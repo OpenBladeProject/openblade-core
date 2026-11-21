@@ -149,8 +149,10 @@ impl<S: AsRef<str> + for<'a> From<&'a str>> ApplicationContext<S> {
 pub struct Intent<'a, D, B> {
     /// `ActiveApplicationProfileId`.
     pub application_profile_id: Option<&'a str>,
-    /// `ResolveAutomationDesired(confirmed)`, whose profile layer is
-    /// `profile_set::application::desired_intent`.
+    /// `ResolveAutomationDesired(confirmed)`. While no manual override,
+    /// recovered HyperBoost intent or temporary battery override is active,
+    /// that is `profile_set::application::desired_intent`; otherwise the host
+    /// composes it over that profile layer.
     pub desired: D,
     /// `EffectiveLaptopBehavior`.
     pub laptop_behavior: B,

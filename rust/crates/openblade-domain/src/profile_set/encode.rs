@@ -554,7 +554,7 @@ fn setting(value: Json, source: crate::automation::Provenance) -> Json {
 
 /// Managed `DesiredDeviceState`'s members as `Resolve` fills them from the
 /// profile layer, without the battery's temporary full charge. Lighting
-/// with no value, which managed takes from confirmed state, is `null`.
+/// with no value is `null`.
 pub fn desired_intent(value: &super::application::DesiredIntent<'_>) -> Json {
     object([
         (

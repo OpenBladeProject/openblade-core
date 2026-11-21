@@ -4,8 +4,9 @@
 //! case from `ProfileAutomationState` and each intent row from the real
 //! `UpdateProfilesAsync`, and verifies the same file. A step marked
 //! `nativeDifference` is one native refuses where managed accepts; the note
-//! says why. `"confirmedState"` is the recorder's marker for a profile and
-//! intent managed builds from confirmed firmware state, not a managed value.
+//! says why. A case may set the device capability and the confirmed firmware
+//! state `Resolve` reads; an update step also records the save-path predicate
+//! over `Resolve`.
 #![cfg(feature = "profile-set")]
 
 mod common;
@@ -13,17 +14,17 @@ mod common;
 use common::{apply, member, validator};
 use openblade_domain::application_context::{Intent, intent_changed};
 use openblade_domain::profile_set::application::{
-    self, ApplicationContext, DesiredIntent, Power, Resolution, Unnormalized,
+    self, ApplicationContext, Confirmed, DesiredIntent, Power, Resolution, Unnormalized,
 };
 use openblade_domain::profile_set::json::{self, Json};
-use openblade_domain::profile_set::{Dialect, PowerSource, ProfileSet, encode, normalize, update};
+use openblade_domain::profile_set::{
+    CustomPerformance, Dialect, FanMode, LaptopBehavior, LightingSettings, PerformancePreset,
+    PowerSource, ProfileSet, encode, normalize, update,
+};
 
 const VECTORS: &str = include_str!(
     "../../../../tools/openblade-windows-host/tests/data/profile-resolution-vectors.json"
 );
-
-/// The recorder's marker where managed reads confirmed firmware state.
-const CONFIRMED_STATE: &str = "confirmedState";
 
 /// The file shape, checked before any row runs, as the managed reader checks
 /// it: an unknown or misspelt member would otherwise be ignored and its case
@@ -39,6 +40,8 @@ fn read_vectors(text: &str) -> Result<Json, String> {
                 "name",
                 "power",
                 "projectUnclassified",
+                "supportsManualFansOnLimitedPower",
+                "confirmed",
                 "profiles",
                 "steps",
                 "expect",
@@ -46,11 +49,23 @@ fn read_vectors(text: &str) -> Result<Json, String> {
             &["name", "power", "steps"],
         )?;
         power_source(member(case, "power"))?;
-        if case
-            .member("projectUnclassified")
-            .is_some_and(|value| value.boolean().is_none())
-        {
-            return Err("a projection is true or false".into());
+        for flag in ["projectUnclassified", "supportsManualFansOnLimitedPower"] {
+            if case
+                .member(flag)
+                .is_some_and(|value| value.boolean().is_none())
+            {
+                return Err(format!("{flag} is true or false"));
+            }
+        }
+        if let Some(confirmed) = case.member("confirmed") {
+            let all = ["performance", "fans", "lighting", "customPerformance"];
+            shape(confirmed, &all, &all)?;
+            for (name, max) in [("performance", 9), ("fans", 4)] {
+                let value = member(confirmed, name);
+                if !value.is_null() && value.integer(0, max).is_none() {
+                    return Err(format!("a confirmed {name} is null or 0 to {max}"));
+                }
+            }
         }
         edits(member(case, "profiles"))?;
         for step in rows(member(case, "steps"))? {
@@ -151,26 +166,88 @@ fn saved(base: &Json, edits: &Json, case: &str) -> ProfileSet {
     profiles
 }
 
-/// The recorder resolves with manual fans admitted on limited power.
-fn intent<'a>(resolution: &'a Resolution<'_>) -> Option<DesiredIntent<'a>> {
-    application::desired_intent(resolution, true).unwrap()
+/// A case's confirmed firmware state, owned: lighting and Custom settings
+/// decode through the profile codec, as managed's reader deserialises them.
+struct Observed {
+    performance: Option<PerformancePreset>,
+    fans: Option<FanMode>,
+    lighting: Option<LightingSettings>,
+    custom_performance: Option<CustomPerformance>,
 }
 
-fn project(resolution: &Resolution<'_>) -> [Json; 4] {
-    let confirmed = || Json::string(CONFIRMED_STATE);
+impl Observed {
+    fn read(base: &Json, value: Option<&Json>) -> Self {
+        let Some(value) = value else {
+            return Self {
+                performance: None,
+                fans: None,
+                lighting: None,
+                custom_performance: None,
+            };
+        };
+        let number = |name| {
+            let value = member(value, name);
+            (!value.is_null()).then(|| i32::try_from(value.integer(0, 9).unwrap()).unwrap())
+        };
+        let edit = |name: &str, field: &str| {
+            Json::Array(vec![
+                Json::Array(vec![Json::string("pluggedIn"), Json::string(name)]),
+                member(value, field).clone(),
+            ])
+        };
+        let carrier = update::decode_profiles(
+            &apply(
+                base,
+                &Json::Array(vec![
+                    edit("lighting", "lighting"),
+                    edit("customPerformance", "customPerformance"),
+                ]),
+            ),
+            Dialect::Document,
+        )
+        .expect("the confirmed state decodes");
+        Self {
+            performance: number("performance").map(PerformancePreset),
+            fans: number("fans").map(FanMode),
+            lighting: carrier.plugged_in.lighting,
+            custom_performance: carrier.plugged_in.custom_performance,
+        }
+    }
+
+    fn confirmed(&self) -> Confirmed<'_> {
+        Confirmed {
+            performance: self.performance,
+            fans: self.fans,
+            lighting: self.lighting.as_ref(),
+            custom_performance: self.custom_performance,
+        }
+    }
+}
+
+fn intent<'a>(resolution: &'a Resolution<'_>, supports: bool) -> DesiredIntent<'a> {
+    application::desired_intent(resolution, supports).unwrap()
+}
+
+fn project(resolution: &Resolution<'_>, supports: bool) -> [Json; 4] {
     [
         resolution
             .application_profile_id
             .map_or(Json::Null, Json::string),
-        resolution
-            .profile
-            .as_deref()
-            .map_or_else(confirmed, encode::power_profile),
-        intent(resolution)
-            .as_ref()
-            .map_or_else(confirmed, encode::desired_intent),
+        encode::power_profile(&resolution.profile),
+        encode::desired_intent(&intent(resolution, supports)),
         encode::laptop_behavior(resolution.laptop_behavior),
     ]
+}
+
+fn predicate<'a>(
+    resolution: &'a Resolution<'_>,
+    supports: bool,
+) -> Intent<'a, DesiredIntent<'a>, LaptopBehavior> {
+    Intent {
+        application_profile_id: resolution.application_profile_id,
+        desired: intent(resolution, supports),
+        laptop_behavior: resolution.laptop_behavior,
+    }
 }
 
 fn base() -> Json {
@@ -186,7 +263,7 @@ fn base() -> Json {
 fn every_managed_case_selects_retains_and_resolves_alike() {
     let root = read_vectors(VECTORS).unwrap();
     let base = base();
-    let (mut steps, mut differences, mut projected) = (0, 0, 0);
+    let mut counts = [0; 6];
     for case in rows(member(&root, "cases")).unwrap() {
         let case_name = name(case);
         let mut profiles = saved(&base, member(case, "profiles"), case_name);
@@ -196,6 +273,11 @@ fn every_managed_case_selects_retains_and_resolves_alike() {
                 .boolean()
                 .unwrap_or(false),
         };
+        let supports = member(case, "supportsManualFansOnLimitedPower")
+            .boolean()
+            .unwrap_or(true);
+        let observed = Observed::read(&base, case.member("confirmed"));
+        let confirmed = observed.confirmed();
         let mut context = ApplicationContext::default();
         let expected = rows(member(case, "expect")).unwrap();
         let operations = rows(member(case, "steps")).unwrap();
@@ -208,7 +290,7 @@ fn every_managed_case_selects_retains_and_resolves_alike() {
                 if step.member("nativeDifference").is_some() {
                     assert_eq!(reported, Err(Unnormalized), "{at}");
                     assert_eq!(index + 1, operations.len(), "{at}: a refusal ends its case");
-                    differences += 1;
+                    counts[1] += 1;
                     break;
                 }
                 assert_eq!(
@@ -217,6 +299,8 @@ fn every_managed_case_selects_retains_and_resolves_alike() {
                     "{at}"
                 );
             } else if let Some(edits) = step.member("update") {
+                let prior_context = context.clone();
+                let prior_profiles = profiles;
                 profiles = saved(&base, edits, &at);
                 let dropped = application::update(&mut context, &profiles);
                 assert_eq!(
@@ -224,6 +308,20 @@ fn every_managed_case_selects_retains_and_resolves_alike() {
                     prior.is_some() && member(expect, "activeId").is_null(),
                     "{at}"
                 );
+                // `activeApplicationIntentChanged` over `Resolve`, as
+                // `UpdateProfilesAsync` evaluates it with no override active.
+                let before =
+                    application::resolve(&prior_context, &prior_profiles, power, confirmed)
+                        .unwrap();
+                let after = application::resolve(&context, &profiles, power, confirmed).unwrap();
+                let changed =
+                    intent_changed(&predicate(&before, supports), &predicate(&after, supports));
+                assert_eq!(
+                    Json::Bool(changed),
+                    *member(expect, "intentChanged"),
+                    "{at}"
+                );
+                counts[3] += usize::from(changed);
             } else {
                 // `ChangePowerSource` reports only whether the source moved.
                 // Its other effects, expiring transient manual overrides and
@@ -235,20 +333,25 @@ fn every_managed_case_selects_retains_and_resolves_alike() {
                     *member(expect, "changed"),
                     "{at}"
                 );
+                counts[4] += usize::from(next == power.state);
                 power.state = next;
             }
-            let resolution = application::resolve(&context, &profiles, power).unwrap();
-            let [id, profile, desired, behavior] = project(&resolution);
+            let resolution = application::resolve(&context, &profiles, power, confirmed).unwrap();
+            let [id, profile, desired, behavior] = project(&resolution, supports);
             assert_eq!(id, *member(expect, "activeId"), "{at}");
             assert_eq!(profile, *member(expect, "profile"), "{at}");
             assert_eq!(desired, *member(expect, "intent"), "{at}");
             assert_eq!(behavior, *member(expect, "laptopBehavior"), "{at}");
-            projected += usize::from(power.project_unclassified && power.state.is_some());
-            steps += 1;
+            counts[0] += 1;
+            counts[2] += usize::from(resolution.desired_source().is_none());
+            counts[5] += usize::from(!supports);
         }
     }
-    // Guard against a file that silently lost its rows.
-    assert_eq!((steps, differences, projected), (78, 1, 3));
+    // Guard against a file that silently lost its rows: steps, native
+    // differences, steps on unknown external power, saves that change the
+    // intent, power steps that repeat their source, steps without manual fans
+    // on limited power.
+    assert_eq!(counts, [135, 1, 33, 16, 3, 7]);
 }
 
 #[test]
@@ -267,19 +370,15 @@ fn every_managed_save_changes_the_active_intent_alike() {
         let prior_context = context.clone();
         let profiles = saved(&base, member(row, "update"), row_name);
         application::update(&mut context, &profiles);
-        let before = application::resolve(&prior_context, &prior_profiles, power).unwrap();
-        let after = application::resolve(&context, &profiles, power).unwrap();
-
-        let prior = Intent {
-            application_profile_id: before.application_profile_id,
-            desired: intent(&before),
-            laptop_behavior: before.laptop_behavior,
-        };
-        let next = Intent {
-            application_profile_id: after.application_profile_id,
-            desired: intent(&after),
-            laptop_behavior: after.laptop_behavior,
-        };
+        // The runtime resolves before any confirmed member matters: every
+        // row's profiles set lighting and no Custom preset without levels.
+        let before =
+            application::resolve(&prior_context, &prior_profiles, power, Confirmed::default())
+                .unwrap();
+        let after = application::resolve(&context, &profiles, power, Confirmed::default()).unwrap();
+        // The recorded runtime admits manual fans on limited power.
+        let prior = predicate(&before, true);
+        let next = predicate(&after, true);
         let id = |value: Option<&str>| value.map_or(Json::Null, Json::string);
         assert_eq!(
             id(prior.application_profile_id),
@@ -338,9 +437,13 @@ fn malformed_or_unknown_rows_are_rejected() {
         r#"{"comment":"","base":{},"cases":[],"intent":[{"name":"x","report":null,"update":[],"power":0}]}"#,
         r#"{"comment":"","base":{},"cases":[{"name":"x","power":0,"steps":[{"power":4}]}],"intent":[]}"#,
         r#"{"comment":"","base":{},"cases":[{"name":"x","power":0,"projectUnclassified":1,"steps":[]}],"intent":[]}"#,
+        r#"{"comment":"","base":{},"cases":[{"name":"x","power":0,"supportsManualFansOnLimitedPower":null,"steps":[]}],"intent":[]}"#,
+        r#"{"comment":"","base":{},"cases":[{"name":"x","power":3,"confirmed":{"performance":null,"fans":null,"lighting":null},"steps":[]}],"intent":[]}"#,
+        r#"{"comment":"","base":{},"cases":[{"name":"x","power":3,"confirmed":{"performance":null,"fans":null,"lighting":null,"customPerformance":null,"battery":null},"steps":[]}],"intent":[]}"#,
+        r#"{"comment":"","base":{},"cases":[{"name":"x","power":3,"confirmed":{"performance":"1","fans":null,"lighting":null,"customPerformance":null},"steps":[]}],"intent":[]}"#,
     ] {
         assert!(read_vectors(text).is_err(), "{text}");
     }
-    let minimal = r#"{"comment":"","base":{},"cases":[{"name":"x","power":3,"projectUnclassified":false,"steps":[{"report":null},{"update":[]},{"power":0}]}],"intent":[{"name":"x","report":"C:\\a.exe","update":[]}]}"#;
+    let minimal = r#"{"comment":"","base":{},"cases":[{"name":"x","power":3,"projectUnclassified":false,"supportsManualFansOnLimitedPower":false,"confirmed":{"performance":1,"fans":null,"lighting":null,"customPerformance":null},"steps":[{"report":null},{"update":[]},{"power":0}]}],"intent":[{"name":"x","report":"C:\\a.exe","update":[]}]}"#;
     assert!(read_vectors(minimal).is_ok());
 }

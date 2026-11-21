@@ -1,20 +1,21 @@
 //! Managed `ProfileAutomationState`'s active application profile over the
 //! typed set: the selection the Service keeps between foreground reports and
-//! profile saves, and the intent it resolves for the current power sources.
+//! profile saves, and the profile layer it resolves for the current power
+//! sources and confirmed firmware state.
 //!
 //! The selection rules are [`crate::application_context`]'s; this binds them
 //! to `ProfileSet` with managed's `OrdinalIgnoreCase` table. Pure: no clock,
-//! device or storage. Leases, triggers, manual overrides, confirmed firmware
-//! state and hardware application stay in the host. The save path's predicate
-//! is [`crate::application_context::intent_changed`]; its desired term
-//! compares [`desired_intent`], which keeps each setting's source as managed's
-//! `DesiredDeviceState` does.
+//! device or storage. Leases, triggers, manual overrides, the temporary
+//! battery overrides and hardware application stay in the host. The save
+//! path's predicate is [`crate::application_context::intent_changed`]; while
+//! no override is active its desired term compares [`desired_intent`], which
+//! keeps each setting's source as managed's `DesiredDeviceState` does.
 
 use super::model::*;
 use super::normalize::Invalid;
 use super::{resolve, text};
 use crate::application_context::{self, Rule};
-use crate::automation::{self, Provenance};
+use crate::automation::{self, Provenance, ValueOrigin};
 use std::borrow::Cow;
 use std::string::String;
 
@@ -59,12 +60,13 @@ pub fn update(context: &mut ApplicationContext, profiles: &ProfileSet) -> bool {
 }
 
 /// The two power sources managed's resolution reads. `None` is
-/// `ExternalUnknown`, which selects no saved profile.
+/// `ExternalUnknown`, which has no power-profile slot of its own.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Power {
     /// `ProfileAutomationState.PowerSource`. `EffectiveLaptopBehavior`
     /// (`ProfileAutomationState.cs:99-110`, through `GetActiveProfile` at
-    /// :563-569) and `GetApplicationOverride` (:632-641) read only this one.
+    /// :563-569), `GetApplicationOverride` (:632-641) and `DesiredBattery`
+    /// (:84-89) read only this one.
     pub state: Option<PowerSource>,
     /// `ServiceControlRuntime.ProjectUnclassifiedIntent`
     /// (`ServiceControlRuntime.UnclassifiedExternalPower.cs:151-152`): then
@@ -93,24 +95,49 @@ impl Power {
     }
 }
 
+/// Confirmed firmware state as managed `Resolve` reads it
+/// (`ConfirmedDeviceState`): what the device last reported, each member absent
+/// when unknown. It shapes the profile layer only where managed reads it: the
+/// unknown-external base profile and sources, Custom settings a profile does
+/// not carry, and lighting a profile does not set. The default is managed's
+/// all-unknown `ConfirmedDeviceState(null, null, null, null)`.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Confirmed<'a> {
+    pub performance: Option<PerformancePreset>,
+    pub fans: Option<FanMode>,
+    pub lighting: Option<&'a LightingSettings>,
+    pub custom_performance: Option<CustomPerformance>,
+}
+
 /// What managed resolves for the active application profile.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Resolution<'a> {
     /// `ActiveApplicationProfileId`.
     pub application_profile_id: Option<&'a str>,
-    /// The profile `Resolve` starts from (`ProfileAutomationState.cs:329-344`):
-    /// the base profile for the desired source with the active application's
-    /// override applied. `None` when the desired source is `ExternalUnknown`,
-    /// where managed builds the base from confirmed firmware state and applies
-    /// no application override.
-    pub profile: Option<Cow<'a, PowerProfile>>,
+    /// The profile `Resolve` starts from (`ProfileAutomationState.cs:329-344`).
+    /// On a classified desired source, its base profile with the active
+    /// application's override applied. On `ExternalUnknown`, managed
+    /// `CreateObservedFallbackProfile` (:554-561) with no override: each of
+    /// performance, fans and lighting is the confirmed value or else the saved
+    /// USB-C one, Custom settings are the confirmed ones only, battery
+    /// protection is `DesiredBattery`'s, and every other member is unset.
+    pub profile: Cow<'a, PowerProfile>,
     /// `EffectiveLaptopBehavior`, from the state source alone: a projection
     /// to `ExternalUnknown` leaves it on the retained classified profile.
     pub laptop_behavior: LaptopBehavior,
     source: Option<PowerSource>,
     application_override: Option<&'a ApplicationOverride>,
+    confirmed: Confirmed<'a>,
     battery_policy: Option<BatteryPolicy>,
     battery_protection_enabled: bool,
+}
+
+impl Resolution<'_> {
+    /// `Resolve`'s source, `observedPowerSource ?? PowerSource`; `None` is
+    /// `ExternalUnknown`.
+    pub fn desired_source(&self) -> Option<PowerSource> {
+        self.source
+    }
 }
 
 /// `GetApplicationOverride` (`ProfileAutomationState.cs:632-641`).
@@ -142,13 +169,40 @@ fn merged<'a>(
     }
 }
 
-/// The active application intent on `power`. Fails where managed's
-/// `ApplicationProfileResolution.Apply` throws: an override naming an
-/// undefined legacy fan mode.
+/// Managed `CreateObservedFallbackProfile` (`ProfileAutomationState.cs:554-561`)
+/// through the `PowerProfile(Performance, Fans, Lighting)` constructor, whose
+/// other members keep their defaults.
+fn observed_fallback(
+    profiles: &ProfileSet,
+    confirmed: Confirmed<'_>,
+    battery_protection_enabled: bool,
+) -> PowerProfile {
+    let usb_c = &profiles.usb_c;
+    PowerProfile {
+        performance: confirmed.performance.unwrap_or(usb_c.performance),
+        fans: confirmed.fans.unwrap_or(usb_c.fans),
+        lighting: confirmed.lighting.or(usb_c.lighting.as_ref()).cloned(),
+        display: None,
+        stop_fans_in_battery_saver: false,
+        custom_performance: confirmed.custom_performance,
+        gpu_clock_tuning: None,
+        fan_control: None,
+        lighting_power_policy: None,
+        laptop_behavior: None,
+        battery_protection_enabled: Some(battery_protection_enabled),
+        thx_audio: None,
+        windows_power_mode: None,
+    }
+}
+
+/// The active application intent on `power` with `confirmed` firmware state.
+/// Fails where managed's `ApplicationProfileResolution.Apply` throws: an
+/// override naming an undefined legacy fan mode.
 pub fn resolve<'a>(
     context: &'a ApplicationContext,
     profiles: &'a ProfileSet,
     power: Power,
+    confirmed: Confirmed<'a>,
 ) -> Result<Resolution<'a>, Invalid> {
     let application_override = power
         .state
@@ -161,21 +215,35 @@ pub fn resolve<'a>(
         .as_deref()
         .map(PowerProfile::effective_laptop_behavior)
         .unwrap_or_default();
+    // `DesiredBattery` (:84-89) reads `GetActiveProfile`, the state source's
+    // base, whatever source `Resolve` takes.
+    let battery_protection_enabled = power
+        .state
+        .and_then(|source| profiles.for_source(source).battery_protection_enabled)
+        .unwrap_or(true);
     // Without a projection both sources are the state's; with one, `Resolve`
     // takes neither the state's profile nor its override.
     let source = power.desired();
+    let (profile, application_override) = match (source, state) {
+        (Some(_), Some(state)) => (state, application_override),
+        _ => (
+            Cow::Owned(observed_fallback(
+                profiles,
+                confirmed,
+                battery_protection_enabled,
+            )),
+            None,
+        ),
+    };
     Ok(Resolution {
         application_profile_id: context.active().map(|active| active.id),
-        profile: state.filter(|_| source.is_some()),
+        profile,
         laptop_behavior,
         source,
-        application_override: application_override.filter(|_| source.is_some()),
+        application_override,
+        confirmed,
         battery_policy: profiles.battery_policy,
-        // `DesiredBattery` reads `GetActiveProfile`, the state source's base.
-        battery_protection_enabled: power
-            .state
-            .and_then(|source| profiles.for_source(source).battery_protection_enabled)
-            .unwrap_or(true),
+        battery_protection_enabled,
     })
 }
 
@@ -186,44 +254,57 @@ pub struct Setting<T> {
     pub source: Provenance,
 }
 
-/// The profile layer of managed `Resolve` (`ProfileAutomationState.cs:322-478`)
-/// for a classified desired source: every `DesiredDeviceState` member before
-/// manual overrides and confirmed firmware state apply. Display, THX audio
-/// and the gaming-mode key policy are not among them, so a change to only
-/// those is no change here, while removing an override equal to its base
-/// still is: the value stays and its source moves.
+/// The profile layer of managed `Resolve` (`ProfileAutomationState.cs:322-478`):
+/// every `DesiredDeviceState` member `Resolve` returns while no manual
+/// override, recovered HyperBoost intent or temporary battery override is
+/// active, less the temporary full charge. Display, THX audio and the
+/// gaming-mode key policy are not among them, so a change to only those is no
+/// change here, while removing an override equal to its base still is: the
+/// value stays and its source moves.
 ///
-/// The host layers on manual overrides, recovered HyperBoost intent, the
-/// temporary battery overrides and full charge, and confirmed firmware state,
-/// which supplies Custom settings when the profile has none and lighting when
-/// [`DesiredIntent::lighting`] has no value. With none of those in effect,
-/// equal intents resolve equal `DesiredDeviceState`s and unequal ones unequal.
+/// It is the desired term of the save-path predicate only while no such
+/// override is active. An active override can hide a profile change from
+/// managed (a persistent Silent override over an edited rule preset) or
+/// surface one this omits (a persistent Custom override takes the profile's
+/// Custom settings even when the profile preset is not Custom). The host
+/// composes the full term: performance, fans, fan control, lighting and
+/// battery layer over each member's [`Setting::source`]; Custom settings and
+/// GPU tuning layer over the raw [`Resolution::profile`], not this intent,
+/// then pass through [`gpu_clock_settings`] again; fan control in a mode an
+/// override selects goes through [`with_mode`].
 #[derive(Clone, Debug, PartialEq)]
 pub struct DesiredIntent<'a> {
     /// Source `ApplicationProfile` when the override sets the preset, Custom
-    /// settings or GPU tuning (:377-390).
+    /// settings or GPU tuning (:377-390); on `ExternalUnknown`, confirmed
+    /// firmware state when it reports a preset (:430-439).
     pub performance: Setting<PerformancePreset>,
-    /// The profile's Custom settings while Custom is selected (:391-398).
+    /// While Custom is selected, the profile's Custom settings, else the
+    /// confirmed ones, else managed's default (:391-398).
     pub custom_performance: Option<CustomPerformance>,
-    /// The profile's tuning on external power only, with legacy Custom
-    /// offsets moved into it (:400-416).
+    /// The profile's tuning on classified external power only, with legacy
+    /// Custom offsets moved into it (:400-416).
     pub gpu_clock_tuning: Option<GpuClockTuning>,
     /// Source `ApplicationProfile` when the override sets the fan mode or
-    /// fan control (:417-428); on USB-C an unavailable mode is Automatic from
-    /// the power profile (:440-447).
+    /// fan control (:417-428); on `ExternalUnknown`, confirmed firmware state
+    /// when it reports a mode (:430-439); on USB-C an unavailable mode is
+    /// Automatic from the power profile (:440-447).
     pub fans: Setting<FanMode>,
-    /// The profile's fan control in the resolved mode (:454-468).
+    /// The profile's fan control, or the legacy default for its mode, in the
+    /// resolved mode (:454-468).
     pub fan_control: FanControl,
-    /// Source `ApplicationProfile` when the override sets lighting (:448-453).
-    /// No value is managed's selection of confirmed firmware lighting.
+    /// `ResolveLightingWithPowerContext` (:480-512): the profile's lighting,
+    /// from `ApplicationProfile` when the override sets it; confirmed lighting
+    /// when the profile has none; on `ExternalUnknown`, confirmed lighting
+    /// before the fallback profile's. No value is managed's `null`.
     pub lighting: Setting<Option<&'a LightingSettings>>,
     /// `DesiredBattery` (:84-89) without its temporary members.
     pub battery_policy: Option<BatteryPolicy>,
     pub battery_protection_enabled: bool,
 }
 
-/// Managed `WithMode` (`ProfileAutomationState.cs:522-531`).
-fn with_mode(settings: &FanControl, mode: FanMode) -> FanControl {
+/// Managed `WithMode` (`ProfileAutomationState.cs:522-531`): `settings` in
+/// `mode`, at the maximum speed when that mode is Maximum.
+pub fn with_mode(settings: &FanControl, mode: FanMode) -> FanControl {
     if settings.mode == mode {
         return settings.clone();
     }
@@ -238,55 +319,94 @@ fn with_mode(settings: &FanControl, mode: FanMode) -> FanControl {
     }
 }
 
+/// Managed `Resolve`'s GPU clock step (`ProfileAutomationState.cs:400-415`)
+/// after its layers are chosen: `custom_performance` is the selected Custom
+/// settings (present only while Custom is resolved) and `gpu_clock_tuning` the
+/// first tuning present among the layers. On classified external power the
+/// tuning stays, or else the Custom settings' legacy offsets move into an
+/// enabled tuning; elsewhere there is no tuning and the offsets stay.
+pub fn gpu_clock_settings(
+    source: Option<PowerSource>,
+    mut custom_performance: Option<CustomPerformance>,
+    gpu_clock_tuning: Option<GpuClockTuning>,
+) -> (Option<CustomPerformance>, Option<GpuClockTuning>) {
+    if !source.is_some_and(PowerSource::is_external) {
+        return (custom_performance, None);
+    }
+    if gpu_clock_tuning.is_none()
+        && let Some(settings) = custom_performance.as_mut()
+        && let Some(offsets) = settings.gpu_clock_offsets.take()
+    {
+        return (
+            custom_performance,
+            Some(GpuClockTuning {
+                enabled: true,
+                offsets: Some(offsets),
+            }),
+        );
+    }
+    (custom_performance, gpu_clock_tuning)
+}
+
 fn provenance(from_application: bool) -> Provenance {
     automation::performance(false, false, from_application).provenance
 }
 
-/// The desired term of managed's save-path predicate for `resolution`, or
-/// `None` when the desired source is `ExternalUnknown` and managed resolves
-/// from confirmed firmware state. `supports_manual_fans_on_limited_power` is
-/// the device capability `ResolveAutomationDesired` passes. Fails where
-/// managed's `FanControlSettings.FromLegacy` throws.
+/// The profile layer of managed `Resolve` for `resolution`.
+/// `supports_manual_fans_on_limited_power` is the device capability
+/// `ResolveAutomationDesired` passes. Fails where managed's
+/// `FanControlSettings.FromLegacy` throws.
 pub fn desired_intent<'a>(
     resolution: &'a Resolution<'_>,
     supports_manual_fans_on_limited_power: bool,
-) -> Result<Option<DesiredIntent<'a>>, Invalid> {
-    let (Some(source), Some(profile)) = (resolution.source, resolution.profile.as_deref()) else {
-        return Ok(None);
-    };
+) -> Result<DesiredIntent<'a>, Invalid> {
+    let profile = &*resolution.profile;
+    let source = resolution.source;
+    let confirmed = resolution.confirmed;
     let from = resolution.application_override;
+    let external_unknown = source.is_none();
+    // :430-439: a power-profile value confirmed firmware state reports.
+    let observed = |setting: Provenance, reported: bool| {
+        if external_unknown && reported && setting == Provenance::PowerProfile {
+            Provenance::ConfirmedFirmwareState
+        } else {
+            setting
+        }
+    };
     let performance = Setting {
         value: profile.performance,
-        source: provenance(from.is_some_and(|value| {
-            value.performance.is_some()
-                || value.custom_performance.is_some()
-                || value.gpu_clock_tuning.is_some()
-        })),
-    };
-    let mut custom_performance = profile
-        .custom_performance
-        .filter(|_| performance.value == PerformancePreset::CUSTOM);
-    let mut gpu_clock_tuning = profile.gpu_clock_tuning.filter(|_| source.is_external());
-    if source.is_external()
-        && gpu_clock_tuning.is_none()
-        && let Some(settings) = custom_performance.as_mut()
-        && let Some(offsets) = settings.gpu_clock_offsets.take()
-    {
-        gpu_clock_tuning = Some(GpuClockTuning {
-            enabled: true,
-            offsets: Some(offsets),
-        });
-    }
-    let mut fans = Setting {
-        value: profile.fans,
-        source: provenance(
-            from.is_some_and(|value| value.fans.is_some() || value.fan_control.is_some()),
+        source: observed(
+            provenance(from.is_some_and(|value| {
+                value.performance.is_some()
+                    || value.custom_performance.is_some()
+                    || value.gpu_clock_tuning.is_some()
+            })),
+            confirmed.performance.is_some(),
         ),
     };
-    if source == PowerSource::UsbC
+    let (custom_performance, gpu_clock_tuning) = gpu_clock_settings(
+        source,
+        (performance.value == PerformancePreset::CUSTOM).then(|| {
+            profile
+                .custom_performance
+                .or(confirmed.custom_performance)
+                .unwrap_or(CustomPerformance::DEFAULT)
+        }),
+        profile.gpu_clock_tuning,
+    );
+    let mut fans = Setting {
+        value: profile.fans,
+        source: observed(
+            provenance(
+                from.is_some_and(|value| value.fans.is_some() || value.fan_control.is_some()),
+            ),
+            confirmed.fans.is_some(),
+        ),
+    };
+    if source == Some(PowerSource::UsbC)
         && !fans
             .value
-            .available_on(source, supports_manual_fans_on_limited_power)
+            .available_on(PowerSource::UsbC, supports_manual_fans_on_limited_power)
     {
         fans = Setting {
             value: FanMode::AUTOMATIC,
@@ -304,25 +424,148 @@ pub fn desired_intent<'a>(
             fans.value,
         ),
     };
+    // Managed skips the profile value on unknown external power while
+    // confirmed lighting is known; the selection then takes the confirmed
+    // value either way.
+    let profile_lighting = profile.lighting.as_ref();
     let lighting = automation::lighting(
-        profile.lighting.is_some(),
+        profile_lighting.is_some(),
+        confirmed.lighting.is_some(),
         false,
         false,
-        false,
-        false,
+        external_unknown,
         from.is_some_and(|value| value.lighting.is_some()),
     );
-    Ok(Some(DesiredIntent {
+    Ok(DesiredIntent {
         performance,
         custom_performance,
         gpu_clock_tuning,
         fans,
         fan_control,
         lighting: Setting {
-            value: profile.lighting.as_ref(),
+            value: match lighting.origin {
+                ValueOrigin::Confirmed => confirmed.lighting.or(profile_lighting),
+                _ => profile_lighting,
+            },
             source: lighting.provenance,
         },
         battery_policy: resolution.battery_policy,
         battery_protection_enabled: resolution.battery_protection_enabled,
-    }))
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn fixed(speed: i32) -> FanControl {
+        FanControl {
+            fixed_speed_rpm: speed,
+            ..FanControl::from_legacy(FanMode::FIXED).unwrap()
+        }
+    }
+
+    #[test]
+    fn with_mode_keeps_matching_settings_and_raises_maximum_to_full_speed() {
+        let settings = fixed(3000);
+        assert_eq!(with_mode(&settings, FanMode::FIXED), settings);
+        assert_eq!(
+            with_mode(&settings, FanMode::MAXIMUM),
+            FanControl {
+                mode: FanMode::MAXIMUM,
+                fixed_speed_rpm: FanControl::MAXIMUM_SPEED_RPM,
+                ..settings.clone()
+            }
+        );
+        assert_eq!(
+            with_mode(&settings, FanMode::AUTOMATIC),
+            FanControl {
+                mode: FanMode::AUTOMATIC,
+                ..settings
+            }
+        );
+    }
+
+    #[test]
+    fn legacy_offsets_move_into_tuning_on_classified_external_power_only() {
+        let offsets = GpuClockOffsets {
+            core_megahertz: 7,
+            memory_megahertz: 8,
+        };
+        let custom = CustomPerformance {
+            gpu_clock_offsets: Some(offsets),
+            ..CustomPerformance::DEFAULT
+        };
+        let tuning = GpuClockTuning {
+            enabled: false,
+            offsets: None,
+        };
+        let moved = (
+            Some(CustomPerformance::DEFAULT),
+            Some(GpuClockTuning {
+                enabled: true,
+                offsets: Some(offsets),
+            }),
+        );
+        for source in [PowerSource::PluggedIn, PowerSource::UsbC] {
+            assert_eq!(gpu_clock_settings(Some(source), Some(custom), None), moved);
+            assert_eq!(
+                gpu_clock_settings(Some(source), Some(custom), Some(tuning)),
+                (Some(custom), Some(tuning))
+            );
+            assert_eq!(
+                gpu_clock_settings(Some(source), None, Some(tuning)),
+                (None, Some(tuning))
+            );
+        }
+        for source in [Some(PowerSource::Battery), None] {
+            assert_eq!(
+                gpu_clock_settings(source, Some(custom), Some(tuning)),
+                (Some(custom), None)
+            );
+        }
+    }
+
+    #[test]
+    fn confirmed_state_fills_what_an_unvalidated_profile_lacks() {
+        // A set the store refuses: Custom without levels (:391-398) and no
+        // lighting (`ResolveLightingWithPowerContext`).
+        let mut profiles = ProfileSet::safe_defaults();
+        profiles.plugged_in.performance = PerformancePreset::CUSTOM;
+        profiles.plugged_in.custom_performance = None;
+        profiles.plugged_in.lighting = None;
+        let context = ApplicationContext::default();
+        let power = Power::retained(Some(PowerSource::PluggedIn));
+        let resolution = resolve(&context, &profiles, power, Confirmed::default()).unwrap();
+        let intent = desired_intent(&resolution, true).unwrap();
+        assert_eq!(intent.custom_performance, Some(CustomPerformance::DEFAULT));
+        assert_eq!(
+            intent.lighting,
+            Setting {
+                value: None,
+                source: Provenance::ConfirmedFirmwareState,
+            }
+        );
+
+        let lighting = LightingSettings::off();
+        let custom = CustomPerformance {
+            cpu: CustomPerformanceLevel::LOW,
+            ..CustomPerformance::DEFAULT
+        };
+        let confirmed = Confirmed {
+            lighting: Some(&lighting),
+            custom_performance: Some(custom),
+            ..Confirmed::default()
+        };
+        let resolution = resolve(&context, &profiles, power, confirmed).unwrap();
+        let intent = desired_intent(&resolution, true).unwrap();
+        assert_eq!(intent.custom_performance, Some(custom));
+        assert_eq!(
+            intent.lighting,
+            Setting {
+                value: Some(&lighting),
+                source: Provenance::ConfirmedFirmwareState,
+            }
+        );
+    }
 }
