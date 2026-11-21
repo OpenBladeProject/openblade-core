@@ -149,6 +149,56 @@ fn every_managed_store_open_leaves_what_managed_leaves() {
     assert_eq!(differences, 5);
 }
 
+/// Pending override or journal evidence refuses the open before the
+/// migration, so an older aggregate beside it is not written.
+#[test]
+fn pending_override_or_journal_evidence_keeps_an_older_aggregate_untouched() {
+    for source in sources() {
+        for pending in [
+            "manual-overrides.json.pending",
+            "thermal-mutation.journal.pending",
+        ] {
+            let mut files = source.files.clone();
+            files.insert(pending.into(), b"{}".to_vec());
+            let model = model(&files);
+
+            assert!(open(&model).is_err(), "{}: {pending}", source.name);
+            assert_eq!(model.snapshot(), files, "{}: {pending}", source.name);
+            assert_eq!(model.writes.load(Ordering::Acquire), 0, "{}", source.name);
+        }
+    }
+}
+
+/// The override document and the journal are admitted before the migration,
+/// so an open they refuse leaves an older aggregate beside them unwritten.
+#[test]
+fn an_override_or_journal_the_open_refuses_keeps_an_older_aggregate_untouched() {
+    for source in sources() {
+        for (what, name, bytes) in [
+            (
+                "a lighting override",
+                OVERRIDES,
+                br#"{"schemaVersion":10,"overrides":{"performance":null,"fans":null,"lighting":{"effect":0}}}"#.to_vec(),
+            ),
+            (
+                "a legacy override schema",
+                OVERRIDES,
+                br#"{"schemaVersion":7,"overrides":{"performance":null,"fans":null,"lighting":null}}"#.to_vec(),
+            ),
+            ("an invalid override document", OVERRIDES, b"{".to_vec()),
+            ("an invalid journal", JOURNAL, b"not a journal\n".to_vec()),
+        ] {
+            let mut files = source.files.clone();
+            files.insert(name.into(), bytes);
+            let model = model(&files);
+
+            assert!(open(&model).is_err(), "{}: {what}", source.name);
+            assert_eq!(model.snapshot(), files, "{}: {what}", source.name);
+            assert_eq!(model.writes.load(Ordering::Acquire), 0, "{}: {what}", source.name);
+        }
+    }
+}
+
 #[test]
 fn a_future_or_corrupt_aggregate_is_refused_untouched() {
     for name in [

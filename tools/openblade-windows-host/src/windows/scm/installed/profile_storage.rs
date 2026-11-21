@@ -43,8 +43,12 @@ const RECOVERY_REQUIRED: &str = "The requested intent was rejected: Configuratio
 const STAGE_BLOCKED: &str = "The requested intent was rejected: A staging file left by an earlier configuration save could not be removed. The saved configuration is unchanged.";
 /// The set is valid, but this service's own reader would refuse it once stored.
 const UNREADABLE: &str = "The requested intent was rejected: This service cannot read the profile set back once it is stored. The saved configuration is unchanged.";
-/// A migration at open that left the stored aggregate as it was.
-const MIGRATION_UNCHANGED: &str = "The saved configuration could not be migrated to the current schema. It is unchanged, and the next start migrates it again.";
+/// A migration at open that left the stored aggregate as it was. The next
+/// open tries again, and a failed open is not kept, so that is the next
+/// request. A stage that cannot be removed, or another file under one of the
+/// change's backup names, fails every attempt alike until it is removed.
+const MIGRATION_UNCHANGED: &str =
+    "The saved configuration could not be migrated to the current schema. It is unchanged.";
 /// A migration at open whose restore could not be confirmed.
 const MIGRATION_RECOVERY_REQUIRED: &str = "Configuration transaction recovery is required. The recovery-required record and the original transaction backups are preserved.";
 
@@ -120,7 +124,8 @@ fn read_committed(files: &dyn Files, validator: &Validator) -> io::Result<Option
                     documents: prior,
                 })
         }
-        // A schema-less legacy profile and every preserved state need managed.
+        // A schema-less legacy profile reaches a save only when the open
+        // left it unmigrated; it and every preserved state stay preserved.
         _ => None,
     })
 }
@@ -167,6 +172,13 @@ fn sha256(bytes: &[u8]) -> String {
 /// (the first save materialises it), a recorded or preserved state, an
 /// aggregate managed would quarantine, and one this service could not read
 /// back once migrated.
+///
+/// The caller has already refused a recorded transaction and pending
+/// override or journal evidence, and admitted the override document and the
+/// journal, so a refused open writes nothing. The record guard below repeats
+/// that check for this function's own sake; at its one call site it cannot
+/// change the outcome, which holds only while the call stays after those
+/// checks.
 pub(super) fn migrate_on_open(
     files: &dyn Files,
     same_path: fn(&str, &str) -> bool,

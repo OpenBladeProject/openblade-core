@@ -506,15 +506,16 @@ impl Storage {
                 return Err(denied());
             }
         }
-        // Managed migrates an older aggregate when it loads it.
-        #[cfg(feature = "service-profiles-v1")]
-        profiles::migrate_on_open(files.as_ref(), same_path)?;
-        aggregate(files.as_ref(), same_path)?;
         let bytes = files.read(OVERRIDES)?;
         let document = overrides(bytes.as_deref())?;
         let journal = files.read(JOURNAL)?;
         let last =
             crate::thermal_history::rows(journal.as_deref().unwrap_or_default(), |_, _| Ok(()))?.1;
+        // Managed migrates an older aggregate when it loads it. Only after
+        // every read-only refusal above, so an open that fails writes nothing.
+        #[cfg(feature = "service-profiles-v1")]
+        profiles::migrate_on_open(files.as_ref(), same_path)?;
+        aggregate(files.as_ref(), same_path)?;
         Ok(Arc::new(Self {
             #[cfg(test)]
             battery_append_hook: Mutex::new(None),
@@ -1324,9 +1325,11 @@ impl Storage {
     }
 }
 
-// This stage never migrates or writes the aggregate. Validate its durable envelope
-// before touching overrides, and consume only explicitly represented performance
-// fields. Missing configuration does not materialize or activate a default.
+// This reader never migrates or writes the aggregate; with service-profiles-v1
+// the open has already migrated an older one (profiles::migrate_on_open).
+// Validate its durable envelope before touching overrides, and consume only
+// explicitly represented performance fields. Missing configuration does not
+// materialize or activate a default.
 fn aggregate(files: &dyn Files, same_path: fn(&str, &str) -> bool) -> io::Result<Option<Value>> {
     if files.read(configuration::RECOVERY_REQUIRED)?.is_some() {
         return Err(denied());
@@ -1342,8 +1345,10 @@ fn aggregate(files: &dyn Files, same_path: fn(&str, &str) -> bool) -> io::Result
     }
     // Schemas 25 and 26 are read as managed ProfileStore reads them: lighting
     // members newer than the document are rejected, and schema 26 also gets the
-    // PreserveLegacyIndependentProfileIntent normalisation below. Schema 24 still
-    // needs managed Fan Stop migration first.
+    // PreserveLegacyIndependentProfileIntent normalisation below. Schema 24 and
+    // older are refused: with service-profiles-v1 the open migrated them first,
+    // so they reach this only on other lanes or when that migration was not
+    // written.
     let Inspection::CommittedEnvelope {
         schema: schema @ 25..=configuration::CURRENT_SCHEMA,
     } = configuration::inspect(configuration::Snapshot {
