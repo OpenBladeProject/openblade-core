@@ -24,6 +24,7 @@ struct Fake<F> {
     calls: Vec<&'static str>,
     install_error: Option<u32>,
     uninstall_error: Option<u32>,
+    waits: Vec<Option<Duration>>,
 }
 
 impl<F> Fake<F> {
@@ -34,6 +35,7 @@ impl<F> Fake<F> {
             calls: Vec::new(),
             install_error: None,
             uninstall_error: None,
+            waits: Vec::new(),
         }
     }
 }
@@ -51,8 +53,9 @@ impl<F: FnMut(&mut Callback, Instant) -> Result<bool, u32>> Messages for Fake<F>
             .map_or(Ok(42), |code| Err(HookError::Install(code)))
     }
 
-    fn pump(&mut self, callback: &mut Callback, _: Option<Duration>) -> Result<bool, u32> {
+    fn pump(&mut self, callback: &mut Callback, wait: Option<Duration>) -> Result<bool, u32> {
         self.calls.push("pump");
+        self.waits.push(wait);
         self.now += Duration::from_millis(50);
         (self.on_pump)(callback, self.now)
     }
@@ -429,3 +432,125 @@ fn atomic_admission_retains_exact_layer_and_expiry_together() {
 
 #[path = "executor_tests.rs"]
 mod executor_tests;
+
+/// Counts heap operations on threads that opt in, so a callback can be shown
+/// to run without the allocator, whose lock could exceed the hook timeout.
+#[allow(unsafe_code)]
+mod allocations {
+    use std::{
+        alloc::{GlobalAlloc, Layout, System},
+        cell::Cell,
+    };
+
+    struct Counting;
+
+    thread_local! {
+        static COUNTING: Cell<bool> = const { Cell::new(false) };
+        static COUNT: Cell<usize> = const { Cell::new(0) };
+    }
+
+    fn note() {
+        if COUNTING.with(Cell::get) {
+            COUNT.with(|count| count.set(count.get() + 1));
+        }
+    }
+
+    // SAFETY: every operation forwards to System unchanged.
+    unsafe impl GlobalAlloc for Counting {
+        unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+            note();
+            unsafe { System.alloc(layout) }
+        }
+
+        unsafe fn dealloc(&self, pointer: *mut u8, layout: Layout) {
+            note();
+            unsafe { System.dealloc(pointer, layout) }
+        }
+
+        unsafe fn realloc(&self, pointer: *mut u8, layout: Layout, size: usize) -> *mut u8 {
+            note();
+            unsafe { System.realloc(pointer, layout, size) }
+        }
+    }
+
+    #[global_allocator]
+    static ALLOCATOR: Counting = Counting;
+
+    /// The heap operations `body` performs on this thread.
+    pub(super) fn during<T>(body: impl FnOnce() -> T) -> (T, usize) {
+        COUNT.with(|count| count.set(0));
+        COUNTING.with(|counting| counting.set(true));
+        let result = body();
+        COUNTING.with(|counting| counting.set(false));
+        (result, COUNT.with(Cell::get))
+    }
+}
+
+#[test]
+fn the_callback_neither_allocates_nor_blocks_and_drops_on_a_full_queue() {
+    static SLOT: AtomicBool = AtomicBool::new(false);
+    let (hook, control, actions) = FunctionRowHook::with_capacity(2);
+    let shared = Arc::clone(&control.0);
+    let mut messages = Fake::new(|callback: &mut Callback, now| {
+        // A held wake lock must not stall the flag that saturation raises.
+        let _wake = shared.wake.lock().unwrap();
+        let started = Instant::now();
+        let (routed, heap) = allocations::during(|| {
+            [
+                callback.route(key(0x3c, true), false, now),
+                callback.route(key(0x3c, false), false, now),
+                // The queue is full and nothing consumes it: dropped, passed.
+                callback.route(key(0x3d, true), false, now),
+                callback.route(key(0x3d, false), false, now),
+                callback.route(key(0x01, true), false, now),
+            ]
+        });
+        assert_eq!(routed, [true, true, false, false, false]);
+        assert_eq!(heap, 0, "the hook callback allocated");
+        // Far inside the 300 ms LowLevelHooksTimeout, even unoptimized.
+        assert!(started.elapsed() < Duration::from_millis(50));
+        Ok(true)
+    });
+    control.publish(ACTIVE, messages.now + Duration::from_secs(1));
+    assert_eq!(hook.run_with(ADMITTED, &mut messages, &SLOT), Ok(()));
+    assert!(control.needs_recovery(Recovery::DeliveryLost));
+    assert!(!control.needs_recovery(Recovery::ReleaseLost));
+    // After a loss nothing queued runs, and the queued release is lost.
+    expect_actions(actions, &[]);
+    assert!(control.needs_recovery(Recovery::ReleaseLost));
+    assert!(!control.retired_cleanly());
+}
+
+#[test]
+fn a_stopping_hook_waits_no_longer_than_the_drain_limit() {
+    // Windows removes a low-level hook whose callback exceeds
+    // LowLevelHooksTimeout (300 ms by default); the drain stays below it.
+    const LOW_LEVEL_HOOKS_TIMEOUT: Duration = Duration::from_millis(300);
+    const { assert!(DRAIN_LIMIT.as_millis() < LOW_LEVEL_HOOKS_TIMEOUT.as_millis()) };
+    static SLOT: AtomicBool = AtomicBool::new(false);
+    let (hook, control, _actions) = FunctionRowHook::new();
+    let stopped_at = std::cell::Cell::new(None);
+    let mut messages = Fake::new(|callback: &mut Callback, now| {
+        if stopped_at.get().is_none() {
+            // Held, and its release never arrives.
+            assert!(callback.route(key(0x3c, true), false, now));
+            control.cancel();
+            stopped_at.set(Some(now));
+        }
+        Ok(true)
+    });
+    control.publish(ACTIVE, messages.now + Duration::from_secs(1));
+    assert_eq!(hook.run_with(ADMITTED, &mut messages, &SLOT), Ok(()));
+    let stopped_at = stopped_at.get().unwrap();
+    // The fake clock advances 50 ms per pump; the drain ends at its deadline.
+    assert!(messages.now - stopped_at <= DRAIN_LIMIT);
+    assert_eq!(messages.waits[0], None);
+    assert!(
+        messages.waits[1..]
+            .iter()
+            .all(|wait| wait.is_some_and(|wait| wait <= DRAIN_LIMIT))
+    );
+    assert_eq!(messages.calls.last(), Some(&"uninstall"));
+    assert!(control.needs_recovery(Recovery::KeysHeld));
+    assert!(SLOT.load(SeqCst));
+}

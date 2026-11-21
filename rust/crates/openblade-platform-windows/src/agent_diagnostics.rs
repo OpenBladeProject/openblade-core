@@ -40,6 +40,29 @@ pub enum Event {
     /// failure: the Agent exits 0 quietly, as managed does, leaving this line.
     PipeAlreadyOwned(Option<i32>),
     StopEndpointAlreadyOwned(Option<i32>),
+    FunctionRow(FunctionRowNotice),
+}
+
+/// Fixed notices of the function-row role. None carries a key sequence, a
+/// timing or a path.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum FunctionRowNotice {
+    /// The policy admitted this action, but its effect is not admitted in
+    /// this stage, so nothing was executed. Recorded once per action.
+    EffectNotAdmitted(openblade_domain::function_row::Action),
+    /// A Razer-driver ownership journal may still own the function row, so
+    /// the Windows hook is not installed.
+    DriverOwnershipJournalPresent,
+    /// The driver ownership journals could not be observed.
+    DriverOwnershipUnobservable,
+    /// The per-user preferences could not be read; the last value read stays.
+    PreferencesUnreadable,
+    /// A hook run ended. An unclean retirement leaves ownership uncertain, so
+    /// the role never installs again in this Agent's lifetime.
+    HookRetired {
+        clean: bool,
+        error: Option<crate::function_row_hook::HookError>,
+    },
 }
 
 // Both fixed names match the existing managed diagnostics export glob. Keep

@@ -1025,6 +1025,50 @@ impl Snapshot {
     pub(crate) fn application_profiles(&self) -> Option<&Value> {
         self.profiles.feature_fields.get("applicationProfiles")
     }
+    /// Managed `KeyboardDriverModeActive`: the Service's confirmed firmware
+    /// Driver mode. Only a JSON boolean is knowledge. An absent member, `null`
+    /// or any other value is unknown, never a guessed confirmation, as managed
+    /// `SetDriverModeUnknown` treats a missing readback. An unverified status
+    /// is unknown too, as managed `ServiceReactiveLightingLoop` resets it.
+    #[cfg(feature = "agent-function-row-v1")]
+    pub(crate) fn keyboard_driver_mode_active(&self) -> Option<bool> {
+        if !self.device_verified {
+            return None;
+        }
+        self.feature_fields
+            .get("keyboardDriverModeActive")
+            .and_then(Value::as_bool)
+    }
+    /// Managed `FunctionKeyPrimary` as its numeric `FunctionKeyPrimaryMode`
+    /// wire value (0 FunctionKeys, 1 MultimediaKeys). Any other value, and any
+    /// value in an unverified status, is unknown.
+    #[cfg(feature = "agent-function-row-v1")]
+    pub(crate) fn function_key_primary(
+        &self,
+    ) -> Option<openblade_domain::function_row::PrimaryMode> {
+        use openblade_domain::function_row::PrimaryMode;
+        if !self.device_verified {
+            return None;
+        }
+        match self.feature_fields.get("functionKeyPrimary")?.as_i64()? {
+            0 => Some(PrimaryMode::FunctionKeys),
+            1 => Some(PrimaryMode::MultimediaKeys),
+            _ => None,
+        }
+    }
+    /// The verified laptop's `firmware.modelNumber`. Managed
+    /// `ServiceReactiveLightingLoop` classifies the input device from this
+    /// field, and only while `deviceVerified`; an unverified status has none.
+    #[cfg(feature = "agent-function-row-v1")]
+    pub(crate) fn verified_model_number(&self) -> Option<&str> {
+        if !self.device_verified {
+            return None;
+        }
+        self.feature_fields
+            .get("firmware")?
+            .get("modelNumber")?
+            .as_str()
+    }
     // Use only for a direct, admitted ObserveState reply. v85 can retain
     // fields during failed observations. Require the managed completion
     // guards and explicit absence of observation or write uncertainty.

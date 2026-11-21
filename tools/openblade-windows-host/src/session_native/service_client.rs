@@ -91,6 +91,14 @@ impl StatusObservation {
         }
         Ok(())
     }
+
+    /// The instant at which this status stops being fresh, on the clock the
+    /// function-row hook reads. A stale status is refused as `require_fresh` refuses it.
+    #[cfg(feature = "agent-function-row-v1")]
+    pub(crate) fn fresh_until(&self) -> io::Result<std::time::Instant> {
+        self.require_fresh()?;
+        Ok((self.received_at + STATUS_BUDGET).into_std())
+    }
 }
 
 pub(crate) struct PerformanceObservation(StatusObservation);
@@ -115,10 +123,20 @@ impl SubscriptionInitial {
     }
 }
 
-#[cfg(feature = "agent-application-reporter-v1")]
+#[cfg(any(
+    feature = "agent-application-reporter-v1",
+    feature = "agent-function-row-v1"
+))]
 impl SubscriptionInitial {
     pub(crate) fn snapshot(&self) -> &Snapshot {
         &self.0.snapshot
+    }
+}
+
+#[cfg(feature = "agent-function-row-v1")]
+impl SubscriptionInitial {
+    pub(crate) fn fresh_until(&self) -> io::Result<std::time::Instant> {
+        self.0.fresh_until()
     }
 }
 

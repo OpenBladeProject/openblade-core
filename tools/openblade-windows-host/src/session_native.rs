@@ -22,6 +22,10 @@ mod display_query;
 pub(crate) mod exit;
 #[cfg(openblade_agent_endpoint)]
 mod feature_lifetime;
+#[cfg(feature = "agent-function-row-v1")]
+#[cfg_attr(test, allow(dead_code))]
+// The production hooks are built only by the non-test installed monitor.
+mod function_row;
 #[cfg(feature = "agent-gpu-v1")]
 mod gpu;
 #[cfg(not(test))]
@@ -35,7 +39,7 @@ mod restart;
 mod scm_peer;
 pub(crate) mod service_client;
 mod token;
-#[cfg(openblade_display_write)]
+#[cfg(any(openblade_display_write, feature = "agent-function-row-v1"))]
 #[cfg_attr(test, allow(dead_code))]
 // Only the non-test installed monitor resolves the user environment.
 mod user_environment;

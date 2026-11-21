@@ -62,6 +62,11 @@ pub(super) fn run(
         // authority and the reporter never reads status for anything else.
         #[cfg(feature = "agent-application-reporter-v1")]
         let profiles = super::application::ProfileFeed::new();
+        // The function-row hook reads Driver mode only from verified, fresh
+        // status; a reconnect, a stale status or a lost Origin passes every
+        // key through before the error ends the watcher.
+        #[cfg(feature = "agent-function-row-v1")]
+        let function_row = Arc::new(super::function_row::Admission::default());
         let canceled = async {
             let result = async {
                 loop {
@@ -90,6 +95,10 @@ pub(super) fn run(
             |update| {
                 #[cfg(feature = "agent-application-reporter-v1")]
                 super::application::publish_status(&profiles, &update, || {
+                    super::verify_origin(&origin)
+                })?;
+                #[cfg(feature = "agent-function-row-v1")]
+                super::function_row::publish_status(&function_row, &update, || {
                     super::verify_origin(&origin)
                 })?;
                 #[cfg(openblade_display_write)]
@@ -167,6 +176,10 @@ pub(super) fn run(
             #[cfg(feature = "agent-gpu-v1")]
             features.push(feature(|feature_stop| {
                 super::gpu::run(origin.clone(), feature_stop)
+            }));
+            #[cfg(feature = "agent-function-row-v1")]
+            features.push(feature(|feature_stop| {
+                super::function_row::run(origin.clone(), feature_stop, function_row.clone())
             }));
             run_all(canceled, watch, features).await
         }
