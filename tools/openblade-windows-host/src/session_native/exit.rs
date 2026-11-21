@@ -81,6 +81,8 @@ pub(crate) fn singleton(already_owned: bool) -> Result<(), Failure> {
     }
 }
 
+type Check = fn(&io::Error) -> bool;
+
 /// Classify the result of the running roles. After a deliberate stop any
 /// failure is a drain error: it is reported, but the exit stays ordinary and is
 /// never raised as a crash. Otherwise another Agent owning a pipe is quiet, an
@@ -88,13 +90,12 @@ pub(crate) fn singleton(already_owned: bool) -> Result<(), Failure> {
 /// anything else after admission is a fault.
 pub(crate) fn classify_run(result: io::Result<()>, deliberate: bool) -> Result<(), Failure> {
     #[cfg(openblade_agent_endpoint)]
-    let (is_origin, is_conflict): (fn(&io::Error) -> bool, fn(&io::Error) -> bool) = (
+    let (is_origin, is_conflict): (Check, Check) = (
         super::diagnostics::is_origin,
         super::diagnostics::is_claim_conflict,
     );
     #[cfg(not(openblade_agent_endpoint))]
-    let (is_origin, is_conflict): (fn(&io::Error) -> bool, fn(&io::Error) -> bool) =
-        (|_| false, |_| false);
+    let (is_origin, is_conflict): (Check, Check) = (|_| false, |_| false);
     result.map_err(|error| {
         if deliberate {
             Failure::Denied(error)
