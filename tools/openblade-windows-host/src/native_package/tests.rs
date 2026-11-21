@@ -757,6 +757,56 @@ fn an_application_reporter_agent_is_not_admitted_by_feature_or_marker() {
 }
 
 #[test]
+fn a_function_row_agent_is_not_admitted_by_feature_or_marker() {
+    // The feature and the marker build.rs gives a build with
+    // agent-function-row-v1. Packaging has not admitted either, so the reader
+    // refuses the image by name whatever else the record claims.
+    let features = "agent-function-row-v1,native-agent-entry-compile-check";
+    for claimed in [
+        "session-function-row-v1",
+        "agent-function-row-v1",
+        "none",
+        "agent-battery-report-v1,session-function-row-v1",
+    ] {
+        assert!(capabilities(2, "agent", features, claimed).is_err());
+        assert!(capabilities(1, "agent", features, claimed).is_err());
+        assert!(capabilities(2, "service", features, claimed).is_err());
+    }
+    // A forged marker without the feature is no better.
+    assert!(
+        capabilities(
+            2,
+            "agent",
+            "native-agent-entry-compile-check",
+            "session-function-row-v1"
+        )
+        .is_err()
+    );
+    // Beside an admitted contract, and beside every Agent contract with the
+    // reporter, the hook is still refused; the contract alone is not.
+    let combined = "agent-battery-report-v1,agent-function-row-v1,native-agent-entry-compile-check";
+    assert!(capabilities(2, "agent", combined, "agent-battery-report-v1").is_err());
+    assert!(
+        capabilities(
+            2,
+            "agent",
+            combined,
+            "agent-battery-report-v1,session-function-row-v1"
+        )
+        .is_err()
+    );
+    assert!(
+        capabilities(
+            2,
+            "agent",
+            "agent-battery-report-v1,native-agent-entry-compile-check",
+            "agent-battery-report-v1"
+        )
+        .is_ok()
+    );
+}
+
+#[test]
 fn legacy_artifact_record_and_compiled_identity_reencode_byte_exact() {
     let v = vector();
     for role in ["service", "agent"] {

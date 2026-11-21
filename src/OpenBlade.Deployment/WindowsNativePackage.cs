@@ -85,6 +85,10 @@ internal sealed record NativeArtifact(string Id, string Role, string Target, str
         // which alone serves reportApplicationContext (docs/windows-native-agent-application-reporter.md).
         if (features.Contains("agent-application-reporter-v1", StringComparer.Ordinal) || capabilities.Split(',').Any(capability => capability is "agent-application-reporter-v1" or "session-application-reporter-v1"))
         { throw new InvalidDataException("The application reporter is not admitted for packaging."); }
+        // The function-row hook is not admitted for packaging. Refuse its feature and its
+        // capability marker by name until a stage admits the role (docs/windows-native-agent-function-row.md).
+        if (features.Contains("agent-function-row-v1", StringComparer.Ordinal) || capabilities.Split(',').Any(capability => capability is "agent-function-row-v1" or "session-function-row-v1"))
+        { throw new InvalidDataException("The function-row hook is not admitted for packaging."); }
         if (agentWrite && !agentDisplay) { throw new InvalidDataException("Brightness write requires the display query contract."); }
         if (agentHdr && !agentDisplay) { throw new InvalidDataException("HDR write requires the display query contract."); }
         if (agentRefresh && !agentDisplay) { throw new InvalidDataException("Refresh-rate write requires the display query contract."); }

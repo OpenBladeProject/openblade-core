@@ -98,6 +98,7 @@ fn main() {
             "session-display-profile-apply-partial-v1",
         ),
         ("agent-gpu-v1", "session-gpu-apps-v1"),
+        ("agent-function-row-v1", "session-function-row-v1"),
     ]
     .into_iter()
     .filter_map(|(feature, marker)| has(feature).then_some(marker))
@@ -108,6 +109,7 @@ fn main() {
         || has("agent-application-reporter-v1")
         || has("agent-display-query-v1")
         || has("agent-gpu-v1")
+        || has("agent-function-row-v1")
     {
         println!("cargo::rustc-cfg=openblade_agent_endpoint");
     }

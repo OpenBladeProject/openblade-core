@@ -723,6 +723,18 @@ fn capabilities(schema: u8, role: &str, features: &str, value: &str) -> io::Resu
     {
         return Err(deny());
     }
+    // The function-row hook is not admitted for packaging: refuse its feature
+    // and its capability marker by name until a stage admits the role; see
+    // docs/windows-native-agent-function-row.md.
+    const FUNCTION_ROW: &str = "agent-function-row-v1";
+    const FUNCTION_ROW_MARKER: &str = "session-function-row-v1";
+    if has(FUNCTION_ROW)
+        || value
+            .split(',')
+            .any(|capability| capability == FUNCTION_ROW || capability == FUNCTION_ROW_MARKER)
+    {
+        return Err(deny());
+    }
     if (agent_write || agent_hdr || agent_refresh || agent_color) && !agent_display {
         return Err(deny());
     }

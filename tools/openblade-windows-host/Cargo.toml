@@ -44,6 +44,10 @@ agent-application-reporter-v1 = ["native-agent-entry-compile-check", "openblade-
 # retained-handle backend (identity and integrity recheck on the held handle;
 # an unconfirmed force close is reported in that request only).
 agent-gpu-v1 = ["native-agent-entry-compile-check", "openblade-platform-windows/gpu-close"]
+# Current-user function-row Windows hook on exact RZ09-0581, driven by the
+# Service's confirmed keyboard Driver mode. It issues no Service command and
+# admits no action effect. Packaging refuses an image that carries it.
+agent-function-row-v1 = ["native-agent-entry-compile-check"]
 native-agent-entry-compile-check = ["windows-sys/Win32_System_RemoteDesktop"]
 cpu-worker-fixture = []
 scratch-writer-fence = []
