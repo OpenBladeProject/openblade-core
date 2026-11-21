@@ -16,6 +16,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 ### Fixed
 
 - On laptops with GPU clock offsets, an interrupted performance or GPU change whose offsets cannot be read back no longer keeps fan and performance controls blocked, or keeps experimental controls paused after **Resume laptop controls**. OpenBlade sends the offsets again with the next change. An interrupted GPU write is checked against the offsets the NVIDIA driver reports instead of being reported as leaving the previous offsets in place, a power-source change still applies its remaining fan, lighting and battery settings, and a change confirmed by **Resume laptop controls** is no longer reported as an outside change. ([#991](https://github.com/OpenBladeProject/openblade-core/pull/991))
+- Keep Razer-driver function-row media keys and SnapTap working after focus briefly leaves every window, such as at the lock screen, and when a key is pressed while Windows is still starting. Previously they stopped until Windows restarted or the setting was toggled. ([#990](https://github.com/OpenBladeProject/openblade-core/pull/990))
 
 ## [0.65.1-nightly.117] - 2026-11-20
 
