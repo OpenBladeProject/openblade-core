@@ -660,6 +660,48 @@ impl StatusOrigin for Origin {
         Ok(())
     }
 }
+/// Parks the fixture worker at mutation retirement until the test opens the
+/// gate, and tells the test when the worker gets there. Both sides wait on an
+/// event rather than spin, so a loaded host only delays them. Dropping the gate
+/// opens it, so a failed test never leaves the worker parked.
+struct RetirementGate(Arc<GateState>);
+#[derive(Default)]
+struct GateState {
+    reached: tokio::sync::Notify,
+    open: StdMutex<bool>,
+    opened: std::sync::Condvar,
+}
+impl RetirementGate {
+    /// A bound that only catches a hang. Each recipe in these tests runs on
+    /// paused fixture time, so a healthy one never comes near it.
+    const LIVENESS: Duration = Duration::from_secs(30);
+    fn install(rig: &Rig) -> Self {
+        let state = Arc::new(GateState::default());
+        let hook = state.clone();
+        rig.port.state.lock().unwrap().on_mutation_retired = Some(Arc::new(move || {
+            hook.reached.notify_one();
+            let mut open = hook.open.lock().unwrap();
+            while !*open {
+                open = hook.opened.wait(open).unwrap();
+            }
+        }));
+        Self(state)
+    }
+    async fn reached(&self) {
+        tokio::time::timeout(Self::LIVENESS, self.0.reached.notified())
+            .await
+            .expect("the worker reaches mutation retirement");
+    }
+    fn open(&self) {
+        *self.0.open.lock().unwrap() = true;
+        self.0.opened.notify_all();
+    }
+}
+impl Drop for RetirementGate {
+    fn drop(&mut self) {
+        self.open();
+    }
+}
 struct Rig {
     #[cfg(feature = "service-fan-mutation-v2")]
     runtime: Runtime,
@@ -816,15 +858,15 @@ impl Rig {
             )
             .await
             .unwrap();
-            let bytes = crate::service_frame::read_payload(&mut client)
-                .await
-                .unwrap();
-            (serde_json::from_slice::<Value>(&bytes).unwrap(), bytes)
+            crate::service_frame::read_payload(&mut client).await
         };
-        let (server, (response, bytes)) = tokio::join!(server, client);
+        let (server, bytes) = tokio::join!(server, client);
         // A later job that serves no request keeps its own deadline.
         self.port.state.lock().unwrap().arrival = None;
-        assert!(server.is_ok());
+        // The server's error explains a missing reply.
+        assert!(server.is_ok(), "{operation}: {:?}", server.err());
+        let bytes = bytes.unwrap();
+        let response = serde_json::from_slice::<Value>(&bytes).unwrap();
         // Preserve the actual encoder bytes. Re-serializing Value sorts object
         // keys and can move the managed polymorphic discriminator out of first place.
         assert!(bytes.starts_with(br#"{"frame":"response","#));
@@ -1790,32 +1832,26 @@ async fn correction_fresh_metadata_expires_temporary_policy_without_promoting_pr
 async fn correction_late_accepted_intent_reconciles_only_with_new_read_without_replay() {
     let rig = Rig::new(MemoryFiles::default());
     rig.get().await;
-    let held = Arc::new(AtomicBool::new(false));
-    let release = Arc::new(AtomicBool::new(false));
-    let entered = held.clone();
-    let gate = release.clone();
-    rig.port.state.lock().unwrap().on_mutation_retired = Some(Arc::new(move || {
-        entered.store(true, Ordering::Release);
-        while !gate.load(Ordering::Acquire) {
-            std::thread::yield_now();
-        }
-    }));
+    let gate = RetirementGate::install(&rig);
     let request=crate::service_status::StatusRequest::decode(&serde_json::to_vec(&json!({"operation":"setPerformanceOverride","version":85,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000091","value":value(1,1)})).unwrap()).unwrap();
-    let deadline = Instant::now() + std::time::Duration::from_secs(1);
+    // The worker caps the deadline at the 6 s recipe budget. The recipe runs
+    // on paused fixture time and reaches retirement well inside it, however
+    // loaded the host is. Paused time then expires the deadline while the
+    // worker is parked, with no real wait.
+    let deadline = Instant::now() + std::time::Duration::from_secs(6);
     let operation = rig
         .source
         .lock()
         .await
         .mutate(USER, SID.into(), request, deadline);
     tokio::pin!(operation);
-    let boundary = async {
-        while !held.load(Ordering::Acquire) {
-            tokio::task::yield_now().await;
-        }
-    };
-    tokio::select! {_=&mut operation=>panic!("retirement unexpectedly completed"),result = tokio::time::timeout(std::time::Duration::from_secs(2),boundary)=>result.unwrap()}
-    tokio::time::sleep_until(deadline).await;
-    release.store(true, Ordering::Release);
+    tokio::select! {_=&mut operation=>panic!("retirement unexpectedly completed"),()=gate.reached()=>{}}
+    tokio::time::pause();
+    tokio::time::advance(deadline.saturating_duration_since(Instant::now())).await;
+    // The worker finishes retirement and serves later reads on OS threads, so
+    // the rest of the test waits on the real clock.
+    tokio::time::resume();
+    gate.open();
     let (result, status) = operation.await.unwrap();
     assert_eq!(result.status, 2);
     assert!(status.is_none());
@@ -3298,30 +3334,16 @@ async fn edge_outer_first_intent_and_worker_fatals_preserve_class_and_fences() {
 async fn edge_canceled_first_intent_fatal_is_sticky_for_get_observe_and_new_sid() {
     let rig = Rig::new(MemoryFiles::default());
     rig.files.fatal_first_intent.store(true, Ordering::Release);
-    let reached = Arc::new(AtomicBool::new(false));
-    let release = Arc::new(AtomicBool::new(false));
-    let entered = reached.clone();
-    let gate = release.clone();
-    rig.port.state.lock().unwrap().on_mutation_retired = Some(Arc::new(move || {
-        entered.store(true, Ordering::Release);
-        while !gate.load(Ordering::Acquire) {
-            std::thread::yield_now();
-        }
-    }));
+    let gate = RetirementGate::install(&rig);
     {
         let request = rig.set(91, value(1, 1));
         tokio::pin!(request);
-        let held = async {
-            while !reached.load(Ordering::Acquire) {
-                tokio::task::yield_now().await;
-            }
-        };
-        tokio::select! { _ = &mut request => panic!("fatal request completed before controlled retirement release"), r = tokio::time::timeout(std::time::Duration::from_secs(2), held) => r.unwrap() }
+        tokio::select! { _ = &mut request => panic!("fatal request completed before controlled retirement release"), () = gate.reached() => {} }
     }
     Fresh::verify_health(rig.custody.as_ref()).unwrap();
     assert_eq!(rig.files.first_intent_attempts.load(Ordering::Acquire), 1);
     let prepared = rig.files.read("thermal-mutation.journal").unwrap();
-    release.store(true, Ordering::Release);
+    gate.open();
     for (operation, sid) in [
         ("getStatus", SID),
         ("observeState", SID),
@@ -3699,23 +3721,7 @@ async fn correction_absent_null_and_fans_only_app_policy_preserve_inheritance() 
 async fn correction_disconnected_first_intent_fatal_precedes_later_owner_loss() {
     let rig = Rig::new(MemoryFiles::default());
     rig.files.fatal_first_intent.store(true, Ordering::Release);
-    let reached = Arc::new(AtomicBool::new(false));
-    let release = Arc::new(AtomicBool::new(false));
-    struct Release(Arc<AtomicBool>);
-    impl Drop for Release {
-        fn drop(&mut self) {
-            self.0.store(true, Ordering::Release);
-        }
-    }
-    let _release_on_failure = Release(release.clone());
-    let entered = reached.clone();
-    let gate = release.clone();
-    rig.port.state.lock().unwrap().on_mutation_retired = Some(Arc::new(move || {
-        entered.store(true, Ordering::Release);
-        while !gate.load(Ordering::Acquire) {
-            std::thread::yield_now();
-        }
-    }));
+    let gate = RetirementGate::install(&rig);
     let (mut client, server) = duplex(65536);
     let publications = rig.source.lock().await.publications();
     let server = serve_connection(
@@ -3738,18 +3744,12 @@ async fn correction_disconnected_first_intent_fatal_precedes_later_owner_loss() 
         )
         .await
         .unwrap();
-        tokio::time::timeout(std::time::Duration::from_secs(2), async {
-            while !reached.load(Ordering::Acquire) {
-                tokio::task::yield_now().await;
-            }
-        })
-        .await
-        .unwrap();
+        gate.reached().await;
         // Exercise serve_mutation's real biased disconnect branch while the
         // accepted mutation future is still waiting for actual retirement.
         drop(client);
     };
-    let (server, ()) = tokio::time::timeout(std::time::Duration::from_secs(3), async {
+    let (server, ()) = tokio::time::timeout(RetirementGate::LIVENESS, async {
         tokio::join!(server, disconnect)
     })
     .await
@@ -3762,7 +3762,7 @@ async fn correction_disconnected_first_intent_fatal_precedes_later_owner_loss() 
     // A was retained by the worker before the disconnected caller disappeared.
     // B must never replace A at an earlier reader-admission checkpoint.
     rig.custody.integrity_lost.store(true, Ordering::Release);
-    release.store(true, Ordering::Release);
+    gate.open();
     for (operation, sid) in [
         ("getStatus", SID),
         ("observeState", SID),
@@ -7508,15 +7508,15 @@ async fn battery_correction_queued_result_preserves_latest_thermal_metadata_and_
         let r = Rig::new(MemoryFiles::default());
         fresh_observe(&r).await;
         let release = Arc::new(AtomicBool::new(false));
-        r.port.state.lock().unwrap().held_write = Some((1, release.clone()));
+        let holding = {
+            let mut s = r.port.state.lock().unwrap();
+            s.held_write = Some((1, release.clone()));
+            s.holding.clone()
+        };
         let a = r.set(240, value(1, 1));
         tokio::pin!(a);
-        let entered = async {
-            while r.port.state.lock().unwrap().writes != 1 {
-                tokio::task::yield_now().await;
-            }
-        };
-        tokio::select! {_=&mut a=>panic!("held performance finished"),v=tokio::time::timeout(Duration::from_secs(2),entered)=>v.unwrap()}
+        tokio::select! {_=&mut a=>panic!("held performance finished"),v=tokio::time::timeout(RetirementGate::LIVENESS,holding.notified())=>v.unwrap()}
+        assert_eq!(r.port.state.lock().unwrap().writes, 1);
         let request = crate::service_status::StatusRequest::decode(
             &serde_json::to_vec(&battery_request(341, "setBatteryProtection", json!(false)))
                 .unwrap(),

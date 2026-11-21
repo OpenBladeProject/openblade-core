@@ -205,15 +205,24 @@ async fn firmware_worker_rejects_late_success_and_fences_replacement_during_call
     static FENCE: AtomicBool = AtomicBool::new(false);
     let (worker, held) = blocking_worker(BlockAt::Retire, Some(&FENCE));
     let (replacement, next) = blocking_worker(BlockAt::Verify, Some(&FENCE));
-    let deadline = Instant::now() + Duration::from_millis(500);
-    let read = worker.observe(deadline, None);
+    // The read's deadline leaves the job time to reach the callback drain on
+    // any host. Paused time then expires it with no real wait, so the success
+    // is late however long the host took to reach the drain.
+    let budget = Duration::from_secs(60);
+    let deadline = Instant::now() + budget;
+    let read = worker.observe_with_budget(deadline, None, budget);
     tokio::pin!(read);
     tokio::select! {
-        reached = timeout(TEST_LIMIT, held.entered) => reached.unwrap().unwrap(),
+        reached = timeout(budget, held.entered) => reached.unwrap().unwrap(),
         _ = &mut read => panic!("read returned before callback drain"),
     }
     assert_eq!(held.submitted.load(Ordering::Acquire), 4);
+    tokio::time::pause();
+    tokio::time::advance(deadline.saturating_duration_since(Instant::now())).await;
     assert!(read.await.unwrap().is_none());
+    // The drain and the replacement run on OS threads, so the rest of the test
+    // waits on the real clock.
+    tokio::time::resume();
     assert!(
         worker
             .observe(Instant::now() + TEST_LIMIT, None)

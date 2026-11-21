@@ -62,6 +62,8 @@ pub(crate) struct State {
     pub(crate) power_timeout: Option<usize>,
     pub(crate) held_read: Option<Arc<AtomicBool>>,
     pub(crate) held_write: Option<(usize, Arc<AtomicBool>)>,
+    /// Notified each time a held read or write begins to hold.
+    pub(crate) holding: Arc<tokio::sync::Notify>,
     pub(crate) before_write: Option<Arc<dyn Fn(usize) + Send + Sync>>,
     // Every transfer completes this long after its submission, on the
     // runtime's clock (paused in the direct Reader tests).
@@ -77,9 +79,9 @@ pub(crate) struct State {
     /// Extra latency on each 0D/01, 0D/02 and 0D/07 setter, on top of
     /// `latency`.
     pub(crate) setter_latency: Option<Duration>,
-    /// When the test sent the request that a thermal or fan recipe serves, on
-    /// the test's clock. A recipe on paused time takes its deadline as that
-    /// request's budget from its own start (see `worker`).
+    /// When the test sent the request that a recipe serves, on the test's
+    /// clock. A recipe on paused time takes its deadline as that request's
+    /// budget from its own start (see `worker`).
     pub(crate) arrival: Option<Instant>,
 }
 #[derive(Clone)]
@@ -147,7 +149,11 @@ impl Fixture {
                     let paused = (latency || permit.is_none() || thermal)
                         && s.held_read.is_none()
                         && s.held_write.is_none();
-                    let arrival = if thermal { s.arrival.take() } else { None };
+                    let arrival = if paused && permit.is_some() {
+                        s.arrival.take()
+                    } else {
+                        None
+                    };
                     (paused, arrival)
                 };
                 let mut reader = Reader::new(fixture.port(), admission);
@@ -157,9 +163,10 @@ impl Fixture {
                 // instant the job starts and advances only through the job's
                 // own waits, so neither a slow device nor a loaded host costs it
                 // time, and the deadline is compared with exact virtual
-                // progress. A recipe also takes the whole request budget from
-                // its own start, so the host's time between the request and the
-                // job does not count either. Battery and temporary-charge
+                // progress. A paused recipe, a battery or temporary-charge one
+                // with a latency included, also takes the whole request budget
+                // from its own start, so the host's time between the request and
+                // the job does not count either. Battery and temporary-charge
                 // recipes otherwise keep the real clock: the tests age their
                 // results on the test's clock, which a paused job's waits would
                 // run ahead of.
@@ -321,6 +328,7 @@ impl Port for MemoryPort {
                             && *number == s.writes
                         {
                             self.held = Some(release.clone());
+                            s.holding.notify_one();
                         }
                         if s.fail_write == Some(s.writes) {
                             return Err(io::ErrorKind::Other.into());
@@ -330,6 +338,7 @@ impl Port for MemoryPort {
                     (13, 0x82) => {
                         if let Some(release) = &s.held_read {
                             self.held = Some(release.clone());
+                            s.holding.notify_one();
                         }
                         let index = (payload[1] - 1) as usize;
                         vec![
@@ -372,6 +381,7 @@ impl Port for MemoryPort {
                             && *n == s.writes
                         {
                             self.held = Some(release.clone());
+                            s.holding.notify_one();
                         }
                         if s.fail_write == Some(s.writes) {
                             return Err(io::ErrorKind::Other.into());
@@ -393,6 +403,7 @@ impl Port for MemoryPort {
                             && *number == s.writes
                         {
                             self.held = Some(release.clone());
+                            s.holding.notify_one();
                         }
                         if s.fail_write == Some(s.writes) {
                             return Err(io::ErrorKind::Other.into());
