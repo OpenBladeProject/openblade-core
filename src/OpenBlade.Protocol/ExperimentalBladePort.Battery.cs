@@ -94,14 +94,26 @@ internal sealed partial class ExperimentalBladePort
             {
                 return;
             }
-            // Only a positive 07/8F override blocks the limiter. A failed or
-            // undecodable read leaves the limiter-only write it had before the
-            // override was admitted, and is not repeated while it stays unreadable.
-            if (SupportsTemporaryFullChargeQuery && !policy.TemporaryFullChargeReadUnavailable
-                && await TryReadTemporaryFullChargeActiveAsync(cancellationToken).ConfigureAwait(false) == true)
+            // A positive 07/8F override blocks the limiter. A failed or undecodable
+            // read is not repeated while it stays unreadable; it still blocks when
+            // OpenBlade last decoded an active override or confirmed enabling it,
+            // because a limiter write under bit 04 leaves a state Synapse never
+            // produces. Firmware that has never answered 07/8F keeps the
+            // limiter-only write it had before the override was admitted.
+            if (SupportsTemporaryFullChargeQuery)
             {
-                throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
-                    "Cancel temporary full charge before changing the charge policy.");
+                bool? active = policy.TemporaryFullChargeReadUnavailable ? null
+                    : await TryReadTemporaryFullChargeActiveAsync(cancellationToken).ConfigureAwait(false);
+                if (active == true)
+                {
+                    throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
+                        "Cancel temporary full charge before changing the charge policy.");
+                }
+                if (active is null && policy.TemporaryFullChargeLastKnownActive)
+                {
+                    throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
+                        TemporaryFullChargeLastSeenActiveMessage);
+                }
             }
             RequireWriteAdmission();
             // Synapse disables protection with its retained threshold. Legacy upstream

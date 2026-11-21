@@ -23,6 +23,9 @@ internal sealed partial class ExperimentalBladePort
     // mask is not physical validation.
     public bool SupportsTemporaryFullChargeQuery => SupportsTemporaryFullCharge(model);
 
+    internal const string TemporaryFullChargeLastSeenActiveMessage =
+        "Temporary full charge was last on and can't be read now, so OpenBlade won't change the charge limit. Check the laptop state again before retrying.";
+
     internal static bool SupportsTemporaryFullCharge(ExperimentalBladeModel model) =>
         model.ProductId is 0x02A0 or 0x02C5 or 0x02C7;
 
@@ -66,7 +69,7 @@ internal sealed partial class ExperimentalBladePort
                 throw new IOException("Temporary full charge returned an invalid shared Power Mode Control mask.");
             }
             RecordQuery("TemporaryFullCharge", "Confirmed", $"Active={active};OtherSettings=0x{otherSettings:X2}");
-            policy.RecordTemporaryFullChargeRead(readable: true);
+            policy.RecordTemporaryFullChargeRead(readable: true, active);
             return payload.Span[0];
         }
         catch (Exception error) when (error is not OperationCanceledException)
@@ -98,8 +101,23 @@ internal sealed partial class ExperimentalBladePort
     {
         ConfirmedBatteryState policyState = await ReadBatteryAsync(token).ConfigureAwait(false);
         byte flags = await ReadTemporaryFullChargeFlagsAsync(token).ConfigureAwait(false);
-        return new(policyState.ProtectionEnabled, policyState.ChargeLimitPercent,
+        return WithTemporaryFullCharge(policyState,
             (flags & TemporaryFullChargeProtocol.TemporaryFullChargeBit) != 0);
+    }
+
+    // Synapse clears bit 04 whenever it turns the limiter off, so protection off
+    // with the override set has no confirmed representation. Publish the override
+    // as unknown and record why, rather than failing every subsystem in the read.
+    // The decoded bit still counts as last seen active for later limiter writes.
+    internal ConfirmedBatteryState WithTemporaryFullCharge(ConfirmedBatteryState policyState, bool? active)
+    {
+        if (!policyState.ProtectionEnabled && active == true)
+        {
+            RecordQuery("TemporaryFullCharge", "InconsistentState", "Active=True;ProtectionEnabled=False",
+                "TemporaryFullChargeWithProtectionOff");
+            active = null;
+        }
+        return new(policyState.ProtectionEnabled, policyState.ChargeLimitPercent, active);
     }
 
     public async Task SetTemporaryFullChargeAsync(bool enabled, CancellationToken cancellationToken)
@@ -163,6 +181,7 @@ internal sealed partial class ExperimentalBladePort
             {
                 throw new IOException("Independent full-charge readback did not confirm the flag and unchanged charge policy.");
             }
+            policy.RecordTemporaryFullChargeWrite(enabled);
             policy.Record("TemporaryFullCharge", "Readback", "Confirmed", true,
                 enabled.ToString(), enabled.ToString());
         }

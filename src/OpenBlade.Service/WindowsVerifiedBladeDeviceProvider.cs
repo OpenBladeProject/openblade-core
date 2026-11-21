@@ -1020,6 +1020,22 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                             BatteryStateSubsystems,
                             current => current.QueryTemporaryFullChargeAsync(cancellationToken),
                             independent ? [] : failures).ConfigureAwait(false);
+                        // Synapse clears the override whenever it turns protection
+                        // off, so this pair has no confirmed representation. Keep
+                        // it out of every other subsystem: the flag becomes unknown,
+                        // and where the limiter depends on it the battery read is an
+                        // isolated failure with its own diagnostic.
+                        if (!protection.ProtectionEnabled && temporary == true)
+                        {
+                            temporary = null;
+                            if (!independent)
+                            {
+                                failures.Add(new DeviceStateReadFailure(
+                                    DeviceStateQuery.TemporaryFullCharge,
+                                    BatteryStateSubsystems,
+                                    "Temporary full charge query (07/8F) reported the override while battery protection is off."));
+                            }
+                        }
                     }
 
                     // Otherwise the temporary override changes how the protection

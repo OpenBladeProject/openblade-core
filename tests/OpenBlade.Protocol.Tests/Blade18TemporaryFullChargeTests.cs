@@ -303,6 +303,106 @@ public abstract class SourceReviewedTemporaryFullChargeTests
         Assert.Empty(session.Writes);
     }
 
+    // A decoded active override is remembered while 07/8F is unreadable: a
+    // limiter write under bit 04 leaves a state Synapse never produces.
+    [Fact]
+    public async Task ChargePolicy_LastSeenActiveOverrideBlocksLimiterWhileUnreadable()
+    {
+        var session = new Session { Flags = 4 };
+        var policy = new ExperimentalFeaturesPolicy(Model);
+        await using var port = Create(session, policy);
+        Assert.True(await port.QueryTemporaryFullChargeAsync(CancellationToken.None));
+        session.MaskReply = [16];
+        foreach (Func<Task> write in new Func<Task>[]
+        {
+            () => port.SetChargeLimitAsync(70, CancellationToken.None),
+            () => port.SetProtectionOffAsync(CancellationToken.None),
+        })
+        {
+            var failure = await Assert.ThrowsAsync<BladeWriteException>(write);
+            Assert.Equal(WriteSubmissionState.KnownNotApplied, failure.SubmissionState);
+            Assert.Equal(ExperimentalBladePort.TemporaryFullChargeLastSeenActiveMessage, failure.Message);
+        }
+        Assert.Empty(session.Writes);
+        Assert.True(policy.TemporaryFullChargeReadUnavailable);
+        Assert.True(policy.TemporaryFullChargeLastKnownActive);
+        Assert.True(policy.WritesAllowed);
+    }
+
+    // A confirmed enable counts as last seen active; a later readable Off clears it.
+    [Fact]
+    public async Task ChargePolicy_ConfirmedEnableBlocksLimiterUntilOverrideReadsOff()
+    {
+        var session = new Session();
+        var policy = new ExperimentalFeaturesPolicy(Model);
+        await using var port = Create(session, policy);
+        await port.SetTemporaryFullChargeAsync(true, CancellationToken.None);
+        Assert.True(policy.TemporaryFullChargeLastKnownActive);
+        session.MaskReply = [16];
+        var failure = await Assert.ThrowsAsync<BladeWriteException>(
+            () => port.SetChargeLimitAsync(70, CancellationToken.None));
+        Assert.Equal(ExperimentalBladePort.TemporaryFullChargeLastSeenActiveMessage, failure.Message);
+        Assert.Single(session.Writes);
+
+        session.MaskReply = null;
+        session.Flags = 0;
+        Assert.False(await port.QueryTemporaryFullChargeAsync(CancellationToken.None));
+        Assert.False(policy.TemporaryFullChargeLastKnownActive);
+        await port.SetChargeLimitAsync(70, CancellationToken.None);
+        Assert.Equal(0xC6, session.PolicyRaw);
+    }
+
+    // Protection off with bit 04 set has no confirmed representation. Both
+    // recovery readers publish the override as unknown instead of throwing.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Recovery_ProtectionOffWithOverrideBitPublishesUnknownOverride(bool overrideWritePause)
+    {
+        var session = new Session { FailSet = overrideWritePause };
+        var policy = new ExperimentalFeaturesPolicy(Model);
+        await using var port = Create(session, policy);
+        if (overrideWritePause)
+        {
+            await Assert.ThrowsAsync<BladeWriteException>(() => port.SetTemporaryFullChargeAsync(true, CancellationToken.None));
+            Assert.True(policy.TemporaryFullChargeRecoveryRequired);
+        }
+        session.Flags = 4;
+        session.PolicyRaw = 0x50;
+
+        ConfirmedDeviceState recovered = await port.ReadRecoveryStateAsync(CancellationToken.None);
+
+        Assert.False(recovered.Battery!.ProtectionEnabled);
+        Assert.Null(recovered.Battery.TemporaryFullCharge);
+        Assert.True(policy.TemporaryFullChargeLastKnownActive);
+        Assert.Contains(session.Commands, command => command.CommandId == 0x8F);
+        Assert.True(port.LastAdmissionFailure?.FailureCategory == "TemporaryFullChargeWithProtectionOff"
+            || policy.Snapshot().Observations.Any(item => item.FailureCategory == "TemporaryFullChargeWithProtectionOff"));
+        await Assert.ThrowsAnyAsync<Exception>(() => port.SetChargeLimitAsync(70, CancellationToken.None));
+        Assert.DoesNotContain(session.Writes, command => command.CommandId == 0x12);
+    }
+
+    // An unreadable override refuses its own SET with a message that names the read.
+    [Fact]
+    public async Task FullCharge_UnreadableOverrideRefusesSetBeforeWrite()
+    {
+        var session = new Session { MaskReply = [16] };
+        var policy = new ExperimentalFeaturesPolicy(Model);
+        await using var port = Create(session, policy);
+        foreach (bool enabled in new[] { true, false })
+        {
+            var failure = await Assert.ThrowsAsync<BladeWriteException>(
+                () => port.SetTemporaryFullChargeAsync(enabled, CancellationToken.None));
+            Assert.Equal(WriteSubmissionState.KnownNotApplied, failure.SubmissionState);
+            Assert.Contains("can't read temporary full charge right now", failure.Message);
+            Exception? cause = failure;
+            while (cause is not null and not IOException) { cause = cause.InnerException; }
+            Assert.NotNull(cause);
+        }
+        Assert.Empty(session.Writes);
+        Assert.True(policy.WritesAllowed);
+    }
+
     protected abstract ushort ProductId { get; }
     private ExperimentalBladeModel Model => ExperimentalBladeModels.All.Single(item => item.ProductId == ProductId);
     private ExperimentalBladePort Create(Session session, ExperimentalFeaturesPolicy? policy = null,

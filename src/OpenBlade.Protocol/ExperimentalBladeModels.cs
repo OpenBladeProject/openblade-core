@@ -622,6 +622,7 @@ internal sealed class ExperimentalFeaturesPolicy(ExperimentalBladeModel model)
     private ExperimentalRecoveryScope recoveryScope = ExperimentalRecoveryScope.All;
     private bool temporaryFullChargeRecoveryRequired;
     private int temporaryFullChargeReadUnavailable;
+    private int temporaryFullChargeLastKnownActive;
 
     // Observed capability metadata only; never a saved fan target or write admission.
     internal IReadOnlyDictionary<PerformancePreset, FanSpeedRange> ConfirmedFanRanges => Volatile.Read(ref confirmedFanRanges);
@@ -667,8 +668,27 @@ internal sealed class ExperimentalFeaturesPolicy(ExperimentalBladeModel model)
     internal bool TemporaryFullChargeReadUnavailable =>
         Volatile.Read(ref temporaryFullChargeReadUnavailable) != 0;
 
-    internal void RecordTemporaryFullChargeRead(bool readable) =>
+    // An unreadable read keeps the previous known value: it is evidence of
+    // nothing, and the limiter must not be written while OpenBlade last saw
+    // (or confirmed writing) an active override.
+    internal void RecordTemporaryFullChargeRead(bool readable, bool active = false)
+    {
+        if (readable)
+        {
+            Volatile.Write(ref temporaryFullChargeLastKnownActive, active ? 1 : 0);
+        }
         Volatile.Write(ref temporaryFullChargeReadUnavailable, readable ? 0 : 1);
+    }
+
+    internal void RecordTemporaryFullChargeWrite(bool enabled) =>
+        Volatile.Write(ref temporaryFullChargeLastKnownActive, enabled ? 1 : 0);
+
+    /// <summary>
+    /// The latest decoded 07/8F mask or confirmed 07/0F write reported an active
+    /// override. False when the firmware has never answered 07/8F.
+    /// </summary>
+    internal bool TemporaryFullChargeLastKnownActive =>
+        Volatile.Read(ref temporaryFullChargeLastKnownActive) != 0;
 
     internal void RequireRecovery(ExperimentalRecoveryScope scope = ExperimentalRecoveryScope.All,
         bool temporaryFullCharge = false)

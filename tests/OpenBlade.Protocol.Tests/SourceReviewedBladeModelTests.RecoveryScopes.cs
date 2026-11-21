@@ -19,6 +19,25 @@ public sealed partial class SourceReviewedBladeModelTests
         Assert.True(policy.IsPaused);
     }
 
+    // A possibly submitted override write keeps its 07/8F obligation when a later
+    // thermal-only fault joins the pause; only completed recovery clears it.
+    [Theory]
+    [InlineData(0x02A0)]
+    [InlineData(0x02C5)]
+    [InlineData(0x02C7)]
+    public void RecoveryScope_OverrideObligationSurvivesLaterThermalPause(int product)
+    {
+        var policy = new ExperimentalFeaturesPolicy(Model(product));
+        policy.RequireRecovery(ExperimentalRecoveryScope.All, temporaryFullCharge: true);
+        policy.RequireRecovery(ExperimentalRecoveryScope.ThermalOnly);
+        Assert.True(policy.TemporaryFullChargeRecoveryRequired);
+        Assert.Equal(ExperimentalRecoveryScope.All, policy.RecoveryScope);
+        policy.CompleteRecovery();
+        Assert.False(policy.TemporaryFullChargeRecoveryRequired);
+        policy.RequireRecovery(ExperimentalRecoveryScope.ThermalOnly);
+        Assert.False(policy.TemporaryFullChargeRecoveryRequired);
+    }
+
     [Fact]
     public async Task RecoveryScope_IndependentFieldFailureDoesNotRequireAnUnownedCustomFrameBaseline()
     {

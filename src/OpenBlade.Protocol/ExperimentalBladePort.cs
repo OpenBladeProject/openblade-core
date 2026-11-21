@@ -79,7 +79,7 @@ internal sealed partial class ExperimentalBladePort(
             {
                 // Optional and last: an unreadable flag stays unknown, never Off.
                 bool? active = await TryReadTemporaryFullChargeActiveAsync(cancellationToken).ConfigureAwait(false);
-                battery = new(battery.ProtectionEnabled, battery.ChargeLimitPercent, active);
+                battery = WithTemporaryFullCharge(battery, active);
             }
             return new(performance.Performance, performance.Fans, battery, lighting)
             {
