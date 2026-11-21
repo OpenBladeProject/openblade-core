@@ -1,16 +1,19 @@
-//! The status rows of the managed function-row vectors.
+//! The status and preference rows of the managed function-row vectors.
 //!
 //! `ServiceReactiveLightingLoopTests.NativeFunctionRowVectors` drives managed
 //! `ServiceReactiveLightingLoop` with each status and records the device,
 //! Driver-mode knowledge and primary mode its hook reads, beside the status
 //! members as the IPC codec writes them (`wire`). Here those members replace
 //! the v85 fixture's and the Agent's projection must agree. This role admits
-//! RZ09-0581 only, so every other recorded device projects to none. The hook
-//! cases are read by the domain's `function_row_vectors` test.
+//! RZ09-0581 only, so every other recorded device projects to none. Each
+//! preference row is a `functionRowBackend` value and the backend managed
+//! `UiPreferenceStore.LoadInputPreferencesAsync` reads from a file holding only
+//! that member. The hook cases are read by the domain's `function_row_vectors`
+//! test.
 use openblade_domain::function_row::{Device, PrimaryMode};
 use serde_json::{Map, Value};
 
-use super::{DriverMode, Projection, Snapshot, status};
+use super::{Backend, DriverMode, Projection, Snapshot, Unreadable, parse, status};
 
 const VECTORS: &str = include_str!("../../../../tests/data/function-row-hook-vectors.json");
 const WIRE: [&str; 4] = [
@@ -98,10 +101,29 @@ fn status_row(row: &Value) -> Result<&Map<String, Value>, String> {
     Ok(vector)
 }
 
+/// One preference row, as the managed `NativeFunctionRowPreferenceRow` checks it.
+fn preference_row(row: &Value) -> Result<&Map<String, Value>, String> {
+    let vector = shape(row, &["name", "value", "expect"], &["name", "value"])?;
+    vector
+        .get("name")
+        .and_then(Value::as_str)
+        .ok_or("a name is a string")?;
+    if vector.contains_key("expect") {
+        named(
+            vector.get("expect"),
+            &["WindowsHook", "RazerDriver", "Unknown", "Unreadable"],
+        )?;
+    }
+    Ok(vector)
+}
+
 fn vectors() -> Value {
     let root: Value = serde_json::from_str(VECTORS).unwrap();
     for row in root["status"].as_array().unwrap() {
         status_row(row).unwrap();
+    }
+    for row in root["preference"].as_array().unwrap() {
+        preference_row(row).unwrap();
     }
     root
 }
@@ -161,14 +183,51 @@ fn the_agent_projects_each_managed_status_as_the_managed_hook_reads_it() {
 }
 
 #[test]
-fn malformed_status_rows_are_refused_by_this_reader_too() {
+fn the_agent_reads_each_managed_preference_value_as_the_managed_store_does() {
     let root = vectors();
-    let mut refused = 0;
+    let rows = root["preference"].as_array().unwrap();
+    assert!(rows.len() >= 50);
+    for row in rows {
+        let content =
+            serde_json::to_vec(&serde_json::json!({ "functionRowBackend": row["value"] })).unwrap();
+        let expected = match row["expect"].as_str() {
+            Some("WindowsHook") => Ok(Some(Backend::WindowsHook)),
+            Some("RazerDriver") => Ok(Some(Backend::RazerDriver)),
+            Some("Unknown") => Ok(None),
+            _ => Err(Unreadable),
+        };
+        assert_eq!(parse(Some(&content)), expected, "{}", row["name"]);
+    }
+    // The comma, sign and white-space forms the review found accepted.
+    for value in [
+        "1,1",
+        "WindowsHook,1",
+        "1,WindowsHook",
+        "0,1",
+        "RazerDriver,0",
+        "1\u{a0}",
+    ] {
+        let row = rows.iter().find(|row| row["value"] == value).unwrap();
+        assert_eq!(row["expect"], "Unknown", "{value:?}");
+    }
+}
+
+#[test]
+fn malformed_status_and_preference_rows_are_refused_by_this_reader_too() {
+    let root = vectors();
+    let (mut status, mut preference) = (0, 0);
     for row in root["malformed"].as_array().unwrap() {
         if row["section"] == "status" {
             assert!(status_row(&row["row"]).is_err(), "accepted {}", row["row"]);
-            refused += 1;
+            status += 1;
+        } else if row["section"] == "preference" {
+            assert!(
+                preference_row(&row["row"]).is_err(),
+                "accepted {}",
+                row["row"]
+            );
+            preference += 1;
         }
     }
-    assert!(refused >= 5);
+    assert!(status >= 5 && preference >= 5);
 }

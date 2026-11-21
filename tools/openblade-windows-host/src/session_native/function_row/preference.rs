@@ -7,10 +7,11 @@
 //!   a file without the member.
 //! - The file is bounded at 1 MiB and may start with a UTF-8 BOM.
 //! - Members match case-insensitively (`JsonSerializerDefaults.Web`).
-//! - `KeyboardInputBackendJsonConverter`: a string is a case-insensitive name or
-//!   number, optionally comma-joined as `Enum.TryParse` allows; a number must fit
-//!   in 32 bits; `null` and anything undefined is Unknown; another JSON type
-//!   fails the read.
+//! - `KeyboardInputBackendJsonConverter`: a string is read by
+//!   `Enum.TryParse(ignoreCase: true)` (see `enum_parse`), a number must be a
+//!   32-bit integer, `null` and anything undefined is Unknown, and another JSON
+//!   type fails the read. The managed parity vectors' `preference` rows pin
+//!   each of these.
 //! - A failed read keeps the last value read.
 //!
 //! Deliberate differences:
@@ -84,9 +85,23 @@ fn normalize(value: i32) -> Option<Backend> {
     }
 }
 
-/// `Enum.TryParse(ignoreCase: true)`: comma-separated names or integers,
-/// each trimmed, combined with OR.
+/// `Enum.TryParse(ignoreCase: true)` for `KeyboardInputBackend`:
+/// - leading white space (`char.IsWhiteSpace`) is skipped;
+/// - text that then starts with a digit or sign is one 32-bit integer with
+///   optional trailing ASCII white space (`NumberStyles.AllowTrailingWhite`),
+///   never comma-joined;
+/// - anything else is comma-separated names, each trimmed and matched without
+///   ASCII case, combined with OR; an empty or unknown name fails.
 fn enum_parse(text: &str) -> Option<i32> {
+    let text = text.trim_start();
+    let first = text.chars().next()?;
+    if first.is_ascii_digit() || first == '-' || first == '+' {
+        // No name starts with a digit or sign, so a failed number fails.
+        return text
+            .trim_end_matches([' ', '\t', '\n', '\u{b}', '\u{c}', '\r'])
+            .parse()
+            .ok();
+    }
     let mut value = 0;
     for part in text.split(',') {
         let part = part.trim();
@@ -97,7 +112,7 @@ fn enum_parse(text: &str) -> Option<i32> {
         } else if part.eq_ignore_ascii_case("RazerDriver") {
             2
         } else {
-            part.parse::<i32>().ok()?
+            return None;
         };
     }
     Some(value)

@@ -99,19 +99,21 @@ fn name<'a>(value: Option<&'a Value>, names: &[&str]) -> Result<&'a str, String>
 }
 
 /// The file shape, checked before any row runs, as the managed reader checks
-/// it. The status rows are only required to be an array here.
+/// it. The status and preference rows are only required to be arrays here;
+/// the Agent tests read them.
 fn read_vectors(text: &str) -> Result<Value, String> {
     let root: Value = serde_json::from_str(text).map_err(|error| error.to_string())?;
-    let sections = ["comment", "cases", "status", "malformed"];
+    let sections = ["comment", "cases", "status", "preference", "malformed"];
     let object = shape(&root, &sections, &sections)?;
     string(object.get("comment"))?;
     for row in rows(object.get("cases"))? {
         case(row)?;
     }
     rows(object.get("status"))?;
+    rows(object.get("preference"))?;
     for row in rows(object.get("malformed"))? {
         let malformed = shape(row, &["section", "row"], &["section", "row"])?;
-        name(malformed.get("section"), &["cases", "status"])?;
+        name(malformed.get("section"), &["cases", "status", "preference"])?;
     }
     Ok(root)
 }
@@ -444,11 +446,12 @@ fn malformed_case_rows_are_refused_by_this_reader_too() {
     }
     assert!(refused > 10);
     for text in [
-        r#"{"comment":"","cases":[],"status":[]}"#,
-        r#"{"comment":"","cases":[],"status":[],"malformed":[],"extra":1}"#,
-        r#"{"comment":"","cases":{},"status":[],"malformed":[]}"#,
-        r#"{"comment":"","cases":[],"status":[],"malformed":[{"section":"cases"}]}"#,
-        r#"{"comment":"","cases":[],"status":[],"malformed":[{"section":"other","row":{}}]}"#,
+        r#"{"comment":"","cases":[],"status":[],"malformed":[]}"#,
+        r#"{"comment":"","cases":[],"status":[],"preference":[],"malformed":[],"extra":1}"#,
+        r#"{"comment":"","cases":{},"status":[],"preference":[],"malformed":[]}"#,
+        r#"{"comment":"","cases":[],"status":[],"preference":{},"malformed":[]}"#,
+        r#"{"comment":"","cases":[],"status":[],"preference":[],"malformed":[{"section":"cases"}]}"#,
+        r#"{"comment":"","cases":[],"status":[],"preference":[],"malformed":[{"section":"other","row":{}}]}"#,
     ] {
         assert!(read_vectors(text).is_err(), "{text}");
     }

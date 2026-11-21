@@ -26,7 +26,8 @@ public sealed partial class ServiceReactiveLightingLoopTests
         + "regenerate with OPENBLADE_REGENERATE_NATIVE_FUNCTION_ROW_VECTORS set to this directory. "
         + "A case step is a hook edge (key) or a Raw Input edge the hook missed (missed); "
         + "its result is the hook's suppression or the recovery's reinstall. "
-        + "Step members after the edge change the case state from that step on.";
+        + "Step members after the edge change the case state from that step on. "
+        + "A preference row is a functionRowBackend value and the backend UiPreferenceStore reads from it.";
 
     private static readonly string[] NativeStatusMembers =
         ["deviceVerified", "firmware", "keyboardDriverModeActive", "functionKeyPrimary"];
@@ -54,6 +55,7 @@ public sealed partial class ServiceReactiveLightingLoopTests
             {
                 "cases" => NativeFunctionRowCase(row),
                 "status" => NativeFunctionRowStatusRow(row),
+                "preference" => NativeFunctionRowPreferenceRow(row),
                 _ => throw new InvalidOperationException("Unknown malformed section."),
             });
         }
@@ -73,12 +75,18 @@ public sealed partial class ServiceReactiveLightingLoopTests
             Record(vector, "expect", await ObserveNativeFunctionRowStatusAsync(status));
         }
 
+        foreach (JsonNode? entry in root["preference"]!.AsArray())
+        {
+            JsonObject vector = entry!.AsObject();
+            Record(vector, "expect", await ReadNativeFunctionRowPreferenceAsync(vector["value"]));
+        }
+
         if (!string.IsNullOrEmpty(output))
         {
             // One row per line keeps the shared file reviewable in a diff.
             var text = new StringBuilder("{\n\"comment\":")
                 .Append(root["comment"]!.ToJsonString());
-            foreach (string section in (string[])["cases", "status", "malformed"])
+            foreach (string section in (string[])["cases", "status", "preference", "malformed"])
             {
                 text.Append(",\n\"").Append(section).Append("\":[\n")
                     .AppendJoin(",\n", root[section]!.AsArray().Select(row => row!.ToJsonString()))
@@ -107,7 +115,7 @@ public sealed partial class ServiceReactiveLightingLoopTests
         {
             var inputs = (JsonObject)root.DeepClone();
             inputs.Remove("comment");
-            foreach (string section in (string[])["cases", "status"])
+            foreach (string section in (string[])["cases", "status", "preference"])
             {
                 foreach (JsonNode? row in inputs[section]!.AsArray())
                 {
@@ -121,11 +129,12 @@ public sealed partial class ServiceReactiveLightingLoopTests
     }
 
     [Theory]
-    [InlineData("""{"comment":"","cases":[],"status":[]}""")]
-    [InlineData("""{"comment":"","cases":[],"status":[],"malformed":[],"extra":1}""")]
-    [InlineData("""{"comment":"","cases":{},"status":[],"malformed":[]}""")]
-    [InlineData("""{"comment":"","cases":[],"status":[],"malformed":[{"section":"cases"}]}""")]
-    [InlineData("""{"comment":"","cases":[],"status":[],"malformed":[{"section":"other","row":{}}]}""")]
+    [InlineData("""{"comment":"","cases":[],"status":[],"malformed":[]}""")]
+    [InlineData("""{"comment":"","cases":[],"status":[],"preference":[],"malformed":[],"extra":1}""")]
+    [InlineData("""{"comment":"","cases":{},"status":[],"preference":[],"malformed":[]}""")]
+    [InlineData("""{"comment":"","cases":[],"status":[],"preference":{},"malformed":[]}""")]
+    [InlineData("""{"comment":"","cases":[],"status":[],"preference":[],"malformed":[{"section":"cases"}]}""")]
+    [InlineData("""{"comment":"","cases":[],"status":[],"preference":[],"malformed":[{"section":"other","row":{}}]}""")]
     public void NativeFunctionRowVectors_RejectMalformedFiles(string text) =>
         Assert.Throws<InvalidDataException>(() => ReadNativeFunctionRowVectors(text));
 
@@ -133,7 +142,7 @@ public sealed partial class ServiceReactiveLightingLoopTests
     // file is one this reader and the Rust readers must both refuse.
     private static JsonObject ReadNativeFunctionRowVectors(string text)
     {
-        string[] sections = ["comment", "cases", "status", "malformed"];
+        string[] sections = ["comment", "cases", "status", "preference", "malformed"];
         JsonObject root = NativeShape(JsonNode.Parse(text), sections, sections);
         if (root["comment"]?.GetValueKind() != JsonValueKind.String)
         {
@@ -150,11 +159,16 @@ public sealed partial class ServiceReactiveLightingLoopTests
             NativeFunctionRowStatusRow(row);
         }
 
+        foreach (JsonNode? row in NativeRows(root["preference"]))
+        {
+            NativeFunctionRowPreferenceRow(row);
+        }
+
         foreach (JsonNode? row in NativeRows(root["malformed"]))
         {
             JsonObject malformed = NativeShape(row, ["section", "row"], ["section", "row"]);
             if (malformed["section"]?.GetValueKind() != JsonValueKind.String
-                || (string)malformed["section"]! is not ("cases" or "status"))
+                || (string)malformed["section"]! is not ("cases" or "status" or "preference"))
             {
                 throw new InvalidDataException("A malformed row names its section.");
             }
@@ -259,6 +273,18 @@ public sealed partial class ServiceReactiveLightingLoopTests
             NativeName(expect["device"], Enum.GetNames<RazerBladeInputDeviceKind>());
             NativeName(expect["driverMode"], ["Unknown", "Inactive", "Active"]);
             NativeOptionalName(expect["primary"], ["FunctionKeys", "MultimediaKeys"]);
+        }
+
+        return vector;
+    }
+
+    private static JsonObject NativeFunctionRowPreferenceRow(JsonNode? row)
+    {
+        JsonObject vector = NativeShape(row, ["name", "value", "expect"], ["name", "value"]);
+        NativeString(vector["name"]);
+        if (vector.ContainsKey("expect"))
+        {
+            NativeName(vector["expect"], ["WindowsHook", "RazerDriver", "Unknown", "Unreadable"]);
         }
 
         return vector;
@@ -440,6 +466,7 @@ public sealed partial class ServiceReactiveLightingLoopTests
 
         JsonObject valid = Case("x", "Rz09_0581", "WindowsHook", "Active", false, "MultimediaKeys", [Hook(0x3C, true, false)]);
         JsonObject validStatus = Status("x", true, "RZ09-0581", true, "MultimediaKeys");
+        var validPreference = new JsonObject { ["name"] = "x", ["value"] = "WindowsHook" };
         var malformed = new JsonArray
         {
             Malformed("cases", valid, row => row["extra"] = 1),
@@ -469,13 +496,43 @@ public sealed partial class ServiceReactiveLightingLoopTests
             Malformed("status", validStatus, row => row["set"]!["deviceVerified"] = null),
             Malformed("status", validStatus, row => row["wire"] = new JsonObject { ["other"] = 1, ["deviceVerified"] = true }),
             Malformed("status", validStatus, row => row["expect"] = new JsonObject { ["device"] = "Rz09_0581", ["driverMode"] = "On", ["primary"] = null }),
+            Malformed("preference", validPreference, row => row["extra"] = 1),
+            Malformed("preference", validPreference, row => row.Remove("value")),
+            Malformed("preference", validPreference, row => row["name"] = 1),
+            Malformed("preference", validPreference, row => row["expect"] = "windowshook"),
+            Malformed("preference", validPreference, row => row["expect"] = 1),
         };
+
+        // The functionRowBackend values Enum.TryParse and the converter decide:
+        // names in any case, numbers with a sign and white space, comma-joined
+        // names, and the comma, white-space and number forms that fail.
+        JsonNode?[] values =
+        [
+            "WindowsHook", "windowshook", "WINDOWSHOOK", "RazerDriver", "Unknown",
+            "1", "2", "0", "3", "-1", "+1", "01", "-0", "1.0", "0x1", "1e0", "2147483648", "99999999999",
+            " 1", "1 ", "\t1", "1\t", "\u00a01", "1\u00a0", "\u20001", "+ 1", "1 1",
+            " WindowsHook ", "\u00a0WindowsHook", "WindowsHook\u00a0", "Windows Hook",
+            "1,1", "WindowsHook,1", "1,WindowsHook", "0,1", "RazerDriver,0", "1,2",
+            "WindowsHook,Unknown", "WindowsHook,WindowsHook", "WindowsHook , Unknown",
+            "WindowsHook,RazerDriver", "WindowsHook,", ",WindowsHook", "WindowsHook,,Unknown",
+            "", " ", ",", "W\u0131ndowsHook", "Window\u017fHook", "WindowsHoo\u212a",
+            1, 2, 0, 3, -1, JsonNode.Parse("1.0"), JsonNode.Parse("1e0"), 2147483648, null, true, new JsonArray(), new JsonObject(),
+        ];
+        var preference = new JsonArray(
+        [
+            .. values.Select(value => (JsonNode?)new JsonObject
+            {
+                ["name"] = value?.ToJsonString() ?? "null",
+                ["value"] = value,
+            }),
+        ]);
 
         return new JsonObject
         {
             ["comment"] = NativeFunctionRowComment,
             ["cases"] = cases,
             ["status"] = status,
+            ["preference"] = preference,
             ["malformed"] = malformed,
         };
 
@@ -544,6 +601,31 @@ public sealed partial class ServiceReactiveLightingLoopTests
             false => "inactive",
             null => "unknown",
         };
+    }
+
+    // UiPreferenceStore.LoadInputPreferencesAsync over a file holding only this
+    // member; a JsonException is a failed read.
+    private static async Task<JsonNode> ReadNativeFunctionRowPreferenceAsync(JsonNode? value)
+    {
+        string path = Path.Combine(Path.GetTempPath(), $"openblade-native-preference-{Guid.NewGuid():N}.json");
+        try
+        {
+            var content = new JsonObject { ["functionRowBackend"] = value?.DeepClone() };
+            await File.WriteAllTextAsync(path, content.ToJsonString(), new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+            try
+            {
+                UiInputPreferences preferences = await new UiPreferenceStore(path).LoadInputPreferencesAsync();
+                return preferences.FunctionRowBackend.ToString();
+            }
+            catch (JsonException)
+            {
+                return "Unreadable";
+            }
+        }
+        finally
+        {
+            File.Delete(path);
+        }
     }
 
     private static JsonArray ReplayNativeFunctionRowCase(JsonObject vector)
