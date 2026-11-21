@@ -271,15 +271,64 @@ public sealed partial class ExperimentalThermalExpansionTests
         Assert.True(policy.WritesAllowed);
     }
 
+    // Synapse writes raw 6 on battery and sets the plugged-in mode on AC attach
+    // without reading it first, so raw 6 can remain after external power returns.
+    // It reads as DC Balanced there: no AC intent matches it, and a typed AC set
+    // leaves it without a prerequisite write.
     [Theory]
-    [InlineData(PowerSource.PluggedIn)]
-    [InlineData(PowerSource.UsbC)]
-    public async Task Blade16_DcBalancedIsRejectedOnExternalPower(PowerSource source)
+    [InlineData(0x029F, PowerSource.PluggedIn)]
+    [InlineData(0x029F, PowerSource.UsbC)]
+    [InlineData(0x029D, PowerSource.PluggedIn)]
+    [InlineData(0x029D, PowerSource.UsbC)]
+    public async Task Blade16_RawSixOnExternalPowerIsTransitionalDcBalanced(int pid, PowerSource source)
     {
-        var session = new Session { Mode = 6 };
-        await using var port = Create(0x029F, session, power: () => source);
-        await Assert.ThrowsAsync<RazerProtocolException>(() => port.QueryPerformanceFanStateAsync(CancellationToken.None));
+        var session = new Session { Mode = 6, AdapterPowerPayload = source == PowerSource.UsbC ? [2, 17] : [17, 17] };
+        await using var port = Create(pid, session, power: () => source);
+        ProductionPerformanceFanState state = await port.QueryPerformanceFanStateAsync(CancellationToken.None);
+        Assert.Equal(PerformancePreset.BatteryBalanced, state.Performance);
+        Assert.False(state.HyperBoostActive);
         Assert.Empty(session.Writes);
+        await port.SetPerformanceAsync(PerformancePreset.Balanced, CancellationToken.None);
+        Assert.Equal(new byte[][] { [1, 1, 0, 0], [1, 2, 0, 0] },
+            session.Writes.Select(command => command.Arguments.ToArray()).ToArray());
+        Assert.Equal(PerformancePreset.Balanced,
+            (await port.QueryPerformanceFanStateAsync(CancellationToken.None)).Performance);
+    }
+
+    [Theory]
+    [InlineData(0x029F)]
+    [InlineData(0x029D)]
+    public async Task Blade16_BatteryExitThenReplugLeavesRawSixUntilTypedAcSet(int pid)
+    {
+        PowerSource source = PowerSource.PluggedIn;
+        // Silent is a direct entry base on both products.
+        var session = new Session { Mode = 5, HyperBoostFirmware = [1, 5, 0, 0] };
+        await using var port = HyperBoostPort(session, new Pad(), power: () => source, pid: pid);
+        await port.SetHyperBoostAsync(true, PerformancePreset.Silent, true, CancellationToken.None);
+        Assert.Equal(7, session.Mode);
+
+        source = PowerSource.Battery;
+        session.AdapterPowerPayload = [0, 17];
+        await port.SetHyperBoostAsync(false, PerformancePreset.Silent, true, CancellationToken.None);
+        Assert.Equal(6, session.Mode);
+        Assert.Equal(PerformancePreset.Balanced,
+            (await port.QueryPerformanceFanStateAsync(CancellationToken.None)).Performance);
+
+        source = PowerSource.PluggedIn;
+        session.AdapterPowerPayload = [17, 17];
+        int writes = session.Writes.Count();
+        ProductionPerformanceFanState replugged = await port.QueryPerformanceFanStateAsync(CancellationToken.None);
+        Assert.Equal(PerformancePreset.BatteryBalanced, replugged.Performance);
+        Assert.False(replugged.HyperBoostActive);
+        Assert.Equal(writes, session.Writes.Count());
+
+        await port.SetPerformanceAsync(PerformancePreset.Silent, CancellationToken.None);
+        Assert.Equal(5, session.Mode);
+        Assert.Equal(PerformancePreset.Silent,
+            (await port.QueryPerformanceFanStateAsync(CancellationToken.None)).Performance);
+        await port.SetHyperBoostAsync(true, PerformancePreset.Silent, true, CancellationToken.None);
+        Assert.Equal(7, session.Mode);
+        Assert.True((await port.QueryPerformanceFanStateAsync(CancellationToken.None)).HyperBoostActive);
     }
 
     [Theory]

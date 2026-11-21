@@ -413,7 +413,15 @@ internal sealed partial class ExperimentalBladePort(
             3 when model.ProductId == 0x02C5 => PerformancePreset.BatterySaver,
             6 when model.ProductId == 0x02C5 => PerformancePreset.BatteryBalanced,
             // Products 671/669 map battery Balanced to raw 6 (AC Balanced is 0).
-            6 when UsesRaw6AsBatteryBalanced(model) && capturePowerSource() == PowerSource.Battery => PerformancePreset.Balanced,
+            // Synapse writes raw 6 on battery and sets the plugged-in mode on AC
+            // attach without reading it first (671 policy bytes 1,398,128 and
+            // 1,941,140; 669 policy bytes 1,558,229 and 1,699,212), so the EC can
+            // still hold raw 6 after the power source returns. Off battery it is a
+            // transitional DC Balanced reading: no AC intent matches it, and a
+            // typed AC set leaves it.
+            6 when UsesRaw6AsBatteryBalanced(model) => capturePowerSource() == PowerSource.Battery
+                ? PerformancePreset.Balanced
+                : PerformancePreset.BatteryBalanced,
             1 when model.ProductId == 0x0255 => PerformancePreset.Performance,
             2 when model.ProductId is 0x02A0 or 0x029F => PerformancePreset.Performance,
             7 when hyperBoost => null,
