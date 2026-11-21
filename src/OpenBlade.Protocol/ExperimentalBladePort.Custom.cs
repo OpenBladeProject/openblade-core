@@ -78,7 +78,9 @@ internal sealed partial class ExperimentalBladePort
     // 1,893,371). The earlier AC-preset list had no firmware reason to exclude
     // raw 6. Admit it only off battery and only on these three mode-7 models;
     // every other Custom precondition (fan baseline, Maximum Fans flags, stored
-    // levels, readback) still applies.
+    // levels, readback) still applies. The scope is the models whose HyperBoost
+    // battery exit leaves raw 6; other Battery Balanced models keep the refusal
+    // until their own Custom entry is reviewed.
     private bool AdmitsCustomFromDcBalanced(PerformancePreset? baseline) =>
         baseline == PerformancePreset.BatteryBalanced
         && model.ProductId is 0x029F or 0x029D or 0x02B7
