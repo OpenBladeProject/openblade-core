@@ -13,6 +13,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 - Credit the Blade 18 (2025, RZ09-0529) keyboard lighting effects and per-key color editing in 0.65.1-nightly.117 to their contributor. Thanks to [@TheChrisTech](https://github.com/TheChrisTech). ([#977](https://github.com/OpenBladeProject/openblade-core/pull/977))
 
+### Fixed
+
+- Keep Razer-driver function-row media keys and SnapTap working after focus briefly leaves every window, such as at the lock screen, and when a key is pressed while Windows is still starting. Previously they stopped until Windows restarted or the setting was toggled. ([#990](https://github.com/OpenBladeProject/openblade-core/pull/990))
+
 ## [0.65.1-nightly.117] - 2026-11-20
 
 ### Added
