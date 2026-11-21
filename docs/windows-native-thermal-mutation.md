@@ -233,8 +233,13 @@ no native writer and blocks with the GPU cause.
 
 Saved and profile Custom use their stored levels. An application profile's
 `customPerformance` replaces the power profile's, whichever of the two selected
-Custom (managed `ApplicationProfileResolution`). Managed fills missing levels
-from the confirmed state or Medium/High; native selects no destination then.
+Custom (managed `ApplicationProfileResolution`). A profile Custom without levels
+selects Medium CPU and High GPU, managed's `CustomPerformanceSettings.Default`,
+which managed's profile saves store in their place. Managed would try the
+confirmed state's levels first; its normalized profiles never reach that, and
+native does not consult it. A stored or requested override Custom always
+carries its levels: the document reader and the request codec refuse one
+without them.
 
 `select` in the installed thermal runtime resolves the saved destination for a
 fresh class without storing anything; a later automatic reconciliation of saved

@@ -374,7 +374,8 @@ fn fan_control(v: &Value) -> io::Result<()> {
 
 pub(super) use crate::service_status::PerformanceOverride as Override;
 /// The destination saved Custom settings name on exact RZ09-0581, if the
-/// model admits them (`Destination::custom`). Missing levels are not guessed.
+/// model admits them (`Destination::custom`). Settings without both levels
+/// name none; `profile_custom` supplies a profile's missing levels first.
 pub(super) fn custom_destination(settings: &Value) -> Option<Destination> {
     Destination::custom(
         settings["cpu"].as_u64()?,
@@ -383,6 +384,22 @@ pub(super) fn custom_destination(settings: &Value) -> Option<Destination> {
             .get("maximumFans")
             .map_or(Some(false), Value::as_bool)?,
     )
+}
+/// A profile selection's Custom settings. Managed resolves a selected Custom's
+/// levels as the override's, then the profile's, then the confirmed state's,
+/// then `CustomPerformanceSettings.Default` (`ProfileAutomationState`), and
+/// its profile saves store those defaults in place of missing levels. Native
+/// reads a profile document without them as Medium/High too. The confirmed
+/// state is not consulted: a stored override Custom always carries its levels,
+/// and managed's normalized profiles never reach it.
+fn profile_custom(preset: i32, custom: &Value) -> Option<Value> {
+    if !custom.is_null() {
+        return Some(custom.clone());
+    }
+    (preset == CUSTOM).then(|| {
+        let levels = openblade_domain::profile_set::CustomPerformance::DEFAULT;
+        serde_json::json!({"cpu":levels.cpu.0,"gpu":levels.gpu.0,"maximumFans":levels.maximum_fans})
+    })
 }
 /// A selected wire destination, its Custom settings and its provenance,
 /// before model admission.
@@ -588,8 +605,9 @@ impl Storage {
         Ok(())
     }
     /// The saved destination for class `power`, with its provenance. Custom
-    /// settings the model does not admit, unadmitted presets and Custom
-    /// without levels select nothing.
+    /// settings the model does not admit and unadmitted presets select
+    /// nothing; a profile's Custom without levels selects managed's default
+    /// levels (`profile_custom`).
     pub(super) fn desired(
         &self,
         power: i32,
@@ -664,7 +682,7 @@ impl Storage {
             .filter(|n| openblade_domain::automation::performance_source_eligible(*n as i32, power))
             .map(|n| Selected {
                 value: n as i32,
-                custom: Some(custom.clone()).filter(|v| !v.is_null()),
+                custom: profile_custom(n as i32, custom),
                 source: if app
                     .is_some_and(|a| a["overrides"][key]["performance"].as_i64().is_some())
                 {

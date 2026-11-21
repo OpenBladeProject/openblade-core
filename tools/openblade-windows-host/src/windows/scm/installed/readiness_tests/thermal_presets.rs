@@ -694,6 +694,51 @@ async fn every_admitted_level_pair_writes_its_own_fixture_payloads() {
     rig.stop().await;
 }
 
+/// A profile document whose plugged-in profile selects Custom without levels.
+fn custom_without_levels_files() -> MemoryFiles {
+    let files = MemoryFiles::default();
+    files.profiles_with(CUSTOM, None);
+    let mut document = files.document("profiles.json");
+    document["profiles"]["pluggedIn"]["customPerformance"] = Value::Null;
+    files.put("profiles.json", document);
+    files.commit_configuration();
+    files
+}
+
+#[tokio::test]
+async fn a_saved_custom_without_levels_applies_the_default_levels() {
+    // Managed resolves a selected Custom's missing levels to
+    // `CustomPerformanceSettings.Default`, Medium CPU and High GPU, and
+    // applies them; it does not report the selection as unsupported.
+    let rig = rig_at(2, 0, FULL, custom_without_levels_files());
+    let result = rig.set(1, Value::Null).await;
+    assert_eq!(result["result"]["status"], 1, "{result}");
+    assert_eq!(thermal_setters(&rig), custom_setters(1, 2));
+    rig.stop().await;
+}
+
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn a_fan_return_applies_the_default_levels_for_a_saved_custom_without_them() {
+    let r = rig_at(0, 0, FULL, custom_without_levels_files());
+    *r.custody.origin_for_fan.lock().unwrap() = Some(r.origin.clone());
+    r.get().await;
+    let owned = r.request(fan_request(230, Some(1), 3700)).await;
+    assert_eq!(owned["result"]["status"], 1, "{owned}");
+    let out = r.request(fan_request(232, None, 0)).await;
+    assert_eq!(out["result"]["status"], 1, "{out}");
+    let setters = thermal_setters(&r);
+    assert_eq!(setters[setters.len() - 4..], custom_setters(1, 2)[..]);
+    let s = r.port.state.lock().unwrap();
+    assert_eq!(
+        (s.selectors, s.fans, s.custom_levels),
+        ([4; 2], [0; 2], [1, 2])
+    );
+    drop(s);
+    r.origin.stop();
+    r.stop().await;
+}
+
 #[test]
 fn saved_custom_settings_resolve_only_when_canonical() {
     use crate::installed::readiness::thermal_storage::custom_destination;
