@@ -32440,8 +32440,6 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
 
         public int InvalidationCount { get; private set; }
 
-        public int LowPowerInvalidationCount { get; private set; }
-
         public int RelinquishCount { get; private set; }
 
         public int GpuClockOffsetInvalidationCount { get; private set; }
@@ -32544,10 +32542,6 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
         {
             cancellationToken.ThrowIfCancellationRequested();
             InvalidationCount++;
-            if (lowPower)
-            {
-                LowPowerInvalidationCount++;
-            }
             if (InvalidationFailure is { } failure)
             {
                 InvalidationFailure = null;

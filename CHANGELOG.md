@@ -7,7 +7,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
-- Pause OpenBlade lighting controls while Windows Dynamic Lighting controls the keyboard on Blade 18 (2025, RZ09-0529), Blade 18 (2024, RZ09-0509), Blade 16 (2024, RZ09-0510) and Blade 14 (2025, RZ09-0530), as on Blade 16 (2025, RZ09-0528). On Blade 18 (2025) this includes the Vapor Chamber. The Lighting page explains how to turn Dynamic Lighting off for the device; OpenBlade does not restore lighting over Windows. ([#992](https://github.com/OpenBladeProject/openblade-core/pull/992))
+- Show a notice on the Lighting page when Windows Dynamic Lighting is on and can override OpenBlade keyboard lighting on Blade 16 (2025, RZ09-0528), Blade 18 (2025, RZ09-0529), Blade 18 (2024, RZ09-0509), Blade 16 (2024, RZ09-0510) and Blade 14 (2025, RZ09-0530). On Blade 18 (2025) it also names the Vapor chamber. Lighting controls stay available; the notice explains where to turn Dynamic Lighting off. ([#992](https://github.com/OpenBladeProject/openblade-core/pull/992))
 
 ### Changed
 

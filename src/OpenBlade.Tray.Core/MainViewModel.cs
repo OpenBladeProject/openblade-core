@@ -259,7 +259,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private bool isExperimentalDevice;
     private bool experimentalWritesPaused;
     private KeyboardLightingControlMode keyboardLightingControlMode;
-    private WindowsDynamicLightingOwnership windowsDynamicLightingOwnership;
+    private WindowsDynamicLightingAdvisory windowsDynamicLightingAdvisory;
+    private bool isWindowsDynamicLightingAdvisoryVisible;
+    private string windowsDynamicLightingAdvisoryText = string.Empty;
     private IReadOnlyList<PerformancePreset> availablePerformancePresets = [];
     private IReadOnlyList<PerformancePresetOption> availablePluggedInPerformanceOptions = [];
     private IReadOnlyList<PerformancePresetOption> availableBatteryPerformanceOptions = [];
@@ -1563,9 +1565,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         latestStatus?.ExternalChanges.Any(subsystem =>
             subsystem != DeviceSubsystem.Lighting
             || latestStatus.KeyboardLightingControlMode
-                    != KeyboardLightingControlMode.WindowsDynamicLighting
-                && latestStatus.WindowsDynamicLightingOwnership
-                    != WindowsDynamicLightingOwnership.Owned) == true;
+                != KeyboardLightingControlMode.WindowsDynamicLighting) == true;
 
     public bool AlwaysOverrideExternalLightingChanges
     {
@@ -1612,7 +1612,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 return TrayText.Get("60 Hz lighting support couldn’t be checked.");
             }
 
-            if (UseWindowsDynamicLighting || IsLightingOwnedByWindows)
+            if (UseWindowsDynamicLighting)
             {
                 return TrayText.Get("Windows Dynamic Lighting manages keyboard lighting.");
             }
@@ -1702,42 +1702,60 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 Notify(nameof(CanSetLightingRefreshRate));
                 Notify(nameof(LightingRefreshRateAvailabilityText));
                 Notify(nameof(CanReapplyChangedSettings));
+                RefreshWindowsDynamicLightingAdvisory();
             }
         }
+    }
+
+    /// <summary>
+    /// Advisory from the active session's Session Agent: the Windows Dynamic
+    /// Lighting switch is on and this keyboard's LampArray is present, so
+    /// Windows can override OpenBlade keyboard lighting. It never disables
+    /// OpenBlade controls.
+    /// </summary>
+    public WindowsDynamicLightingAdvisory WindowsDynamicLightingAdvisory
+    {
+        get => windowsDynamicLightingAdvisory;
+        private set
+        {
+            if (windowsDynamicLightingAdvisory != value)
+            {
+                SetField(ref windowsDynamicLightingAdvisory, value);
+                RefreshWindowsDynamicLightingAdvisory();
+            }
+        }
+    }
+
+    public bool IsWindowsDynamicLightingAdvisoryVisible
+    {
+        get => isWindowsDynamicLightingAdvisoryVisible;
+        private set => SetField(ref isWindowsDynamicLightingAdvisoryVisible, value);
+    }
+
+    public string WindowsDynamicLightingAdvisoryText
+    {
+        get => windowsDynamicLightingAdvisoryText;
+        private set => SetField(ref windowsDynamicLightingAdvisoryText, value);
+    }
+
+    // A user who delegated the keyboard to Windows already sees that state.
+    private void RefreshWindowsDynamicLightingAdvisory()
+    {
+        bool visible = WindowsDynamicLightingAdvisory == WindowsDynamicLightingAdvisory.MayControl
+            && latestStatus?.ControlAccess == SessionControlAccess.Active
+            && !UseWindowsDynamicLighting;
+        WindowsDynamicLightingAdvisoryText = !visible
+            ? string.Empty
+            : WindowsDynamicLightingLampArrays
+                    .Find(latestStatus?.Firmware?.ModelNumber)?.CoversVaporChamber == true
+                ? TrayText.Get("Windows Dynamic Lighting is on and can override OpenBlade keyboard and Vapor chamber lighting. If your OpenBlade lighting doesn’t show, turn off Use Dynamic Lighting on my devices in Settings > Personalization > Dynamic Lighting.")
+                : TrayText.Get("Windows Dynamic Lighting is on and can override OpenBlade keyboard lighting. If your OpenBlade lighting doesn’t show, turn off Use Dynamic Lighting on my devices in Settings > Personalization > Dynamic Lighting.");
+        IsWindowsDynamicLightingAdvisoryVisible = visible;
     }
 
     public bool UseWindowsDynamicLighting =>
         KeyboardLightingControlMode
             == KeyboardLightingControlMode.WindowsDynamicLighting;
-
-    /// <summary>
-    /// The Session Agent observed that Windows Dynamic Lighting currently drives
-    /// this keyboard's LampArray, whatever the saved OpenBlade preference is.
-    /// The service blocks keyboard lighting writes until Windows releases it.
-    /// </summary>
-    public WindowsDynamicLightingOwnership WindowsDynamicLightingOwnership
-    {
-        get => windowsDynamicLightingOwnership;
-        private set
-        {
-            if (windowsDynamicLightingOwnership != value)
-            {
-                SetField(ref windowsDynamicLightingOwnership, value);
-                Notify(nameof(IsLightingOwnedByWindows));
-                Notify(nameof(CanControlLighting));
-                Notify(nameof(CanApplyRz090529KeyColors));
-                Notify(nameof(IsLightingControlUnavailable));
-                Notify(nameof(IsLightingControlUnavailableNoticeVisible));
-                Notify(nameof(LightingControlUnavailableMessage));
-                Notify(nameof(CanSetLightingRefreshRate));
-                Notify(nameof(LightingRefreshRateAvailabilityText));
-                Notify(nameof(CanReapplyChangedSettings));
-            }
-        }
-    }
-
-    public bool IsLightingOwnedByWindows =>
-        WindowsDynamicLightingOwnership == WindowsDynamicLightingOwnership.Owned;
 
     public bool IsWindowsDynamicLightingAvailable =>
         !UsesIndependentLightingControls && Capabilities.LampArrayLightingAccess is not null;
@@ -2445,7 +2463,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     public bool CanControlLighting =>
         CanRequestHardwareControl
         && HasLightingCapability
-        && !IsLightingOwnedByWindows
         && (UsesIndependentLightingControls || !UseWindowsDynamicLighting);
 
     public bool SupportsRz090529KeyColorEditor =>
@@ -2460,21 +2477,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         !CanControlLighting && !IsCheckingLaptopConnection(latestStatus);
 
     public bool IsLightingControlUnavailableNoticeVisible =>
-        IsLightingControlUnavailable
-        && (IsLightingOwnedByWindows || !UseWindowsDynamicLighting);
+        IsLightingControlUnavailable && !UseWindowsDynamicLighting;
 
     public string LightingControlUnavailableMessage
     {
         get
         {
-            if (IsLightingOwnedByWindows)
-            {
-                return WindowsDynamicLightingLampArrays
-                        .Find(latestStatus?.Firmware?.ModelNumber)?.CoversVaporChamber == true
-                    ? TrayText.Get("Windows Dynamic Lighting controls the keyboard and Vapor Chamber. To use OpenBlade lighting, turn it off for this device in Settings > Personalization > Dynamic Lighting.")
-                    : TrayText.Get("Windows Dynamic Lighting controls the keyboard. To use OpenBlade lighting, turn it off for this device in Settings > Personalization > Dynamic Lighting.");
-            }
-
             if (UseWindowsDynamicLighting)
             {
                 return TrayText.Get("Windows Dynamic Lighting manages keyboard lighting.");
@@ -5918,7 +5926,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         IsExperimentalDevice = status.IsExperimentalDevice;
         ExperimentalWritesPaused = status.ExperimentalWritesPaused;
         KeyboardLightingControlMode = status.KeyboardLightingControlMode;
-        WindowsDynamicLightingOwnership = status.WindowsDynamicLightingOwnership;
+        WindowsDynamicLightingAdvisory = status.WindowsDynamicLightingAdvisory;
+        // Control access and the model can change without the advisory.
+        RefreshWindowsDynamicLightingAdvisory();
         Profiles = status.Profiles;
         if (!lightingPowerPolicyEditorDirty)
         {

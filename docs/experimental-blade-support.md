@@ -226,16 +226,15 @@ latency on every model.
 
 ## Windows Dynamic Lighting
 
-The keyboards of Blade 18 (2025), Blade 18 (2024), Blade 16 (2024), Blade 14
-(2025) and Blade 16 (2025) work with Windows Dynamic Lighting. While Windows
-controls the keyboard, OpenBlade pauses its lighting controls for that laptop
-and shows a notice on the Lighting page. On Blade 18 (2025), Windows also
-controls the Vapor Chamber. To use OpenBlade lighting again, turn off Dynamic
-Lighting for the device in **Settings > Personalization > Dynamic Lighting**,
-then choose a lighting setting. Detection on these models has not yet been
-tested on the laptops. See the
-[ownership review](source-reviewed-blade-models.md#windows-dynamic-lighting-ownership)
-for the firmware evidence.
+On Blade 18 (2025), Blade 18 (2024), Blade 16 (2024), Blade 14 (2025) and
+Blade 16 (2025), Windows Dynamic Lighting can override OpenBlade keyboard
+lighting while it is on. OpenBlade then shows a notice on the Lighting page;
+its lighting controls stay available. On Blade 18 (2025) this also covers the
+Vapor chamber. If your OpenBlade lighting doesn't show, turn off **Use Dynamic
+Lighting on my devices** in **Settings > Personalization > Dynamic Lighting**.
+The notice has not yet been checked on these laptops. See the
+[advisory review](source-reviewed-blade-models.md#windows-dynamic-lighting-advisory)
+for the evidence.
 
 ## Send a useful test report
 

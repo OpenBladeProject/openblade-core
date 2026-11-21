@@ -55,11 +55,11 @@ public sealed class ServiceRequestAccessPolicyTests
     [Fact]
     public void WindowsDynamicLightingReportsRequireTheActiveLocalSession()
     {
-        var request = new ReportWindowsDynamicLightingOwnershipRequest(
+        var request = new ReportWindowsDynamicLightingAdvisoryRequest(
             OpenBladeIpc.ProtocolVersion,
             Guid.NewGuid(),
             "RZ09-0529",
-            WindowsDynamicLightingOwnership.Owned);
+            WindowsDynamicLightingAdvisory.MayControl);
         var authority = new FixedSessionAuthority(4);
 
         Assert.Null(ServiceRequestAccessPolicy.GetRejection(

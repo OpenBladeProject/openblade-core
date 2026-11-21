@@ -493,7 +493,7 @@ internal static class Program
                         "Observe",
                         exception),
                     statusWatcher: statusFeed);
-                await using var lampArrayOwnershipServiceClient = new ServiceClient();
+                await using var lampArrayAdvisoryServiceClient = new ServiceClient();
                 var lampArrayObservation = new ServiceLampArrayObservationLoop(
                     statusFeed,
                     new WindowsLampArrayObservationSource(),
@@ -505,8 +505,8 @@ internal static class Program
                         "Observe",
                         exception),
                     settingSource: new WindowsDynamicLightingUserSettingSource(),
-                    ownershipReporter: lampArrayOwnershipServiceClient
-                        .ReportWindowsDynamicLightingOwnershipAsync);
+                    advisoryReporter: lampArrayAdvisoryServiceClient
+                        .ReportWindowsDynamicLightingAdvisoryAsync);
 
                 Task statusFeedTask = statusFeed.RunAsync(lifetime.Token);
                 Task specialKeyBindingsTask = specialKeyBindings.RunAsync(lifetime.Token);

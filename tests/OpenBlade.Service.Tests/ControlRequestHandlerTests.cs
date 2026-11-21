@@ -22,11 +22,11 @@ public sealed class ControlRequestHandlerTests
                 Guid.NewGuid(),
                 1,
                 @"C:\Games\game.exe"),
-            new ReportWindowsDynamicLightingOwnershipRequest(
+            new ReportWindowsDynamicLightingAdvisoryRequest(
                 OpenBladeIpc.ProtocolVersion,
                 Guid.NewGuid(),
                 "RZ09-0529",
-                WindowsDynamicLightingOwnership.Owned),
+                WindowsDynamicLightingAdvisory.MayControl),
             new SetPerformanceOverrideRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(),
                 new ManualOverride<PerformancePreset>(PerformancePreset.Silent, OverrideLifetime.Persistent)),
             new CyclePerformanceShortcutRequest(
@@ -134,7 +134,7 @@ public sealed class ControlRequestHandlerTests
         string[] expectedCalls =
         [
             "GetStatus", "GetStatus", "UpdateProfiles", "ReportApplicationContext",
-            "ReportWindowsDynamicLightingOwnership",
+            "ReportWindowsDynamicLightingAdvisory",
             "SetPerformanceOverride",
             "CyclePerformanceShortcut", "SetFanOverride", "SetBatterySaverFanStop", "SetFanStopMode",
             "SetFanStopSettings", "ResumeAutomaticFanStop", "SetLightingOverride",
@@ -713,13 +713,15 @@ public sealed class ControlRequestHandlerTests
             return Record("ReportApplicationContext");
         }
 
-        public Task<ControlOperationResult> ReportWindowsDynamicLightingOwnershipAsync(
-            ReportWindowsDynamicLightingOwnershipRequest request,
+        public Task<ControlOperationResult> ReportWindowsDynamicLightingAdvisoryAsync(
+            ReportWindowsDynamicLightingAdvisoryRequest request,
+            string reportingUserSid,
             Func<bool> stillControlsSession,
             CancellationToken token)
         {
+            Assert.False(string.IsNullOrWhiteSpace(reportingUserSid));
             Assert.True(stillControlsSession());
-            return Record("ReportWindowsDynamicLightingOwnership");
+            return Record("ReportWindowsDynamicLightingAdvisory");
         }
 
         public Task<ControlOperationResult> SetPerformanceOverrideAsync(ManualOverride<PerformancePreset>? value, CancellationToken token) =>

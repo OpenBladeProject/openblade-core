@@ -8,9 +8,10 @@ namespace OpenBlade.Contracts;
 
 public static class OpenBladeIpc
 {
-    // Protocol 85 adds the Session Agent's Windows Dynamic Lighting ownership
-    // report and the matching status field.
-    public const int ProtocolVersion = 85;
+    // Protocol 87 adds the Session Agent's advisory Windows Dynamic Lighting
+    // report and the matching status field. Protocols 85 and 86 are held by
+    // concurrent pull requests.
+    public const int ProtocolVersion = 87;
     public const int ReadOnlyCompatibilityProtocolVersion = 51;
     public const int MaximumMessageBytes = 64 * 1024;
     public const int MaximumDiagnosticArchiveBytes = 16 * 1024 * 1024;
@@ -286,9 +287,9 @@ public static class IpcMessageCodec
                 && report.Sequence > 0
                 && (report.ExecutablePath is null
                     || ValidApplicationExecutablePath(report.ExecutablePath)),
-            ReportWindowsDynamicLightingOwnershipRequest report =>
-                report.Ownership is WindowsDynamicLightingOwnership.Owned
-                    or WindowsDynamicLightingOwnership.Released
+            ReportWindowsDynamicLightingAdvisoryRequest report =>
+                report.Advisory is WindowsDynamicLightingAdvisory.Off
+                    or WindowsDynamicLightingAdvisory.MayControl
                 && WindowsDynamicLightingLampArrays.Find(report.ModelNumber) is { } profile
                 && string.Equals(profile.ModelNumber, report.ModelNumber, StringComparison.Ordinal),
             SetPerformanceOverrideRequest set =>
@@ -714,9 +715,9 @@ public static class IpcMessageCodec
             throw InvalidStatus("keyboard-lighting control mode is unknown");
         }
 
-        if (!Enum.IsDefined(status.WindowsDynamicLightingOwnership))
+        if (!Enum.IsDefined(status.WindowsDynamicLightingAdvisory))
         {
-            throw InvalidStatus("Windows Dynamic Lighting ownership is unknown");
+            throw InvalidStatus("Windows Dynamic Lighting advisory is unknown");
         }
 
         if (!Enum.IsDefined(status.LightingRefreshRate))
@@ -1388,7 +1389,7 @@ public static class IpcMessageCodec
                     property.Name, "effectiveLaptopBehavior", StringComparison.OrdinalIgnoreCase))
                     .ShouldSerialize = static (_, _) => false;
                 typeInfo.Properties.Single(property => string.Equals(
-                    property.Name, "windowsDynamicLightingOwnership", StringComparison.OrdinalIgnoreCase))
+                    property.Name, "windowsDynamicLightingAdvisory", StringComparison.OrdinalIgnoreCase))
                     .ShouldSerialize = static (_, _) => false;
             }
 

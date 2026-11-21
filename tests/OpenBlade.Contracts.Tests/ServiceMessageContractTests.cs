@@ -9,7 +9,7 @@ public sealed class ServiceMessageContractTests
     [Fact]
     public void ProtocolConstants_AreCurrentAndRetainExactSizeLimit()
     {
-        Assert.Equal(85, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(87, OpenBladeIpc.ProtocolVersion);
         Assert.Equal("OpenBlade.Service.v2", OpenBladeIpc.PipeName);
         Assert.Equal(64 * 1024, OpenBladeIpc.MaximumMessageBytes);
         Assert.Equal(16 * 1024 * 1024, OpenBladeIpc.MaximumDiagnosticArchiveBytes);
@@ -88,7 +88,7 @@ public sealed class ServiceMessageContractTests
             (typeof(ApplyOneShotLaptopControlRequest), "applyOneShotLaptopControl"),
             (typeof(ReportSessionPowerTransitionRequest), "reportSessionPowerTransition"),
             (typeof(ReportApplicationContextRequest), "reportApplicationContext"),
-            (typeof(ReportWindowsDynamicLightingOwnershipRequest), "reportWindowsDynamicLightingOwnership"),
+            (typeof(ReportWindowsDynamicLightingAdvisoryRequest), "reportWindowsDynamicLightingAdvisory"),
             (typeof(ShutdownOpenBladeRequest), "shutdownOpenBlade"));
         AssertDerivedTypes(
             typeof(ServiceServerFrame),
@@ -120,7 +120,7 @@ public sealed class ServiceMessageContractTests
             "ControlAccess", "AllowUntestedFirmware", "AllowExperimentalFeatures",
             "IsExperimentalDevice", "ExperimentalSupportSource", "ExperimentalWritesPaused", "FirmwareCompatibility",
             "DisplayBrightnessHidAvailability", "BatterySaverFanStopStatus", "FanStopStatus",
-            "CpuTuning", "WindowsDynamicLightingOwnership",
+            "CpuTuning", "WindowsDynamicLightingAdvisory",
         ];
 
         Assert.Equal(

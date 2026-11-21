@@ -596,8 +596,8 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
             ["desired.lighting.source"] = status.DesiredState.Lighting.Source.ToString(),
             ["lighting.rendererOwnership"] =
                 status.LightingRendererOwnership.ToString(),
-            ["lighting.windowsDynamicLightingOwnership"] =
-                status.WindowsDynamicLightingOwnership.ToString(),
+            ["lighting.windowsDynamicLightingAdvisory"] =
+                status.WindowsDynamicLightingAdvisory.ToString(),
             ["lighting.alwaysOverrideExternalChanges"] =
                 status.AlwaysOverrideExternalLightingChanges.ToString(),
             ["lighting.refreshRate"] = status.LightingRefreshRate.ToString(),

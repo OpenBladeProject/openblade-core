@@ -73,7 +73,7 @@ public sealed record ControlOperationResult(ControlOperationStatus Status, strin
 [JsonDerivedType(typeof(ShutdownOpenBladeRequest), "shutdownOpenBlade")]
 [JsonDerivedType(typeof(ReportSessionPowerTransitionRequest), "reportSessionPowerTransition")]
 [JsonDerivedType(typeof(ReportApplicationContextRequest), "reportApplicationContext")]
-[JsonDerivedType(typeof(ReportWindowsDynamicLightingOwnershipRequest), "reportWindowsDynamicLightingOwnership")]
+[JsonDerivedType(typeof(ReportWindowsDynamicLightingAdvisoryRequest), "reportWindowsDynamicLightingAdvisory")]
 public abstract record ServiceRequest(int Version, Guid RequestId);
 
 public sealed record SetCoolingPadDemandLeaseRequest(int Version, Guid RequestId, Guid LeaseId, int Rpm, int DurationSeconds)
@@ -141,15 +141,16 @@ public sealed record ReportApplicationContextRequest(
     : ServiceRequest(Version, RequestId);
 
 /// <summary>
-/// Current-user LampArray observation from the Session Agent. It names the
-/// exact model it observed so the service can reject a report for another
-/// laptop. Only Owned and Released are reportable.
+/// Advisory Windows Dynamic Lighting observation from the active session's
+/// Session Agent. It names the exact model it observed so the service can
+/// reject a report for another laptop. Only Off and MayControl are
+/// reportable; the service binds the report to the reporting user's session.
 /// </summary>
-public sealed record ReportWindowsDynamicLightingOwnershipRequest(
+public sealed record ReportWindowsDynamicLightingAdvisoryRequest(
     int Version,
     Guid RequestId,
     string ModelNumber,
-    WindowsDynamicLightingOwnership Ownership)
+    WindowsDynamicLightingAdvisory Advisory)
     : ServiceRequest(Version, RequestId);
 
 public sealed record SetPerformanceOverrideRequest(
@@ -591,9 +592,9 @@ public sealed record ServiceStatusSnapshot(
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public CpuTuningStatus? CpuTuning { get; init; }
 
-    // Current-user observation of the exact model's LampArray. Owned blocks
-    // OpenBlade lighting writes; it is never a write authorization.
-    public WindowsDynamicLightingOwnership WindowsDynamicLightingOwnership { get; init; }
+    // Advisory only: the active user's Windows Dynamic Lighting switch and the
+    // exact model's LampArray presence. It never gates OpenBlade lighting.
+    public WindowsDynamicLightingAdvisory WindowsDynamicLightingAdvisory { get; init; }
 }
 
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "frame")]

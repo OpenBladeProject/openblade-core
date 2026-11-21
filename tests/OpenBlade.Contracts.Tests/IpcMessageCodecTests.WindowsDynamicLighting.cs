@@ -5,20 +5,20 @@ namespace OpenBlade.Contracts.Tests;
 public sealed partial class IpcMessageCodecTests
 {
     [Theory]
-    [InlineData("RZ09-0528", WindowsDynamicLightingOwnership.Owned)]
-    [InlineData("RZ09-0529", WindowsDynamicLightingOwnership.Owned)]
-    [InlineData("RZ09-0509", WindowsDynamicLightingOwnership.Released)]
-    [InlineData("RZ09-0510", WindowsDynamicLightingOwnership.Owned)]
-    [InlineData("RZ09-0530", WindowsDynamicLightingOwnership.Released)]
+    [InlineData("RZ09-0528", WindowsDynamicLightingAdvisory.MayControl)]
+    [InlineData("RZ09-0529", WindowsDynamicLightingAdvisory.MayControl)]
+    [InlineData("RZ09-0509", WindowsDynamicLightingAdvisory.Off)]
+    [InlineData("RZ09-0510", WindowsDynamicLightingAdvisory.MayControl)]
+    [InlineData("RZ09-0530", WindowsDynamicLightingAdvisory.Off)]
     public async Task WindowsDynamicLightingReport_RoundTripsForEachReviewedModel(
         string modelNumber,
-        WindowsDynamicLightingOwnership ownership)
+        WindowsDynamicLightingAdvisory advisory)
     {
-        var expected = new ReportWindowsDynamicLightingOwnershipRequest(
+        var expected = new ReportWindowsDynamicLightingAdvisoryRequest(
             OpenBladeIpc.ProtocolVersion,
             Guid.NewGuid(),
             modelNumber,
-            ownership);
+            advisory);
         using MemoryStream stream = new();
 
         await IpcMessageCodec.WriteRequestAsync(stream, expected, CancellationToken.None);
@@ -26,29 +26,29 @@ public sealed partial class IpcMessageCodecTests
 
         Assert.Equal(
             expected,
-            Assert.IsType<ReportWindowsDynamicLightingOwnershipRequest>(
+            Assert.IsType<ReportWindowsDynamicLightingAdvisoryRequest>(
                 await IpcMessageCodec.ReadRequestAsync(stream, CancellationToken.None)));
     }
 
     [Theory]
     // Unknown is never reported: a failed observation sends nothing.
-    [InlineData("RZ09-0529", WindowsDynamicLightingOwnership.Unknown)]
-    [InlineData("RZ09-0529", (WindowsDynamicLightingOwnership)7)]
-    // SO690 has no LampArray; RZ09-0581's descriptor is unreviewed.
-    [InlineData("RZ09-0483", WindowsDynamicLightingOwnership.Owned)]
-    [InlineData("RZ09-0581", WindowsDynamicLightingOwnership.Owned)]
+    [InlineData("RZ09-0529", WindowsDynamicLightingAdvisory.Unknown)]
+    [InlineData("RZ09-0529", (WindowsDynamicLightingAdvisory)7)]
+    // Neither model is in the reviewed LampArray list.
+    [InlineData("RZ09-0483", WindowsDynamicLightingAdvisory.MayControl)]
+    [InlineData("RZ09-0581", WindowsDynamicLightingAdvisory.MayControl)]
     // Identity is exact: no aliases or case folding on the wire.
-    [InlineData("rz09-0529", WindowsDynamicLightingOwnership.Owned)]
-    [InlineData("", WindowsDynamicLightingOwnership.Owned)]
+    [InlineData("rz09-0529", WindowsDynamicLightingAdvisory.MayControl)]
+    [InlineData("", WindowsDynamicLightingAdvisory.MayControl)]
     public async Task WindowsDynamicLightingReport_RejectsUnreviewedOrInexactReports(
         string modelNumber,
-        WindowsDynamicLightingOwnership ownership)
+        WindowsDynamicLightingAdvisory advisory)
     {
-        var request = new ReportWindowsDynamicLightingOwnershipRequest(
+        var request = new ReportWindowsDynamicLightingAdvisoryRequest(
             OpenBladeIpc.ProtocolVersion,
             Guid.NewGuid(),
             modelNumber,
-            ownership);
+            advisory);
         using MemoryStream stream = new();
 
         await Assert.ThrowsAsync<InvalidDataException>(() =>
@@ -57,20 +57,20 @@ public sealed partial class IpcMessageCodecTests
     }
 
     [Theory]
-    [InlineData(WindowsDynamicLightingOwnership.Unknown)]
-    [InlineData(WindowsDynamicLightingOwnership.Released)]
-    [InlineData(WindowsDynamicLightingOwnership.Owned)]
-    public async Task WindowsDynamicLightingStatus_RoundTripsOwnership(
-        WindowsDynamicLightingOwnership ownership)
+    [InlineData(WindowsDynamicLightingAdvisory.Unknown)]
+    [InlineData(WindowsDynamicLightingAdvisory.Off)]
+    [InlineData(WindowsDynamicLightingAdvisory.MayControl)]
+    public async Task WindowsDynamicLightingStatus_RoundTripsAdvisory(
+        WindowsDynamicLightingAdvisory advisory)
     {
         ServiceStatusSnapshot decoded = await RoundTripStatusAsync(
-            CreateStatus() with { WindowsDynamicLightingOwnership = ownership });
+            CreateStatus() with { WindowsDynamicLightingAdvisory = advisory });
 
-        Assert.Equal(ownership, decoded.WindowsDynamicLightingOwnership);
+        Assert.Equal(advisory, decoded.WindowsDynamicLightingAdvisory);
     }
 
     [Fact]
-    public async Task WindowsDynamicLightingStatus_RejectsUndefinedOwnership()
+    public async Task WindowsDynamicLightingStatus_RejectsUndefinedAdvisory()
     {
         using MemoryStream stream = new();
 
@@ -81,7 +81,7 @@ public sealed partial class IpcMessageCodecTests
                     OpenBladeIpc.ProtocolVersion,
                     CreateStatus() with
                     {
-                        WindowsDynamicLightingOwnership = (WindowsDynamicLightingOwnership)7,
+                        WindowsDynamicLightingAdvisory = (WindowsDynamicLightingAdvisory)7,
                     }),
                 CancellationToken.None));
     }

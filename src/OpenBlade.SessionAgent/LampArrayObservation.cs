@@ -38,7 +38,7 @@ internal sealed record LampArrayObservation(
     internal string ToSanitizedSummary(string modelNumber) => ExactDeviceCount switch
     {
         0 => $"The exact {modelNumber} LampArray is not currently present.",
-        > 1 => $"More than one exact {modelNumber} LampArray is present; ownership stays unconfirmed.",
+        > 1 => $"More than one exact {modelNumber} LampArray is present; the advisory stays unknown.",
         _ =>
             $"The exact {modelNumber} LampArray was observed (lamps={LampCount}, " +
             $"connected={IsConnected}, enabled={IsEnabled}, available={IsAvailable}); " +
@@ -61,7 +61,7 @@ internal interface IDynamicLightingUserSettingSource
 {
     /// <summary>
     /// Reads the setting without changing it. A failed read throws, so the
-    /// caller keeps the last confirmed ownership instead of guessing.
+    /// caller sends no advisory instead of guessing.
     /// </summary>
     DynamicLightingUserSetting Read();
 }
@@ -88,33 +88,36 @@ internal sealed class WindowsDynamicLightingUserSettingSource : IDynamicLighting
     }
 }
 
-internal static class WindowsDynamicLightingOwnershipClassifier
+internal static class WindowsDynamicLightingAdvisoryClassifier
 {
     /// <summary>
     /// Classifies one clean observation. Null means the observation cannot
-    /// confirm either state, so no report is sent and the service keeps the
-    /// last confirmed ownership.
+    /// support either advisory, so no report is sent.
     /// </summary>
-    internal static WindowsDynamicLightingOwnership? Classify(
+    /// <remarks>
+    /// <see cref="LampArrayObservation.IsEnabled"/> is deliberately ignored:
+    /// WinRT documents it as the calling app's own update gate, which is true
+    /// by default, not as a Windows ownership signal. Whether Windows actually
+    /// drives the keyboard is not observable here, so the result only says
+    /// that the global switch is on and the exact array is present.
+    /// </remarks>
+    internal static WindowsDynamicLightingAdvisory? Classify(
         LampArrayObservation observation,
         DynamicLightingUserSetting setting)
     {
         ArgumentNullException.ThrowIfNull(observation);
         if (setting == DynamicLightingUserSetting.Disabled)
         {
-            // Windows returns every LampArray to autonomous firmware control.
-            return WindowsDynamicLightingOwnership.Released;
+            return WindowsDynamicLightingAdvisory.Off;
         }
 
         return observation switch
         {
             // A completed enumeration without the exact array leaves nothing
             // Windows can drive.
-            { ExactDeviceCount: 0 } => WindowsDynamicLightingOwnership.Released,
-            { ExactDeviceCount: > 1 } => null,
-            { IsConnected: not true } => null,
-            { IsEnabled: true } => WindowsDynamicLightingOwnership.Owned,
-            { IsEnabled: false } => WindowsDynamicLightingOwnership.Released,
+            { ExactDeviceCount: 0 } => WindowsDynamicLightingAdvisory.Off,
+            { ExactDeviceCount: 1, IsConnected: true } =>
+                WindowsDynamicLightingAdvisory.MayControl,
             _ => null,
         };
     }
@@ -134,33 +137,34 @@ internal interface ILampArrayObservationSource
 }
 
 internal sealed record LampArraySessionEligibility(
-    DeviceFeatureAccess Access,
     WindowsDynamicLightingLampArrayProfile Profile)
 {
     internal static LampArraySessionEligibility? FromStatus(
         ServiceStatusSnapshot status)
     {
         ArgumentNullException.ThrowIfNull(status);
+        // Only the active session's agent observes: the service accepts
+        // advisory reports from that session alone, and an inactive agent
+        // must not keep retrying a refused report.
         if (!status.DeviceVerified
-            || status.Capabilities?.LampArrayLightingAccess is not
-                (DeviceFeatureAccess.ObservedOnly or DeviceFeatureAccess.ReadWrite)
+            || status.ControlAccess != SessionControlAccess.Active
             || WindowsDynamicLightingLampArrays.Find(status.Firmware?.ModelNumber)
                 is not { } profile)
         {
             return null;
         }
 
-        return new(status.Capabilities.LampArrayLightingAccess.Value, profile);
+        return new(profile);
     }
 }
 
 /// <summary>
-/// Activates read-only Windows LampArray observation only while the service has
-/// verified an exact reviewed LampArray model and advertises the OS-native
-/// interface. Each clean observation that confirms Windows Dynamic Lighting
-/// ownership is reported to the service, which blocks OpenBlade keyboard
-/// writes while Windows owns the keyboard. The loop never calls a LampArray
-/// mutation API.
+/// Activates read-only Windows LampArray observation only while this session
+/// controls a verified laptop from the reviewed LampArray list. The loop
+/// reports the advisory to the service only when it differs from the one the
+/// service publishes, which also resends it after a service restart or user
+/// change. Nothing it reports gates OpenBlade lighting, and the loop never
+/// calls a LampArray mutation API.
 /// </summary>
 internal sealed class ServiceLampArrayObservationLoop
 {
@@ -173,8 +177,8 @@ internal sealed class ServiceLampArrayObservationLoop
     private readonly Action<LampArraySessionEligibility, LampArrayObservation>? observationHandler;
     private readonly Action<Exception>? errorHandler;
     private readonly IDynamicLightingUserSettingSource? settingSource;
-    private readonly Func<ReportWindowsDynamicLightingOwnershipRequest, CancellationToken,
-        Task<ControlOperationResult>>? ownershipReporter;
+    private readonly Func<ReportWindowsDynamicLightingAdvisoryRequest, CancellationToken,
+        Task<ControlOperationResult>>? advisoryReporter;
     private readonly Func<TimeSpan, CancellationToken, Task> delay;
     private readonly Channel<byte> eligibilityChanges = Channel.CreateBounded<byte>(
         new BoundedChannelOptions(1)
@@ -185,6 +189,7 @@ internal sealed class ServiceLampArrayObservationLoop
         });
     private LampArraySessionEligibility? eligibility;
     private LampArrayObservation? lastObservation;
+    private WindowsDynamicLightingAdvisory publishedAdvisory;
     private long eligibilityGeneration;
 
     internal ServiceLampArrayObservationLoop(
@@ -194,17 +199,17 @@ internal sealed class ServiceLampArrayObservationLoop
         Action<Exception>? errorHandler = null,
         Func<TimeSpan, CancellationToken, Task>? delay = null,
         IDynamicLightingUserSettingSource? settingSource = null,
-        Func<ReportWindowsDynamicLightingOwnershipRequest, CancellationToken,
-            Task<ControlOperationResult>>? ownershipReporter = null)
+        Func<ReportWindowsDynamicLightingAdvisoryRequest, CancellationToken,
+            Task<ControlOperationResult>>? advisoryReporter = null)
     {
-        if ((settingSource is null) != (ownershipReporter is null))
+        if ((settingSource is null) != (advisoryReporter is null))
         {
             throw new ArgumentException(
-                "Ownership reporting requires both a setting source and a reporter.");
+                "Advisory reporting requires both a setting source and a reporter.");
         }
 
         this.settingSource = settingSource;
-        this.ownershipReporter = ownershipReporter;
+        this.advisoryReporter = advisoryReporter;
         this.statusWatcher = statusWatcher
             ?? throw new ArgumentNullException(nameof(statusWatcher));
         this.observationSource = observationSource
@@ -243,14 +248,16 @@ internal sealed class ServiceLampArrayObservationLoop
             .WithCancellation(cancellationToken)
             .ConfigureAwait(false))
         {
-            LampArraySessionEligibility? next = update switch
+            ServiceStatusSnapshot? status =
+                (update as ServiceWatchUpdate.Connected)?.Status;
+            lock (sync)
             {
-                ServiceWatchUpdate.Connected connected =>
-                    LampArraySessionEligibility.FromStatus(connected.Status),
-                ServiceWatchUpdate.Reconnecting => null,
-                _ => null,
-            };
-            SetEligibility(next);
+                publishedAdvisory = status?.WindowsDynamicLightingAdvisory
+                    ?? WindowsDynamicLightingAdvisory.Unknown;
+            }
+            SetEligibility(status is null
+                ? null
+                : LampArraySessionEligibility.FromStatus(status));
         }
 
         throw new IOException(
@@ -280,7 +287,7 @@ internal sealed class ServiceLampArrayObservationLoop
                 if (ReadEligibility().Generation == generation)
                 {
                     ReportObservation(current, observation);
-                    await ReportOwnershipAsync(
+                    await ReportAdvisoryAsync(
                             current,
                             generation,
                             observation,
@@ -330,41 +337,50 @@ internal sealed class ServiceLampArrayObservationLoop
         }
     }
 
-    private async Task ReportOwnershipAsync(
+    private async Task ReportAdvisoryAsync(
         LampArraySessionEligibility current,
         long generation,
         LampArrayObservation observation,
         CancellationToken cancellationToken)
     {
-        if (settingSource is null || ownershipReporter is null)
+        if (settingSource is null || advisoryReporter is null)
         {
             return;
         }
 
-        WindowsDynamicLightingOwnership? ownership =
-            WindowsDynamicLightingOwnershipClassifier.Classify(
+        WindowsDynamicLightingAdvisory? advisory =
+            WindowsDynamicLightingAdvisoryClassifier.Classify(
                 observation,
                 settingSource.Read());
-        if (ownership is not { } confirmed
-            || ReadEligibility().Generation != generation)
+        if (advisory is not { } observed)
         {
             return;
         }
 
-        // Every clean observation reports again: the service treats repeats
-        // as idempotent, and a restarted service recovers within one interval.
-        ControlOperationResult result = await ownershipReporter(
-                new ReportWindowsDynamicLightingOwnershipRequest(
+        lock (sync)
+        {
+            // Report only a change. A restarted service or a user change
+            // publishes Unknown, which differs, so the advisory is resent.
+            if (eligibilityGeneration != generation || publishedAdvisory == observed)
+            {
+                return;
+            }
+        }
+
+        ControlOperationResult result = await advisoryReporter(
+                new ReportWindowsDynamicLightingAdvisoryRequest(
                     OpenBladeIpc.ProtocolVersion,
                     Guid.NewGuid(),
                     current.Profile.ModelNumber,
-                    confirmed),
+                    observed),
                 cancellationToken)
             .ConfigureAwait(false);
-        if (result.Status is ControlOperationStatus.Failed)
+        if (result.Status is not ControlOperationStatus.Stored)
         {
-            throw new InvalidOperationException(
-                $"The service could not apply the Windows Dynamic Lighting report: {result.Message}");
+            // A refusal is traced, not retried quickly: the next observation
+            // interval tries again only if the advisory still differs.
+            ReportFailure(new InvalidOperationException(
+                $"The service did not record the Windows Dynamic Lighting advisory: {result.Message}"));
         }
     }
 

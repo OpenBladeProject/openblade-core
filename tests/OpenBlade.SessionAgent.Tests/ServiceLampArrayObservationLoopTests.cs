@@ -10,33 +10,23 @@ namespace OpenBlade.SessionAgent.Tests;
 public sealed class ServiceLampArrayObservationLoopTests
 {
     [Fact]
-    public void EligibilityRequiresVerifiedExactModelAndAdvertisedAccess()
+    public void EligibilityRequiresAVerifiedReviewedModelInTheActiveSession()
     {
-        ServiceStatusSnapshot eligible = Status(DeviceFeatureAccess.ObservedOnly);
+        ServiceStatusSnapshot eligible = Status(access: null);
 
         LampArraySessionEligibility? result =
             LampArraySessionEligibility.FromStatus(eligible);
 
+        // The advisory needs no LampArray capability: listing the model is
+        // the admission, and delegation stays a separate capability.
         Assert.NotNull(result);
-        Assert.Equal(DeviceFeatureAccess.ObservedOnly, result.Access);
-        Assert.NotNull(LampArraySessionEligibility.FromStatus(
-            eligible with
-            {
-                Capabilities = eligible.Capabilities! with
-                {
-                    LampArrayLightingAccess = DeviceFeatureAccess.ReadWrite,
-                },
-            }));
+        Assert.Equal(RazerBladeModelCatalog.Rz090528ModelNumber, result.Profile.ModelNumber);
         Assert.Null(LampArraySessionEligibility.FromStatus(
             eligible with { DeviceVerified = false }));
         Assert.Null(LampArraySessionEligibility.FromStatus(
-            eligible with
-            {
-                Capabilities = eligible.Capabilities! with
-                {
-                    LampArrayLightingAccess = null,
-                },
-            }));
+            eligible with { ControlAccess = SessionControlAccess.InactiveSession }));
+        Assert.Null(LampArraySessionEligibility.FromStatus(
+            eligible with { ControlAccess = SessionControlAccess.NotInteractive }));
         Assert.Null(LampArraySessionEligibility.FromStatus(
             eligible with
             {
@@ -65,7 +55,7 @@ public sealed class ServiceLampArrayObservationLoopTests
         bool coversVaporChamber)
     {
         LampArraySessionEligibility? result = LampArraySessionEligibility.FromStatus(
-            Status(DeviceFeatureAccess.ObservedOnly, modelNumber));
+            Status(access: null, modelNumber));
 
         Assert.NotNull(result);
         Assert.Equal(modelNumber, result.Profile.ModelNumber);
@@ -74,7 +64,7 @@ public sealed class ServiceLampArrayObservationLoopTests
     }
 
     [Theory]
-    // SO690 declares no LampArray; RZ09-0581's descriptor is unreviewed.
+    // Neither model is in the reviewed LampArray list.
     [InlineData("RZ09-0483")]
     [InlineData(RazerBladeModelCatalog.OpenBladeTargetModelNumber)]
     public void EligibilityExcludesModelsWithoutAReviewedLampArray(string modelNumber)
@@ -84,34 +74,38 @@ public sealed class ServiceLampArrayObservationLoopTests
     }
 
     [Theory]
-    [InlineData(nameof(DynamicLightingUserSetting.NotConfigured), true, true, WindowsDynamicLightingOwnership.Owned)]
-    [InlineData(nameof(DynamicLightingUserSetting.Enabled), true, true, WindowsDynamicLightingOwnership.Owned)]
-    [InlineData(nameof(DynamicLightingUserSetting.Enabled), true, false, WindowsDynamicLightingOwnership.Released)]
-    [InlineData(nameof(DynamicLightingUserSetting.Disabled), true, true, WindowsDynamicLightingOwnership.Released)]
+    // IsEnabled is the calling app's own update gate, true by default, so it
+    // never decides the advisory in either direction.
+    [InlineData(nameof(DynamicLightingUserSetting.NotConfigured), true, true, WindowsDynamicLightingAdvisory.MayControl)]
+    [InlineData(nameof(DynamicLightingUserSetting.Enabled), true, true, WindowsDynamicLightingAdvisory.MayControl)]
+    [InlineData(nameof(DynamicLightingUserSetting.Enabled), true, false, WindowsDynamicLightingAdvisory.MayControl)]
+    [InlineData(nameof(DynamicLightingUserSetting.Enabled), true, null, WindowsDynamicLightingAdvisory.MayControl)]
+    [InlineData(nameof(DynamicLightingUserSetting.Disabled), true, true, WindowsDynamicLightingAdvisory.Off)]
     [InlineData(nameof(DynamicLightingUserSetting.Enabled), false, true, null)]
     [InlineData(nameof(DynamicLightingUserSetting.Enabled), null, true, null)]
-    [InlineData(nameof(DynamicLightingUserSetting.Enabled), true, null, null)]
-    public void ClassifierConfirmsOwnershipOnlyFromAConnectedExactArray(
+    public void ClassifierReadsOnlyTheGlobalSwitchAndExactArrayPresence(
         string setting,
         bool? connected,
         bool? enabled,
-        WindowsDynamicLightingOwnership? expected)
+        WindowsDynamicLightingAdvisory? expected)
     {
         LampArrayObservation observation = ApprovedObservation() with
         {
             IsConnected = connected,
             IsEnabled = enabled,
+            // The repository's RZ09-0528 capture recorded IsAvailable false.
+            IsAvailable = false,
         };
 
         Assert.Equal(
             expected,
-            WindowsDynamicLightingOwnershipClassifier.Classify(
+            WindowsDynamicLightingAdvisoryClassifier.Classify(
                 observation,
                 Enum.Parse<DynamicLightingUserSetting>(setting)));
     }
 
     [Fact]
-    public void ClassifierTreatsAMissingArrayAsReleasedAndDuplicatesAsUnconfirmed()
+    public void ClassifierTreatsAMissingArrayAsOffAndDuplicatesAsUnknown()
     {
         LampArrayObservation absent = ApprovedObservation() with
         {
@@ -121,17 +115,16 @@ public sealed class ServiceLampArrayObservationLoopTests
         };
 
         Assert.Equal(
-            WindowsDynamicLightingOwnership.Released,
-            WindowsDynamicLightingOwnershipClassifier.Classify(
+            WindowsDynamicLightingAdvisory.Off,
+            WindowsDynamicLightingAdvisoryClassifier.Classify(
                 absent,
                 DynamicLightingUserSetting.Enabled));
-        Assert.Null(WindowsDynamicLightingOwnershipClassifier.Classify(
+        Assert.Null(WindowsDynamicLightingAdvisoryClassifier.Classify(
             ApprovedObservation() with { ExactDeviceCount = 2 },
             DynamicLightingUserSetting.Enabled));
-        // The global Windows switch releases every array, duplicates included.
         Assert.Equal(
-            WindowsDynamicLightingOwnership.Released,
-            WindowsDynamicLightingOwnershipClassifier.Classify(
+            WindowsDynamicLightingAdvisory.Off,
+            WindowsDynamicLightingAdvisoryClassifier.Classify(
                 ApprovedObservation() with { ExactDeviceCount = 2 },
                 DynamicLightingUserSetting.Disabled));
     }
@@ -142,7 +135,7 @@ public sealed class ServiceLampArrayObservationLoopTests
     [InlineData("RZ09-0509", 0x02B8)]
     [InlineData("RZ09-0510", 0x02B7)]
     [InlineData("RZ09-0530", 0x02C5)]
-    public async Task ObservationReportsOwnershipForTheExactModelAndProductId(
+    public async Task ObservationReportsTheAdvisoryForTheExactModelAndProductId(
         string modelNumber,
         int productId)
     {
@@ -154,18 +147,121 @@ public sealed class ServiceLampArrayObservationLoopTests
             source,
             delay: InfiniteDelayAsync,
             settingSource: new Setting(DynamicLightingUserSetting.NotConfigured),
-            ownershipReporter: reporter.ReportAsync);
+            advisoryReporter: reporter.ReportAsync);
         using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         Task running = loop.RunAsync(cancellation.Token);
 
-        watcher.PublishConnected(Status(DeviceFeatureAccess.ObservedOnly, modelNumber));
+        watcher.PublishConnected(Status(access: null, modelNumber));
         await WaitUntilAsync(() => !reporter.Requests.IsEmpty, cancellation.Token);
 
-        ReportWindowsDynamicLightingOwnershipRequest request = Assert.Single(reporter.Requests);
+        ReportWindowsDynamicLightingAdvisoryRequest request = Assert.Single(reporter.Requests);
         Assert.Equal(productId, source.LastProductId);
         Assert.Equal(modelNumber, request.ModelNumber);
-        Assert.Equal(WindowsDynamicLightingOwnership.Owned, request.Ownership);
+        Assert.Equal(WindowsDynamicLightingAdvisory.MayControl, request.Advisory);
         Assert.Equal(OpenBladeIpc.ProtocolVersion, request.Version);
+
+        await cancellation.CancelAsync();
+        await running;
+    }
+
+    [Fact]
+    public async Task ObservationReportsOnlyWhenTheServiceAdvisoryDiffers()
+    {
+        var watcher = new Watcher();
+        var source = new Source(ApprovedObservation());
+        var reporter = new Reporter();
+        using var tick = new SemaphoreSlim(0);
+        var loop = new ServiceLampArrayObservationLoop(
+            watcher,
+            source,
+            delay: (_, token) => tick.WaitAsync(token),
+            settingSource: new Setting(DynamicLightingUserSetting.Enabled),
+            advisoryReporter: reporter.ReportAsync);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        Task running = loop.RunAsync(cancellation.Token);
+        ServiceStatusSnapshot status = Status(access: null, "RZ09-0529");
+
+        watcher.PublishConnected(status);
+        await WaitUntilAsync(() => reporter.Requests.Count == 1, cancellation.Token);
+
+        // The service now publishes the reported advisory: no repeat report.
+        watcher.PublishConnected(status with
+        {
+            Revision = 2,
+            WindowsDynamicLightingAdvisory = WindowsDynamicLightingAdvisory.MayControl,
+        });
+        await Task.Delay(30, cancellation.Token);
+        tick.Release();
+        await WaitUntilAsync(() => source.CallCount == 2, cancellation.Token);
+        await Task.Delay(30, cancellation.Token);
+        Assert.Single(reporter.Requests);
+
+        // A restarted service or another user publishes Unknown again.
+        watcher.PublishConnected(status with { Revision = 3 });
+        await Task.Delay(30, cancellation.Token);
+        tick.Release();
+        await WaitUntilAsync(() => reporter.Requests.Count == 2, cancellation.Token);
+
+        await cancellation.CancelAsync();
+        await running;
+    }
+
+    [Fact]
+    public async Task InactiveSessionAgentNeitherObservesNorReports()
+    {
+        var watcher = new Watcher();
+        var source = new Source(ApprovedObservation());
+        var reporter = new Reporter();
+        var loop = new ServiceLampArrayObservationLoop(
+            watcher,
+            source,
+            delay: static (_, _) => Task.CompletedTask,
+            settingSource: new Setting(DynamicLightingUserSetting.Enabled),
+            advisoryReporter: reporter.ReportAsync);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        Task running = loop.RunAsync(cancellation.Token);
+
+        watcher.PublishConnected(Status(access: null, "RZ09-0529") with
+        {
+            ControlAccess = SessionControlAccess.InactiveSession,
+        });
+        await Task.Delay(50, cancellation.Token);
+
+        Assert.Equal(0, source.CallCount);
+        Assert.Empty(reporter.Requests);
+
+        await cancellation.CancelAsync();
+        await running;
+    }
+
+    [Fact]
+    public async Task RefusedReportIsTracedWithoutAFastRetry()
+    {
+        var watcher = new Watcher();
+        var source = new Source(ApprovedObservation());
+        var reporter = new Reporter(ControlOperationStatus.Blocked);
+        var failures = new ConcurrentQueue<Exception>();
+        var delays = new ConcurrentQueue<TimeSpan>();
+        var loop = new ServiceLampArrayObservationLoop(
+            watcher,
+            source,
+            errorHandler: failures.Enqueue,
+            delay: (interval, token) =>
+            {
+                delays.Enqueue(interval);
+                return Task.Delay(Timeout.InfiniteTimeSpan, token);
+            },
+            settingSource: new Setting(DynamicLightingUserSetting.Enabled),
+            advisoryReporter: reporter.ReportAsync);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        Task running = loop.RunAsync(cancellation.Token);
+
+        watcher.PublishConnected(Status(access: null, "RZ09-0529"));
+        await WaitUntilAsync(() => !delays.IsEmpty, cancellation.Token);
+
+        Assert.Single(reporter.Requests);
+        Assert.IsType<InvalidOperationException>(Assert.Single(failures));
+        Assert.Equal(TimeSpan.FromSeconds(30), Assert.Single(delays));
 
         await cancellation.CancelAsync();
         await running;
@@ -186,11 +282,11 @@ public sealed class ServiceLampArrayObservationLoopTests
             settingSource: new Setting(
                 DynamicLightingUserSetting.Enabled,
                 new UnauthorizedAccessException()),
-            ownershipReporter: reporter.ReportAsync);
+            advisoryReporter: reporter.ReportAsync);
         using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         Task running = loop.RunAsync(cancellation.Token);
 
-        watcher.PublishConnected(Status(DeviceFeatureAccess.ObservedOnly, "RZ09-0529"));
+        watcher.PublishConnected(Status(access: null, "RZ09-0529"));
         await WaitUntilAsync(() => !failures.IsEmpty, cancellation.Token);
 
         Assert.Empty(reporter.Requests);
@@ -201,14 +297,14 @@ public sealed class ServiceLampArrayObservationLoopTests
     }
 
     [Fact]
-    public void OwnershipReportingRequiresBothTheSettingSourceAndReporter()
+    public void AdvisoryReportingRequiresBothTheSettingSourceAndReporter()
     {
         var reporter = new Reporter();
 
         Assert.Throws<ArgumentException>(() => new ServiceLampArrayObservationLoop(
             new Watcher(),
             new Source(ApprovedObservation()),
-            ownershipReporter: reporter.ReportAsync));
+            advisoryReporter: reporter.ReportAsync));
         Assert.Throws<ArgumentException>(() => new ServiceLampArrayObservationLoop(
             new Watcher(),
             new Source(ApprovedObservation()),
@@ -216,7 +312,7 @@ public sealed class ServiceLampArrayObservationLoopTests
     }
 
     [Fact]
-    public void ProgramReportsOwnershipThroughItsOwnServiceClient()
+    public void ProgramReportsTheAdvisoryThroughItsOwnServiceClient()
     {
         string program = ReadRepositoryFile(
             "src",
@@ -224,7 +320,7 @@ public sealed class ServiceLampArrayObservationLoopTests
             "Program.cs");
 
         Assert.Contains(
-            "await using var lampArrayOwnershipServiceClient = new ServiceClient();",
+            "await using var lampArrayAdvisoryServiceClient = new ServiceClient();",
             program,
             StringComparison.Ordinal);
         Assert.Contains(
@@ -232,7 +328,7 @@ public sealed class ServiceLampArrayObservationLoopTests
             program,
             StringComparison.Ordinal);
         Assert.Contains(
-            ".ReportWindowsDynamicLightingOwnershipAsync",
+            ".ReportWindowsDynamicLightingAdvisoryAsync",
             program,
             StringComparison.Ordinal);
     }
@@ -316,7 +412,7 @@ public sealed class ServiceLampArrayObservationLoopTests
     }
 
     [Fact]
-    public async Task UnverifiedOrUnadvertisedStatusNeverEnumeratesLampArrays()
+    public async Task UnverifiedOrUnlistedStatusNeverEnumeratesLampArrays()
     {
         var watcher = new Watcher();
         var source = new Source(ApprovedObservation());
@@ -329,7 +425,8 @@ public sealed class ServiceLampArrayObservationLoopTests
 
         watcher.PublishConnected(
             Status(DeviceFeatureAccess.ObservedOnly) with { DeviceVerified = false });
-        watcher.PublishConnected(Status(access: null));
+        watcher.PublishConnected(
+            Status(DeviceFeatureAccess.ObservedOnly, "RZ09-0483"));
         await Task.Delay(30, cancellation.Token);
 
         Assert.Equal(0, source.CallCount);
@@ -476,19 +573,17 @@ public sealed class ServiceLampArrayObservationLoopTests
             failure is null ? value : throw failure;
     }
 
-    private sealed class Reporter
+    private sealed class Reporter(ControlOperationStatus result = ControlOperationStatus.Stored)
     {
-        internal ConcurrentQueue<ReportWindowsDynamicLightingOwnershipRequest> Requests { get; } = new();
+        internal ConcurrentQueue<ReportWindowsDynamicLightingAdvisoryRequest> Requests { get; } = new();
 
         internal Task<ControlOperationResult> ReportAsync(
-            ReportWindowsDynamicLightingOwnershipRequest request,
+            ReportWindowsDynamicLightingAdvisoryRequest request,
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
             Requests.Enqueue(request);
-            return Task.FromResult(new ControlOperationResult(
-                ControlOperationStatus.Stored,
-                "Stored"));
+            return Task.FromResult(new ControlOperationResult(result, result.ToString()));
         }
     }
 

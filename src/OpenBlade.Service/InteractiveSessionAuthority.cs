@@ -108,7 +108,7 @@ public static class ServiceRequestAccessPolicy
 
         if (request is ReportSessionPowerTransitionRequest
             or ReportApplicationContextRequest
-            or ReportWindowsDynamicLightingOwnershipRequest)
+            or ReportWindowsDynamicLightingAdvisoryRequest)
         {
             return new ServiceRequestAccessDecision(GetAccess(client, authority),
                 IsActiveLocalInteractiveClient(client, authority)

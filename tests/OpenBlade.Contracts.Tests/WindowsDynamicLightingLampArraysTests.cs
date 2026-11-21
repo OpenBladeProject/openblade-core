@@ -5,22 +5,20 @@ namespace OpenBlade.Contracts.Tests;
 public sealed class WindowsDynamicLightingLampArraysTests
 {
     [Fact]
-    public void CatalogListsOnlyTheReviewedLampArrayDescriptors()
+    public void CatalogListsOnlyTheReviewedLampArrayModels()
     {
-        // Each row was re-read from the decoded, hash-pinned MCU image.
+        // docs/source-reviewed-blade-models.md cites each model's descriptor evidence.
         Assert.Equal(
             [
-                ("RZ09-0528", (ushort)0x02C6, "SO6110 MCU 1.09.00", 0xDD24, false),
-                ("RZ09-0529", (ushort)0x02C7, "KI8110 MCU 1.07.00", 0xEE30, true),
-                ("RZ09-0509", (ushort)0x02B8, "KI8100 MCU 1.01.00", 0xEDE8, false),
-                ("RZ09-0510", (ushort)0x02B7, "SO6100 MCU 1.03.00", 0x1023C, false),
-                ("RZ09-0530", (ushort)0x02C5, "PI4110 MCU 1.04.00", 0xC30C, false),
+                ("RZ09-0528", (ushort)0x02C6, false),
+                ("RZ09-0529", (ushort)0x02C7, true),
+                ("RZ09-0509", (ushort)0x02B8, false),
+                ("RZ09-0510", (ushort)0x02B7, false),
+                ("RZ09-0530", (ushort)0x02C5, false),
             ],
             WindowsDynamicLightingLampArrays.All.Select(profile => (
                 profile.ModelNumber,
                 profile.ProductId,
-                profile.FirmwareImage,
-                profile.DescriptorOffset,
                 profile.CoversVaporChamber)));
     }
 

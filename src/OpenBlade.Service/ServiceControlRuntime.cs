@@ -120,8 +120,9 @@ public interface IServiceControlRuntime
             ControlOperationStatus.Blocked,
             "Application profiles are unavailable."));
 
-    Task<ControlOperationResult> ReportWindowsDynamicLightingOwnershipAsync(
-        ReportWindowsDynamicLightingOwnershipRequest request,
+    Task<ControlOperationResult> ReportWindowsDynamicLightingAdvisoryAsync(
+        ReportWindowsDynamicLightingAdvisoryRequest request,
+        string reportingUserSid,
         Func<bool> stillControlsSession,
         CancellationToken token) => Task.FromResult(new ControlOperationResult(
             ControlOperationStatus.Blocked,
@@ -1389,6 +1390,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 }
                 activeUserStillControlsSession = stillControlsSession;
                 Volatile.Write(ref activeUserSid, userSid.Value);
+                ForgetWindowsDynamicLightingObservationForOtherUser(userSid.Value);
                 await coolingPadControl.SetUserAsync(userSid.Value, cancellationToken).ConfigureAwait(false);
                 PublishCoolingPadStatus();
                 Volatile.Write(
@@ -4309,10 +4311,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         await operationGate.WaitAsync(token).ConfigureAwait(false);
         try
         {
-            // This is a saved preference, so only the saved delegation blocks it.
-            if (enabled
-                && preferences.KeyboardLightingControlMode
-                    == KeyboardLightingControlMode.WindowsDynamicLighting)
+            if (enabled && IsKeyboardLightingDelegated)
             {
                 return new ControlOperationResult(
                     ControlOperationStatus.Blocked,
@@ -18970,12 +18969,9 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         };
     }
 
-    // Either the user delegated the keyboard, or the Session Agent observed
-    // that Windows Dynamic Lighting currently drives this exact LampArray.
     private bool IsKeyboardLightingDelegated =>
         preferences.KeyboardLightingControlMode
-            == KeyboardLightingControlMode.WindowsDynamicLighting
-        || WindowsDynamicLightingOwnsLampArray;
+            == KeyboardLightingControlMode.WindowsDynamicLighting;
 
     private LightingRefreshRate EffectiveLightingRefreshRate(
         DeviceCapabilities? capabilities) =>
@@ -21438,8 +21434,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                     && !deviceProvider.IsExperimentalDevice
                     && deviceProvider.GetCachedDeviceVerificationDiagnostics()
                         .LatestAttemptFoundUnsupportedLaptop,
-                WindowsDynamicLightingOwnership =
-                    PublishedWindowsDynamicLightingOwnership(updated),
+                WindowsDynamicLightingAdvisory =
+                    PublishedWindowsDynamicLightingAdvisory(updated),
             };
             candidate = ApplyConfigurationQuarantineAdvisory(ProjectFanStopStatus(ProjectBatterySaverFanStopStatus(candidate)));
             if (!previous.ExternalChanges.Contains(DeviceSubsystem.Fans)
