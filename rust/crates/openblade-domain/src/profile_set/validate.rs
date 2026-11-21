@@ -198,20 +198,7 @@ impl Validator {
                 "Manual fan curves require confirmed full external power on this backend.",
             );
         }
-        // Managed `FanControlPowerPolicy.IsAvailable`.
-        let available = match source {
-            PowerSource::PluggedIn => matches!(
-                fans,
-                Fan::AUTOMATIC | Fan::FIXED | Fan::MANUAL_CURVE | Fan::MAXIMUM
-            ),
-            PowerSource::UsbC => {
-                fans == Fan::AUTOMATIC
-                    || policy.supports_manual_fans_on_limited_power
-                        && matches!(fans, Fan::FIXED | Fan::MANUAL_CURVE | Fan::MAXIMUM)
-            }
-            PowerSource::Battery => matches!(fans, Fan::AUTOMATIC | Fan::FIXED | Fan::MAXIMUM),
-        };
-        if !available {
+        if !fans.available_on(source, policy.supports_manual_fans_on_limited_power) {
             return invalid("The selected fan mode is unavailable on this power source.");
         }
         if !policy.supported_fan_modes.contains(&fans) {

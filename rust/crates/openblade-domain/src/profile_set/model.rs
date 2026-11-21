@@ -69,6 +69,28 @@ wire_enum!(FanMode {
     STOP = 4 => "Stop",
 });
 
+impl FanMode {
+    /// Managed `FanControlPowerPolicy.IsAvailable` (`FanControlPowerPolicy.cs:6-22`).
+    pub fn available_on(
+        self,
+        source: PowerSource,
+        supports_manual_fans_on_limited_power: bool,
+    ) -> bool {
+        match source {
+            PowerSource::PluggedIn => matches!(
+                self,
+                Self::AUTOMATIC | Self::FIXED | Self::MANUAL_CURVE | Self::MAXIMUM
+            ),
+            PowerSource::UsbC => {
+                self == Self::AUTOMATIC
+                    || supports_manual_fans_on_limited_power
+                        && matches!(self, Self::FIXED | Self::MANUAL_CURVE | Self::MAXIMUM)
+            }
+            PowerSource::Battery => matches!(self, Self::AUTOMATIC | Self::FIXED | Self::MAXIMUM),
+        }
+    }
+}
+
 wire_enum!(LightingEffect {
     OFF = 0 => "Off",
     STATIC = 1 => "Static",

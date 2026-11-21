@@ -112,6 +112,22 @@ impl<S: AsRef<str> + for<'a> From<&'a str>> ApplicationContext<S> {
         self.active.take().is_some()
     }
 
+    /// The active pair while `rules` still retain it, as `UpdateProfiles`
+    /// would leave it. A reader that cannot show every rule change passed
+    /// through [`Self::update`] finds no profile here, rather than the
+    /// overrides of another rule that now holds the active id.
+    pub fn retained<'r>(
+        &self,
+        rules: impl IntoIterator<Item = Rule<'r>>,
+        same_path: SamePath,
+    ) -> Option<Active<'_>> {
+        let active = self.active()?;
+        rules
+            .into_iter()
+            .any(|rule| rule.retains(active, same_path))
+            .then_some(active)
+    }
+
     /// `UpdateProfiles` (`ProfileAutomationState.cs:130-143`): the active
     /// pair survives only while an enabled rule with the same id still holds
     /// the reported path. It never selects a rule; the next report does.
@@ -121,13 +137,7 @@ impl<S: AsRef<str> + for<'a> From<&'a str>> ApplicationContext<S> {
         rules: impl IntoIterator<Item = Rule<'r>>,
         same_path: SamePath,
     ) -> bool {
-        let Some(active) = self.active() else {
-            return false;
-        };
-        if rules
-            .into_iter()
-            .any(|rule| rule.retains(active, same_path))
-        {
+        if self.active.is_none() || self.retained(rules, same_path).is_some() {
             return false;
         }
         self.clear()
@@ -139,7 +149,8 @@ impl<S: AsRef<str> + for<'a> From<&'a str>> ApplicationContext<S> {
 pub struct Intent<'a, D, B> {
     /// `ActiveApplicationProfileId`.
     pub application_profile_id: Option<&'a str>,
-    /// `ResolveAutomationDesired(confirmed)`.
+    /// `ResolveAutomationDesired(confirmed)`, whose profile layer is
+    /// `profile_set::application::desired_intent`.
     pub desired: D,
     /// `EffectiveLaptopBehavior`.
     pub laptop_behavior: B,
@@ -219,6 +230,18 @@ mod tests {
         assert!(!context.update([rule("a", true)], ascii));
         context.report([rule("a", true)], Some(r"C:\Game.exe"), ascii);
         assert!(!context.update([rule("b", true), rule("a", true)], ascii));
+        // A reader that skipped the update sees no rule under a reused id.
+        let replaced = Rule {
+            executable_path: r"C:\Other.exe",
+            ..rule("a", true)
+        };
+        assert_eq!(context.retained([replaced], ascii), None);
+        assert_eq!(
+            context
+                .retained([rule("a", true)], ascii)
+                .map(|active| active.id),
+            Some("a")
+        );
         let moved = Rule {
             executable_path: r"C:\Other.exe",
             ..rule("a", true)

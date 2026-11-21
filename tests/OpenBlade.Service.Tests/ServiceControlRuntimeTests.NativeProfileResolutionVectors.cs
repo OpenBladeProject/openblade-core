@@ -21,6 +21,13 @@ public sealed partial class ServiceControlRuntimeTests
     // the predicate holds on a verified, writable device.
     private const string NativeIntentAppliedMessage = "Profiles were stored.";
 
+    // The recorder's own marker, not a managed value: on ExternalUnknown,
+    // Resolve builds its base from confirmed firmware state, which belongs to
+    // the host and is not recorded.
+    private const string NativeConfirmedStateConvention = "confirmedState";
+
+    private static readonly ConfirmedDeviceState NativeUnknownConfirmedState = new(null, null, null, null);
+
     [Fact]
     public async Task NativeProfileResolutionVectors_MatchManagedAutomationState()
     {
@@ -96,6 +103,8 @@ public sealed partial class ServiceControlRuntimeTests
     [InlineData("""{"comment":"","base":{},"cases":[{"name":"x","power":"0","steps":[]}],"intent":[]}""")]
     [InlineData("""{"comment":"","base":{},"cases":[],"intent":[{"name":"x","report":null}]}""")]
     [InlineData("""{"comment":"","base":{},"cases":[],"intent":[{"name":"x","report":null,"update":[],"power":0}]}""")]
+    [InlineData("""{"comment":"","base":{},"cases":[{"name":"x","power":0,"steps":[{"power":4}]}],"intent":[]}""")]
+    [InlineData("""{"comment":"","base":{},"cases":[{"name":"x","power":0,"projectUnclassified":1,"steps":[]}],"intent":[]}""")]
     public void NativeProfileResolutionVectors_RejectMalformedOrUnknownRows(string text) =>
         Assert.Throws<InvalidDataException>(() => ReadNativeResolutionVectors(text));
 
@@ -106,8 +115,15 @@ public sealed partial class ServiceControlRuntimeTests
         JsonObject root = Shape(JsonNode.Parse(text), ["comment", "base", "cases", "intent"], ["comment", "base", "cases", "intent"]);
         foreach (JsonNode? entry in Rows(root["cases"]))
         {
-            JsonObject vector = Shape(entry, ["name", "power", "profiles", "steps", "expect"], ["name", "power", "steps"]);
+            JsonObject vector = Shape(
+                entry, ["name", "power", "projectUnclassified", "profiles", "steps", "expect"], ["name", "power", "steps"]);
             Power(vector["power"]);
+            if (vector.ContainsKey("projectUnclassified")
+                && vector["projectUnclassified"]?.GetValueKind() is not (JsonValueKind.True or JsonValueKind.False))
+            {
+                throw new InvalidDataException("A projection is true or false.");
+            }
+
             Edits(vector["profiles"]);
             foreach (JsonNode? step in Rows(vector["steps"]))
             {
@@ -257,6 +273,9 @@ public sealed partial class ServiceControlRuntimeTests
         JsonNode defaults, JsonObject vector, ProfileSetValidator validator)
     {
         string name = vector["name"]!.GetValue<string>();
+        // ProjectUnclassifiedIntent is the runtime's; ResolveAutomationDesired
+        // hands it to Resolve as the observed source, as this does.
+        bool projectUnclassified = vector["projectUnclassified"]?.GetValue<bool>() == true;
         var state = new ProfileAutomationState(
             ReadNativeResolutionProfiles(defaults, vector["profiles"], validator, name),
             new BatteryAutomationPreferences(),
@@ -279,34 +298,56 @@ public sealed partial class ServiceControlRuntimeTests
                 result["changed"] = state.ChangePowerSource((PowerSource)step["power"]!.GetValue<int>());
             }
 
-            ProjectNativeResolution(state, result);
+            ProjectNativeResolution(state, projectUnclassified, result);
             observed.Add(result);
         }
 
         return observed;
     }
 
-    // The profile EffectiveLaptopBehavior and Resolve both start from:
-    // ApplicationProfileResolution.Apply(GetActiveProfile(), GetApplicationOverride()).
-    // Both inputs are private, so they are read as the getter reads them.
-    private static void ProjectNativeResolution(ProfileAutomationState state, JsonObject result)
+    // "profile" is ApplicationProfileResolution.Apply over the base and the
+    // override Resolve selects; "intent" is Resolve itself with no manual
+    // override and no confirmed firmware state, less the temporary full
+    // charge no case sets. Both private inputs are read as the getters read
+    // them.
+    private static void ProjectNativeResolution(
+        ProfileAutomationState state, bool projectUnclassified, JsonObject result)
     {
         static object? Private(ProfileAutomationState state, string method) =>
             typeof(ProfileAutomationState)
                 .GetMethod(method, BindingFlags.Instance | BindingFlags.NonPublic)!
                 .Invoke(state, null);
 
+        var applicationOverride = (ApplicationPowerProfileOverride?)Private(state, "GetApplicationOverride");
         var baseline = (PowerProfile?)Private(state, "GetActiveProfile");
-        PowerProfile? desired = baseline is null
-            ? null
-            : ApplicationProfileResolution.Apply(
-                baseline,
-                (ApplicationPowerProfileOverride?)Private(state, "GetApplicationOverride"));
         Assert.Equal(
-            desired?.EffectiveLaptopBehavior ?? LaptopBehaviorProfileSettings.Unconfigured(),
+            baseline is null
+                ? LaptopBehaviorProfileSettings.Unconfigured()
+                : ApplicationProfileResolution.Apply(baseline, applicationOverride).EffectiveLaptopBehavior,
             state.EffectiveLaptopBehavior);
+        PowerSource source = projectUnclassified ? PowerSource.ExternalUnknown : state.PowerSource;
         result["activeId"] = state.ActiveApplicationProfileId?.ToString();
-        result["desired"] = JsonSerializer.SerializeToNode(desired, ProfileStore.SerializerOptions);
+        if (source == PowerSource.ExternalUnknown)
+        {
+            result["profile"] = NativeConfirmedStateConvention;
+            result["intent"] = NativeConfirmedStateConvention;
+        }
+        else
+        {
+            result["profile"] = JsonSerializer.SerializeToNode(
+                ApplicationProfileResolution.Apply(state.Profiles.ForPowerSource(source), applicationOverride),
+                ProfileStore.SerializerOptions);
+            DesiredDeviceState desired = state.Resolve(
+                NativeUnknownConfirmedState,
+                supportsManualFansOnLimitedPower: true,
+                projectUnclassified ? PowerSource.ExternalUnknown : null);
+            JsonObject intent = JsonSerializer.SerializeToNode(desired, ProfileStore.SerializerOptions)!.AsObject();
+            JsonObject battery = intent["battery"]!.AsObject();
+            Assert.False(battery["temporaryFullCharge"]!.GetValue<bool>());
+            battery.Remove("temporaryFullCharge");
+            result["intent"] = intent;
+        }
+
         result["laptopBehavior"] = JsonSerializer.SerializeToNode(
             state.EffectiveLaptopBehavior, ProfileStore.SerializerOptions);
     }

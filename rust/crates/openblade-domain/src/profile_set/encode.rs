@@ -536,6 +536,66 @@ pub fn profile_set(value: &ProfileSet) -> Json {
     ])
 }
 
+fn provenance(value: crate::automation::Provenance) -> Json {
+    use crate::automation::Provenance;
+    // Managed `SettingValueSource` order.
+    int(match value {
+        Provenance::ConfirmedFirmwareState => 0,
+        Provenance::PowerProfile => 1,
+        Provenance::ApplicationProfile => 2,
+        Provenance::TemporaryOverride => 3,
+        Provenance::PersistentOverride => 4,
+    })
+}
+
+fn setting(value: Json, source: crate::automation::Provenance) -> Json {
+    object([("value", value), ("source", provenance(source))])
+}
+
+/// Managed `DesiredDeviceState`'s members as `Resolve` fills them from the
+/// profile layer, without the battery's temporary full charge. Lighting
+/// with no value, which managed takes from confirmed state, is `null`.
+pub fn desired_intent(value: &super::application::DesiredIntent<'_>) -> Json {
+    object([
+        (
+            "performance",
+            setting(int(value.performance.value.0), value.performance.source),
+        ),
+        ("fans", setting(int(value.fans.value.0), value.fans.source)),
+        (
+            "lighting",
+            setting(
+                optional(value.lighting.value, lighting),
+                value.lighting.source,
+            ),
+        ),
+        (
+            "battery",
+            object([
+                (
+                    "configuredPolicy",
+                    optional(value.battery_policy, |policy| {
+                        object([("chargeLimitPercent", int(policy.charge_limit_percent))])
+                    }),
+                ),
+                (
+                    "protectionEnabled",
+                    Json::Bool(value.battery_protection_enabled),
+                ),
+            ]),
+        ),
+        (
+            "customPerformance",
+            optional(value.custom_performance, custom_performance),
+        ),
+        (
+            "gpuClockTuning",
+            optional(value.gpu_clock_tuning, gpu_clock_tuning),
+        ),
+        ("fanControl", fan_control(&value.fan_control)),
+    ])
+}
+
 /// `profiles.json` at the current schema, byte for byte as `ProfileStore`
 /// writes it.
 pub fn profile_document(schema: i32, value: &ProfileSet) -> Vec<u8> {
