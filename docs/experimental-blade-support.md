@@ -45,7 +45,7 @@ are listed in the [complete fan review](source-reviewed-thermal-967.md).
 
 | Laptop | Model number | Controls |
 | --- | --- | --- |
-| Blade 14 (2025) | `RZ09-0530` | Balanced, Silent, Maximum Power, battery modes, Custom levels, fixed fans and curves, keyboard and logo lighting, 50–100% charge limits, optional [THX audio](thx-audio.md) with a supported installed stack |
+| Blade 14 (2025) | `RZ09-0530` | Balanced, Silent, Maximum Power, battery modes, Custom levels, fixed fans and curves, keyboard and logo lighting, 50–100% charge limits, experimental temporary full charge, optional [THX audio](thx-audio.md) with a supported installed stack |
 | Blade 16 (2023) | `RZ09-0483` | Performance and Custom levels with CPU Boost, HyperBoost with or without the cooling pad, fixed and maximum fans, host curves in Balanced/Silent/Performance/Custom on confirmed full-power AC, keyboard and logo lighting, 50–100% charge limits |
 | Blade 14 (2023) | `RZ09-0482` | Balanced, Silent, Custom levels, HyperBoost with or without the cooling pad, fixed fans, host curves in Balanced/Silent/Custom on confirmed full-power AC, keyboard and logo lighting, 50–100% charge limits |
 | Blade 18 (2023) | `RZ09-0484` | Performance and Custom levels, including every CPU Boost/GPU level combination and High/High, linked fixed fans in Balanced/Silent, fan curves in Balanced/Silent and Custom Maximum Fans, keyboard and logo lighting, 50–100% charge limits |
@@ -62,7 +62,7 @@ temperature holds 5000 RPM. Physical curve validation remains pending; see the
 
 | Laptop | Model number | Controls |
 | --- | --- | --- |
-| Blade 18 (2025) | `RZ09-0529` | Balanced, Silent, Turbo, Maximum Power, Battery Saver, Custom Low/Medium/High, Automatic, fixed fans and curves, charge limits 50–80% in 5% steps or protection off |
+| Blade 18 (2025) | `RZ09-0529` | Balanced, Silent, Turbo, Maximum Power, Battery Saver, Custom Low/Medium/High, Automatic, fixed fans and curves, charge limits 50–80% in 5% steps or protection off, experimental temporary full charge |
 | Blade 14 (2024) | `RZ09-0508` | Balanced, Silent, Turbo, Custom Low/Medium/High with CPU Boost, Automatic, fixed fans and curves, Maximum Fans, charge limits 50–80% in 5% steps or protection off |
 | Blade 16 (2024) | `RZ09-0510` | Balanced, Silent, Turbo, Custom Low/Medium/High with CPU Boost, Automatic, fixed fans and curves, Maximum Fans, charge limits 50–80% in 5% steps or protection off |
 | Blade 18 (2024) | `RZ09-0509` | Balanced, Silent, Turbo, Custom Low/Medium/High, Automatic, fixed fans and curves, Maximum Fans, charge limits 50–80% in 5% steps or protection off |
@@ -72,6 +72,8 @@ and Blade 16 (2024) additionally offer CPU Boost.
 
 All four offer Balanced on battery. The other listed presets require confirmed
 full-power AC, except Battery Saver on Blade 18 (2025), which is a battery mode.
+Temporary full charge on Blade 18 (2025) works like Blade 18 (2023): it needs an
+active charge limit, and other Power Mode Control options must be off.
 Fixed speeds and curves follow the [per-preset fan review](source-reviewed-thermal-967.md).
 See the [exact-model admission guide](source-reviewed-blade-models.md) for the other controls and evidence.
 
@@ -211,9 +213,11 @@ Battery Saver and Battery Balanced on battery power.
   Blade 18 (2023) remains observed-only: turn HyperBoost off in Synapse before
   changing performance.
 - Charge limits use 1% steps; 100% turns protection off. The Blade 15 does not
-  support charge limits. Blade 18 also offers experimental temporary full charge
-  after valid state readback. Enabling it requires an active charge limit; other
-  Power Mode Control options must be off.
+  support charge limits. Blade 18 and Blade 14 (2025) also offer experimental
+  temporary full charge after valid state readback. Enabling it requires an active charge limit; other
+  Power Mode Control options must be off. On Blade 18 (2025) and Blade 14 (2025), Synapse can
+  turn on local dimming, one of those options, to follow Windows HDR. If Synapse is running,
+  turn off Windows HDR, close Synapse, then retry.
 
 Battery changes on these profiles and the seven newer limiter profiles share a
 bounded confirmation window: only GETs returning the exact pre-write raw byte
@@ -255,8 +259,9 @@ check, choose the setting again; the previous request is not replayed. For
 lighting, select a lighting setting or change the active profile's lighting.
 Failed checks keep controls paused.
 
-A thermal-only pause does not require unrelated charge-limit readings on models
-without temporary full charge. Pending battery operations still require their own
+A thermal-only pause does not require unrelated charge-limit or temporary full
+charge readings. Only a temporary full charge change that may have been sent needs
+a fresh reading of that setting. Pending battery operations still require their own
 confirmed readback.
 
 The [implementation reference](experimental-blade-reference.md) contains protocol

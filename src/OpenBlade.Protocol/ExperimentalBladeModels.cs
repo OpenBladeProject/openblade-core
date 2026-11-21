@@ -92,6 +92,7 @@ internal static class ExperimentalBladeModels
                 new("ChargeLimits50To80Step5AndOff", model.SupportsBatteryProtection
                     ? "SynapseSourceBackedWithoutPhysicalValidation" : "NotEstablished", sources),
                 new("MaximumFans", thermal.SupportsMaximumFans ? "SynapseSourceBackedWithoutPhysicalValidation" : "NotEstablished", sources),
+                .. TemporaryFullChargeEvidenceFor(model),
                 new("AdapterPowerClassification", "SynapseSourceBacked", sources),
                 .. OrdinaryThermalEvidenceFor(model),
                 .. FanStopEvidenceFor(model),
@@ -259,11 +260,28 @@ internal static class ExperimentalBladeModels
                 new(model.ProductId == 0x0255 ? "CreatorPerformanceRaw2" : "MaximumPowerPerformanceRaw2",
                     "SynapseSourceBackedWithoutPhysicalValidation", exactSources)];
         }
-        features = [.. features, .. FanStopEvidenceFor(model), .. OrdinaryThermalEvidenceFor(model), .. CpuVoltageEvidenceFor(model)];
+        features = [.. features, .. FanStopEvidenceFor(model), .. OrdinaryThermalEvidenceFor(model), .. CpuVoltageEvidenceFor(model),
+            .. TemporaryFullChargeEvidenceFor(model)];
         return model.AdapterPowerEvidenceSource is { } source
             ? [.. features, new("AdapterPowerClassification", "SynapseSourceBacked", [source])]
             : features;
     }
+
+    // Exact product 709 and 711 command and middleware pins; see
+    // evidence/source-reviewed-blades/2026-11-19-temporary-full-charge-rz09-0529-0530.json.
+    private static IEnumerable<ExperimentalFeatureEvidence> TemporaryFullChargeEvidenceFor(ExperimentalBladeModel model) =>
+        model.ProductId switch
+        {
+            0x02C5 => [new("TemporaryFullCharge", "SynapseSourceBackedWithoutPhysicalValidation", [
+                "https://apps.razer.com/synapse/products/709/mw/rzDevice25.d532642d8de7a9cfcf5d.js;SHA256=9109826D790FEB8597BBFC115231066CA66E2C480ED9769BB85F3F91188AAD0A",
+                "https://apps.razer.com/synapse/products/709/mw/6737.d34a3f9a638030f35c6a.js;SHA256=4758FB7E2D8296564FB9CE971F6DCE3D580ED5407EEF07A69E1C362A04FF28C0",
+                "https://apps.razer.com/synapse/products/709/mw/main.bb0dd1873a58a987c63a.js;SHA256=CC8E0EFD2B37F1ED5AF6C8CC8C3AB1327B9502927DC05F20EE7465486AB006F1"])],
+            0x02C7 => [new("TemporaryFullCharge", "SynapseSourceBackedWithoutPhysicalValidation", [
+                "https://apps.razer.com/synapse/products/711/mw/rzDevice25.c8da1ead63e6cf002d32.js;SHA256=02C55B78B3EABDCC104D725C64C94CADE500FA78D29713ACE5FEF520D243EBB9",
+                "https://apps.razer.com/synapse/products/711/mw/6737.c63928b0e4fd1b7673b4.js;SHA256=3EF16C0BEB5E8399CDEE51E9995A717E029CDF2125324735440B68A34D2D7B88",
+                "https://apps.razer.com/synapse/products/711/mw/main.1f8e0c604f19af3ea24c.js;SHA256=C8C0C794D6D01867CD9C6020869808428B81CB98AE297E46EC700F3B935BFF7E"])],
+            _ => [],
+        };
 
     private static IEnumerable<ExperimentalFeatureEvidence> CpuVoltageEvidenceFor(ExperimentalBladeModel model) =>
         model.ProductId is not (0x02B6 or 0x029D or 0x02C5) ? [] :
@@ -602,6 +620,9 @@ internal sealed class ExperimentalFeaturesPolicy(ExperimentalBladeModel model)
         System.Collections.Immutable.ImmutableDictionary<PerformancePreset, FanSpeedRange>.Empty;
     private int recoveryRequired;
     private ExperimentalRecoveryScope recoveryScope = ExperimentalRecoveryScope.All;
+    private bool temporaryFullChargeRecoveryRequired;
+    private int temporaryFullChargeReadUnavailable;
+    private int temporaryFullChargeLastKnownActive;
 
     // Observed capability metadata only; never a saved fan target or write admission.
     internal IReadOnlyDictionary<PerformancePreset, FanSpeedRange> ConfirmedFanRanges => Volatile.Read(ref confirmedFanRanges);
@@ -624,7 +645,53 @@ internal sealed class ExperimentalFeaturesPolicy(ExperimentalBladeModel model)
         }
     }
 
-    internal void RequireRecovery(ExperimentalRecoveryScope scope = ExperimentalRecoveryScope.All)
+    /// <summary>
+    /// A possibly submitted 07/0F temporary full charge write must be reconciled
+    /// from a real 07/8F reading. No other pause depends on that query.
+    /// </summary>
+    internal bool TemporaryFullChargeRecoveryRequired
+    {
+        get
+        {
+            lock (sync)
+            {
+                return temporaryFullChargeRecoveryRequired;
+            }
+        }
+    }
+
+    /// <summary>
+    /// The latest 07/8F read failed or returned an undecodable mask. Charge-limit
+    /// writes and optional recovery reads then keep their limiter-only behaviour
+    /// instead of repeating a query that may end the session.
+    /// </summary>
+    internal bool TemporaryFullChargeReadUnavailable =>
+        Volatile.Read(ref temporaryFullChargeReadUnavailable) != 0;
+
+    // An unreadable read keeps the previous known value: it is evidence of
+    // nothing, and the limiter must not be written while OpenBlade last saw
+    // (or confirmed writing) an active override.
+    internal void RecordTemporaryFullChargeRead(bool readable, bool active = false)
+    {
+        if (readable)
+        {
+            Volatile.Write(ref temporaryFullChargeLastKnownActive, active ? 1 : 0);
+        }
+        Volatile.Write(ref temporaryFullChargeReadUnavailable, readable ? 0 : 1);
+    }
+
+    internal void RecordTemporaryFullChargeWrite(bool enabled) =>
+        Volatile.Write(ref temporaryFullChargeLastKnownActive, enabled ? 1 : 0);
+
+    /// <summary>
+    /// The latest decoded 07/8F mask or confirmed 07/0F write reported an active
+    /// override. False when the firmware has never answered 07/8F.
+    /// </summary>
+    internal bool TemporaryFullChargeLastKnownActive =>
+        Volatile.Read(ref temporaryFullChargeLastKnownActive) != 0;
+
+    internal void RequireRecovery(ExperimentalRecoveryScope scope = ExperimentalRecoveryScope.All,
+        bool temporaryFullCharge = false)
     {
         lock (sync)
         {
@@ -635,6 +702,8 @@ internal sealed class ExperimentalFeaturesPolicy(ExperimentalBladeModel model)
                 or ExperimentalRecoveryScope.LightingFieldsOnly ? scope : ExperimentalRecoveryScope.All;
             recoveryScope = !IsPaused ? requested
                 : recoveryScope == requested ? recoveryScope : ExperimentalRecoveryScope.All;
+            temporaryFullChargeRecoveryRequired = temporaryFullCharge
+                || IsPaused && temporaryFullChargeRecoveryRequired;
             Volatile.Write(ref recoveryRequired, 1);
         }
     }
@@ -645,6 +714,7 @@ internal sealed class ExperimentalFeaturesPolicy(ExperimentalBladeModel model)
         lock (sync)
         {
             recoveryScope = ExperimentalRecoveryScope.All;
+            temporaryFullChargeRecoveryRequired = false;
             Volatile.Write(ref recoveryRequired, 0);
         }
     }

@@ -151,7 +151,8 @@ public sealed class ExperimentalEvidenceCatalogTests
                     Assert.Equal("Supported", snapshot.SupportStatus);
                     Assert.Equal("Pending", snapshot.PhysicalValidation);
                     Assert.True(feature.Feature.StartsWith("ManualFanRange", StringComparison.Ordinal)
-                        || feature.Feature is "FixedAndCurveFanWrites" or "CreatorPerformanceRaw2" or "MaximumPowerPerformanceRaw2");
+                        || feature.Feature is "FixedAndCurveFanWrites" or "CreatorPerformanceRaw2" or "MaximumPowerPerformanceRaw2"
+                        || feature.Feature == "TemporaryFullCharge" && model.ProductId == 0x02C5);
                     Assert.All(feature.Sources, source =>
                     {
                         Assert.StartsWith($"https://apps.razer.com/synapse/products/{model.ProductId}/", source);

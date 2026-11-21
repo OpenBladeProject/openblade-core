@@ -47,7 +47,11 @@ internal sealed partial class ExperimentalBladePort(
             {
                 _ = await ReadStartupAnimationCoreAsync(cancellationToken).ConfigureAwait(false);
             }
+            // Only a possibly submitted 07/0F override write needs the real 07/8F
+            // flag to recover. Fan, performance, lighting and limiter pauses keep
+            // the reads they had before the override was admitted.
             ConfirmedBatteryState? recoveredTemporaryBattery = SupportsTemporaryFullChargeQuery
+                && policy.TemporaryFullChargeRecoveryRequired
                 ? await ReadTemporaryFullChargeRecoveryAsync(cancellationToken).ConfigureAwait(false) : null;
             ProductionPerformanceFanState performance = await ReadPerformanceAsync(cancellationToken).ConfigureAwait(false);
             if (performance.Performance is null && !performance.HyperBoostActive || performance.Fans is null)
@@ -56,8 +60,7 @@ internal sealed partial class ExperimentalBladePort(
             }
             // A thermal-only fault does not require a limiter GET that older firmware
             // may not implement. Leave those fields unknown rather than poisoning
-            // the fresh recovery session with an unrelated optional query. Override-
-            // capable backends still read their real policy and flag above.
+            // the fresh recovery session with an unrelated optional query.
             ConfirmedBatteryState? battery = recoveredTemporaryBattery ?? (model.SupportsBatteryProtection
                 && policy.RecoveryScope == ExperimentalRecoveryScope.All
                 ? await ReadBatteryAsync(cancellationToken).ConfigureAwait(false) : null);
@@ -68,14 +71,22 @@ internal sealed partial class ExperimentalBladePort(
                     && policy.RecoveryScope == ExperimentalRecoveryScope.All
                     ? await ReadRecoveryLightingStateAsync(cancellationToken).ConfigureAwait(false)
                     : (null, null);
+            IndependentLightingSettings? independentLighting = SupportsIndependentLighting(model)
+                && policy.RecoveryScope != ExperimentalRecoveryScope.ThermalOnly
+                ? await ReadIndependentLightingCoreAsync(cancellationToken).ConfigureAwait(false) : null;
+            if (recoveredTemporaryBattery is null && battery is not null && SupportsTemporaryFullChargeQuery
+                && !policy.TemporaryFullChargeReadUnavailable)
+            {
+                // Optional and last: an unreadable flag stays unknown, never Off.
+                bool? active = await TryReadTemporaryFullChargeActiveAsync(cancellationToken).ConfigureAwait(false);
+                battery = WithTemporaryFullCharge(battery, active);
+            }
             return new(performance.Performance, performance.Fans, battery, lighting)
             {
                 HyperBoostActive = performance.HyperBoostActive,
                 CustomPerformance = performance.CustomPerformance,
                 LogoLighting = logo,
-                IndependentLighting = SupportsIndependentLighting(model)
-                    && policy.RecoveryScope != ExperimentalRecoveryScope.ThermalOnly
-                    ? await ReadIndependentLightingCoreAsync(cancellationToken).ConfigureAwait(false) : null,
+                IndependentLighting = independentLighting,
             };
         }
         finally
@@ -149,10 +160,13 @@ internal sealed partial class ExperimentalBladePort(
                 : enabled && model.ThermalPolicy is not null ? new HashSet<FanMode> { FanMode.Automatic } : [],
             CreateExperimentalLightingEffects(model, enabled),
             enabled ? GetExperimentalChargeLimits(model) : new HashSet<int>(),
-            enabled && GetExperimentalChargeLimits(model).Count > 0, enabled && model.ProductId == 0x02A0)
+            enabled && GetExperimentalChargeLimits(model).Count > 0, enabled && SupportsTemporaryFullCharge(model))
         {
             SupportsOrdinaryThermalControlOnUnclassifiedExternalPower = enabled
                 && OrdinaryThermalPowerAdmission.SupportsProduct(model.ProductId),
+            // The experimental limiter GET/SET (07/92, 07/12) never depended on
+            // 07/8F, which these models admit later from their own sources.
+            ChargePolicyIndependentOfTemporaryFullCharge = SupportsTemporaryFullCharge(model),
             CustomPerformance = enabled && SupportsExperimentalCustom(model) ? CreateCustomCapabilities(model) : null,
             FanSpeedRange = enabled ? GetExperimentalFanRange(model) : null,
             FanSpeedRangesByPerformancePreset = enabled
@@ -232,8 +246,13 @@ internal sealed partial class ExperimentalBladePort(
     // 0D/02 parsers/setters at 671 chars 2958/3448 and 672 chars 61214/61706;
     // and 0D/07 parsers/setters at 671 chars 7082/7516 and 672 chars 65356/65792.
     // Their 07/0F helpers/public methods are at 671 chars 20394/140294 and 672 chars 52955/141017.
+    // Product 711 rzDevice25.c8da1ead63e6cf002d32.js
+    // (SHA-256 02C55B78B3EABDCC104D725C64C94CADE500FA78D29713ACE5FEF520D243EBB9) has the same
+    // 07/0F helper/public method at chars 48088/141805, and product 709 rzDevice25.d532642d8de7a9cfcf5d.js
+    // (SHA-256 9109826D790FEB8597BBFC115231066CA66E2C480ED9769BB85F3F91188AAD0A) at chars 52965/142479;
+    // temporary full charge relies on them.
     // These paths accept status ACKs and parse optional payload; every relaxed caller keeps an independent GET.
-    private static bool UsesSourceBackedSetAckContract(ExperimentalBladeModel model) =>
+    internal static bool UsesSourceBackedSetAckContract(ExperimentalBladeModel model) =>
         model.ThermalPolicy is not null || model.ProductId is 0x029F or 0x02A0 or 0x0255 or 0x02C5;
 
     private static IReadOnlySet<PerformancePreset> CreatePerformancePresets(ExperimentalBladeModel model)
@@ -640,7 +659,7 @@ internal sealed partial class ExperimentalBladePort(
                 && OrdinaryThermalPowerAdmission.ExternalPresence(capturePowerSource())
                 && OrdinaryThermalPowerAdmission.IsOrdinaryExperimentalSet(operation, commandClass, commandId, arguments);
         }
-        // The exact 02A0 full-charge bit changes battery policy, not thermal mode.
+        // The admitted full-charge bit changes battery policy, not thermal mode.
         // It retains general submission admission and its own shared-mask guard.
         if (IsTemporaryFullChargeSet(operation, commandClass, commandId, arguments))
         {
@@ -690,7 +709,8 @@ internal sealed partial class ExperimentalBladePort(
             policy.RequireRecovery(operation is "Performance" or "CustomPerformance" or "Fans"
                 or "HyperBoost" or "HyperBoostRestore"
                 ? ExperimentalRecoveryScope.ThermalOnly : operation == "IndependentLighting"
-                    ? ExperimentalRecoveryScope.LightingFieldsOnly : ExperimentalRecoveryScope.All);
+                    ? ExperimentalRecoveryScope.LightingFieldsOnly : ExperimentalRecoveryScope.All,
+                temporaryFullCharge: operation == "TemporaryFullCharge");
         }
         policy.Record(operation, "Failure", submitted ? "Indeterminate" : "NotApplied", submitted,
             failure: exception.GetType().Name);

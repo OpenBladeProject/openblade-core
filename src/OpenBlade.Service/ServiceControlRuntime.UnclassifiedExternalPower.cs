@@ -130,13 +130,20 @@ public sealed partial class ServiceControlRuntime
         }
         ServiceStatusSnapshot current = GetStatus();
         if (current.ConfirmedState?.Battery is not { } battery
-            || current.Capabilities?.SupportsTemporaryFullCharge == true && battery.TemporaryFullCharge is null)
+            || battery.TemporaryFullCharge is null && current.Capabilities is { } capabilities
+                && !BatteryOperationPlanner.UnknownOverrideAdmitsPolicy(capabilities))
         {
             return null;
         }
+        bool protectionEnabled = Automation.BatteryProtectionOverride ?? battery.ProtectionEnabled;
+        // An unreadable override keeps OpenBlade's own intent, as
+        // ResolveFullChargeOverride does, so a limiter change cannot be staged
+        // while OpenBlade itself turned the override on. Protection off cannot
+        // carry the override, so that intent is stale there.
         return new(Automation.BatteryPolicy,
-            Automation.BatteryProtectionOverride ?? battery.ProtectionEnabled,
-            battery.TemporaryFullCharge == true);
+            protectionEnabled,
+            protectionEnabled
+                && (battery.TemporaryFullCharge ?? Automation.DesiredBattery.TemporaryFullCharge));
     }
 
     private bool HasFreshDirectControlPowerContext()

@@ -7,6 +7,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- Add experimental temporary full charge on Blade 14 (2025, RZ09-0530) and Blade 18 (2025, RZ09-0529), using the same checks as Blade 18 (2023): an active charge limit, other Power Mode Control options off, and readback of both the setting and the charge limit. If Synapse is running and Windows HDR is on, turn off Windows HDR and close Synapse before you turn it on. On all three laptops, temporary full charge can be turned on whenever Windows reports the charger connected, and the charge limit stays available when the temporary full charge state can't be read, unless OpenBlade last saw it on. ([#987](https://github.com/OpenBladeProject/openblade-core/pull/987))
 - Add an Automatic fan mode for the cooling pad with Quiet, Balanced and Performance profiles, following the CPU, the GPU or both the way Razer Synapse does. ([#983](https://github.com/OpenBladeProject/openblade-core/pull/983))
 
 ### Changed

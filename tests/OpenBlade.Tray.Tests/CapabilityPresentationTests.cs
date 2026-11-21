@@ -3748,7 +3748,9 @@ public sealed class CapabilityPresentationTests
     }
 
     [Fact]
-    public async Task UnknownTemporaryStateDisablesEveryBatteryMutation()
+    // Only a confirmed active override blocks the limiter in the tray. The
+    // service still refuses where a backend's limiter depends on the override.
+    public async Task UnknownTemporaryStateDisablesOnlyOverrideMutation()
     {
         var client = new PresentationClient();
         await using var viewModel = new MainViewModel(client, new ImmediateDispatcher());
@@ -3764,12 +3766,13 @@ public sealed class CapabilityPresentationTests
                 SupportsBatteryProtectionOff: true,
                 SupportsTemporaryFullCharge: true),
             confirmedBattery: new ConfirmedBatteryState(true, 80, null)));
-        await WaitUntilAsync(() => viewModel.ChargeLimitOptions.Count > 0);
+        await WaitUntilAsync(() => viewModel.ChargeLimitOptions.Count > 0
+            && viewModel.BatterySourceLabel.Contains("state unavailable", StringComparison.Ordinal));
 
-        Assert.False(viewModel.SetChargeLimitCommand.CanExecute(80));
-        Assert.False(viewModel.ToggleBatteryProtectionCommand.CanExecute(null));
+        Assert.True(viewModel.SetChargeLimitCommand.CanExecute(80));
+        Assert.True(viewModel.ToggleBatteryProtectionCommand.CanExecute(null));
         Assert.False(viewModel.ToggleFullChargeCommand.CanExecute(true));
-        Assert.Contains("state unavailable", viewModel.BatterySourceLabel);
+        Assert.False(viewModel.ToggleFullChargeCommand.CanExecute(false));
     }
 
     [Fact]

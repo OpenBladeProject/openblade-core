@@ -218,6 +218,15 @@ public sealed record DeviceCapabilities(
     /// </summary>
     public bool SupportsDirectManualFanTransitions { get; init; }
 
+    /// <summary>
+    /// The exact backend reads and writes its charge limiter without the
+    /// temporary full charge flag. An unknown flag then blocks only the flag's
+    /// own enable and cancel; a confirmed active flag still blocks the limiter.
+    /// This is service-side admission metadata and is never sent over IPC.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool ChargePolicyIndependentOfTemporaryFullCharge { get; init; }
+
     public bool SupportsBatterySaverFanStop { get; init; }
 
     /// <summary>Attended exact-model evidence exists. This is display metadata,
