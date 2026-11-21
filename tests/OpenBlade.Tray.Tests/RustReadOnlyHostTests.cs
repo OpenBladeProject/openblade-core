@@ -295,7 +295,7 @@ public sealed partial class RustReadOnlyHostTests
                 Assert.True(JsonNode.DeepEquals(expectedProfile, JsonNode.Parse(actual[0])));
                 Assert.True(JsonNode.DeepEquals(expectedPreferences, JsonNode.Parse(actual[1])));
                 using JsonDocument marker = JsonDocument.Parse(actual[2]);
-                Assert.Equal(25, marker.RootElement.GetProperty("schemaVersion").GetInt32());
+                Assert.Equal(CurrentProfileSchemaVersion, marker.RootElement.GetProperty("schemaVersion").GetInt32());
                 Assert.Equal(Convert.ToHexString(SHA256.HashData(actual[0])),
                     marker.RootElement.GetProperty("profileSha256").GetString());
                 Assert.Equal(Convert.ToHexString(SHA256.HashData(actual[1])),

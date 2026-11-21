@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Security.AccessControl;
 using System.Security.Cryptography;
@@ -153,10 +154,16 @@ public sealed partial class RustReadOnlyHostTests
         Assert.Contains("(os error 32)", diagnostic, StringComparison.Ordinal);
     }
 
+    // ProfileStore.CurrentSchemaVersion is internal to the Service.
+    private static readonly int CurrentProfileSchemaVersion = (int)typeof(ProfileStore)
+        .GetField("CurrentSchemaVersion", BindingFlags.NonPublic | BindingFlags.Static)!
+        .GetRawConstantValue()!;
+
     private static void AssertCommitHashes(byte[][] aggregate)
     {
         using JsonDocument marker = JsonDocument.Parse(aggregate[2]);
-        Assert.Equal(25, marker.RootElement.GetProperty("schemaVersion").GetInt32());
+        // The host commits at the managed store's current schema.
+        Assert.Equal(CurrentProfileSchemaVersion, marker.RootElement.GetProperty("schemaVersion").GetInt32());
         Assert.Equal(Convert.ToHexString(SHA256.HashData(aggregate[0])),
             marker.RootElement.GetProperty("profileSha256").GetString());
         Assert.Equal(Convert.ToHexString(SHA256.HashData(aggregate[1])),
