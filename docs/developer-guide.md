@@ -396,8 +396,8 @@ runs:
   the product names the other settings that are on. Developer validation reports
   the refusal as `EnableFailed` or `CancelFailed`. Captured full-charge writes
   remain limited to bare `00` and `04`.
-- Source-reviewed Maximum Fans on `029F` and `02A0` uses upstream-backed `00` and
-  `02` writes. Its fresh guard refuses CPU boost, temporary full charge, or
+- Source-reviewed Maximum Fans on `029F`, `029D` and `02A0` uses `00` and `02`
+  writes backed by upstream or exact Synapse source. Its fresh guard refuses CPU boost, temporary full charge, or
   local dimming bits, so replacing the byte cannot clear another enabled option.
   This does not admit combined writes or a local dimming control.
 
@@ -412,6 +412,36 @@ When you admit a model, check its panel:
   evidence, for example its mini-LED resolution reading. Don't clear the bit
   automatically, since it may be a real display setting. Any other combined
   payload needs capture and reversible validation first.
+
+Current admissions:
+
+- RZ09-0510 (`02B7`) and RZ09-0509 (`02B8`) offer Clear. The panel gate is
+  Synapse's `getSKUHardwareConfiguration` `0D/8F` (`[1,13,143]`): bit `0x02` is
+  `Mini_LED_Resolution`, and Synapse shows its toggle only for
+  `Mini_LED_Supported`. OpenBlade reads `0D/8F` once per device to decide whether
+  to offer Clear and keeps a successful reading; a failed read is remembered and
+  leaves the control unoffered, and a later failure never withdraws an earlier
+  confirmed reading. Every Clear reads `0D/8F` again. A reply with a bit outside
+  the reviewed `0x07` mask is rejected. The Clear then reads `07/8F` through the
+  shared decoder, writes `current & 0x04` once and requires an exact readback.
+  A possible submission without that readback pauses experimental writes with a
+  local dimming obligation: recovery reads `07/8F` and reports the real bit, and
+  a failed read keeps the pause. The write is never replayed. Clear sends only
+  `00` or `04` after the guard refused `0x01` and `0x02`, so it skips the thermal
+  external-power gate. The optional `07/8F` state read is isolated: a failure
+  leaves only local dimming unknown and later state reads skip it until a Clear
+  or recovery reads `07/8F` again. The shared rules are in `LocalDimmingProtocol`.
+- Bit `0x01` is a firmware flag OpenBlade never writes; it is not the Custom CPU
+  Boost level. With `0x0A` (Maximum Fans and local dimming), Clear refuses
+  because of Maximum Fans, and the Maximum Fans and Balanced writes refuse
+  because of local dimming. Turn off Maximum Fans or local dimming in Synapse.
+- RZ09-0530 (`02C5`), RZ09-0528 (`02C6`) and RZ09-0581 (`02E0`) report local
+  dimming as `ObservedOnly`: Synapse sets `0x08` to follow Windows HDR on these
+  models.
+- Turning local dimming on is not admitted on any model.
+
+Source pins are in
+[the observed-feature review](../evidence/source-reviewed-blades/2026-11-20-observed-features-and-local-dimming.json).
 
 ### RZ09-0581 lighting cadence validator
 

@@ -99,10 +99,11 @@ internal sealed record HyperBoostOwnershipJournal(
     internal bool IsWellFormed =>
         Enum.IsDefined(State)
         // A Custom base is restored together with its saved CPU/GPU levels. Older builds
-        // reject a Custom base as malformed and fail closed.
+        // reject a Custom or Turbo base as malformed and fail closed.
         && (BaseMode is (PerformancePreset.Silent
                 or PerformancePreset.Balanced
-                or PerformancePreset.Performance)
+                or PerformancePreset.Performance
+                or PerformancePreset.Turbo)
             || BaseMode == PerformancePreset.Custom
                 && RestoreIntent is { CustomPerformance: not null })
         && RestoreIntent is { IsWellFormed: true }

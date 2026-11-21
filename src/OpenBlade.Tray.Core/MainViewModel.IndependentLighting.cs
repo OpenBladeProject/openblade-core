@@ -241,6 +241,11 @@ public sealed partial class MainViewModel
         bool backendChanged = presentedIndependentLighting != independent;
         presentedIndependentLighting = independent;
         NotifyComputed(nameof(UsesIndependentLightingControls), independent);
+        // These getters read UsesIndependentLightingControls, which an editor
+        // switch changes without a status update.
+        NotifyComputed(nameof(IsWindowsDynamicLightingAvailable), IsWindowsDynamicLightingAvailable);
+        NotifyComputed(nameof(ShowOpenBladeKeyboardLightingControls), ShowOpenBladeKeyboardLightingControls);
+        NotifyComputed(nameof(CanControlLighting), CanControlLighting);
         NotifyComputed(nameof(IsKeyboardEffectSelectionVisible), IsKeyboardEffectSelectionVisible);
         NotifyComputed(nameof(ShowLightingEffectLabControls), ShowLightingEffectLabControls);
         NotifyComputed(nameof(LightingBrightnessMinimum), LightingBrightnessMinimum);

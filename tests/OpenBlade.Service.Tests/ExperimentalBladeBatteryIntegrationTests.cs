@@ -591,6 +591,9 @@ public sealed partial class ExperimentalBladeBatteryIntegrationTests
     {
         private byte[] request = [];
         internal byte Raw { get; set; }
+        internal byte SkuHardwareConfiguration { get; set; }
+        internal byte PowerModeControl { get; set; }
+        internal List<byte> PowerModeControlWrites { get; } = [];
         internal (byte Class, byte Id)? RejectedGetter { get; set; }
         internal int GetterFailureKind { get; set; }
         internal int GetterFailureAfter { get; set; }
@@ -611,6 +614,7 @@ public sealed partial class ExperimentalBladeBatteryIntegrationTests
         internal bool FailNextSetterResponse { get; set; }
         internal bool FailNextLightingSetterResponse { get; set; }
         internal Action? AfterLogoRead { get; set; }
+        internal Action? AfterPowerModeControlRead { get; set; }
         internal List<(byte Class, byte Id)> Commands { get; } = [];
         internal ConcurrentQueue<LightingTraffic> LightingTraffic { get; } = new();
         internal int LightingFrameGetRequests { get; private set; }
@@ -620,11 +624,11 @@ public sealed partial class ExperimentalBladeBatteryIntegrationTests
         internal TaskCompletionSource ReleaseLightingRow { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal List<byte> Setters { get; } = [];
-        // Shared Power Mode Control mask: 07/0F stores it and 07/8F returns it,
-        // unless MaskReply supplies the nth (1-based) read.
-        internal byte Mask { get; set; }
+        // Temporary-full-charge tests name the shared Power Mode Control mask Mask: 07/0F
+        // stores it and 07/8F returns it, unless MaskReply supplies the nth (1-based) read.
+        internal byte Mask { get => PowerModeControl; set => PowerModeControl = value; }
         internal Func<int, byte>? MaskReply { get; set; }
-        internal List<byte> MaskWrites { get; } = [];
+        internal List<byte> MaskWrites => PowerModeControlWrites;
         private int maskReads;
         internal List<byte> CustomReadProfiles { get; } = [];
         private int lightingRows;
@@ -684,8 +688,8 @@ public sealed partial class ExperimentalBladeBatteryIntegrationTests
                 }
                 if (request[7] == 0x07 && request[8] == 0x0F)
                 {
-                    Mask = request[9];
-                    MaskWrites.Add(Mask);
+                    PowerModeControl = request[9];
+                    PowerModeControlWrites.Add(request[9]);
                 }
             }
             else
@@ -717,9 +721,14 @@ public sealed partial class ExperimentalBladeBatteryIntegrationTests
                 {
                     buffer[9] = Raw;
                 }
-                else if (buffer[7] == 0x07 && buffer[8] == 0x8F && (MaskReply is not null || MaskWrites.Count > 0))
+                else if (buffer[7] == 0x0D && buffer[8] == 0x8F)
                 {
-                    buffer[9] = MaskReply?.Invoke(++maskReads) ?? Mask;
+                    buffer[9] = SkuHardwareConfiguration;
+                }
+                else if (buffer[7] == 0x07 && buffer[8] == 0x8F)
+                {
+                    buffer[9] = MaskReply?.Invoke(++maskReads) ?? PowerModeControl;
+                    AfterPowerModeControlRead?.Invoke();
                 }
                 else if (buffer[7] == 0x07 && buffer[8] == 0x12 && FailNextSetterResponse)
                 {

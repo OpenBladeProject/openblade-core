@@ -12,6 +12,7 @@ internal sealed class ExperimentalGridLightingEffect
     private const int Rows = 6;
     private readonly int columns;
     private readonly bool rz090529;
+    private readonly byte? blade14Edition;
     private readonly LightingSettings settings;
     private readonly StarlightPattern? starlight;
     private readonly ImportedSequenceTimeline? sequence;
@@ -19,16 +20,29 @@ internal sealed class ExperimentalGridLightingEffect
     private readonly List<(int Slot, TimeSpan At)> pulses = [];
     internal bool IsKeyTriggered => settings.Effect is LightingEffect.Reactive or LightingEffect.Ripple;
     internal bool IsSequence => sequence is not null;
+    // Reactive pulses and per-key sequences address keyboard slots only; every
+    // other RZ09-0529 pattern also has a defined value on the LED38 row.
+    internal bool IncludesVaporChamber => rz090529 && sequence is null
+        && settings.Effect != LightingEffect.Reactive;
 
-    internal ExperimentalGridLightingEffect(LightingSettings settings, bool rz090529 = false)
+    /// <param name="blade14Edition">
+    /// Confirmed RZ09-0530 keyboard-MCU edition; null keeps the common key map.
+    /// </param>
+    internal ExperimentalGridLightingEffect(LightingSettings settings, bool rz090529 = false,
+        byte? blade14Edition = null)
     {
         ArgumentNullException.ThrowIfNull(settings);
         if (!IsSupported(settings, rz090529))
         {
             throw new ArgumentException("The settings do not describe a supported typed grid effect.", nameof(settings));
         }
+        if (rz090529 && blade14Edition is not null)
+        {
+            throw new ArgumentException("A Blade 14 edition does not describe this keyboard.", nameof(blade14Edition));
+        }
         this.settings = settings;
         this.rz090529 = rz090529;
+        this.blade14Edition = blade14Edition;
         columns = rz090529 ? Rz090529KeyboardLightingLayout.Columns : 16;
         if (settings.Parameters is SequenceLightingParameters playback)
         {
@@ -84,7 +98,7 @@ internal sealed class ExperimentalGridLightingEffect
         ArgumentOutOfRangeException.ThrowIfLessThan(at, TimeSpan.Zero);
         if (!IsKeyTriggered || !(rz090529
             ? Rz090529KeyboardLightingLayout.IsKeySlot(slot)
-            : Blade14KeyboardLightingLayout.IsKeySlot(slot)))
+            : Blade14KeyboardLightingLayout.IsKeySlot(blade14Edition, slot)))
         {
             throw new CapabilityUnavailableException("The key is outside the reviewed keyboard map.");
         }
@@ -123,6 +137,40 @@ internal sealed class ExperimentalGridLightingEffect
             };
         }
         // Brightness is applied separately by the device port, not baked into RGB.
+        return colors;
+    }
+
+    // LED38 occupies logical canvas row 0, columns 0..17. Grid patterns use
+    // that same row/column; Ripple uses the logical key-position space, and
+    // Starlight gives each LED its own slot after the 114 keyboard slots.
+    internal IReadOnlyList<RgbColor> RenderVaporChamber(TimeSpan elapsed)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(elapsed, TimeSpan.Zero);
+        if (!IncludesVaporChamber)
+        {
+            throw new InvalidOperationException("This grid effect has no Vapor Chamber output.");
+        }
+        if (IsKeyTriggered)
+        {
+            TimeSpan duration = PulseDuration();
+            pulses.RemoveAll(pulse => elapsed - pulse.At >= duration);
+        }
+        var colors = new RgbColor[Rz090529KeyboardLightingFrame.VaporChamberColumns];
+        for (int column = 0; column < colors.Length; column++)
+        {
+            colors[column] = settings.Parameters switch
+            {
+                SpectrumCyclingLightingParameters => Hue(Phase(elapsed, 12)),
+                FireLightingParameters => Fire(0, column, elapsed),
+                WheelLightingParameters wheel => Wheel(0, column, wheel, elapsed),
+                TidalLightingParameters tidal => Tidal(0, column, tidal, elapsed),
+                RippleLightingParameters ripple => Scale(ripple.Color, RippleIntensity(column, 0, elapsed)),
+                StarlightLightingParameters => FromMatrix(starlight!.RenderSlot(Rows * columns + column, elapsed)),
+                _ => throw new InvalidOperationException("Unsupported Vapor Chamber effect."),
+            };
+            // Unlike the keyboard rows, LED38 brightness is not set by the port.
+            colors[column] = Rz090529KeyboardLightingFrame.ScaleVaporChamberColor(colors[column], settings.Brightness);
+        }
         return colors;
     }
 
@@ -176,10 +224,10 @@ internal sealed class ExperimentalGridLightingEffect
 
     private RgbColor RenderPulses(int slot, TimeSpan elapsed)
     {
-        bool hasPosition = TryGetKeyPosition(slot, out double x, out double y);
-        if (settings.Effect == LightingEffect.Ripple && !hasPosition)
+        if (settings.Parameters is RippleLightingParameters ripple)
         {
-            return default;
+            return TryGetKeyPosition(slot, out double x, out double y)
+                ? Scale(ripple.Color, RippleIntensity(x, y, elapsed)) : default;
         }
         double strongest = 0;
         double duration = PulseDuration().TotalSeconds;
@@ -187,26 +235,27 @@ internal sealed class ExperimentalGridLightingEffect
         {
             double age = (elapsed - at).TotalSeconds;
             if (age < 0 || age >= duration) { continue; }
-            double intensity;
-            if (settings.Effect == LightingEffect.Reactive)
-            {
-                intensity = slot == origin ? 1 - age / duration : 0;
-            }
-            else
-            {
-                if (!TryGetKeyPosition(origin, out double ox, out double oy))
-                {
-                    continue;
-                }
-                double distance = Math.Sqrt((x - ox) * (x - ox) + (y - oy) * (y - oy));
-                double band = Math.Max(0, 1 - Math.Abs(distance - age / duration * 18) / 1.25);
-                intensity = band * (1 - age / duration);
-            }
-            strongest = Math.Max(strongest, intensity);
+            strongest = Math.Max(strongest, slot == origin ? 1 - age / duration : 0);
         }
-        RgbColor color = settings.Parameters is ReactiveLightingParameters reactive
-            ? reactive.Color : ((RippleLightingParameters)settings.Parameters!).Color;
-        return Scale(color, strongest);
+        return Scale(((ReactiveLightingParameters)settings.Parameters!).Color, strongest);
+    }
+
+    private double RippleIntensity(double x, double y, TimeSpan elapsed)
+    {
+        double strongest = 0;
+        double duration = PulseDuration().TotalSeconds;
+        foreach ((int origin, TimeSpan at) in pulses)
+        {
+            double age = (elapsed - at).TotalSeconds;
+            if (age < 0 || age >= duration || !TryGetKeyPosition(origin, out double ox, out double oy))
+            {
+                continue;
+            }
+            double distance = Math.Sqrt((x - ox) * (x - ox) + (y - oy) * (y - oy));
+            double band = Math.Max(0, 1 - Math.Abs(distance - age / duration * 18) / 1.25);
+            strongest = Math.Max(strongest, band * (1 - age / duration));
+        }
+        return strongest;
     }
 
     private static double Phase(TimeSpan elapsed, int seconds) =>
@@ -214,7 +263,7 @@ internal sealed class ExperimentalGridLightingEffect
 
     private bool TryGetKeyPosition(int slot, out double x, out double y) => rz090529
         ? Rz090529KeyboardLightingLayout.TryGetKeyPosition(slot, out x, out y)
-        : Blade14KeyboardLightingLayout.TryGetKeyPosition(slot, out x, out y);
+        : Blade14KeyboardLightingLayout.TryGetKeyPosition(blade14Edition, slot, out x, out y);
 
     private static double Fraction(double value) => value - Math.Floor(value);
 

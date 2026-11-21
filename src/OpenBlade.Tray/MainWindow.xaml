@@ -1720,6 +1720,13 @@
                                  Severity="Informational"
                                  Title="{CustomResource MainWindow_LightingUnavailableInfoBarText.Title}"
                                  Message="{x:Bind LightingControlUnavailableMessage, Mode=OneWay}" />
+                        <InfoBar x:Name="WindowsDynamicLightingAdvisoryInfoBar"
+                                 Margin="0,0,0,18"
+                                 IsOpen="{x:Bind IsWindowsDynamicLightingAdvisoryVisible, Mode=OneWay}"
+                                 Visibility="{x:Bind IsWindowsDynamicLightingAdvisoryVisible, Mode=OneWay}"
+                                 IsClosable="False"
+                                 Severity="Informational"
+                                 Message="{x:Bind WindowsDynamicLightingAdvisoryText, Mode=OneWay}" />
                         <ContentControl x:Name="LightingControls"
                                         HorizontalContentAlignment="Stretch">
                             <StackPanel x:Name="LightingSectionHost">
@@ -4957,6 +4964,41 @@
                                         ContentTemplate="{StaticResource DashboardDisplayCardTemplate}"
                                         HorizontalContentAlignment="Stretch" />
                         </StackPanel>
+                        <Border x:Name="LocalDimmingCard"
+                                Style="{StaticResource SettingsGroupStyle}"
+                                Margin="0,10,0,0"
+                                Visibility="{x:Bind ViewModel.ShowLocalDimmingClear, Mode=OneWay}">
+                            <Border Style="{StaticResource SettingsLastRowStyle}">
+                                <Grid ColumnSpacing="20">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Spacing="3"
+                                                VerticalAlignment="Center">
+                                        <TextBlock Text="{CustomResource MainWindow_LocalDimmingTitle.Text}"
+                                                   Style="{StaticResource CardTitleStyle}"
+                                                   TextWrapping="Wrap" />
+                                        <TextBlock Text="{CustomResource MainWindow_LocalDimmingDescription.Text}"
+                                                   Style="{StaticResource SecondaryTextStyle}"
+                                                   TextWrapping="Wrap" />
+                                        <TextBlock x:Name="LocalDimmingStatusText"
+                                                   Text="{x:Bind ViewModel.LocalDimmingStatusMessage, Mode=OneWay}"
+                                                   Visibility="{x:Bind ViewModel.HasLocalDimmingStatusMessage, Mode=OneWay}"
+                                                   Style="{StaticResource SecondaryTextStyle}"
+                                                   TextWrapping="Wrap"
+                                                   AutomationProperties.LiveSetting="Polite" />
+                                    </StackPanel>
+                                    <Button x:Name="LocalDimmingTurnOffButton"
+                                            Grid.Column="1"
+                                            VerticalAlignment="Center"
+                                            Style="{StaticResource AppCommandButtonStyle}"
+                                            Content="{CustomResource MainWindow_LocalDimmingTurnOffButton.Content}"
+                                            Command="{x:Bind ViewModel.ClearLocalDimmingCommand}"
+                                            AutomationProperties.Name="{CustomResource MainWindow_LocalDimmingTurnOffButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name}" />
+                                </Grid>
+                            </Border>
+                        </Border>
                     </StackPanel>
                 </ScrollViewer>
 

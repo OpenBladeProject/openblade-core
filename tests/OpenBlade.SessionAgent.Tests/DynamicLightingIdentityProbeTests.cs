@@ -230,10 +230,15 @@ public sealed class DynamicLightingIdentityProbeTests
         }
 
         public Task<LampArrayObservation> ObserveAsync(
-            CancellationToken cancellationToken) =>
-            failure is null
+            ushort productId,
+            CancellationToken cancellationToken)
+        {
+            // The probe remains bound to the exact RZ09-0528 LampArray.
+            Assert.Equal(Rz090528LampArrayGeometry.ProductId, productId);
+            return failure is null
                 ? Task.FromResult(observation!)
                 : Task.FromException<LampArrayObservation>(failure);
+        }
     }
 
     private sealed class TemporaryProbeDirectory : IDisposable

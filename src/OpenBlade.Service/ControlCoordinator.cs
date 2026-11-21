@@ -439,11 +439,13 @@ public sealed class ControlCoordinator
         GpuClockTuningSettings? effectiveGpuClockTuning = gpuClockTuning;
         bool supportsDirectManualFanTransitions = false;
         bool reportsPerformanceWithManualFans = false;
+        bool compareMaximumFans = false;
         bool PerformanceSupported(DeviceCapabilities capabilities)
         {
             supportsDirectManualFanTransitions =
                 capabilities.SupportsDirectManualFanTransitions;
             reportsPerformanceWithManualFans = capabilities.ReportsPerformanceWithManualFans;
+            compareMaximumFans = ComparesMaximumFans(capabilities);
             effectiveGpuClockTuning = FilterUnsupportedGpuClockTuning(
                 gpuClockTuning,
                 capabilities);
@@ -469,7 +471,8 @@ public sealed class ControlCoordinator
                     state,
                     value,
                     customPerformance,
-                    effectiveGpuClockTuning),
+                    effectiveGpuClockTuning,
+                    compareMaximumFans),
             token => ApplyPerformanceAndGpuClockTuningAsync(
                 value,
                 customPerformance,
@@ -486,7 +489,8 @@ public sealed class ControlCoordinator
                     value,
                     customPerformance,
                     effectiveGpuClockTuning,
-                    firmwarePerformanceSelectorHidden: false)
+                    firmwarePerformanceSelectorHidden: false,
+                    compareMaximumFans)
                     ? SetGpuClockOffsetsAsync(
                         effectiveGpuClockTuning!.EffectiveOffsets,
                         effectiveGpuClockTuning.Enabled,
@@ -1673,7 +1677,8 @@ public sealed class ControlCoordinator
                 || PerformancePresetMatches(
                     state,
                     desired.Performance.Value,
-                    desired.CustomPerformance))
+                    desired.CustomPerformance,
+                    ComparesMaximumFans(capabilities)))
             && GpuClockTuningMatches(state, desired.GpuClockTuning);
         bool PerformanceInitiallyMatches(ConfirmedDeviceState state) =>
             latentManualPerformanceIntent
@@ -1702,7 +1707,8 @@ public sealed class ControlCoordinator
                         desired.CustomPerformance,
                         desired.GpuClockTuning,
                         latentManualPerformanceIntent
-                            || FirmwarePerformanceSelectorHidden(state))
+                            || FirmwarePerformanceSelectorHidden(state),
+                        ComparesMaximumFans(capabilities))
                         ? SetGpuClockOffsetsAsync(
                             desired.GpuClockTuning!.EffectiveOffsets,
                             desired.GpuClockTuning.Enabled,
@@ -3300,20 +3306,31 @@ public sealed class ControlCoordinator
         ConfirmedDeviceState state,
         PerformancePreset performance,
         CustomPerformanceSettings? customPerformance,
-        GpuClockTuningSettings? gpuClockTuning) =>
-        PerformancePresetMatches(state, performance, customPerformance)
+        GpuClockTuningSettings? gpuClockTuning,
+        bool compareMaximumFans) =>
+        PerformancePresetMatches(state, performance, customPerformance, compareMaximumFans)
         && GpuClockTuningMatches(state, gpuClockTuning);
 
+    // Compares the confirmed Custom fields individually: the retained legacy
+    // GpuClockOffsets field is tuned separately, so record equality would
+    // report false mismatches. Maximum Fans is a separate firmware flag on
+    // models that admit it; a flag-only change must still reach the device.
     private static bool PerformancePresetMatches(
         ConfirmedDeviceState state,
         PerformancePreset performance,
-        CustomPerformanceSettings? customPerformance) =>
+        CustomPerformanceSettings? customPerformance,
+        bool compareMaximumFans) =>
         state.Performance == performance
         && (performance != PerformancePreset.Custom
             || state.CustomPerformance is { } confirmed
                 && customPerformance is { } desired
                 && confirmed.Cpu == desired.Cpu
-                && confirmed.Gpu == desired.Gpu);
+                && confirmed.Gpu == desired.Gpu
+                && (!compareMaximumFans
+                    || confirmed.MaximumFans == desired.MaximumFans));
+
+    private static bool ComparesMaximumFans(DeviceCapabilities capabilities) =>
+        capabilities.CustomPerformance?.SupportsMaximumFans == true;
 
     private bool GpuClockTuningMatches(
         ConfirmedDeviceState state,
@@ -3355,10 +3372,11 @@ public sealed class ControlCoordinator
         PerformancePreset performance,
         CustomPerformanceSettings? customPerformance,
         GpuClockTuningSettings? gpuClockTuning,
-        bool firmwarePerformanceSelectorHidden) =>
+        bool firmwarePerformanceSelectorHidden,
+        bool compareMaximumFans) =>
         gpuClockTuning is not null
         && (firmwarePerformanceSelectorHidden
-            || PerformancePresetMatches(state, performance, customPerformance));
+            || PerformancePresetMatches(state, performance, customPerformance, compareMaximumFans));
 
     private Task ApplyPerformanceAndGpuClockTuningAsync(
         PerformancePreset performance,

@@ -29,6 +29,33 @@ public sealed class WinUiShellContractTests
     }
 
     [Fact]
+    public void LocalDimmingCardReusesTheSharedRowAndStaysOutsideTheDisplaySectionHost()
+    {
+        XDocument document = CanonicalLocalizedXaml.Load("MainWindow.xaml");
+        XElement card = NamedElement(document, "Border", "LocalDimmingCard");
+        XElement host = NamedElement(document, "StackPanel", "DisplayCardsHost");
+        XElement button = NamedElement(document, "Button", "LocalDimmingTurnOffButton");
+
+        // The section host removes children it does not know, so the card is a sibling.
+        Assert.DoesNotContain(host, card.Ancestors());
+        Assert.Equal(host.Parent, card.Parent);
+        Assert.Equal("{StaticResource SettingsGroupStyle}", Attribute(card, "Style"));
+        Assert.Equal("{x:Bind ViewModel.ShowLocalDimmingClear, Mode=OneWay}", Attribute(card, "Visibility"));
+        XElement row = Assert.Single(card.Elements(), element => element.Name.LocalName == "Border");
+        Assert.Equal("{StaticResource SettingsLastRowStyle}", Attribute(row, "Style"));
+        Assert.Null(Attribute(row, "Background"));
+        Assert.Contains(row, button.Ancestors());
+        Assert.Equal("{StaticResource AppCommandButtonStyle}", Attribute(button, "Style"));
+        Assert.Equal("{x:Bind ViewModel.ClearLocalDimmingCommand}", Attribute(button, "Command"));
+        // The Clear result shows on the card itself, collapsed when empty.
+        XElement status = NamedElement(document, "TextBlock", "LocalDimmingStatusText");
+        Assert.Contains(row, status.Ancestors());
+        Assert.Equal("{x:Bind ViewModel.LocalDimmingStatusMessage, Mode=OneWay}", Attribute(status, "Text"));
+        Assert.Equal("{x:Bind ViewModel.HasLocalDimmingStatusMessage, Mode=OneWay}", Attribute(status, "Visibility"));
+        Assert.Equal("Wrap", Attribute(status, "TextWrapping"));
+    }
+
+    [Fact]
     public void WindowsBatteryReportLivesOutsideCollectionControlsAndKeepsDetailsOptional()
     {
         XDocument document = CanonicalLocalizedXaml.Load("MainWindow.xaml");
@@ -2415,6 +2442,7 @@ public sealed class WinUiShellContractTests
         Assert.Contains("RazerBladeReactiveInputDevice", source, StringComparison.Ordinal);
         Assert.Contains("deviceKind != readVerifiedInputDeviceKind()", source, StringComparison.Ordinal);
         Assert.Contains("readBlade18KeyboardLayoutId()", source, StringComparison.Ordinal);
+        Assert.Contains("readBlade14KeyboardEdition()", source, StringComparison.Ordinal);
         Assert.Contains("GetRawInputHeader", source, StringComparison.Ordinal);
         Assert.Contains("EnsureRawInputBuffer", source, StringComparison.Ordinal);
         Assert.Contains("stackalloc byte[blade18 ? 16 : 3]", source, StringComparison.Ordinal);

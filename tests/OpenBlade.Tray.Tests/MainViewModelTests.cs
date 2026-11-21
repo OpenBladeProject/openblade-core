@@ -12453,6 +12453,14 @@ public sealed partial class MainViewModelTests
             return MutateAsync(token);
         }
 
+        public int ClearLocalDimmingCalls { get; private set; }
+
+        public Task<ControlOperationResult> ClearLocalDimmingAsync(CancellationToken token)
+        {
+            ClearLocalDimmingCalls++;
+            return MutateAsync(token);
+        }
+
         public override Task<ControlOperationResult> SetFirmwareCompatibilityOverrideAsync(
             bool enabled,
             CancellationToken token)
