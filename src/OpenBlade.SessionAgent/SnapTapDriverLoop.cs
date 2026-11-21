@@ -48,8 +48,11 @@ internal static class SnapTapDriverLoop
             stage = "HeartbeatOpen";
             using EventWaitHandle heartbeat = EventWaitHandle.OpenExisting(
                 SnapTapDriverSupervisor.HeartbeatName(parentId));
+            using EventWaitHandle admitting = EventWaitHandle.OpenExisting(
+                SnapTapDriverSupervisor.AdmissionName(parentId));
             stage = "TransportOpen";
-            transport = new RazerSnapTapDriverTransport(endpoint!.Path, () => admission.IsCurrent(endpoint),
+            transport = new RazerSnapTapDriverTransport(endpoint!.Path,
+                () => AdmitWithProgress(() => admission.IsCurrent(endpoint), () => heartbeat.Set(), admitting),
                 () => !shouldStop() && AllReleased() && (functionContext is null || functionContext.Ready), CanOutput, purpose);
             if (functionContext is not null)
             {
@@ -127,11 +130,7 @@ internal static class SnapTapDriverLoop
                         // Close without reading queued input; only the guardian may rearm
                         // a fresh worker after verified cleanup of this subscription.
                         foregroundPause = CanPauseForForegroundLoss(processor) && functionProcessor?.HasTrackedKeys != true;
-                        loopFailure = SnapTapDiagnosticFailure.Create(
-                            SnapTapDiagnosticFailure.Worker, "Run", stage, "ForegroundUnavailable") with
-                        {
-                            Context = $"ForegroundAvailable={foreground != 0}; KeyboardLayoutAvailable={layout != 0}; PhysicallyReleased={processor.ArePhysicallyReleased}",
-                        };
+                        loopFailure = ForegroundUnavailableFailure(foreground != 0, layout != 0, processor.ArePhysicallyReleased);
                         break;
                     }
                 }
@@ -277,6 +276,32 @@ internal static class SnapTapDriverLoop
             return sent;
         }
     }
+
+    // Brackets only the user-mode admission that precedes each driver mutation, never
+    // the driver request itself. Progress is signalled before the window flag is
+    // cleared so the supervisor cannot see a closed window with a stale heartbeat.
+    internal static bool AdmitWithProgress(Func<bool> admit, Action signalProgress, EventWaitHandle window)
+    {
+        signalProgress();
+        window.Set();
+        try
+        {
+            return admit();
+        }
+        finally
+        {
+            signalProgress();
+            window.Reset();
+        }
+    }
+
+    internal static DiagnosticFailure ForegroundUnavailableFailure(
+        bool foregroundAvailable, bool layoutAvailable, bool physicallyReleased) =>
+        SnapTapDiagnosticFailure.Create(
+            SnapTapDiagnosticFailure.Worker, "Run", "InputLoop", "ForegroundUnavailable") with
+        {
+            Context = $"ForegroundAvailable={foregroundAvailable}; KeyboardLayoutAvailable={layoutAvailable}; PhysicallyReleased={physicallyReleased}",
+        };
 
     internal static bool CanPauseForForegroundLoss(SnapTapDriverInputProcessor processor) =>
         !processor.Faulted && processor.Winner == 0 && processor.ArePhysicallyReleased;
