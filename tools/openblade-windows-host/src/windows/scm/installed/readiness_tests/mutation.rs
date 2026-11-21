@@ -77,6 +77,9 @@ struct MemoryFiles {
     terminal_attempts: Arc<AtomicUsize>,
     /// A file whose replacement blocks for this long, as slow storage does.
     stalled_replace: Arc<StdMutex<Option<(&'static str, std::time::Duration)>>>,
+    /// A file whose every replacement on a fixture job takes this long on the
+    /// job's paused clock. Elsewhere it takes no time.
+    paced_replace: Arc<StdMutex<Option<(&'static str, std::time::Duration)>>>,
 }
 impl MemoryFiles {
     fn put(&self, name: &str, value: Value) {
@@ -241,6 +244,17 @@ impl Files for MemoryFiles {
             .take_if(|(file, _)| *file == name);
         if let Some((_, time)) = stalled {
             std::thread::sleep(time);
+        }
+        let paced = *self.paced_replace.lock().unwrap();
+        if let Some((file, time)) = paced
+            && file == name
+            && std::thread::current().name() == Some("openblade-firmware-observer")
+        {
+            // A synchronous append spends paused time by polling one advance.
+            let mut advance = std::pin::pin!(tokio::time::advance(time));
+            let _ = advance
+                .as_mut()
+                .poll(&mut std::task::Context::from_waker(std::task::Waker::noop()));
         }
         if name == "thermal-mutation.journal" {
             let progress = bytes

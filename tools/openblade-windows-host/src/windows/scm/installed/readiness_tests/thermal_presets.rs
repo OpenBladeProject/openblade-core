@@ -1086,38 +1086,19 @@ async fn one_slow_power_read_refuses_a_custom_recipe_before_its_first_setter() {
 
 #[tokio::test]
 async fn a_slow_journal_append_refuses_a_recipe_before_its_first_setter() {
-    // Every journal append held 1600 ms on a healthy device. Paced before the
+    // Every journal append the recipe makes takes 1600 ms of fixture time on
+    // a healthy device. Paced before the
     // Prepared row, the Silent pair started and split after its first setter
     // ([5, 2]) at the deadline. The Prepared append is timed and charged for
     // each of the five rows left, so the recipe is refused before any setter.
     let rig = rig_at(2, 0, FULL, MemoryFiles::default());
     rig.get().await;
-    // The store holds each append with a real sleep, which a job on paused
-    // time would not see. Load only makes the expected refusal likelier.
-    rig.port.state.lock().unwrap().real_time = true;
-    let stop = Arc::new(AtomicBool::new(false));
-    let rearm = {
-        let files = rig.files.clone();
-        let stop = stop.clone();
-        std::thread::spawn(move || {
-            while !stop.load(Ordering::Acquire) {
-                {
-                    let mut slot = files.stalled_replace.lock().unwrap();
-                    if slot.is_none() {
-                        *slot = Some((
-                            "thermal-mutation.journal",
-                            std::time::Duration::from_millis(1600),
-                        ));
-                    }
-                }
-                std::thread::sleep(std::time::Duration::from_millis(2));
-            }
-        })
-    };
+    *rig.files.paced_replace.lock().unwrap() = Some((
+        "thermal-mutation.journal",
+        std::time::Duration::from_millis(1600),
+    ));
     let result = rig.set(1, value(SILENT.0, 1)).await;
-    stop.store(true, Ordering::Release);
-    rearm.join().unwrap();
-    *rig.files.stalled_replace.lock().unwrap() = None;
+    *rig.files.paced_replace.lock().unwrap() = None;
     assert_eq!(result["result"]["status"], 2, "{result}");
     assert_eq!(
         result["result"]["message"],
