@@ -199,6 +199,69 @@ fn an_override_or_journal_the_open_refuses_keeps_an_older_aggregate_untouched() 
     }
 }
 
+/// A migration the store reads back as other bytes is restored and then
+/// refused, as managed quarantines it, until the service restarts: no later
+/// open in this process writes it again. Other stored bytes are another
+/// change and are attempted.
+#[test]
+fn a_migration_the_store_does_not_hold_is_quarantined_until_a_restart() {
+    let source = case("schema 24 committed aggregate");
+    let model = model(&source.files);
+    // The marker lands with other bytes: verification refuses it.
+    model.fail(6, Fault::Padded);
+
+    let error = open(&model).err().unwrap();
+
+    assert_eq!(error.to_string(), QUARANTINE_BLOCKED);
+    assert_eq!(model.snapshot(), source.files);
+    let writes = model.writes.load(Ordering::Acquire);
+    for _ in 0..3 {
+        let error = open(&model).err().unwrap();
+        assert_eq!(error.to_string(), QUARANTINE_BLOCKED);
+    }
+    assert_eq!(
+        model.writes.load(Ordering::Acquire),
+        writes,
+        "nothing written again"
+    );
+    assert_eq!(model.snapshot(), source.files);
+
+    // Another stored aggregate is another change.
+    let other = case("schema 23 committed aggregate");
+    let fresh = self::model(&other.files);
+    open(&fresh).unwrap();
+    assert_eq!(fresh.snapshot(), migrated(&other.files));
+
+    forget_mismatches();
+    open(&model).unwrap();
+    assert_eq!(model.snapshot(), migrated(&source.files));
+}
+
+/// The remembered changes are bounded: the oldest is attempted again.
+#[test]
+fn the_quarantined_changes_are_bounded() {
+    let source = case("schema 24 committed aggregate");
+    let first = model(&source.files);
+    first.fail(6, Fault::Padded);
+    assert!(open(&first).is_err());
+    for index in 0..MISMATCHED_LIMIT {
+        // Each a distinct change: the profile ends in other whitespace.
+        let mut files = source.files.clone();
+        let profile = [files[NAMES[0]].clone(), vec![b' '; index + 1]].concat();
+        files.insert(
+            NAMES[2].into(),
+            commit_marker(24, &sha256(&profile), &sha256(&files[NAMES[1]])),
+        );
+        files.insert(NAMES[0].into(), profile);
+        let other = model(&files);
+        other.fail(6, Fault::Padded);
+        let error = open(&other).err().unwrap();
+        assert_eq!(error.to_string(), QUARANTINE_BLOCKED, "{index}");
+    }
+    open(&first).unwrap();
+    assert_eq!(first.snapshot(), migrated(&source.files));
+}
+
 #[test]
 fn a_future_or_corrupt_aggregate_is_refused_untouched() {
     for name in [
@@ -295,6 +358,17 @@ fn any_single_failed_write_leaves_the_prior_or_the_migrated_aggregate() {
                     assert!(opened.is_err(), "{case}");
                 }
                 model.faults.lock().unwrap().clear();
+                // A migration that read back as other bytes is quarantined
+                // until the service restarts, and only then attempted again.
+                if opened
+                    .as_ref()
+                    .is_err_and(|error| error.to_string() == QUARANTINE_BLOCKED)
+                {
+                    let writes = model.writes.load(Ordering::Acquire);
+                    assert!(open(&model).is_err(), "{case}");
+                    assert_eq!(model.writes.load(Ordering::Acquire), writes, "{case}");
+                    forget_mismatches();
+                }
                 open(&model).unwrap();
                 assert_eq!(documents(&model.snapshot()), documents(&intended), "{case}");
             }

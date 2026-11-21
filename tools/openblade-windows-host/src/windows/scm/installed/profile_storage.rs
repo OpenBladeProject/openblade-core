@@ -214,11 +214,57 @@ pub(super) fn migrate_on_open(
         &migration.preferences,
         &validator,
     );
+    // Managed quarantines an aggregate whose migration does not read back:
+    // `VerifyIntendedAggregateAsync` throws `InvalidDataException`, which
+    // `LoadCoreAsync` turns into a quarantine (`BatteryConfigurationStore.cs`
+    // `:914-932`, `:403-438`, `IsRecoverable` `:1344-1349`), held until the
+    // service restarts. A change this thread already found the store would
+    // not hold is refused the same way without writing again.
+    if mismatched(&transaction.id, false) {
+        return Err(io::Error::other(QUARANTINE_BLOCKED));
+    }
     transaction.run().map_err(|failure| {
         io::Error::other(match failure {
+            Failure::Mismatched => {
+                mismatched(&transaction.id, true);
+                QUARANTINE_BLOCKED
+            }
             Failure::RecoveryRequired => MIGRATION_RECOVERY_REQUIRED,
             Failure::StageBlocked | Failure::Unchanged | Failure::Restored => MIGRATION_UNCHANGED,
         })
+    })
+}
+
+/// How many changes `mismatched` remembers; the oldest is forgotten first.
+const MISMATCHED_LIMIT: usize = 16;
+
+thread_local! {
+    /// The changes whose migration this thread wrote, read back as something
+    /// else and restored. The store's owner is the service runtime, which
+    /// stays on one thread (`Rc`), so this lasts as long as the service.
+    /// A change is the digest of the stored and the migrated bytes, so other
+    /// stored bytes are a new change and are attempted again.
+    static MISMATCHED: std::cell::RefCell<Vec<String>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// A restart: this thread forgets every remembered change.
+#[cfg(test)]
+fn forget_mismatches() {
+    MISMATCHED.with_borrow_mut(Vec::clear);
+}
+
+/// Whether `id` is a remembered change; `remember` adds it.
+fn mismatched(id: &str, remember: bool) -> bool {
+    MISMATCHED.with_borrow_mut(|ids| {
+        let known = ids.iter().any(|known| known == id);
+        if remember && !known {
+            if ids.len() == MISMATCHED_LIMIT {
+                ids.remove(0);
+            }
+            ids.push(id.to_owned());
+        }
+        known
     })
 }
 
@@ -347,24 +393,22 @@ impl<'a> Transaction<'a> {
         Ok(())
     }
 
-    /// Managed `VerifyIntendedAggregateAsync`: the store holds exactly the
-    /// intended documents and they read back as the admitted aggregate.
-    fn verify(&self) -> io::Result<()> {
-        match read_committed(self.files, self.validator)? {
-            Some(stored)
-                if stored.profiles == *self.admitted
+    /// Managed `VerifyIntendedAggregateAsync`: whether the store holds exactly
+    /// the intended documents and they read back as the admitted aggregate.
+    /// A read that fails is an error, as managed's I/O exception is.
+    fn verify(&self) -> io::Result<bool> {
+        Ok(
+            read_committed(self.files, self.validator)?.is_some_and(|stored| {
+                stored.profiles == *self.admitted
                     && stored.preferences == *self.preferences
                     && !stored.migrated
                     && stored
                         .documents
                         .iter()
                         .zip(&self.intended)
-                        .all(|(stored, intended)| stored.as_ref() == Some(intended)) =>
-            {
-                Ok(())
-            }
-            _ => Err(denied()),
-        }
+                        .all(|(stored, intended)| stored.as_ref() == Some(intended))
+            }),
+        )
     }
 
     /// Puts back whatever a failed replacement changed, then proves it.
@@ -411,13 +455,17 @@ impl<'a> Transaction<'a> {
         }
         // Verified while the record and the backups still stand, as managed
         // does: a stored aggregate that is not the intended one is restored.
-        let replaced = self.replace().and_then(|()| self.verify());
+        let replaced = match self.replace().and_then(|()| self.verify()) {
+            Ok(true) => Ok(()),
+            Ok(false) => Err(Failure::Mismatched),
+            Err(_) => Err(Failure::Restored),
+        };
         let settled = match replaced {
             Ok(()) => Ok(()),
-            Err(_) => self
+            Err(failure) => self
                 .restore()
                 .map_err(|_| Failure::RecoveryRequired)
-                .and(Err(Failure::Restored)),
+                .and(Err(failure)),
         };
         if matches!(settled, Err(Failure::RecoveryRequired)) {
             return settled;
@@ -443,6 +491,9 @@ enum Failure {
     Unchanged,
     /// Documents were replaced and the exact prior aggregate is back.
     Restored,
+    /// As `Restored`, but the replacement was read back as other than the
+    /// intended aggregate: managed's verification failure.
+    Mismatched,
     /// The record and backups remain; the aggregate needs review.
     RecoveryRequired,
 }
@@ -500,7 +551,9 @@ impl Storage {
         Ok(match transaction.run() {
             Ok(()) => ProfileSave::Stored,
             Err(Failure::StageBlocked) => ProfileSave::Rejected(STAGE_BLOCKED.into()),
-            Err(Failure::Unchanged | Failure::Restored) => ProfileSave::Rejected(RESTORED.into()),
+            Err(Failure::Unchanged | Failure::Restored | Failure::Mismatched) => {
+                ProfileSave::Rejected(RESTORED.into())
+            }
             Err(Failure::RecoveryRequired) => {
                 state.quarantined = true;
                 state.configuration_failed = true;
