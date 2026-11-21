@@ -15,9 +15,18 @@ internal sealed partial class ExperimentalBladePort(
     ExperimentalLightingOwnershipState? sharedLightingOwnership = null,
     ICoolingPadDiscoverySource? coolingPadDiscovery = null,
     TimeProvider? lightingTimeProvider = null,
-    ExperimentalStartupAnimationState? sharedStartupAnimationState = null)
+    ExperimentalStartupAnimationState? sharedStartupAnimationState = null,
+    string? systemSku = null)
     : IProductionBatteryPort, IProductionLightingPort, ILightingRecoveryWriteAdmission
 {
+    // Read once from the exact host identity that admitted this session. Only
+    // HyperBoost depends on it; an unreadable SKU leaves every other control unchanged.
+    internal HyperBoostSystemSkuAdmission HyperBoostSkuAdmission { get; } =
+        HyperBoostSystemSkuPolicy.Evaluate(model.ProductId, systemSku);
+
+    internal string HyperBoostSkuDiagnostic =>
+        HyperBoostSystemSkuPolicy.DescribeForDiagnostics(HyperBoostSkuAdmission, systemSku);
+
     private readonly SemaphoreSlim operationGate = sharedOperationGate ?? new(1, 1);
     private readonly AdapterPowerCommandClient adapterPowerCommands = new(session, TimeSpan.FromSeconds(3));
     private readonly ExperimentalLightingOwnershipState lightingOwnership =
@@ -134,13 +143,21 @@ internal sealed partial class ExperimentalBladePort(
     internal void SetAdditionalWriteAdmission(Func<bool> admission) => additionalWriteAdmission = admission;
 
     public DeviceCapabilities Capabilities => WithConfirmedExperimentalFanRange(
-        WithStartupReadAdmission(CreateCapabilities(model, policy.WritesAllowed), startupAnimationState),
+        WithStartupReadAdmission(CreateCapabilities(model, policy.WritesAllowed, HyperBoostSkuAdmission),
+            startupAnimationState),
         model, policy.ConfirmedFanRanges) with
     {
         Blade18KeyboardLayoutId = blade18KeyboardLayoutId,
     };
 
-    internal static DeviceCapabilities CreateCapabilities(ExperimentalBladeModel model, bool enabled) =>
+    // A null SKU admission describes the model's potential capabilities, before a host SKU is read.
+    internal static DeviceCapabilities CreateCapabilities(ExperimentalBladeModel model, bool enabled,
+        HyperBoostSystemSkuAdmission? hyperBoostSku = null) =>
+        CreateCapabilitiesCore(model, enabled, SupportsExperimentalHyperBoost(model) && enabled
+            && (hyperBoostSku is not { } sku || HyperBoostSystemSkuPolicy.AllowsWrites(sku)));
+
+    private static DeviceCapabilities CreateCapabilitiesCore(ExperimentalBladeModel model, bool enabled,
+        bool hyperBoostWritable) =>
         new(enabled ? CreatePerformancePresets(model) : new HashSet<PerformancePreset>(),
             enabled && GetExperimentalFanRange(model) is not null
                 ? model.ProductId == 0x02A0 || UsesDynamicExperimentalFanRange(model) || SupportsStaticSourceHostCurves(model)
@@ -187,15 +204,19 @@ internal sealed partial class ExperimentalBladePort(
                     ObservedLightingZone.UnderGlass,
                 }
                 : new HashSet<ObservedLightingZone>(),
-            HyperBoostAccess = SupportsExperimentalHyperBoost(model) && enabled ? DeviceFeatureAccess.ReadWrite
-                : model.ProductId is 0x02A0 or 0x029F or 0x029D ? DeviceFeatureAccess.ObservedOnly : null,
-            HyperBoostWithoutCoolingPadAccess = SupportsExperimentalHyperBoost(model) && enabled ? DeviceFeatureAccess.ReadWrite : null,
-            HyperBoostBaseModes = SupportsExperimentalHyperBoost(model) && enabled
+            // A SKU-disabled or unreadable-SKU HyperBoost stays visible as observed only.
+            HyperBoostAccess = hyperBoostWritable ? DeviceFeatureAccess.ReadWrite
+                : model.ProductId is 0x02A0 or 0x029F or 0x029D or 0x02B7 ? DeviceFeatureAccess.ObservedOnly : null,
+            HyperBoostWithoutCoolingPadAccess = hyperBoostWritable ? DeviceFeatureAccess.ReadWrite : null,
+            HyperBoostBaseModes = hyperBoostWritable
                 ? new(DeviceFeatureAccess.ReadWrite, DeviceFeatureAccess.ReadWrite,
                     model.ProductId == 0x029F ? DeviceFeatureAccess.ReadWrite : DeviceFeatureAccess.ObservedOnly)
                 {
                     Custom = DeviceFeatureAccess.ReadWrite,
-                    CoolingPadEntryBaseMode = model.ProductId == 0x029D ? PerformancePreset.Balanced : null,
+                    // Product 695 lists Turbo (raw 1) as an ordinary mode and its
+                    // default AC mode; it has no Performance (raw 2) mode.
+                    Turbo = model.ProductId == 0x02B7 ? DeviceFeatureAccess.ReadWrite : null,
+                    CoolingPadEntryBaseMode = HyperBoostCoolingPadEntryBaseMode(model),
                 } : null,
             OneShotLaptopControls = enabled && model.ProductId == 0x02A0
                 ? new HashSet<OneShotLaptopControl> { OneShotLaptopControl.StartupAnimation } : [],
@@ -373,7 +394,9 @@ internal sealed partial class ExperimentalBladePort(
                 DeviceStateQuery.ThermalChannelAgreement, first.Span, second.Span);
         }
         byte mode = first.Span[2];
-        bool hyperBoost = mode == 7 && model.ProductId is 0x02A0 or 0x029F or 0x029D;
+        // Decode mode 7 wherever it is observed or admitted (rule 9). Product 695
+        // lists Hyperboost_Mode:7 (main.27df2e7ddab0b6bc34cc.js byte 48,922).
+        bool hyperBoost = mode == 7 && model.ProductId is 0x02A0 or 0x029F or 0x029D or 0x02B7;
         PerformancePreset? performance = mode switch
         {
             0 => PerformancePreset.Balanced,
@@ -388,16 +411,23 @@ internal sealed partial class ExperimentalBladePort(
             3 when model.ProductId == 0x02C5 => PerformancePreset.BatterySaver,
             6 when model.ProductId == 0x02C5 => PerformancePreset.BatteryBalanced,
             // Products 671/669 map battery Balanced to raw 6 (AC Balanced is 0).
-            6 when SupportsExperimentalHyperBoost(model) && capturePowerSource() == PowerSource.Battery => PerformancePreset.Balanced,
+            6 when UsesRaw6AsBatteryBalanced(model) && capturePowerSource() == PowerSource.Battery => PerformancePreset.Balanced,
             1 when model.ProductId == 0x0255 => PerformancePreset.Performance,
             2 when model.ProductId is 0x02A0 or 0x029F => PerformancePreset.Performance,
-            7 when model.ProductId is 0x02A0 or 0x029F or 0x029D => null,
+            7 when hyperBoost => null,
             _ => UnsupportedPerformanceMode(first.Span),
         };
         FanMode fans = first.Span[3] == 0 ? FanMode.Automatic : FanMode.Fixed;
         CustomPerformanceSettings? custom = mode == 4 && SupportsExperimentalCustom(model)
             ? await ReadCustomPerformanceAsync(cancellationToken).ConfigureAwait(false) : null;
-        if (readManualTargets && fans == FanMode.Fixed && GetExperimentalFanRange(model) is not null)
+        // Synapse can run 02B7 HyperBoost with manual fans (product 695 main byte
+        // 145,857 lists 3400-5200 RPM for mode 7). No admitted dynamic range covers mode 7, so
+        // report HyperBoost with manual fans instead of rejecting the whole state.
+        if (hyperBoost && fans == FanMode.Fixed && UsesDynamicExperimentalFanRange(model))
+        {
+            RecordQuery("FanTargets", "NotQueried", failure: "HyperBoostHasNoAdmittedFanRange");
+        }
+        else if (readManualTargets && fans == FanMode.Fixed && GetExperimentalFanRange(model) is not null)
         {
             FanSpeedRange? activeRange = performance is { } activePerformance
                 ? GetExperimentalFanRange(model, activePerformance)

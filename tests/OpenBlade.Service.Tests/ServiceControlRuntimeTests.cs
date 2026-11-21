@@ -32746,6 +32746,9 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
 
         public bool SuppressHyperBoostMutation { get; set; }
 
+        // RZ09-0510 reports the battery exit's raw 6 as its DC Balanced preset.
+        public bool ReportsBatteryBalancedForBalancedExit { get; set; }
+
         public Queue<Exception> HyperBoostFailures { get; } = new();
 
         public Action? AfterHyperBoostFailure { get; set; }
@@ -33159,7 +33162,8 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
                 }
                 : ConfirmedState with
                 {
-                    Performance = baseMode,
+                    Performance = ReportsBatteryBalancedForBalancedExit && baseMode == PerformancePreset.Balanced
+                        ? PerformancePreset.BatteryBalanced : baseMode,
                     Fans = FanMode.Automatic,
                     HyperBoostActive = false,
                 };

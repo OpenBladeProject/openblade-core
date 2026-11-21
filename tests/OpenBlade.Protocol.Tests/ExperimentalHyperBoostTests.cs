@@ -91,8 +91,8 @@ public sealed partial class ExperimentalThermalExpansionTests
         {
             var session = new Session();
             await using var port = new ExperimentalBladePort(session, new(), model, new(model),
-                () => true, () => PowerSource.PluggedIn, coolingPadDiscovery: new Pad());
-            if (model.ProductId is not (0x029F or 0x029D))
+                () => true, () => PowerSource.PluggedIn, coolingPadDiscovery: new Pad(), systemSku: AdmittedSku);
+            if (model.ProductId is not (0x029F or 0x029D or 0x02B7))
             {
                 await Assert.ThrowsAsync<CapabilityUnavailableException>(() =>
                     port.SetHyperBoostAsync(true, PerformancePreset.Balanced, false, CancellationToken.None));
@@ -100,7 +100,7 @@ public sealed partial class ExperimentalThermalExpansionTests
                     port.SetHyperBoostAsync(true, PerformancePreset.Balanced, true, CancellationToken.None));
             }
             Assert.Empty(session.Commands);
-            Assert.Equal(model.ProductId is 0x029F or 0x029D ? DeviceFeatureAccess.ReadWrite : (DeviceFeatureAccess?)null,
+            Assert.Equal(model.ProductId is 0x029F or 0x029D or 0x02B7 ? DeviceFeatureAccess.ReadWrite : (DeviceFeatureAccess?)null,
                 port.Capabilities.HyperBoostWithoutCoolingPadAccess);
         }
     }
@@ -160,7 +160,7 @@ public sealed partial class ExperimentalThermalExpansionTests
         };
         var policy = new ExperimentalFeaturesPolicy(Model(0x029F));
         await using var port = new ExperimentalBladePort(session, new(), Model(0x029F), policy,
-            () => exact, () => source, coolingPadDiscovery: new Pad());
+            () => exact, () => source, coolingPadDiscovery: new Pad(), systemSku: AdmittedSku);
         BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
             port.SetHyperBoostAsync(true, PerformancePreset.Performance, true, CancellationToken.None));
         Assert.Equal(WriteSubmissionState.KnownNotApplied, failure.SubmissionState);
@@ -309,10 +309,14 @@ public sealed partial class ExperimentalThermalExpansionTests
         }
     }
 
+    // SKU character 9 is T: outside the vendor HyperBoost recheck's disabled set.
+    private const string AdmittedSku = "RZ09-0483TEH3";
+
     private static ExperimentalBladePort HyperBoostPort(Session session, Pad pad,
-        ExperimentalFeaturesPolicy? policy = null, Func<PowerSource>? power = null, int pid = 0x029F) =>
+        ExperimentalFeaturesPolicy? policy = null, Func<PowerSource>? power = null, int pid = 0x029F,
+        string? sku = AdmittedSku) =>
         new(session, new(), Model(pid), policy ?? new(Model(pid)), () => true,
-            power ?? (() => PowerSource.ExternalUnknown), coolingPadDiscovery: pad);
+            power ?? (() => PowerSource.ExternalUnknown), coolingPadDiscovery: pad, systemSku: sku);
 
     private sealed class Pad : ICoolingPadDiscoverySource
     {

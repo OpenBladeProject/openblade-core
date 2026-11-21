@@ -351,9 +351,11 @@ public sealed partial class ExperimentalBladeFactoryTests
         Assert.Null(result.Failure);
         Assert.NotNull(result.Value);
         await using IProductionBatteryPort port = result.Value!;
-        Assert.Empty(factory.GetDiagnostics().Observations);
+        // The admitted session's HyperBoost SKU recheck is its only open-time record.
+        Assert.DoesNotContain(factory.GetDiagnostics().Observations, item => item.Operation != "HyperBoostSystemSku");
         await port.QueryPerformanceFanStateAsync(CancellationToken.None);
-        ExperimentalControlObservation observation = Assert.Single(factory.GetDiagnostics().Observations);
+        ExperimentalControlObservation observation = Assert.Single(factory.GetDiagnostics().Observations,
+            item => item.Operation != "HyperBoostSystemSku");
         Assert.Equal("Confirmed", observation.Outcome);
         Assert.Equal("Performance", observation.Operation);
     }
@@ -457,17 +459,56 @@ public sealed partial class ExperimentalBladeFactoryTests
         Assert.All(io.Commands, command => Assert.True(command >= 0x80));
     }
 
+    [Theory]
+    [InlineData(0x02B7, "RZ09-0510TEH3", true)]
+    [InlineData(0x02B7, "RZ09-0510SEH3", false)]
+    [InlineData(0x02B7, null, false)]
+    [InlineData(0x029F, "RZ09-0483TEH3", true)]
+    [InlineData(0x029F, "RZ09-04835EH3", false)]
+    [InlineData(0x029D, null, true)]
+    public async Task HyperBoostSkuRecheck_UsesAdmittedHostSkuForHyperBoostOnly(int productId, string? sku, bool writable)
+    {
+        ExperimentalBladeModel model = ExperimentalBladeModels.All.Single(item => item.ProductId == productId);
+        var native = new Native(1) { ProductId = model.ProductId };
+        var factory = new ExperimentalBladeFactory(model, new Identity(model.ProductName, sku), native,
+            new Guard(), new Io(), () => PowerSource.PluggedIn);
+        // Before a session reads the host SKU, the gated models report HyperBoost observed only.
+        Assert.Equal(productId == 0x029D ? DeviceFeatureAccess.ReadWrite : DeviceFeatureAccess.ObservedOnly,
+            factory.Capabilities.HyperBoostAccess);
+        Assert.Equal(DeviceFeatureAccess.ReadWrite, factory.PotentialCapabilities.HyperBoostAccess);
+        HidSessionResult<IProductionBatteryPort> opened = await factory.OpenAsync(CancellationToken.None);
+        await using var port = Assert.IsType<ExperimentalBladePort>(opened.Value);
+
+        DeviceFeatureAccess expected = writable ? DeviceFeatureAccess.ReadWrite : DeviceFeatureAccess.ObservedOnly;
+        Assert.Equal(expected, port.Capabilities.HyperBoostAccess);
+        Assert.Equal(expected, factory.Capabilities.HyperBoostAccess);
+        Assert.Equal(port.Capabilities.PerformancePresets, factory.PotentialCapabilities.PerformancePresets);
+        ExperimentalControlObservation[] records = factory.GetDiagnostics().Observations
+            .Where(item => item.Operation == "HyperBoostSystemSku").ToArray();
+        if (productId == 0x029D)
+        {
+            Assert.Empty(records);
+            return;
+        }
+        ExperimentalControlObservation record = Assert.Single(records);
+        Assert.Equal(writable ? "Confirmed" : "Blocked", record.Outcome);
+        Assert.Equal(sku is null ? "SkuCharacter9=Unavailable" : $"SkuCharacter9={sku[9]}", record.ConfirmedValue);
+        // Diagnostics never carry the full SKU.
+        Assert.DoesNotContain(factory.GetDiagnostics().Observations,
+            item => sku is not null && (item.ConfirmedValue?.Contains(sku, StringComparison.Ordinal) == true));
+    }
+
     private static ExperimentalBladeFactory Create(Native native, Io io) =>
         new(ExperimentalBladeModels.All[0], new Identity(), native, new Guard(), io,
             () => PowerSource.ExternalUnknown);
 
-    private sealed class Identity(string product = "Blade 16 - RZ09-0483") : IHostIdentitySource
+    private sealed class Identity(string product = "Blade 16 - RZ09-0483", string? sku = null) : IHostIdentitySource
     {
         internal int ReadCount { get; private set; }
         public HostIdentityReadResult ReadExactIdentity()
         {
             ReadCount++;
-            return new(new HostIdentityEvidence("Razer", product, null, "test-firmware"), null);
+            return new(new HostIdentityEvidence("Razer", product, sku, "test-firmware"), null);
         }
     }
 

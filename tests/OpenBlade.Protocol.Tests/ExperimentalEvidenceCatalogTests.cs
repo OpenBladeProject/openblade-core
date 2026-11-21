@@ -118,6 +118,24 @@ public sealed class ExperimentalEvidenceCatalogTests
                     Assert.Equal("ExactMcuAndSelectedSynapseFieldsWithoutPhysicalValidation", feature.Basis);
                     Assert.Equal("evidence/source-reviewed-blades/2026-11-13-rz09-0529-keyboard-frames.json", feature.Sources[1]);
                 }
+                else if (feature.Feature == "HyperBoostSystemSkuRecheck"
+                    || model.ProductId == 0x02B7 && feature.Feature is "HyperBoost" or "PadlessHyperBoost")
+                {
+                    // Products 671 and 695 both run the vendor SKU recheck; 669 does not.
+                    Assert.Contains(model.ProductId, new ushort[] { 0x029F, 0x02B7 });
+                    Assert.Equal(feature.Feature switch
+                    {
+                        "HyperBoostSystemSkuRecheck" => "SynapseSourceBackedCapabilityGate",
+                        "HyperBoost" => "SynapseSourceBackedWithoutPhysicalValidation",
+                        _ => "SourceBackedExtrapolationWithoutPhysicalValidation",
+                    }, feature.Basis);
+                    Assert.Equal(ExperimentalBladeModels.Rz090510HyperBoostEvidence, feature.Sources[^1]);
+                    Assert.All(feature.Sources.SkipLast(1), source =>
+                    {
+                        Assert.StartsWith($"https://apps.razer.com/synapse/products/{model.ProductId}/mw/", source);
+                        Assert.Matches(@";SHA256=[0-9A-F]{64}$", source);
+                    });
+                }
                 else if (model.ThermalPolicy is not null)
                 {
                     Assert.Equal("Supported", snapshot.SupportStatus);

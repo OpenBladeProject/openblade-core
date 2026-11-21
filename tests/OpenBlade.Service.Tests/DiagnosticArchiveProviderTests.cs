@@ -122,7 +122,10 @@ public sealed class DiagnosticArchiveProviderTests
                 HyperBoostBaseModes = new HyperBoostBaseModeCapabilities(
                     DeviceFeatureAccess.ObservedOnly,
                     DeviceFeatureAccess.ReadWrite,
-                    DeviceFeatureAccess.ObservedOnly),
+                    DeviceFeatureAccess.ObservedOnly)
+                {
+                    Turbo = DeviceFeatureAccess.ReadWrite,
+                },
                 SpecialKeyBindingsAccess = DeviceFeatureAccess.ReadWrite,
                 WritableSpecialKeySlots =
                     SpecialKeySlotSet.M3
@@ -292,6 +295,16 @@ public sealed class DiagnosticArchiveProviderTests
             DeviceFeatureAccess.ReadWrite.ToString(),
             configuration.RootElement
                 .GetProperty("capability.hyperBoostBase.Balanced")
+                .GetString());
+        Assert.Equal(
+            DeviceFeatureAccess.ReadWrite.ToString(),
+            configuration.RootElement
+                .GetProperty("capability.hyperBoostBase.Turbo")
+                .GetString());
+        Assert.Equal(
+            "Unavailable",
+            configuration.RootElement
+                .GetProperty("capability.hyperBoostBase.Custom")
                 .GetString());
         using JsonDocument capabilities = JsonDocument.Parse(
             await ReadEntryAsync(archive, "capabilities.json"));

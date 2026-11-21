@@ -7,10 +7,10 @@ internal sealed partial class ExperimentalBladePort
     internal const string MaximumFansClearedForHyperBoostNotice =
         "Maximum Fans was turned off for HyperBoost; reapply Custom to turn it back on.";
 
-    // Synapse products 671/669 enable mode 7 for 029F/029D. Experimental padless use
-    // shares that exact command; see docs/experimental-hyperboost-evidence.md.
+    // Synapse products 671/669/695 enable mode 7 for 029F/029D/02B7. Experimental
+    // padless use shares that exact command; see docs/experimental-hyperboost-evidence.md.
     public Task SetHyperBoostAsync(bool enabled, CancellationToken cancellationToken) =>
-        SetHyperBoostAsync(enabled, model.ProductId == 0x029D ? PerformancePreset.Balanced : PerformancePreset.Performance,
+        SetHyperBoostAsync(enabled, HyperBoostCoolingPadEntryBaseMode(model) ?? PerformancePreset.Performance,
             ObserveHyperBoostCoolingPad() == CoolingPadConnectionState.PresentExact, cancellationToken);
 
     public Task SetHyperBoostAsync(bool enabled, PerformancePreset baseMode,
@@ -21,6 +21,15 @@ internal sealed partial class ExperimentalBladePort
     public async Task SetHyperBoostAsync(bool enabled, PerformancePreset baseMode,
         bool requiresCoolingPad, CancellationToken cancellationToken)
     {
+        if (SupportsExperimentalHyperBoost(model) && !HyperBoostSystemSkuPolicy.AllowsWrites(HyperBoostSkuAdmission))
+        {
+            policy.Record(enabled ? "HyperBoost" : "HyperBoostRestore", "Guard", "Blocked",
+                confirmed: HyperBoostSkuDiagnostic,
+                failure: HyperBoostSkuAdmission.ToString());
+            throw new CapabilityUnavailableException(
+                HyperBoostSkuAdmission == HyperBoostSystemSkuAdmission.DisabledByVendorSkuPolicy
+                    ? HyperBoostSystemSkuPolicy.DisabledMessage : HyperBoostSystemSkuPolicy.UnavailableMessage);
+        }
         if (!SupportsExperimentalHyperBoost(model)
             || Capabilities.HyperBoostAccess != DeviceFeatureAccess.ReadWrite
             || Capabilities.HyperBoostBaseModes?.AccessFor(baseMode) != DeviceFeatureAccess.ReadWrite)
@@ -53,8 +62,7 @@ internal sealed partial class ExperimentalBladePort
             }
             if (enabled)
             {
-                // Exact product-specific firmwareMinimumRequired, not BIOS provenance.
-                Version minimum = model.ProductId == 0x029D ? new(1, 1, 1, 3) : new(1, 5, 0, 0);
+                Version minimum = HyperBoostMinimumMcuFirmware(model);
                 ReadOnlyMemory<byte> firmware = await ExchangeAsync("HyperBoostFirmware", 0, 0x87,
                     [0, 0, 0, 0], false, cancellationToken).ConfigureAwait(false);
                 if (!McuVersionProtocol.TryDecodeQuery(firmware.Span, out string version)
@@ -123,6 +131,9 @@ internal sealed partial class ExperimentalBladePort
                 PerformancePreset.Performance => 2,
                 PerformancePreset.Silent => 5,
                 PerformancePreset.Custom => 4,
+                // Product 695 lists Turbo_Mode (main.27df2e7ddab0b6bc34cc.js byte 144,379)
+                // and sends it as Gaming_Mode raw 1 (bytes 117,552 and 48,781).
+                PerformancePreset.Turbo => 1,
                 _ => throw new CapabilityUnavailableException("Unrepresentable HyperBoost restore mode."),
             });
             foreach (byte selector in new byte[] { 1, 2 })
@@ -142,14 +153,15 @@ internal sealed partial class ExperimentalBladePort
                 submitted = true;
             }
             ProductionPerformanceFanState confirmed = await ReadPerformanceAsync(cancellationToken).ConfigureAwait(false);
+            // The battery exit submits raw 6; 02B7 reports it as its DC Balanced preset.
             if (confirmed.HyperBoostActive != enabled || confirmed.Fans != FanMode.Automatic
-                || !enabled && confirmed.Performance != baseMode)
+                || !enabled && !HyperBoostCapabilityPolicy.IsRestoredBase(baseMode, confirmed.Performance, source))
             {
                 throw new IOException("Independent HyperBoost readback did not confirm the requested state.");
             }
             policy.Record(operation, "Readback", "Confirmed", true,
                 enabled ? "HyperBoost" : baseMode.ToString(),
-                enabled ? "HyperBoost/Automatic" : $"{baseMode}/Automatic");
+                enabled ? "HyperBoost/Automatic" : $"{confirmed.Performance}/Automatic");
         }
         catch (Exception exception)
         {
@@ -175,7 +187,39 @@ internal sealed partial class ExperimentalBladePort
     }
 
     private static bool SupportsExperimentalHyperBoost(ExperimentalBladeModel model) =>
+        model.ProductId is 0x029F or 0x029D or 0x02B7;
+
+    // Products 671/669 report battery Balanced as raw 6 without a separate DC preset.
+    // Product 695 declares isBalancedDCSupported, so 02B7 keeps BatteryBalanced.
+    private static bool UsesRaw6AsBatteryBalanced(ExperimentalBladeModel model) =>
         model.ProductId is 0x029F or 0x029D;
+
+    // The default pad-present entry: 029D's vendor path uses Balanced, and 02B7
+    // uses Turbo, its default AC mode (product 695 main byte 158,285,
+    // defaultACPerformanceMode:1). Null keeps the legacy Performance inference (029F).
+    private static PerformancePreset? HyperBoostCoolingPadEntryBaseMode(ExperimentalBladeModel model) =>
+        model.ProductId switch
+        {
+            0x029D => PerformancePreset.Balanced,
+            0x02B7 => PerformancePreset.Turbo,
+            _ => null,
+        };
+
+    // Exact product-specific firmwareMinimumRequired, not BIOS provenance. Entry
+    // compares the 00/87 MCU version with it, as Synapse's isFirmwareSupported does
+    // (!check4DigitVersionGreater(minimum, current)).
+    // 669 main.8e09720cb94da405eead.js byte 142,487: 1.1.1.3.
+    // 671 main.2ceb8f5607c0e7a5901a.js: 1.5.0.0.
+    // 695 main.27df2e7ddab0b6bc34cc.js byte 141,503: 1.3.0.0, with the release note
+    // "Added support for new performance feature - Hyperboost"; policy
+    // 6737.7ec91e479ef65c194b6c.js byte 2,386,571 applies it.
+    internal static Version HyperBoostMinimumMcuFirmware(ExperimentalBladeModel model) => model.ProductId switch
+    {
+        0x029D => new(1, 1, 1, 3),
+        0x02B7 => new(1, 3, 0, 0),
+        0x029F => new(1, 5, 0, 0),
+        _ => throw new CapabilityUnavailableException("HyperBoost is outside this exact experimental model's contract."),
+    };
 
     private CoolingPadConnectionState ObserveHyperBoostCoolingPad()
     {

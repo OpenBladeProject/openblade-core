@@ -54,10 +54,22 @@ public static class HyperBoostCapabilityPolicy
         PerformancePreset mode) =>
         EntryBaseMode(capabilities, coolingPadPresent) is not null
         && mode is PerformancePreset.Silent or PerformancePreset.Balanced or PerformancePreset.Performance
-            or PerformancePreset.Custom
+            or PerformancePreset.Custom or PerformancePreset.Turbo
         && (capabilities.HyperBoostBaseModes?.AccessFor(mode)
             ?? (mode == PerformancePreset.Balanced ? capabilities.HyperBoostAccess : null))
             == DeviceFeatureAccess.ReadWrite;
+
+    // Whether a confirmed mode after a HyperBoost exit is the requested base. The
+    // battery exit always submits Balanced raw 6; models with a distinct DC
+    // Balanced preset (RZ09-0510) confirm that same raw value as BatteryBalanced.
+    public static bool IsRestoredBase(
+        PerformancePreset requestedBase,
+        PerformancePreset? confirmed,
+        PowerSource exitPowerSource) =>
+        confirmed == requestedBase
+        || requestedBase == PerformancePreset.Balanced
+            && exitPowerSource == PowerSource.Battery
+            && confirmed == PerformancePreset.BatteryBalanced;
 
     public static bool IsWritable(DeviceCapabilities capabilities) =>
         PadPresentEntryBaseMode(capabilities) is not null

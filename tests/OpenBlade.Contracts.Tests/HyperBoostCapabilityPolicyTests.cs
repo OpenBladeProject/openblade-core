@@ -82,6 +82,55 @@ public sealed class HyperBoostCapabilityPolicyTests
         Assert.Null(HyperBoostCapabilityPolicy.PadlessEntryBaseMode(capabilities));
     }
 
+    [Fact]
+    public void DeclaredTurboCoolingPadEntry_AdmitsTurboAndPadlessOrdinaryBases()
+    {
+        // RZ09-0510 shape: product 695 lists Turbo (raw 1) and has no Performance mode.
+        DeviceCapabilities capabilities = DeviceCapabilities.Unavailable() with
+        {
+            HyperBoostAccess = RW,
+            HyperBoostWithoutCoolingPadAccess = RW,
+            HyperBoostBaseModes = new HyperBoostBaseModeCapabilities(RW, RW, Observed)
+            {
+                Custom = RW,
+                Turbo = RW,
+                CoolingPadEntryBaseMode = PerformancePreset.Turbo,
+            },
+        };
+
+        Assert.Equal(PerformancePreset.Turbo, HyperBoostCapabilityPolicy.PadPresentEntryBaseMode(capabilities));
+        Assert.Equal(PerformancePreset.Balanced, HyperBoostCapabilityPolicy.PadlessEntryBaseMode(capabilities));
+        foreach (bool pad in new[] { true, false })
+        {
+            foreach (PerformancePreset mode in new[] { PerformancePreset.Silent, PerformancePreset.Balanced,
+                PerformancePreset.Turbo, PerformancePreset.Custom })
+            {
+                Assert.True(HyperBoostCapabilityPolicy.IsDirectEntryBase(capabilities, pad, mode));
+            }
+            Assert.False(HyperBoostCapabilityPolicy.IsDirectEntryBase(capabilities, pad, PerformancePreset.Performance));
+        }
+        DeviceCapabilities withoutTurbo = capabilities with
+        {
+            HyperBoostBaseModes = capabilities.HyperBoostBaseModes! with { Turbo = null, CoolingPadEntryBaseMode = null },
+        };
+        Assert.False(HyperBoostCapabilityPolicy.IsDirectEntryBase(withoutTurbo, coolingPadPresent: false, PerformancePreset.Turbo));
+    }
+
+    [Theory]
+    [InlineData(PerformancePreset.Turbo, PerformancePreset.Turbo, PowerSource.PluggedIn, true)]
+    [InlineData(PerformancePreset.Balanced, PerformancePreset.Balanced, PowerSource.Battery, true)]
+    [InlineData(PerformancePreset.Balanced, PerformancePreset.BatteryBalanced, PowerSource.Battery, true)]
+    [InlineData(PerformancePreset.Balanced, PerformancePreset.BatteryBalanced, PowerSource.PluggedIn, false)]
+    [InlineData(PerformancePreset.Balanced, PerformancePreset.BatteryBalanced, PowerSource.UsbC, false)]
+    [InlineData(PerformancePreset.Silent, PerformancePreset.BatteryBalanced, PowerSource.Battery, false)]
+    [InlineData(PerformancePreset.Turbo, PerformancePreset.Performance, PowerSource.PluggedIn, false)]
+    [InlineData(PerformancePreset.Turbo, null, PowerSource.PluggedIn, false)]
+    public void RestoredBase_AcceptsOnlyTheRequestedBaseOrItsBatteryBalancedReport(
+        PerformancePreset requested, PerformancePreset? confirmed, PowerSource source, bool restored)
+    {
+        Assert.Equal(restored, HyperBoostCapabilityPolicy.IsRestoredBase(requested, confirmed, source));
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData(DeviceFeatureAccess.ObservedOnly)]

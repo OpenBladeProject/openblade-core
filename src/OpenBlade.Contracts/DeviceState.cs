@@ -175,6 +175,10 @@ public sealed record HyperBoostBaseModeCapabilities(
     // Direct entry from and restoration to Custom; null where it has not been admitted.
     public DeviceFeatureAccess? Custom { get; init; }
 
+    // Direct entry from and restoration to Turbo (raw 1) on models whose ordinary
+    // modes include Turbo, such as RZ09-0510; null where it has not been admitted.
+    public DeviceFeatureAccess? Turbo { get; init; }
+
     // Explicit cooling-pad entry baseline for models whose vendor path does not use Performance.
     // Omitted capabilities retain the legacy inferred Performance baseline.
     [System.Text.Json.Serialization.JsonIgnore(
@@ -187,6 +191,7 @@ public sealed record HyperBoostBaseModeCapabilities(
         PerformancePreset.Balanced => Balanced,
         PerformancePreset.Performance => Performance,
         PerformancePreset.Custom => Custom,
+        PerformancePreset.Turbo => Turbo,
         _ => null,
     };
 
@@ -195,11 +200,13 @@ public sealed record HyperBoostBaseModeCapabilities(
         && Enum.IsDefined(Balanced)
         && Enum.IsDefined(Performance)
         && (Custom is null || Enum.IsDefined(Custom.Value))
+        && (Turbo is null || Enum.IsDefined(Turbo.Value))
         && (CoolingPadEntryBaseMode is null
             || CoolingPadEntryBaseMode is PerformancePreset.Silent
                 or PerformancePreset.Balanced
                 or PerformancePreset.Performance
                 or PerformancePreset.Custom
+                or PerformancePreset.Turbo
                 && AccessFor(CoolingPadEntryBaseMode.Value) == DeviceFeatureAccess.ReadWrite);
 }
 
@@ -400,7 +407,9 @@ public sealed record DeviceCapabilities(
                 && HyperBoostBaseModes.Balanced <= HyperBoostAccess.Value
                 && HyperBoostBaseModes.Performance <= HyperBoostAccess.Value
                 && (HyperBoostBaseModes.Custom is null
-                    || HyperBoostBaseModes.Custom <= HyperBoostAccess.Value))
+                    || HyperBoostBaseModes.Custom <= HyperBoostAccess.Value)
+                && (HyperBoostBaseModes.Turbo is null
+                    || HyperBoostBaseModes.Turbo <= HyperBoostAccess.Value))
         && (SpecialKeyBindingsAccess is null
             || Enum.IsDefined(SpecialKeyBindingsAccess.Value))
         && HasValidSpecialKeySlots()

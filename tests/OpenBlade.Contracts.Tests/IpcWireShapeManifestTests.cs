@@ -90,6 +90,8 @@ public sealed class IpcWireShapeManifestTests
             83 => "C29F478A17D06E6EDD3F69F1A6EAC11FAAEA3B89186B043F7ABB95761C294EC6",
             // Protocol 84 combines RZ09-0529 lighting zones with current-main contracts.
             84 => "7698A5B8C9679FCDE35762221E1DBD8A31E92086588511320CB0D5D87473D306",
+            // Protocol 86 adds the HyperBoost Turbo base-mode slot; 85 is reserved by PR #984.
+            86 => "2EEFCCAE4F968681337E0C20F808B43BEA5B0D48AB87F753802623E1BAD398D4",
             _ => null,
         };
 

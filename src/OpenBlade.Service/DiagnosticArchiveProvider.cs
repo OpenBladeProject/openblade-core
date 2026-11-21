@@ -662,6 +662,8 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
                 capabilities.HyperBoostBaseModes?.Balanced.ToString() ?? "Unavailable",
             ["capability.hyperBoostBase.Custom"] =
                 capabilities.HyperBoostBaseModes?.Custom?.ToString() ?? "Unavailable",
+            ["capability.hyperBoostBase.Turbo"] =
+                capabilities.HyperBoostBaseModes?.Turbo?.ToString() ?? "Unavailable",
             ["capability.fanSpeedMinimumRpm"] = NumberOrUnavailable(
                 capabilities.FanSpeedRange?.MinimumRpm),
             ["capability.reportsPerformanceWithManualFans"] =

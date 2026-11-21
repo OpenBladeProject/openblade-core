@@ -8,8 +8,9 @@ namespace OpenBlade.Contracts;
 
 public static class OpenBladeIpc
 {
-    // Protocol 84 combines source-main power metadata with RZ09-0529 lighting-zone intent.
-    public const int ProtocolVersion = 84;
+    // Protocol 86 adds the HyperBoost Turbo base-mode slot (RZ09-0510). It skips 85,
+    // which open PR #984 claims, so the two shapes never share one version number.
+    public const int ProtocolVersion = 86;
     public const int ReadOnlyCompatibilityProtocolVersion = 51;
     public const int MaximumMessageBytes = 64 * 1024;
     public const int MaximumDiagnosticArchiveBytes = 16 * 1024 * 1024;
@@ -1283,7 +1284,7 @@ public static class IpcMessageCodec
 
             if (protocol51Projection && typeInfo.Type == typeof(HyperBoostBaseModeCapabilities))
             {
-                foreach (string member in new[] { "custom", "coolingPadEntryBaseMode" })
+                foreach (string member in new[] { "custom", "turbo", "coolingPadEntryBaseMode" })
                 {
                     typeInfo.Properties.Single(property => string.Equals(
                         property.Name, member, StringComparison.OrdinalIgnoreCase))

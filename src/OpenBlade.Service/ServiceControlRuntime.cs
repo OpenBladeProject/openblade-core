@@ -7019,7 +7019,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                     {
                         Performance: var restoredPerformance,
                         Fans: FanMode.Automatic,
-                    } && restoredPerformance == requestedBaseMode);
+                    } && HyperBoostCapabilityPolicy.IsRestoredBase(
+                        requestedBaseMode, restoredPerformance, transitionPowerSource));
             if (!matched)
             {
                 HyperBoostIntentRestorationResult? failedTransitionRestore = null;
