@@ -72,7 +72,10 @@ and `authorize_for`) is source-reviewed only: the tests drive a `SettleFresh`
 model of it, not the real console, token, AC-line and controller suppliers.
 Disagreeing or undecodable readback (including mode 7 with manual fans) keeps
 the owner outstanding on both paths. So do manual fans under another selector at
-Stop; an explicit return on external power writes its pair and closes with 50.
+Stop; an explicit return on external power writes the saved destination's own
+setters and closes with 50. Without a destination there is no fan pair for
+selectors 5, 3, 6 and 4, so it writes nothing, and an unsupported saved Custom
+keeps the fans manual and says so, as managed does.
 
 Known gaps in this handback, none of which can submit a write:
 

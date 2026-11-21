@@ -674,6 +674,18 @@ impl Storage {
                 },
             }))
     }
+    /// The selected policy is Custom with settings outside the RZ09-0581
+    /// capability, which managed `ApplyPerformanceOutcomeAsync` reports as
+    /// unsupported without a write.
+    pub(super) fn custom_unsupported(
+        &self,
+        power: i32,
+        application: Option<&str>,
+    ) -> io::Result<bool> {
+        Ok(self
+            .selected(power, application)?
+            .is_some_and(|s| s.value == CUSTOM && s.destination().is_none()))
+    }
     pub(super) fn gpu_incomplete(&self, power: i32, application: Option<&str>) -> io::Result<bool> {
         let mut s = self.state.lock().map_err(|_| denied())?;
         // The same class expiry as `desired`, so the answer does not depend on

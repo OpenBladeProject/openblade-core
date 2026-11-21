@@ -4636,13 +4636,16 @@ async fn fan_v2_ac_manual_deferral_is_stored_but_cleared_fan_handback_blocks() {
 
     // The fan override is cleared but its handback is still outstanding: no
     // manual fan intent remains, so the reply is Blocked with the prefix.
+    // An unsupported saved Custom keeps the return from writing anything.
     let r = fan_rig(0, 0);
     r.get().await;
     assert_eq!(
         r.request(fan_request(180, Some(1), 3700)).await["result"]["status"],
         1
     );
-    r.port.state.lock().unwrap().selectors = [4, 4];
+    let mut custom = value(5, 1);
+    custom["customPerformance"] = json!({"cpu":2,"gpu":2,"maximumFans":false});
+    assert_eq!(r.set(181, custom).await["result"]["status"], 2);
     let cleared = r.request(fan_request(182, None, 0)).await;
     assert_eq!(cleared["result"]["status"], 2);
     assert!(
@@ -5244,6 +5247,79 @@ async fn fan_handback_retry_after_a_refused_return_reports_the_unapplied_preset(
     );
     r.origin.stop();
     r.stop().await;
+}
+
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn manual_fans_under_any_selector_return_through_the_saved_destination() {
+    // Manual fans under Silent (5), Battery Saver (3), Battery Balanced (6)
+    // and Custom (4): managed reads each as FanMode.Maximum and applies the
+    // saved destination's own pair from it, as from selectors 0 and 2.
+    for selector in [5, 3, 6, 4] {
+        let r = handback_rig(0, 15, 2).await;
+        r.port.state.lock().unwrap().selectors = [selector; 2];
+        let sent = r.port.state.lock().unwrap().sent.len();
+        let out = r.request(fan_request(232, None, 0)).await;
+        assert_eq!(out["result"]["status"], 1, "{selector}: {out}");
+        assert_eq!(
+            out["result"]["message"],
+            "Fans returned to Automatic with Performance performance, confirmed by independent paired readback.",
+            "{selector}"
+        );
+        assert_eq!(
+            mode_setters(&r, sent),
+            [[1, 1, 2, 0], [1, 2, 2, 0]],
+            "{selector}"
+        );
+        assert_eq!(request_rows(&r, 232).last().unwrap()["progress"], 50);
+        {
+            let state = r.port.state.lock().unwrap();
+            assert_eq!((state.selectors, state.fans), ([2; 2], [0; 2]));
+        }
+        r.origin.stop();
+        r.stop().await;
+    }
+}
+
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn an_unsupported_saved_custom_keeps_fans_manual_and_says_so() {
+    // Managed's fan return applies the saved Custom, whose capability check
+    // refuses High/High before any write: fans stay manual, the fan intent is
+    // saved and the reply names the refused destination.
+    for (request, message) in [
+        (fan_request(232, None, 0), "Fan override was cleared."),
+        (
+            fan_request(232, Some(0), 3700),
+            "Fan override intent was stored.",
+        ),
+    ] {
+        let r = fan_rig(0, 0);
+        r.port.state.lock().unwrap().actual = 15;
+        r.get().await;
+        let owned = r.request(fan_request(230, Some(1), 3700)).await;
+        assert_eq!(owned["result"]["status"], 1, "{owned}");
+        let mut custom = value(5, 1);
+        custom["customPerformance"] = json!({"cpu":2,"gpu":2,"maximumFans":false});
+        assert_eq!(r.set(231, custom).await["result"]["status"], 2);
+        let sent = r.port.state.lock().unwrap().sent.len();
+        let out = r.request(request).await;
+        assert_eq!(out["result"]["status"], 2, "{out}");
+        assert_eq!(
+            out["result"]["message"],
+            format!(
+                "{message} Hardware result: Fans could not return to Automatic with the saved Custom performance intent. Performance value is not supported by the verified capability table."
+            )
+        );
+        assert!(request_rows(&r, 232).is_empty());
+        assert!(mode_setters(&r, sent).is_empty());
+        {
+            let state = r.port.state.lock().unwrap();
+            assert_eq!((state.writes, state.fans), (4, [1; 2]));
+        }
+        r.origin.stop();
+        r.stop().await;
+    }
 }
 
 #[cfg(feature = "service-fan-mutation-v2")]

@@ -90,14 +90,41 @@ impl Plan {
     /// and GPU 0D/07 setters. There is no fan pair first. Manual intents and
     /// `None` keep the observed selector. Unclassified external power admits no
     /// battery preset (`thermal_mutation::admits_class`).
+    ///
+    /// Manual fans under Silent, a battery selector or Custom leave the same
+    /// way: managed reads them as `FanMode.Maximum`, and
+    /// `ProductionBatteryPort.CanApplyAutomaticPerformanceFrom` and the Custom
+    /// setter admit every destination from it. The destination's own pairs carry
+    /// Automatic fans under its selector. No fan state pair exists for those
+    /// selectors (`FanPair::state` admits 0 and 2), so without a destination
+    /// they have no plan.
     pub fn select_toward(
         baseline: O,
         intent: FanIntent,
         source: i32,
         performance: Option<Destination>,
     ) -> Option<Self> {
-        let mut plan = Self::select(baseline, intent, source)?;
-        if let Some(destination) = performance.filter(|_| !intent.manual()) {
+        let carried = performance.filter(|_| !intent.manual());
+        let mut plan = match Self::select(baseline, intent, source) {
+            Some(plan) => plan,
+            None if carried.is_some()
+                && matches!(
+                    baseline,
+                    O::SilentManual
+                        | O::BatterySaverManual
+                        | O::BatteryBalancedManual
+                        | O::Custom { manual: true, .. }
+                ) =>
+            {
+                let auto = Self::select(O::FixedMaximum, intent, source)?;
+                Self {
+                    unchanged: false,
+                    ..auto
+                }
+            }
+            None => return None,
+        };
+        if let Some(destination) = carried {
             if destination.is_battery() && source == crate::automation::UNCLASSIFIED_EXTERNAL {
                 return None;
             }
@@ -237,6 +264,46 @@ mod tests {
             .unchanged
         );
     }
+    /// Every decoded manual-fan baseline.
+    const MANUAL: [O; 6] = [
+        O::FixedMaximum,
+        O::PerformanceManual,
+        O::SilentManual,
+        O::BatterySaverManual,
+        O::BatteryBalancedManual,
+        O::Custom {
+            manual: true,
+            levels: None,
+        },
+    ];
+    #[test]
+    fn manual_fans_under_other_selectors_leave_only_through_a_destination() {
+        use crate::thermal_mutation::Preset;
+        let auto = FanIntent::checked(0, 3700).unwrap();
+        let fixed = FanIntent::checked(1, 3700).unwrap();
+        for baseline in &MANUAL[2..] {
+            for source in [0, 2, 3] {
+                // No fan state pair exists for these selectors.
+                assert!(Plan::select(*baseline, auto, source).is_none());
+                assert!(Plan::select_toward(*baseline, auto, source, None).is_none());
+                // A manual intent takes no destination and has no recipe.
+                assert!(
+                    Plan::select_toward(*baseline, fixed, source, Some(Preset::Balanced.into()))
+                        .is_none()
+                );
+                let p = Plan::select_toward(*baseline, auto, source, Some(Preset::Balanced.into()))
+                    .unwrap();
+                assert_eq!((p.selector, p.setters(), p.pairs()), (0, 2, 3));
+                assert!(!p.entry && !p.intermediate && !p.unchanged);
+                assert_eq!((p.intent, p.source), (auto, source));
+            }
+            // Battery has no plan.
+            assert!(
+                Plan::select_toward(*baseline, auto, 1, Some(Preset::BatterySaver.into()))
+                    .is_none()
+            );
+        }
+    }
     #[test]
     fn automatic_return_takes_every_saved_destination_directly() {
         use crate::thermal_mutation::Preset;
@@ -248,7 +315,7 @@ mod tests {
             gpu: L::Medium,
         };
         for source in [0, 2, 3] {
-            for baseline in [O::FixedMaximum, O::PerformanceManual] {
+            for baseline in MANUAL {
                 for (destination, selector, settled) in [
                     (Preset::Silent.into(), 5, O::SilentAutomatic),
                     (Preset::BatterySaver.into(), 3, O::BatterySaverAutomatic),
@@ -319,8 +386,8 @@ mod tests {
         let auto = FanIntent::checked(0, 3700).unwrap();
         // Unclassified external power (3) uses the same commands and selector.
         for source in [0, 2, 3] {
-            // Manual fans under either selector leave through the saved preset.
-            for baseline in [O::FixedMaximum, O::PerformanceManual] {
+            // Manual fans under every selector leave through the saved preset.
+            for baseline in MANUAL {
                 for (preset, selector, settled) in [
                     (Preset::Balanced, 0, O::BalancedAutomatic),
                     (Preset::Performance, 2, O::PerformanceAutomatic),

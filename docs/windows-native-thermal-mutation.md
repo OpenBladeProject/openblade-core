@@ -164,13 +164,22 @@ one). A rejection is Failed with managed's text, for example:
 A class that disagrees with Windows is not managed's source: this check does
 not apply, and the recipe's power fence submits no setter.
 
-Managed leaves confirmed HyperBoost for a battery preset through the
-`hyperboost-restore-balanced` pair first (`CanExitHyperBoostDirectlyTo`; the
-RZ09-0581 `HyperBoostBaseModeAdmissionSource` admits direct exits to Silent,
-Balanced, Performance and Custom only). That pair belongs to the separate
-HyperBoost fixture and is not admitted natively, so native stores the intent
-and replies Blocked without preparing a row (`Plan::NoDirectPath`). A direct
-exit to Silent keeps the first reading's classified external class, as the
+Managed leaves confirmed HyperBoost for a battery preset indirectly
+(`CanExitHyperBoostDirectlyTo`; the RZ09-0581
+`HyperBoostBaseModeAdmissionSource` admits direct exits to Silent, Balanced,
+Performance and Custom only). `ExecuteThermalSettersAsync`
+(`ProductionBatteryPort.cs:2329-2442`) writes the `hyperboost-restore-balanced`
+pair (`Rz09_0581_02e0_4_00_HyperBoostProduction.json:28-48`, the same payloads
+as `performance-balanced-channel-1/2` at
+`Rz09_0581_02e0_3_01_BatteryProduction.json:179-196`), then reads the full
+thermal state and stops as indeterminate unless it reports Balanced with
+Automatic fans, and only then writes the battery pair. After that exit the
+battery pair skips the per-command ordinary source admission
+(`ordinaryControl && !exitedHyperBoost`). So it is not the restore pair followed
+by the battery pair: it has an intermediate confirmation and different per-command
+power admission, and native has no recipe for it. Native stores the intent and
+replies Blocked without preparing a row (`Plan::NoDirectPath`). A direct exit
+to Silent keeps the first reading's classified external class, as the
 Performance exit does.
 
 ### Custom
@@ -450,6 +459,26 @@ the destination with Automatic fans, and for Custom the 0D/87 CPU and GPU reads
 must report the requested levels; other or unread levels leave the row
 unsettled. The reply is `Fans returned to Automatic with
 <preset> performance, confirmed by independent paired readback.`
+
+This holds for manual fans under every decoded selector. Managed maps Silent,
+Battery Saver, Battery Balanced and Custom with manual fans to
+`FanMode.Maximum` (`ProductionBatteryPort.MapThermalState`), and
+`CanApplyAutomaticPerformanceFrom` and the Custom setter admit every
+destination from `FanMode.Maximum` (`ProductionBatteryPort.cs:810-822` and
+`:988-991`). The destination's own pairs are the fixture's Automatic pairs
+under each selector (`Rz09_0581_02e0_3_01_BatteryProduction.json`, the
+`performance-*-channel-1/2` entries). No fan state pair exists for selectors 5,
+3, 6 or 4 (`FanPair::state` admits 0 and 2), so without a destination
+(`Plan::select_toward`) those baselines have no plan and nothing is written.
+
+A saved Custom outside the RZ09-0581 range has no destination. Managed applies it
+anyway, and its capability check (`ApplyScopedAsync`, `Unsupported`) refuses it
+before any write, so the fans stay manual. Native does the same: the fan intent
+is saved, nothing is prepared or written, the owner stays outstanding and the
+reply is Blocked, `Fan override intent was stored. Hardware result: Fans could
+not return to Automatic with the saved Custom performance intent. Performance
+value is not supported by the verified capability table.` (`Fan override was
+cleared.` for a clear).
 
 The fan journal row records the destination selector. Manual fans keep
 selector 0 or 2. An Automatic row may also carry Silent (5), Battery Saver (3)
@@ -827,7 +856,9 @@ SID switch cannot bypass an earlier user's ambiguity. Each durable stage include
 original request ID, SID, peer PID/session, owner-generation digest, full typed
 requested intent, intent hash, resolved destination, and ordered progress:
 Prepared, FirstIntent, FirstAcknowledged, SecondIntent, SecondAcknowledged,
-Confirmed (ordinals 0-5), plus KnownNotSubmitted (6). Every journal owner nonce is checked against the complete validated
+Confirmed (ordinals 0-5), plus KnownNotSubmitted (6), and for Custom
+ThirdIntent, ThirdAcknowledged, FourthIntent and FourthAcknowledged (7-10),
+between SecondAcknowledged and Confirmed. Every journal owner nonce is checked against the complete validated
 Active owner history retained by the same Store, including legitimate historical
 owners. Unknown owner references are refused on read and before replacement.
 Intent is flushed and read back before each possible submission.

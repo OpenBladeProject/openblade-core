@@ -19,6 +19,10 @@ pub(in super::super) struct FanRequest {
 }
 /// A fan request refused by `Refusal::Deadline` after its intent was saved.
 const FAN_DEADLINE_STORED: &str = "Fan override intent was stored. Hardware result: The remaining request time cannot cover this recipe at the measured device pace; no fan setter was submitted.";
+// Managed composes `Fans could not return to Automatic with the saved Custom
+// performance intent.` with ApplyScopedAsync's `Unsupported("Performance")`.
+const FAN_CUSTOM_UNSUPPORTED_STORED: &str = "Fan override intent was stored. Hardware result: Fans could not return to Automatic with the saved Custom performance intent. Performance value is not supported by the verified capability table.";
+const FAN_CUSTOM_UNSUPPORTED_CLEARED: &str = "Fan override was cleared. Hardware result: Fans could not return to Automatic with the saved Custom performance intent. Performance value is not supported by the verified capability table.";
 const FAN_DEADLINE_CLEARED: &str = "Fan override was cleared. Hardware result: The remaining request time cannot cover this recipe at the measured device pace; no fan setter was submitted.";
 pub(super) struct FanPermit {
     storage: Arc<Storage>,
@@ -41,6 +45,8 @@ pub(super) struct FanPermit {
     performance: Mutex<Option<Destination>>,
     // A saved destination was left unapplied because its GPU clock effect is unsupported.
     performance_gpu: AtomicBool,
+    // A return to Automatic refused because the saved Custom is unsupported.
+    custom_unsupported: AtomicBool,
     // The selector an earlier owner recorded, when this request's no-op closed it.
     released: Mutex<Option<u8>>,
     // A clear on unclassified external power: no profile applies, so only an
@@ -301,6 +307,20 @@ impl Permit for FanPermit {
         } else {
             None
         };
+        // Managed applies the saved Custom through
+        // `ApplyDirectAutomaticFanTransitionOutcomeAsync`; its capability check
+        // refuses unsupported settings before any write, so fans stay manual and
+        // the reply says why. The fan intent above is still saved.
+        if returning
+            && performance.is_none()
+            && self
+                .storage
+                .custom_unsupported(power, self.application.as_deref())?
+        {
+            self.custom_unsupported.store(true, Ordering::Release);
+            *self.selected.lock().map_err(|_| io::ErrorKind::Other)? = Some((power, settings));
+            return Ok(None);
+        }
         if returning && performance.is_none() {
             self.performance_gpu.store(
                 self.storage
@@ -728,6 +748,7 @@ impl Runtime {
             released: Mutex::new(None),
             unclassified_clear: AtomicBool::new(false),
             unclassified_blocked: AtomicBool::new(false),
+            custom_unsupported: AtomicBool::new(false),
             deadline: AtomicBool::new(false),
             verified: Mutex::new(None),
             returning: AtomicBool::new(false),
@@ -811,6 +832,14 @@ impl Runtime {
             "Fan setters completed and independent mode was confirmed. Target RPM and rotation are not readable on this backend."
         } else if permit.storage.pending() {
             "Fan submission or owned release remains unresolved; further writes are fenced."
+        } else if permit.accepted.load(Ordering::Acquire)
+            && permit.custom_unsupported.load(Ordering::Acquire)
+        {
+            if permit.value.is_none() {
+                FAN_CUSTOM_UNSUPPORTED_CLEARED
+            } else {
+                FAN_CUSTOM_UNSUPPORTED_STORED
+            }
         } else if permit.accepted.load(Ordering::Acquire) && permit.deadline.load(Ordering::Acquire)
         {
             if permit.value.is_none() {
