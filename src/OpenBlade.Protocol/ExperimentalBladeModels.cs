@@ -612,9 +612,17 @@ internal sealed class ExperimentalFeaturesPolicy(ExperimentalBladeModel model)
     internal void ConfirmFanRange(PerformancePreset preset, FanSpeedRange range) =>
         System.Collections.Immutable.ImmutableInterlocked.AddOrUpdate(ref confirmedFanRanges, preset, range, (_, _) => range);
 
-    // Latest decoded 0D/8F panel reading: 1 mini-LED, 0 no mini-LED, -1 unknown.
-    // Capability metadata only; every local dimming Clear reads the panel afresh.
+    // Latest successful 0D/8F panel reading for this exact device: 1 mini-LED,
+    // 0 no mini-LED, -1 not read yet. A failed read is remembered separately and
+    // never replaces a confirmed reading, so one transient failure on a later
+    // port open does not withdraw an offered Clear. Capability metadata only;
+    // every local dimming Clear reads the panel afresh before writing.
     private int miniLedPanel = -1;
+    private int miniLedPanelReadUnavailable;
+    // The latest optional 07/8F local dimming state read failed. Later state
+    // reads skip it until a Clear or recovery reads Power Mode Control again.
+    private int localDimmingReadUnavailable;
+    private bool localDimmingRecoveryRequired;
 
     internal bool? MiniLedPanel => Volatile.Read(ref miniLedPanel) switch
     {
@@ -623,8 +631,38 @@ internal sealed class ExperimentalFeaturesPolicy(ExperimentalBladeModel model)
         _ => null,
     };
 
-    internal void ConfirmMiniLedPanel(bool? present) =>
-        Volatile.Write(ref miniLedPanel, present switch { true => 1, false => 0, null => -1 });
+    /// <summary>The panel was read, or its read failed; port opens skip 0D/8F.</summary>
+    internal bool MiniLedPanelResolved =>
+        MiniLedPanel is not null || Volatile.Read(ref miniLedPanelReadUnavailable) != 0;
+
+    internal void ConfirmMiniLedPanel(bool present)
+    {
+        Volatile.Write(ref miniLedPanel, present ? 1 : 0);
+        Volatile.Write(ref miniLedPanelReadUnavailable, 0);
+    }
+
+    internal void RecordMiniLedPanelReadUnavailable() =>
+        Volatile.Write(ref miniLedPanelReadUnavailable, 1);
+
+    internal bool LocalDimmingReadUnavailable => Volatile.Read(ref localDimmingReadUnavailable) != 0;
+
+    internal void RecordLocalDimmingRead(bool readable) =>
+        Volatile.Write(ref localDimmingReadUnavailable, readable ? 0 : 1);
+
+    /// <summary>
+    /// A possibly submitted 07/0F local dimming Clear must be reconciled from a
+    /// real 07/8F reading. No other pause depends on that query.
+    /// </summary>
+    internal bool LocalDimmingRecoveryRequired
+    {
+        get
+        {
+            lock (sync)
+            {
+                return localDimmingRecoveryRequired;
+            }
+        }
+    }
 
     internal bool IsPaused => Volatile.Read(ref recoveryRequired) != 0;
 
@@ -641,7 +679,8 @@ internal sealed class ExperimentalFeaturesPolicy(ExperimentalBladeModel model)
         }
     }
 
-    internal void RequireRecovery(ExperimentalRecoveryScope scope = ExperimentalRecoveryScope.All)
+    internal void RequireRecovery(ExperimentalRecoveryScope scope = ExperimentalRecoveryScope.All,
+        bool localDimming = false)
     {
         lock (sync)
         {
@@ -652,6 +691,7 @@ internal sealed class ExperimentalFeaturesPolicy(ExperimentalBladeModel model)
                 or ExperimentalRecoveryScope.LightingFieldsOnly ? scope : ExperimentalRecoveryScope.All;
             recoveryScope = !IsPaused ? requested
                 : recoveryScope == requested ? recoveryScope : ExperimentalRecoveryScope.All;
+            localDimmingRecoveryRequired = localDimming || IsPaused && localDimmingRecoveryRequired;
             Volatile.Write(ref recoveryRequired, 1);
         }
     }
@@ -662,17 +702,21 @@ internal sealed class ExperimentalFeaturesPolicy(ExperimentalBladeModel model)
         lock (sync)
         {
             recoveryScope = ExperimentalRecoveryScope.All;
+            localDimmingRecoveryRequired = false;
             Volatile.Write(ref recoveryRequired, 0);
         }
     }
 
-    internal bool TryCompleteRecovery(ExperimentalRecoveryScope observedScope, Func<bool> acceptObservedState)
+    internal bool TryCompleteRecovery(ExperimentalRecoveryScope observedScope, Func<bool> acceptObservedState,
+        bool localDimmingObserved = true)
     {
         lock (sync)
         {
             // Keep runtime acceptance and pause release together. A widened
             // obligation cannot be discharged by an earlier partial observation.
-            if (!IsPaused || recoveryScope != observedScope || !acceptObservedState()
+            // A Clear obligation needs the 07/8F reading the recovery state carries.
+            if (!IsPaused || recoveryScope != observedScope
+                || localDimmingRecoveryRequired && !localDimmingObserved || !acceptObservedState()
                 || recoveryScope != observedScope)
             {
                 return false;

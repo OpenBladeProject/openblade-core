@@ -6,13 +6,17 @@ namespace OpenBlade.Protocol;
 // applied by Synapse through an unreviewed native vendor DLL, so no OpenBlade
 // write path exists (AGENTS.md rule 6). See docs/experimental-blade-support.md and
 // evidence/source-reviewed-blades/2026-11-20-observed-features-and-local-dimming.json.
+// Offsets below are UTF-8 byte offsets into the pinned file.
 internal sealed partial class ExperimentalBladePort
 {
-    // hasAMDOverclock in product 669 (RZ09-0482), 694 (RZ09-0508) and 709
-    // (RZ09-0530) mw main. activePowerPreset CPUPowerLimit applies in Custom
-    // mode only; the UI range is 45-95 W in 1 W steps (RzAMDOverClock).
+    // hasAMDOverclock in product 694 (RZ09-0508) and 709 (RZ09-0530) mw main.
+    // activePowerPreset CPUPowerLimit applies in Custom mode only; the UI range is
+    // 45-95 W in 1 W steps (694 ui main.415cc878.js byte 6945431, 709 ui chunk
+    // 2915.4e513855.chunk.js byte 88779). Product 669 (RZ09-0482) is series 9:
+    // its power-limit path drives the V22 curve optimizer instead, so it has no
+    // CPU power limit here.
     internal static bool SupportsObservedAmdCpuPowerLimit(ExperimentalBladeModel model) =>
-        model.ProductId is 0x029D or 0x02B6 or 0x02C5;
+        model.ProductId is 0x02B6 or 0x02C5;
 
     // hasIntelCPUOverclocking in product 671 (RZ09-0483), 672 (RZ09-0484), 695
     // (RZ09-0510), 696 (RZ09-0509) and 711 (RZ09-0529) mw main, each with the
@@ -24,12 +28,15 @@ internal sealed partial class ExperimentalBladePort
     // Products 582 (RZ09-0300), 616 (RZ09-0351) and 597 (RZ09-0328) use the
     // rzDevice25LedMatrixBladeWattage setOverClockingMode: Gaming mode reads the
     // 0D/83 GPU and VRAM fields and passes them to native SetGPUValue; other modes
-    // send 0,0. The same 0D/83 bytes also carry fan-table fields.
+    // send 0,0. The same 0D/83 bytes also carry fan-table fields. Only the 582
+    // Wattage module is pinned; the 597 (5473a2df...) and 616 (f57ee707...)
+    // Wattage modules were not downloaded, so those two rest on their pinned
+    // main, 6737 and rzDevice25 files.
     internal static bool SupportsObservedFirmwareGamingGpuOverclock(ExperimentalBladeModel model) =>
         model.ProductId is 0x0246 or 0x0268 or 0x0255;
 
-    // UI ranges from 695 main.65ed4ee5.js (char 6904126), 696 main.cb24c0fc.js
-    // (char 7174591) and 711 chunk 892.12b29c32.js (char 113285): PL2 1-200 W
+    // UI ranges from 695 main.65ed4ee5.js (byte 6904126), 696 main.cb24c0fc.js
+    // (byte 7174591) and 711 chunk 892.12b29c32.js (byte 113285): PL2 1-200 W
     // with an enable box, PL1 1-190 W, both in 0.125 W steps, and the tau list.
     internal static readonly IntelCpuPowerLimitCapabilities SynapseIntelCpuPowerLimit = new(
         LongTermPowerMilliwatts: new DeviceNumericRange(1_000, 190_000, 125),
@@ -46,6 +53,22 @@ internal sealed partial class ExperimentalBladePort
         SupportsShortTermPowerEnableDisable = true,
     };
 
+    // Products 671 and 672 pin the same defaults and control IDs, but their UI
+    // bundles carrying the ranges were not reviewed. The ranges stay unknown
+    // rather than assumed from the other models.
+    internal static readonly IntelCpuPowerLimitCapabilities SynapseIntelCpuPowerLimitRangeUnknown =
+        SynapseIntelCpuPowerLimit with
+        {
+            LongTermPowerMilliwatts = null,
+            ShortTermPowerMilliwatts = null,
+            TimeWindowSeconds = null,
+        };
+
+    internal static IntelCpuPowerLimitCapabilities? ObservedIntelCpuPowerLimit(ExperimentalBladeModel model) =>
+        !SupportsObservedIntelCpuPowerLimit(model) ? null
+        : model.ProductId is 0x029F or 0x02A0 ? SynapseIntelCpuPowerLimitRangeUnknown
+        : SynapseIntelCpuPowerLimit;
+
     private const string SynapseProducts = "https://apps.razer.com/synapse/products/";
     internal const string ObservedFeaturesReview = "evidence/source-reviewed-blades/2026-11-20-observed-features-and-local-dimming.json";
 
@@ -55,19 +78,17 @@ internal sealed partial class ExperimentalBladePort
         List<ExperimentalFeatureEvidence> features = [];
         if (SupportsObservedAmdCpuPowerLimit(model))
         {
-            features.Add(new("CpuPowerLimit", "SynapseSourceObservedOnlyNativeVendorWrite", [
-                model.ProductId switch
-                {
-                    0x029D => SynapseProducts + "669/mw/main.8e09720cb94da405eead.js;SHA256=EEB8A171E77D1E066655D7FC997E4015B420B0F936F2464A27A87FDAFB5AC302",
-                    0x02B6 => SynapseProducts + "694/mw/main.1b1b68e07824e5af9833.js;SHA256=F1AEEAFF4BBDB631B4E66BF8B2B6415FB0EADDF24343A146787B091F89AA7BDC",
-                    _ => SynapseProducts + "709/mw/main.bb0dd1873a58a987c63a.js;SHA256=CC8E0EFD2B37F1ED5AF6C8CC8C3AB1327B9502927DC05F20EE7465486AB006F1",
-                },
-                ObservedFeaturesReview]));
+            features.Add(new("CpuPowerLimit", "SynapseSourceObservedOnlyNativeVendorWrite",
+                model.ProductId == 0x02B6
+                    ? [SynapseProducts + "694/mw/main.1b1b68e07824e5af9833.js;SHA256=F1AEEAFF4BBDB631B4E66BF8B2B6415FB0EADDF24343A146787B091F89AA7BDC",
+                        SynapseProducts + "694/ui/static/js/main.415cc878.js;SHA256=C22750AAD6E54EE86E04B3D7F7D7DA520636293C209734358FC26A744D84F6B1", ObservedFeaturesReview]
+                    : [SynapseProducts + "709/mw/main.bb0dd1873a58a987c63a.js;SHA256=CC8E0EFD2B37F1ED5AF6C8CC8C3AB1327B9502927DC05F20EE7465486AB006F1",
+                        SynapseProducts + "709/ui/static/js/2915.4e513855.chunk.js;SHA256=6D6106090CDC8D26F527F0265C07DBB4035EC57FBD0BDC41F0EDB1A205ADCEB2", ObservedFeaturesReview]));
         }
         if (SupportsObservedIntelCpuPowerLimit(model))
         {
             features.Add(new("IntelCpuPowerLimits", model.ProductId is 0x029F or 0x02A0
-                    ? "SynapseSourceObservedOnlyNativeVendorWriteUiRangeExtrapolated"
+                    ? "SynapseSourceObservedOnlyNativeVendorWriteRangeUnknown"
                     : "SynapseSourceObservedOnlyNativeVendorWrite",
                 model.ProductId switch
                 {
@@ -84,7 +105,9 @@ internal sealed partial class ExperimentalBladePort
         }
         if (SupportsObservedFirmwareGamingGpuOverclock(model))
         {
-            features.Add(new("FirmwareGamingGpuOverclock", "SynapseSourceObservedOnlyNativeVendorWrite",
+            features.Add(new("FirmwareGamingGpuOverclock", model.ProductId == 0x0246
+                    ? "SynapseSourceObservedOnlyNativeVendorWrite"
+                    : "SynapseSourceObservedOnlyNativeVendorWriteWattageModuleUnpinned",
                 model.ProductId switch
                 {
                     0x0246 => [SynapseProducts + "582/mw/rzDevice25LedMatrixBladeWattage.45c847b37f79a031cbaf.js;SHA256=71D91DFF87CB617384535C5DEC4643A2CC551C3CDE63EE691A29D7282FF96AB2",
@@ -100,8 +123,10 @@ internal sealed partial class ExperimentalBladePort
             features.Add(new("LocalDimmingClearOnMiniLedPanels", "SynapseSourceBackedWithoutPhysicalValidation",
                 model.ProductId == 0x02B7
                     ? [SynapseProducts + "695/mw/rzDevice25.60bfcef58690c8bb715d.js;SHA256=2D69449422DAC50C23A0EC81A5421CAB178BD04610725273FA67497574195491",
+                        SynapseProducts + "695/mw/6737.7ec91e479ef65c194b6c.js;SHA256=22D359EB7EDA08A9D2F4766EB6898A875A5F009EDB666BA4CD5A0425491AD1DA",
                         SynapseProducts + "695/ui/static/js/main.65ed4ee5.js;SHA256=74ECA71816B57B4C9BE3F83D3E5D894F95A2050D88FB2DF4B63A5AFFF5271612", ObservedFeaturesReview]
                     : [SynapseProducts + "696/mw/rzDevice25.6339454cb5b2fe587300.js;SHA256=8780AA380D11665A2D551174D162C7278404465772219D0530A29B09E297BC81",
+                        SynapseProducts + "696/mw/6737.2463f7361e4d145671a2.js;SHA256=4EF6AFB6402DD50CD6DE07CA96E191F475797903507C82CAE194F0AF63E32ECC",
                         SynapseProducts + "696/ui/static/js/main.cb24c0fc.js;SHA256=C882F2130FC41DC73EDA31A141BA82F8786B84F45992C490CC0DC5AC3EC28DCD", ObservedFeaturesReview]));
         }
         if (model.ProductId == 0x02C5)

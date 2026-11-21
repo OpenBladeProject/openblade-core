@@ -49,7 +49,8 @@ public sealed class CpuVoltageModelAdmissionTests
         Assert.Equal(DeviceFeatureAccess.ReadWrite, caps.CpuVoltageOptimizer!.Access);
         // The Synapse CPU power limit is shown but never writable; voltage
         // admission does not lend it a write path.
-        Assert.Equal(DeviceFeatureAccess.ObservedOnly, caps.CpuPowerLimit!.Access);
+        // RZ09-0482 shows no power limit: its Synapse path drives the V22 curve.
+        Assert.Equal(product == 0x029D ? null : DeviceFeatureAccess.ObservedOnly, caps.CpuPowerLimit?.Access);
         Assert.Equal(DeviceFeatureAccess.ObservedOnly,
             ExperimentalBladePort.CreateCapabilities(profile, false).CpuVoltageOptimizer!.Access);
         var contract = CpuLiveCurveContract.ForIdentity(new(model, 0x1532, (ushort)product, "Unknown"))!;

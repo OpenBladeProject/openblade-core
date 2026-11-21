@@ -49,6 +49,10 @@ internal sealed partial class ExperimentalBladePort(
             }
             ConfirmedBatteryState? recoveredTemporaryBattery = SupportsTemporaryFullChargeQuery
                 ? await ReadTemporaryFullChargeRecoveryAsync(cancellationToken).ConfigureAwait(false) : null;
+            // A possibly submitted local dimming Clear leaves the real bit unknown.
+            // Recovery reads it; a failed read throws, so the pause stays.
+            bool? recoveredLocalDimming = SupportsLocalDimmingClear(model) && policy.LocalDimmingRecoveryRequired
+                ? await ReadLocalDimmingActiveAsync(cancellationToken).ConfigureAwait(false) : null;
             ProductionPerformanceFanState performance = await ReadPerformanceAsync(cancellationToken).ConfigureAwait(false);
             if (performance.Performance is null && !performance.HyperBoostActive || performance.Fans is null)
             {
@@ -73,6 +77,7 @@ internal sealed partial class ExperimentalBladePort(
                 HyperBoostActive = performance.HyperBoostActive,
                 CustomPerformance = performance.CustomPerformance,
                 LogoLighting = logo,
+                LocalDimmingActive = recoveredLocalDimming,
                 IndependentLighting = SupportsIndependentLighting(model)
                     && policy.RecoveryScope != ExperimentalRecoveryScope.ThermalOnly
                     ? await ReadIndependentLightingCoreAsync(cancellationToken).ConfigureAwait(false) : null,
@@ -215,7 +220,7 @@ internal sealed partial class ExperimentalBladePort(
                 : null,
             // Synapse hasIntelCPUOverclocking: PL1/PL2/tau through the unreviewed native
             // RzIntelOverClock DLL, so access is observed only.
-            IntelCpuPowerLimit = SupportsObservedIntelCpuPowerLimit(model) ? SynapseIntelCpuPowerLimit : null,
+            IntelCpuPowerLimit = ObservedIntelCpuPowerLimit(model),
             // Synapse setOverClockingMode applies 0D/83 GPU/VRAM fields through native
             // SetGPUValue on Gaming mode; no reviewed OpenBlade path writes them.
             FirmwareGamingGpuOverclockAccess = SupportsObservedFirmwareGamingGpuOverclock(model)
@@ -710,7 +715,8 @@ internal sealed partial class ExperimentalBladePort(
             policy.RequireRecovery(operation is "Performance" or "CustomPerformance" or "Fans"
                 or "HyperBoost" or "HyperBoostRestore"
                 ? ExperimentalRecoveryScope.ThermalOnly : operation == "IndependentLighting"
-                    ? ExperimentalRecoveryScope.LightingFieldsOnly : ExperimentalRecoveryScope.All);
+                    ? ExperimentalRecoveryScope.LightingFieldsOnly : ExperimentalRecoveryScope.All,
+                localDimming: operation == "LocalDimming");
         }
         policy.Record(operation, "Failure", submitted ? "Indeterminate" : "NotApplied", submitted,
             failure: exception.GetType().Name);
@@ -912,6 +918,7 @@ internal sealed partial class ExperimentalBladePort(
             (0x07, 0x92, [0]) => DeviceStateQuery.BatteryProtection,
             (0x07, 0x8F, [0]) when operation == "TemporaryFullCharge" => DeviceStateQuery.TemporaryFullCharge,
             (0x07, 0x8F, [0]) when operation == "MaximumFans" => DeviceStateQuery.PerformanceAndFans,
+            (0x07, 0x8F, [0]) when operation == "LocalDimming" => DeviceStateQuery.LocalDimming,
             (0x0D, 0x82, [0 or 1, 1, 0, 0]) => DeviceStateQuery.ThermalChannelOne,
             (0x0D, 0x82, [0 or 1, 2, 0, 0]) => DeviceStateQuery.ThermalChannelTwo,
             (0x0D, 0x81, [0 or 1, 1 or 2, 0]) => DeviceStateQuery.PerformanceAndFans,

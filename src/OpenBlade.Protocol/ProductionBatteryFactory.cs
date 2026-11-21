@@ -521,7 +521,11 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
             thxAudioCapabilities: thxAudioCapabilities,
             laptopControlRecoveryIdentity: $"{TargetBladeDevice.Model}|{TargetBladeDevice.VendorId:X4}:{TargetBladeDevice.ProductId:X4}",
             capturePowerSource: capturePowerSource,
-            supportsOrdinaryThermalControlOnUnclassifiedExternalPower: IsExactModelScopedRz090581Identity(exactIdentity));
+            supportsOrdinaryThermalControlOnUnclassifiedExternalPower: IsExactModelScopedRz090581Identity(exactIdentity),
+            // Synapse product 736 sets hasLocalDimming and couples local dimming to
+            // Windows HDR, like RZ09-0530 (mw main.b2e1b23c byte 163692, 6737.45e4affd
+            // bytes 1201990 and 1202173). Shown only; no local dimming command is admitted.
+            localDimmingCapabilities: new LocalDimmingCapabilities(DeviceFeatureAccess.ObservedOnly, SupportsClear: false));
     }
 
     internal static (bool DirectManualTransitions, bool BatterySaverFanStop)

@@ -40,15 +40,28 @@ internal sealed partial class ExperimentalBladePort
 
     private async Task<byte> ReadTemporaryFullChargeFlagsAsync(CancellationToken token)
     {
-        ReadOnlyMemory<byte> payload = await ExchangeAsync("TemporaryFullCharge", 0x07, 0x8F,
+        byte flags = await ReadPowerModeControlAsync("TemporaryFullCharge",
+            "Temporary full charge returned an invalid shared Power Mode Control mask.", token).ConfigureAwait(false);
+        RecordQuery("TemporaryFullCharge", "Confirmed",
+            $"Active={(flags & TemporaryFullChargeProtocol.TemporaryFullChargeBit) != 0};"
+                + $"OtherSettings=0x{flags & ~TemporaryFullChargeProtocol.TemporaryFullChargeBit:X2}");
+        return flags;
+    }
+
+    // The one shared Power Mode Control (07/8F) read. Every caller decodes the
+    // same whole-byte mask; an undecodable mask is retained as a rejected query
+    // so later reads in this session fail closed instead of repeating it.
+    private async Task<byte> ReadPowerModeControlAsync(string operation, string invalidMaskMessage,
+        CancellationToken token)
+    {
+        ReadOnlyMemory<byte> payload = await ExchangeAsync(operation, 0x07, 0x8F,
             [0], false, token, variableResponse: true,
             payloadValidator: static value => value.Length == 1).ConfigureAwait(false);
-        if (!TemporaryFullChargeProtocol.TryDecodeQuery(payload.Span, out bool active, out byte otherSettings))
+        if (!TemporaryFullChargeProtocol.TryDecodeQuery(payload.Span, out _))
         {
             session.RetainQueryFailure(0x07, 0x8F, FirmwareQueryOutcome.ContentRejected);
-            throw new IOException("Temporary full charge returned an invalid shared Power Mode Control mask.");
+            throw new IOException(invalidMaskMessage);
         }
-        RecordQuery("TemporaryFullCharge", "Confirmed", $"Active={active};OtherSettings=0x{otherSettings:X2}");
         return payload.Span[0];
     }
 

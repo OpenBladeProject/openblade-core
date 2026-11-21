@@ -142,7 +142,8 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
                 throw new CapabilityUnavailableException("Fresh recovery safety admission failed.");
             }
             cancellationToken.ThrowIfCancellationRequested();
-            if (!policy.TryCompleteRecovery(recoveryScope, () => acceptObservedState(observed)))
+            if (!policy.TryCompleteRecovery(recoveryScope, () => acceptObservedState(observed),
+                localDimmingObserved: observed.LocalDimmingActive is not null))
             {
                 throw new CapabilityUnavailableException("The confirmed state could not be reconciled for recovery.");
             }

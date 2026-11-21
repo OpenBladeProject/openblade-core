@@ -25,13 +25,15 @@ public sealed class LocalDimmingClearTests
         Assert.Equal(plan.Kind == LocalDimmingClearKind.Blocked, plan.Refusal is not null);
     }
 
-    [Fact]
-    public void PlanClear_NamesTheSettingsThatBlockIt()
+    [Theory]
+    [InlineData(0x0A, "Turn off Maximum Fans in Synapse")]
+    [InlineData(0x0E, "Turn off Maximum Fans in Synapse")]
+    [InlineData(0x09, "CPU boost is on. Turn it off in Synapse")]
+    [InlineData(0x0B, "Maximum Fans and Synapse’s CPU boost are on. Turn them off in Synapse")]
+    public void PlanClear_SaysWhichSettingToTurnOffInSynapse(byte flags, string expected)
     {
-        string refusal = LocalDimmingProtocol.PlanClear(0x0B).Refusal!;
-        Assert.Contains("Turn them off first", refusal, StringComparison.Ordinal);
-        Assert.All(TemporaryFullChargeProtocol.DescribeOtherSettings(0x03),
-            setting => Assert.Contains(setting, refusal, StringComparison.Ordinal));
+        string refusal = LocalDimmingProtocol.PlanClear(flags).Refusal!;
+        Assert.Contains(expected, refusal, StringComparison.Ordinal);
     }
 
     [Theory]
@@ -41,6 +43,9 @@ public sealed class LocalDimmingClearTests
     [InlineData("00", true, false)]
     [InlineData("01", true, false)]
     [InlineData("04", true, false)]
+    [InlineData("08", false, false)]
+    [InlineData("0A", false, false)]
+    [InlineData("FF", false, false)]
     [InlineData("", false, false)]
     [InlineData("0200", false, false)]
     public void TryDecodeMiniLedPanel_ReadsOnlyTheMiniLedBitOfOneByte(string hex, bool decoded, bool miniLed)
@@ -227,6 +232,101 @@ public sealed class LocalDimmingClearTests
         Assert.Single(session.Writes);
     }
 
+    // The session would submit anyway: only the port's second admission check,
+    // after its reads, stops the write.
+    [Fact]
+    public async Task Clear_AdmitsAgainAfterItsReadsBeforeSubmitting()
+    {
+        bool admitted = true;
+        var session = new Session { Flags = 0x08, AfterMask = () => admitted = false, IgnoreSubmissionGuard = true };
+        var policy = new ExperimentalFeaturesPolicy(Model(0x02B7));
+        await using var port = Create(0x02B7, session, policy, () => admitted);
+
+        var failure = await Assert.ThrowsAsync<BladeWriteException>(
+            () => port.ClearLocalDimmingAsync(CancellationToken.None));
+
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, failure.SubmissionState);
+        Assert.Empty(session.Writes);
+        Assert.True(policy.WritesAllowed);
+    }
+
+    [Fact]
+    public async Task PanelReading_IsCachedAndAFailedReadIsNotRepeated()
+    {
+        var session = new Session { Flags = 0x08 };
+        var policy = new ExperimentalFeaturesPolicy(Model(0x02B7));
+        await using (var first = Create(0x02B7, session, policy))
+        {
+            await first.InitializeLocalDimmingPanelAsync(CancellationToken.None);
+        }
+        session.Panel = [];
+        await using (var second = Create(0x02B7, session, policy))
+        {
+            await second.InitializeLocalDimmingPanelAsync(CancellationToken.None);
+            Assert.True(second.SupportsLocalDimmingQuery);
+        }
+        Assert.Single(session.Commands, command => command is { ClassId: 0x0D, CommandId: 0x8F });
+
+        var unreadPolicy = new ExperimentalFeaturesPolicy(Model(0x02B7));
+        session.Commands.Clear();
+        await using (var failed = Create(0x02B7, session, unreadPolicy))
+        {
+            await failed.InitializeLocalDimmingPanelAsync(CancellationToken.None);
+        }
+        session.Panel = [0x02];
+        await using (var later = Create(0x02B7, session, unreadPolicy))
+        {
+            await later.InitializeLocalDimmingPanelAsync(CancellationToken.None);
+            Assert.Null(later.Capabilities.LocalDimming);
+        }
+        Assert.Single(session.Commands, command => command is { ClassId: 0x0D, CommandId: 0x8F });
+        Assert.True(unreadPolicy.MiniLedPanelResolved);
+        Assert.Null(unreadPolicy.MiniLedPanel);
+    }
+
+    [Fact]
+    public async Task QueryFailure_IsRememberedUntilPowerModeControlIsReadAgain()
+    {
+        var session = new Session { Flags = 0x08 };
+        var policy = new ExperimentalFeaturesPolicy(Model(0x02B8));
+        await using var port = Create(0x02B8, session, policy);
+        await port.InitializeLocalDimmingPanelAsync(CancellationToken.None);
+        session.FailMask = true;
+
+        await Assert.ThrowsAnyAsync<Exception>(() => port.QueryLocalDimmingAsync(CancellationToken.None));
+
+        Assert.True(policy.LocalDimmingReadUnavailable);
+        Assert.False(port.SupportsLocalDimmingQuery);
+        Assert.Null(await port.QueryLocalDimmingAsync(CancellationToken.None));
+        session.FailMask = false;
+        await port.ClearLocalDimmingAsync(CancellationToken.None);
+        Assert.False(policy.LocalDimmingReadUnavailable);
+        Assert.False(await port.QueryLocalDimmingAsync(CancellationToken.None));
+    }
+
+    [Fact]
+    public void RecoveryObligation_FollowsOnlyAPossibleClearSubmission()
+    {
+        var policy = new ExperimentalFeaturesPolicy(Model(0x02B7));
+        policy.RequireRecovery();
+        Assert.False(policy.LocalDimmingRecoveryRequired);
+        Assert.True(policy.TryCompleteRecovery(ExperimentalRecoveryScope.All, () => true, localDimmingObserved: false));
+
+        policy.RequireRecovery(localDimming: true);
+        // A later unrelated fault keeps the obligation.
+        policy.RequireRecovery();
+        Assert.True(policy.LocalDimmingRecoveryRequired);
+        bool accepted = false;
+        Assert.False(policy.TryCompleteRecovery(ExperimentalRecoveryScope.All,
+            () => accepted = true, localDimmingObserved: false));
+        Assert.False(accepted);
+        Assert.True(policy.IsPaused);
+
+        Assert.True(policy.TryCompleteRecovery(ExperimentalRecoveryScope.All, () => true, localDimmingObserved: true));
+        Assert.False(policy.LocalDimmingRecoveryRequired);
+        Assert.False(policy.IsPaused);
+    }
+
     [Fact]
     public async Task Clear_HostLossBeforeSubmissionDoesNotWrite()
     {
@@ -309,6 +409,8 @@ public sealed class LocalDimmingClearTests
         internal bool FailSet { get; init; }
         internal Action? AfterSet { get; set; }
         internal Action? AfterMask { get; set; }
+        internal bool FailMask { get; set; }
+        internal bool IgnoreSubmissionGuard { get; init; }
         internal List<RazerCommandSpec> Commands { get; } = [];
         internal IEnumerable<RazerCommandSpec> Writes => Commands.Where(command => command.CommandId < 0x80);
         public RazerCommandSessionDisposition Disposition => RazerCommandSessionDisposition.Healthy;
@@ -317,7 +419,7 @@ public sealed class LocalDimmingClearTests
             Func<TransactionIdAssignment> assignTransactionId, TimeSpan exchangeTimeout, CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
-            if (command.SubmissionAllowed?.Invoke() == false)
+            if (!IgnoreSubmissionGuard && command.SubmissionAllowed?.Invoke() == false)
             {
                 return Task.FromResult(new HidSessionResult<ReadOnlyMemory<byte>>(default, HidSessionFailureKind.IdentityBlocked)
                 { Diagnostic = new(HidSessionFailurePhase.Guard, HidSessionFailureKind.IdentityBlocked, null, null) });
@@ -328,7 +430,9 @@ public sealed class LocalDimmingClearTests
             switch ((command.ClassId, command.CommandId))
             {
                 case (0x0D, 0x8F): response = Panel; break;
-                case (7, 0x8F): response = [Flags]; AfterMask?.Invoke(); break;
+                case (7, 0x8F):
+                    if (FailMask) { return Task.FromResult(new HidSessionResult<ReadOnlyMemory<byte>>(default, HidSessionFailureKind.Timeout)); }
+                    response = [Flags]; AfterMask?.Invoke(); break;
                 case (7, 0x0F):
                     if (!IgnoreSet) { Flags = command.Arguments.Span[0]; }
                     AfterSet?.Invoke();

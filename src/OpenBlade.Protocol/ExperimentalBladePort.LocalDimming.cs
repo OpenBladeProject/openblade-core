@@ -5,16 +5,23 @@ namespace OpenBlade.Protocol;
 internal sealed partial class ExperimentalBladePort
 {
     // Products 695 (RZ09-0510) and 696 (RZ09-0509) expose a local dimming toggle
-    // only for mini-LED panels. Pinned sources, reviewed read-only:
+    // only for mini-LED panels. Pinned sources, reviewed read-only, with UTF-8
+    // byte offsets:
     // 695 rzDevice25.60bfcef58690c8bb715d.js
     // (SHA-256 2D69449422DAC50C23A0EC81A5421CAB178BD04610725273FA67497574195491)
-    // decodes getSKUHardwareConfiguration 0D/8F [1,13,143] at char 64925;
+    // decodes getSKUHardwareConfiguration 0D/8F [1,13,143] at byte 64925;
     // 696 rzDevice25.6339454cb5b2fe587300.js
     // (SHA-256 8780AA380D11665A2D551174D162C7278404465772219D0530A29B09E297BC81)
-    // defines the same getter at char 66696. UI main 695 (char 6936465) and 696
-    // (char 7201418) show the toggle only when miniLedResolution is
-    // Mini_LED_Supported (0x02). Power Mode Control is the shared 07/8F/07/0F mask.
-    // Only the developer-guide Clear is admitted; turning local dimming on is not.
+    // defines the same getter at byte 66696. The mask enum
+    // {DDS:1,Mini_LED_Resolution:2,Illegal_Battery_Support:4} is module 83379 of
+    // 695 6737.7ec91e479ef65c194b6c.js
+    // (SHA-256 22D359EB7EDA08A9D2F4766EB6898A875A5F009EDB666BA4CD5A0425491AD1DA) at byte
+    // 900284 and of 696 6737.2463f7361e4d145671a2.js
+    // (SHA-256 4EF6AFB6402DD50CD6DE07CA96E191F475797903507C82CAE194F0AF63E32ECC) at byte
+    // 888791. UI main 695 (byte 6936465) and 696 (byte 7201418) show the toggle only
+    // when miniLedResolution is Mini_LED_Supported (0x02). Power Mode Control is the
+    // shared 07/8F/07/0F mask. Only the developer-guide Clear is admitted; turning
+    // local dimming on is not.
     internal static bool SupportsLocalDimmingClear(ExperimentalBladeModel model) =>
         model.ProductId is 0x02B7 or 0x02B8 && model.ThermalPolicy is not null;
 
@@ -27,13 +34,20 @@ internal sealed partial class ExperimentalBladePort
             }
             : capabilities;
 
-    public bool SupportsLocalDimmingQuery => SupportsLocalDimmingClear(model) && policy.MiniLedPanel == true;
+    // The optional state read is skipped after it failed, until a Clear or
+    // recovery reads Power Mode Control again.
+    public bool SupportsLocalDimmingQuery => SupportsLocalDimmingClear(model)
+        && policy.MiniLedPanel == true
+        && !policy.LocalDimmingReadUnavailable;
 
-    // Optional panel metadata read while a port opens. A failed read leaves the
-    // panel unknown, so the control is not offered; it never guesses mini-LED.
+    // Optional panel metadata, read once per exact device (factory) rather than
+    // on every port open. A successful reading is kept; a failed read is
+    // remembered and leaves an unread panel unknown, so the control is not
+    // offered, and it never replaces an earlier confirmed reading. It never
+    // guesses mini-LED. Every Clear still reads the panel afresh.
     internal async Task InitializeLocalDimmingPanelAsync(CancellationToken cancellationToken)
     {
-        if (!SupportsLocalDimmingClear(model))
+        if (!SupportsLocalDimmingClear(model) || policy.MiniLedPanelResolved)
         {
             return;
         }
@@ -42,7 +56,6 @@ internal sealed partial class ExperimentalBladePort
         {
             if (!exactHostStillPresent())
             {
-                policy.ConfirmMiniLedPanel(null);
                 throw new CapabilityUnavailableException("The exact laptop is no longer verified.");
             }
             policy.ConfirmMiniLedPanel(await ReadMiniLedPanelAsync(cancellationToken).ConfigureAwait(false));
@@ -50,12 +63,13 @@ internal sealed partial class ExperimentalBladePort
         catch (IOException) when (session.Disposition == RazerCommandSessionDisposition.Healthy)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            policy.ConfirmMiniLedPanel(null);
+            policy.RecordMiniLedPanelReadUnavailable();
             RecordQuery("LocalDimmingPanel", "Unavailable", failure: "MiniLedPanelReadUnavailable");
         }
         catch (IOException)
         {
-            policy.ConfirmMiniLedPanel(null);
+            policy.RecordMiniLedPanelReadUnavailable();
+            RecordQuery("LocalDimmingPanel", "Unavailable", failure: "MiniLedPanelReadUnavailable");
             throw;
         }
         finally
@@ -64,6 +78,10 @@ internal sealed partial class ExperimentalBladePort
         }
     }
 
+    /// <summary>
+    /// Reads the local dimming bit. A failed read is remembered so later state
+    /// reads skip it; the caller isolates the failure and leaves the field unknown.
+    /// </summary>
     public async Task<bool?> QueryLocalDimmingAsync(CancellationToken cancellationToken)
     {
         if (!SupportsLocalDimmingQuery)
@@ -73,14 +91,13 @@ internal sealed partial class ExperimentalBladePort
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            byte flags = await ReadLocalDimmingFlagsAsync(cancellationToken).ConfigureAwait(false);
-            return (flags & TemporaryFullChargeProtocol.LocalDimmingBit) != 0;
+            return await ReadLocalDimmingActiveAsync(cancellationToken).ConfigureAwait(false);
         }
-        catch (IOException) when (session.Disposition == RazerCommandSessionDisposition.Healthy)
+        catch (Exception) when (!cancellationToken.IsCancellationRequested)
         {
-            cancellationToken.ThrowIfCancellationRequested();
+            policy.RecordLocalDimmingRead(readable: false);
             RecordQuery("LocalDimming", "Unavailable", failure: "LocalDimmingReadbackUnavailable");
-            return null;
+            throw;
         }
         finally
         {
@@ -92,7 +109,8 @@ internal sealed partial class ExperimentalBladePort
     /// Turns local dimming off once: fresh mini-LED panel read, fresh Power Mode
     /// Control read, whole-byte write of <c>current &amp; 0x04</c>, then an exact
     /// readback. Any possible submission without a matching readback pauses
-    /// experimental writes; the write is never replayed.
+    /// experimental writes with a local dimming recovery obligation; the write
+    /// is never replayed.
     /// </summary>
     public async Task ClearLocalDimmingAsync(CancellationToken cancellationToken)
     {
@@ -125,6 +143,7 @@ internal sealed partial class ExperimentalBladePort
             }
             policy.Record("LocalDimming", "Baseline", "Confirmed",
                 requested: $"PowerModeControl=0x{plan.Value:X2}", confirmed: $"PowerModeControl=0x{flags:X2}");
+            // The reads above can outlive a pause or host change; admit again at submission.
             RequireWriteAdmission();
             await ExchangeAsync("LocalDimming", 0x07, 0x0F, [plan.Value], true,
                 cancellationToken, variableResponse: true,
@@ -149,13 +168,20 @@ internal sealed partial class ExperimentalBladePort
         }
     }
 
+    // Recovery after a possibly submitted Clear reads the real bit. A failed
+    // read throws, so the pause stays until Power Mode Control is readable.
+    private async Task<bool> ReadLocalDimmingActiveAsync(CancellationToken cancellationToken) =>
+        (await ReadLocalDimmingFlagsAsync(cancellationToken).ConfigureAwait(false)
+            & TemporaryFullChargeProtocol.LocalDimmingBit) != 0;
+
     private async Task<bool> ReadMiniLedPanelAsync(CancellationToken cancellationToken)
     {
         ReadOnlyMemory<byte> payload = await ExchangeAsync("LocalDimmingPanel",
             LocalDimmingProtocol.SkuHardwareConfigurationCommandClass,
             LocalDimmingProtocol.SkuHardwareConfigurationCommandId,
             [0], false, cancellationToken,
-            payloadValidator: static value => value.Length == 1).ConfigureAwait(false);
+            payloadValidator: static value => value.Length == Rz090581CapabilityDiagnosticsProtocol.SingleBytePayloadLength)
+            .ConfigureAwait(false);
         if (!LocalDimmingProtocol.TryDecodeMiniLedPanel(payload.Span, out bool miniLedPanel))
         {
             RecordQuery("LocalDimmingPanel", "UnsupportedState",
@@ -169,25 +195,19 @@ internal sealed partial class ExperimentalBladePort
 
     private async Task<byte> ReadLocalDimmingFlagsAsync(CancellationToken cancellationToken)
     {
-        ReadOnlyMemory<byte> payload = await ExchangeAsync("LocalDimming", 0x07, 0x8F,
-            [0], false, cancellationToken, variableResponse: true,
-            payloadValidator: static value => value.Length == 1).ConfigureAwait(false);
-        if (!TemporaryFullChargeProtocol.TryDecodeQuery(payload.Span, out _))
-        {
-            RecordQuery("LocalDimming", "UnsupportedState",
-                DeviceStateContentRejection.FormatPayload(payload.Span), "OutsideSharedPowerModeControlContract");
-            throw new IOException("Power Mode Control is outside the shared bitmask contract.");
-        }
+        byte flags = await ReadPowerModeControlAsync("LocalDimming",
+            "Power Mode Control is outside the shared bitmask contract.", cancellationToken).ConfigureAwait(false);
+        policy.RecordLocalDimmingRead(readable: true);
         RecordQuery("LocalDimming", "Confirmed",
-            $"PowerModeControl=0x{payload.Span[0]:X2};"
-                + $"LocalDimmingBit={(payload.Span[0] & TemporaryFullChargeProtocol.LocalDimmingBit) != 0}");
-        return payload.Span[0];
+            $"PowerModeControl=0x{flags:X2};"
+                + $"LocalDimmingBit={(flags & TemporaryFullChargeProtocol.LocalDimmingBit) != 0}");
+        return flags;
     }
 
-    // Clear writes 00 or 04 only after the fresh guard refused CPU boost (0x01)
-    // and Maximum Fans (0x02), so the whole-byte write changes no thermal bit.
-    // It therefore keeps the general write admission without the thermal
-    // external-power gate, like the 02A0 full-charge bit.
+    // Clear writes 00 or 04 only after the fresh guard refused the firmware CPU
+    // boost flag (0x01) and Maximum Fans (0x02), so the whole-byte write changes
+    // no thermal bit. It therefore keeps the general write admission without the
+    // thermal external-power gate, like the 02A0 full-charge bit.
     private bool IsLocalDimmingClearSet(string operation, byte commandClass, byte commandId, byte[] arguments) =>
         SupportsLocalDimmingClear(model) && operation == "LocalDimming"
         && commandClass == 0x07 && commandId == 0x0F

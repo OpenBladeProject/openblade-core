@@ -5,7 +5,7 @@ namespace OpenBlade.Protocol.Tests;
 
 public sealed class ExperimentalObservedFeatureTests
 {
-    private static readonly int[] AmdPowerLimitModels = [0x029D, 0x02B6, 0x02C5];
+    private static readonly int[] AmdPowerLimitModels = [0x02B6, 0x02C5];
     private static readonly int[] IntelPowerLimitModels = [0x029F, 0x02A0, 0x02B7, 0x02B8, 0x02C7];
     private static readonly int[] FirmwareGamingGpuModels = [0x0246, 0x0268, 0x0255];
 
@@ -48,6 +48,21 @@ public sealed class ExperimentalObservedFeatureTests
                 Assert.NotNull(limit);
                 Assert.True(limit.IsWellFormed);
                 Assert.Equal(DeviceFeatureAccess.ObservedOnly, limit.Access);
+                Assert.True(limit.SupportsShortTermPowerEnableDisable);
+                Assert.Equal(120_000, limit.DefaultLongTermPowerMilliwatts);
+                Assert.Equal(160_000, limit.DefaultShortTermPowerMilliwatts);
+                Assert.Equal(56, limit.DefaultTimeWindowSeconds);
+                // 671 and 672 pin the defaults but not the UI ranges.
+                if (model.ProductId is 0x029F or 0x02A0)
+                {
+                    Assert.False(limit.RangesKnown);
+                    Assert.Null(limit.LongTermPowerMilliwatts);
+                    Assert.Null(limit.ShortTermPowerMilliwatts);
+                    Assert.Null(limit.TimeWindowSeconds);
+                    continue;
+                }
+
+                Assert.True(limit.RangesKnown);
                 Assert.Equal(new DeviceNumericRange(1_000, 190_000, 125), limit.LongTermPowerMilliwatts);
                 Assert.Equal(new DeviceNumericRange(1_000, 200_000, 125), limit.ShortTermPowerMilliwatts);
                 Assert.True(limit.SupportsShortTermPowerEnableDisable);
@@ -59,6 +74,29 @@ public sealed class ExperimentalObservedFeatureTests
                     limit.TimeWindowSeconds);
             }
         }
+    }
+
+    // Product 669 is series 9: its power-limit path drives the V22 curve
+    // optimizer, so RZ09-0482 shows no AMD CPU power limit.
+    [Fact]
+    public void AmdCpuPowerLimit_IsNotShownOnRz090482()
+    {
+        ExperimentalBladeModel model = ExperimentalBladeModels.All.Single(item => item.ProductId == 0x029D);
+        Assert.Null(ExperimentalBladePort.CreateCapabilities(model, true).CpuPowerLimit);
+        Assert.DoesNotContain(ExperimentalBladeModels.FeatureEvidenceFor(model), item => item.Feature == "CpuPowerLimit");
+    }
+
+    [Theory]
+    [InlineData(0x0246, "SynapseSourceObservedOnlyNativeVendorWrite")]
+    [InlineData(0x0268, "SynapseSourceObservedOnlyNativeVendorWriteWattageModuleUnpinned")]
+    [InlineData(0x0255, "SynapseSourceObservedOnlyNativeVendorWriteWattageModuleUnpinned")]
+    public void FirmwareGamingGpuOverclock_MarksTheUnpinnedWattageModules(int productId, string basis)
+    {
+        ExperimentalBladeModel model = ExperimentalBladeModels.All.Single(item => item.ProductId == productId);
+        ExperimentalFeatureEvidence evidence = Assert.Single(
+            ExperimentalBladeModels.FeatureEvidenceFor(model), item => item.Feature == "FirmwareGamingGpuOverclock");
+        Assert.Equal(basis, evidence.Basis);
+        Assert.Equal(productId == 0x0246, evidence.Sources.Any(source => source.Contains("Wattage", StringComparison.Ordinal)));
     }
 
     [Fact]
@@ -88,7 +126,6 @@ public sealed class ExperimentalObservedFeatureTests
     }
 
     [Theory]
-    [InlineData(0x029D, "CpuPowerLimit")]
     [InlineData(0x02B6, "CpuPowerLimit")]
     [InlineData(0x02C5, "CpuPowerLimit")]
     [InlineData(0x029F, "IntelCpuPowerLimits")]
