@@ -27,7 +27,9 @@ pub(crate) const ADMITTED_MODEL: &str = "RZ09-0581";
 /// The idle subscription checks its Service generation and pipe peer every
 /// 500 ms; a failed read reconnects and a changed identity ends the watcher,
 /// and either invalidates the admission. A renewal that stops (a stalled
-/// runtime) lets the admission expire within this bound.
+/// runtime) lets the admission expire one lease after the last renewal, or
+/// up to two seconds after a status arrived (its `fresh_until`), whichever
+/// is later.
 pub(crate) const LEASE: Duration = Duration::from_secs(1);
 
 /// Managed `KeyboardDriverModeKnowledge`.
