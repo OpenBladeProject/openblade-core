@@ -2291,16 +2291,23 @@ public sealed class WinUiShellContractTests
             Assert.Null(Attribute(row, "Background"));
             Assert.Null(Attribute(row, "SettingsCardPointerVisual.IsEnabled"));
         }
+        // Pad sections open with the laptop Fans card's first-row role; later rows are subcells.
+        XElement fanModeRow = NamedElement(document, "ResponsiveChoiceSelector", "DashboardFanModeSelector")
+            .Ancestors().First(element => element.Name.LocalName == "Border");
         foreach ((string name, string controlType) in new[]
                  {
                      ("CoolingPadFanLabel", "ResponsiveChoiceSelector"),
                      ("CoolingPadLightingLabel", "ResponsiveChoiceSelector"),
+                     ("CoolingPadAutoProfileLabel", "ResponsiveChoiceSelector"),
                      ("CoolingPadDemandLabel", "ToggleSwitch"),
+                     ("CoolingPadPrimaryColorLabel", "Button"),
+                     ("CoolingPadWaveDirectionLabel", "ResponsiveChoiceSelector"),
                  })
         {
             XElement title = NamedElement(document, "TextBlock", name);
             XElement row = title.Ancestors().First(element => element.Name.LocalName == "Border");
-            Assert.Equal(Attribute(cpuRow, "Style"), Attribute(row, "Style"));
+            bool firstRow = name is "CoolingPadFanLabel" or "CoolingPadLightingLabel";
+            Assert.Equal(Attribute(firstRow ? fanModeRow : cpuRow, "Style"), Attribute(row, "Style"));
             Assert.Equal(Attribute(cpuRow, "Padding"), Attribute(row, "Padding"));
             Assert.Equal(Attribute(cpuTitle, "Style"), Attribute(title, "Style"));
             Assert.Equal(Attribute(cpuTitle.Parent!, "VerticalAlignment"), Attribute(title, "VerticalAlignment"));
@@ -2322,7 +2329,7 @@ public sealed class WinUiShellContractTests
                 Assert.Null(Attribute(row, property));
             }
         }
-        foreach (string name in new[] { "CoolingPadFixedRpm", "CoolingPadCurves", "CoolingPadBrightness" })
+        foreach (string name in new[] { "CoolingPadFixedRpm", "CoolingPadBrightness" })
         {
             XElement control = document.Descendants().Single(element => Attribute(element, "Name") == name);
             XElement row = control.Ancestors().First(element => element.Name.LocalName == "Border");
@@ -2330,15 +2337,17 @@ public sealed class WinUiShellContractTests
             Assert.Null(Attribute(row, "Background"));
             Assert.Null(Attribute(row, "SettingsCardPointerVisual.IsEnabled"));
         }
-        XElement commands = NamedElement(document, "Button", "CoolingPadApply")
-            .Ancestors().First(element => element.Name.LocalName == "Border");
-        XElement fanEditor = document.Descendants().Single(element => Attribute(element, "CardReorder.CardId") == "FixedFanSpeedSlider");
-        Assert.Equal(Attribute(fanEditor, "Style"), Attribute(commands, "Style"));
-        Assert.Null(Attribute(commands, "Padding"));
-        Assert.Null(Attribute(commands, "Background"));
-        Assert.Single(commands.Descendants(), element => element.Name.LocalName == "ContentWrapPanel");
-        Assert.All(commands.Descendants().Where(element => element.Name.LocalName == "Button"),
-            button => Assert.Equal("{StaticResource AppCommandButtonStyle}", Attribute(button, "Style")));
+        XElement curves = NamedElement(document, "Border", "CoolingPadCurves");
+        Assert.Equal("{StaticResource SettingsEditorSubcardStyle}", Attribute(curves, "Style"));
+        Assert.Null(Attribute(curves, "Background"));
+        // Changes apply as they are made; the status row holds Release, or the check after an unconfirmed change.
+        Assert.DoesNotContain(document.Descendants(), element => Attribute(element, "Name") is "CoolingPadCommands" or "CoolingPadApply" or "CoolingPadRefresh");
+        XElement release = NamedElement(document, "Button", "CoolingPadRelease");
+        XElement check = NamedElement(document, "Button", "CoolingPadCheck");
+        Assert.Same(release.Parent, check.Parent);
+        Assert.Equal(Attribute(release, "Grid.Column"), Attribute(check, "Grid.Column"));
+        Assert.Equal("{StaticResource AppCommandButtonStyle}", Attribute(release, "Style"));
+        Assert.Equal("{StaticResource AppAccentCommandButtonStyle}", Attribute(check, "Style"));
     }
 
     [Fact]

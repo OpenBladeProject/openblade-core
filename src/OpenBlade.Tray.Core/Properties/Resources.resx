@@ -1817,26 +1817,8 @@ Details: {1}</value>
   <data name="Optimizer recovery is blocked. Refresh to check its status." xml:space="preserve"><value>Optimizer recovery is blocked. Refresh to check its status.</value></data>
   <data name="CPU recovery includes power settings and cannot be restored here." xml:space="preserve"><value>CPU recovery includes power settings and cannot be restored here.</value></data>
   <data name="Recovery of earlier saved CPU settings is blocked." xml:space="preserve"><value>Recovery of earlier saved CPU settings is blocked.</value></data>
-  <data name="The cooling-pad change was blocked. Refresh status and check Troubleshooting." xml:space="preserve">
-    <value>The cooling-pad change was blocked. Refresh status and check Troubleshooting.</value>
-  </data>
-  <data name="Configured brightness: {0}%" xml:space="preserve">
-    <value>Configured brightness: {0}%</value>
-  </data>
   <data name="Cooling-pad status is unavailable. Showing the last confirmed state." xml:space="preserve">
     <value>Cooling-pad status is unavailable. Showing the last confirmed state.</value>
-  </data>
-  <data name="Configured fan target: {0} RPM" xml:space="preserve">
-    <value>Configured fan target: {0} RPM</value>
-  </data>
-  <data name="Cooling-pad control is paused. Refresh status before making another change." xml:space="preserve">
-    <value>Cooling-pad control is paused. Refresh status before making another change.</value>
-  </data>
-  <data name="Keep current" xml:space="preserve">
-    <value>Keep current</value>
-  </data>
-  <data name="Configured fan target unavailable" xml:space="preserve">
-    <value>Configured fan target unavailable</value>
   </data>
   <data name="Spectrum" xml:space="preserve">
     <value>Spectrum</value>
@@ -1850,24 +1832,6 @@ Details: {1}</value>
   <data name="OpenBlade is controlling the cooling pad." xml:space="preserve">
     <value>OpenBlade is controlling the cooling pad.</value>
   </data>
-  <data name="Connected. Choose settings and apply them to take control." xml:space="preserve">
-    <value>Connected. Choose settings and apply them to take control.</value>
-  </data>
-  <data name="The cooling-pad change could not be confirmed. Refresh status before continuing." xml:space="preserve">
-    <value>The cooling-pad change could not be confirmed. Refresh status before continuing.</value>
-  </data>
-  <data name="Check fan speeds, increasing curve temperatures, and six-digit RGB colors." xml:space="preserve">
-    <value>Check fan speeds, increasing curve temperatures, and six-digit RGB colors.</value>
-  </data>
-  <data name="CPU/GPU curves" xml:space="preserve">
-    <value>CPU/GPU curves</value>
-  </data>
-  <data name="Configured brightness unavailable" xml:space="preserve">
-    <value>Configured brightness unavailable</value>
-  </data>
-  <data name="Apply new settings, or release control to restore the captured cooling-pad settings." xml:space="preserve">
-    <value>Apply new settings, or release control to restore the captured cooling-pad settings.</value>
-  </data>
   <data name="CPU" xml:space="preserve">
     <value>CPU</value>
   </data>
@@ -1879,4 +1843,22 @@ Details: {1}</value>
   </data>
   <data name="Vapor chamber lighting" xml:space="preserve"><value>Vapor chamber lighting</value></data>
   <data name="Touchpad status indicator" xml:space="preserve"><value>Touchpad status indicator</value></data>
+  <data name="Quiet" xml:space="preserve">
+    <value>Quiet</value>
+  </data>
+  <data name="A change to the cooling pad could not be confirmed. Check the pad before making another change." xml:space="preserve">
+    <value>A change to the cooling pad could not be confirmed. Check the pad before making another change.</value>
+  </data>
+  <data name="Choose a setting, or release control to restore the pad's own settings." xml:space="preserve">
+    <value>Choose a setting, or release control to restore the pad's own settings.</value>
+  </data>
+  <data name="Connected. The pad is using its own settings." xml:space="preserve">
+    <value>Connected. The pad is using its own settings.</value>
+  </data>
+  <data name="The cooling pad did not accept the change. Check Troubleshooting for the reason." xml:space="preserve">
+    <value>The cooling pad did not accept the change. Check Troubleshooting for the reason.</value>
+  </data>
+  <data name="Check the cooling-pad settings and try again." xml:space="preserve">
+    <value>Check the cooling-pad settings and try again.</value>
+  </data>
 </root>
