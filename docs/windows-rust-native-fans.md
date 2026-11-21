@@ -14,7 +14,16 @@ No 0D/81 getter or tachometer inference is added.
 The codec, installed dispatcher and runtime use the existing serialized
 ReadSource, Worker and Reader. Generic manual target changes send targets only.
 Balanced and Performance entry preserve their admitted selectors; Performance
-entry includes independent intermediate mode proof. An explicit Automatic
+entry includes independent intermediate mode proof. Native enters manual fans
+only from Balanced or Performance (selectors 0 and 2) on external power. Managed
+applies a Fixed request from every selector on external power, Silent, Custom,
+Battery Saver and Battery Balanced (5, 4, 3 and 6) included, and on battery
+from Balanced, Battery Saver and Battery Balanced (0, 3 and 6). Native stores
+those requests and replies that no native recipe applies them, including on
+battery and after a Windows battery source drops an AC temporary from the
+request check. Managed's state pairs for them, `[1, channel, 5|4|3|6, 1]`, are
+not fixture entries, and native admits the Balanced pair on external power only.
+Porting them needs its own evidence review; the port is deferred. An explicit Automatic
 request that leaves saved manual fan intent goes directly to the saved
 Balanced or Performance preset, as managed does: that preset's 0D/02 pair
 carries the Automatic fan mode, so the stored performance intent is applied in

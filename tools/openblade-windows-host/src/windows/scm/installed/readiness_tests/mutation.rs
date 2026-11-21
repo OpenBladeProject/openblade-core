@@ -4979,6 +4979,107 @@ async fn a_fan_request_under_windows_battery_is_checked_as_battery() {
         let _ = r.source.lock().await.drain().await;
     }
 }
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn a_fan_request_under_windows_battery_drops_an_ac_temporary_from_its_check() {
+    // A temporary Silent saved on AC, then Windows battery with the adapter
+    // still reading full power. The reading's class keeps the temporary
+    // (`observe_power(0)`), but managed's source is Battery, where the
+    // temporary has expired: the check uses the battery profile, which admits
+    // Fixed. Native stores the request and, having no fan recipe under Silent,
+    // applies nothing. Managed applies it (see the Fixed-entry gap in the fan
+    // guide).
+    let r = saved_override_fan_rig(15, 0, None);
+    r.get().await;
+    let saved = r.set(206, value(0, 0)).await;
+    assert_eq!(saved["result"]["status"], 1, "{saved}");
+    assert_eq!(r.storage.current_performance_override(0).unwrap(), Some(0));
+    r.port.state.lock().unwrap().windows_on_battery = Some(Some(true));
+    let writes = r.port.state.lock().unwrap().writes;
+    let out = r.request(fan_request(257, Some(1), 3700)).await;
+    assert_eq!(out["result"]["status"], 2, "{out}");
+    assert!(
+        out["result"]["message"]
+            .as_str()
+            .unwrap()
+            .starts_with("Fan override intent was stored."),
+        "{out}"
+    );
+    assert_eq!(
+        r.files.document("manual-overrides.json")["overrides"]["fans"],
+        1
+    );
+    assert_eq!(r.port.state.lock().unwrap().writes, writes);
+    r.origin.stop();
+    let _ = r.source.lock().await.drain().await;
+}
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn a_contradicted_battery_reading_leaves_an_ac_temporary_in_place() {
+    // Managed maps an adapter battery reply under Windows AC to
+    // ExternalUnknown and blocks the request; that classification never
+    // becomes current, so a temporary saved on AC survives it. Both the
+    // performance and the fan path block before observing the reading.
+    for fan in [false, true] {
+        let r = saved_override_fan_rig(15, 0, None);
+        r.get().await;
+        let saved = r.set(208, value(2, 0)).await;
+        assert_eq!(saved["result"]["status"], 1, "{fan}: {saved}");
+        {
+            let mut s = r.port.state.lock().unwrap();
+            s.actual = 0;
+            s.windows_on_battery = Some(Some(false));
+        }
+        let out = if fan {
+            r.request(fan_request(259, Some(1), 3700)).await
+        } else {
+            r.set(209, value(1, 1)).await
+        };
+        assert_eq!(out["result"]["status"], 2, "{fan}: {out}");
+        assert_eq!(
+            out["result"]["message"],
+            crate::installed::readiness::thermal_mutation::UNCLASSIFIED_BLOCKED,
+            "{fan}"
+        );
+        assert_eq!(
+            r.storage.current_performance_override(0).unwrap(),
+            Some(2),
+            "{fan}"
+        );
+        r.origin.stop();
+        let _ = r.source.lock().await.drain().await;
+    }
+}
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn a_fan_request_on_a_limited_adapter_is_checked_with_the_usb_c_profile() {
+    // Managed's source for a limited adapter under Windows AC is UsbC, so the
+    // check uses the USB-C profile: its Battery Saver rejects ManualCurve,
+    // which the plugged-in Balanced profile would admit.
+    let files = MemoryFiles::default();
+    files.profiles_with(1, Some(3));
+    let r = Rig::new(files);
+    *r.custody.origin_for_fan.lock().unwrap() = Some(r.origin.clone());
+    {
+        let mut s = r.port.state.lock().unwrap();
+        s.selectors = [0; 2];
+        s.fans = [0; 2];
+        s.actual = 10;
+    }
+    r.get().await;
+    let before = r.files.read("manual-overrides.json").unwrap();
+    let out = r.request(fan_request(260, Some(2), 3700)).await;
+    assert_eq!(out["result"]["status"], 3, "{out}");
+    assert_eq!(
+        out["result"]["message"],
+        "The requested intent was rejected: The performance and fan combination is not supported by the active validation policy."
+    );
+    assert_eq!(r.files.read("manual-overrides.json").unwrap(), before);
+    assert_eq!(r.port.state.lock().unwrap().writes, 0);
+    assert!(fan_rows(&r).is_empty());
+    r.origin.stop();
+    let _ = r.source.lock().await.drain().await;
+}
 #[cfg(feature = "service-temporary-charge-v1")]
 #[tokio::test]
 async fn temporary_charge_runs_within_its_request_budget_at_slow_transfers() {
