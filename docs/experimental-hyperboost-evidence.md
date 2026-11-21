@@ -1,14 +1,15 @@
-# Experimental HyperBoost on Blade 14 and Blade 16 (2023)
+# Experimental HyperBoost on Blade 14 (2023) and Blade 16 (2023, 2024)
 
 Razer's [14 October 2026 Synapse release notes](https://insider.razer.com/release-versions-feedback-67/14-october-2026-synapse-chroma-for-windows-90679)
 name Blade 16 (2023–2026) with the Razer Laptop Cooling Pad. This is model-family
 availability evidence, not a command specification or evidence for padless use.
 Blade 16 (2025), RZ09-0528 / `1532:02C6`, already has independently admitted
 HyperBoost and padless HyperBoost in OpenBlade. Its command fixtures and physical
-validation do not transfer to the 2023 laptop.
+validation do not transfer to the 2023 or 2024 laptops.
 
-The experimental additions use the existing exact RZ09-0483 (`1532:029F`)
-and RZ09-0482 (`1532:029D`) profiles and their own Synapse definitions.
+The experimental additions use the existing exact RZ09-0483 (`1532:029F`),
+RZ09-0482 (`1532:029D`) and RZ09-0510 (`1532:02B7`) profiles and their own
+Synapse definitions.
 Other experimental Blade families retain their existing capabilities.
 
 ## Published compatibility and experimental scope
@@ -19,7 +20,7 @@ checked on 2026-10-16, names these models:
 | Blade 16 | Model | Listed NVIDIA GPUs | OpenBlade status |
 | --- | --- | --- | --- |
 | 2023 | `RZ09-0483` | RTX 4060–4090 | Existing experimental profile; HyperBoost added here |
-| 2024 | `RZ09-0510` | RTX 4060–4090 | Outside the current model registry |
+| 2024 | `RZ09-0510` | RTX 4060–4090 | Existing source-reviewed profile; HyperBoost added from product 695 |
 | 2025 | `RZ09-0528` | RTX 5080–5090 | Existing validated backend with HyperBoost |
 | 2026 | `RZ09-0581` | RTX 5070 Ti–5090 | Existing validated backend with HyperBoost |
 
@@ -27,9 +28,8 @@ Razer's [2024 support page](https://mysupport.razer.com/app/answers/detail/a_id/
 and [2025 BIOS page](https://mysupport.razer.com/app/answers/detail/a_id/15235)
 confirm the distinct model numbers. RZ09-0528 is the 2025 laptop.
 
-The 2024 Blade requires a separate exact-model backend and is outside this
-change's existing-experimental-model scope. The Blade 14 (2025), Blade 18
-(2023), and Blade 15 Base (2020) gain no HyperBoost writes. A shared mode-7
+The 2024 Blade uses its own product-695 definitions, described below. The Blade
+14 (2025), Blade 18 (2023), and Blade 15 Base (2020) gain no HyperBoost writes. A shared mode-7
 enum alone does not establish an exact model's command contract.
 
 ### Blade 14 (2023): exact Synapse definitions
@@ -66,6 +66,61 @@ after the confirmed cleanup and before mode 7 reports a known state.
 Blade 18 product 672 has no HyperBoost entry in its exact mode list. A shared
 enum reference is insufficient to enable it. Its existing observed-only state
 remains unchanged.
+
+### Blade 16 (2024): exact Synapse definitions
+
+Product 695's exact Blade 16 module declares `isHyperBoostSystem`, a HyperBoost
+mode entry with its own fan range, the shared mode-7 value and MCU minimum
+1.3.0.0. Its ordinary modes are Balanced (0), Silent (5), Turbo (1) and Custom
+(4), with DC Balanced (6) on battery. It has no Performance (2) mode, so Turbo,
+the default AC mode, is the pad-present entry base. Silent, Balanced, Turbo and
+Custom enter directly and are restored on exit. The battery exit sends raw 6 and
+confirms it as DC Balanced. Both pad paths use the same paired setter and
+independent readback as the 2023 laptop; padless use remains a source-backed
+extrapolation. No accessory-status write emulates a pad.
+
+| Official product-695 source | SHA-256 |
+| --- | --- |
+| [main.27df2e7ddab0b6bc34cc.js](https://apps.razer.com/synapse/products/695/mw/main.27df2e7ddab0b6bc34cc.js) | `A12CD7047CC1CF093DBB458D703BA4D18CFE77110F47391B180EA5B33BA5E379` |
+| [6737.7ec91e479ef65c194b6c.js](https://apps.razer.com/synapse/products/695/mw/6737.7ec91e479ef65c194b6c.js) | `22D359EB7EDA08A9D2F4766EB6898A875A5F009EDB666BA4CD5A0425491AD1DA` |
+| [rzDevice25.60bfcef58690c8bb715d.js](https://apps.razer.com/synapse/products/695/mw/rzDevice25.60bfcef58690c8bb715d.js) | `2D69449422DAC50C23A0EC81A5421CAB178BD04610725273FA67497574195491` |
+| [ui main.65ed4ee5.js](https://apps.razer.com/synapse/products/695/ui/static/js/main.65ed4ee5.js) | `74ECA71816B57B4C9BE3F83D3E5D894F95A2050D88FB2DF4B63A5AFFF5271612` |
+
+Useful byte offsets: main 48,781 and 48,922 (raw mode enum, including mode 7),
+117,552 (Turbo sent as raw 1), 141,152 (identity), 141,503 (MCU minimum),
+144,379 and 145,857 (Turbo and HyperBoost mode entries), 158,285
+(`defaultACPerformanceMode:1`), 163,111 (`needHyperboostRecheck`) and 163,422
+(`isHyperBoostSystem`); policy 1,255,621 (SKU predicates), 1,256,342 and
+1,278,863 (`shouldDisableHyperboost`), 1,793,192 and 1,795,779 (mode and pad
+offer gated on it) and 2,386,571 (`isFirmwareSupported`). The
+[evidence record](../evidence/source-reviewed-blades/2026-11-20-rz09-0510-hyperboost.json)
+lists each finding.
+
+Product 695 omits `hasMaxFanSpeedModeEnabled` and `hasCpuBoostEnabled`. In its policy the
+first gates only the Maximum Fans clear and reapply around mode changes (bytes
+1,892,259 and 1,893,528) and a startup UI restore (1,295,124); the second gates a
+separate battery CPU Boost toggle (1,295,285). The UI still renders the Maximum
+Fans switch (ui byte 6,906,405) and the CPU Boost level (6,906,371), and the
+Maximum Fans setter handler (policy byte 1,189,750) is ungated, so both existing
+admissions stay. Synapse therefore does not clear Maximum Fans before HyperBoost
+on this laptop. OpenBlade keeps its guarded cleanup and restores the saved Custom
+intent on exit, as on the 2023 laptops.
+
+### System SKU recheck
+
+Products 671 and 695 set `needHyperboostRecheck`. Their policies then turn
+HyperBoost off when the tenth character of the Windows system SKU
+(`systemSKU.charAt(9)`) is `R`, `S`, `5` or `6`. A disabled laptop shows no
+HyperBoost mode and no pad offer in Synapse. The meaning of that character is not
+established; OpenBlade follows the predicate as written on RZ09-0483 and RZ09-0510
+and reports HyperBoost as observed only on those configurations. The RZ09-0510
+updater lists SKUs `RZ09-0510S`, `RZ09-0510T`, `RZ09-05102` and `RZ09-05103`,
+so the `S` variant is excluded. Synapse admits a SKU too short to evaluate;
+OpenBlade instead keeps HyperBoost observed only when the SKU is missing or
+shorter than ten characters, because that is not evidence about the predicate.
+Other controls and host admission are unaffected, and diagnostics record only the
+evaluated character. Product 669's policy has a `5`/`6` predicate, but its main
+module never requests the recheck, so the RZ09-0482 stays ungated.
 
 ## Vendor evidence
 
@@ -113,11 +168,13 @@ Every submitted entry command requires fresh exact identity, controller,
 full-power adapter and the journaled pad path, including at native submission.
 Pad-present entry requires the exact pad; padless entry requires confirmed
 absence. Ambiguous discovery admits neither path.
-The exact product modules declare MCU minimum 1.1.1.3 for Blade 14 and
-1.5.0.0 for Blade 16. Entry queries `00/87` (four zero request bytes, four version bytes)
+The exact product modules declare MCU minimum 1.1.1.3 for Blade 14,
+1.5.0.0 for Blade 16 (2023) and 1.3.0.0 for Blade 16 (2024). Entry queries `00/87` (four zero request bytes, four version bytes)
 and requires the model-specific minimum; this is an explicit source-backed MCU restriction,
 not a BIOS-version restriction. Exit remains available without this entry gate.
-Both models declare DC Balanced raw mode 6; AC Balanced is raw 0.
+All three models use DC Balanced raw mode 6; AC Balanced is raw 0. The 2023
+laptops report raw 6 as Balanced; the 2024 laptop reports it as DC Balanced, and
+the exit readback accepts that preset only on battery.
 
 Pad loss between selectors stops the sequence. A possibly submitted or
 unconfirmed write pauses all experimental writes; no alternate sequence or
@@ -127,9 +184,11 @@ cleanup. Exiting remains available after pad removal. Low-power cleanup selects
 the admitted Balanced/Automatic destination directly and preserves saved intent.
 
 This is source-backed experimental support. No physical HyperBoost, thermal,
-sleep/resume or crash-recovery validation on an RZ09-0482 or RZ09-0483 was performed for this
-change. Existing RZ09-0528/0581 physical results do not establish those outcomes.
+sleep/resume or crash-recovery validation on an RZ09-0482, RZ09-0483 or RZ09-0510 was
+performed for these changes. Existing RZ09-0528/0581 physical results do not establish those outcomes.
 
 The explicit Blade 14 cooling-pad entry baseline is carried in IPC protocol 67.
 Protocol-66 readers reject the added nested member, so service and clients must
-be updated together through a full installation.
+be updated together through a full installation. IPC protocol 86 adds the Turbo
+base slot for the 2024 laptop under the same full-installation rule; protocol 85
+is reserved by a separate pending change.

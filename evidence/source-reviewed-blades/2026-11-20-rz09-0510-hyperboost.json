@@ -1,0 +1,195 @@
+{
+  "model": "RZ09-0510",
+  "productName": "Blade 16 - RZ09-0510",
+  "hid": "1532:02B7",
+  "synapseProduct": 695,
+  "feature": "HyperBoost",
+  "basis": "SynapseSourceBackedWithoutPhysicalValidation",
+  "padlessBasis": "SourceBackedExtrapolationWithoutPhysicalValidation",
+  "reviewedOn": "2026-11-20",
+  "method": "Static review of hash-verified official product-695 bundles. Vendor code was not executed and no hardware command was sent.",
+  "offsetUnit": "UTF-8 byte offset into the single-line minified bundle",
+  "sources": [
+    {
+      "id": "695-main",
+      "url": "https://apps.razer.com/synapse/products/695/mw/main.27df2e7ddab0b6bc34cc.js",
+      "bytes": 175163,
+      "sha256": "A12CD7047CC1CF093DBB458D703BA4D18CFE77110F47391B180EA5B33BA5E379",
+      "verifiedThisReview": true
+    },
+    {
+      "id": "695-policy",
+      "url": "https://apps.razer.com/synapse/products/695/mw/6737.7ec91e479ef65c194b6c.js",
+      "bytes": 2465050,
+      "sha256": "22D359EB7EDA08A9D2F4766EB6898A875A5F009EDB666BA4CD5A0425491AD1DA",
+      "verifiedThisReview": true
+    },
+    {
+      "id": "695-device",
+      "url": "https://apps.razer.com/synapse/products/695/mw/rzDevice25.60bfcef58690c8bb715d.js",
+      "bytes": 277422,
+      "sha256": "2D69449422DAC50C23A0EC81A5421CAB178BD04610725273FA67497574195491",
+      "verifiedThisReview": true
+    },
+    {
+      "id": "695-ui",
+      "url": "https://apps.razer.com/synapse/products/695/ui/static/js/main.65ed4ee5.js",
+      "bytes": 7227421,
+      "sha256": "74ECA71816B57B4C9BE3F83D3E5D894F95A2050D88FB2DF4B63A5AFFF5271612",
+      "verifiedThisReview": true
+    },
+    {
+      "id": "671-main",
+      "url": "https://apps.razer.com/synapse/products/671/mw/main.2ceb8f5607c0e7a5901a.js",
+      "sha256": "CACF8758BF8B4DF35B7D51536830149ED428960AFEDF08CC81367E75520551D1",
+      "verifiedThisReview": false
+    },
+    {
+      "id": "671-policy",
+      "url": "https://apps.razer.com/synapse/products/671/mw/6737.e123a2b3f0516116025b.js",
+      "sha256": "54D3A9BBEC83568B02342AA54FF47A94EE55A48ECA85B5D9F28D60D01A0B1A9A",
+      "verifiedThisReview": false
+    },
+    {
+      "id": "669-main",
+      "url": "https://apps.razer.com/synapse/products/669/mw/main.8e09720cb94da405eead.js",
+      "sha256": "EEB8A171E77D1E066655D7FC997E4015B420B0F936F2464A27A87FDAFB5AC302",
+      "verifiedThisReview": false
+    },
+    {
+      "id": "669-policy",
+      "url": "https://apps.razer.com/synapse/products/669/mw/6737.439ff1a12463933a6346.js",
+      "sha256": "D1AC2212AED5491D3EAB69ABAFA270B963A2336E859DF6BFBF9ED9A455E3791B",
+      "verifiedThisReview": false
+    },
+    {
+      "id": "0510-ec-mcu-updater",
+      "url": "https://dl.razerzone.com/drivers/Razer%20Blade%2016%22%20%282024%29%20%7C%20RZ09-0510/RazerUpdater_v1.1.1.3_SO6100_EC_0102_MCU_010300_VBIOS.exe",
+      "sha256": "2912408C872D57176E42D2DA09B68566CECF9B723F51CCE4AE4E717A9E98E295",
+      "verifiedThisReview": false
+    }
+  ],
+  "findings": [
+    {
+      "source": "695-main",
+      "offset": 141152,
+      "text": "productId:695,vendorId:5426",
+      "meaning": "Exact Blade 16 (2024) product identity."
+    },
+    {
+      "source": "695-main",
+      "offset": 163422,
+      "text": "useFeature(\"isHyperBoostSystem\",",
+      "meaning": "The product declares HyperBoost."
+    },
+    {
+      "source": "695-main",
+      "offset": 48922,
+      "text": "Hyperboost_Mode:7",
+      "meaning": "HyperBoost is firmware mode 7, the same value used on 029F and 029D. OpenBlade decodes raw mode 7 on 02B7 as HyperBoostActive."
+    },
+    {
+      "source": "695-main",
+      "offset": 145857,
+      "text": "{id:5,mode:i.mNQ.Hyperboost_Mode,",
+      "meaning": "HyperBoost is an ordinary entry in the product's mode list. Its manual fan range is 3400-5200 RPM (minFanSpeedValue at byte 146729); OpenBlade admits no manual fan range in mode 7 and reports HyperBoost with manual fans without reading targets."
+    },
+    {
+      "source": "695-main",
+      "offset": 144379,
+      "text": "{id:3,mode:i.mNQ.Turbo_Mode,",
+      "meaning": "Turbo is an ordinary mode. The setter maps Turbo_Mode to Gaming_Mode raw 1 (byte 117552; enum byte 48781). The product has no Performance (raw 2) mode."
+    },
+    {
+      "source": "695-main",
+      "offset": 158285,
+      "text": "defaultACPerformanceMode:1",
+      "meaning": "Turbo is the default AC mode, so it is the declared pad-present HyperBoost entry base."
+    },
+    {
+      "source": "695-main",
+      "offset": 141503,
+      "text": "firmwareMinimumRequired:\"1.3.0.0\"",
+      "meaning": "Exact MCU minimum for HyperBoost entry, compared with the 00/87 MCU version. The 0510 EC/MCU updater name carries MCU 010300."
+    },
+    {
+      "source": "695-policy",
+      "offset": 2386571,
+      "text": "isFirmwareSupported=!e",
+      "meaning": "The policy applies the firmware minimum (!check4DigitVersionGreater(minimum, current))."
+    },
+    {
+      "source": "695-main",
+      "offset": 163111,
+      "text": "useFeature(\"needHyperboostRecheck\",\"yes\")",
+      "meaning": "The product requests the system SKU recheck."
+    },
+    {
+      "source": "695-policy",
+      "offset": 1255621,
+      "text": "function uo(){...systemSKU).charAt(9);return e===so.TypeR||e===so.TypeS}",
+      "meaning": "SKU predicates: charAt(9) R or S, S, and 5 or 6 (charAt calls at 1255706, 1255836 and 1255945)."
+    },
+    {
+      "source": "695-policy",
+      "offset": 1256342,
+      "text": "dt.A.shouldDisableHyperboost=e",
+      "meaning": "The predicate result disables HyperBoost; the same assignment appears at 1278863."
+    },
+    {
+      "source": "695-policy",
+      "offset": 1795779,
+      "text": "!C.A.shouldDisableHyperboost",
+      "meaning": "The mode and pad offer are skipped when the flag is set (also 1793192)."
+    },
+    {
+      "source": "0510-ec-mcu-updater",
+      "text": "RZ09-0510S, RZ09-0510T, RZ09-05102, RZ09-05103",
+      "meaning": "SKU cases in the updater. Character 9 is S, T, 2 or 3; only the S variant is disabled by the vendor predicate."
+    },
+    {
+      "source": "669-main",
+      "meaning": "Product 669 declares isHyperBoostSystem but never sets needHyperboostRecheck. Its policy has only a 5/6 predicate (byte 1220019) that never runs, so 029D stays ungated."
+    },
+    {
+      "source": "695-policy",
+      "offset": 1892259,
+      "text": "hasMaxFanSpeedModeEnabled)&&(yield",
+      "meaning": "The absent hasMaxFanSpeedModeEnabled flag gates only the Maximum Fans clear and reapply around mode changes (also 1893528) and a startup UI restore (1295124)."
+    },
+    {
+      "source": "695-policy",
+      "offset": 1189750,
+      "text": "ON_SET_MAX_FAN_SPEED_MODE_ENABLED",
+      "meaning": "The Maximum Fans setter handler is not gated by hasMaxFanSpeedModeEnabled."
+    },
+    {
+      "source": "695-ui",
+      "offset": 6906405,
+      "text": "supportMaxFanSpeedModeEnabled:!0",
+      "meaning": "The product UI renders the Maximum Fans switch."
+    },
+    {
+      "source": "695-ui",
+      "offset": 6906371,
+      "text": "isCPUBoost:!0",
+      "meaning": "The product UI renders the Custom CPU Boost level."
+    },
+    {
+      "source": "695-policy",
+      "offset": 1295285,
+      "text": "hasCpuBoostEnabled)&&",
+      "meaning": "The absent hasCpuBoostEnabled flag gates a separate battery cpuBoostEnabled toggle, not Custom CPU level 3."
+    }
+  ],
+  "decisions": {
+    "admission": "02B7 joins 029F and 029D in the exact experimental HyperBoost contract: the paired 0D/02 [1, selector, 7, 0] setter, the 0D/82 getter with selector agreement, fresh exact-device, controller, full-power adapter and journaled pad-path admission at every submission, and stop-on-ambiguity.",
+    "padPaths": "Pad-present and padless entry use the same mode-7 pair. Padless use is a source-backed extrapolation awaiting community validation. No setMultipleDeviceWiredConnectionStatus or other accessory-status write emulates a pad.",
+    "bases": "Silent (5), Balanced (0), Turbo (1) and Custom (4) enter directly and are restored on exit. Performance (2) is observed only. IPC protocol 86 adds the Turbo base slot; protocol 85 is reserved by a separate pending change.",
+    "batteryExit": "Battery exit sends Balanced raw 6. 02B7 reports raw 6 as BatteryBalanced, so exit readback accepts BatteryBalanced for a Balanced request only on battery.",
+    "skuRecheck": "A capability gate shared by 029F and 02B7: charAt(9) of the admitted host's system SKU in {R, S, 5, 6} keeps HyperBoost observed only. A missing SKU or one shorter than ten characters also keeps HyperBoost observed only, which is stricter than Synapse. Host admission and other controls are unaffected; diagnostics record only the evaluated character. This is a maintainer decision.",
+    "maximumFans": "Synapse 695 does not clear Maximum Fans before HyperBoost. OpenBlade keeps its guarded 07/0F [0] cleanup before mode 7 and restores the saved Custom intent on exit, as on 029F and 029D.",
+    "maximumFansAndCpuBoostAdmission": "Unchanged. The UI renders both controls directly and the Maximum Fans setter is ungated; the absent device flags gate only clear/reapply, startup restore and a separate battery toggle."
+  },
+  "physicalValidationPerformed": false
+}
