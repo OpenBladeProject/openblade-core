@@ -745,6 +745,18 @@ the aggregate: `profile_storage::migrate_on_open`, called once from
 still refuse schema 24 and older and the legacy profile, and write no profile
 document.
 
+The call comes after every read-only refusal of the open: pending override or
+journal evidence, a recovery-required record, the override document and the
+journal. An open that fails for one of them writes nothing. Managed's
+`ReadContextAsync` loads the battery store first and its overrides after, and
+quarantines an override document on its own; native refuses that whole open,
+so migrating first would only rewrite an aggregate the service still could not
+use. The record check also makes the record guard inside `migrate_on_open`
+unreachable from this call site, which holds only while the call stays after
+those checks; `pending_override_or_journal_evidence_keeps_an_older_aggregate_untouched`
+and `an_override_or_journal_the_open_refuses_keeps_an_older_aggregate_untouched`
+pin the placement.
+
 Two sources migrate, through `profile_set::migrate`:
 
 - A committed aggregate at schemas 1 to 27 that `read_aggregate` reports as
@@ -801,21 +813,50 @@ A crash at each durable step leaves:
   each document holding its prior or its migrated bytes. The store stays
   closed and nothing is touched, as managed's `CheckRecoveryRequired` does.
 - After the record is removed: the migrated documents and possibly some exact
-  backups, which nothing reads. The store opens.
+  backups, which nothing reads. The store opens. Nothing collects those
+  backups later, as managed's are never collected either.
 
-A failure that does not stop the process restores the prior documents and the
-open fails with `The saved configuration could not be migrated to the current
-schema. It is unchanged, and the next start migrates it again.` If the restore
-cannot be confirmed, the record stays: `Configuration transaction recovery is
-required. ...`. Managed's load throws its I/O exception in both cases.
+A failure that does not stop the process restores the prior documents, and
+the open fails:
 
-`profile-migration-vectors.json` holds 105 cases recorded from
+- A migration the store read back as other bytes is managed's verification
+  failure. `VerifyIntendedAggregateAsync` throws `InvalidDataException`
+  (`BatteryConfigurationStore.cs:914-932`), which `IsRecoverable` admits
+  (`:1344-1349`), so `LoadCoreAsync` quarantines the aggregate (`:403-438`)
+  and the service keeps that until it restarts. Native refuses the open with
+  managed's quarantine text, `OpenBlade preserved an unsupported or invalid
+  configuration. ...`, and remembers the change, the digest of the stored and
+  migrated bytes, for the life of the service runtime's thread. A later open of
+  the same stored bytes is refused the same way without a write; other stored
+  bytes are attempted. At most 16 changes are remembered, the oldest forgotten
+  first.
+- Any other failure, an I/O error before or after the record, fails the open
+  with `The saved configuration could not be migrated to the current schema.
+  It is unchanged.` Managed's load throws its I/O exception there, and its
+  activation tries again at the next session event.
+- If the restore cannot be confirmed, the record stays: `Configuration
+  transaction recovery is required. ...`, and every later open is refused.
+
+Schemas 25 and 26 used to open without a write. Now a migration of them, or of
+any older aggregate, that cannot be written fails the open, and every thermal,
+fan, battery and profile request answers from that failed open. A failed open
+is not kept, so each request opens again and retries an I/O failure. One
+attempt makes up to 14 durable writes and leaves the prior aggregate. A stage
+that cannot be removed, or another file under one of the change's backup
+names, fails every attempt the same way until it is removed. Native has no
+session activation to retry at, so the next request is that point; the only
+failure managed holds for the process, the verification failure, is held
+here too.
+
+`profile-migration-vectors.json` holds 112 cases recorded from
 `BatteryConfigurationStore.LoadAsync` by
 `ServiceControlRuntimeTests.NativeProfileMigrationVectors`: every schema from 1
-to 26, schema 27 left alone, boundary values, 53 legacy profiles and the
-envelopes managed preserves, each with the files left on disk and their
-digests. The domain test `profile_migration_vectors` migrates every case the
-payload reader sees. The host tests in `profile_migration_tests.rs` open the
+to 26, schema 27 left alone and schema 27 rewritten, boundary values, 54
+legacy profiles and the envelopes managed preserves, each with the files left
+on disk and their digests. Five rows carry `nativeDifference`: managed's
+outcome is still their expectation, and the native readers pin their own
+refusal with the files untouched. The domain test `profile_migration_vectors`
+migrates every case the payload reader sees. The host tests in `profile_migration_tests.rs` open the
 store on every case and compare the files, fail and crash each write, and
 repeat the open; four real-file tests run through `ProtectedFiles` with the
 injected verifier. Both readers refuse a malformed or unknown row.
@@ -831,6 +872,20 @@ Differences from managed:
 - A document with a duplicate member that also declares a future schema is
   refused as invalid by the domain reader; managed names it a future schema.
   Both leave the files untouched and the store closed.
+- A lone profile with a duplicate member and a schema version is incomplete
+  to managed and invalid to `profile_set::migrate`. The host's inspection
+  names it as managed does, and both leave it untouched. Pinned by the
+  `legacy duplicate member with a schema version` row.
+- Below schema 22, an application profile list holding `null`, or an entry
+  whose `overrides` or `executablePath` is `null`, and below schema 12,
+  `windowsPowerModes: null`, are refused, with the files untouched and the
+  store closed. Managed reads them and then discards those members
+  (`ProfileStore.cs:235-256`) and migrates the aggregate; the native decoder
+  refuses the null first (`profile_set/decode.rs:698-705`). Four `nativeDifference`
+  rows pin it. A null list itself is refused by managed as well.
+- The store's own reader (`thermal_storage::aggregate`) refuses a current
+  aggregate whose application profile omits `enabled`; managed defaults it
+  to `true`. This predates the migration and is unchanged here.
 
 Packaging refuses this composition. `build.rs` gives a build with
 `service-profiles-v1` the temporary-charge capabilities followed by
