@@ -138,6 +138,13 @@ impl Resolution<'_> {
     pub fn desired_source(&self) -> Option<PowerSource> {
         self.source
     }
+
+    /// The active application's override that [`Self::profile`] applies:
+    /// `GetApplicationOverride` for the desired source, and `None` on
+    /// `ExternalUnknown`, where no override applies.
+    pub fn application_override(&self) -> Option<&ApplicationOverride> {
+        self.application_override
+    }
 }
 
 /// `GetApplicationOverride` (`ProfileAutomationState.cs:632-641`).
