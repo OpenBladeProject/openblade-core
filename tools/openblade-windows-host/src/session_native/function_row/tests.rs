@@ -1,6 +1,10 @@
 use std::{
     cell::RefCell,
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering::SeqCst},
+        mpsc::sync_channel,
+    },
     time::{Duration, Instant},
 };
 
@@ -19,7 +23,7 @@ use serde_json::{Value, json};
 use tokio::sync::watch;
 
 use super::{
-    Timing,
+    Retire, Signals, Timing,
     admission::{Admission, DriverMode, LEASE, Projection, Sink, publish_status},
     effects::StageEffects,
     host::{Hooks, RETRY, Retirement, Running, Supervisor},
@@ -465,12 +469,14 @@ struct HookState {
     finished: bool,
     retirement: Option<Retirement>,
     start_error: bool,
+    /// What the hook last received when it was asked to stop.
+    at_stop: Vec<Option<Published>>,
 }
 
 #[derive(Clone, Default)]
 struct FakeHooks(Arc<Mutex<HookState>>, Recorder);
 
-struct FakeRunning(Arc<Mutex<HookState>>);
+struct FakeRunning(Arc<Mutex<HookState>>, Recorder);
 
 impl Hooks for FakeHooks {
     type Running = FakeRunning;
@@ -486,13 +492,15 @@ impl Hooks for FakeHooks {
         state.starts.push(startup);
         state.finished = false;
         admission.attach(Box::new(self.1.clone()));
-        Ok(FakeRunning(Arc::clone(&self.0)))
+        Ok(FakeRunning(Arc::clone(&self.0), self.1.clone()))
     }
 }
 
 impl Running for FakeRunning {
     fn stop(&self) {
-        self.0.lock().unwrap().stops += 1;
+        let mut state = self.0.lock().unwrap();
+        state.stops += 1;
+        state.at_stop.push(self.1.last());
     }
     fn finished(&self) -> bool {
         self.0.lock().unwrap().finished
@@ -663,9 +671,11 @@ fn a_backend_change_retires_the_hook_and_reinstalls_only_after_clean_release() {
     supervisor.step(now, false).unwrap();
     supervisor.step(now, false).unwrap();
     assert_eq!(rig.hooks.0.lock().unwrap().stops, 1);
-    // Pass-through before the drain: the backend is dropped first.
-    let Some(Published::Observation(observation, _)) = rig.hooks.1.last() else {
-        panic!("published");
+    // Pass-through before the drain: the hook already held no backend when it
+    // was asked to stop.
+    let [Some(Published::Observation(observation, _))] = rig.hooks.0.lock().unwrap().at_stop[..]
+    else {
+        panic!("published before the stop");
     };
     assert_eq!(observation.selected_backend, None);
     // Still running: the selection returning must not start a second hook.
@@ -756,6 +766,11 @@ fn stop_retires_the_running_hook_before_reporting_done() {
     assert!(!supervisor.step(now, true).unwrap());
     assert!(!supervisor.step(now, true).unwrap());
     assert_eq!(rig.hooks.0.lock().unwrap().stops, 1);
+    let [Some(Published::Observation(observation, _))] = rig.hooks.0.lock().unwrap().at_stop[..]
+    else {
+        panic!("published before the stop");
+    };
+    assert_eq!(observation.selected_backend, None);
     rig.finish(Retirement {
         clean: true,
         error: None,
@@ -775,6 +790,47 @@ fn stop_retires_the_running_hook_before_reporting_done() {
 }
 
 // ---- The async role ----
+
+/// Reads the supervisor's stop flag whenever the hook is invalidated.
+struct StopWitness(Arc<Signals>, Arc<Mutex<Vec<bool>>>);
+
+impl Sink for StopWitness {
+    fn publish(&self, _: Observation, _: Instant) {}
+    fn invalidate(&self) {
+        self.1.lock().unwrap().push(self.0.stop.load(SeqCst));
+    }
+}
+
+#[test]
+fn stop_passes_every_key_through_before_the_supervisor_can_see_it() {
+    for dropped in [false, true] {
+        let (wake, wakes) = sync_channel(1);
+        let signals = Arc::new(Signals {
+            stop: AtomicBool::new(false),
+            wake,
+        });
+        let admission = Arc::new(Admission::default());
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        admission.observe(
+            Projection::of(&verified("RZ09-0581", json!(true), json!(1))),
+            Instant::now() + Duration::from_secs(60),
+        );
+        admission.attach(Box::new(StopWitness(
+            Arc::clone(&signals),
+            Arc::clone(&seen),
+        )));
+        if dropped {
+            // A dropped role future keeps the same order.
+            drop(Retire(Arc::clone(&signals), Arc::clone(&admission)));
+        } else {
+            signals.retire(&admission);
+        }
+        assert_eq!(*seen.lock().unwrap(), [false], "dropped: {dropped}");
+        assert!(signals.stop.load(SeqCst));
+        assert!(wakes.try_recv().is_ok());
+        assert!(!admission.admits_install(Instant::now()));
+    }
+}
 
 const FAST: Timing = Timing {
     renew: Duration::from_millis(10),
@@ -862,6 +918,55 @@ async fn origin_loss_invalidates_and_a_stuck_hook_bounds_the_stop() {
     assert_eq!(rig.hooks.0.lock().unwrap().stops, 1);
     assert_eq!(rig.hooks.1.last(), Some(Published::Invalidated));
     // Let the abandoned supervisor thread end.
+    rig.finish(Retirement {
+        clean: true,
+        error: None,
+    });
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_suspend_is_followed_by_one_renewal_not_a_burst() {
+    use std::sync::atomic::AtomicUsize;
+    let rig = Rig::new();
+    rig.status("RZ09-0581", Instant::now());
+    let (_stop_tx, stop) = watch::channel(false);
+    let verifies = Arc::new(AtomicUsize::new(0));
+    let role = tokio::spawn({
+        let supervisor = rig.supervisor(local, ignore);
+        let admission = Arc::clone(&rig.admission);
+        let verifies = Arc::clone(&verifies);
+        async move {
+            let verify = move || {
+                verifies.fetch_add(1, SeqCst);
+                Ok(())
+            };
+            serve(supervisor, admission, stop, verify, Timing::INSTALLED).await
+        }
+    });
+    let settle = || async {
+        for _ in 0..1_000 {
+            tokio::task::yield_now().await;
+        }
+    };
+    settle().await;
+    assert_eq!(verifies.load(SeqCst), 1, "the first tick is immediate");
+    // Windows `Instant` keeps counting through sleep, so the clock jumps.
+    for suspended in [Duration::from_secs(600), Duration::from_secs(8 * 3600)] {
+        let before = verifies.load(SeqCst);
+        tokio::time::advance(suspended).await;
+        settle().await;
+        assert_eq!(verifies.load(SeqCst) - before, 1, "{suspended:?}");
+    }
+    // The next renewal is a full period after the resumed one.
+    let before = verifies.load(SeqCst);
+    tokio::time::advance(Timing::INSTALLED.renew - Duration::from_millis(1)).await;
+    settle().await;
+    assert_eq!(verifies.load(SeqCst), before);
+    tokio::time::advance(Duration::from_millis(1)).await;
+    settle().await;
+    assert_eq!(verifies.load(SeqCst), before + 1);
+    role.abort();
+    let _ = role.await;
     rig.finish(Retirement {
         clean: true,
         error: None,

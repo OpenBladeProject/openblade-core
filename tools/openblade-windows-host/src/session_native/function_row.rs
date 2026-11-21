@@ -30,7 +30,10 @@ use std::{
 };
 
 use openblade_platform_windows::agent_diagnostics::record;
-use tokio::sync::{oneshot, watch};
+use tokio::{
+    sync::{oneshot, watch},
+    time::MissedTickBehavior,
+};
 
 mod admission;
 mod effects;
@@ -96,15 +99,6 @@ pub(super) async fn run(
     .await
 }
 
-/// Invalidates the admission on every exit, including a dropped future.
-struct Invalidate(Arc<Admission>);
-
-impl Drop for Invalidate {
-    fn drop(&mut self) {
-        self.0.invalidate();
-    }
-}
-
 /// Stop and wake for the supervisor thread.
 struct Signals {
     stop: AtomicBool,
@@ -112,18 +106,22 @@ struct Signals {
 }
 
 impl Signals {
-    fn retire(&self) {
+    /// Pass-through first, then retire the hook: every key passes before the
+    /// supervisor can see the stop and start the drain.
+    fn retire(&self, admission: &Admission) {
+        admission.invalidate();
         self.stop.store(true, SeqCst);
         let _ = self.wake.try_send(());
     }
 }
 
-/// Retires the supervisor on every exit, including a dropped future.
-struct Retire(Arc<Signals>);
+/// Invalidates, then retires the supervisor, on every exit, including a
+/// dropped future.
+struct Retire(Arc<Signals>, Arc<Admission>);
 
 impl Drop for Retire {
     fn drop(&mut self) {
-        self.0.retire();
+        self.0.retire(&self.1);
     }
 }
 
@@ -152,13 +150,12 @@ where
     G: Guard + Send + 'static,
     L: Fn() -> bool + Send + 'static,
 {
-    let _invalidate = Invalidate(Arc::clone(&admission));
     let (wake, wakes) = sync_channel(1);
     let signals = Arc::new(Signals {
         stop: AtomicBool::new(false),
         wake,
     });
-    let _retire = Retire(Arc::clone(&signals));
+    let _retire = Retire(Arc::clone(&signals), Arc::clone(&admission));
     let (exit_tx, mut exit) = oneshot::channel();
     let thread_signals = Arc::clone(&signals);
     let thread = thread::Builder::new()
@@ -169,6 +166,10 @@ where
         })?;
 
     let mut renew = tokio::time::interval(timing.renew);
+    // Windows `Instant` keeps counting through sleep. A burst would replay every
+    // tick missed during a suspend back to back on the Agent's shared runtime;
+    // one renewal after resume re-verifies just as well.
+    renew.set_missed_tick_behavior(MissedTickBehavior::Delay);
     let mut finished = None;
     let result = loop {
         tokio::select! {
@@ -190,9 +191,7 @@ where
             }
         }
     };
-    // Pass-through first, then retire the hook.
-    admission.invalidate();
-    signals.retire();
+    signals.retire(&admission);
     let joined = match finished {
         Some(result) => result,
         None => match tokio::time::timeout(timing.retire, exit).await {

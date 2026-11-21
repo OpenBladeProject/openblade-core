@@ -412,3 +412,59 @@ async fn retained_idle_pipe_monitor_rejects_changed_peer_and_closes_partial_fram
     let (result, ()) = tokio::join!(watch, drive);
     assert_eq!(result.unwrap_err().kind(), io::ErrorKind::PermissionDenied);
 }
+
+#[tokio::test(start_paused = true)]
+async fn idle_checks_after_a_suspend_run_once_not_in_a_burst() {
+    let (client, mut server) = duplex(16_384);
+    let mut client = Some(client);
+    let authority = Authority::live();
+    let checks = std::rc::Rc::new(Cell::new(0usize));
+    let (stop, stopped) = oneshot::channel();
+    let (opened, mut received) = tokio::sync::mpsc::unbounded_channel();
+    let watch = watch_monitored(
+        Some(&authority),
+        async { stopped.await.unwrap() },
+        || Ok(REQUEST_ID.into()),
+        async || Ok(client.take().expect("a healthy idle stream was reopened")),
+        |_| Ok((PID, 0)),
+        |_| {
+            let checks = checks.clone();
+            Ok(Some(Box::new(move || {
+                checks.set(checks.get() + 1);
+                Ok((PID, 0))
+            })))
+        },
+        |update| {
+            opened.send(update).unwrap();
+            Ok(())
+        },
+    );
+    let drive = async {
+        accept(&mut server, REQUEST_ID).await;
+        server.write_all(frames()[1]).await.unwrap();
+        assert!(matches!(
+            received.recv().await,
+            Some(StatusUpdate::Opened(_))
+        ));
+        let settle = || async {
+            for _ in 0..1_000 {
+                tokio::task::yield_now().await;
+            }
+        };
+        settle().await;
+        assert_eq!(checks.get(), 1, "the first check is immediate");
+        // Windows `Instant` keeps counting through sleep, so the clock jumps.
+        for suspended in [Duration::from_secs(600), Duration::from_secs(8 * 3600)] {
+            let before = checks.get();
+            advance(suspended).await;
+            settle().await;
+            assert_eq!(checks.get() - before, 1, "{suspended:?}");
+        }
+        assert!(received.try_recv().is_err());
+        stop.send(()).unwrap();
+    };
+    assert_eq!(
+        tokio::join!(watch, drive).0.unwrap_err().kind(),
+        io::ErrorKind::Interrupted
+    );
+}

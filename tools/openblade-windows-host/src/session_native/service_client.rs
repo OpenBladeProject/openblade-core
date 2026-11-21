@@ -216,6 +216,11 @@ async fn watch_monitored<S: AsyncRead + AsyncWrite + Unpin>(
                     let reading = read_status_event(&mut stream);
                     tokio::pin!(reading);
                     let mut check = tokio::time::interval(Duration::from_millis(500));
+                    // Windows `Instant` keeps counting through sleep. A burst
+                    // would run every check missed during a suspend back to
+                    // back; one check after resume proves the generation and
+                    // peer just as well.
+                    check.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
                     loop {
                         tokio::select! {
