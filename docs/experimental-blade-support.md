@@ -224,6 +224,34 @@ newer profiles accept an optional returned-state byte. Independent requested-sta
 readback remains required. This software tolerance does not establish firmware
 latency on every model.
 
+## Synapse features shown without controls
+
+OpenBlade shows these Synapse features in diagnostics and model details. Synapse
+changes them through its own native components, so OpenBlade doesn't change
+them. Use Synapse for these settings.
+
+| Feature | Laptops | What Synapse offers |
+| --- | --- | --- |
+| CPU power limit | `RZ09-0482`, `RZ09-0508`, `RZ09-0530` | 45–95 W in Custom |
+| CPU power limits (PL1, PL2, time window) | `RZ09-0483`, `RZ09-0484`, `RZ09-0510`, `RZ09-0509`, `RZ09-0529` | PL1 1–190 W, PL2 1–200 W with an on/off switch, 0.125 W steps; time window 1–128 s; default PL2 160 W, PL1 120 W, 56 s |
+| Gaming-mode GPU overclock | `RZ09-0300`, `RZ09-0351`, `RZ09-0328` | Gaming adds the laptop's stored GPU and memory overclock |
+| Local dimming | `RZ09-0530`, `RZ09-0528` | Follows the Windows HDR setting |
+
+The RZ09-0483 and RZ09-0484 ranges match the other Intel models; their own
+Synapse settings pages weren't reviewed.
+
+### Local dimming on Blade 16 (2024) and Blade 18 (2024)
+
+On `RZ09-0510` and `RZ09-0509`, the Display page shows **Local dimming** with a
+**Turn off** button when the laptop reports a mini-LED display and local dimming
+is on. OpenBlade can only turn local dimming off. It doesn't do so while CPU Boost
+or Maximum Fans is on; turn those off first. Each change is checked by a fresh
+readback. If the result can't be confirmed, laptop controls pause until you check
+the current state.
+
+See the [source review](../evidence/source-reviewed-blades/2026-11-20-observed-features-and-local-dimming.json)
+for the pinned Synapse files. Physical validation is pending.
+
 ## Send a useful test report
 
 The earlier five models also offer [SnapTap](snap-tap.md#supported-driver-profiles) through

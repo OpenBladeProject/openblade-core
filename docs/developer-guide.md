@@ -413,6 +413,26 @@ When you admit a model, check its panel:
   automatically, since it may be a real display setting. Any other combined
   payload needs capture and reversible validation first.
 
+Current admissions:
+
+- RZ09-0510 (`02B7`) and RZ09-0509 (`02B8`) offer Clear. The panel gate is
+  Synapse's `getSKUHardwareConfiguration` `0D/8F` (`[1,13,143]`): bit `0x02` is
+  `Mini_LED_Resolution`, and Synapse shows its toggle only for
+  `Mini_LED_Supported`. OpenBlade reads `0D/8F` when the port opens to decide
+  whether to offer Clear, and again before every Clear. An unreadable or
+  non-mini-LED reply leaves the control unoffered. The Clear then reads `07/8F`
+  through the shared decoder, writes `current & 0x04` once and requires an exact
+  readback. A possible submission without that readback pauses experimental
+  writes; it is never replayed. Clear sends only `00` or `04` after the guard
+  refused `0x01` and `0x02`, so it skips the thermal external-power gate. The
+  shared rules are in `LocalDimmingProtocol`.
+- RZ09-0530 (`02C5`) and RZ09-0528 (`02C6`) report local dimming as
+  `ObservedOnly`: Synapse sets `0x08` to follow Windows HDR on these models.
+- Turning local dimming on is not admitted on any model.
+
+Source pins are in
+[the observed-feature review](../evidence/source-reviewed-blades/2026-11-20-observed-features-and-local-dimming.json).
+
 ### RZ09-0581 lighting cadence validator
 
 The RZ09-0581 cadence validator measures whether the admitted `1532:02E0`
