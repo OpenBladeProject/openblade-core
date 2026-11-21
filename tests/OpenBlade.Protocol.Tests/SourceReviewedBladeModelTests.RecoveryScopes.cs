@@ -110,10 +110,14 @@ public sealed partial class SourceReviewedBladeModelTests
     }
 
     [Fact]
-    public async Task ThermalRecovery_OverrideCapableBackendStillRequiresActualBatteryPolicy()
+    public async Task ThermalRecovery_PossiblySubmittedOverrideStillRequiresActualBatteryPolicy()
     {
         var policy = new ExperimentalFeaturesPolicy(Model(0x02A0));
         policy.RequireRecovery(ExperimentalRecoveryScope.ThermalOnly);
+        // A thermal pause alone keeps its base recovery reads.
+        Assert.False(policy.TemporaryFullChargeRecoveryRequired);
+        policy.RequireRecovery(ExperimentalRecoveryScope.ThermalOnly, temporaryFullCharge: true);
+        Assert.True(policy.TemporaryFullChargeRecoveryRequired);
         var session = new Session { RejectBatteryQuery = true };
         await using var port = Create(0x02A0, session, policy);
         Assert.True(port.SupportsTemporaryFullChargeQuery);

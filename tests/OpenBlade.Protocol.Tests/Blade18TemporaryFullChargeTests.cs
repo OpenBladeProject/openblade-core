@@ -91,7 +91,9 @@ public abstract class SourceReviewedTemporaryFullChargeTests
     [InlineData(true)]
     public async Task FullCharge_PostWriteMismatchPausesAndDoesNotReplay(bool policyChanged)
     {
-        var session = new Session { IgnoreSet = !policyChanged, PolicyAfterSet = policyChanged ? (byte)0xDA : null };
+        // 0xC6 (enabled, 70%) is inside every admitted model's limits, so only the
+        // raw-policy comparison can reject it.
+        var session = new Session { IgnoreSet = !policyChanged, PolicyAfterSet = policyChanged ? (byte)0xC6 : null };
         var policy = new ExperimentalFeaturesPolicy(Model);
         await using var port = Create(session, policy);
         var failure = await Assert.ThrowsAsync<BladeWriteException>(() => port.SetTemporaryFullChargeAsync(true, CancellationToken.None));
@@ -184,9 +186,20 @@ public abstract class SourceReviewedTemporaryFullChargeTests
         Assert.Empty(session.Commands);
     }
 
+    // Production reports Windows AC presence as ExternalUnknown, which counts as
+    // external power exactly as for the other experimental writes.
+    [Fact]
+    public async Task FullCharge_WindowsExternalPresenceAdmitsEnable()
+    {
+        var session = new Session();
+        await using var port = Create(session, source: PowerSource.ExternalUnknown);
+        await port.SetTemporaryFullChargeAsync(true, CancellationToken.None);
+        Assert.Equal(4, Assert.Single(session.Writes).Arguments.Span[0]);
+        Assert.Equal(4, session.Flags);
+    }
+
     [Theory]
     [InlineData(PowerSource.Battery)]
-    [InlineData(PowerSource.ExternalUnknown)]
     [InlineData((PowerSource)99)]
     public async Task FullCharge_UnconfirmedExternalPowerBlocksEnableButAllowsCancel(PowerSource source)
     {
@@ -198,6 +211,85 @@ public abstract class SourceReviewedTemporaryFullChargeTests
         session.Flags = 4;
         await port.SetTemporaryFullChargeAsync(false, CancellationToken.None);
         Assert.Equal(0, Assert.Single(session.Writes).Arguments.Span[0]);
+    }
+
+    // The power check repeats after the baseline reads, before the guarded submission.
+    [Fact]
+    public async Task FullCharge_PowerLossAfterBaselineIsRefusedBeforeSubmission()
+    {
+        PowerSource source = PowerSource.PluggedIn;
+        var session = new Session { AfterMask = () => source = PowerSource.Battery };
+        await using var port = new ExperimentalBladePort(session, new(), Model, new(Model), () => true, () => source);
+        var failure = await Assert.ThrowsAsync<BladeWriteException>(() => port.SetTemporaryFullChargeAsync(true, CancellationToken.None));
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, failure.SubmissionState);
+        Assert.Contains("requires external power", failure.Message);
+        Assert.Empty(session.Writes);
+    }
+
+    [Theory]
+    [InlineData("", true)]
+    [InlineData("04", true)]
+    [InlineData("0400", false)]
+    public async Task FullCharge_SetAcknowledgmentCarriesAtMostOneByte(string ackHex, bool accepted)
+    {
+        var session = new Session { SetAck = Convert.FromHexString(ackHex) };
+        var policy = new ExperimentalFeaturesPolicy(Model);
+        await using var port = Create(session, policy);
+        Exception? failure = await Record.ExceptionAsync(() => port.SetTemporaryFullChargeAsync(true, CancellationToken.None));
+        if (accepted)
+        {
+            Assert.Null(failure);
+            Assert.True(policy.WritesAllowed);
+        }
+        else
+        {
+            Assert.Equal(WriteSubmissionState.Indeterminate, Assert.IsType<BladeWriteException>(failure).SubmissionState);
+            Assert.False(policy.WritesAllowed);
+        }
+        Assert.Single(session.Writes);
+    }
+
+    // 07/8F has not been observed on every admitted model. An undecodable mask
+    // must not block the limiter, become Off, or be retried while unreadable.
+    [Fact]
+    public async Task ChargeLimit_UnreadableOverrideKeepsLimiterOnlyWrite()
+    {
+        var session = new Session { MaskReply = [16] };
+        var policy = new ExperimentalFeaturesPolicy(Model);
+        await using var port = Create(session, policy);
+        await port.SetChargeLimitAsync(70, CancellationToken.None);
+        Assert.Equal(0xC6, session.PolicyRaw);
+        Assert.True(policy.TemporaryFullChargeReadUnavailable);
+        int overrideReads = session.Commands.Count(command => command.CommandId == 0x8F);
+        await port.SetChargeLimitAsync(75, CancellationToken.None);
+        Assert.Equal(0xCB, session.PolicyRaw);
+        Assert.Equal(overrideReads, session.Commands.Count(command => command.CommandId == 0x8F));
+        Assert.Equal(new byte[] { 0xC6, 0xCB }, session.Writes.Select(command => command.Arguments.Span[0]));
+        Assert.True(policy.WritesAllowed);
+        session.MaskReply = null;
+        Assert.False(await port.QueryTemporaryFullChargeAsync(CancellationToken.None));
+        Assert.False(policy.TemporaryFullChargeReadUnavailable);
+    }
+
+    // Only a possibly submitted override write needs 07/8F to recover. A limiter
+    // pause recovers as before and reports an unreadable flag as unknown.
+    [Fact]
+    public async Task Recovery_LimiterPauseDoesNotDependOnOverrideQuery()
+    {
+        var session = new Session { FailLimiterSet = true };
+        var policy = new ExperimentalFeaturesPolicy(Model);
+        await using var port = Create(session, policy);
+        await Assert.ThrowsAsync<BladeWriteException>(() => port.SetChargeLimitAsync(70, CancellationToken.None));
+        Assert.False(policy.WritesAllowed);
+        Assert.False(policy.TemporaryFullChargeRecoveryRequired);
+        session.MaskReply = [16];
+        var recovered = await port.ReadRecoveryStateAsync(CancellationToken.None);
+        Assert.Null(recovered.Battery!.TemporaryFullCharge);
+        Assert.Equal(70, recovered.Battery.ChargeLimitPercent);
+        int overrideReads = session.Commands.Count(command => command.CommandId == 0x8F);
+        recovered = await port.ReadRecoveryStateAsync(CancellationToken.None);
+        Assert.Null(recovered.Battery!.TemporaryFullCharge);
+        Assert.Equal(overrideReads, session.Commands.Count(command => command.CommandId == 0x8F));
     }
 
     [Fact]
@@ -225,6 +317,8 @@ public abstract class SourceReviewedTemporaryFullChargeTests
         internal byte? PolicyAfterSet { get; init; }
         internal bool IgnoreSet { get; init; }
         internal bool FailSet { get; init; }
+        internal bool FailLimiterSet { get; init; }
+        internal byte[] SetAck { get; init; } = [];
         internal Action? BeforeSet { get; set; }
         internal Action? AfterSet { get; set; }
         internal Action? AfterMask { get; set; }
@@ -253,7 +347,11 @@ public abstract class SourceReviewedTemporaryFullChargeTests
                     if (PolicyAfterSet is { } policy) { PolicyRaw = policy; }
                     AfterSet?.Invoke();
                     if (FailSet) { return Task.FromResult(new HidSessionResult<ReadOnlyMemory<byte>>(default, HidSessionFailureKind.Timeout)); }
-                    response = []; break; // Do not infer state from vendor ACK.
+                    response = SetAck; break; // Do not infer state from vendor ACK.
+                case (7, 0x12):
+                    PolicyRaw = command.Arguments.Span[0];
+                    if (FailLimiterSet) { return Task.FromResult(new HidSessionResult<ReadOnlyMemory<byte>>(default, HidSessionFailureKind.Timeout)); }
+                    response = command.Arguments.ToArray(); break;
                 case (0x0D, 0x82): response = [command.Arguments.Span[0], command.Arguments.Span[1], 0, 0]; break;
                 case (3, 0x80): response = command.Arguments.ToArray(); break;
                 // RZ09-0529 lighting recovery reads zero brightness, the Off effect and an off indicator.
@@ -294,6 +392,42 @@ public sealed class Rz090529TemporaryFullChargeTests : SourceReviewedTemporaryFu
             "https://apps.razer.com/synapse/products/709/mw/rzDevice25.d532642d8de7a9cfcf5d.js;SHA256=9109826D790FEB8597BBFC115231066CA66E2C480ED9769BB85F3F91188AAD0A",
             "https://apps.razer.com/synapse/products/709/mw/6737.d34a3f9a638030f35c6a.js;SHA256=4758FB7E2D8296564FB9CE971F6DCE3D580ED5407EEF07A69E1C362A04FF28C0",
             "https://apps.razer.com/synapse/products/709/mw/main.bb0dd1873a58a987c63a.js;SHA256=CC8E0EFD2B37F1ED5AF6C8CC8C3AB1327B9502927DC05F20EE7465486AB006F1");
+    }
+
+    // 02C7 admits the status-only 07/0F ACK only through its reviewed thermal
+    // policy. Without that contract the guard refuses before any write.
+    [Fact]
+    public async Task FullCharge_WithoutReviewedAckContractRefusesBeforeWrite()
+    {
+        ExperimentalBladeModel model = ExperimentalBladeModels.All.Single(item => item.ProductId == 0x02C7) with { ThermalPolicy = null };
+        Assert.False(ExperimentalBladePort.UsesSourceBackedSetAckContract(model));
+        var session = new AckSession();
+        await using var port = new ExperimentalBladePort(session, new(), model, new(model), () => true, () => PowerSource.PluggedIn);
+        var failure = await Assert.ThrowsAsync<BladeWriteException>(() => port.SetTemporaryFullChargeAsync(false, CancellationToken.None));
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, failure.SubmissionState);
+        Assert.IsType<CapabilityUnavailableException>(failure.InnerException);
+        Assert.DoesNotContain(session.Commands, command => command.CommandId == 0x0F);
+    }
+
+    private sealed class AckSession : IRazerCommandSession
+    {
+        internal List<RazerCommandSpec> Commands { get; } = [];
+        public RazerCommandSessionDisposition Disposition => RazerCommandSessionDisposition.Healthy;
+        public Task<HidSessionResult<ReadOnlyMemory<byte>>> ExecuteAsync(RazerCommandSpec command,
+            Func<TransactionIdAssignment> assignTransactionId, TimeSpan exchangeTimeout, CancellationToken token)
+        {
+            _ = assignTransactionId();
+            Commands.Add(command);
+            // Protection off (no limits apply without the thermal policy); override active.
+            byte[] response = (command.ClassId, command.CommandId) switch
+            {
+                (7, 0x92) => [0x50],
+                (7, 0x8F) => [4],
+                _ => [],
+            };
+            return Task.FromResult(new HidSessionResult<ReadOnlyMemory<byte>>(response, null));
+        }
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 
     // Both admitted backends already accept status-only SET ACKs for their other

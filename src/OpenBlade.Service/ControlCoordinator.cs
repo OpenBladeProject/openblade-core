@@ -1738,7 +1738,7 @@ public sealed class ControlCoordinator
                     initial.Battery,
                     token),
                 state => BatteryOperationPlanner.BatteryMatches(desiredBattery, state.Battery,
-                    allowUnmanagedOverride: !capabilities.SupportsTemporaryFullCharge))
+                    allowUnmanagedOverride: BatteryOperationPlanner.UnknownOverrideAdmitsPolicy(capabilities)))
             {
                 BatteryConfirmation = batteryPlan.ConfirmationScope,
             },
@@ -2466,7 +2466,9 @@ public sealed class ControlCoordinator
                 capabilities,
                 DeviceAccessFailed: false,
                 ConfirmationUnavailable: final.Battery is null
-                    || capabilities.SupportsTemporaryFullCharge && final.Battery.TemporaryFullCharge is null,
+                    || final.Battery.TemporaryFullCharge is null && capabilities.SupportsTemporaryFullCharge
+                        && (batteryConfirmation == BatteryConfirmationScope.All
+                            || !capabilities.ChargePolicyIndependentOfTemporaryFullCharge),
                 PreWriteState: initial,
                 BatteryConfirmation: batteryConfirmation);
         }

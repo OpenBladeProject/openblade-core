@@ -1010,16 +1010,20 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                     bool? temporary = null;
                     if (port.SupportsTemporaryFullChargeQuery)
                     {
+                        // A backend whose limiter never depended on the override
+                        // keeps confirmed limiter fields and an unknown flag; the
+                        // failed query still retires the port before reuse.
+                        bool independent = port.Capabilities.ChargePolicyIndependentOfTemporaryFullCharge;
                         (_, temporary) = await ReadIsolatedStateQueryAsync(
                             lease,
                             DeviceStateQuery.TemporaryFullCharge,
                             BatteryStateSubsystems,
                             current => current.QueryTemporaryFullChargeAsync(cancellationToken),
-                            failures).ConfigureAwait(false);
+                            independent ? [] : failures).ConfigureAwait(false);
                     }
 
-                    // The temporary override changes how the protection fields
-                    // must be interpreted, so a rejected override leaves the
+                    // Otherwise the temporary override changes how the protection
+                    // fields must be interpreted, so a rejected override leaves the
                     // whole battery state unknown rather than half confirmed.
                     battery = failures.Count == 0
                         ? new(

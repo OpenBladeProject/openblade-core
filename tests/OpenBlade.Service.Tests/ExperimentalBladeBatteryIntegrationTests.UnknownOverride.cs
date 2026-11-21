@@ -10,7 +10,7 @@ public sealed partial class ExperimentalBladeBatteryIntegrationTests
     [InlineData(0x02A0)]
     [InlineData(0x02C5)]
     [InlineData(0x02C7)]
-    public async Task QueryCapableBlade18_UnknownOverrideBlocksPolicyPlanBeforeFirstRead(int product)
+    public async Task QueryCapableBlade18_UnknownOverrideAdmitsPolicyPlanBeforeFirstRead(int product)
     {
         var io = new Io { Raw = 0xD0 };
         using WindowsVerifiedBladeDeviceProvider provider = CreateProvider(io,
@@ -18,13 +18,18 @@ public sealed partial class ExperimentalBladeBatteryIntegrationTests
         Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
         DeviceCapabilities capabilities = await device.ReadCapabilitiesAsync(CancellationToken.None);
         Assert.True(capabilities.SupportsTemporaryFullCharge);
+        // The experimental limiter never depended on the override. Only a
+        // confirmed active override blocks it, as before 07/8F was admitted.
+        Assert.True(capabilities.ChargePolicyIndependentOfTemporaryFullCharge);
 
         BatteryOperationPlan plan = BatteryOperationPlanner.CreateBatteryPlan(
             new DesiredBatteryState(BatteryPolicy.Create(75), true, false),
             capabilities, new ConfirmedBatteryState(true, 80, null));
 
-        Assert.False(plan.Supported);
-        Assert.IsType<BatteryOperation.None>(plan.Operation);
+        Assert.True(plan.Supported);
+        Assert.IsNotType<BatteryOperation.None>(plan.Operation);
+        Assert.False(BatteryOperationPlanner.CreateTemporaryFullChargePlan(
+            true, capabilities, new ConfirmedBatteryState(true, 80, null)).Supported);
         Assert.Empty(io.Setters);
     }
 

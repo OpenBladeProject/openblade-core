@@ -620,6 +620,8 @@ internal sealed class ExperimentalFeaturesPolicy(ExperimentalBladeModel model)
         System.Collections.Immutable.ImmutableDictionary<PerformancePreset, FanSpeedRange>.Empty;
     private int recoveryRequired;
     private ExperimentalRecoveryScope recoveryScope = ExperimentalRecoveryScope.All;
+    private bool temporaryFullChargeRecoveryRequired;
+    private int temporaryFullChargeReadUnavailable;
 
     // Observed capability metadata only; never a saved fan target or write admission.
     internal IReadOnlyDictionary<PerformancePreset, FanSpeedRange> ConfirmedFanRanges => Volatile.Read(ref confirmedFanRanges);
@@ -642,7 +644,34 @@ internal sealed class ExperimentalFeaturesPolicy(ExperimentalBladeModel model)
         }
     }
 
-    internal void RequireRecovery(ExperimentalRecoveryScope scope = ExperimentalRecoveryScope.All)
+    /// <summary>
+    /// A possibly submitted 07/0F temporary full charge write must be reconciled
+    /// from a real 07/8F reading. No other pause depends on that query.
+    /// </summary>
+    internal bool TemporaryFullChargeRecoveryRequired
+    {
+        get
+        {
+            lock (sync)
+            {
+                return temporaryFullChargeRecoveryRequired;
+            }
+        }
+    }
+
+    /// <summary>
+    /// The latest 07/8F read failed or returned an undecodable mask. Charge-limit
+    /// writes and optional recovery reads then keep their limiter-only behaviour
+    /// instead of repeating a query that may end the session.
+    /// </summary>
+    internal bool TemporaryFullChargeReadUnavailable =>
+        Volatile.Read(ref temporaryFullChargeReadUnavailable) != 0;
+
+    internal void RecordTemporaryFullChargeRead(bool readable) =>
+        Volatile.Write(ref temporaryFullChargeReadUnavailable, readable ? 0 : 1);
+
+    internal void RequireRecovery(ExperimentalRecoveryScope scope = ExperimentalRecoveryScope.All,
+        bool temporaryFullCharge = false)
     {
         lock (sync)
         {
@@ -653,6 +682,8 @@ internal sealed class ExperimentalFeaturesPolicy(ExperimentalBladeModel model)
                 or ExperimentalRecoveryScope.LightingFieldsOnly ? scope : ExperimentalRecoveryScope.All;
             recoveryScope = !IsPaused ? requested
                 : recoveryScope == requested ? recoveryScope : ExperimentalRecoveryScope.All;
+            temporaryFullChargeRecoveryRequired = temporaryFullCharge
+                || IsPaused && temporaryFullChargeRecoveryRequired;
             Volatile.Write(ref recoveryRequired, 1);
         }
     }
@@ -663,6 +694,7 @@ internal sealed class ExperimentalFeaturesPolicy(ExperimentalBladeModel model)
         lock (sync)
         {
             recoveryScope = ExperimentalRecoveryScope.All;
+            temporaryFullChargeRecoveryRequired = false;
             Volatile.Write(ref recoveryRequired, 0);
         }
     }

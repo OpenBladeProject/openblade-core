@@ -94,9 +94,11 @@ internal sealed partial class ExperimentalBladePort
             {
                 return;
             }
-            if (SupportsTemporaryFullChargeQuery
-                && ((await ReadTemporaryFullChargeFlagsAsync(cancellationToken).ConfigureAwait(false))
-                    & TemporaryFullChargeProtocol.TemporaryFullChargeBit) != 0)
+            // Only a positive 07/8F override blocks the limiter. A failed or
+            // undecodable read leaves the limiter-only write it had before the
+            // override was admitted, and is not repeated while it stays unreadable.
+            if (SupportsTemporaryFullChargeQuery && !policy.TemporaryFullChargeReadUnavailable
+                && await TryReadTemporaryFullChargeActiveAsync(cancellationToken).ConfigureAwait(false) == true)
             {
                 throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
                     "Cancel temporary full charge before changing the charge policy.");

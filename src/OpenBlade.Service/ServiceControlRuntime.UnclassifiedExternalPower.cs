@@ -130,7 +130,8 @@ public sealed partial class ServiceControlRuntime
         }
         ServiceStatusSnapshot current = GetStatus();
         if (current.ConfirmedState?.Battery is not { } battery
-            || current.Capabilities?.SupportsTemporaryFullCharge == true && battery.TemporaryFullCharge is null)
+            || battery.TemporaryFullCharge is null && current.Capabilities is { } capabilities
+                && !BatteryOperationPlanner.UnknownOverrideAdmitsPolicy(capabilities))
         {
             return null;
         }

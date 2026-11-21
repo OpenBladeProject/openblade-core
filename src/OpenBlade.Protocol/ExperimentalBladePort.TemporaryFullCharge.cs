@@ -55,16 +55,43 @@ internal sealed partial class ExperimentalBladePort
 
     private async Task<byte> ReadTemporaryFullChargeFlagsAsync(CancellationToken token)
     {
-        ReadOnlyMemory<byte> payload = await ExchangeAsync("TemporaryFullCharge", 0x07, 0x8F,
-            [0], false, token, variableResponse: true,
-            payloadValidator: static value => value.Length == 1).ConfigureAwait(false);
-        if (!TemporaryFullChargeProtocol.TryDecodeQuery(payload.Span, out bool active, out byte otherSettings))
+        try
         {
-            session.RetainQueryFailure(0x07, 0x8F, FirmwareQueryOutcome.ContentRejected);
-            throw new IOException("Temporary full charge returned an invalid shared Power Mode Control mask.");
+            ReadOnlyMemory<byte> payload = await ExchangeAsync("TemporaryFullCharge", 0x07, 0x8F,
+                [0], false, token, variableResponse: true,
+                payloadValidator: static value => value.Length == 1).ConfigureAwait(false);
+            if (!TemporaryFullChargeProtocol.TryDecodeQuery(payload.Span, out bool active, out byte otherSettings))
+            {
+                session.RetainQueryFailure(0x07, 0x8F, FirmwareQueryOutcome.ContentRejected);
+                throw new IOException("Temporary full charge returned an invalid shared Power Mode Control mask.");
+            }
+            RecordQuery("TemporaryFullCharge", "Confirmed", $"Active={active};OtherSettings=0x{otherSettings:X2}");
+            policy.RecordTemporaryFullChargeRead(readable: true);
+            return payload.Span[0];
         }
-        RecordQuery("TemporaryFullCharge", "Confirmed", $"Active={active};OtherSettings=0x{otherSettings:X2}");
-        return payload.Span[0];
+        catch (Exception error) when (error is not OperationCanceledException)
+        {
+            policy.RecordTemporaryFullChargeRead(readable: false);
+            throw;
+        }
+    }
+
+    // 07/8F has not been observed on every admitted model. Where it only refines
+    // battery state, a failed or undecodable read leaves the flag unknown while
+    // the session is still usable. A session that ended cannot continue.
+    private async Task<bool?> TryReadTemporaryFullChargeActiveAsync(CancellationToken token)
+    {
+        try
+        {
+            return (await ReadTemporaryFullChargeFlagsAsync(token).ConfigureAwait(false)
+                & TemporaryFullChargeProtocol.TemporaryFullChargeBit) != 0;
+        }
+        catch (IOException) when (!token.IsCancellationRequested
+            && session.Disposition == RazerCommandSessionDisposition.Healthy)
+        {
+            RecordQuery("TemporaryFullCharge", "Unavailable", failure: "TemporaryFullChargeReadbackUnavailable");
+            return null;
+        }
     }
 
     private async Task<ConfirmedBatteryState> ReadTemporaryFullChargeRecoveryAsync(CancellationToken token)
@@ -87,7 +114,17 @@ internal sealed partial class ExperimentalBladePort
         {
             RequireTemporaryFullChargeWriteAdmission(enabled);
             var baseline = await ReadBatteryPolicyAsync(cancellationToken).ConfigureAwait(false);
-            byte flags = await ReadTemporaryFullChargeFlagsAsync(cancellationToken).ConfigureAwait(false);
+            byte flags;
+            try
+            {
+                flags = await ReadTemporaryFullChargeFlagsAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (IOException error) when (!cancellationToken.IsCancellationRequested)
+            {
+                throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
+                    "OpenBlade can't read temporary full charge right now, so it won't turn it on or off. Check the laptop state again before retrying.",
+                    error);
+            }
             bool active = (flags & TemporaryFullChargeProtocol.TemporaryFullChargeBit) != 0;
             if (active == enabled)
             {
@@ -145,12 +182,15 @@ internal sealed partial class ExperimentalBladePort
         if (enabled && !TemporaryFullChargeEnablePowerAdmitted())
         {
             throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
-                "Enabling temporary full charge requires a confirmed connected power source.");
+                "Enabling temporary full charge requires external power. Connect the charger and retry.");
         }
     }
 
+    // The production callback reports Windows AC presence as ExternalUnknown,
+    // the same preliminary presence the other experimental writes accept. This
+    // battery-policy bit has no adapter-class contract, so Battery alone refuses.
     private bool TemporaryFullChargeEnablePowerAdmitted() =>
-        capturePowerSource() is PowerSource.PluggedIn or PowerSource.UsbC;
+        ExternalPowerReported(capturePowerSource());
 
     private bool IsTemporaryFullChargeSet(string operation, byte commandClass, byte commandId, byte[] arguments) =>
         SupportsTemporaryFullChargeQuery && operation == "TemporaryFullCharge"
