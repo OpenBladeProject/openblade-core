@@ -67,7 +67,17 @@ impl InstalledServiceAuthority for WindowsInstalledServiceAuthority {
 impl WindowsInstalledServiceAuthority {
     fn acquire(&self) -> Result<Generation, ServiceAuthorityError> {
         super::verify_origin(&self.origin)?;
-        let mut package = native_package::read_installed_package()?;
+        // A stopped or changing Service is unavailable whatever the package
+        // says, and reading the package re-hashes it, so classify it first.
+        // Only a running Service goes on to the full validation below.
+        let mut package = before_package(
+            Registration::open("OpenBlade")
+                .and_then(|registration| {
+                    registration.query(std::ffi::OsStr::new(""), SERVICE_AUTO_START)
+                })
+                .map(|scm| scm.state),
+            native_package::read_installed_package,
+        )?;
         if package.agent_path != self.origin.image {
             return Err(ServiceAuthorityError::Denied(deny()));
         }
@@ -115,6 +125,22 @@ impl WindowsInstalledServiceAuthority {
         generation.verify_live_process()?;
         Ok(generation)
     }
+}
+/// The Service state decides whether the package is worth reading. A Service
+/// that is starting, stopping or stopped grants no authority either way, and its
+/// configuration is validated in full once it runs. An unreadable state falls
+/// through to the full path, which reports the same failure.
+fn before_package<T>(
+    state: io::Result<u32>,
+    read: impl FnOnce() -> io::Result<T>,
+) -> Result<T, ServiceAuthorityError> {
+    if matches!(
+        state,
+        Ok(SERVICE_START_PENDING | SERVICE_STOP_PENDING | SERVICE_STOPPED)
+    ) {
+        return Err(ServiceAuthorityError::Unavailable);
+    }
+    Ok(read()?)
 }
 impl InstalledServiceGeneration for Generation {
     fn verify_live_process(&self) -> Result<NonZeroU32, ServiceAuthorityError> {
@@ -237,6 +263,40 @@ fn deny() -> io::Error {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn a_stopped_or_changing_service_is_unavailable_without_reading_the_package() {
+        for state in [SERVICE_START_PENDING, SERVICE_STOP_PENDING, SERVICE_STOPPED] {
+            let reads = Cell::new(0);
+            let result = before_package(Ok(state), || {
+                reads.set(reads.get() + 1);
+                Ok(())
+            });
+            assert!(matches!(result, Err(ServiceAuthorityError::Unavailable)));
+            assert_eq!(reads.get(), 0);
+        }
+    }
+
+    #[test]
+    fn a_running_or_unreadable_service_still_reads_and_validates_the_package() {
+        for state in [
+            Ok(SERVICE_RUNNING),
+            Err(io::ErrorKind::PermissionDenied.into()),
+        ] {
+            let reads = Cell::new(0);
+            let result = before_package(state, || {
+                reads.set(reads.get() + 1);
+                Ok(7)
+            });
+            assert!(matches!(result, Ok(7)));
+            assert_eq!(reads.get(), 1);
+        }
+        // A package that cannot be read stays a denial, not an unavailable Service.
+        let denied = before_package(Ok(SERVICE_RUNNING), || -> io::Result<()> {
+            Err(io::ErrorKind::InvalidData.into())
+        });
+        assert!(matches!(denied, Err(ServiceAuthorityError::Denied(_))));
+    }
+
     fn scm(state: u32, pid: u32, matches_config: bool) -> crate::scm_identity::ScmEvidence {
         crate::scm_identity::ScmEvidence {
             process_id: pid,
