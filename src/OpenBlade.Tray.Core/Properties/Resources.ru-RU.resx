@@ -1820,14 +1820,8 @@
   <data name="Optimizer recovery is blocked. Refresh to check its status." xml:space="preserve"><value>Восстановление оптимизатора заблокировано. Обновите, чтобы проверить состояние.</value></data>
   <data name="CPU recovery includes power settings and cannot be restored here." xml:space="preserve"><value>Восстановление CPU включает параметры мощности и недоступно здесь.</value></data>
   <data name="Recovery of earlier saved CPU settings is blocked." xml:space="preserve"><value>Восстановление ранее сохранённых настроек CPU заблокировано.</value></data>
-  <data name="CPU/GPU curves" xml:space="preserve">
-    <value>Кривые ЦП/ГП</value>
-  </data>
   <data name="Mirror keyboard" xml:space="preserve">
     <value>Как на клавиатуре</value>
-  </data>
-  <data name="Cooling-pad control is paused. Refresh status before making another change." xml:space="preserve">
-    <value>Управление подставкой приостановлено. Обновите состояние перед следующим изменением.</value>
   </data>
   <data name="Reconnecting. Showing the last confirmed cooling-pad state." xml:space="preserve">
     <value>Повторное подключение. Показано последнее подтверждённое состояние подставки.</value>
@@ -1835,38 +1829,8 @@
   <data name="OpenBlade is controlling the cooling pad." xml:space="preserve">
     <value>OpenBlade управляет охлаждающей подставкой.</value>
   </data>
-  <data name="Connected. Choose settings and apply them to take control." xml:space="preserve">
-    <value>Подключено. Выберите и примените настройки, чтобы начать управление.</value>
-  </data>
-  <data name="Configured fan target: {0} RPM" xml:space="preserve">
-    <value>Заданная скорость вентилятора: {0} об/мин</value>
-  </data>
-  <data name="Configured fan target unavailable" xml:space="preserve">
-    <value>Заданная скорость вентилятора недоступна</value>
-  </data>
-  <data name="Configured brightness: {0}%" xml:space="preserve">
-    <value>Заданная яркость: {0}%</value>
-  </data>
-  <data name="Configured brightness unavailable" xml:space="preserve">
-    <value>Заданная яркость недоступна</value>
-  </data>
-  <data name="Check fan speeds, increasing curve temperatures, and six-digit RGB colors." xml:space="preserve">
-    <value>Проверьте скорости вентиляторов, возрастание температур в кривых и шестизначные RGB-коды цветов.</value>
-  </data>
-  <data name="The cooling-pad change was blocked. Refresh status and check Troubleshooting." xml:space="preserve">
-    <value>Изменение настроек подставки заблокировано. Обновите состояние и откройте раздел устранения неполадок.</value>
-  </data>
-  <data name="The cooling-pad change could not be confirmed. Refresh status before continuing." xml:space="preserve">
-    <value>Не удалось подтвердить изменение настроек подставки. Обновите состояние перед продолжением.</value>
-  </data>
   <data name="Cooling-pad status is unavailable. Showing the last confirmed state." xml:space="preserve">
     <value>Состояние подставки недоступно. Показано последнее подтверждённое состояние.</value>
-  </data>
-  <data name="Apply new settings, or release control to restore the captured cooling-pad settings." xml:space="preserve">
-    <value>Примените новые настройки или передайте управление, чтобы восстановить исходные настройки подставки.</value>
-  </data>
-  <data name="Keep current" xml:space="preserve">
-    <value>Без изменений</value>
   </data>
   <data name="Spectrum" xml:space="preserve">
     <value>Циклическая смена цветов</value>
@@ -1882,4 +1846,22 @@
   </data>
   <data name="Vapor chamber lighting" xml:space="preserve"><value>Подсветка испарительной камеры</value></data>
   <data name="Touchpad status indicator" xml:space="preserve"><value>Индикатор состояния тачпада</value></data>
+  <data name="Quiet" xml:space="preserve">
+    <value>Тихий</value>
+  </data>
+  <data name="A change to the cooling pad could not be confirmed. Check the pad before making another change." xml:space="preserve">
+    <value>Не удалось подтвердить изменение настроек подставки. Проверьте подставку, прежде чем вносить новые изменения.</value>
+  </data>
+  <data name="Choose a setting, or release control to restore the pad's own settings." xml:space="preserve">
+    <value>Выберите настройку или передайте управление, чтобы вернуть собственные настройки подставки.</value>
+  </data>
+  <data name="Connected. The pad is using its own settings." xml:space="preserve">
+    <value>Подключено. Подставка использует собственные настройки.</value>
+  </data>
+  <data name="The cooling pad did not accept the change. Check Troubleshooting for the reason." xml:space="preserve">
+    <value>Подставка не приняла изменение. Причину можно узнать в разделе «Устранение неполадок».</value>
+  </data>
+  <data name="Check the cooling-pad settings and try again." xml:space="preserve">
+    <value>Проверьте настройки подставки и повторите попытку.</value>
+  </data>
 </root>
