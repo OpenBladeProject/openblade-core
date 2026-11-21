@@ -171,6 +171,18 @@ Blade 14 (2025) 在电池供电时还提供电池节能和电池平衡模式。
 - 充电上限每次可调整 1%，设为 100% 时会关闭充电保护。
   Blade 15 不支持充电上限。Blade 18 在成功读取状态后支持实验性的临时充满；开启时需要已启用充电上限，且不能覆盖其他 Power Mode Control 选项。
 
+<a id="windows-dynamic-lighting"></a>
+
+## Windows 动态照明
+
+在 Blade 18 (2025)、Blade 18 (2024)、Blade 16 (2024)、Blade 14 (2025) 和
+Blade 16 (2025) 上，Windows 动态照明开启时可能会覆盖 OpenBlade 设置的键盘灯光。
+此时 OpenBlade 会在“灯光”页面显示提示，灯光控制仍可使用。在 Blade 18 (2025)
+上，这也包括均热板灯光。如果 OpenBlade 灯光未显示，请在
+**设置 > 个性化 > 动态照明**中关闭**在我的设备上使用动态照明**。
+此提示尚未在这些笔记本电脑上实测。证据见
+[审核说明](../source-reviewed-blade-models.md#windows-dynamic-lighting-advisory)。
+
 <a id="send-a-useful-test-report"></a>
 
 ## 提交测试报告

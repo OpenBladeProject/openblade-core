@@ -160,6 +160,63 @@ They do not change official support classification or weaken command admission.
 This change requires a coordinated full installation when deployed, including
 the service and Session Agent; a tray-only replacement is insufficient.
 
+## Windows Dynamic Lighting advisory
+
+Each listed keyboard exposes a HID LampArray (usage page `0x59`, usage `0x01`).
+Windows Dynamic Lighting can drive that array without any OpenBlade command
+observing it. On the reviewed images, a cleared LampArrayControl
+`AutonomousMode` makes the keyboard show the LampArray buffer instead of
+OpenBlade's staged frame while `0F/82` still reports mode 8, and releasing it
+forces a persisted Spectrum. RZ09-0529 records this for the keyboard and the
+Vapor chamber, and RZ09-0509 and RZ09-0510 record it for the keyboard.
+
+| Model | USB ID | Evidence |
+| --- | --- | --- |
+| RZ09-0528 | `1532:02C6` | WinRT LampArray observation `evidence/legacy-captures/decoded/rz09-0528-pid-02c6-bios-2.02-lamp-array.json` (85-lamp keyboard array) |
+| RZ09-0529 | `1532:02C7` | KI8110 1.07.00: LampArray collection at `0xEE30` (pinned 327-byte range), `AutonomousMode` at collection + `0x139`; buffer selection at copy helper `0x4B80`. `evidence/source-reviewed-blades/2026-11-13-rz09-0529-keyboard-frames.json` (`windowsDynamicLighting`) on `feat/rz09-0529-vapor-chamber-frames` |
+| RZ09-0509 | `1532:02B8` | KI8100 1.01.00: LampArray collection at `0xEDE8`; buffer selection at copy helper `0x63A8`. `evidence/source-reviewed-blades/2026-11-19-rz09-0509-keyboard-frames.json` (`ownershipHazards.windowsDynamicLighting`) on `feat/mcu-frames-0301-0421-0423-0427` |
+| RZ09-0510 | `1532:02B7` | SO6100 1.03.00: LampArray collection at `0x1023C`; buffer selection at copy helper `0x69EE`. `evidence/source-reviewed-blades/2026-11-19-rz09-0510-keyboard-frames.json` (`ownershipHazards.windowsDynamicLighting`) on `feat/mcu-frames-0301-0421-0423-0427` |
+| RZ09-0530 | `1532:02C5` | PI4110 1.04.00: interface 3 report descriptor at `0xC30C` (327 bytes, usage page 89, usage 1, report IDs 1 to 6), `AutonomousMode` at collection + `0x139`. `evidence/source-reviewed-blades/2026-11-12-pi4110-keymap.json` |
+
+Offsets are in the decoded image. RZ09-0530 has no reviewed runtime effect
+beyond the descriptor. RZ09-0483 and RZ09-0581 are not listed because no
+LampArray descriptor has been reviewed for them.
+
+`WindowsDynamicLightingLampArrays` lists these models for the advisory only. It
+does not advertise `LampArrayLightingAccess`: the explicit Windows Dynamic
+Lighting delegation choice remains available on RZ09-0528 alone, unchanged.
+
+The Session Agent of the active session observes the exact `1532` vendor and
+listed product ID through WinRT `LampArray`, without requesting priority or
+calling a mutation API. It also reads the global **Use Dynamic Lighting on my
+devices** value, `AmbientLightingEnabled` under
+`HKCU\Software\Microsoft\Lighting`. A turned-off switch or a completed
+enumeration without the exact array reports `Off`. The switch on (or not
+configured, the Windows default) with exactly one connected exact array reports
+`MayControl`. `LampArray.IsEnabled` is not used: WinRT documents it as the
+calling app's own update gate, which is true by default, and the RZ09-0528
+observation above recorded `enabled: true` while the array was unavailable to
+the probe. More than one exact array, a disconnected array, an unreadable
+setting or a failed enumeration sends nothing. The agent reports only when its
+advisory differs from the one the service publishes.
+
+The service accepts a report only from the active local interactive session of
+the active user, for the verified laptop whose exact model matches the report.
+It binds the observation to that user and session: a user switch drops it, and
+a lost session or a different laptop publishes `Unknown`. The advisory gates
+nothing: lighting writes, host frames, renderer ownership, restoration and
+suppressions behave exactly as without it, and the saved
+`KeyboardLightingControlMode` stays unchanged. The tray shows a notice on the
+Lighting page while the advisory is `MayControl`, unless the user already chose
+Windows Dynamic Lighting.
+
+Automatic ownership handling, such as blocking OpenBlade lighting while Windows
+drives the keyboard, is deferred. No observed signal establishes ownership yet.
+Designing it needs a read-only physical observation on an admitted laptop that
+records the global switch, the per-device Dynamic Lighting toggle under
+`HKCU\Software\Microsoft\Lighting\Devices`, and `LampArray.IsAvailable`, each
+on and off. The advisory has not been physically validated on any listed model.
+
 ## Controls not admitted and remaining evidence
 
 These profiles do not initially admit fixed fans, fan curves, HyperBoost, lighting,

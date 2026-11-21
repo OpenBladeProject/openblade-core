@@ -120,6 +120,14 @@ public interface IServiceControlRuntime
             ControlOperationStatus.Blocked,
             "Application profiles are unavailable."));
 
+    Task<ControlOperationResult> ReportWindowsDynamicLightingAdvisoryAsync(
+        ReportWindowsDynamicLightingAdvisoryRequest request,
+        string reportingUserSid,
+        Func<bool> stillControlsSession,
+        CancellationToken token) => Task.FromResult(new ControlOperationResult(
+            ControlOperationStatus.Blocked,
+            "Windows Dynamic Lighting reporting is unavailable."));
+
     Task<ControlOperationResult> SetPerformanceOverrideAsync(
         ManualOverride<PerformancePreset>? value,
         CancellationToken token);
@@ -1393,6 +1401,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 }
                 activeUserStillControlsSession = stillControlsSession;
                 Volatile.Write(ref activeUserSid, userSid.Value);
+                ForgetWindowsDynamicLightingObservationForOtherUser(userSid.Value);
                 await coolingPadControl.SetUserAsync(userSid.Value, cancellationToken).ConfigureAwait(false);
                 PublishCoolingPadStatus();
                 Volatile.Write(
@@ -21908,6 +21917,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                     && !deviceProvider.IsExperimentalDevice
                     && deviceProvider.GetCachedDeviceVerificationDiagnostics()
                         .LatestAttemptFoundUnsupportedLaptop,
+                WindowsDynamicLightingAdvisory =
+                    PublishedWindowsDynamicLightingAdvisory(updated),
             };
             candidate = ApplyConfigurationQuarantineAdvisory(ProjectFanStopStatus(ProjectBatterySaverFanStopStatus(candidate)));
             if (!previous.ExternalChanges.Contains(DeviceSubsystem.Fans)

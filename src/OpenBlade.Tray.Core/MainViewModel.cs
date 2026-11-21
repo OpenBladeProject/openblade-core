@@ -259,6 +259,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private bool isExperimentalDevice;
     private bool experimentalWritesPaused;
     private KeyboardLightingControlMode keyboardLightingControlMode;
+    private WindowsDynamicLightingAdvisory windowsDynamicLightingAdvisory;
+    private bool isWindowsDynamicLightingAdvisoryVisible;
+    private string windowsDynamicLightingAdvisoryText = string.Empty;
     private IReadOnlyList<PerformancePreset> availablePerformancePresets = [];
     private IReadOnlyList<PerformancePresetOption> availablePluggedInPerformanceOptions = [];
     private IReadOnlyList<PerformancePresetOption> availableBatteryPerformanceOptions = [];
@@ -1699,8 +1702,55 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 Notify(nameof(CanSetLightingRefreshRate));
                 Notify(nameof(LightingRefreshRateAvailabilityText));
                 Notify(nameof(CanReapplyChangedSettings));
+                RefreshWindowsDynamicLightingAdvisory();
             }
         }
+    }
+
+    /// <summary>
+    /// Advisory from the active session's Session Agent: the Windows Dynamic
+    /// Lighting switch is on and this keyboard's LampArray is present, so
+    /// Windows can override OpenBlade keyboard lighting. It never disables
+    /// OpenBlade controls.
+    /// </summary>
+    public WindowsDynamicLightingAdvisory WindowsDynamicLightingAdvisory
+    {
+        get => windowsDynamicLightingAdvisory;
+        private set
+        {
+            if (windowsDynamicLightingAdvisory != value)
+            {
+                SetField(ref windowsDynamicLightingAdvisory, value);
+                RefreshWindowsDynamicLightingAdvisory();
+            }
+        }
+    }
+
+    public bool IsWindowsDynamicLightingAdvisoryVisible
+    {
+        get => isWindowsDynamicLightingAdvisoryVisible;
+        private set => SetField(ref isWindowsDynamicLightingAdvisoryVisible, value);
+    }
+
+    public string WindowsDynamicLightingAdvisoryText
+    {
+        get => windowsDynamicLightingAdvisoryText;
+        private set => SetField(ref windowsDynamicLightingAdvisoryText, value);
+    }
+
+    // A user who delegated the keyboard to Windows already sees that state.
+    private void RefreshWindowsDynamicLightingAdvisory()
+    {
+        bool visible = WindowsDynamicLightingAdvisory == WindowsDynamicLightingAdvisory.MayControl
+            && latestStatus?.ControlAccess == SessionControlAccess.Active
+            && !UseWindowsDynamicLighting;
+        WindowsDynamicLightingAdvisoryText = !visible
+            ? string.Empty
+            : WindowsDynamicLightingLampArrays
+                    .Find(latestStatus?.Firmware?.ModelNumber)?.CoversVaporChamber == true
+                ? TrayText.Get("Windows Dynamic Lighting is on and can override OpenBlade keyboard and Vapor chamber lighting. If your OpenBlade lighting doesn’t show, turn off Use Dynamic Lighting on my devices in Settings > Personalization > Dynamic Lighting.")
+                : TrayText.Get("Windows Dynamic Lighting is on and can override OpenBlade keyboard lighting. If your OpenBlade lighting doesn’t show, turn off Use Dynamic Lighting on my devices in Settings > Personalization > Dynamic Lighting.");
+        IsWindowsDynamicLightingAdvisoryVisible = visible;
     }
 
     public bool UseWindowsDynamicLighting =>
@@ -5891,6 +5941,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         IsExperimentalDevice = status.IsExperimentalDevice;
         ExperimentalWritesPaused = status.ExperimentalWritesPaused;
         KeyboardLightingControlMode = status.KeyboardLightingControlMode;
+        WindowsDynamicLightingAdvisory = status.WindowsDynamicLightingAdvisory;
+        // Control access and the model can change without the advisory.
+        RefreshWindowsDynamicLightingAdvisory();
         Profiles = status.Profiles;
         if (!lightingPowerPolicyEditorDirty)
         {

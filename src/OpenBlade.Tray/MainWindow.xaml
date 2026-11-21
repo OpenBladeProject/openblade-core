@@ -1720,6 +1720,13 @@
                                  Severity="Informational"
                                  Title="{CustomResource MainWindow_LightingUnavailableInfoBarText.Title}"
                                  Message="{x:Bind LightingControlUnavailableMessage, Mode=OneWay}" />
+                        <InfoBar x:Name="WindowsDynamicLightingAdvisoryInfoBar"
+                                 Margin="0,0,0,18"
+                                 IsOpen="{x:Bind IsWindowsDynamicLightingAdvisoryVisible, Mode=OneWay}"
+                                 Visibility="{x:Bind IsWindowsDynamicLightingAdvisoryVisible, Mode=OneWay}"
+                                 IsClosable="False"
+                                 Severity="Informational"
+                                 Message="{x:Bind WindowsDynamicLightingAdvisoryText, Mode=OneWay}" />
                         <ContentControl x:Name="LightingControls"
                                         HorizontalContentAlignment="Stretch">
                             <StackPanel x:Name="LightingSectionHost">
