@@ -211,8 +211,10 @@ internal sealed partial class ExperimentalBladePort
                     }
                     catch (Exception error)
                     {
-                        SetLightingFaulted();
+                        // Record the recovery pause before Faulted becomes observable,
+                        // so no reader sees a faulted renderer while writes are allowed.
                         _ = MapWriteFailure("KeyboardAnimationFrame", false, error);
+                        SetLightingFaulted();
                         return;
                     }
                 }
