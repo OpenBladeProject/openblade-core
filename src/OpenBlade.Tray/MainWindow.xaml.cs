@@ -6059,7 +6059,8 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
                     content,
                     Path.GetFileNameWithoutExtension(result.Path),
                     ViewModel.Capabilities.KeyboardLightingLayoutId,
-                    ViewModel.Capabilities.Blade18KeyboardLayoutId)
+                    ViewModel.Capabilities.Blade18KeyboardLayoutId,
+                    ViewModel.Capabilities.Blade14KeyboardEdition)
                 : KeyboardLightingFileSerializer.Deserialize(content);
             if (!ViewModel.CanImportKeyboardLighting(preset))
             {

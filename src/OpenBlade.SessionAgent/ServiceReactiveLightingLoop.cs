@@ -61,6 +61,8 @@ public sealed record ReactiveKeyboardSourceOptions(
 
     public Func<byte?> ReadBlade18KeyboardLayoutId { get; init; } = () => null;
 
+    public Func<byte?> ReadBlade14KeyboardEdition { get; init; } = () => null;
+
     public Action<Blade18FnDiagnostic> ReportBlade18FnDiagnostic { get; init; } = _ => { };
 }
 
@@ -423,6 +425,7 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
                     IsBlade18FnInputAdmitted = IsBlade18FnInputAdmitted,
                     IsBlade18DriverFunctionRowAdmitted = IsBlade18DriverFunctionRowAdmitted,
                     ReadBlade18KeyboardLayoutId = ReadBlade18KeyboardLayoutId,
+                    ReadBlade14KeyboardEdition = ReadBlade14KeyboardEdition,
                     ReadFunctionRowBackend = () => readFunctionRowBackend().Normalize(),
                     ResetFunctionRowInput = () => functionRowInputPump?.Reset(),
                     ReportBlade18FnDiagnostic = ReportBlade18FnDiagnostic,
@@ -945,6 +948,17 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
         {
             return latestStatus is { DeviceVerified: true } status && IsBlade18Model(status)
                 ? status.Capabilities?.Blade18KeyboardLayoutId : null;
+        }
+    }
+
+    private byte? ReadBlade14KeyboardEdition()
+    {
+        lock (performanceShortcutStateSync)
+        {
+            // Null keeps the common map whenever verification or the exact model is absent.
+            return latestStatus is { DeviceVerified: true } status
+                && string.Equals(status.Firmware?.ModelNumber, "RZ09-0530", StringComparison.OrdinalIgnoreCase)
+                    ? status.Capabilities?.Blade14KeyboardEdition : null;
         }
     }
 

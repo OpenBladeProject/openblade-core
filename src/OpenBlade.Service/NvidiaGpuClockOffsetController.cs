@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Text.RegularExpressions;
 using OpenBlade.Contracts;
 using OpenBlade.Protocol;
 
@@ -23,15 +24,16 @@ internal sealed class UnavailableGpuClockOffsetController : IGpuClockOffsetContr
         "GPU clock tuning is unavailable.");
 }
 
-internal sealed class NvidiaGpuClockOffsetController : IGpuClockOffsetController
+internal sealed partial class NvidiaGpuClockOffsetController : IGpuClockOffsetController
 {
     private const int Success = 0;
     private const uint ClockOffsetStructVersion = (1u << 24) | 24u;
     private const int PerformanceStateZero = 0;
     private const int NvmlMemoryOffsetMultiplier = 2;
-    private const string AdmittedDeviceName = "NVIDIA GeForce RTX 5090 Laptop GPU";
+    private const string DefaultAdmittedDeviceName = "NVIDIA GeForce RTX 5090 Laptop GPU";
 
     private readonly INvidiaNvmlClockOffsetApi api;
+    private readonly bool admitNvidiaLaptopGpuForm;
 
     internal NvidiaGpuClockOffsetController()
         : this(NvidiaNvmlClockOffsetApi.Instance)
@@ -39,9 +41,31 @@ internal sealed class NvidiaGpuClockOffsetController : IGpuClockOffsetController
     }
 
     internal NvidiaGpuClockOffsetController(INvidiaNvmlClockOffsetApi api)
+        : this(api, admitNvidiaLaptopGpuForm: false)
+    {
+    }
+
+    // One shared predicate: the exact validated name OR, for models whose factory
+    // selects it, the NVIDIA laptop dGPU form "NVIDIA GeForce RTX <name> Laptop GPU".
+    // The form is an OpenBlade guard (one NVIDIA laptop dGPU on the exactly admitted
+    // laptop), not a vendor list; Synapse applies the envelope per product with no
+    // GPU-name check. The single-GPU requirement and per-query/per-write recheck apply.
+    internal NvidiaGpuClockOffsetController(
+        INvidiaNvmlClockOffsetApi api,
+        bool admitNvidiaLaptopGpuForm)
     {
         this.api = api ?? throw new ArgumentNullException(nameof(api));
+        this.admitNvidiaLaptopGpuForm = admitNvidiaLaptopGpuForm;
     }
+
+    internal static bool IsAdmittedDeviceName(string name, bool admitNvidiaLaptopGpuForm) =>
+        string.Equals(name, DefaultAdmittedDeviceName, StringComparison.Ordinal)
+        || admitNvidiaLaptopGpuForm && LaptopGpuName().IsMatch(name);
+
+    [GeneratedRegex(
+        @"^NVIDIA GeForce RTX [A-Za-z0-9]+( [A-Za-z0-9]+)* Laptop GPU\z",
+        RegexOptions.CultureInvariant)]
+    private static partial Regex LaptopGpuName();
 
     public GpuClockOffsetCapabilities? Query()
     {
@@ -173,10 +197,11 @@ internal sealed class NvidiaGpuClockOffsetController : IGpuClockOffsetController
         EnsureSuccess(
             api.GetDeviceName(device, name, checked((uint)name.Capacity)),
             "read the NVIDIA GPU name");
-        // Both admitted Blade SKUs were validated with this exact laptop GPU.
+        // The validated Blade SKUs use the default exact name; the source-reviewed
+        // RZ09-0529 and RZ09-0530 admit the NVIDIA laptop dGPU form.
         // Recheck the current target for every query and write; a previous
         // successful query does not authorize another GPU selected later.
-        if (!string.Equals(name.ToString(), AdmittedDeviceName, StringComparison.Ordinal))
+        if (!IsAdmittedDeviceName(name.ToString(), admitNvidiaLaptopGpuForm))
         {
             throw new NvmlClockOffsetException(
                 status: -1,
@@ -236,6 +261,9 @@ internal sealed class NvidiaGpuClockOffsetController : IGpuClockOffsetController
         bool restoreCore,
         bool restoreMemory)
     {
+        // Each restore write is attempted even if the other fails. The result is the
+        // fresh readback, not the write status: a refused write that left the driver
+        // at the prior offsets is known not to have applied.
         try
         {
             if (restoreCore)
@@ -247,7 +275,14 @@ internal sealed class NvidiaGpuClockOffsetController : IGpuClockOffsetController
                     api.SetClockOffsets(device, ref core),
                     "restore the GPU core clock offset");
             }
+        }
+        catch
+        {
+            // The readback below decides the outcome.
+        }
 
+        try
+        {
             if (restoreMemory)
             {
                 NvmlClockOffset memory = CreateWrite(
@@ -257,7 +292,14 @@ internal sealed class NvidiaGpuClockOffsetController : IGpuClockOffsetController
                     api.SetClockOffsets(device, ref memory),
                     "restore the GPU memory clock offset");
             }
+        }
+        catch
+        {
+            // The readback below decides the outcome.
+        }
 
+        try
+        {
             GpuClockOffsetCapabilities restored = QueryCapabilities(device);
             return restored.Current == prior;
         }

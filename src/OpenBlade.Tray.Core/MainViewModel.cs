@@ -259,6 +259,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private bool isExperimentalDevice;
     private bool experimentalWritesPaused;
     private KeyboardLightingControlMode keyboardLightingControlMode;
+    private WindowsDynamicLightingAdvisory windowsDynamicLightingAdvisory;
+    private bool isWindowsDynamicLightingAdvisoryVisible;
+    private string windowsDynamicLightingAdvisoryText = string.Empty;
     private IReadOnlyList<PerformancePreset> availablePerformancePresets = [];
     private IReadOnlyList<PerformancePresetOption> availablePluggedInPerformanceOptions = [];
     private IReadOnlyList<PerformancePresetOption> availableBatteryPerformanceOptions = [];
@@ -570,6 +573,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         ApplyOneShotLaptopControlCommand = CreateCommand(
             ApplyOneShotLaptopControlAsync,
             CanApplyOneShotLaptopControl);
+        ClearLocalDimmingCommand = CreateCommand(
+            async (_, token) =>
+            {
+                await ClearLocalDimmingAsync(token);
+            },
+            _ => CanClearLocalDimming);
         commands =
         [
             (AsyncRelayCommand)SetPerformanceCommand,
@@ -599,6 +608,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             (AsyncRelayCommand)AcknowledgeThermalPolicyUpgradeDisclosureCommand,
             (AsyncRelayCommand)ResumeExperimentalWritesCommand,
             (AsyncRelayCommand)ApplyOneShotLaptopControlCommand,
+            (AsyncRelayCommand)ClearLocalDimmingCommand,
         ];
     }
 
@@ -740,7 +750,13 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             }
             if (latestStatus.UnconfirmedWrites.Count > 0)
             {
-                return TrayText.Get("OpenBlade could not confirm a previous change. Select Check current state before trying again.");
+                // An uncertain GPU clock change is checked from a driver read, which
+                // waits for GPU activity or a power-source change while the GPU is idle.
+                return latestStatus.UnconfirmedWrites.Contains(DeviceSubsystem.Performance)
+                    && (latestStatus.DesiredState.GpuClockTuning is not null
+                        || latestStatus.Capabilities?.GpuOverclock is not null)
+                    ? TrayText.Get("OpenBlade could not confirm a previous change. Select Check current state. If GPU clock tuning was part of it, OpenBlade checks it again when the GPU is next in use or the power source changes.")
+                    : TrayText.Get("OpenBlade could not confirm a previous change. Select Check current state before trying again.");
             }
             if (latestStatus.ActivePowerSource == PowerSource.ExternalUnknown)
             {
@@ -1699,8 +1715,55 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 Notify(nameof(CanSetLightingRefreshRate));
                 Notify(nameof(LightingRefreshRateAvailabilityText));
                 Notify(nameof(CanReapplyChangedSettings));
+                RefreshWindowsDynamicLightingAdvisory();
             }
         }
+    }
+
+    /// <summary>
+    /// Advisory from the active session's Session Agent: the Windows Dynamic
+    /// Lighting switch is on and this keyboard's LampArray is present, so
+    /// Windows can override OpenBlade keyboard lighting. It never disables
+    /// OpenBlade controls.
+    /// </summary>
+    public WindowsDynamicLightingAdvisory WindowsDynamicLightingAdvisory
+    {
+        get => windowsDynamicLightingAdvisory;
+        private set
+        {
+            if (windowsDynamicLightingAdvisory != value)
+            {
+                SetField(ref windowsDynamicLightingAdvisory, value);
+                RefreshWindowsDynamicLightingAdvisory();
+            }
+        }
+    }
+
+    public bool IsWindowsDynamicLightingAdvisoryVisible
+    {
+        get => isWindowsDynamicLightingAdvisoryVisible;
+        private set => SetField(ref isWindowsDynamicLightingAdvisoryVisible, value);
+    }
+
+    public string WindowsDynamicLightingAdvisoryText
+    {
+        get => windowsDynamicLightingAdvisoryText;
+        private set => SetField(ref windowsDynamicLightingAdvisoryText, value);
+    }
+
+    // A user who delegated the keyboard to Windows already sees that state.
+    private void RefreshWindowsDynamicLightingAdvisory()
+    {
+        bool visible = WindowsDynamicLightingAdvisory == WindowsDynamicLightingAdvisory.MayControl
+            && latestStatus?.ControlAccess == SessionControlAccess.Active
+            && !UseWindowsDynamicLighting;
+        WindowsDynamicLightingAdvisoryText = !visible
+            ? string.Empty
+            : WindowsDynamicLightingLampArrays
+                    .Find(latestStatus?.Firmware?.ModelNumber)?.CoversVaporChamber == true
+                ? TrayText.Get("Windows Dynamic Lighting is on and can override OpenBlade keyboard and Vapor chamber lighting. If your OpenBlade lighting doesn’t show, turn off Use Dynamic Lighting on my devices in Settings > Personalization > Dynamic Lighting.")
+                : TrayText.Get("Windows Dynamic Lighting is on and can override OpenBlade keyboard lighting. If your OpenBlade lighting doesn’t show, turn off Use Dynamic Lighting on my devices in Settings > Personalization > Dynamic Lighting.");
+        IsWindowsDynamicLightingAdvisoryVisible = visible;
     }
 
     public bool UseWindowsDynamicLighting =>
@@ -3068,8 +3131,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 || !CanMutate
                 || !HasManualPowerContext
                 || latestStatus?.ConfirmedState?.Battery is not { } confirmed
-                || confirmed.TemporaryFullCharge is true
-                || confirmed.TemporaryFullCharge is null && capabilities.SupportsTemporaryFullCharge)
+                // Only a confirmed active override blocks the limiter here. The service
+                // still refuses an unknown override on backends whose limiter depends on it.
+                || confirmed.TemporaryFullCharge is true)
             {
                 return false;
             }
@@ -3361,7 +3425,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         CanMutate
         && !IsThermalStateUnknown
         && !IsPowerClassificationUnavailable
-        && IsHyperBoostWritable
+        // An entry restriction declines new entries; it never removes the exit.
+        && (HyperBoostActive
+            ? HyperBoostCapabilityPolicy.CanExit(Capabilities)
+            : IsHyperBoostWritable)
         && !IsHyperBoostOperationInProgress
         && !IsPerformanceOperationInProgress
         && !HasControllerDetectionWarning
@@ -3462,9 +3529,15 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                     "Laptop controls are currently unavailable. Check Troubleshooting for details.");
             }
 
-            if (!IsHyperBoostWritable)
+            // An entry restriction explains only why HyperBoost can't start. While it
+            // is active and the exit is admitted, the reason lies elsewhere.
+            if (!IsHyperBoostWritable
+                && !(HyperBoostActive && HyperBoostCapabilityPolicy.CanExit(Capabilities)))
             {
-                return HyperBoostDescription;
+                return HyperBoostActive && Capabilities.HyperBoostEntryRestriction is not null
+                    ? TrayText.Get(
+                        "Detected on this laptop, but OpenBlade cannot safely change it with the current evidence.")
+                    : HyperBoostDescription;
             }
 
             if (!HyperBoostActive && HyperBoostRequiresCoolingPad && !HyperBoostPadReady)
@@ -3493,7 +3566,13 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
     }
 
-    public string HyperBoostDescription => IsHyperBoostWritable
+    public string HyperBoostDescription => Capabilities.HyperBoostEntryRestriction is not null
+        ? HyperBoostActive
+            ? TrayText.Get(
+                "Synapse doesn't offer HyperBoost on this laptop configuration. You can still turn it off.")
+            : TrayText.Get(
+                "Synapse doesn't offer HyperBoost on this laptop configuration, so OpenBlade doesn't start it.")
+        : IsHyperBoostWritable
         ? HyperBoostRequiresCoolingPad
             ? TrayText.Get("HyperBoost requires the supported cooling pad to stay connected.")
             : HyperBoostActive
@@ -5223,8 +5302,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             || !HasManualPowerContext
             || !ProfileAdmissionPolicy.HasBatteryCapability(capabilities)
             || status?.ConfirmedState?.Battery is not { } confirmed
-            || confirmed.TemporaryFullCharge is true
-            || confirmed.TemporaryFullCharge is null && capabilities.SupportsTemporaryFullCharge)
+            // Only a confirmed active override blocks the limiter here. The service
+            // still refuses an unknown override on backends whose limiter depends on it.
+            || confirmed.TemporaryFullCharge is true)
         {
             return false;
         }
@@ -5876,6 +5956,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         IsExperimentalDevice = status.IsExperimentalDevice;
         ExperimentalWritesPaused = status.ExperimentalWritesPaused;
         KeyboardLightingControlMode = status.KeyboardLightingControlMode;
+        WindowsDynamicLightingAdvisory = status.WindowsDynamicLightingAdvisory;
+        // Control access and the model can change without the advisory.
+        RefreshWindowsDynamicLightingAdvisory();
         Profiles = status.Profiles;
         if (!lightingPowerPolicyEditorDirty)
         {
@@ -6487,8 +6570,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             || !CanMutate
             || !HasManualPowerContext
             || status?.ConfirmedState?.Battery is not { } confirmed
-            || confirmed.TemporaryFullCharge is true
-            || confirmed.TemporaryFullCharge is null && capabilities.SupportsTemporaryFullCharge)
+            // Only a confirmed active override blocks the limiter here. The service
+            // still refuses an unknown override on backends whose limiter depends on it.
+            || confirmed.TemporaryFullCharge is true)
         {
             return false;
         }
@@ -7251,19 +7335,25 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private async Task ClearManualOverridesAsync(object? parameter, CancellationToken token)
     {
         List<string> hardwareNotApplied = [];
-        if (FanOverride is not null)
+        // Clear performance before fans. Under manual fans the service then
+        // stores the profile preset for the fan clear to apply once, instead
+        // of first applying the override preset and then replacing it.
+        string performanceFragment = TrayText.Get("Fragment.Performance", "performance");
+        ControlOperationStatus? performanceCleared = null;
+        if (PerformanceOverride is not null)
         {
-            await ClearOverrideAsync(
-                TrayText.Get("Fragment.Fans", "fans"),
-                cancellationToken => serviceClient.SetFanOverrideAsync(null, cancellationToken),
+            performanceCleared = await ClearOverrideAsync(
+                performanceFragment,
+                ClearPerformanceOverrideAsync,
                 hardwareNotApplied,
                 token).ConfigureAwait(false);
         }
-        if (PerformanceOverride is not null)
+        ControlOperationStatus? fansCleared = null;
+        if (FanOverride is not null)
         {
-            await ClearOverrideAsync(
-                TrayText.Get("Fragment.Performance", "performance"),
-                ClearPerformanceOverrideAsync,
+            fansCleared = await ClearOverrideAsync(
+                TrayText.Get("Fragment.Fans", "fans"),
+                cancellationToken => serviceClient.SetFanOverrideAsync(null, cancellationToken),
                 hardwareNotApplied,
                 token).ConfigureAwait(false);
         }
@@ -7303,6 +7393,15 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         {
             ServiceStatusSnapshot status = await serviceClient.GetStatusAsync(token)
                 .ConfigureAwait(false);
+            // A performance clear that was stored, or blocked because fans were
+            // manual, was restored by the applied fan clear only when the service
+            // now confirms the performance it wants.
+            if (performanceCleared is ControlOperationStatus.Stored or ControlOperationStatus.Blocked
+                && fansCleared == ControlOperationStatus.Applied
+                && ConfirmsDesiredPerformance(status))
+            {
+                hardwareNotApplied.Remove(performanceFragment);
+            }
             List<string> notCleared = [];
             if (status.PerformanceOverride is not null)
             {
@@ -7362,7 +7461,13 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             token).ConfigureAwait(false);
     }
 
-    private static async Task ClearOverrideAsync(
+    private static bool ConfirmsDesiredPerformance(ServiceStatusSnapshot status) =>
+        status.ConfirmedState?.Performance is { } confirmed
+        && confirmed == status.DesiredState.Performance.Value
+        && (confirmed != PerformancePreset.Custom
+            || status.ConfirmedState.CustomPerformance == status.DesiredState.CustomPerformance);
+
+    private static async Task<ControlOperationStatus?> ClearOverrideAsync(
         string subsystem,
         Func<CancellationToken, Task<ControlOperationResult>> operation,
         ICollection<string> hardwareNotApplied,
@@ -7375,6 +7480,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             {
                 hardwareNotApplied.Add(subsystem);
             }
+            return result.Status;
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
@@ -7388,6 +7494,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 exception,
                 subsystem);
             hardwareNotApplied.Add(subsystem);
+            return null;
         }
     }
 
@@ -9504,6 +9611,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         NotifyComputed(nameof(CanReapplyChangedSettings), CanReapplyChangedSettings);
         NotifyComputed(nameof(CanRecoverHyperBoostRestore), CanRecoverHyperBoostRestore);
         NotifyComputed(nameof(CanResumeExperimentalWrites), CanResumeExperimentalWrites);
+        NotifyLocalDimmingPresentation();
         NotifyComputed(nameof(CanCheckCurrentState), CanCheckCurrentState);
         NotifyComputed(nameof(ShowHardwareControlStateCheck), ShowHardwareControlStateCheck);
         NotifyComputed(nameof(ShowReapplyChangedSettings), ShowReapplyChangedSettings);

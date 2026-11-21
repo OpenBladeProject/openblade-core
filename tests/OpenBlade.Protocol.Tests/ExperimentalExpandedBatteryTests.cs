@@ -36,7 +36,8 @@ public sealed class ExperimentalExpandedBatteryTests
         await port.SetChargeLimitAsync(percent, CancellationToken.None);
 
         byte expected = percent == 100 ? (byte)0x50 : (byte)(0x80 | percent);
-        Assert.Equal(productId == 0x02A0 ? new byte[] { 0x92, 0x8F, 0x12, 0x92 } : [0x92, 0x12, 0x92],
+        // Models that admit temporary full charge read the override before a policy write.
+        Assert.Equal(productId is 0x02A0 or 0x02C5 ? new byte[] { 0x92, 0x8F, 0x12, 0x92 } : [0x92, 0x12, 0x92],
             session.Commands.Select(command => command.CommandId));
         Assert.Equal(expected, Assert.Single(session.Commands, command => command.CommandId == 0x12).Arguments.Span[0]);
         Assert.Equal(expected, session.Raw);
@@ -177,8 +178,8 @@ public sealed class ExperimentalExpandedBatteryTests
 
         Assert.Equal(WriteSubmissionState.KnownNotApplied, failure.SubmissionState);
         Assert.True(policy.WritesAllowed);
-        Assert.Single(session.Commands);
-        Assert.Equal(0x92, session.Commands[0].CommandId);
+        // RZ09-0530 reads its temporary full charge override before the setter.
+        Assert.Equal(new byte[] { 0x92, 0x8F }, session.Commands.Select(command => command.CommandId));
         Assert.Equal(3, admissionChecks);
     }
 

@@ -142,8 +142,10 @@ internal static class ServiceComposition
                 ? UnavailableExperimentalFanRpmFactory.Instance
                 : BatteryValidationFactory.CreateWindowsFanRpmForService(
                     provider.GetRequiredService<FirmwareCompatibilityPolicy>()));
-        services.AddSingleton<IGpuClockOffsetController>(_ =>
-            new NvidiaGpuClockOffsetController());
+        services.AddSingleton<IGpuClockOffsetController>(provider =>
+            CreateGpuClockOffsetController(
+                provider.GetRequiredService<IProductionBatteryPortFactory>(),
+                NvidiaNvmlClockOffsetApi.Instance));
         services.AddSingleton<IVerifiedBladeDeviceProvider>(provider =>
         {
             FirmwareCompatibilityPolicy compatibilityPolicy =
@@ -229,6 +231,16 @@ internal static class ServiceComposition
             return CreateProductionBatteryFactory(createAdmitted, createReadOnly);
         }
     }
+
+    // Only an experimental factory whose model selects it admits the NVIDIA
+    // laptop dGPU name form; every other factory keeps the validated exact name.
+    internal static IGpuClockOffsetController CreateGpuClockOffsetController(
+        IProductionBatteryPortFactory batteryFactory,
+        INvidiaNvmlClockOffsetApi api) =>
+        new NvidiaGpuClockOffsetController(
+            api,
+            batteryFactory is ExperimentalBladeFactory experimental
+                && experimental.AdmitsNvidiaLaptopGpuForClockOffsets);
 
     internal static IProductionLightingPortFactory CreateProductionLightingFactory() =>
         CreateProductionLightingFactory(

@@ -175,6 +175,12 @@ internal sealed class ThermalTransitionStepRunner
 
     public bool RecoveryLeaseConsumed => recoveryLeaseConsumed;
 
+    // Set once this runner restores a saved intent: an entry rollback or the
+    // restore after an exit. Entry-only admission no longer applies to its steps.
+    public bool RestoringIntent { get; private set; }
+
+    public void BeginIntentRestoration() => RestoringIntent = true;
+
     public string? RecoveryBlockReason => recoveryBlockReason;
 
     public int AttemptCount => steps.Sum(step => step.Attempts.Count);

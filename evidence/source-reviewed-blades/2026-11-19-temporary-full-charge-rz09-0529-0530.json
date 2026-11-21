@@ -1,0 +1,457 @@
+{
+  "schemaVersion": 1,
+  "audit": "temporary full charge source review for RZ09-0529 and RZ09-0530",
+  "base": "571d7ef7",
+  "coordinates": "zero-based UTF-8 byte offsets of the first byte of each quoted snippet. The rzDevice25, main and 709 subclass files contain only ASCII bytes, so their byte and character offsets agree. The 6737 policy files do not: 711-policy has 1590 non-ASCII bytes (first at 140038) and 709-policy has 1581 (first at 140040), so their offsets are byte offsets, not character offsets.",
+  "physicalValidation": "none; downloaded vendor files inspected read-only; no vendor code executed and no hardware commands sent",
+  "provenance": "Cached copies were stored with CRLF line endings; removing every CR reproduces the pinned size and SHA-256 exactly. The 709 policy and main files match their pins without normalization.",
+  "contract": "Same as product 672 (RZ09-0484): GET 07/8F [0], SET 07/0F [mask], Power Mode Control bits cpuBoost 01, maxFanSpeedMode 02, oneTimeOverride 04, localDimming 08; the battery charging override changes bit 04 by read-modify-write and clears it whenever the charge limiter is disabled.",
+  "decisions": [
+    {
+      "model": "RZ09-0529",
+      "usb": "1532:02C7",
+      "vendorProductId": 711,
+      "decision": "Admitted as source-reviewed temporary full charge without physical validation",
+      "sources": [
+        {
+          "id": "711-device",
+          "url": "https://apps.razer.com/synapse/products/711/mw/rzDevice25.c8da1ead63e6cf002d32.js",
+          "bytes": 279417,
+          "sha256": "02C55B78B3EABDCC104D725C64C94CADE500FA78D29713ACE5FEF520D243EBB9"
+        },
+        {
+          "id": "711-policy",
+          "url": "https://apps.razer.com/synapse/products/711/mw/6737.c63928b0e4fd1b7673b4.js",
+          "bytes": 2457106,
+          "sha256": "3EF16C0BEB5E8399CDEE51E9995A717E029CDF2125324735440B68A34D2D7B88"
+        },
+        {
+          "id": "711-main",
+          "url": "https://apps.razer.com/synapse/products/711/mw/main.1f8e0c604f19af3ea24c.js",
+          "bytes": 184695,
+          "sha256": "C8C0C794D6D01867CD9C6020869808428B81CB98AE297E46EC700F3B935BFF7E"
+        }
+      ],
+      "findings": [
+        {
+          "source": "711-device",
+          "claim": "Module 31509 command tuples: GET 07/8F and SET 07/0F, one-byte payload",
+          "offsetUtf8": 52973,
+          "text": "j=new Uint8Array([1,7,143]),$=new Uint8Array([1,7,15])"
+        },
+        {
+          "source": "711-device",
+          "claim": "Command names",
+          "offsetUtf8": 53028,
+          "text": "k=\"Get Power Mode Control\",M=\"Set Power Mode Control\""
+        },
+        {
+          "source": "711-device",
+          "claim": "Shared reply decoder; bit 04 is oneTimeOverride; status-only ACK parses no payload",
+          "offsetUtf8": 47786,
+          "text": "L=t=>{t.status===o.STATUS_SUCCESS&&t.packetSizeReturned>0&&(t.jsonData={cpuBoost:1&t.data[0],maxFanSpeedMode:2&t.data[0],oneTimeOverride:4&t.data[0],localDimming:8&t.data[0]})}"
+        },
+        {
+          "source": "711-device",
+          "claim": "Getter helper sends a zeroed one-byte argument",
+          "offsetUtf8": 47963,
+          "text": "P=t=>s(void 0,void 0,void 0,(function*(){const n=new Uint8Array(i.Uk[0]),e=yield t.sendCommand(i.Uk,i.Rt,n);return L(e),"
+        },
+        {
+          "source": "711-device",
+          "claim": "Setter helper sends the whole mask byte",
+          "offsetUtf8": 48088,
+          "text": "O=(t,n)=>s(void 0,void 0,void 0,(function*(){const e=new Uint8Array(i.$g[0]);e[0]=n;const o=yield t.sendCommand(i.$g,i.N3,e);return L(o),o}))"
+        },
+        {
+          "source": "711-device",
+          "claim": "Module 34836 exports the getter here and the setter as ,_w:()=>O at 42550; the public methods call it through En=e(34836) at 85501",
+          "offsetUtf8": 42442,
+          "text": ",Il:()=>P,"
+        },
+        {
+          "source": "711-device",
+          "claim": "Public methods",
+          "offsetUtf8": 141719,
+          "text": "getPowerModeControl(){return ja(this,void 0,void 0,(function*(){return En.Il(this)}))}setPowerModeControl(t){return ja(this,void 0,void 0,(function*(){return En._w(this,t"
+        },
+        {
+          "source": "711-policy",
+          "claim": "Read-modify-write helper exported as _w by module 34938",
+          "offsetUtf8": 2376567,
+          "text": "Ge=(e,t)=>x(void 0,void 0,void 0,(function*(){const i=r.jf.rzDevice;try{const{jsonData:n}=yield i.getPowerModeControl(),o=n;o[e]=t,yield i.setPowerModeControl(o.cpuBoost|o.localDimming|o.max"
+        },
+        {
+          "source": "711-policy",
+          "claim": "Charge limiter task sets bit 04 only with an enabled limiter and the override, otherwise clears it (module 46329 imports _=i(34938))",
+          "offsetUtf8": 1986374,
+          "text": "r&&c?yield(0,_._w)(ze.oneTimeOverride,ze.oneTimeOverrideEnabled):yield(0,_._w)(ze.oneTimeOverride,ze.disabled)"
+        },
+        {
+          "source": "711-policy",
+          "claim": "Override task writes 04 or 00 through the same helper",
+          "offsetUtf8": 1988648,
+          "text": "const t=e?ze.oneTimeOverrideEnabled:ze.disabled;yield(0,_._w)(ze.oneTimeOverride,t)"
+        },
+        {
+          "source": "711-main",
+          "claim": "Exact-model feature flag",
+          "offsetUtf8": 167795,
+          "text": "hasBatteryChargingOverrideEnabled:!0"
+        }
+      ],
+      "implementation": "ExperimentalBladePort.SupportsTemporaryFullCharge admits 0x02C7 beside 0x02A0. Writes stay limited to 00/04 with the other shared bits clear, an admitted enabled charge limit for enablement, Windows-reported external power for enablement (ExternalUnknown counts, Battery refuses; cancellation needs no power), fresh exact-device admission, independent readback of the flag and the raw charge policy, and a write pause after any possibly submitted failure. 07/8F has not been observed on this model: a failed or undecodable read leaves the override unknown and blocks only override changes, while the limiter write, its confirmation and fan, performance and lighting recovery keep their previous behaviour. A positive override blocks the limiter, and so does an unreadable one that OpenBlade last decoded or confirmed as on; only a possibly submitted 07/0F write makes 07/8F a recovery prerequisite. Protection off with bit 04 set has no confirmed representation and is read as an unknown override. Bit 08 (localDimming) can also be set on this model and blocks the write the same way.",
+      "panel": {
+        "result": "Bit 08 (localDimming) can be latched on this model as well. Its device settings declare isLocalDimmingEnable, its Blade series is 11, and the shared policy writes bit 08 for series 10 to 12. Only the hasLocalDimming flag that makes Synapse follow Windows HDR automatically is absent. OpenBlade refuses the override while bit 08 is set and tells the user, if Synapse is running, to turn off Windows HDR, close Synapse, then retry.",
+        "findings": [
+          {
+            "source": "711-main",
+            "claim": "Default device settings enable local dimming",
+            "offsetUtf8": 158849,
+            "text": "isLocalDimmingEnable:!0"
+          },
+          {
+            "source": "711-main",
+            "claim": "Saved device settings carry the local-dimming value",
+            "offsetUtf8": 161342,
+            "text": "isLocalDimmingEnable:U.isLocalDimmingEnable"
+          },
+          {
+            "source": "711-main",
+            "claim": "Second reference in the same assignment",
+            "offsetUtf8": 161365,
+            "text": "isLocalDimmingEnable,powerSavingMode:!0"
+          },
+          {
+            "source": "711-main",
+            "claim": "Product 711 is a series 11 Blade",
+            "offsetUtf8": 167873,
+            "text": "bladeSeries:11,latestBiosVersionRequired:2.01"
+          },
+          {
+            "source": "711-policy",
+            "claim": "Settings handler for isLocalDimmingEnable; it forces false only when the panel reports no mini-LED support",
+            "offsetUtf8": 1286340,
+            "text": "case\"isLocalDimmingEnable\":{let t=R[o];"
+          },
+          {
+            "source": "711-policy",
+            "claim": "Synapse sets Power Mode Control bit 08 through its localDimming setter for series 10, 11 and 12 Blades, and calls the Windows HDR DLL action otherwise",
+            "offsetUtf8": 1883683,
+            "text": "[U.IwP.SERIES_10,U.IwP.SERIES_11,U.IwP.SERIES_12]"
+          }
+        ]
+      }
+    },
+    {
+      "model": "RZ09-0530",
+      "usb": "1532:02C5",
+      "vendorProductId": 709,
+      "decision": "Admitted as source-reviewed temporary full charge without physical validation",
+      "sources": [
+        {
+          "id": "709-device",
+          "url": "https://apps.razer.com/synapse/products/709/mw/rzDevice25.d532642d8de7a9cfcf5d.js",
+          "bytes": 280091,
+          "sha256": "9109826D790FEB8597BBFC115231066CA66E2C480ED9769BB85F3F91188AAD0A"
+        },
+        {
+          "id": "709-policy",
+          "url": "https://apps.razer.com/synapse/products/709/mw/6737.d34a3f9a638030f35c6a.js",
+          "bytes": 2379746,
+          "sha256": "4758FB7E2D8296564FB9CE971F6DCE3D580ED5407EEF07A69E1C362A04FF28C0"
+        },
+        {
+          "id": "709-main",
+          "url": "https://apps.razer.com/synapse/products/709/mw/main.bb0dd1873a58a987c63a.js",
+          "bytes": 187452,
+          "sha256": "CC8E0EFD2B37F1ED5AF6C8CC8C3AB1327B9502927DC05F20EE7465486AB006F1"
+        }
+      ],
+      "provenance": "The 709 device file was downloaded with user approval after this review began; it has no CR bytes and matches its pinned size and SHA-256 as downloaded.",
+      "findings": [
+        {
+          "source": "709-device",
+          "claim": "Module 31509 command tuples: GET 07/8F and SET 07/0F, one-byte payload",
+          "offsetUtf8": 57850,
+          "text": "j=new Uint8Array([1,7,143]),$=new Uint8Array([1,7,15])"
+        },
+        {
+          "source": "709-device",
+          "claim": "Command names",
+          "offsetUtf8": 57905,
+          "text": "k=\"Get Power Mode Control\",M=\"Set Power Mode Control\""
+        },
+        {
+          "source": "709-device",
+          "claim": "Module 31509 exports the SET tuple here, then N3:()=>M at 56292, Rt:()=>k at 56347 and Uk:()=>j at 56393",
+          "offsetUtf8": 56135,
+          "text": "$g:()=>$,"
+        },
+        {
+          "source": "709-device",
+          "claim": "Shared reply decoder, identical to 711; bit 04 is oneTimeOverride; status-only ACK parses no payload",
+          "offsetUtf8": 52663,
+          "text": "L=t=>{t.status===o.STATUS_SUCCESS&&t.packetSizeReturned>0&&(t.jsonData={cpuBoost:1&t.data[0],maxFanSpeedMode:2&t.data[0],oneTimeOverride:4&t.data[0],localDimming:8&t.data[0]})}"
+        },
+        {
+          "source": "709-device",
+          "claim": "Getter helper sends a zeroed one-byte argument",
+          "offsetUtf8": 52840,
+          "text": "P=t=>s(void 0,void 0,void 0,(function*(){const n=new Uint8Array(i.Uk[0]),e=yield t.sendCommand(i.Uk,i.Rt,n);return L(e),e}))"
+        },
+        {
+          "source": "709-device",
+          "claim": "Setter helper sends the whole mask byte; only the minified name differs from 711",
+          "offsetUtf8": 52965,
+          "text": "V=(t,n)=>s(void 0,void 0,void 0,(function*(){const e=new Uint8Array(i.$g[0]);e[0]=n;const o=yield t.sendCommand(i.$g,i.N3,e);return L(o),o}))"
+        },
+        {
+          "source": "709-device",
+          "claim": "Module 34836 (imports i=e(31509)) exports the getter here and the setter as ,_w:()=>V at 47427; the public methods call it through gn=e(34836) at 90227",
+          "offsetUtf8": 47319,
+          "text": ",Il:()=>P,"
+        },
+        {
+          "source": "709-device",
+          "claim": "Public methods",
+          "offsetUtf8": 142393,
+          "text": "getPowerModeControl(){return Oa(this,void 0,void 0,(function*(){return gn.Il(this)}))}setPowerModeControl(t){return Oa(this,void 0,void 0,(function*(){return gn._w(this,t)}))}"
+        },
+        {
+          "source": "709-policy",
+          "claim": "Same read-modify-write helper shape",
+          "offsetUtf8": 2312703,
+          "text": "Re=(e,t)=>K(void 0,void 0,void 0,(function*(){const i=a.jf.rzDevice;try{const{jsonData:n}=yield i.getPowerModeControl()"
+        },
+        {
+          "source": "709-policy",
+          "claim": "Same charge limiter override handling",
+          "offsetUtf8": 1941348,
+          "text": "r&&c?yield(0,d._w)(Ge.oneTimeOverride,Ge.oneTimeOverrideEnabled):yield(0,d._w)(Ge.oneTimeOverride,Ge.disabled)"
+        },
+        {
+          "source": "709-main",
+          "claim": "Exact-model feature flag",
+          "offsetUtf8": 162238,
+          "text": "hasBatteryChargingOverrideEnabled:!0"
+        }
+      ],
+      "panel": {
+        "result": "Panel type not established. Bit 08 (localDimming) can be latched on both RZ09-0530 and RZ09-0529. On this model Synapse also sets it to follow Windows HDR while Synapse runs. OpenBlade keeps refusing the override while it is set and tells the user, if Synapse is running, to turn off Windows HDR, close Synapse, then retry.",
+        "findings": [
+          {
+            "source": "709-main",
+            "claim": "Product 709 enables the local-dimming feature",
+            "offsetUtf8": 161869,
+            "text": "hasLocalDimming:!0"
+          },
+          {
+            "source": "709-main",
+            "claim": "Panel notification flag; it names no panel technology",
+            "offsetUtf8": 161888,
+            "text": "requireBOENotification:!0"
+          },
+          {
+            "source": "709-main",
+            "claim": "Device class",
+            "offsetUtf8": 162396,
+            "text": "rzDevice25LedMatrixBlade2"
+          },
+          {
+            "source": "709-subclass-blade",
+            "claim": "Mini-LED resolution methods are declared on the intermediate class shared by Blade models, so they do not establish this panel",
+            "offsetUtf8": 12462,
+            "text": "getMiniLEDPanelResolution("
+          },
+          {
+            "source": "709-subclass-blade",
+            "claim": "Setter counterpart",
+            "offsetUtf8": 12552,
+            "text": "setMiniLEDPanelResolution("
+          },
+          {
+            "source": "709-main",
+            "claim": "Product 709 is a series 11 Blade",
+            "offsetUtf8": 162316,
+            "text": "bladeSeries:11,latestBiosVersionRequired:1.04"
+          },
+          {
+            "source": "709-policy",
+            "claim": "Synapse sets Power Mode Control bit 08 through its localDimming setter for series 10, 11 and 12 Blades, and calls the Windows HDR DLL action otherwise",
+            "offsetUtf8": 1848640,
+            "text": "[C.IwP.SERIES_10,C.IwP.SERIES_11,C.IwP.SERIES_12]"
+          },
+          {
+            "source": "709-policy",
+            "claim": "With hasLocalDimming, Synapse reads the Windows HDR mode and sets local dimming to match it (series other than 10), so HDR drives bit 08 only while Synapse runs",
+            "offsetUtf8": 1201934,
+            "text": "if(wi.hasLocalDimming){const e=yield(0,mt.xs)();"
+          },
+          {
+            "source": "711-main",
+            "claim": "For comparison, product 711 sets the same notification flag and device class (168018) and also declares isLocalDimmingEnable (158849); it lacks only hasLocalDimming",
+            "offsetUtf8": 167435,
+            "text": "requireBOENotification:!0"
+          }
+        ]
+      },
+      "subclassChain": {
+        "result": "Closed: rzDevice25LedMatrixBlade2 extends rzDevice25LedMatrixBlade, which extends rzDevice25LedMatrix, which extends rzDevice25 module 74503 in 709-device. None of the three subclass files mentions PowerModeControl or overrides sendCommand, so the pinned rzDevice25 helpers are the ones product 709 uses. Chunk URLs were built from the 709-main name and hash maps; the files were read as data and never executed.",
+        "sources": [
+          {
+            "id": "709-subclass-blade2",
+            "url": "https://apps.razer.com/synapse/products/709/mw/rzDevice25LedMatrixBlade2.da34a4070bcb5ea45648.js",
+            "bytes": 20253,
+            "sha256": "41408CFD6CAB1117D49B13EB40FE68182EC395F63B2228C058BC0517A5C87E77",
+            "summary": "Chunk 5794, module 56193, extends module 77127. Its only sendCommand is a call that sets audio mute. HDR goes through Windows HDR DLL actions, not 07/0F."
+          },
+          {
+            "id": "709-subclass-blade",
+            "url": "https://apps.razer.com/synapse/products/709/mw/rzDevice25LedMatrixBlade.bf83967de3685c97c672.js",
+            "bytes": 13099,
+            "sha256": "36E74625AC6A46619E8E9F1ABB3D9C2451ECE9DB7CEBD64BD2E2681A40BBC8B5",
+            "summary": "Chunk 6832, module 77127, extends module 71513. It overrides the charge limiter getter and setter through shared helpers and declares the mini-LED resolution methods; no sendCommand."
+          },
+          {
+            "id": "709-subclass-ledmatrix",
+            "url": "https://apps.razer.com/synapse/products/709/mw/rzDevice25LedMatrix.53b59e4d2e7d14746530.js",
+            "bytes": 6461,
+            "sha256": "193FD57388F190A35B24386C04FD0D8B08B303476DF01EE9023856015D764EF0",
+            "summary": "Chunk 5634, module 71513, extends rzDevice25 module 74503; no sendCommand."
+          }
+        ],
+        "findings": [
+          {
+            "source": "709-device",
+            "claim": "rzDevice25 module 74503, the base of the chain",
+            "offsetUtf8": 72343,
+            "text": "74503:(t,n,e)=>{e.r(n),e.d(n,{default:()=>$a});"
+          },
+          {
+            "source": "709-main",
+            "claim": "Chunk name map entry for rzDevice25LedMatrix",
+            "offsetUtf8": 182236,
+            "text": "5634:\"rzDevice25LedMatrix\""
+          },
+          {
+            "source": "709-main",
+            "claim": "Chunk name map entry for rzDevice25LedMatrixBlade2",
+            "offsetUtf8": 182306,
+            "text": "5794:\"rzDevice25LedMatrixBlade2\""
+          },
+          {
+            "source": "709-main",
+            "claim": "Chunk name map entry for rzDevice25LedMatrixBlade",
+            "offsetUtf8": 182501,
+            "text": "6832:\"rzDevice25LedMatrixBlade\""
+          },
+          {
+            "source": "709-main",
+            "claim": "Chunk hash map entry for rzDevice25LedMatrix",
+            "offsetUtf8": 184243,
+            "text": "5634:\"53b59e4d2e7d14746530\""
+          },
+          {
+            "source": "709-main",
+            "claim": "Chunk hash map entry for rzDevice25LedMatrixBlade2",
+            "offsetUtf8": 184299,
+            "text": "5794:\"da34a4070bcb5ea45648\""
+          },
+          {
+            "source": "709-main",
+            "claim": "Chunk hash map entry for rzDevice25LedMatrixBlade",
+            "offsetUtf8": 184523,
+            "text": "6832:\"bf83967de3685c97c672\""
+          },
+          {
+            "source": "709-subclass-blade2",
+            "claim": "Chunk 5794 registers module 56193",
+            "offsetUtf8": 541,
+            "text": "push([[5794],{56193:"
+          },
+          {
+            "source": "709-subclass-blade2",
+            "claim": "Base module import",
+            "offsetUtf8": 642,
+            "text": "n=i(77127)"
+          },
+          {
+            "source": "709-subclass-blade2",
+            "claim": "Class declaration",
+            "offsetUtf8": 1281,
+            "text": "class S extends n.default"
+          },
+          {
+            "source": "709-subclass-blade2",
+            "claim": "Its only sendCommand is a call",
+            "offsetUtf8": 2573,
+            "text": "this.sendCommand(i,\"Set Audio Mute Status\",o)"
+          },
+          {
+            "source": "709-subclass-blade2",
+            "claim": "Windows HDR DLL getter action",
+            "offsetUtf8": 14082,
+            "text": "GetBladeMonitorWindowsHDRMode"
+          },
+          {
+            "source": "709-subclass-blade2",
+            "claim": "Windows HDR DLL setter action",
+            "offsetUtf8": 14358,
+            "text": "SetBladeMonitorWindowsHDRMode"
+          },
+          {
+            "source": "709-subclass-blade",
+            "claim": "Chunk 6832 registers module 77127",
+            "offsetUtf8": 541,
+            "text": "push([[6832],{77127:"
+          },
+          {
+            "source": "709-subclass-blade",
+            "claim": "Base module import",
+            "offsetUtf8": 642,
+            "text": "o=i(71513)"
+          },
+          {
+            "source": "709-subclass-blade",
+            "claim": "Class declaration",
+            "offsetUtf8": 1260,
+            "text": "class N extends o.default"
+          },
+          {
+            "source": "709-subclass-blade",
+            "claim": "Charge limiter getter override",
+            "offsetUtf8": 12265,
+            "text": "getBatteryChargeLimiterControl()"
+          },
+          {
+            "source": "709-subclass-blade",
+            "claim": "Charge limiter setter override",
+            "offsetUtf8": 12360,
+            "text": "setBatteryChargeLimiterControl(e,t)"
+          },
+          {
+            "source": "709-subclass-ledmatrix",
+            "claim": "Chunk 5634 registers module 71513",
+            "offsetUtf8": 541,
+            "text": "push([[5634],{71513:"
+          },
+          {
+            "source": "709-subclass-ledmatrix",
+            "claim": "Base module import",
+            "offsetUtf8": 605,
+            "text": "r=a(74503)"
+          },
+          {
+            "source": "709-subclass-ledmatrix",
+            "claim": "Class declaration",
+            "offsetUtf8": 998,
+            "text": "class u extends r.default"
+          }
+        ]
+      },
+      "ackContract": "The existing 0x02C5 backend already uses the status-only SET acknowledgment contract (ExperimentalBladePort.UsesSourceBackedSetAckContract) for its other source-reviewed setters; the 709 helper parses payload only when packetSizeReturned > 0, so the 07/0F write accepts a status-only ACK and does not require an echo.",
+      "implementation": "ExperimentalBladePort.SupportsTemporaryFullCharge admits 0x02C5 with the same safeguards as 0x02C7, including the same handling of an unreadable 07/8F. Products 709 and 711 can both set localDimming; any set 08 bit blocks the write, since the shared guard does not read-modify-write other bits, and no Clear action is offered for it here."
+    }
+  ]
+}

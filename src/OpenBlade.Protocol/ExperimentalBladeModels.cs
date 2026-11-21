@@ -52,7 +52,10 @@ internal static class ExperimentalBladeModels
     internal const string OpenRazerSource = "https://github.com/openrazer/openrazer/tree/477f4d6d3ab7e9deb6310d5bd3742560c5cbe80d";
     internal const string ExpandedBladeControlSource = "https://github.com/jdsgnrinfo/blade-control/tree/92beedc82e6e378cb71dac276e5820c8ea84247d";
 
-    internal static IReadOnlyList<ExperimentalFeatureEvidence> FeatureEvidenceFor(ExperimentalBladeModel model)
+    internal static IReadOnlyList<ExperimentalFeatureEvidence> FeatureEvidenceFor(ExperimentalBladeModel model) =>
+        [.. ModelFeatureEvidence(model), .. ExperimentalBladePort.ObservedFeatureEvidence(model)];
+
+    private static IReadOnlyList<ExperimentalFeatureEvidence> ModelFeatureEvidence(ExperimentalBladeModel model)
     {
         if (model.ThermalPolicy is { } thermal)
         {
@@ -92,9 +95,21 @@ internal static class ExperimentalBladeModels
                 new("ChargeLimits50To80Step5AndOff", model.SupportsBatteryProtection
                     ? "SynapseSourceBackedWithoutPhysicalValidation" : "NotEstablished", sources),
                 new("MaximumFans", thermal.SupportsMaximumFans ? "SynapseSourceBackedWithoutPhysicalValidation" : "NotEstablished", sources),
+                .. TemporaryFullChargeEvidenceFor(model),
                 new("AdapterPowerClassification", "SynapseSourceBacked", sources),
                 .. OrdinaryThermalEvidenceFor(model),
                 .. FanStopEvidenceFor(model),
+                .. GpuClockOffsetEvidenceFor(model),
+                .. (ExperimentalBladePort.SupportsReviewedMcuKeyboardFrames(model)
+                    ? new ExperimentalFeatureEvidence[] { new("KeyboardOnlyCustomFramesGridAndUniformEffects",
+                        "ExactMcuSourceBackedWithoutPhysicalValidation",
+                        [ReviewedMcuLightingSource(model), ReviewedMcuKeyboardFrameReview(model)]) }
+                    : []),
+                .. (model.ProductId is 0x02B7 or 0x02B8
+                    ? new ExperimentalFeatureEvidence[] { new("KeyboardCustomFrames",
+                        "NotEstablishedLampArrayAutonomousModeSelectsDisplayedBuffer",
+                        [ReviewedMcuLightingSource(model), ReviewedMcuKeyboardFrameReview(model)]) }
+                    : []),
                 .. (model.ProductId == 0x02C7
                     ? new ExperimentalFeatureEvidence[]
                     {
@@ -114,9 +129,17 @@ internal static class ExperimentalBladeModels
                             "ExactMcuAndSelectedSynapseFieldsWithoutPhysicalValidation",
                             [ReviewedMcuLightingSource(model),
                                 "evidence/source-reviewed-blades/2026-11-13-rz09-0529-keyboard-frames.json"]),
+                        new("VaporChamberHostFramesWithRestorableBaseline",
+                            "ExactMcuSourceBackedWithoutPhysicalValidation",
+                            [ReviewedMcuLightingSource(model),
+                                "evidence/source-reviewed-blades/2026-11-13-rz09-0529-keyboard-frames.json"]),
                     }
                     : []),
+                .. HyperBoostEvidenceFor(model),
                 new(model.ProductId == 0x02C7 ? "HyperBoost"
+                    : model.ProductId == 0x02B7 ? "CustomFramesAdditionalEffects"
+                    : ExperimentalBladePort.SupportsReviewedMcuKeyboardFrames(model)
+                    ? "KeyTriggeredEffectsSequencesAndHyperBoost"
                     : ExperimentalBladePort.SupportsReviewedMcuLighting(model)
                     ? "CustomFramesAdditionalEffectsAndHyperBoost"
                     : ExperimentalBladePort.SupportsIndependentLighting(model)
@@ -134,6 +157,10 @@ internal static class ExperimentalBladeModels
                     "https://apps.razer.com/synapse/products/671/mw/main.2ceb8f5607c0e7a5901a.js",
                     "https://apps.razer.com/synapse/products/671/mw/6737.e123a2b3f0516116025b.js",
                     "https://apps.razer.com/synapse/products/671/mw/rzDevice25.5e330aa9fdf6f29eec62.js"]),
+                new("HyperBoostSystemSkuRecheck", "SynapseSourceBackedCapabilityGate", [
+                    "https://apps.razer.com/synapse/products/671/mw/main.2ceb8f5607c0e7a5901a.js;SHA256=CACF8758BF8B4DF35B7D51536830149ED428960AFEDF08CC81367E75520551D1",
+                    "https://apps.razer.com/synapse/products/671/mw/6737.e123a2b3f0516116025b.js;SHA256=54D3A9BBEC83568B02342AA54FF47A94EE55A48ECA85B5D9F28D60D01A0B1A9A",
+                    Rz090510HyperBoostEvidence]),
                 new("PerformanceAndCustom", "UpstreamOwnerTested", [RazerCtlSource, MaintainedRazerCtlSource]),
                 new("FixedFansAndMaximumFans", "UpstreamOwnerTested", [RazerCtlSource, MaintainedRazerCtlSource]),
                 new("KeyboardAndLogoLighting", "UpstreamOwnerTested", [MaintainedRazerCtlSource]),
@@ -150,6 +177,18 @@ internal static class ExperimentalBladeModels
                     "https://apps.razer.com/synapse/products/669/mw/6737.439ff1a12463933a6346.js",
                     "https://apps.razer.com/synapse/products/669/mw/rzDevice25.1094c437ecd0242743f8.js"]),
                 new("CustomAndFixedFans", "SourceBackedExtrapolation", [RazerCtlSource, MaintainedRazerCtlSource]),
+                new("MaximumFans", "SynapseSourceBackedWithoutPhysicalValidation", [
+                    "https://apps.razer.com/synapse/products/669/mw/main.8e09720cb94da405eead.js;SHA256=EEB8A171E77D1E066655D7FC997E4015B420B0F936F2464A27A87FDAFB5AC302",
+                    "https://apps.razer.com/synapse/products/669/mw/6737.439ff1a12463933a6346.js;SHA256=D1AC2212AED5491D3EAB69ABAFA270B963A2336E859DF6BFBF9ED9A455E3791B",
+                    "https://apps.razer.com/synapse/products/669/mw/rzDevice25.1094c437ecd0242743f8.js;SHA256=D76F0E964537BCF19D517E67B16E9D8AC0160230FA779AFB3640DA78B6201AD3",
+                    "evidence/source-reviewed-blades/2026-11-19-rz09-0482-maximum-fans.json"]),
+                // Product 669 offers CPU Boost as Power Mode Control bit 0x01. It is
+                // reported and guards 07/0F writes; OpenBlade has no control for it.
+                new("PowerModeCpuBoost", "SynapseSourceObservedOnly", [
+                    "https://apps.razer.com/synapse/products/669/mw/main.8e09720cb94da405eead.js;SHA256=EEB8A171E77D1E066655D7FC997E4015B420B0F936F2464A27A87FDAFB5AC302",
+                    "https://apps.razer.com/synapse/products/669/mw/6737.439ff1a12463933a6346.js;SHA256=D1AC2212AED5491D3EAB69ABAFA270B963A2336E859DF6BFBF9ED9A455E3791B",
+                    "https://apps.razer.com/synapse/products/669/mw/rzDevice25.1094c437ecd0242743f8.js;SHA256=D76F0E964537BCF19D517E67B16E9D8AC0160230FA779AFB3640DA78B6201AD3",
+                    "evidence/source-reviewed-blades/2026-11-19-rz09-0482-maximum-fans.json"]),
                 new("KeyboardLightingAndLogoOnOff", "UpstreamOwnerReported", [OpenRazerSource, "https://github.com/openrazer/openrazer/pull/2237"]),
                 new("LogoStaticAndBreathing", "SourceBackedExtrapolation", [RazerCtlSource, MaintainedRazerCtlSource]),
                 new("ChargeLimits50To100", "SourceBackedExtrapolation", [RazerCtlSource, MaintainedRazerCtlSource])],
@@ -226,7 +265,7 @@ internal static class ExperimentalBladeModels
         if (model.ProductId == 0x02C5)
         {
             features = [.. features, new("MappedReactiveRippleAndSequence",
-                "KeyboardMcuCommonRegionalBindingsWithoutRgbReadbackOrPhysicalValidation",
+                "KeyboardMcuEditionSelectedRegionalBindingsWithoutRgbReadbackOrPhysicalValidation",
                 ["https://dl.razerzone.com/drivers/Razer%20Blade%2014%E2%80%9D%20%282025%29%20%7C%20RZ09-0530/PI4110-MCUv01.04.00.exe;SHA256=AED7039BE5CC4EC3F166A2728B0C1B90839BAE72C8A04150056654F64F20581F",
                  "Blade14KeyboardLightingLayout.json;SHA256=9356BC177DFBCB458E4C9E465D93AD7E32AF94A61ADBDF7C7E2A7319A7D3E623"])];
         }
@@ -259,10 +298,63 @@ internal static class ExperimentalBladeModels
                 new(model.ProductId == 0x0255 ? "CreatorPerformanceRaw2" : "MaximumPowerPerformanceRaw2",
                     "SynapseSourceBackedWithoutPhysicalValidation", exactSources)];
         }
-        features = [.. features, .. FanStopEvidenceFor(model), .. OrdinaryThermalEvidenceFor(model), .. CpuVoltageEvidenceFor(model)];
+        features = [.. features, .. FanStopEvidenceFor(model), .. OrdinaryThermalEvidenceFor(model), .. CpuVoltageEvidenceFor(model),
+            .. GpuClockOffsetEvidenceFor(model),
+            .. TemporaryFullChargeEvidenceFor(model)];
         return model.AdapterPowerEvidenceSource is { } source
             ? [.. features, new("AdapterPowerClassification", "SynapseSourceBacked", [source])]
             : features;
+    }
+
+    // The mw main sets isNvidiaOverclockUISupported (711 at byte 175107, 709 at
+    // byte 169200); the UI chunk (711 892, 709 2915) carries the offset envelope.
+    private static IEnumerable<ExperimentalFeatureEvidence> GpuClockOffsetEvidenceFor(ExperimentalBladeModel model) =>
+        !ExperimentalBladePort.SupportsExperimentalGpuClockOffsets(model) ? [] :
+        [new("GpuClockOffsets", "SynapseSourceBackedNvmlWithoutPhysicalValidation",
+            model.ProductId == 0x02C7
+                ? ["https://apps.razer.com/synapse/products/711/mw/main.1f8e0c604f19af3ea24c.js;SHA256=C8C0C794D6D01867CD9C6020869808428B81CB98AE297E46EC700F3B935BFF7E",
+                    "https://apps.razer.com/synapse/products/711/ui/static/js/892.12b29c32.chunk.js;SHA256=FE1298AD9FAAE66301E76B439311F19393E4A46E1F8C5EB42B65350DA88F9100",
+                    "https://apps.razer.com/synapse/products/711/ui/static/js/main.a649ed49.js;SHA256=4B42EF4995470865B7D02587B85724247B886BDF2376EB6A78DA38BB9B6CBF99"]
+                : ["https://apps.razer.com/synapse/products/709/mw/main.bb0dd1873a58a987c63a.js;SHA256=CC8E0EFD2B37F1ED5AF6C8CC8C3AB1327B9502927DC05F20EE7465486AB006F1",
+                    "https://apps.razer.com/synapse/products/709/ui/static/js/2915.4e513855.chunk.js;SHA256=6D6106090CDC8D26F527F0265C07DBB4035EC57FBD0BDC41F0EDB1A205ADCEB2",
+                    "https://apps.razer.com/synapse/products/709/ui/static/js/main.fd91712e.js;SHA256=338D8F51C9A1179D3B2436F77FD44B3D393C3CC987D0EC73928E1F636BF3A9B7"])];
+
+    // Exact product 709 and 711 command and middleware pins; see
+    // evidence/source-reviewed-blades/2026-11-19-temporary-full-charge-rz09-0529-0530.json.
+    private static IEnumerable<ExperimentalFeatureEvidence> TemporaryFullChargeEvidenceFor(ExperimentalBladeModel model) =>
+        model.ProductId switch
+        {
+            0x02C5 => [new("TemporaryFullCharge", "SynapseSourceBackedWithoutPhysicalValidation", [
+                "https://apps.razer.com/synapse/products/709/mw/rzDevice25.d532642d8de7a9cfcf5d.js;SHA256=9109826D790FEB8597BBFC115231066CA66E2C480ED9769BB85F3F91188AAD0A",
+                "https://apps.razer.com/synapse/products/709/mw/6737.d34a3f9a638030f35c6a.js;SHA256=4758FB7E2D8296564FB9CE971F6DCE3D580ED5407EEF07A69E1C362A04FF28C0",
+                "https://apps.razer.com/synapse/products/709/mw/main.bb0dd1873a58a987c63a.js;SHA256=CC8E0EFD2B37F1ED5AF6C8CC8C3AB1327B9502927DC05F20EE7465486AB006F1"])],
+            0x02C7 => [new("TemporaryFullCharge", "SynapseSourceBackedWithoutPhysicalValidation", [
+                "https://apps.razer.com/synapse/products/711/mw/rzDevice25.c8da1ead63e6cf002d32.js;SHA256=02C55B78B3EABDCC104D725C64C94CADE500FA78D29713ACE5FEF520D243EBB9",
+                "https://apps.razer.com/synapse/products/711/mw/6737.c63928b0e4fd1b7673b4.js;SHA256=3EF16C0BEB5E8399CDEE51E9995A717E029CDF2125324735440B68A34D2D7B88",
+                "https://apps.razer.com/synapse/products/711/mw/main.1f8e0c604f19af3ea24c.js;SHA256=C8C0C794D6D01867CD9C6020869808428B81CB98AE297E46EC700F3B935BFF7E"])],
+            _ => [],
+        };
+    internal const string Rz090510HyperBoostEvidence =
+        "evidence/source-reviewed-blades/2026-11-20-rz09-0510-hyperboost.json";
+
+    // Product 695 declares isHyperBoostSystem, Hyperboost_Mode:7 and MCU minimum
+    // 1.3.0.0 for 02B7. Padless use reuses the same mode-7 pair without a pad.
+    private static IEnumerable<ExperimentalFeatureEvidence> HyperBoostEvidenceFor(ExperimentalBladeModel model)
+    {
+        if (model.ProductId != 0x02B7)
+        {
+            return [];
+        }
+        string[] sources = [
+            "https://apps.razer.com/synapse/products/695/mw/main.27df2e7ddab0b6bc34cc.js;SHA256=A12CD7047CC1CF093DBB458D703BA4D18CFE77110F47391B180EA5B33BA5E379",
+            "https://apps.razer.com/synapse/products/695/mw/6737.7ec91e479ef65c194b6c.js;SHA256=22D359EB7EDA08A9D2F4766EB6898A875A5F009EDB666BA4CD5A0425491AD1DA",
+            "https://apps.razer.com/synapse/products/695/mw/rzDevice25.60bfcef58690c8bb715d.js;SHA256=2D69449422DAC50C23A0EC81A5421CAB178BD04610725273FA67497574195491",
+            Rz090510HyperBoostEvidence];
+        return [
+            new("HyperBoost", "SynapseSourceBackedWithoutPhysicalValidation", sources),
+            new("PadlessHyperBoost", "SourceBackedExtrapolationWithoutPhysicalValidation", sources),
+            new("HyperBoostSystemSkuRecheck", "SynapseSourceBackedCapabilityGate", sources),
+        ];
     }
 
     private static IEnumerable<ExperimentalFeatureEvidence> CpuVoltageEvidenceFor(ExperimentalBladeModel model) =>
@@ -424,6 +516,11 @@ internal static class ExperimentalBladeModels
         0x02C7 => "https://dl.razerzone.com/drivers/RazerBlade18RZ09-0529/KI8110-MCUv01.07.00.exe;SHA256=30C06BA3D2D057593BBF3C812249D4EDD020D17FC157A8CC7C29264A9E72F9DC",
         _ => throw new ArgumentOutOfRangeException(nameof(model)),
     };
+
+    // 2026-11-19 exact keyboard MCU frame reviews: admitted for 0245/028A/028B/028C,
+    // recorded as not established for 02B7/02B8.
+    internal static string ReviewedMcuKeyboardFrameReview(ExperimentalBladeModel model) =>
+        $"evidence/source-reviewed-blades/2026-11-19-{model.ModelNumber.ToLowerInvariant()}-keyboard-frames.json";
 
     private static System.Collections.Immutable.ImmutableArray<string> SourceReviewedEvidence(ushort product) =>
         product switch
@@ -602,12 +699,67 @@ internal sealed class ExperimentalFeaturesPolicy(ExperimentalBladeModel model)
         System.Collections.Immutable.ImmutableDictionary<PerformancePreset, FanSpeedRange>.Empty;
     private int recoveryRequired;
     private ExperimentalRecoveryScope recoveryScope = ExperimentalRecoveryScope.All;
+    private bool temporaryFullChargeRecoveryRequired;
+    private int temporaryFullChargeReadUnavailable;
+    private int temporaryFullChargeLastKnownActive;
 
     // Observed capability metadata only; never a saved fan target or write admission.
     internal IReadOnlyDictionary<PerformancePreset, FanSpeedRange> ConfirmedFanRanges => Volatile.Read(ref confirmedFanRanges);
 
     internal void ConfirmFanRange(PerformancePreset preset, FanSpeedRange range) =>
         System.Collections.Immutable.ImmutableInterlocked.AddOrUpdate(ref confirmedFanRanges, preset, range, (_, _) => range);
+
+    // Latest successful 0D/8F panel reading for this exact device: 1 mini-LED,
+    // 0 no mini-LED, -1 not read yet. A failed read is remembered separately and
+    // never replaces a confirmed reading, so one transient failure on a later
+    // port open does not withdraw an offered Clear. Capability metadata only;
+    // every local dimming Clear reads the panel afresh before writing.
+    private int miniLedPanel = -1;
+    private int miniLedPanelReadUnavailable;
+    // The latest optional 07/8F local dimming state read failed. Later state
+    // reads skip it until a Clear or recovery reads Power Mode Control again.
+    private int localDimmingReadUnavailable;
+    private bool localDimmingRecoveryRequired;
+
+    internal bool? MiniLedPanel => Volatile.Read(ref miniLedPanel) switch
+    {
+        1 => true,
+        0 => false,
+        _ => null,
+    };
+
+    /// <summary>The panel was read, or its read failed; port opens skip 0D/8F.</summary>
+    internal bool MiniLedPanelResolved =>
+        MiniLedPanel is not null || Volatile.Read(ref miniLedPanelReadUnavailable) != 0;
+
+    internal void ConfirmMiniLedPanel(bool present)
+    {
+        Volatile.Write(ref miniLedPanel, present ? 1 : 0);
+        Volatile.Write(ref miniLedPanelReadUnavailable, 0);
+    }
+
+    internal void RecordMiniLedPanelReadUnavailable() =>
+        Volatile.Write(ref miniLedPanelReadUnavailable, 1);
+
+    internal bool LocalDimmingReadUnavailable => Volatile.Read(ref localDimmingReadUnavailable) != 0;
+
+    internal void RecordLocalDimmingRead(bool readable) =>
+        Volatile.Write(ref localDimmingReadUnavailable, readable ? 0 : 1);
+
+    /// <summary>
+    /// A possibly submitted 07/0F local dimming Clear must be reconciled from a
+    /// real 07/8F reading. No other pause depends on that query.
+    /// </summary>
+    internal bool LocalDimmingRecoveryRequired
+    {
+        get
+        {
+            lock (sync)
+            {
+                return localDimmingRecoveryRequired;
+            }
+        }
+    }
 
     internal bool IsPaused => Volatile.Read(ref recoveryRequired) != 0;
 
@@ -624,7 +776,53 @@ internal sealed class ExperimentalFeaturesPolicy(ExperimentalBladeModel model)
         }
     }
 
-    internal void RequireRecovery(ExperimentalRecoveryScope scope = ExperimentalRecoveryScope.All)
+    /// <summary>
+    /// A possibly submitted 07/0F temporary full charge write must be reconciled
+    /// from a real 07/8F reading. No other pause depends on that query.
+    /// </summary>
+    internal bool TemporaryFullChargeRecoveryRequired
+    {
+        get
+        {
+            lock (sync)
+            {
+                return temporaryFullChargeRecoveryRequired;
+            }
+        }
+    }
+
+    /// <summary>
+    /// The latest 07/8F read failed or returned an undecodable mask. Charge-limit
+    /// writes and optional recovery reads then keep their limiter-only behaviour
+    /// instead of repeating a query that may end the session.
+    /// </summary>
+    internal bool TemporaryFullChargeReadUnavailable =>
+        Volatile.Read(ref temporaryFullChargeReadUnavailable) != 0;
+
+    // An unreadable read keeps the previous known value: it is evidence of
+    // nothing, and the limiter must not be written while OpenBlade last saw
+    // (or confirmed writing) an active override.
+    internal void RecordTemporaryFullChargeRead(bool readable, bool active = false)
+    {
+        if (readable)
+        {
+            Volatile.Write(ref temporaryFullChargeLastKnownActive, active ? 1 : 0);
+        }
+        Volatile.Write(ref temporaryFullChargeReadUnavailable, readable ? 0 : 1);
+    }
+
+    internal void RecordTemporaryFullChargeWrite(bool enabled) =>
+        Volatile.Write(ref temporaryFullChargeLastKnownActive, enabled ? 1 : 0);
+
+    /// <summary>
+    /// The latest decoded 07/8F mask or confirmed 07/0F write reported an active
+    /// override. False when the firmware has never answered 07/8F.
+    /// </summary>
+    internal bool TemporaryFullChargeLastKnownActive =>
+        Volatile.Read(ref temporaryFullChargeLastKnownActive) != 0;
+
+    internal void RequireRecovery(ExperimentalRecoveryScope scope = ExperimentalRecoveryScope.All,
+        bool temporaryFullCharge = false, bool localDimming = false)
     {
         lock (sync)
         {
@@ -635,6 +833,9 @@ internal sealed class ExperimentalFeaturesPolicy(ExperimentalBladeModel model)
                 or ExperimentalRecoveryScope.LightingFieldsOnly ? scope : ExperimentalRecoveryScope.All;
             recoveryScope = !IsPaused ? requested
                 : recoveryScope == requested ? recoveryScope : ExperimentalRecoveryScope.All;
+            temporaryFullChargeRecoveryRequired = temporaryFullCharge
+                || IsPaused && temporaryFullChargeRecoveryRequired;
+            localDimmingRecoveryRequired = localDimming || IsPaused && localDimmingRecoveryRequired;
             Volatile.Write(ref recoveryRequired, 1);
         }
     }
@@ -645,17 +846,22 @@ internal sealed class ExperimentalFeaturesPolicy(ExperimentalBladeModel model)
         lock (sync)
         {
             recoveryScope = ExperimentalRecoveryScope.All;
+            temporaryFullChargeRecoveryRequired = false;
+            localDimmingRecoveryRequired = false;
             Volatile.Write(ref recoveryRequired, 0);
         }
     }
 
-    internal bool TryCompleteRecovery(ExperimentalRecoveryScope observedScope, Func<bool> acceptObservedState)
+    internal bool TryCompleteRecovery(ExperimentalRecoveryScope observedScope, Func<bool> acceptObservedState,
+        bool localDimmingObserved = true)
     {
         lock (sync)
         {
             // Keep runtime acceptance and pause release together. A widened
             // obligation cannot be discharged by an earlier partial observation.
-            if (!IsPaused || recoveryScope != observedScope || !acceptObservedState()
+            // A Clear obligation needs the 07/8F reading the recovery state carries.
+            if (!IsPaused || recoveryScope != observedScope
+                || localDimmingRecoveryRequired && !localDimmingObserved || !acceptObservedState()
                 || recoveryScope != observedScope)
             {
                 return false;

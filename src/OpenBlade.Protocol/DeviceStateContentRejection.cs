@@ -71,6 +71,7 @@ internal static class DeviceStateContentRejection
         DeviceStateQuery.LogoLightingState => "Logo lighting state query (03/80)",
         DeviceStateQuery.LogoLightingEffect => "Logo lighting effect query (03/82)",
         DeviceStateQuery.LogoLightingCombination => "Logo lighting state and effect (03/80, 03/82)",
+        DeviceStateQuery.LocalDimming => "Local dimming query (07/8F)",
         _ => fallback,
     };
 

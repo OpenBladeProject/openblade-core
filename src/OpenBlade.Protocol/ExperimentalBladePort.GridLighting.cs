@@ -8,7 +8,14 @@ internal sealed partial class ExperimentalBladePort
     // and standard custom-row dispatch. No physical-key mapping is inferred.
     // See docs/blade14-lighting-parity.md for the pinned encoders and scope.
     private static bool SupportsExperimentalGridAnimation(ExperimentalBladeModel model) =>
-        model.ProductId is 0x029F or 0x029D or 0x02C5 or 0x02C7;
+        model.ProductId is 0x029F or 0x029D or 0x02C5 or 0x02C7
+        || SupportsReviewedMcuKeyboardFrames(model);
+
+    private bool IsExperimentalGridRequest(LightingSettings settings) =>
+        SupportsReviewedMcuKeyboardFrames(model)
+            ? IsReviewedMcuKeyboardGridEffect(settings)
+            : SupportsExperimentalGridAnimation(model)
+                && ExperimentalGridLightingEffect.IsSupported(settings, model.ProductId == 0x02C7);
 
     // The new Blade 14 contracts declare the full 70-byte standard row payload.
     // Keep 029F/02A0's separately established 52-byte uniform-row contracts.
@@ -18,16 +25,28 @@ internal sealed partial class ExperimentalBladePort
     private static byte? ExperimentalLightingFrameTransactionId(ExperimentalBladeModel model) =>
         UsesPaddedExperimentalLightingRows(model) ? (byte)0xFF : null;
 
+    // Last LED38 row submitted with the keyboard rows; null for keyboard-only frames.
+    private IReadOnlyList<RgbColor>? vaporChamberMirrorFrame;
+
     private async Task SubmitExperimentalGridFrameAsync(
         IReadOnlyList<RgbColor> colors,
+        IReadOnlyList<RgbColor>? vaporChamber,
         bool activate,
         CancellationToken token,
         Action onSubmitted)
     {
-        if (!SupportsExperimentalGridAnimation(model))
+        if (!SupportsExperimentalGridAnimation(model)
+            || vaporChamber is not null && !SupportsRz090529VaporChamberFrames(model))
         {
             throw new CapabilityUnavailableException("Grid lighting is unavailable for this model.");
         }
+        if (SupportsReviewedMcuKeyboardFrames(model))
+        {
+            await SubmitReviewedMcuKeyboardFrameAsync(colors, activate, token, onSubmitted).ConfigureAwait(false);
+            return;
+        }
+        byte[]? vaporChamberRow = vaporChamber is null
+            ? null : Rz090529KeyboardLightingFrame.EncodeVaporChamberRow(vaporChamber);
         // Serialize acknowledged row exchanges. These exact models do not inherit
         // Product 672's SET-only batch transport. New Blade 14 production frames
         // retain the source FF transaction; 029F retains its existing allocator.
@@ -42,6 +61,17 @@ internal sealed partial class ExperimentalBladePort
                     RequireWriteAdmission();
                     await ExchangeAsync("KeyboardAnimationFrame", 0x03, 0x0B,
                         Rz090529KeyboardLightingFrame.EncodeRow(row, colors),
+                        true, token, variableResponse: true,
+                        payloadValidator: static value => value.Length <= RazerReport.MaximumPayloadLength,
+                        requireEcho: false, recordAcknowledgedSubmission: false).ConfigureAwait(false);
+                    submitted = true;
+                    onSubmitted();
+                }
+                if (vaporChamberRow is not null)
+                {
+                    // KI8110 copies transport row 6 into LED38's separate buffer.
+                    RequireWriteAdmission();
+                    await ExchangeAsync("KeyboardAnimationFrame", 0x03, 0x0B, vaporChamberRow,
                         true, token, variableResponse: true,
                         payloadValidator: static value => value.Length <= RazerReport.MaximumPayloadLength,
                         requireEcho: false, recordAcknowledgedSubmission: false).ConfigureAwait(false);
@@ -64,7 +94,23 @@ internal sealed partial class ExperimentalBladePort
                     {
                         throw new IOException("Independent keyboard readback did not confirm custom-frame selection.");
                     }
+                    if (vaporChamberRow is not null)
+                    {
+                        // [0,0,8] would also switch the LED4 logo; select LED38 alone.
+                        RequireWriteAdmission();
+                        RecordRz090529VaporChamberSelection();
+                        await ExchangeAsync("KeyboardAnimationFrame", 0x0F, 0x02,
+                            [0, VaporChamberRegion, 8], true, token, variableResponse: true,
+                            payloadValidator: static value => value.Length <= RazerReport.MaximumPayloadLength,
+                            requireEcho: false, recordAcknowledgedSubmission: false).ConfigureAwait(false);
+                        onSubmitted();
+                        if ((await ReadReviewedVaporChamberEffectAsync(token).ConfigureAwait(false)).Mode != 8)
+                        {
+                            throw new IOException("Independent Vapor Chamber readback did not confirm custom-frame selection.");
+                        }
+                    }
                 }
+                vaporChamberMirrorFrame = vaporChamber;
                 RecordKeyboardMirrorFrame(colors, Rz090529KeyboardLightingFrame.Columns,
                     Rz090529KeyboardLightingFrame.Rows);
                 return;

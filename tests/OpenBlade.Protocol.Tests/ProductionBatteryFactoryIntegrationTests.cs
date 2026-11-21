@@ -67,6 +67,18 @@ public sealed class ProductionBatteryFactoryIntegrationTests
         Assert.Equal(ThxAudioProductIds.Rznb11, capability.ProductId);
     }
 
+    // Synapse 736 (RZ09-0581) and 710 (RZ09-0528) couple local dimming to
+    // Windows HDR. Both show it as observed only, with no Clear.
+    [Fact]
+    public void ProductionCapabilities_ShowHdrCoupledLocalDimmingAsObservedOnly()
+    {
+        var observed = new LocalDimmingCapabilities(DeviceFeatureAccess.ObservedOnly, SupportsClear: false);
+        Assert.Equal(observed, ProductionBatteryFactory.CreateWindows().Capabilities.LocalDimming);
+        Assert.Equal(observed, ProductionBatteryFactory.CreateWindowsReadOnly().Capabilities.LocalDimming);
+        Assert.Equal(observed,
+            BatteryValidationFactory.CreateWindowsRz090528ProductionBattery().Capabilities.LocalDimming);
+    }
+
     [Fact]
     public void Rz090581ProductionPolicies_DoNotRequireABiosVersionWhenModelScoped()
     {

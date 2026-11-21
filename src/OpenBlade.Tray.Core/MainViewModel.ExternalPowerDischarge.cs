@@ -67,8 +67,10 @@ public sealed partial class MainViewModel
 
     private bool IsAtOrAboveChargeLimitWarningThreshold(ServiceStatusSnapshot status) =>
         status.ConfirmedState?.Battery is { ProtectionEnabled: true, ChargeLimitPercent: int limit } battery
-        && (battery.TemporaryFullCharge is false
-            || battery.TemporaryFullCharge is null && status.Capabilities?.SupportsTemporaryFullCharge is false)
+        // An unknown override no longer blocks the limiter on backends whose
+        // limiter is independent of it, so only a confirmed active override
+        // means the cap is lifted.
+        && battery.TemporaryFullCharge is not true
         && ReadPluggedInBatteryPercent() is int percent
         && percent >= limit - ChargeLimitWarningTolerancePercent;
 

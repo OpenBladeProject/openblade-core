@@ -31,7 +31,7 @@ internal static class BatteryOperationPlanner
         ConfirmedBatteryState? confirmed)
     {
         if (confirmed is null || confirmed.TemporaryFullCharge is null
-            && (capabilities.SupportsTemporaryFullCharge || desired.TemporaryFullCharge))
+            && (!UnknownOverrideAdmitsPolicy(capabilities) || desired.TemporaryFullCharge))
         {
             return BlockedBatteryPlan("Battery");
         }
@@ -71,7 +71,7 @@ internal static class BatteryOperationPlanner
                 confirmed);
         }
 
-        return BatteryMatches(desired, confirmed, allowUnmanagedOverride: !capabilities.SupportsTemporaryFullCharge)
+        return BatteryMatches(desired, confirmed, allowUnmanagedOverride: UnknownOverrideAdmitsPolicy(capabilities))
             ? MatchingBatteryPlan("Battery", confirmed)
             : BlockedBatteryPlan("Battery");
     }
@@ -253,10 +253,16 @@ internal static class BatteryOperationPlanner
         _ => false);
 
     // A limiter-only backend has no override command to coordinate. Its unknown
-    // flag stays unknown; an admitted override backend still needs a real Off read.
+    // flag stays unknown; an admitted override backend still needs a real Off read
+    // unless its limiter never depended on the override (experimental 07/92), where
+    // only a confirmed active override blocks the policy.
     private static bool PolicyOperationAdmitted(DeviceCapabilities capabilities, ConfirmedBatteryState? state) =>
         state is not null && (state.TemporaryFullCharge == false
-            || state.TemporaryFullCharge is null && !capabilities.SupportsTemporaryFullCharge);
+            || state.TemporaryFullCharge is null && UnknownOverrideAdmitsPolicy(capabilities));
+
+    internal static bool UnknownOverrideAdmitsPolicy(DeviceCapabilities capabilities) =>
+        !capabilities.SupportsTemporaryFullCharge
+        || capabilities.ChargePolicyIndependentOfTemporaryFullCharge;
 
     internal static bool BatteryMatches(
         DesiredBatteryState desired,
