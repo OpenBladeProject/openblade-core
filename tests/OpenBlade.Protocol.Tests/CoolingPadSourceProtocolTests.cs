@@ -149,6 +149,51 @@ public sealed class CoolingPadSourceProtocolTests
     }
 
     [Fact]
+    public async Task AutoSelectsTheProfilePresetDirectlyThenSendsTheDemand()
+    {
+        // Synapse Smart: setThermalFanCoolingMode(smart.active, 0, 0), then 0D/01 per demand.
+        var wire = new Wire { Fan = new(CoolingPadFanOwnership.Synapse, CoolingPadFanPreset.Medium, 2200) };
+        await using var device = Create(wire);
+        await device.SetFanAsync(CoolingPadFanMode.Auto, 2200, () => true, default, CoolingPadFanPreset.Balanced);
+        Assert.Equal(new[] { "0D90:000000", "0D10:000400", "0D90:000000", "0D01:01052C" }, wire.Commands);
+        Assert.Equal(new CoolingPadFanConfiguration(CoolingPadFanOwnership.Firmware, CoolingPadFanPreset.Balanced, 0), wire.Fan);
+    }
+
+    [Fact]
+    public async Task AutoSkipsTheSelectionOnlyWhenThisSessionLeftThatPresetRunning()
+    {
+        // The firmware record matches, but another owner may have written last: select it once.
+        var wire = new Wire { Fan = new(CoolingPadFanOwnership.Firmware, CoolingPadFanPreset.Balanced, 0) };
+        await using var device = Create(wire);
+        await device.SetFanAsync(CoolingPadFanMode.Auto, 1500, () => true, default, CoolingPadFanPreset.Balanced);
+        Assert.Contains("0D10:000400", wire.Commands);
+        wire.Commands.Clear();
+        await device.SetFanAsync(CoolingPadFanMode.Auto, 2000, () => true, default, CoolingPadFanPreset.Balanced);
+        Assert.Equal(new[] { "0D90:000000", "0D01:010528" }, wire.Commands);
+        wire.Commands.Clear();
+        // A profile change goes straight to its own preset, with no reset through another mode.
+        await device.SetFanAsync(CoolingPadFanMode.Auto, 2000, () => true, default, CoolingPadFanPreset.Performance);
+        Assert.Equal(new[] { "0D90:000000", "0D10:000500", "0D90:000000", "0D01:010528" }, wire.Commands);
+        wire.Commands.Clear();
+        await device.SetFanAsync(CoolingPadFanMode.Fixed, 2000, () => true, default);
+        wire.Commands.Clear();
+        await device.SetFanAsync(CoolingPadFanMode.Auto, 1000, () => true, default, CoolingPadFanPreset.Performance);
+        Assert.Equal(new[] { "0D90:010000", "0D10:000500", "0D90:000000", "0D01:010514" }, wire.Commands);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData(CoolingPadFanPreset.Medium)]
+    [InlineData(CoolingPadFanPreset.Off)]
+    public async Task AutoRequiresASmartPresetBeforeAnyCommand(CoolingPadFanPreset? preset)
+    {
+        var wire = new Wire(); await using var device = Create(wire);
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() =>
+            device.SetFanAsync(CoolingPadFanMode.Auto, 1500, () => true, default, preset));
+        Assert.Empty(wire.Commands);
+    }
+
+    [Fact]
     public async Task GuardRevocationBeforeSubmissionSendsNothingAndCanBeRetriedExplicitly()
     {
         var wire = new Wire(); await using var device = Create(wire);

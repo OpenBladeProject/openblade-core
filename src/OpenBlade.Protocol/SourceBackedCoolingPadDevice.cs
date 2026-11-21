@@ -17,6 +17,8 @@ internal sealed class SourceBackedCoolingPadDevice(
     // The firmware runs the preset set last by either owner and cannot report which one that was.
     // Until this session confirms its own fan write, the firmware-owned selection is reported.
     private CoolingPadFanOwnership runningOwner = CoolingPadFanOwnership.Firmware;
+    // Set once this session has written and independently confirmed a fan selection.
+    private bool fanWriteConfirmed;
     public string Identity { get; } = identity;
 
     public void BindLightingBaseline(CoolingPadDeviceSnapshot baseline)
@@ -80,20 +82,39 @@ internal sealed class SourceBackedCoolingPadDevice(
         };
     }
 
-    public async Task SetFanAsync(CoolingPadFanMode mode, int? rpm, Func<bool> submissionAllowed, CancellationToken cancellationToken)
+    public async Task SetFanAsync(CoolingPadFanMode mode, int? rpm, Func<bool> submissionAllowed, CancellationToken cancellationToken,
+        CoolingPadFanPreset? smartPreset = null)
     {
         ArgumentNullException.ThrowIfNull(submissionAllowed);
-        if (mode is CoolingPadFanMode.Fixed or CoolingPadFanMode.HostCurve)
+        if (mode is CoolingPadFanMode.Fixed or CoolingPadFanMode.HostCurve or CoolingPadFanMode.Auto)
         { CoolingPadProtocol.ValidateTarget(rpm ?? throw new ArgumentNullException(nameof(rpm))); }
         else if (mode is not (CoolingPadFanMode.Off or CoolingPadFanMode.Keep))
         { throw new ArgumentOutOfRangeException(nameof(mode)); }
+        if (mode == CoolingPadFanMode.Auto
+            && smartPreset is not (CoolingPadFanPreset.Quiet or CoolingPadFanPreset.Balanced or CoolingPadFanPreset.Performance))
+        { throw new ArgumentOutOfRangeException(nameof(smartPreset)); }
         await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             RequireWritable();
             partialMutation = false;
             if (mode == CoolingPadFanMode.Keep) { return; }
-            if (mode == CoolingPadFanMode.HostCurve)
+            if (mode == CoolingPadFanMode.Auto)
+            {
+                // Synapse Smart: setThermalFanCoolingMode(smart.active, 0, 0) selects the profile's
+                // preset in the firmware-owned record, then 0D/01 carries each demand. Go there
+                // directly. Skip the selection only when this session's own confirmed write left
+                // exactly that preset running: the firmware cannot report which owner wrote last.
+                var smart = new CoolingPadFanConfiguration(CoolingPadFanOwnership.Firmware, smartPreset!.Value, 0);
+                var current = await ReadFan(cancellationToken).ConfigureAwait(false);
+                if (!fanWriteConfirmed || runningOwner != CoolingPadFanOwnership.Firmware || current != smart)
+                {
+                    await WriteFan(smart, submissionAllowed, cancellationToken).ConfigureAwait(false);
+                }
+                // The verified echo confirms the demand; 0D/81 reports the ramping speed, not this target.
+                await Execute(CoolingPadProtocol.DemandSet(rpm!.Value), true, submissionAllowed, cancellationToken).ConfigureAwait(false);
+            }
+            else if (mode == CoolingPadFanMode.HostCurve)
             {
                 var current = await ReadFan(cancellationToken).ConfigureAwait(false);
                 // Preserve an already selected vendor Smart preset. Entry from another mode goes
@@ -127,6 +148,7 @@ internal sealed class SourceBackedCoolingPadDevice(
         var confirmed = await ReadFan(state.Ownership, token).ConfigureAwait(false);
         if (confirmed != state) { FailReadback("Cooling-pad fan-mode readback differs from the request."); }
         runningOwner = state.Ownership;
+        fanWriteConfirmed = true;
     }
 
     private Task<CoolingPadFanConfiguration> ReadFan(CancellationToken token) => ReadFan(runningOwner, token);
