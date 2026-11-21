@@ -418,4 +418,33 @@ public sealed partial class ServiceControlRuntimeTests
         Assert.Equal(fanWrites, context.Device.FanSetCalls);
         Assert.Contains(DeviceSubsystem.Performance, outcome.GpuClockOffsetsOnlyTried ?? new HashSet<DeviceSubsystem>());
     }
+
+    // The re-arm is one-shot: the power change re-arms the driver query once, and
+    // the continuation that follows it, a full transition without a power
+    // change, does not re-arm it again.
+    [Fact]
+    public async Task PowerChange_RearmsOnceAcrossItsContinuation()
+    {
+        var time = new ManualTimeProvider();
+        TestContext context = await CreateGpuContinuationContextAsync(
+            time, new GpuClockTuningSettings(true, new GpuClockOffsetSettings(200, 500)));
+        GpuClockOffsetManagementState prior = GpuClockOffsetManagementState.Relinquished;
+        context.Device.GpuClockOffsetManagementState = prior;
+        RefuseEveryGpuWrite(context, prior, "KnownNotApplied");
+        int mark = context.Device.GpuManagementCalls.Count;
+
+        context.Telemetry.Current = CreateTelemetry(PowerSource.PluggedIn);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+        for (int i = 0; i < 6; i++)
+        {
+            time.Advance(ServicePeriodicObservationLoop.ObservationInterval);
+            await context.Runtime.ObserveAsync(CancellationToken.None);
+        }
+
+        List<string> chain = context.Device.GpuManagementCalls.Skip(mark).ToList();
+        // The continuation ran: it sent the GPU half again.
+        Assert.Equal(2, chain.Count(call => call == "gpuSet"));
+        Assert.Equal("rearm", chain[0]);
+        Assert.Single(chain, call => call == "rearm");
+    }
 }

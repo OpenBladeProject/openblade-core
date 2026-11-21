@@ -39,7 +39,7 @@ public sealed partial class ExperimentalBladeBatteryIntegrationTests
             GpuClockTuning = new GpuClockTuningSettings(true, new GpuClockOffsetSettings(200, 500)),
             FanControl = new FanControlSettings(FanMode.Fixed, 3700, ManualFanCurve.Default),
         };
-        int firmwareSetters = harness.Io.Setters.Count;
+        int commands = harness.Io.Commands.Count;
 
         FullTransitionApplyOutcome outcome = await new ControlCoordinator(device).ApplyDesiredStateOutcomeAsync(
             desired,
@@ -49,7 +49,10 @@ public sealed partial class ExperimentalBladeBatteryIntegrationTests
                     new HashSet<DeviceSubsystem> { DeviceSubsystem.Fans, DeviceSubsystem.Performance },
                     new HashSet<DeviceSubsystem> { DeviceSubsystem.Performance })
                 : null);
-        return (outcome, harness.Io.Setters.Count - firmwareSetters, (IGpuClockOffsetManagementDevice)device);
+        // Thermal (0D/02) and fan-target (0D/01) setters the step sent.
+        int firmwareSetters = harness.Io.Commands.Skip(commands).Count(command =>
+            command == ((byte)0x0D, (byte)0x02) || command == ((byte)0x0D, (byte)0x01));
+        return (outcome, firmwareSetters, (IGpuClockOffsetManagementDevice)device);
     }
 
     [Theory]
