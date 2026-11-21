@@ -238,7 +238,7 @@ fn a_migration_the_store_does_not_hold_is_quarantined_until_a_restart() {
 }
 
 /// The hold belongs to one user's store and one change. The same bytes in
-/// another user's store are attempted, and that user's migration step
+/// another user's store are attempted, and that user's successful open
 /// forgets the first user's hold, as managed loads a user's configuration
 /// again when the user activates after another. Other bytes in the same
 /// store are another change, which takes the hold's place.
@@ -274,6 +274,108 @@ fn a_held_migration_belongs_to_one_store_and_one_change() {
     let writes = later.writes.load(Ordering::Acquire);
     assert_eq!(open(&later).err().unwrap().to_string(), QUARANTINE_BLOCKED);
     assert_eq!(later.writes.load(Ordering::Acquire), writes);
+}
+
+/// Only another user's successful open forgets a hold, as managed loads the
+/// held user's configuration again only after another user has activated
+/// (`ServiceControlRuntime.cs:1456-1487`). An open the override document
+/// refuses leaves it, whether or not it planned a migration; one of a
+/// current store, which plans none, forgets it.
+#[test]
+fn only_another_users_successful_open_forgets_a_hold() {
+    const OTHER: &str = "S-1-5-21-111-222-333-1002";
+    let source = case("schema 24 committed aggregate");
+    let held = model(&source.files);
+    held.fail(6, Fault::Padded);
+    assert_eq!(open(&held).err().unwrap().to_string(), QUARANTINE_BLOCKED);
+    let writes = held.writes.load(Ordering::Acquire);
+
+    for aggregate in [
+        "schema 23 committed aggregate",
+        "schema 27 current aggregate is left alone",
+    ] {
+        let mut files = case(aggregate).files.clone();
+        files.insert(OVERRIDES.into(), b"{".to_vec());
+        let refused = model(&files);
+        assert!(
+            Storage::open(Box::new(refused.clone()), OTHER).is_err(),
+            "{aggregate}"
+        );
+        assert_eq!(refused.writes.load(Ordering::Acquire), 0, "{aggregate}");
+        assert_eq!(
+            open(&held).err().unwrap().to_string(),
+            QUARANTINE_BLOCKED,
+            "{aggregate}"
+        );
+        assert_eq!(held.writes.load(Ordering::Acquire), writes, "{aggregate}");
+    }
+
+    let current = model(&case("schema 27 current aggregate is left alone").files);
+    Storage::open(Box::new(current.clone()), OTHER).unwrap();
+    assert_eq!(current.writes.load(Ordering::Acquire), 0);
+    open(&held).unwrap();
+    assert_eq!(held.snapshot(), migrated(&source.files));
+}
+
+/// Another writer that replaces the stored aggregate while the open admits
+/// the override document: after the plan read it, before it is written.
+struct Interloper {
+    inner: Model,
+    armed: std::sync::atomic::AtomicBool,
+    newer: BTreeMap<String, Vec<u8>>,
+}
+
+impl Files for Interloper {
+    fn read(&self, name: &str) -> io::Result<Option<Vec<u8>>> {
+        if name == OVERRIDES && self.armed.swap(false, Ordering::AcqRel) {
+            let mut files = self.inner.bytes.lock().unwrap();
+            for (name, bytes) in &self.newer {
+                files.insert(name.clone(), bytes.clone());
+            }
+        }
+        self.inner.read(name)
+    }
+    fn replace(&self, name: &str, expected: Option<&[u8]>, bytes: &[u8]) -> io::Result<()> {
+        self.inner.replace(name, expected, bytes)
+    }
+    fn remove(&self, name: &str, expected: &[u8]) -> io::Result<()> {
+        self.inner.remove(name, expected)
+    }
+    fn discard_stage(&self, name: &str) -> io::Result<()> {
+        self.inner.discard_stage(name)
+    }
+}
+
+/// Documents another writer changed between the plan and the write are not
+/// the plan's prior. They are left exactly as written, nothing is backed up
+/// or restored over them, and the next open migrates what is stored then.
+#[test]
+fn documents_another_writer_changed_after_the_plan_are_left_unchanged() {
+    let source = case("schema 24 committed aggregate");
+    let mut profile: Value = serde_json::from_slice(&source.files[NAMES[0]]).unwrap();
+    profile["profiles"]["batteryPolicy"]["chargeLimitPercent"] = json!(60);
+    let profile = serde_json::to_vec(&profile).unwrap();
+    let mut newer = source.files.clone();
+    newer.insert(
+        NAMES[2].into(),
+        commit_marker(24, &sha256(&profile), &sha256(&source.files[NAMES[1]])),
+    );
+    newer.insert(NAMES[0].into(), profile);
+    assert_ne!(newer, source.files);
+    let inner = model(&source.files);
+    let files = Interloper {
+        inner: inner.clone(),
+        armed: std::sync::atomic::AtomicBool::new(true),
+        newer: newer.clone(),
+    };
+
+    let error = Storage::open(Box::new(files), SID).err().unwrap();
+
+    assert_eq!(error.to_string(), MIGRATION_UNCHANGED);
+    assert_eq!(inner.snapshot(), newer, "the newer bytes, and nothing else");
+    assert_eq!(inner.writes.load(Ordering::Acquire), 0);
+    open(&inner).unwrap();
+    assert_eq!(inner.snapshot(), migrated(&newer));
 }
 
 /// A declared difference is an aggregate no migration writes, so the open

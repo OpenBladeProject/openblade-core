@@ -236,7 +236,17 @@ impl Planned {
     /// The save's recorded transaction: the same backups, record,
     /// verification and restore, so the original bytes stay on disk until
     /// the migrated ones are verified.
+    ///
+    /// The open admits the override document and the journal between the
+    /// plan and this write. Documents another writer changed in that window
+    /// are not this plan's prior: the transaction would back up and, on a
+    /// failure, restore the planned bytes over the newer ones. So they are
+    /// left as they are and the open fails unchanged; the next open plans
+    /// from what is stored then.
     pub(super) fn write(self, files: &dyn Files) -> io::Result<()> {
+        if !matches!(read_documents(files), Ok(documents) if documents == self.prior) {
+            return Err(io::Error::other(MIGRATION_UNCHANGED));
+        }
         let (_, validator) = validator();
         let transaction = Transaction::new(
             files,
@@ -266,9 +276,10 @@ thread_local! {
     /// else and restored, and that change: the digest of the stored and the
     /// migrated bytes. Managed holds such a quarantine while that user's
     /// configuration stays active and loads it again when the user activates
-    /// after another (`ServiceControlRuntime.cs:1456-1487`); here another
-    /// user's migration step forgets it. The store's owner is the service
-    /// runtime, which stays on one thread (`Rc`). One entry at most.
+    /// after another activates successfully (`ServiceControlRuntime.cs`
+    /// `:1456-1487`); here another user's successful open forgets it
+    /// ([`opened`]). The store's owner is the service runtime, which stays
+    /// on one thread (`Rc`). One entry at most.
     static HELD: std::cell::RefCell<Option<(String, String)>> =
         const { std::cell::RefCell::new(None) };
 }
@@ -279,14 +290,24 @@ fn forget_mismatches() {
     HELD.set(None);
 }
 
-/// Whether `user_sid`'s store holds `id`. Another user's store forgets it.
+/// Whether `user_sid`'s store holds `id`.
 fn held(user_sid: &str, id: &str) -> bool {
+    HELD.with_borrow(|entry| {
+        entry
+            .as_ref()
+            .is_some_and(|(sid, held)| sid == user_sid && held == id)
+    })
+}
+
+/// `user_sid`'s store opened: another user's hold is forgotten, as managed
+/// loads that user's configuration again once this user has activated. A
+/// refused open, and this user's own, leave it.
+pub(super) fn opened(user_sid: &str) {
     HELD.with_borrow_mut(|entry| {
         if entry.as_ref().is_some_and(|(sid, _)| sid != user_sid) {
             *entry = None;
         }
-        entry.as_ref().is_some_and(|(_, held)| held == id)
-    })
+    });
 }
 
 /// Holds `id` for `user_sid`'s store, in place of anything held before.

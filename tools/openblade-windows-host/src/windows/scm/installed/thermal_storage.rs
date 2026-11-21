@@ -527,6 +527,8 @@ impl Storage {
             migration.write(files.as_ref())?;
             aggregate(files.as_ref(), same_path)?;
         }
+        #[cfg(feature = "service-profiles-v1")]
+        profiles::opened(user_sid);
         Ok(Arc::new(Self {
             #[cfg(test)]
             battery_append_hook: Mutex::new(None),
