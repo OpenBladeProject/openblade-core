@@ -16,6 +16,7 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
     private readonly SemaphoreSlim operationGate = new(1, 1);
     private readonly ExperimentalLightingOwnershipState lightingOwnership;
     private readonly ExperimentalStartupAnimationState startupAnimationState = new();
+    private readonly ExperimentalVaporChamberAvailability vaporChamberAvailability = new();
 
     internal ExperimentalBladeFactory(ExperimentalBladeModel model, IHostIdentitySource identity,
         IHidCandidateNative native, IHardwareAccessGuard guard, IHidFeatureIo io,
@@ -33,11 +34,12 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
         // A native operation may outlive the provider's managed operation lock.
         this.sharedCommandGate = sharedCommandGate ?? new(1, 1);
         policy = new(model);
-        if (model.ProductId != 0x02C7)
+        if (model.ProductId != 0x02C7 && !ExperimentalBladePort.SupportsReviewedMcuKeyboardFrames(model))
         {
-            // This journal admits the KI8110 active-bank baseline contract.
-            // Legacy frame backends retain their separately reviewed saved-bank
-            // and Spectrum restoration semantics; do not apply this parser to them.
+            // This journal admits the reviewed MCU active-bank baseline contract:
+            // KI8110 and the four 2026-11-19 legacy-setter frame reviews. Older
+            // frame backends retain their separately reviewed saved-bank and
+            // Spectrum restoration semantics; do not apply this parser to them.
             lightingOwnership = new();
             return;
         }
@@ -50,10 +52,15 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
             Baseline = journal.Baseline,
             Ownership = journal.Invalid || journal.Baseline is not null
                 ? (int)LightingRendererOwnershipState.Faulted : 0,
+            // A record from an earlier run may follow a [0,5,8] selection.
+            McuCustomFrameMayRemain = ExperimentalBladePort.SupportsReviewedMcuKeyboardFrames(model)
+                && journal.Baseline is not null,
         };
     }
 
     public string EvidenceSource => model.EvidenceSource;
+
+    internal ExperimentalLightingOwnershipState LightingOwnership => lightingOwnership;
 
     internal string LaptopControlRecoveryIdentity => $"{model.ModelNumber}|1532:{model.ProductId:X4}";
 
@@ -255,6 +262,8 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
             try
             {
                 await port.InitializeBlade18KeyboardLayoutAsync(cancellationToken).ConfigureAwait(false);
+                // Each exact-model read returns immediately for every other product.
+                await port.InitializeRz090529VaporChamberAvailabilityAsync(cancellationToken).ConfigureAwait(false);
                 if (!port.IsRecoverySessionHealthy)
                 {
                     throw new IOException("The optional keyboard-layout read left an unhealthy session.");
@@ -262,7 +271,7 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
             }
             catch (IOException) when (!port.IsRecoverySessionHealthy)
             {
-                // Layout is optional metadata, not admission for thermal/battery controls.
+                // Layout and LED38 availability are optional, not admission for other controls.
                 // A rejected GET poisons its session: drain it before one complete fresh
                 // admission, without repeating the failed metadata query or guessing a layout.
                 pending = null;
@@ -297,7 +306,7 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
         {
             return new(null, HidSessionFailureKind.Canceled);
         }
-        if (identity.ReadExactIdentity() is not { Evidence: { } host, Failure: null })
+        if (identity.ReadExactIdentity() is not { Evidence: { } hostEvidence, Failure: null })
         {
             return new(null, HidSessionFailureKind.IdentityBlocked);
         }
@@ -308,10 +317,11 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
                 ? HidSessionFailureKind.ConflictDetectionFailed : HidSessionFailureKind.ConflictBlocked);
         }
         // The SKU is diagnostic host metadata; only HyperBoost's vendor recheck reads it.
-        string? systemSku = host.Sku;
+        string? systemSku = hostEvidence.Sku;
 
         List<(OpenedCandidateHandle Handle, HidHandleIdentity Identity)> candidates = FindCandidates();
         ExperimentalBladePort? selected = null;
+        HidHandleIdentity selectedIdentity = default;
         bool ambiguous = false;
         ExperimentalControlObservation? lastAdmissionFailure = null;
         try
@@ -359,6 +369,7 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
                     if (selected is null)
                     {
                         selected = port;
+                        selectedIdentity = candidate.Identity;
                         port = null;
                     }
                     else
@@ -415,6 +426,9 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
                     failure: HyperBoostSystemSkuPolicy.AllowsEntry(admitted.HyperBoostSkuAdmission)
                         ? null : admitted.HyperBoostSkuAdmission.ToString());
             }
+            // Key the optional LED38 probe result to this session's fresh host and exact
+            // HID identity, including its version number, so a changed device probes again.
+            admitted.BindVaporChamberAvailability(vaporChamberAvailability, new(hostEvidence, selectedIdentity));
             // Startup animation is queried independently by the service. Temporary full
             // charge is read with battery state. Neither optional probe belongs in the
             // shared port-open path; each control still requires its own real readback.

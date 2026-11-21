@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using OpenBlade.Contracts;
 
@@ -37,13 +38,25 @@ public sealed partial class IpcMessageCodecTests
         await IpcMessageCodec.WriteProtocol51ReadOnlyServerFrameAsync(stream,
             new ServiceStatusEvent(OpenBladeIpc.ProtocolVersion, status), CancellationToken.None);
         Assert.True(ReadFrozenProtocol51Frame(stream).Status!.WritesBlocked);
-        string json = FramedJsonObject(stream).ToJsonString();
-        Assert.DoesNotContain("5500", json, StringComparison.Ordinal);
+        JsonObject frame = FramedJsonObject(stream);
+        string json = frame.ToJsonString();
+        // Inspect numeric values only: the frame carries random GUIDs whose hex
+        // text can contain "5500" without any RPM value reaching the frame.
+        decimal[] numbers = NumericValues(frame).ToArray();
+        Assert.DoesNotContain(5500m, numbers);
         Assert.DoesNotContain("observedFanSpeedRangesByPerformancePreset", json, StringComparison.Ordinal);
-        Assert.Contains("5400", json, StringComparison.Ordinal);
+        Assert.Contains(5400m, numbers);
         Assert.Equal(5500, status.DesiredState.FanControl!.FixedSpeedRpm);
         Assert.Equal(5500, status.Profiles.PluggedIn.FanControl!.ManualCurve.Cpu[^1].SpeedRpm);
     }
+
+    private static IEnumerable<decimal> NumericValues(JsonNode? node) => node switch
+    {
+        JsonObject value => value.SelectMany(property => NumericValues(property.Value)),
+        JsonArray value => value.SelectMany(NumericValues),
+        JsonValue value when value.GetValueKind() == JsonValueKind.Number => [value.GetValue<decimal>()],
+        _ => [],
+    };
 
     [Theory]
     [InlineData(PerformancePreset.Turbo, false)]

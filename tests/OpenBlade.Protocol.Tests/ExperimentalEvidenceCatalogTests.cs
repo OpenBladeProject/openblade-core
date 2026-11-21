@@ -136,6 +136,27 @@ public sealed class ExperimentalEvidenceCatalogTests
                         Assert.Matches(@";SHA256=[0-9A-F]{64}$", source);
                     });
                 }
+                else if (feature.Feature == "VaporChamberHostFramesWithRestorableBaseline")
+                {
+                    Assert.Equal((ushort)0x02C7, model.ProductId);
+                    Assert.Equal("ExactMcuSourceBackedWithoutPhysicalValidation", feature.Basis);
+                    Assert.Equal(2, feature.Sources.Count);
+                    Assert.Contains(";SHA256=", feature.Sources[0], StringComparison.Ordinal);
+                    Assert.Equal("evidence/source-reviewed-blades/2026-11-13-rz09-0529-keyboard-frames.json", feature.Sources[1]);
+                }
+                else if (feature.Feature is "KeyboardOnlyCustomFramesGridAndUniformEffects" or "KeyboardCustomFrames")
+                {
+                    bool admitted = feature.Feature == "KeyboardOnlyCustomFramesGridAndUniformEffects";
+                    Assert.Contains(model.ProductId, admitted
+                        ? new ushort[] { 0x0245, 0x028A, 0x028B, 0x028C } : new ushort[] { 0x02B7, 0x02B8 });
+                    Assert.Equal(admitted ? "ExactMcuSourceBackedWithoutPhysicalValidation"
+                        : "NotEstablishedLampArrayAutonomousModeSelectsDisplayedBuffer", feature.Basis);
+                    Assert.Equal(2, feature.Sources.Count);
+                    Assert.Matches(@";SHA256=[0-9A-F]{64}$", feature.Sources[0]);
+                    Assert.Equal($"evidence/source-reviewed-blades/2026-11-19-{model.ModelNumber.ToLowerInvariant()}-keyboard-frames.json",
+                        feature.Sources[1]);
+                    Assert.Equal("Pending", snapshot.PhysicalValidation);
+                }
                 else if (model.ThermalPolicy is not null)
                 {
                     Assert.Equal("Supported", snapshot.SupportStatus);

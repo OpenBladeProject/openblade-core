@@ -15,6 +15,8 @@ internal enum BladeWriteFailurePhase
     HyperBoostAdapterEligibilityRead,
     ThermalFinalConfirmationRead,
     ControlRecoveryAdmission,
+    // A lighting ownership read was refused before it reached the device.
+    LightingSelectionRead,
 }
 
 public sealed class BladeWriteException : Exception

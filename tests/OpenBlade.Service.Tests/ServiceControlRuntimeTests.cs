@@ -9448,6 +9448,53 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
             StringComparison.OrdinalIgnoreCase);
     }
 
+    // A firmware event can end ownership without a fault: an MCU that reports
+    // its journaled baseline again, or a renderer that simply disappears. The
+    // one recovery attempt per fault must not re-arm from the remembered owner
+    // when the device later reports None; only a new successful apply re-arms.
+    [Theory]
+    [InlineData(LightingRendererOwnershipState.Faulted)]
+    [InlineData(LightingRendererOwnershipState.None)]
+    public async Task FailedLightingRecoveryDoesNotReArmUntilASuccessfulApply(
+        LightingRendererOwnershipState firstObservation)
+    {
+        TestContext context = await CreateOwnedStaticLightingContextAsync();
+        context.Device.LightingRendererOwnership = firstObservation;
+        context.Device.LightingFailure = new IOException("custom selection lost");
+
+        await context.Runtime.RefreshPowerSourceClassificationAsync(CancellationToken.None);
+        Assert.Equal(2, context.Device.LightingSetCalls);
+
+        foreach (LightingRendererOwnershipState later in new[]
+        {
+            LightingRendererOwnershipState.None,
+            LightingRendererOwnershipState.Faulted,
+            LightingRendererOwnershipState.None,
+        })
+        {
+            context.Device.LightingRendererOwnership = later;
+            await context.Runtime.ObserveAsync(CancellationToken.None);
+            await context.Runtime.RefreshPowerSourceClassificationAsync(CancellationToken.None);
+        }
+        Assert.Equal(2, context.Device.LightingSetCalls);
+
+        // A new successful apply re-arms exactly one further attempt.
+        context.Device.LightingFailure = null;
+        context.Device.LightingRendererOwnership = LightingRendererOwnershipState.Static;
+        ControlOperationResult applied = await context.Runtime.SetLightingOverrideAsync(
+            new ManualOverride<LightingSettings>(
+                LightingSettingsFactory.Static(new RgbColor(10, 20, 30), brightness: 60),
+                OverrideLifetime.UntilPowerSourceChange),
+            CancellationToken.None);
+        Assert.Equal(ControlOperationStatus.Applied, applied.Status);
+        Assert.Equal(3, context.Device.LightingSetCalls);
+        context.Device.LightingRendererOwnership = LightingRendererOwnershipState.Faulted;
+        context.Device.LightingFailure = new IOException("custom selection lost");
+        await context.Runtime.RefreshPowerSourceClassificationAsync(CancellationToken.None);
+        await context.Runtime.RefreshPowerSourceClassificationAsync(CancellationToken.None);
+        Assert.Equal(4, context.Device.LightingSetCalls);
+    }
+
     [Theory]
     [InlineData(PowerSource.Battery)]
     [InlineData(PowerSource.UsbC)]
