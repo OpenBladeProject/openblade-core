@@ -56,6 +56,13 @@ try {
         @{ Path = 'crates/openblade-domain/Cargo.toml'; Before = '[dev-dependencies]'; After = "[[test]]`nname = 'unexpected'`npath = 'src/lib.rs'`n`n[dev-dependencies]"; Error = 'Unreviewed target*' },
         @{ Path = 'crates/openblade-types/Cargo.toml'; Before = '[lints]'; After = "[dependencies]`nserde_json = '=1.0.149'`n`n[lints]"; Error = 'Unreviewed dependency kind*' }
     )
+    $windowsManifest = 'crates/openblade-platform-windows/Cargo.toml'
+    $cases += @(
+        @{ Path = $windowsManifest; Before = "target.'cfg(windows)'.dependencies"; After = 'dependencies'; Error = 'Unreviewed dependency kind*' },
+        @{ Path = $windowsManifest; Before = 'Win32_Graphics_Gdi'; After = 'Win32_Graphics_Gdi", "Win32_System_Registry'; Error = 'Conditional, optional or renamed dependencies*' },
+        @{ Path = $windowsManifest; Before = 'unsafe_code = "deny"'; After = 'unsafe_code = "allow"'; Error = 'Required lints.rust policy*' }
+    )
+
     # The std CLI is a leaf: only its exact reviewed binary and registry roots.
     $cliManifest = 'crates/openblade-status-cli/Cargo.toml'
     $cases += @(
