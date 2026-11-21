@@ -81,7 +81,7 @@ public sealed class WriteConfirmationPolicyTests
     }
 
     [Fact]
-    public void ManualPerformance_MatchesGenericManualStateBeforePresetAndGpuChecks()
+    public void ManualPerformance_SkipsHiddenPresetButStillJudgesGpuHalf()
     {
         var expectation = new WriteConfirmationExpectation(
             Desired() with
@@ -96,10 +96,28 @@ public sealed class WriteConfirmationPolicyTests
             Fans = FanMode.Fixed,
         };
 
-        Assert.False(WriteConfirmationPolicy.RequiresGpuClockOffsetManagementState(
+        // The hidden preset is not compared; the GPU reset still needs evidence.
+        Assert.True(WriteConfirmationPolicy.RequiresGpuClockOffsetManagementState(
             DeviceSubsystem.Performance, expectation, observed));
-        Assert.Equal(PendingConfirmationResult.Match, Match(DeviceSubsystem.Performance, expectation, observed));
+        Assert.Equal(PendingConfirmationResult.Match, WriteConfirmationPolicy.Match(
+            DeviceSubsystem.Performance, expectation, observed, GpuClockOffsetManagementState.ResetConfirmed));
+        Assert.Equal(PendingConfirmationResult.Mismatch, WriteConfirmationPolicy.Match(
+            DeviceSubsystem.Performance, expectation, observed, GpuClockOffsetManagementState.Unknown));
         Assert.Equal(PendingConfirmationResult.Mismatch, Match(DeviceSubsystem.Fans, expectation, observed));
+
+        var enabled = expectation with
+        {
+            Target = expectation.Target with
+            {
+                GpuClockTuning = new GpuClockTuningSettings(true, new GpuClockOffsetSettings(100, 200)),
+            },
+        };
+        Assert.Equal(PendingConfirmationResult.Mismatch, Match(
+            DeviceSubsystem.Performance, enabled, observed with { GpuClockOffsets = Offsets(300, 0) }));
+        Assert.Equal(PendingConfirmationResult.Match, Match(
+            DeviceSubsystem.Performance, enabled, observed with { GpuClockOffsets = Offsets(100, 200) }));
+        Assert.Equal(PendingConfirmationResult.GpuClockOffsetsUnconfirmed, WriteConfirmationPolicy.Match(
+            DeviceSubsystem.Performance, enabled, observed, GpuClockOffsetManagementState.Unknown));
     }
 
     [Fact]
@@ -120,7 +138,9 @@ public sealed class WriteConfirmationPolicyTests
                 state is GpuClockOffsetManagementState.ResetConfirmed
                     or GpuClockOffsetManagementState.RelinquishedDefaultConfirmed
                     ? PendingConfirmationResult.Match
-                    : PendingConfirmationResult.Mismatch,
+                    : state == GpuClockOffsetManagementState.SubmissionUncertain
+                        ? PendingConfirmationResult.Unavailable
+                        : PendingConfirmationResult.Mismatch,
                 WriteConfirmationPolicy.Match(DeviceSubsystem.Performance, expectation, Confirmed(), state));
         }
 
@@ -141,6 +161,8 @@ public sealed class WriteConfirmationPolicyTests
     {
         ConfirmedDeviceState before = Confirmed() with { GpuClockOffsets = Offsets(100, 200) };
         var expectation = new WriteConfirmationExpectation(Desired(), before);
+        Assert.True(WriteConfirmationPolicy.RequiresGpuClockOffsetManagementState(
+            DeviceSubsystem.Performance, expectation, Confirmed()));
         Assert.Equal(PendingConfirmationResult.Unavailable, Match(DeviceSubsystem.Performance, expectation, Confirmed()));
         Assert.Equal(PendingConfirmationResult.Match, Match(DeviceSubsystem.Performance, expectation, before));
         Assert.Equal(
@@ -161,8 +183,12 @@ public sealed class WriteConfirmationPolicyTests
             },
             Confirmed());
 
-        Assert.False(WriteConfirmationPolicy.RequiresGpuClockOffsetManagementState(
+        // A missing observation needs the device's management state; without it
+        // the GPU half stays Unavailable.
+        Assert.True(WriteConfirmationPolicy.RequiresGpuClockOffsetManagementState(
             DeviceSubsystem.Performance, expectation, Confirmed()));
+        Assert.False(WriteConfirmationPolicy.RequiresGpuClockOffsetManagementState(
+            DeviceSubsystem.Performance, expectation, Confirmed() with { GpuClockOffsets = Offsets(100, 200) }));
         Assert.Equal(
             PendingConfirmationResult.Unavailable,
             Match(DeviceSubsystem.Performance, expectation, Confirmed()));
@@ -172,6 +198,74 @@ public sealed class WriteConfirmationPolicyTests
         Assert.Equal(
             PendingConfirmationResult.Mismatch,
             Match(DeviceSubsystem.Performance, expectation, Confirmed() with { GpuClockOffsets = Offsets(100, 300) }));
+    }
+
+    // Every management state leaves an unobserved GPU half unconfirmed, never
+    // matched; a paired write's firmware fields are still judged first.
+    [Theory]
+    [InlineData(nameof(GpuClockOffsetManagementState.Unknown), false)]
+    [InlineData(nameof(GpuClockOffsetManagementState.Managed), false)]
+    [InlineData(nameof(GpuClockOffsetManagementState.ResetConfirmed), false)]
+    [InlineData(nameof(GpuClockOffsetManagementState.Relinquished), false)]
+    [InlineData(nameof(GpuClockOffsetManagementState.RelinquishedDefaultConfirmed), false)]
+    [InlineData(nameof(GpuClockOffsetManagementState.Unknown), true)]
+    [InlineData(nameof(GpuClockOffsetManagementState.Managed), true)]
+    [InlineData(nameof(GpuClockOffsetManagementState.ResetConfirmed), true)]
+    public void UnobservedGpuHalf_WithManagementStateIsUnconfirmedNeverMatched(
+        string stateName,
+        bool gpuOnly)
+    {
+        GpuClockOffsetManagementState state = Enum.Parse<GpuClockOffsetManagementState>(stateName);
+        var enabled = new WriteConfirmationExpectation(
+            Desired() with
+            {
+                GpuClockTuning = new GpuClockTuningSettings(true, new GpuClockOffsetSettings(100, 200)),
+            },
+            Confirmed(),
+            GpuClockTuningOnly: gpuOnly);
+        var preserved = new WriteConfirmationExpectation(
+            Desired(), Confirmed() with { GpuClockOffsets = Offsets(100, 200) });
+
+        Assert.Equal(PendingConfirmationResult.GpuClockOffsetsUnconfirmed,
+            WriteConfirmationPolicy.Match(DeviceSubsystem.Performance, enabled, Confirmed(), state));
+        Assert.Equal(PendingConfirmationResult.GpuClockOffsetsUnconfirmed,
+            WriteConfirmationPolicy.Match(DeviceSubsystem.Performance, preserved, Confirmed(), state));
+        if (!gpuOnly)
+        {
+            // A firmware mismatch or unknown preset is decided before the GPU half.
+            Assert.Equal(PendingConfirmationResult.Mismatch, WriteConfirmationPolicy.Match(
+                DeviceSubsystem.Performance, enabled, Confirmed() with { Performance = PerformancePreset.Silent }, state));
+            Assert.Equal(PendingConfirmationResult.Unavailable, WriteConfirmationPolicy.Match(
+                DeviceSubsystem.Performance, enabled, Confirmed() with { Performance = null }, state));
+        }
+        Assert.Equal(PendingConfirmationResult.Match, WriteConfirmationPolicy.Match(
+            DeviceSubsystem.Performance, enabled, Confirmed() with { GpuClockOffsets = Offsets(100, 200) }, state));
+    }
+
+    // An uncertain NVML submission is never retired: until a driver read resolves
+    // it into real offsets, the GPU half stays Unavailable for every target.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void UncertainNvmlSubmission_StaysUnavailableUntilDriverRead(bool gpuOnly)
+    {
+        const GpuClockOffsetManagementState uncertain = GpuClockOffsetManagementState.SubmissionUncertain;
+        foreach (GpuClockTuningSettings tuning in new[]
+        {
+            new GpuClockTuningSettings(true, new GpuClockOffsetSettings(100, 200)),
+            GpuClockTuningSettings.Disabled,
+        })
+        {
+            var expectation = new WriteConfirmationExpectation(
+                Desired() with { GpuClockTuning = tuning }, Confirmed(), GpuClockTuningOnly: gpuOnly);
+            Assert.Equal(PendingConfirmationResult.Unavailable,
+                WriteConfirmationPolicy.Match(DeviceSubsystem.Performance, expectation, Confirmed(), uncertain));
+        }
+        Assert.Equal(PendingConfirmationResult.Unavailable, WriteConfirmationPolicy.Match(
+            DeviceSubsystem.Performance,
+            new WriteConfirmationExpectation(Desired(), Confirmed() with { GpuClockOffsets = Offsets(100, 200) }),
+            Confirmed(),
+            uncertain));
     }
 
     [Fact]

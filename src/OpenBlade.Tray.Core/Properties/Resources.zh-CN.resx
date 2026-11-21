@@ -1446,6 +1446,9 @@
   <data name="OpenBlade could not confirm a previous change. Select Check current state before trying again." xml:space="preserve">
     <value>OpenBlade 未能确认之前的更改。重试前，请选择“检查当前状态”。</value>
   </data>
+  <data name="OpenBlade could not confirm a previous change. Select Check current state. If GPU clock tuning was part of it, OpenBlade checks it again when the GPU is next in use or the power source changes." xml:space="preserve">
+    <value>OpenBlade 未能确认之前的更改。请选择“检查当前状态”。如果其中包含 GPU 时钟调校，OpenBlade 会在下次使用 GPU 或供电方式改变时再次检查。</value>
+  </data>
   <data name="OpenBlade could not identify the charger. Connect the laptop’s AC charger, then select Check current state." xml:space="preserve">
     <value>OpenBlade 无法识别电源适配器。连接笔记本的交流电源适配器，然后选择“检查当前状态”。</value>
   </data>

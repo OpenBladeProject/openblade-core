@@ -7,6 +7,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- Add GPU core and memory clock offsets on Blade 18 (2025, RZ09-0529) and Blade 14 (2025, RZ09-0530) on confirmed external power, including limited adapters, when exactly one NVIDIA laptop GPU is present. The control is hidden and refused on battery. Support is source-reviewed; physical validation is pending. ([#991](https://github.com/OpenBladeProject/openblade-core/pull/991))
 - Add an Automatic fan mode for the cooling pad with Quiet, Balanced and Performance profiles, following the CPU, the GPU or both the way Razer Synapse does. ([#983](https://github.com/OpenBladeProject/openblade-core/pull/983))
 
 ### Changed
@@ -17,6 +18,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- On laptops with GPU clock offsets, a performance or GPU change whose offsets were never changed, or whose confirmation was lost, no longer keeps fan and performance controls blocked or experimental controls paused after **Resume laptop controls**; OpenBlade sends the offsets again with the next change. An interrupted GPU write that may have changed the offsets keeps controls blocked until OpenBlade can read the NVIDIA driver when the GPU is next in use, or until the power source changes, and is then checked against the offsets the driver reports. A power-source change reads the driver before it releases or writes the offsets. If the driver cannot be read, OpenBlade writes no offsets and keeps managing them until a later read, and the change is no longer shown as unconfirmed. A power-source change applies its remaining fan, lighting and battery settings after an unconfirmed or refused GPU step, sending the offsets again at most once. Resume and OpenBlade's own GPU re-send are no longer reported as outside changes, unless the driver then reports offsets other than the ones OpenBlade sent. ([#991](https://github.com/OpenBladeProject/openblade-core/pull/991))
+- After a power-source change, OpenBlade applies the new profile's performance setting when an earlier unconfirmed change had in fact been applied, including one whose only unconfirmed part was GPU clock tuning. Previously that step was refused. If the laptop reports another setting or none, automatic performance changes pause as they do after an outside change, and after a failed laptop read the step waits for the next change. ([#991](https://github.com/OpenBladeProject/openblade-core/pull/991))
 - Make the cooling pad's fan and lighting controls apply when Razer's device drivers are installed. The extra input-only pad interfaces and the Razer Experience Service no longer block control, and the pad's fan and lighting replies are now read the way its firmware reports them, so a fixed fan speed no longer pauses control. ([#983](https://github.com/OpenBladeProject/openblade-core/pull/983))
 - Keep Razer-driver function-row media keys and SnapTap working after focus briefly leaves every window, such as at the lock screen, and when a key is pressed while Windows is still starting. Previously they stopped until Windows restarted or the setting was toggled. ([#990](https://github.com/OpenBladeProject/openblade-core/pull/990))
 

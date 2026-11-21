@@ -20,7 +20,9 @@ internal sealed record ScopedApplyOutcome(
     WriteSubmissionState? WriteSubmissionState = null,
     BladeWriteFailurePhase? WriteFailurePhase = null,
     BatteryConfirmationScope BatteryConfirmation = BatteryConfirmationScope.All,
-    (int Fan1Rpm, int Fan2Rpm)? AppliedCurveTargets = null);
+    (int Fan1Rpm, int Fan2Rpm)? AppliedCurveTargets = null,
+    // The step's setter was the GPU-only clock-offset setter; firmware was untouched.
+    bool GpuClockOffsetsOnly = false);
 
 internal sealed record FullTransitionApplyOutcome(
     SubsystemApplyResults Results,
@@ -34,7 +36,9 @@ internal sealed record FullTransitionApplyOutcome(
     ConfirmedDeviceState? PreWriteState = null,
     DesiredDeviceState? EffectiveDesired = null,
     IReadOnlySet<DeviceSubsystem>? DeferredNotSubmitted = null,
-    BatteryConfirmationScope BatteryConfirmation = BatteryConfirmationScope.All);
+    BatteryConfirmationScope BatteryConfirmation = BatteryConfirmationScope.All,
+    // Steps whose GPU-only setter ran, whether it applied, was refused or was uncertain.
+    IReadOnlySet<DeviceSubsystem>? GpuClockOffsetsOnlyTried = null);
 
 internal sealed class IntentionalWriteCanceledException(
     IReadOnlySet<DeviceSubsystem> writeAttempted,
@@ -501,7 +505,20 @@ public sealed class ControlCoordinator
                     ? RelinquishGpuClockOffsetManagementAsync(token)
                     : Task.CompletedTask,
             resolveIndeterminateWriteByReadback: () => resolveIndeterminatePerformanceWrites,
-            unchangedAfterIndeterminateWrite: PerformanceStateMatches,
+            // Only the GPU-only setter can submit NVML without a firmware change.
+            unchangedAfterIndeterminateWrite: (initial, final) =>
+                CanApplyGpuClockOffsetsOnly(
+                    initial,
+                    value,
+                    customPerformance,
+                    effectiveGpuClockTuning,
+                    firmwarePerformanceSelectorHidden: false)
+                    ? GpuClockOffsetsUnchangedAfterIndeterminateWrite(initial, final)
+                    : PerformanceStateMatches(initial, final),
+            // Only a write that carried GPU tuning can leave its NVML half unresolved;
+            // a firmware-only write is judged from the preset alone.
+            confirmationPendingAfterIndeterminateWrite: final =>
+                effectiveGpuClockTuning is not null && GpuClockOffsetSubmissionUnresolved(final),
             writeBlockReason: performanceWriteBlockReason,
             returnBlockedOnWriteAuthorityLoss:
                 performanceWriteBlockReason is not null)
@@ -543,7 +560,8 @@ public sealed class ControlCoordinator
                 ? "GPU clock tuning requires confirmed OpenBlade ownership of active HyperBoost."
                 : null,
             resolveIndeterminateWriteByReadback: static () => true,
-            unchangedAfterIndeterminateWrite: PerformanceStateMatches,
+            unchangedAfterIndeterminateWrite: GpuClockOffsetsUnchangedAfterIndeterminateWrite,
+            confirmationPendingAfterIndeterminateWrite: GpuClockOffsetSubmissionUnresolved,
             writeBlockReason: performanceWriteBlockReason,
             returnBlockedOnWriteAuthorityLoss: true);
 
@@ -1370,7 +1388,7 @@ public sealed class ControlCoordinator
             stateReader = null,
         Func<IBladeDevice, CancellationToken,
             Task<PowerTransitionDeviceStateReadResult>>? deviceStateReader = null,
-        Func<IBladeDevice, ConfirmedDeviceState, IReadOnlySet<DeviceSubsystem>>?
+        Func<IBladeDevice, ConfirmedDeviceState, ContinuationWriteScope>?
             continuationScopeResolver = null)
     {
         ArgumentNullException.ThrowIfNull(desired);
@@ -1380,6 +1398,7 @@ public sealed class ControlCoordinator
         bool lightingReadUnavailable = false;
         PartialDeviceStateRead? initialPartialRead = null;
         IReadOnlySet<DeviceSubsystem>? continuationScope = null;
+        IReadOnlySet<DeviceSubsystem>? continuationGpuOnly = null;
 
         // A content-rejected getter leaves only its dependent subsystems
         // unknown; every channel or safety failure still escapes the read.
@@ -1432,7 +1451,10 @@ public sealed class ControlCoordinator
             lightingReadUnavailable =
                 initialRead.LightingOffConfirmationUnavailable;
             cancellationToken.ThrowIfCancellationRequested();
-            continuationScope = continuationScopeResolver?.Invoke(initialDevice, initial);
+            ContinuationWriteScope? resolvedScope =
+                continuationScopeResolver?.Invoke(initialDevice, initial);
+            continuationScope = resolvedScope?.Subsystems;
+            continuationGpuOnly = resolvedScope?.GpuOnly;
             if (automaticWriteExclusionResolver is not null)
             {
                 automaticWriteExclusions = automaticWriteExclusionResolver(initial);
@@ -1481,7 +1503,8 @@ public sealed class ControlCoordinator
                 transition,
                 cancellationToken,
                 continuationScope,
-                initialPartialRead);
+                initialPartialRead,
+                continuationGpuOnly);
 
             if (transition.Attempted.Count == 0)
             {
@@ -1495,6 +1518,7 @@ public sealed class ControlCoordinator
                     DeviceAccessFailed: false,
                     effectiveDesired: desired,
                     deferredNotSubmitted: transition.DeferredNotSubmitted,
+                    gpuClockOffsetsOnlyTried: transition.GpuClockOffsetsOnlyTried,
                     batteryConfirmation: states[DeviceSubsystem.Battery].BatteryConfirmation);
             }
 
@@ -1562,6 +1586,7 @@ public sealed class ControlCoordinator
                     preWriteState: initial,
                     effectiveDesired: desired,
                     deferredNotSubmitted: transition.DeferredNotSubmitted,
+                    gpuClockOffsetsOnlyTried: transition.GpuClockOffsetsOnlyTried,
                     batteryConfirmation: states[DeviceSubsystem.Battery].BatteryConfirmation);
             }
 
@@ -1617,6 +1642,7 @@ public sealed class ControlCoordinator
                     : null,
                 effectiveDesired: desired,
                 deferredNotSubmitted: transition.DeferredNotSubmitted,
+                gpuClockOffsetsOnlyTried: transition.GpuClockOffsetsOnlyTried,
                 batteryConfirmation: states[DeviceSubsystem.Battery].BatteryConfirmation);
         }
         catch (OperationCanceledException exception)
@@ -1695,6 +1721,14 @@ public sealed class ControlCoordinator
                     token),
                 PerformanceStateMatches)
             {
+                GpuClockOffsetsOnlyApplicable = state =>
+                    CanApplyGpuClockOffsetsOnly(
+                        state,
+                        desired.Performance.Value,
+                        desired.CustomPerformance,
+                        desired.GpuClockTuning,
+                        latentManualPerformanceIntent
+                            || FirmwarePerformanceSelectorHidden(state)),
                 StateAwareSetter = (state, token) =>
                     CanApplyGpuClockOffsetsOnly(
                         state,
@@ -1766,7 +1800,8 @@ public sealed class ControlCoordinator
         FullTransitionApplyState transition,
         CancellationToken cancellationToken,
         IReadOnlySet<DeviceSubsystem>? continuationScope = null,
-        PartialDeviceStateRead? initialPartialRead = null)
+        PartialDeviceStateRead? initialPartialRead = null,
+        IReadOnlySet<DeviceSubsystem>? continuationGpuOnly = null)
     {
         bool stopFurtherWrites = false;
         string? stopReason = null;
@@ -1783,7 +1818,9 @@ public sealed class ControlCoordinator
             && automaticWriteExclusions?.Contains(DeviceSubsystem.Fans) != true
             && (continuationScope is null
                 || continuationScope.Contains(DeviceSubsystem.Performance)
-                    && continuationScope.Contains(DeviceSubsystem.Fans));
+                    && continuationScope.Contains(DeviceSubsystem.Fans))
+            // A GPU-only continuation step never takes the paired firmware path.
+            && continuationGpuOnly?.Contains(DeviceSubsystem.Performance) != true;
         bool coupledAutomaticFansHandled = false;
         IReadOnlyList<DeviceSubsystem> orderedSubsystems =
             directAutomaticPair
@@ -1799,6 +1836,19 @@ public sealed class ControlCoordinator
             }
             if (continuationScope is not null && !continuationScope.Contains(subsystem))
             {
+                transition.ContinuationExcluded.Add(subsystem);
+                transition.Provisional[subsystem] = new(
+                    ControlResultStatus.Blocked,
+                    $"{pending.Name} is not part of the remaining transition work.");
+                continue;
+            }
+            if (continuationGpuOnly?.Contains(subsystem) == true
+                && pending.GpuClockOffsetsOnlyApplicable?.Invoke(initial) != true)
+            {
+                // The continuation may send this step again only through the GPU-only
+                // setter. When the current state needs a firmware write (for example
+                // a preset the policy cannot compare under manual fans), skip it
+                // rather than replay a firmware setter.
                 transition.ContinuationExcluded.Add(subsystem);
                 transition.Provisional[subsystem] = new(
                     ControlResultStatus.Blocked,
@@ -1963,6 +2013,7 @@ public sealed class ControlCoordinator
                 transition.Attempted.Add(DeviceSubsystem.Fans);
                 coupledAutomaticFansHandled = true;
             }
+            bool gpuClockOffsetsOnlyWrite = false;
             try
             {
                 PendingSubsystem writePending = pending;
@@ -1974,6 +2025,12 @@ public sealed class ControlCoordinator
                         desired,
                         capabilities,
                         initial)[subsystem];
+                }
+                gpuClockOffsetsOnlyWrite = !appliesDirectAutomaticPair
+                    && writePending.GpuClockOffsetsOnlyApplicable?.Invoke(initial) == true;
+                if (gpuClockOffsetsOnlyWrite)
+                {
+                    transition.GpuClockOffsetsOnlyTried.Add(subsystem);
                 }
                 await (writePending.StateAwareSetter is null
                     ? writePending.Setter(cancellationToken)
@@ -1996,7 +2053,8 @@ public sealed class ControlCoordinator
                     coupledAutomaticFansHandled = false;
                 }
                 transition.Provisional[subsystem] = CapabilityRefused(pending.Name, exception);
-                if (IsThermalSubsystem(subsystem))
+                if (IsThermalSubsystem(subsystem)
+                    && !IsRefusedGpuClockOffsetsOnlyStep(gpuClockOffsetsOnlyWrite, deviceAccessFailed: false))
                 {
                     stopThermalWrites = true;
                     thermalStopReason = transition.Provisional[subsystem].Message;
@@ -2012,7 +2070,10 @@ public sealed class ControlCoordinator
                     coupledAutomaticFansHandled = false;
                 }
                 transition.Provisional[subsystem] = WriteRejected(pending.Name, exception);
-                if (IsThermalSubsystem(subsystem))
+                if (IsThermalSubsystem(subsystem)
+                    && !IsRefusedGpuClockOffsetsOnlyStep(
+                        gpuClockOffsetsOnlyWrite,
+                        exception.FailurePhase == BladeWriteFailurePhase.ThermalPreWriteRead))
                 {
                     stopThermalWrites = true;
                     thermalStopReason = transition.Provisional[subsystem].Message;
@@ -2081,6 +2142,7 @@ public sealed class ControlCoordinator
                 WriteSubmissionState: WriteSubmissionState.KnownNotApplied);
         }
 
+        bool gpuClockOffsetsOnly = false;
         try
         {
             Dictionary<DeviceSubsystem, PendingSubsystem> currentStates =
@@ -2089,6 +2151,7 @@ public sealed class ControlCoordinator
                     capabilities,
                     initial);
             PendingSubsystem pending = currentStates[subsystem];
+            gpuClockOffsetsOnly = pending.GpuClockOffsetsOnlyApplicable?.Invoke(initial) == true;
             await (pending.StateAwareSetter is null
                 ? pending.Setter(cancellationToken)
                 : pending.StateAwareSetter(initial, cancellationToken))
@@ -2099,7 +2162,8 @@ public sealed class ControlCoordinator
                 WriteAttempted: true,
                 ReadbackMatched: false,
                 Capabilities: null,
-                DeviceAccessFailed: false);
+                DeviceAccessFailed: false,
+                GpuClockOffsetsOnly: gpuClockOffsetsOnly);
         }
         catch (CapabilityUnavailableException exception)
         {
@@ -2110,7 +2174,8 @@ public sealed class ControlCoordinator
                 ReadbackMatched: false,
                 Capabilities: null,
                 DeviceAccessFailed: false,
-                WriteSubmissionState: WriteSubmissionState.KnownNotApplied);
+                WriteSubmissionState: WriteSubmissionState.KnownNotApplied,
+                GpuClockOffsetsOnly: gpuClockOffsetsOnly);
         }
         catch (BladeWriteException exception)
             when (exception.SubmissionState is WriteSubmissionState.KnownNotApplied)
@@ -2124,7 +2189,8 @@ public sealed class ControlCoordinator
                 DeviceAccessFailed: exception.FailurePhase
                     == BladeWriteFailurePhase.ThermalPreWriteRead,
                 WriteSubmissionState: exception.SubmissionState,
-                WriteFailurePhase: exception.FailurePhase);
+                WriteFailurePhase: exception.FailurePhase,
+                GpuClockOffsetsOnly: gpuClockOffsetsOnly);
         }
         catch (BladeWriteException exception)
             when (exception.SubmissionState is WriteSubmissionState.Indeterminate)
@@ -2138,7 +2204,8 @@ public sealed class ControlCoordinator
                 DeviceAccessFailed: true,
                 ConfirmationUnavailable: true,
                 WriteSubmissionState: exception.SubmissionState,
-                WriteFailurePhase: exception.FailurePhase);
+                WriteFailurePhase: exception.FailurePhase,
+                GpuClockOffsetsOnly: gpuClockOffsetsOnly);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -2155,7 +2222,8 @@ public sealed class ControlCoordinator
                 Capabilities: null,
                 DeviceAccessFailed: IsTerminalDeviceFailure(exception),
                 ConfirmationUnavailable: true,
-                WriteSubmissionState: WriteSubmissionState.Indeterminate);
+                WriteSubmissionState: WriteSubmissionState.Indeterminate,
+                GpuClockOffsetsOnly: gpuClockOffsetsOnly);
         }
     }
 
@@ -2172,6 +2240,10 @@ public sealed class ControlCoordinator
         if (outcome.WriteAttempted)
         {
             transition.Attempted.Add(subsystem);
+        }
+        if (outcome.GpuClockOffsetsOnly)
+        {
+            transition.GpuClockOffsetsOnlyTried.Add(subsystem);
         }
         transition.DeviceAccessFailed |= outcome.DeviceAccessFailed;
         if (outcome.ConfirmationUnavailable)
@@ -2196,9 +2268,22 @@ public sealed class ControlCoordinator
             return;
         }
 
+        if (IsRefusedGpuClockOffsetsOnlyStep(outcome.GpuClockOffsetsOnly, outcome.DeviceAccessFailed))
+        {
+            return;
+        }
+
         stopThermalWrites = true;
         thermalStopReason = outcome.Result.Message;
     }
+
+    // A GPU-only Performance step leaves the firmware preset alone, so a driver
+    // refusal before submission (KnownNotApplied, or the driver unavailable) is no
+    // reason to skip the remaining thermal steps. They keep their own fresh admission,
+    // and the GPU failure stays in the Performance result. A refused firmware preset
+    // step, a guard block or a failed pre-write read still stops them.
+    private static bool IsRefusedGpuClockOffsetsOnlyStep(bool gpuClockOffsetsOnly, bool deviceAccessFailed)
+        => gpuClockOffsetsOnly && !deviceAccessFailed;
 
     private static void ReconcileFinalReadback(
         DesiredDeviceState desired,
@@ -2522,6 +2607,7 @@ public sealed class ControlCoordinator
         Func<bool>? resolveIndeterminateWriteByReadback = null,
         Func<ConfirmedDeviceState, ConfirmedDeviceState, bool>?
             unchangedAfterIndeterminateWrite = null,
+        Func<ConfirmedDeviceState, bool>? confirmationPendingAfterIndeterminateWrite = null,
         bool returnBlockedOnWriteAuthorityLoss = false,
         bool reconcileUnconfirmableIndeterminateWrite = false)
     {
@@ -2697,6 +2783,7 @@ public sealed class ControlCoordinator
                     exception,
                     matches,
                     unchangedAfterIndeterminateWrite,
+                    confirmationPendingAfterIndeterminateWrite,
                     readState,
                     initial,
                     capabilities,
@@ -2762,6 +2849,7 @@ public sealed class ControlCoordinator
                         exception,
                         matches,
                         unchangedAfterIndeterminateWrite,
+                        confirmationPendingAfterIndeterminateWrite,
                         readState,
                         initial,
                         capabilities,
@@ -2857,6 +2945,7 @@ public sealed class ControlCoordinator
         Func<ConfirmedDeviceState, bool> matches,
         Func<ConfirmedDeviceState, ConfirmedDeviceState, bool>?
             unchangedAfterIndeterminateWrite,
+        Func<ConfirmedDeviceState, bool>? confirmationPendingAfterIndeterminateWrite,
         Func<CancellationToken, Task<ConfirmedDeviceState>> readState,
         ConfirmedDeviceState? initial,
         DeviceCapabilities? capabilities,
@@ -2882,6 +2971,29 @@ public sealed class ControlCoordinator
                     WriteSubmissionState: WriteSubmissionState.Indeterminate,
                     WriteFailurePhase: exception is BladeWriteException matchedFailure
                         ? matchedFailure.FailurePhase
+                        : null);
+            }
+
+            if (initial is not null
+                && confirmationPendingAfterIndeterminateWrite?.Invoke(final) == true)
+            {
+                // The readback has no evidence for part of the write (an uncertain
+                // NVML submission whose driver read failed). Keep it pending like a
+                // lost readback instead of reporting a contradiction.
+                return new ScopedApplyOutcome(
+                    new ControlResult(
+                        ControlResultStatus.Failed,
+                        $"{Indeterminate(name, exception).Message} Fresh readback cannot confirm the GPU clock offsets."),
+                    final,
+                    WriteAttempted: true,
+                    ReadbackMatched: false,
+                    capabilities,
+                    DeviceAccessFailed: false,
+                    ConfirmationUnavailable: true,
+                    PreWriteState: initial,
+                    WriteSubmissionState: WriteSubmissionState.Indeterminate,
+                    WriteFailurePhase: exception is BladeWriteException pendingFailure
+                        ? pendingFailure.FailurePhase
                         : null);
             }
 
@@ -2955,7 +3067,8 @@ public sealed class ControlCoordinator
         ConfirmedDeviceState? preWriteState = null,
         DesiredDeviceState? effectiveDesired = null,
         IReadOnlySet<DeviceSubsystem>? deferredNotSubmitted = null,
-        BatteryConfirmationScope batteryConfirmation = BatteryConfirmationScope.All) => new(
+        BatteryConfirmationScope batteryConfirmation = BatteryConfirmationScope.All,
+        IReadOnlySet<DeviceSubsystem>? gpuClockOffsetsOnlyTried = null) => new(
             new SubsystemApplyResults(
                 results[DeviceSubsystem.Performance],
                 results[DeviceSubsystem.Fans],
@@ -2971,7 +3084,10 @@ public sealed class ControlCoordinator
             preWriteState,
             effectiveDesired,
             deferredNotSubmitted is null ? null : new HashSet<DeviceSubsystem>(deferredNotSubmitted),
-            batteryConfirmation);
+            batteryConfirmation,
+            gpuClockOffsetsOnlyTried is null or { Count: 0 }
+                ? null
+                : new HashSet<DeviceSubsystem>(gpuClockOffsetsOnlyTried));
 
     private static bool IsLightingValid(LightingSettings value)
         => LightingSettingsValidation.IsWellFormed(value);
@@ -3337,6 +3453,33 @@ public sealed class ControlCoordinator
         && left.Fans == right.Fans
         && left.HyperBoostActive == right.HyperBoostActive;
 
+    // Unmanaged offsets read as null before and after a write. After an
+    // indeterminate NVML submission (for example a core write whose restore
+    // failed) null == null is not evidence that the driver kept its prior offsets.
+    // Only a managed offset observation, or a default reset the device still
+    // holds as confirmed, shows that the prior GPU state remained active. An
+    // uncertain NVML write withdraws a reset; a driver read that finds the
+    // defaults still in place restores it.
+    private bool GpuClockOffsetsUnchangedAfterIndeterminateWrite(
+        ConfirmedDeviceState initial,
+        ConfirmedDeviceState final) =>
+        PerformanceStateMatches(initial, final)
+        && (final.GpuClockOffsets is not null
+            || device is IGpuClockOffsetManagementDevice managedDevice
+                && managedDevice.GpuClockOffsetManagementState is
+                    GpuClockOffsetManagementState.ResetConfirmed
+                    or GpuClockOffsetManagementState.RelinquishedDefaultConfirmed);
+
+    // The device still holds an uncertain NVML submission after its follow-up
+    // read: the driver could not be queried, so nothing confirms or contradicts
+    // the offsets yet.
+    private bool GpuClockOffsetSubmissionUnresolved(ConfirmedDeviceState final) =>
+        final.GpuClockOffsets is null
+        && device is IGpuClockOffsetManagementDevice
+        {
+            GpuClockOffsetManagementState: GpuClockOffsetManagementState.SubmissionUncertain,
+        };
+
     private void EnsureGpuClockOffsetManagementContract(
         DeviceCapabilities capabilities)
     {
@@ -3502,6 +3645,7 @@ public sealed class ControlCoordinator
         public HashSet<DeviceSubsystem> ConfirmationUnavailable { get; } = [];
         public HashSet<DeviceSubsystem> DeferredNotSubmitted { get; } = [];
         public HashSet<DeviceSubsystem> ContinuationExcluded { get; } = [];
+        public HashSet<DeviceSubsystem> GpuClockOffsetsOnlyTried { get; } = [];
         public bool DeviceAccessFailed { get; set; }
     }
 
@@ -3521,5 +3665,19 @@ public sealed class ControlCoordinator
             get;
             init;
         }
+
+        // Whether StateAwareSetter would send only the GPU clock offsets for this state.
+        public Func<ConfirmedDeviceState, bool>? GpuClockOffsetsOnlyApplicable { get; init; }
     }
+}
+
+// The subsystems a transition continuation may write, and the dependency steps among
+// them that it may send again only through the GPU-only setter.
+internal sealed record ContinuationWriteScope(
+    IReadOnlySet<DeviceSubsystem> Subsystems,
+    IReadOnlySet<DeviceSubsystem> GpuOnly)
+{
+    public static ContinuationWriteScope Empty { get; } = new(
+        new HashSet<DeviceSubsystem>(),
+        new HashSet<DeviceSubsystem>());
 }

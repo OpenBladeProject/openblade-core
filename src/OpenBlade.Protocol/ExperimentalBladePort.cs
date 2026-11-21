@@ -218,7 +218,36 @@ internal sealed partial class ExperimentalBladePort(
                     DeviceFeatureAccess.ReadWrite,
                     ThxAudioProductIds.Rznb11)
                 : null,
+            GpuOverclock = enabled && SupportsExperimentalGpuClockOffsets(model)
+                ? CreateGpuOverclockCapabilities()
+                : null,
         };
+
+    // Synapse sets isNvidiaOverclockUISupported for products 709 (RZ09-0530) and 711
+    // (RZ09-0529). Their pinned UI chunks (709 2915, 711 892) bound core -1000..400
+    // and memory -1000..3000 in 1 MHz steps, the same policy envelope as the
+    // validated backends. The write goes through the NVIDIA API, never HID, so the
+    // driver-reported range and exact GPU name remain independent per-write gates.
+    internal static bool SupportsExperimentalGpuClockOffsets(ExperimentalBladeModel model) =>
+        model.ProductId is 0x02C7 or 0x02C5;
+
+    internal static GpuOverclockCapabilities CreateGpuOverclockCapabilities() =>
+        new(new DeviceNumericRange(-1000, 400, 1),
+            new DeviceNumericRange(-1000, 3000, 1),
+            DeviceFeatureAccess.ReadWrite)
+        {
+            SupportsEnableDisable = true,
+        };
+
+    // OpenBlade guard, not a vendor list: exactly one NVIDIA laptop dGPU named
+    // "NVIDIA GeForce RTX <name> Laptop GPU" on the exactly admitted laptop. Synapse
+    // applies this envelope per product (isNvidiaOverclockUISupported) with no GPU-name
+    // check; its only GPU names (711 VBIOS update list: RTX 5070/5080/5090, substring
+    // match; main.1f8e0c604f19af3ea24c.js SHA-256 C8C0C794...BFF7E) corroborate the 0529
+    // configurations. Product 709 lists no GPU. The controller re-checks the name on every
+    // query and write.
+    internal static bool AdmitsNvidiaLaptopGpuForClockOffsets(ExperimentalBladeModel model) =>
+        SupportsExperimentalGpuClockOffsets(model);
 
     private static bool SupportsExperimentalCustom(ExperimentalBladeModel model) =>
         model.ThermalPolicy?.SupportsCustom ?? (model.ProductId is 0x029F or 0x029D or 0x02C5 or 0x0255 or 0x02A0);

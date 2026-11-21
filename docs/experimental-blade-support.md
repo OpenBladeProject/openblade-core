@@ -45,7 +45,7 @@ are listed in the [complete fan review](source-reviewed-thermal-967.md).
 
 | Laptop | Model number | Controls |
 | --- | --- | --- |
-| Blade 14 (2025) | `RZ09-0530` | Balanced, Silent, Maximum Power, battery modes, Custom levels, fixed fans and curves, keyboard and logo lighting, 50–100% charge limits, optional [THX audio](thx-audio.md) with a supported installed stack |
+| Blade 14 (2025) | `RZ09-0530` | Balanced, Silent, Maximum Power, battery modes, Custom levels, fixed fans and curves, GPU core and memory clock offsets, keyboard and logo lighting, 50–100% charge limits, optional [THX audio](thx-audio.md) with a supported installed stack |
 | Blade 16 (2023) | `RZ09-0483` | Performance and Custom levels with CPU Boost, HyperBoost with or without the cooling pad, fixed and maximum fans, host curves in Balanced/Silent/Performance/Custom on confirmed full-power AC, keyboard and logo lighting, 50–100% charge limits |
 | Blade 14 (2023) | `RZ09-0482` | Balanced, Silent, Custom levels, HyperBoost with or without the cooling pad, fixed fans, host curves in Balanced/Silent/Custom on confirmed full-power AC, keyboard and logo lighting, 50–100% charge limits |
 | Blade 18 (2023) | `RZ09-0484` | Performance and Custom levels, including every CPU Boost/GPU level combination and High/High, linked fixed fans in Balanced/Silent, fan curves in Balanced/Silent and Custom Maximum Fans, keyboard and logo lighting, 50–100% charge limits |
@@ -62,7 +62,7 @@ temperature holds 5000 RPM. Physical curve validation remains pending; see the
 
 | Laptop | Model number | Controls |
 | --- | --- | --- |
-| Blade 18 (2025) | `RZ09-0529` | Balanced, Silent, Turbo, Maximum Power, Battery Saver, Custom Low/Medium/High, Automatic, fixed fans and curves, charge limits 50–80% in 5% steps or protection off |
+| Blade 18 (2025) | `RZ09-0529` | Balanced, Silent, Turbo, Maximum Power, Battery Saver, Custom Low/Medium/High, Automatic, fixed fans and curves, GPU core and memory clock offsets, charge limits 50–80% in 5% steps or protection off |
 | Blade 14 (2024) | `RZ09-0508` | Balanced, Silent, Turbo, Custom Low/Medium/High with CPU Boost, Automatic, fixed fans and curves, Maximum Fans, charge limits 50–80% in 5% steps or protection off |
 | Blade 16 (2024) | `RZ09-0510` | Balanced, Silent, Turbo, Custom Low/Medium/High with CPU Boost, Automatic, fixed fans and curves, Maximum Fans, charge limits 50–80% in 5% steps or protection off |
 | Blade 18 (2024) | `RZ09-0509` | Balanced, Silent, Turbo, Custom Low/Medium/High, Automatic, fixed fans and curves, Maximum Fans, charge limits 50–80% in 5% steps or protection off |
@@ -74,6 +74,35 @@ All four offer Balanced on battery. The other listed presets require confirmed
 full-power AC, except Battery Saver on Blade 18 (2025), which is a battery mode.
 Fixed speeds and curves follow the [per-preset fan review](source-reviewed-thermal-967.md).
 See the [exact-model admission guide](source-reviewed-blade-models.md) for the other controls and evidence.
+
+### GPU clock offsets
+
+RZ09-0529 and RZ09-0530 offer the GPU core and memory clock offsets on confirmed
+external power, including limited adapters; the control is hidden and new offsets
+are refused on battery. Synapse enables its NVIDIA overclock panel for products
+711 and 709 with core -1000 to 400 MHz and memory -1000 to 3000 MHz in 1 MHz
+steps; the pinned Synapse files are listed in each model's diagnostics evidence.
+OpenBlade writes through the NVIDIA driver, never through the laptop firmware,
+and applies the intersection of that envelope and the range the driver reports.
+Synapse also hides the panel when the adapter is below its recommended wattage;
+OpenBlade keeps the same external-power rule it uses on RZ09-0581 and RZ09-0528,
+so the offsets stay available on a limited adapter. Switching to battery stops
+OpenBlade managing the offsets; it does not write them back to 0. After an
+interrupted GPU write, a power-source change first reads the offsets from the
+driver. If the driver cannot be read, OpenBlade writes no offsets and keeps
+managing them. The power change clears the unconfirmed-change notice, and
+OpenBlade reads the driver again when the GPU is next in use.
+
+Synapse applies the envelope per product, with no GPU-name check. OpenBlade adds
+its own guard: the laptop must have exactly one NVIDIA GPU, named
+`NVIDIA GeForce RTX <name> Laptop GPU`, which is rechecked on every query and
+write. Any other name, a desktop name or a second GPU leaves the control
+unavailable. This is not a vendor list. The product 711 VBIOS update list (RTX
+5070, 5080, 5090, matched by substring; `main.1f8e0c604f19af3ea24c.js`, SHA-256
+`C8C0C794D6D01867CD9C6020869808428B81CB98AE297E46EC700F3B935BFF7E`)
+corroborates the RZ09-0529 configurations; product 709 lists no GPU. RZ09-0581 and
+RZ09-0528 keep their exact RTX 5090 Laptop GPU pin.
+This support is source-reviewed; physical validation is pending.
 
 ### Additional 2021/2022 models
 
@@ -258,6 +287,12 @@ Failed checks keep controls paused.
 A thermal-only pause does not require unrelated charge-limit readings on models
 without temporary full charge. Pending battery operations still require their own
 confirmed readback.
+
+On RZ09-0529 and RZ09-0530, GPU clock offsets that were already applied stay in
+place while controls are paused, and new offsets, including a reset to 0, wait
+until controls resume. If the resume check cannot confirm the offsets of an
+interrupted change, OpenBlade sends them again with your next GPU or performance
+change.
 
 The [implementation reference](experimental-blade-reference.md) contains protocol
 limits, diagnostic fields, and upstream sources.
