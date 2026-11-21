@@ -74,16 +74,27 @@ subscription and decoding the profile list of each status. Only `Stored` and
 - Path matching uses the managed ordinal case-insensitive comparison. A reused
   PID is never taken for the old process.
 - A failure of any selected Agent role ends the Agent, as the managed
-  supervisor's `WhenAny` does. Like managed, the Agent then finishes draining,
-  releases its Origin and custody, reports its diagnostic and ends with a fail-fast
-  exception (also for a panic), so Windows Error Reporting sees a crash. An
-  admission denial, a lost singleton, an origin retired under the Agent and a
-  deliberate stop are ordinary exits, and a deliberate stop exits 0.
+  supervisor's `WhenAny` does. Like managed, the Agent then finishes draining the
+  other roles, releases its Origin and custody, reports its diagnostic and ends
+  with a fail-fast exception, so Windows Error Reporting sees a crash. A panic
+  takes the same path, except that the roles polled by the panicking future are
+  dropped rather than drained. These are ordinary exits that Windows does not
+  restart: an admission denial, an origin retired under the Agent, and any
+  failure that surfaces while draining after a deliberate stop, which is
+  reported. These exit 0 quietly, as in managed: a deliberate stop, and another
+  Agent that already owns the stop event or a feature pipe (the Tray also starts
+  the managed Agent).
 - The installed Agent registers for Windows Application Restart with flags 0, for
-  every role, and unregisters on a deliberate stop. Windows restarts an Agent
-  that crashed after running at least 60 seconds. Managed registers
+  every role, and unregisters on a deliberate stop. Windows is expected to
+  restart an Agent that crashed or hung after running at least 60 seconds, and
+  after an update or reboot, to which the 60 second rule does not apply. Whether
+  crash restarts need user consent, and whether Windows restarts after the
+  fail-fast, is expected behaviour pending attended validation. Managed registers
   `--application-restart`. Native Origin admission accepts no arguments, so it
   registers no command line (NULL) and the restarted Agent starts with none.
+  Like managed, a crash loop is bounded only by Windows' own restart budget.
+- The installed Agent is a GUI-subsystem executable, as the managed Agent is a
+  WinExe, so a sign-in task or a restart opens no console window.
 - Windows cannot give a restarted process the sign-in action's working directory,
   so the Agent no longer requires it. Origin has already proved the image,
   package, process and session, and nothing before that point uses a relative
@@ -156,7 +167,8 @@ None of the following has run:
 
 Attended validation of the restart, which needs separate authorization:
 
-- a crash of an Agent that ran at least 60 seconds restarts it, the restarted
+- a crash of an Agent that ran at least 60 seconds restarts it (also after the
+  fail-fast, and with or without user consent), the restarted
   Agent passes Origin admission with no arguments and a different working
   directory, and it serves again
 - a crash before 60 seconds does not restart it
