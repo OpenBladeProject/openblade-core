@@ -32,6 +32,8 @@ use crate::{
     session_native::service_client::{StatusUpdate, SubscriptionInitial},
 };
 
+mod vectors;
+
 const FRAMES: &[u8] = include_bytes!("../../../tests/fixtures/get-status-v85.frames");
 
 /// The managed v85 fixture status with the given members replaced (`None`
