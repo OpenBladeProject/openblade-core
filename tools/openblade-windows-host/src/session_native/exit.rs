@@ -1,11 +1,15 @@
-//! How the installed Agent ends, as managed does. A deliberate stop exits 0
-//! after it unregisters Windows Application Restart. A launch that is not
-//! admitted (origin, token, working directory, an owned stop endpoint) is an
-//! ordinary failure exit that Windows does not restart. A role fault or a
-//! panic, once the Agent served, finishes draining, releases Origin and custody
-//! in the normal order, reports its diagnostic and only then fails fast, so
-//! Windows Error Reporting sees a crash and, for an Agent that ran at least 60
-//! seconds, restarts it as the managed Agent is restarted. The fail-fast is a
+//! How the installed Agent ends, as managed does. A deliberate stop exits after it
+//! unregisters Windows Application Restart, and nothing that happens while the
+//! roles drain changes that: a drain error is reported but the exit stays
+//! ordinary. A launch that is not admitted (origin, token, working directory), an
+//! origin retired under the Agent and a drain after a deliberate stop are
+//! ordinary failure exits. A pipe or stop endpoint that another Agent already
+//! owns is a quiet exit 0, as in managed. A role fault after the Agent served
+//! finishes draining, releases Origin and custody in the normal order, reports
+//! its diagnostic and only then fails fast, so Windows Error Reporting sees a
+//! crash and, as expected pending attended validation, restarts it. A panic is
+//! caught after its unwind has released what the entry owned; the roles polled
+//! by the panicking future are dropped rather than drained. The fail-fast is a
 //! seam so a test can observe it without ending the test process.
 use std::{
     io,
@@ -21,6 +25,9 @@ pub(crate) enum Failure {
     Denied(io::Error),
     /// A selected role, the status watch or a supplier failed after admission.
     Fault(io::Error),
+    /// Another Agent already owns the stop event or a pipe. Managed returns 0
+    /// quietly, without a diagnostic.
+    Quiet,
 }
 
 pub(crate) enum Outcome {
@@ -47,6 +54,7 @@ pub(crate) fn conclude(
 ) -> ExitCode {
     match outcome {
         Outcome::Stopped => ExitCode::SUCCESS,
+        Outcome::Failed(Failure::Quiet) => ExitCode::SUCCESS,
         Outcome::Failed(Failure::Denied(error)) => {
             report(&error);
             ExitCode::FAILURE
@@ -64,15 +72,35 @@ pub(crate) fn conclude(
     }
 }
 
-/// Split a result that came from the running roles: an origin that was retired
-/// under the Agent (an update, for one) is an ordinary exit, anything else is a
-/// fault.
-pub(crate) fn classify_run(
-    result: io::Result<()>,
-    is_origin: impl Fn(&io::Error) -> bool,
-) -> Result<(), Failure> {
+/// The Agent's stop event is first-instance: another Agent already owns it.
+pub(crate) fn singleton(already_owned: bool) -> Result<(), Failure> {
+    if already_owned {
+        Err(Failure::Quiet)
+    } else {
+        Ok(())
+    }
+}
+
+/// Classify the result of the running roles. After a deliberate stop any
+/// failure is a drain error: it is reported, but the exit stays ordinary and is
+/// never raised as a crash. Otherwise another Agent owning a pipe is quiet, an
+/// origin retired under the Agent (an update, for one) is an ordinary exit, and
+/// anything else after admission is a fault.
+pub(crate) fn classify_run(result: io::Result<()>, deliberate: bool) -> Result<(), Failure> {
+    #[cfg(openblade_agent_endpoint)]
+    let (is_origin, is_conflict): (fn(&io::Error) -> bool, fn(&io::Error) -> bool) = (
+        super::diagnostics::is_origin,
+        super::diagnostics::is_claim_conflict,
+    );
+    #[cfg(not(openblade_agent_endpoint))]
+    let (is_origin, is_conflict): (fn(&io::Error) -> bool, fn(&io::Error) -> bool) =
+        (|_| false, |_| false);
     result.map_err(|error| {
-        if is_origin(&error) {
+        if deliberate {
+            Failure::Denied(error)
+        } else if is_conflict(&error) {
+            Failure::Quiet
+        } else if is_origin(&error) {
             Failure::Denied(error)
         } else {
             Failure::Fault(error)
@@ -175,16 +203,101 @@ mod tests {
     }
 
     #[test]
-    fn a_retired_origin_is_an_ordinary_exit_and_any_other_run_error_is_a_fault() {
-        let origin = |error: &io::Error| error.kind() == io::ErrorKind::NotFound;
-        assert!(classify_run(Ok(()), origin).is_ok());
+    fn another_agent_owning_the_stop_event_is_a_quiet_exit_and_the_first_is_not() {
+        assert!(singleton(false).is_ok());
+        let quiet = Outcome::Failed(singleton(true).unwrap_err());
+        let (code, log) = run(quiet);
+        assert_eq!(code, ExitCode::SUCCESS);
+        assert!(log.is_empty());
+    }
+
+    #[test]
+    fn a_clean_run_is_a_clean_exit() {
+        assert!(classify_run(Ok(()), false).is_ok());
+        assert!(classify_run(Ok(()), true).is_ok());
+    }
+
+    #[test]
+    fn a_failure_after_a_deliberate_stop_is_reported_but_never_a_crash() {
+        for error in [
+            io::Error::from(io::ErrorKind::TimedOut),
+            io::Error::from(io::ErrorKind::BrokenPipe),
+        ] {
+            let outcome = Outcome::Failed(classify_run(Err(error), true).unwrap_err());
+            let (code, log) = run(outcome);
+            assert_eq!(code, ExitCode::FAILURE);
+            assert_eq!(log, ["report"]);
+        }
+    }
+
+    #[test]
+    fn an_unclassified_failure_without_a_stop_is_a_fault() {
         assert!(matches!(
-            classify_run(Err(io::ErrorKind::NotFound.into()), origin),
-            Err(Failure::Denied(_))
-        ));
-        assert!(matches!(
-            classify_run(Err(io::ErrorKind::BrokenPipe.into()), origin),
+            classify_run(Err(io::ErrorKind::BrokenPipe.into()), false),
             Err(Failure::Fault(_))
         ));
+    }
+
+    #[cfg(openblade_agent_endpoint)]
+    mod through_the_roles {
+        use std::future::pending;
+
+        use super::*;
+        use crate::session_native::{
+            diagnostics,
+            feature_lifetime::{feature, run_all},
+        };
+
+        /// What `run_all` returns when this one role fails, with no stop.
+        async fn failing(error: io::Error) -> io::Result<()> {
+            run_all(
+                pending(),
+                pending(),
+                vec![feature(move |_stop| async move { Err(error) })],
+            )
+            .await
+        }
+
+        #[tokio::test]
+        async fn a_retired_origin_flowing_out_of_the_roles_is_an_ordinary_exit() {
+            let error = diagnostics::origin(io::Error::from_raw_os_error(5));
+            let result = failing(error).await;
+            assert!(matches!(
+                classify_run(result, false),
+                Err(Failure::Denied(_))
+            ));
+        }
+
+        #[tokio::test]
+        async fn a_pipe_claim_conflict_flowing_out_of_the_roles_is_quiet() {
+            for code in [5, 231] {
+                let result = failing(diagnostics::claim(io::Error::from_raw_os_error(code))).await;
+                assert!(matches!(classify_run(result, false), Err(Failure::Quiet)));
+            }
+            // Another claim failure is a listener fault, not a conflict.
+            let result = failing(diagnostics::claim(io::Error::from_raw_os_error(2))).await;
+            assert!(matches!(
+                classify_run(result, false),
+                Err(Failure::Fault(_))
+            ));
+        }
+
+        #[tokio::test]
+        async fn a_drain_error_after_a_deliberate_stop_flowing_out_of_run_all_is_reported() {
+            // The stop wins, then a role fails while it drains.
+            let result = run_all(
+                async { Ok(()) },
+                pending(),
+                vec![feature(|_stop| async {
+                    Err(io::Error::other("startup did not retire"))
+                })],
+            )
+            .await;
+            assert!(result.is_err());
+            assert!(matches!(
+                classify_run(result, true),
+                Err(Failure::Denied(_))
+            ));
+        }
     }
 }

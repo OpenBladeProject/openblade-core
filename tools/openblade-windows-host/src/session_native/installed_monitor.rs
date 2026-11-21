@@ -1,7 +1,7 @@
 //! Installed status/stop supervision with explicitly selected feature endpoints.
 #![allow(unsafe_code)]
 use super::{
-    exit::{Failure, Failure::Denied, classify_run},
+    exit::{Failure, Failure::Denied, classify_run, singleton},
     scm_peer::WindowsInstalledServiceAuthority,
     service_client,
 };
@@ -37,17 +37,16 @@ pub(super) fn run(
     }
     let existing = unsafe { GetLastError() } == ERROR_ALREADY_EXISTS;
     let stop = unsafe { OwnedHandle::from_raw_handle(raw) };
-    if existing {
-        return Err(Denied(io::Error::new(
-            io::ErrorKind::AlreadyExists,
-            "Agent stop endpoint is already owned",
-        )));
-    }
+    // Managed exits 0 quietly when another Agent owns its stop event.
+    singleton(existing)?;
     let authority = WindowsInstalledServiceAuthority::from_agent(origin.clone()).map_err(Denied)?;
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(Failure::Fault)?;
+    // Set by the stop event alone, so a failure that surfaces while the roles
+    // drain after it is reported but never raised as a crash.
+    let deliberate = std::cell::Cell::new(false);
     let result = runtime.block_on(async {
         // Display mutation admission retains only the confirmed power source
         // from verified, fresh status on the authenticated subscription. Stop,
@@ -68,7 +67,7 @@ pub(super) fn run(
                     match unsafe { WaitForSingleObject(stop.as_raw_handle(), 0) } {
                         WAIT_OBJECT_0 => {
                             // A deliberate stop must not be restarted.
-                            let _ = restart.try_unregister();
+                            restart.deliberate_stop(&deliberate);
                             return Ok::<(), io::Error>(());
                         }
                         WAIT_TIMEOUT => (),
@@ -171,13 +170,7 @@ pub(super) fn run(
             run_all(canceled, watch, features).await
         }
     });
-    // An origin retired under the running Agent (an update, for one) is an
-    // ordinary exit. Any other failure after admission is a fault.
-    #[cfg(openblade_agent_endpoint)]
-    let retired = super::diagnostics::is_origin;
-    #[cfg(not(openblade_agent_endpoint))]
-    let retired = |_: &io::Error| false;
-    classify_run(result, retired)
+    classify_run(result, deliberate.get())
 }
 
 /// Retires display power admission on every exit from the monitor runtime.

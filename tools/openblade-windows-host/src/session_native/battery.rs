@@ -67,7 +67,7 @@ pub(super) async fn run(
 ) -> io::Result<()> {
     super::verify_origin(&origin)?;
     let endpoint = Endpoint::current_user_battery().map_err(diagnostics::listener)?;
-    let _claim = endpoint.claim().map_err(diagnostics::listener)?;
+    let _claim = endpoint.claim().map_err(diagnostics::claim)?;
     let mut supplier = WindowsSupplier;
     run_connections(
         &mut stop,

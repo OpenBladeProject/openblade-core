@@ -75,7 +75,8 @@ async fn transport(
     stop: watch::Receiver<bool>,
     profiles: watch::Receiver<Profiles>,
 ) -> io::Result<()> {
-    let authority = WindowsInstalledServiceAuthority::from_agent(Arc::clone(&origin))?;
+    let authority = WindowsInstalledServiceAuthority::from_agent(Arc::clone(&origin))
+        .map_err(super::origin_error)?;
     let mut channel = ReportChannel::new(Some(&authority));
     serve(
         |instance, cancellation| {

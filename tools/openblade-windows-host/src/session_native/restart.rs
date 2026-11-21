@@ -1,9 +1,12 @@
 //! Windows Application Restart registration for the installed Agent, as the
 //! managed Session Agent does (`WindowsApplicationRestartRegistration`), with
-//! flags 0 so Windows restarts the Agent after a crash, hang, update or reboot
-//! once it has run for at least 60 seconds. A deliberate stop unregisters first
-//! so it is not restarted. Registration is best effort: a failure is not fatal
-//! and leaves the Agent unregistered.
+//! flags 0. Windows is expected to restart the Agent after a crash or hang that
+//! follows at least 60 seconds of running, and after an update or reboot, to
+//! which the 60 second rule does not apply. Whether crash restarts need user
+//! consent, and whether Windows restarts after `RaiseFailFastException`, is
+//! expected behaviour pending attended validation. A deliberate stop
+//! unregisters first so it is not restarted. Registration is best effort: a
+//! failure is not fatal and leaves the Agent unregistered.
 //!
 //! Managed registers `--application-restart`. Native Origin admission accepts
 //! no arguments at all, so the native Agent registers no command line: the
@@ -66,6 +69,13 @@ impl<A: Api> Registration<A> {
         }
         self.registered = self.api.register(None, FLAGS) >= 0;
         self.registered
+    }
+
+    /// The stop event fired: record that the stop is deliberate and unregister, so
+    /// that Windows does not restart the Agent that was asked to stop.
+    pub(super) fn deliberate_stop(&mut self, deliberate: &std::cell::Cell<bool>) {
+        deliberate.set(true);
+        let _ = self.try_unregister();
     }
 
     /// Only after a registration succeeded; a failure leaves it registered.
@@ -161,6 +171,17 @@ mod tests {
         assert_eq!(*api.unregistered.borrow(), 0);
         assert!(!registration.try_register());
         assert_eq!(api.calls.borrow().len(), 2);
+    }
+
+    #[test]
+    fn the_stop_event_marks_the_stop_deliberate_and_unregisters() {
+        let api = Recorder::default();
+        let mut registration = Registration::new(&api);
+        registration.try_register();
+        let deliberate = std::cell::Cell::new(false);
+        registration.deliberate_stop(&deliberate);
+        assert!(deliberate.get());
+        assert_eq!(*api.unregistered.borrow(), 1);
     }
 
     #[test]
