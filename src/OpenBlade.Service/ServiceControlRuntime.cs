@@ -18446,7 +18446,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             AdoptDisplayOffSuppressionForPowerSource();
             if (releasePowerOnlyWriteBlock)
             {
-                ReleasePowerOnlyWriteBlockForClassifiedSource();
+                ReleasePowerOnlyWriteBlockForClassifiedSource(powerSource);
             }
         }
         if (!changed || !suppressInitialKnownPowerSourceApplyAfterUnexpectedExit)

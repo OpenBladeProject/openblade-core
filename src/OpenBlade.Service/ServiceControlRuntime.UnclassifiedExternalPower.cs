@@ -224,7 +224,9 @@ public sealed partial class ServiceControlRuntime
     // exact-device, read, power, session, controller and ownership admission
     // before any write. The caller decides eligibility before it invalidates
     // pending confirmations, so a block they held is never released here.
-    private void ReleasePowerOnlyWriteBlockForClassifiedSource()
+    // The same snapshot carries the classified source, so no reader sees the
+    // stale unclassified presentation with writes allowed.
+    private void ReleasePowerOnlyWriteBlockForClassifiedSource(PowerSource classifiedSource)
     {
         ServiceStatusSnapshot current = GetStatus();
         if (!HoldsOnlyPowerWriteBlock(current))
@@ -233,6 +235,7 @@ public sealed partial class ServiceControlRuntime
         }
         PublishIfChanged(current with
         {
+            ActivePowerSource = classifiedSource,
             WritesBlocked = false,
             ObservationReason = current.ObservationReason == DeviceObservationReason.RetainedPowerSource
                 ? DeviceObservationReason.None
