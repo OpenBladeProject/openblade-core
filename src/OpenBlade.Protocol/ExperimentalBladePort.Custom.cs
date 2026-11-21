@@ -70,6 +70,20 @@ internal sealed partial class ExperimentalBladePort
         return result;
     }
 
+    // Raw 6 (DC Balanced) can remain after a battery HyperBoost exit until a typed
+    // AC set. Synapse enters Custom from any mode with the same per-fan mode-4
+    // writes and, off battery, then sets the CPU/GPU levels; it neither reads nor
+    // leaves the current mode first (product 671 mw-6737 bytes 1,398,696 and
+    // 1,398,993; 669 bytes 1,558,801 and 1,559,098; 695 bytes 1,893,039 and
+    // 1,893,371). The earlier AC-preset list had no firmware reason to exclude
+    // raw 6. Admit it only off battery and only on these three mode-7 models;
+    // every other Custom precondition (fan baseline, Maximum Fans flags, stored
+    // levels, readback) still applies.
+    private bool AdmitsCustomFromDcBalanced(PerformancePreset? baseline) =>
+        baseline == PerformancePreset.BatteryBalanced
+        && model.ProductId is 0x029F or 0x029D or 0x02B7
+        && ExternalPowerPresent();
+
     public async Task SetCustomPerformanceAsync(CustomPerformanceSettings value, CancellationToken cancellationToken)
     {
         if (!SupportsExperimentalCustom(model) || !CustomPerformanceSettings.IsWellFormed(value)
@@ -95,7 +109,8 @@ internal sealed partial class ExperimentalBladePort
                 || baseline.Performance is not (PerformancePreset.Balanced or PerformancePreset.Silent
                     or PerformancePreset.Performance or PerformancePreset.Custom
                     or PerformancePreset.Turbo or PerformancePreset.MaximumPower
-                    or PerformancePreset.Gaming or PerformancePreset.Creator))
+                    or PerformancePreset.Gaming or PerformancePreset.Creator)
+                    && !AdmitsCustomFromDcBalanced(baseline.Performance))
             {
                 throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
                     GetExperimentalFanRangesByPerformancePreset(model).Count > 0 && baseline.Fans != FanMode.Automatic

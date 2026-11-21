@@ -331,6 +331,70 @@ public sealed partial class ExperimentalThermalExpansionTests
         Assert.True((await port.QueryPerformanceFanStateAsync(CancellationToken.None)).HyperBoostActive);
     }
 
+    // Synapse enters Custom directly from the current mode (671 mw-6737 bytes
+    // 1,398,696/1,398,993; 669 bytes 1,558,801/1,559,098; 695 bytes
+    // 1,893,039/1,893,371), so a plugged-in Custom profile leaves raw 6 itself.
+    [Theory]
+    [InlineData(0x029F, 0, "RZ09-0483TEH3")]
+    [InlineData(0x029D, 0, "RZ09-0483TEH3")]
+    [InlineData(0x02B7, 1, "RZ09-0510TEH3")]
+    public async Task ModeSeven_CustomPluggedInProfileLeavesRawSixAfterBatteryExit(int pid, byte acMode, string sku)
+    {
+        PowerSource source = PowerSource.PluggedIn;
+        CustomPerformanceCombination combination = ExperimentalBladePort.CreateCapabilities(Model(pid), true)
+            .CustomPerformance!.AllowedCombinations.OrderBy(item => item.Cpu).ThenBy(item => item.Gpu).First();
+        var custom = new CustomPerformanceSettings(combination.Cpu, combination.Gpu);
+        var session = new Session { Mode = acMode, HyperBoostFirmware = [1, 5, 0, 0] };
+        var policy = new ExperimentalFeaturesPolicy(Model(pid));
+        await using var port = HyperBoostPort(session, new Pad { State = CoolingPadConnectionState.Absent }, policy,
+            power: () => source, pid: pid, sku: sku);
+        await port.SetCustomPerformanceAsync(custom, CancellationToken.None);
+        await port.SetHyperBoostAsync(true, PerformancePreset.Custom, false, CancellationToken.None);
+        Assert.Equal(7, session.Mode);
+
+        source = PowerSource.Battery;
+        session.AdapterPowerPayload = [0, 17];
+        await port.SetHyperBoostAsync(false, PerformancePreset.Custom, false, CancellationToken.None);
+        Assert.Equal(6, session.Mode);
+        // On battery Custom stays refused from raw 6, as before.
+        await Assert.ThrowsAsync<BladeWriteException>(
+            () => port.SetCustomPerformanceAsync(custom, CancellationToken.None));
+        Assert.Equal(6, session.Mode);
+
+        source = PowerSource.PluggedIn;
+        session.AdapterPowerPayload = [17, 17];
+        Assert.Equal(PerformancePreset.BatteryBalanced,
+            (await port.QueryPerformanceFanStateAsync(CancellationToken.None)).Performance);
+        int before = session.Writes.Count();
+        await port.SetCustomPerformanceAsync(custom, CancellationToken.None);
+        Assert.Equal(new byte[][] { [1, 1, 4, 0], [1, 2, 4, 0] },
+            session.Writes.Skip(before).Where(command => command.ClassId == 0x0D && command.CommandId == 0x02)
+                .Select(command => command.Arguments.ToArray()).ToArray());
+        ProductionPerformanceFanState applied = await port.QueryPerformanceFanStateAsync(CancellationToken.None);
+        Assert.Equal(PerformancePreset.Custom, applied.Performance);
+        Assert.Equal(custom with { MaximumFans = false }, applied.CustomPerformance! with { MaximumFans = false });
+        Assert.True(policy.WritesAllowed);
+
+        // HyperBoost re-entry from the applied Custom profile is a direct entry.
+        await port.SetHyperBoostAsync(true, PerformancePreset.Custom, false, CancellationToken.None);
+        Assert.Equal(7, session.Mode);
+    }
+
+    // The DC Balanced Custom baseline is admitted only on the three mode-7 models.
+    [Fact]
+    public async Task OtherDcBalancedModel_CustomFromRawSixStaysRefusedOnAc()
+    {
+        var session = new Session { Mode = 6 };
+        await using var port = Create(0x02C5, session, power: () => PowerSource.PluggedIn);
+        Assert.Equal(PerformancePreset.BatteryBalanced,
+            (await port.QueryPerformanceFanStateAsync(CancellationToken.None)).Performance);
+        CustomPerformanceCombination combination = ExperimentalBladePort.CreateCapabilities(Model(0x02C5), true)
+            .CustomPerformance!.AllowedCombinations.First();
+        await Assert.ThrowsAsync<BladeWriteException>(() => port.SetCustomPerformanceAsync(
+            new(combination.Cpu, combination.Gpu), CancellationToken.None));
+        Assert.Empty(session.Writes);
+    }
+
     [Theory]
     [InlineData(0x029F, false)]
     [InlineData(0x029F, true)]
