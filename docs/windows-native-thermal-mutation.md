@@ -571,8 +571,10 @@ chosen (`:400-415`). The wiring slice composes the full term from the profile
 layer. It layers performance, fans, fan control, lighting and battery over each
 member's `Setting::source`. It takes Custom settings and GPU tuning from the raw
 `Resolution::profile`, not from `DesiredIntent`, layers the overrides over them
-and then reapplies the move with `gpu_clock_settings`. It puts fan control into
-an override's mode with `with_mode`.
+and then reapplies the move with `gpu_clock_settings`. When neither an override
+nor the profile carries Custom levels, the confirmed levels and then managed's
+default follow, as `DesiredIntent::custom_performance` does (`:391-398`). It puts
+fan control into an override's mode with `with_mode`.
 
 The replay's `application_runtime::Lease` uses the same selection rules, and
 `Lease::rule` also requires the pair to be retained by the current rules, so a

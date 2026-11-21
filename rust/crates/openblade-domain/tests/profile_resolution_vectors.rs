@@ -351,7 +351,7 @@ fn every_managed_case_selects_retains_and_resolves_alike() {
     // differences, steps on unknown external power, saves that change the
     // intent, power steps that repeat their source, steps without manual fans
     // on limited power.
-    assert_eq!(counts, [135, 1, 33, 16, 3, 7]);
+    assert_eq!(counts, [138, 1, 33, 16, 3, 10]);
 }
 
 #[test]
