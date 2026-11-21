@@ -194,6 +194,47 @@ async fn a_fan_recipe_adds_its_fixed_spacing_before_the_first_setter() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn each_operation_measures_its_own_pace_and_a_refusal_leaves_the_reader_open() {
+    // A 07/8C read held 1300 ms refuses the first operation after its Prepared
+    // row. That refusal submitted nothing, so it does not seal the Reader as an
+    // abandoned transfer would, and `Pace::start` discards its slow interval:
+    // the next operation on the same Reader runs at its own pace.
+    for fan in [None, FanIntent::checked(1, 3700)] {
+        let operation = || Paced {
+            destination: fan.is_none().then_some(Destination::Preset(Preset::Silent)),
+            fan,
+            ..Paced::default()
+        };
+        let fixture = balanced();
+        fixture.state.lock().unwrap().power_latency = Some(Duration::from_millis(1300));
+        let cancelled = AtomicBool::new(false);
+        let limit = || Limit {
+            deadline: Instant::now() + Duration::from_secs(6),
+            cancelled: &cancelled,
+        };
+        let mut reader = Reader::new(fixture.port(), ADMITTED);
+        let refused = operation();
+        assert_eq!(reader.apply_preset(&refused, limit()).await, None);
+        assert_eq!(
+            *refused.refusals.lock().unwrap(),
+            [Refusal::Deadline],
+            "{fan:?}"
+        );
+        assert!(!reader.poisoned, "{fan:?}");
+        assert_eq!(fixture.state.lock().unwrap().writes, 0);
+        fixture.state.lock().unwrap().power_latency = None;
+        let next = operation();
+        assert!(
+            reader.apply_preset(&next, limit()).await.is_some(),
+            "{fan:?}"
+        );
+        assert!(next.refusals.lock().unwrap().is_empty(), "{fan:?}");
+        assert!(fixture.state.lock().unwrap().writes > 0, "{fan:?}");
+        reader.retire(None).await.unwrap();
+    }
+}
+
+#[tokio::test(start_paused = true)]
 async fn one_slow_power_read_paces_the_whole_recipe() {
     // The observation pair takes 2 × 230 ms and a 07/8C read held 1300 ms
     // longer takes 1530 ms: 1990 ms, a mean of 663 ms. Silent's six remaining
