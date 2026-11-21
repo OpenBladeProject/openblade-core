@@ -4757,6 +4757,27 @@ async fn fan_recipes_run_within_the_recipe_budget_and_refuse_one_they_cannot_fin
         let _ = r.source.lock().await.drain().await;
     }
 }
+#[cfg(feature = "service-temporary-charge-v1")]
+#[tokio::test]
+async fn temporary_charge_runs_within_its_request_budget_at_slow_transfers() {
+    // The worker bounds a temporary-charge job by its 6 s request deadline, as
+    // it does every battery job. At 250 and 400 ms a transfer the exchange runs
+    // past the 3 s observation bound, and that bound alone stopped it after the
+    // flags setter, with the journal still pending.
+    for ms in [250, 400] {
+        let r = Rig::new(MemoryFiles::default());
+        r.get().await;
+        r.port.state.lock().unwrap().latency = Some(std::time::Duration::from_millis(ms));
+        let out = r
+            .request(battery_request(702, "setFullChargeOverride", json!(true)))
+            .await;
+        r.port.state.lock().unwrap().latency = None;
+        assert_eq!(out["result"]["status"], 1, "{ms} ms: {out}");
+        assert_eq!(r.port.state.lock().unwrap().writes, 1, "{ms} ms");
+        assert!(!r.storage.pending(), "{ms} ms");
+        let _ = r.source.lock().await.drain().await;
+    }
+}
 #[cfg(feature = "service-fan-mutation-v2")]
 #[tokio::test]
 async fn fan_handback_applies_the_deferred_preset_on_full_and_limited_adapters() {

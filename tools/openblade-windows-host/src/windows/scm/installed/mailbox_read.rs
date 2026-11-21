@@ -1401,16 +1401,14 @@ impl ReadSource {
         let worker = (factory.write)(permit.clone());
         *self.mutation.borrow_mut() = Some((worker.clone(), permit.clone()));
         self.phase.set(MutationPhase::Active);
-        // Battery, performance and fan recipes run for the recipe budget their
-        // request deadline carries (`readiness::mutation_budget`).
-        // Temporary charge keeps the observation bound.
-        let result = if permit.temporary_target().is_none() {
-            worker
-                .observe_with_budget(deadline, None, super::RECIPE_BUDGET)
-                .await
-        } else {
-            worker.observe(deadline, None).await
-        };
+        // Every job here, temporary charge included, runs under the recipe
+        // budget, so its own deadline is the bound: 6 s for battery, temporary
+        // charge, performance and fan requests (`readiness::mutation_budget`)
+        // and 4 s for the automatic temporary-charge release. Owned-Stop
+        // cleanup runs through `mutate_cleanup` with its own deadline.
+        let result = worker
+            .observe_with_budget(deadline, None, super::RECIPE_BUDGET)
+            .await;
         if let Err(error) = &result {
             permit.failed(error);
         }
