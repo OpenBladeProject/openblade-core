@@ -23,7 +23,12 @@ public sealed partial class MainWindow
             ConfirmedBrightnessPercent = variant == "connected" ? null : 70,
             Requested = CoolingPadSettings.Default with
             {
-                FanMode = variant == "curves" ? CoolingPadFanMode.HostCurve : CoolingPadFanMode.Fixed,
+                FanMode = variant switch
+                {
+                    "curves" => CoolingPadFanMode.HostCurve,
+                    "auto" => CoolingPadFanMode.Auto,
+                    _ => CoolingPadFanMode.Fixed,
+                },
                 LightingMode = variant is "wave" or "narrow" or "wide" ? CoolingPadLightingMode.Wave : CoolingPadLightingMode.Breathing,
                 BrightnessPercent = 70,
                 AllowDemandApi = variant == "demand",
@@ -67,10 +72,6 @@ public sealed partial class MainWindow
         {
             ViewModel.CoolingPad.SetServiceAvailable(false);
         }
-        if (variant == "curves")
-        {
-            CoolingPadCurves.IsExpanded = true;
-        }
         if (variant == "hover")
         {
             // Render the existing shared pointer fill without moving the user's pointer.
@@ -87,6 +88,7 @@ public sealed partial class MainWindow
             throw new InvalidOperationException("The cooling-pad app-demand opt-in must match its explicit settings draft.");
         }
         if (!ReferenceEquals(CoolingPadFanSelector.SelectedItem, ViewModel.CoolingPad.FanMode)
+            || !ReferenceEquals(CoolingPadAutoProfile.SelectedItem, ViewModel.CoolingPad.AutoProfile)
             || !ReferenceEquals(CoolingPadLightingSelector.SelectedItem, ViewModel.CoolingPad.LightingMode)
             || !ReferenceEquals(CoolingPadTemperatureSource.SelectedItem, ViewModel.CoolingPad.TemperatureSource)
             || !ReferenceEquals(CoolingPadWaveDirection.SelectedItem, ViewModel.CoolingPad.WaveDirection))

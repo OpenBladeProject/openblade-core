@@ -196,7 +196,8 @@ public sealed partial class ServiceControlRuntimeTests
         internal int RestoreCalls;
         internal int FanWrites;
         public Task<CoolingPadDeviceSnapshot> ReadSnapshotAsync(CancellationToken token) => Task.FromResult(snapshot);
-        public Task SetFanAsync(CoolingPadFanMode mode, int? rpm, Func<bool> allowed, CancellationToken token)
+        public Task SetFanAsync(CoolingPadFanMode mode, int? rpm, Func<bool> allowed, CancellationToken token,
+            CoolingPadFanPreset? smartPreset = null)
         {
             if (!allowed()) { throw new CoolingPadOperationException("Admission closed.", false); }
             FanWrites++;
