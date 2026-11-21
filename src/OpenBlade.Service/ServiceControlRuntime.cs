@@ -4714,6 +4714,20 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                         pendingLightingRestoreFromLifecycle = false;
                         experimentalLightingResumeAwaitingRequest = true;
                     }
+                    // Move the drift baseline to the recovery observation before
+                    // judging pending writes, as ordinary observation does, so the
+                    // first later observation does not report a write that resume
+                    // just confirmed as an external change. A difference without a
+                    // pending write still latches here.
+                    bool lightingExternalBeforeRecovery =
+                        driftTracker.ExternalChanges.Contains(DeviceSubsystem.Lighting);
+                    driftTracker.Observe(observed);
+                    if (!lightingExternalBeforeRecovery
+                        && driftTracker.ExternalChanges.Contains(DeviceSubsystem.Lighting)
+                        && IsUnattributedLightingOff(observed))
+                    {
+                        driftTracker.ConfirmIntentional(DeviceSubsystem.Lighting, matched: true);
+                    }
                     ReconcilePendingWriteConfirmations(observed, source, device);
                     // The user may submit a new request; do not continue the paused transition.
                     pendingTransitionContinuation = null;
@@ -16510,8 +16524,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                                 ? null
                                 : (attemptDevice, confirmed) =>
                                     IsCurrentTransitionContinuation(continuation, confirmed)
-                                    && TransitionDependenciesMatch(continuation, confirmed, attemptDevice)
-                                        ? continuation.Subsystems
+                                        ? TransitionContinuationScope(continuation, confirmed, attemptDevice)
                                         : new HashSet<DeviceSubsystem>()),
                     (_, cancellationToken) => RevalidateScopedThermalRetryAsync(
                         powerSource,
@@ -17395,9 +17408,37 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
     private static PendingConfirmationResult TransitionDependencyResult(
         PendingTransitionContinuation pending,
         ConfirmedDeviceState confirmed,
+        IBladeDevice device) =>
+        TransitionDependencies(pending, confirmed, device).Result;
+
+    // Remaining continuation work on this observation: the deferred steps plus any
+    // dependency whose firmware fields matched while its GPU offsets are
+    // unconfirmed. That step goes back into scope, so the continuation's fresh
+    // pre-write read sends the offsets through the GPU-only setter before the
+    // deferred steps. No firmware setter is replayed: the matched preset leaves
+    // only the GPU-only path.
+    private static IReadOnlySet<DeviceSubsystem> TransitionContinuationScope(
+        PendingTransitionContinuation pending,
+        ConfirmedDeviceState confirmed,
+        IBladeDevice device)
+    {
+        (PendingConfirmationResult result, IReadOnlySet<DeviceSubsystem> unconfirmed) =
+            TransitionDependencies(pending, confirmed, device);
+        return result != PendingConfirmationResult.Match
+            ? new HashSet<DeviceSubsystem>()
+            : unconfirmed.Count == 0
+                ? pending.Subsystems
+                : pending.Subsystems.Union(unconfirmed).ToHashSet();
+    }
+
+    private static (PendingConfirmationResult Result, IReadOnlySet<DeviceSubsystem> GpuUnconfirmed)
+        TransitionDependencies(
+        PendingTransitionContinuation pending,
+        ConfirmedDeviceState confirmed,
         IBladeDevice device)
     {
         bool unavailable = false;
+        var gpuUnconfirmed = new HashSet<DeviceSubsystem>();
         foreach (DeviceSubsystem subsystem in pending.Dependencies)
         {
             PendingConfirmationResult result = MatchWriteConfirmation(
@@ -17410,13 +17451,16 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 device);
             if (result == PendingConfirmationResult.Mismatch)
             {
-                return result;
+                return (result, gpuUnconfirmed);
             }
-            // Unconfirmed GPU offsets never let a deferred transition continue.
-            unavailable |= result is PendingConfirmationResult.Unavailable
-                or PendingConfirmationResult.GpuClockOffsetsUnconfirmed;
+            if (result == PendingConfirmationResult.GpuClockOffsetsUnconfirmed)
+            {
+                gpuUnconfirmed.Add(subsystem);
+            }
+            unavailable |= result == PendingConfirmationResult.Unavailable;
         }
-        return unavailable ? PendingConfirmationResult.Unavailable : PendingConfirmationResult.Match;
+        return (unavailable ? PendingConfirmationResult.Unavailable : PendingConfirmationResult.Match,
+            gpuUnconfirmed);
     }
 
     private async Task ContinueDeferredTransitionAsync(
@@ -18462,8 +18506,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 continue;
             }
 
-            if (result is PendingConfirmationResult.Mismatch
-                    or PendingConfirmationResult.GpuClockOffsetsUnconfirmed
+            if (result == PendingConfirmationResult.Mismatch
                 && pendingTransitionContinuation?.Dependencies.Contains(subsystem) == true)
             {
                 pendingTransitionContinuation = null;
@@ -18472,12 +18515,15 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             if (result == PendingConfirmationResult.GpuClockOffsetsUnconfirmed)
             {
                 // The device holds no managed offset observation for the GPU half
-                // (it never completed, its confirmation was lost, or the dGPU cannot
-                // be read now). Retire that half instead of blocking every thermal
-                // write until a power change. The firmware fields matched, so a
-                // paired write clears its own drift latch; a GPU-only write leaves
-                // drift untouched. Desired offsets now differ from the unconfirmed
-                // observation, so the next apply writes them again.
+                // (NVML never ran, its confirmation was lost, or the dGPU cannot be
+                // read now) and no uncertain NVML submission. Retire that half instead
+                // of blocking every thermal write until a power change. The firmware
+                // fields matched, so a paired write clears its own drift latch; a
+                // GPU-only write leaves drift untouched. Desired offsets now differ
+                // from the unconfirmed observation, so the next apply writes them
+                // again. A deferred transition keeps its remaining steps and puts
+                // this one back in scope (TransitionContinuationScope), so it sends
+                // the offsets before them.
                 if (!pending.GpuClockTuningOnly)
                 {
                     driftTracker.ConfirmIntentional(subsystem, matched: true);

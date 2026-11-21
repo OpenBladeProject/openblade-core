@@ -15,7 +15,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
-- On laptops with GPU clock offsets, an interrupted performance or GPU change whose offsets cannot be read back no longer keeps fan and performance controls blocked, or keeps experimental controls paused after **Resume laptop controls**. OpenBlade sends the offsets again with the next change, and an interrupted GPU write is no longer reported as leaving the previous offsets in place. ([#991](https://github.com/OpenBladeProject/openblade-core/pull/991))
+- On laptops with GPU clock offsets, an interrupted performance or GPU change whose offsets cannot be read back no longer keeps fan and performance controls blocked, or keeps experimental controls paused after **Resume laptop controls**. OpenBlade sends the offsets again with the next change. An interrupted GPU write is checked against the offsets the NVIDIA driver reports instead of being reported as leaving the previous offsets in place, a power-source change still applies its remaining fan, lighting and battery settings, and a change confirmed by **Resume laptop controls** is no longer reported as an outside change. ([#991](https://github.com/OpenBladeProject/openblade-core/pull/991))
 
 ## [0.65.1-nightly.117] - 2026-11-20
 
