@@ -959,6 +959,12 @@ impl Permit for RequestPermit {
                 self.set_cause(Cause::Rejected(message));
                 return Ok(None);
             }
+            // The profile layer is resolved before the override is stored, as
+            // the fan path does: a saved document the domain decoder refuses
+            // stores nothing and the request is not accepted. Saving the
+            // override changes no profile, so the resolution stays current.
+            let layer = self.storage.profile_layer(&self.application)?;
+            let profile = layer.at(power)?;
             self.storage
                 .save(self.value.clone(), power)
                 .inspect_err(|e| self.set_cause(Cause::Storage(e.to_string())))?;
@@ -970,8 +976,7 @@ impl Permit for RequestPermit {
                 self.set_cause(Cause::AwaitingClassification);
                 return Ok(None);
             }
-            let layer = self.storage.profile_layer(&self.application)?;
-            let selection = select(&self.storage, power, layer.at(power)?.as_ref(), baseline)?;
+            let selection = select(&self.storage, power, profile.as_ref(), baseline)?;
             *self
                 .selected_source
                 .lock()
