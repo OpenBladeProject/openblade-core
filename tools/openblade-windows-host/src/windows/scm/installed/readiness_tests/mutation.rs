@@ -1518,6 +1518,46 @@ fn policy_inputs_change_with_every_input_saved_policy_reads() {
     files.put(crate::configuration::RECOVERY_REQUIRED, json!({}));
     changed(&mut seen);
 }
+#[test]
+fn policy_inputs_change_with_a_temporary_alone() {
+    // Temporaries live only in this storage's memory, so no file byte moves
+    // when one is replaced, added or expires; the digest still must.
+    let files = MemoryFiles::default();
+    files.profiles(1);
+    let storage = Storage::open(Box::new(files.clone()), SID).unwrap();
+    storage
+        .save(Some(serde_json::from_value(value(2, 0)).unwrap()), 0)
+        .unwrap();
+    let bytes = || files.read("manual-overrides.json").unwrap();
+    let before = bytes();
+    let mut seen = vec![storage.policy_inputs().unwrap()];
+    let changed = |seen: &mut Vec<[u8; 32]>| {
+        assert_eq!(bytes(), before, "only a temporary may change");
+        let next = storage.policy_inputs().unwrap();
+        assert!(!seen.contains(&next));
+        seen.push(next);
+    };
+    // Another temporary performance value.
+    storage
+        .save(Some(serde_json::from_value(value(1, 0)).unwrap()), 0)
+        .unwrap();
+    changed(&mut seen);
+    // A temporary fan override.
+    storage
+        .save_fan(
+            Some(crate::service_status::FanOverride {
+                value: 1,
+                lifetime: 0,
+            }),
+            Some(crate::installed::readiness::thermal_storage::legacy_fan(1)),
+            0,
+        )
+        .unwrap();
+    changed(&mut seen);
+    // Both expire on another class.
+    storage.observe_power(2, 1).unwrap();
+    changed(&mut seen);
+}
 async fn fresh_observe(rig: &Rig) -> Value {
     assert_eq!(rig.get().await["success"], true); // Same metadata readiness probe as installed prepare.
     rig.request(json!({"operation":"observeState","version":85,"requestId":"eeeeeeee-bbbb-cccc-dddd-000000000001","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0})).await
