@@ -1432,14 +1432,14 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
                 "Service",
                 "Reconcile",
                 "Stored",
-                $"Attempting to exit OpenBlade-owned HyperBoost and restore its entry-time profile {boundary}.",
+                $"Attempting to exit OpenBlade-owned HyperBoost {boundary}.",
                 transitionId),
             new(
                 timestamp.AddMilliseconds(2),
                 "Service",
                 "Reconcile",
                 "Applied",
-                $"OpenBlade-owned HyperBoost exited and its entry-time profile was restored {boundary}.",
+                $"OpenBlade-owned HyperBoost exited {boundary} and its entry-time profile was restored.",
                 transitionId),
         ];
 

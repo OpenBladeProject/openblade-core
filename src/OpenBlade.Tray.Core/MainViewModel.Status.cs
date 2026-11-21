@@ -134,6 +134,7 @@ public sealed partial class MainViewModel
             && left.HyperBoostWithoutCoolingPadAccess
                 == right.HyperBoostWithoutCoolingPadAccess
             && left.HyperBoostBaseModes == right.HyperBoostBaseModes
+            && left.HyperBoostEntryRestriction == right.HyperBoostEntryRestriction
             && left.SpecialKeyBindingsAccess == right.SpecialKeyBindingsAccess
             && left.WritableSpecialKeySlots == right.WritableSpecialKeySlots
             && left.LampArrayLightingAccess == right.LampArrayLightingAccess

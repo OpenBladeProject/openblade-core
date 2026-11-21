@@ -19,7 +19,7 @@ source-reviewed models and their different feature sets.
 | --- | --- | --- | --- | --- |
 | Blade 18 (2025), RZ09-0529 | `Blade 18 - RZ09-0529` | `1532:02C7` | 711 | Balanced, Silent, Turbo, Maximum Power, Battery Saver, Custom Low/Medium/High, Automatic fans, bounded charge limits; no Maximum Fans |
 | Blade 14 (2024), RZ09-0508 | `Blade 14 - RZ09-0508` | `1532:02B6` | 694 | Balanced, Silent, Turbo, Custom Low/Medium/High with CPU Boost, Automatic fans, Maximum Fans, bounded charge limits |
-| Blade 16 (2024), RZ09-0510 | `Blade 16 - RZ09-0510` | `1532:02B7` | 695 | Balanced, Silent, Turbo, Custom Low/Medium/High with CPU Boost, Automatic fans, Maximum Fans, bounded charge limits |
+| Blade 16 (2024), RZ09-0510 | `Blade 16 - RZ09-0510` | `1532:02B7` | 695 | Balanced, Silent, Turbo, Custom Low/Medium/High with CPU Boost, Automatic fans, Maximum Fans, [HyperBoost](experimental-hyperboost-evidence.md#blade-16-2024-exact-synapse-definitions), bounded charge limits |
 | Blade 18 (2024), RZ09-0509 | `Blade 18 - RZ09-0509` | `1532:02B8` | 696 | Balanced, Silent, Turbo, Custom Low/Medium/High, Automatic fans, Maximum Fans, bounded charge limits |
 
 All four offer battery Balanced. Other listed presets require confirmed full-power

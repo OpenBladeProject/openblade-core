@@ -282,6 +282,7 @@ public sealed partial class SourceReviewedBladeModelTests
         var expected = new HashSet<LightingEffect> { LightingEffect.Off, LightingEffect.Breathing, LightingEffect.Wave };
         if (product is 0x0245 or 0x028A or 0x028B or 0x028C) { expected.Add(LightingEffect.Spectrum); }
         if (product is 0x0245 or 0x028B or 0x028C or 0x02B8 or 0x02C7) { expected.Add(LightingEffect.Static); }
+        if (product is 0x0245 or 0x028A or 0x028B or 0x028C) { expected.UnionWith(ReviewedMcuFrameEffects); }
         if (product == 0x02C7)
         {
             Assert.All(expected, effect => Assert.Contains(effect, capabilities.LightingEffects));
@@ -293,7 +294,7 @@ public sealed partial class SourceReviewedBladeModelTests
         Assert.True(capabilities.SupportsKeyboardBrightness);
         Assert.True(capabilities.SupportsIndependentLightingControls);
         Assert.Equal(product == 0x028A ? 0 : 3, capabilities.LogoLightingModes.Count);
-        Assert.Equal(product == 0x02C7, capabilities.SupportsUniformLightingFrames);
+        Assert.Equal(product is not (0x02B7 or 0x02B8), capabilities.SupportsUniformLightingFrames);
         Assert.True(capabilities.SupportsWaveDirectionSelection);
         Assert.Equal(Enum.GetValues<BreathingColorMode>().Order(), capabilities.SupportedBreathingColorModes!.Order());
         Assert.False(capabilities.SupportsBreathingColorSelection); // Legacy flag; typed modes above are authoritative.

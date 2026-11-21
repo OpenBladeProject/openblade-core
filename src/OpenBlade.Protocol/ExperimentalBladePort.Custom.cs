@@ -18,7 +18,12 @@ internal sealed partial class ExperimentalBladePort
                      || (cpu, gpu) is not (CustomPerformanceLevel.High, CustomPerformanceLevel.High)))
          select combination).ToHashSet())
     {
-        SupportsMaximumFans = model.ThermalPolicy?.SupportsMaximumFans ?? (model.ProductId is 0x029F or 0x02A0),
+        // 029D: pinned product-669 main.8e09720cb94da405eead.js enables
+        // hasMaxFanSpeedModeEnabled (byte 162554); its 6737.439ff1a12463933a6346.js
+        // setter writes Power Mode Control bit 2 like 029F, and its
+        // rzDevice25.1094c437ecd0242743f8.js binds that to 07/8F/07/0F (byte 57848). See
+        // evidence/source-reviewed-blades/2026-11-19-rz09-0482-maximum-fans.json.
+        SupportsMaximumFans = model.ThermalPolicy?.SupportsMaximumFans ?? (model.ProductId is 0x029F or 0x029D or 0x02A0),
     };
 
     // 029F High/High and CPU Boost are explicit Synapse captures in tdakhran
@@ -65,6 +70,22 @@ internal sealed partial class ExperimentalBladePort
         return result;
     }
 
+    // Raw 6 (DC Balanced) can remain after a battery HyperBoost exit until a typed
+    // AC set. Synapse enters Custom from any mode with the same per-fan mode-4
+    // writes and, off battery, then sets the CPU/GPU levels; it neither reads nor
+    // leaves the current mode first (product 671 mw-6737 bytes 1,398,696 and
+    // 1,398,993; 669 bytes 1,558,801 and 1,559,098; 695 bytes 1,893,039 and
+    // 1,893,371). The earlier AC-preset list had no firmware reason to exclude
+    // raw 6. Admit it only off battery and only on these three mode-7 models;
+    // every other Custom precondition (fan baseline, Maximum Fans flags, stored
+    // levels, readback) still applies. The scope is the models whose HyperBoost
+    // battery exit leaves raw 6; other Battery Balanced models keep the refusal
+    // until their own Custom entry is reviewed.
+    private bool AdmitsCustomFromDcBalanced(PerformancePreset? baseline) =>
+        baseline == PerformancePreset.BatteryBalanced
+        && model.ProductId is 0x029F or 0x029D or 0x02B7
+        && ExternalPowerPresent();
+
     public async Task SetCustomPerformanceAsync(CustomPerformanceSettings value, CancellationToken cancellationToken)
     {
         if (!SupportsExperimentalCustom(model) || !CustomPerformanceSettings.IsWellFormed(value)
@@ -90,7 +111,8 @@ internal sealed partial class ExperimentalBladePort
                 || baseline.Performance is not (PerformancePreset.Balanced or PerformancePreset.Silent
                     or PerformancePreset.Performance or PerformancePreset.Custom
                     or PerformancePreset.Turbo or PerformancePreset.MaximumPower
-                    or PerformancePreset.Gaming or PerformancePreset.Creator))
+                    or PerformancePreset.Gaming or PerformancePreset.Creator)
+                    && !AdmitsCustomFromDcBalanced(baseline.Performance))
             {
                 throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
                     GetExperimentalFanRangesByPerformancePreset(model).Count > 0 && baseline.Fans != FanMode.Automatic
@@ -210,13 +232,15 @@ internal sealed partial class ExperimentalBladePort
                     await ReadPowerModeControlAsync(cancellationToken).ConfigureAwait(false));
                 RequireWriteAdmission(thermal: true);
                 // The same pinned helpers accept a correlated successful 07/0F ACK without echo
-                // (671 helper/public chars 20394/140294; 672 chars 52955/141017).
+                // (671 helper/public chars 20394/140294; 672 chars 52955/141017; 669 bytes
+                // 52963/119262, see UsesStatusOnlyPowerModeControlAck).
+                bool statusOnlyPowerModeAck = UsesStatusOnlyPowerModeControlAck(model);
                 await ExchangeAsync("MaximumFans", 0x07, 0x0F,
                     [value.MaximumFans ? TemporaryFullChargeProtocol.MaximumFanSpeedBit : (byte)0],
                     true, cancellationToken,
-                    variableResponse: acceptsStatusOnlyAck,
-                    payloadValidator: acceptsStatusOnlyAck ? static payload => payload.Length <= 1 : null,
-                    requireEcho: !acceptsStatusOnlyAck).ConfigureAwait(false);
+                    variableResponse: statusOnlyPowerModeAck,
+                    payloadValidator: statusOnlyPowerModeAck ? static payload => payload.Length <= 1 : null,
+                    requireEcho: !statusOnlyPowerModeAck).ConfigureAwait(false);
                 submitted = true;
                 if (await ReadMaximumFansAsync(cancellationToken).ConfigureAwait(false) != value.MaximumFans)
                 {
@@ -321,9 +345,11 @@ internal sealed partial class ExperimentalBladePort
         {
             names.Add("temporary full charge");
         }
+        // 07/0F replaces the whole byte. Another option set elsewhere, such as CPU
+        // Boost from Synapse on 029D, makes a write ambiguous, so stop before it.
         throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
             "OpenBlade won't change maximum fans because it would also change other laptop settings that are on ("
-                + string.Join(", ", names) + ").");
+                + string.Join(", ", names) + "). Turn them off where they were set, such as in Synapse, then try again.");
     }
 
     private static string FormatCustomPerformance(CustomPerformanceSettings value) =>

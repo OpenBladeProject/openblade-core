@@ -108,7 +108,8 @@ internal sealed record PendingWriteConfirmation(
     BatteryConfirmationScope BatteryConfirmation = BatteryConfirmationScope.All)
 {
     public WriteConfirmationExpectation Expectation => new(
-        Target, PreWriteState, HyperBoostActive, HyperBoostBaseMode, GpuClockTuningOnly, BatteryConfirmation);
+        Target, PreWriteState, HyperBoostActive, HyperBoostBaseMode, GpuClockTuningOnly, BatteryConfirmation,
+        HyperBoostBaseMode is null ? null : PowerSource);
 
     public bool CanConfirm(PowerSource powerSource, ProfileAutomationState owner) =>
         PowerSource == powerSource

@@ -1380,6 +1380,12 @@
   <data name="Pad-less HyperBoost is detected but is not available with the current admission evidence." xml:space="preserve">
     <value>HyperBoost без охлаждающей подставки обнаружен, но недоступен при текущем наборе подтверждающих данных.</value>
   </data>
+  <data name="Synapse doesn't offer HyperBoost on this laptop configuration, so OpenBlade doesn't start it." xml:space="preserve">
+    <value>Synapse не предлагает HyperBoost для этой конфигурации ноутбука, поэтому OpenBlade его не включает.</value>
+  </data>
+  <data name="Synapse doesn't offer HyperBoost on this laptop configuration. You can still turn it off." xml:space="preserve">
+    <value>Synapse не предлагает HyperBoost для этой конфигурации ноутбука. Выключить его по-прежнему можно.</value>
+  </data>
   <data name="Detected on this laptop, but OpenBlade cannot safely change it with the current evidence." xml:space="preserve">
     <value>Функция обнаружена на этом ноутбуке, но текущих данных недостаточно, чтобы OpenBlade мог безопасно изменять её состояние.</value>
   </data>

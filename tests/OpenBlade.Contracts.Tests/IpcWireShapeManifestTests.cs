@@ -92,8 +92,10 @@ public sealed class IpcWireShapeManifestTests
             84 => "7698A5B8C9679FCDE35762221E1DBD8A31E92086588511320CB0D5D87473D306",
             // Protocol 85 adds the cooling-pad Auto fan mode and CoolingPadSettings.AutoProfile.
             85 => "A471FE3A7AD4994630D5137AB901C3599358B1546ED1797B4A4E7E0B4203CEB3",
+            // Protocol 86 adds the HyperBoost Turbo base-mode slot and entry restriction.
+            86 => "450C7529BFF97066D3CE0478544FEB808A540D20A2E1C7B7C66CEE686A42F590",
             // Protocol 87 adds the advisory Windows Dynamic Lighting report and status.
-            87 => "9652876E23F79F61BBD7BBB140ABB45FAF0E2452318282E352F1B9828D92257D",
+            87 => "CB77D50C4764B3E1792C3EF11DB825E8F7FA65D8A63D64CF479F9D41B65B231B",
             _ => null,
         };
 
