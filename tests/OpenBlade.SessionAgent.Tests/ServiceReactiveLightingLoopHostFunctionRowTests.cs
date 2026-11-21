@@ -28,7 +28,9 @@ public sealed partial class ServiceReactiveLightingLoopTests
             },
         };
         client.Publish(admitted);
-        await WaitUntilAsync(() => factory.Last?.IsBlade18DriverFunctionRowAdmitted() == true);
+        // Admission can be visible before the same status applies the primary mode.
+        await WaitUntilAsync(() => client.DeliveryCount == 1);
+        Assert.True(factory.Last?.IsBlade18DriverFunctionRowAdmitted() == true);
         Assert.False(factory.Last!.ReadDriverModeObservation().AllowsFunctionRowInterception);
         Assert.Equal(FunctionKeyPrimaryMode.FunctionKeys, factory.Last.ReadFunctionKeyPrimaryMode());
         client.Publish(admitted with
