@@ -1063,11 +1063,9 @@ async fn one_slow_power_read_refuses_a_custom_recipe_before_its_first_setter() {
     // reads left and the recipe is refused before any setter.
     let rig = rig_at(4, 0, FULL, MemoryFiles::default());
     rig.get().await;
-    rig.port.state.lock().unwrap().on_power = Some(Arc::new(|_| {
-        std::thread::sleep(std::time::Duration::from_millis(1300));
-    }));
+    rig.port.state.lock().unwrap().power_latency = Some(std::time::Duration::from_millis(1300));
     let result = rig.set(1, custom(2, 1, false)).await;
-    rig.port.state.lock().unwrap().on_power = None;
+    rig.port.state.lock().unwrap().power_latency = None;
     assert_eq!(result["result"]["status"], 2, "{result}");
     assert_eq!(
         result["result"]["message"],
@@ -1094,6 +1092,9 @@ async fn a_slow_journal_append_refuses_a_recipe_before_its_first_setter() {
     // each of the five rows left, so the recipe is refused before any setter.
     let rig = rig_at(2, 0, FULL, MemoryFiles::default());
     rig.get().await;
+    // The store holds each append with a real sleep, which a job on paused
+    // time would not see. Load only makes the expected refusal likelier.
+    rig.port.state.lock().unwrap().real_time = true;
     let stop = Arc::new(AtomicBool::new(false));
     let rearm = {
         let files = rig.files.clone();

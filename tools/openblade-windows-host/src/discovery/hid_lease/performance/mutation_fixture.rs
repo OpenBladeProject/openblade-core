@@ -74,6 +74,13 @@ pub(crate) struct State {
     /// Extra latency on each 0D/01, 0D/02 and 0D/07 setter, on top of
     /// `latency`.
     pub(crate) setter_latency: Option<Duration>,
+    /// Runs every job on the real clock. A hold (`held_read`, `held_write`)
+    /// does so as well, since another thread releases it.
+    pub(crate) real_time: bool,
+    /// When the test sent the request that a thermal or fan recipe serves, on
+    /// the test's clock. A recipe on paused time takes its deadline as that
+    /// request's budget from its own start (see `worker`).
+    pub(crate) arrival: Option<Instant>,
 }
 #[derive(Clone)]
 pub(crate) struct Fixture {
@@ -124,28 +131,51 @@ impl Fixture {
                 let Some(admission) = authorize() else {
                     return Ok(None);
                 };
-                let paused = {
+                // A thermal or fan recipe, as opposed to a battery or
+                // temporary-charge one, or an observation.
+                let thermal = permit.as_ref().is_some_and(|permit| {
+                    !permit.is_battery() && permit.temporary_target().is_none()
+                });
+                let (paused, arrival) = {
                     let mut s = fixture.state.lock().unwrap();
                     s.opened += 1;
-                    s.latency.is_some()
+                    let latency = s.latency.is_some()
                         || s.power_latency.is_some()
                         || s.power_stall.is_some()
-                        || s.setter_latency.is_some()
+                        || s.setter_latency.is_some();
+                    let paused = (latency || thermal)
+                        && !s.real_time
+                        && s.held_read.is_none()
+                        && s.held_write.is_none();
+                    let arrival = if thermal { s.arrival.take() } else { None };
+                    (paused, arrival)
                 };
                 let mut reader = Reader::new(fixture.port(), admission);
-                // With a latency the job runs on paused time: its clock starts at
-                // the real instant the job starts and advances only through the
-                // job's own waits, so a slow device costs no wall time and the
-                // request deadline is compared with exact virtual progress.
+                // A thermal or fan recipe, and any job with a latency, runs on
+                // paused time unless it holds a transfer for another thread to
+                // release. Its clock starts at the real instant the job starts
+                // and advances only through the job's own waits, so neither a
+                // slow device nor a loaded host costs it time, and the deadline
+                // is compared with exact virtual progress. A recipe also takes
+                // the whole request budget from its own start, so the host's
+                // time between the request and the job does not count either.
+                // Battery, temporary-charge and observation jobs otherwise keep
+                // the real clock: their readings are aged on the test's clock,
+                // which a paused job would run ahead of.
                 tokio::runtime::Builder::new_current_thread()
                     .enable_time()
                     .start_paused(paused)
                     .build()?
                     .block_on(async {
+                        let mut limit = job.limit();
+                        if paused && let Some(arrival) = arrival {
+                            limit.deadline =
+                                Instant::now() + limit.deadline.saturating_duration_since(arrival);
+                        }
                         let observed = if let Some(permit) = &permit {
-                            reader.apply_preset(permit.as_ref(), job.limit()).await
+                            reader.apply_preset(permit.as_ref(), limit).await
                         } else {
-                            reader.observe(&mut || authorize(), job.limit()).await
+                            reader.observe(&mut || authorize(), limit).await
                         };
                         reader.retire(None).await?;
                         if permit.is_some() {

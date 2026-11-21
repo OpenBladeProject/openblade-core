@@ -781,6 +781,7 @@ impl Rig {
     }
     async fn request_as(&self, request: Value, caller: Caller, sid: &str) -> Value {
         let operation = request["operation"].as_str().unwrap().to_owned();
+        self.port.state.lock().unwrap().arrival = Some(tokio::time::Instant::now());
         let (client, server) = duplex(65536);
         let source = self.source.clone();
         let publications = source.lock().await.publications();
@@ -807,6 +808,8 @@ impl Rig {
             (serde_json::from_slice::<Value>(&bytes).unwrap(), bytes)
         };
         let (server, (response, bytes)) = tokio::join!(server, client);
+        // A later job that serves no request keeps its own deadline.
+        self.port.state.lock().unwrap().arrival = None;
         assert!(server.is_ok());
         // Preserve the actual encoder bytes. Re-serializing Value sorts object
         // keys and can move the managed polymorphic discriminator out of first place.
