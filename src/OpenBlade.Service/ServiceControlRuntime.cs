@@ -653,6 +653,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
     private readonly IHyperBoostOwnershipJournalStore hyperBoostOwnershipJournalStore;
     private int? lastCurveFan1Rpm;
     private int? lastCurveFan2Rpm;
+    // Conditions manual-curve input only; fail-safe decisions use the raw readings.
+    private readonly FanCurveTemperatureFilter fanCurveTemperatureFilter;
     private int consecutiveDeviceProbeFailures;
     private int consecutiveVerifiedAccessFailures;
     private bool driverModePortRecoveryAttempted;
@@ -934,6 +936,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             ?? throw new ArgumentNullException(nameof(transitionRetryDelay));
         this.timeProvider = timeProvider ?? TimeProvider.System;
         resumeStateValidation = new ResumeStateValidationTracker(this.timeProvider);
+        fanCurveTemperatureFilter = new FanCurveTemperatureFilter(this.timeProvider);
         driftTracker = CreateDriftTracker();
         this.validator = validator ?? throw new ArgumentNullException(nameof(validator));
         this.userConfigurationRepository = userConfigurationRepository;
@@ -2731,12 +2734,16 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
 
         FanTemperatureReadings temperatures =
             await fanTemperatureSource.ReadForFanCurveAsync(cancellationToken);
+        // One filter update per sample; both target calculations below reuse it.
+        FanTemperatureReadings filteredTemperatures =
+            fanCurveTemperatureFilter.Filter(temperatures);
         // Compare original curve intent with confirmed actual output. A target
         // clipped by temporary metadata must revisit typed range admission so
         // a later increase can take effect without rewriting the stored curve.
-        FanTargetSpeeds targets = FanCurveCalculator.Calculate(
+        FanTargetSpeeds targets = CalculateManualFanCurveTargets(
             settings.ManualCurve,
             temperatures,
+            filteredTemperatures,
             snapshot.Capabilities?.GetFanIntentSpeedRange(ManualFanRangePreset(snapshot))
                 ?? FanSpeedRange.Standard);
         if (lastCurveFan1Rpm == targets.Fan1Rpm
@@ -2809,9 +2816,10 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             PerformancePreset curvePreset = ManualFanRangePreset(current);
             // Bind original intent to the current destination after waiting
             // for the gate. The backend projects effective output only.
-            targets = FanCurveCalculator.Calculate(
+            targets = CalculateManualFanCurveTargets(
                 settings.ManualCurve,
                 temperatures,
+                filteredTemperatures,
                 current.Capabilities?.GetFanIntentSpeedRange(curvePreset)
                     ?? FanSpeedRange.Standard);
             var authority = new ManualFanCurveAuthority(
@@ -13369,8 +13377,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             observeScopedOutcome: (outcome, _, _) => observeOutcome?.Invoke(outcome)).ConfigureAwait(false);
         if (result.Status == ControlOperationStatus.Applied)
         {
-            lastCurveFan1Rpm = null;
-            lastCurveFan2Rpm = null;
+            ClearLastFanCurveTargets();
             string restored =
                 $"Firmware-managed Automatic fan control was confirmed before {boundary}.";
             history.RecordSummary(ControlOperationStatus.Applied, restored);
@@ -21044,9 +21051,11 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         FanTemperatureReadings temperatures = await fanTemperatureSource
             .ReadForFanCurveAsync(cancellationToken);
         ServiceStatusSnapshot current = GetStatus();
-        FanTargetSpeeds freshTargets = FanCurveCalculator.Calculate(
+        // The retry's fresh sample is a real later reading; it advances the same filter.
+        FanTargetSpeeds freshTargets = CalculateManualFanCurveTargets(
             authority.Settings.ManualCurve,
             temperatures,
+            fanCurveTemperatureFilter.Filter(temperatures),
             current.Capabilities?.GetFanIntentSpeedRange(ManualFanRangePreset(current))
                 ?? FanSpeedRange.Standard);
         if (freshTargets != authority.Targets)
@@ -21239,6 +21248,21 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
     {
         lastCurveFan1Rpm = null;
         lastCurveFan2Rpm = null;
+        // A cleared target starts a new filter history from the next raw sample.
+        fanCurveTemperatureFilter.Reset();
+    }
+
+    // Fail-safe stays on raw readings: a missing CPU, an unconfirmed missing GPU, or an
+    // emergency raw temperature forces maximum speed immediately. Only an ordinary curve
+    // target uses the smoothed readings, which suppresses brief package spikes.
+    internal static FanTargetSpeeds CalculateManualFanCurveTargets(
+        ManualFanCurve curve,
+        FanTemperatureReadings raw,
+        FanTemperatureReadings filtered,
+        FanSpeedRange activeRange)
+    {
+        FanTargetSpeeds safety = FanCurveCalculator.Calculate(curve, raw, activeRange);
+        return safety.FailSafe ? safety : FanCurveCalculator.Calculate(curve, filtered, activeRange);
     }
 
     private void UpdateOwnedFanControlSettings(
