@@ -160,7 +160,7 @@ Blade 14 (2025) 在电池供电时还提供电池节能和电池平衡模式。
 - Blade 14 (2023)、Blade 16 (2023) 和 Blade 16 (2024) 提供 HyperBoost，需要使用足功率电源，连接或不连接 Razer Laptop Cooling Pad 均可。
   Blade 16 (2023) 需要 MCU 固件 1.5.0.0 或更新版本，Blade 16 (2024) 需要 1.3.0.0 或更新版本。
   Blade 14 需要 MCU 固件 1.1.1.3 或更新版本。
-  与 Synapse 一致，对于 Synapse 按系统 SKU 排除的 Blade 16 配置，OpenBlade 不会启动 HyperBoost，但你仍可以将其关闭。
+  与 Synapse 一致，对于 Synapse 按系统 SKU 排除的 Blade 16 配置，OpenBlade 不会启用 HyperBoost，但你仍可以将其关闭。
   使用电池时，HyperBoost 结束后会切换到 Balanced；重新接通电源后，会恢复接通电源时的模式。
   Blade 18 (2023) 仍只能读取状态；更改性能设置前，请先在 Synapse 中关闭 HyperBoost。
 - 充电上限每次可调整 1%，设为 100% 时会关闭充电保护。

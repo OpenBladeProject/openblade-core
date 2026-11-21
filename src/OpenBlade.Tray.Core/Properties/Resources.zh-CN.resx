@@ -1375,7 +1375,7 @@
     <value>已检测到无散热垫 HyperBoost，但当前准入证据尚不支持使用。</value>
   </data>
   <data name="Synapse doesn't offer HyperBoost on this laptop configuration, so OpenBlade doesn't start it." xml:space="preserve">
-    <value>Synapse 不为此笔记本配置提供 HyperBoost，因此 OpenBlade 不会启动它。</value>
+    <value>Synapse 不为此笔记本配置提供 HyperBoost，因此 OpenBlade 不会启用它。</value>
   </data>
   <data name="Synapse doesn't offer HyperBoost on this laptop configuration. You can still turn it off." xml:space="preserve">
     <value>Synapse 不为此笔记本配置提供 HyperBoost。你仍可以将其关闭。</value>

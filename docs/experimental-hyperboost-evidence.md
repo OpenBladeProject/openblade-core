@@ -137,23 +137,34 @@ the predicate as written.
 
 On battery, every HyperBoost exit hands off to Balanced (DC raw 6), whatever base
 the session owns, and the readback confirms Balanced or DC Balanced with
-Automatic fans. The owned base and the saved profile stay as intent, and the next
-AC reconciliation restores them. Synapse sends Balanced on battery as raw 6
-(policy byte 1,398,122 for 671, 1,558,223 for 669 and 1,892,480 for 695) and
-restores its pre-HyperBoost mode only on AC (bytes 172,278, 1,240,504 and
-1,295,406). Before this change the port refused a battery exit from any base
-other than Balanced, so a session entered from Performance, Silent, Custom or
-Turbo could stay in HyperBoost after unplugging. The shared fix applies to RZ09-0483,
-RZ09-0482 and RZ09-0510.
+Automatic fans. Synapse sends Balanced on battery as raw 6 (policy byte
+1,398,122 for 671, 1,558,223 for 669 and 1,892,480 for 695) and restores its
+pre-HyperBoost mode only on AC (bytes 172,278, 1,240,504 and 1,295,406).
+
+The exit command is never gated on the destination intent. Battery intents are
+limited to Battery Saver and Battery Balanced, and the default battery profile is
+Battery Saver, which no mode-7 table lists; RZ09-0483 and RZ09-0482 have neither.
+When the saved battery mode isn't available, the exit still runs, the restore
+write is skipped, and the saved profile is kept. OpenBlade records the mode the
+exit landed on as its own result, so automation does not treat it as an outside
+change. The owned base is not carried over: when AC returns, the plugged-in
+profile applies again.
+
+Before this change the battery exit was refused for every base with the real
+capability tables, because the destination intent was checked before the exit
+command and Battery Saver is in none of them. A session could stay in HyperBoost
+after unplugging. The shared fix applies to RZ09-0483, RZ09-0482 and RZ09-0510.
 
 ### Manual fans
 
 Synapse's setter writes `[1, selector, mode, 0]` from any state (695 policy
 setter at byte 1,891,618; fan flag `auto:0` at byte 2,362,420), so it can leave
-mode 7 with manual fans set by its own UI. OpenBlade reports that state as
-HyperBoost with manual fans, without reading fan targets, and admits the exit
-from it; the readback must confirm Automatic fans. Entry still requires a
-confirmed ordinary mode.
+mode 7 with manual fans set by its own UI. Its HyperBoost manual range is
+3400-5200 RPM (671 main byte 28,478, 669 main byte 145,346 and 695 main byte
+145,857). OpenBlade reports that state as HyperBoost with manual fans on every
+mode-7 model, without reading fan targets, and admits the exit from it; the
+readback must confirm Automatic fans. Entry still requires a confirmed ordinary
+mode.
 
 ## Vendor evidence
 
