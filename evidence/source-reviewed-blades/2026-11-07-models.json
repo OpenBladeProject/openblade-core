@@ -214,7 +214,6 @@
         "Driver integrations and THX: reviewed in the catalog separately; no runtime/setup admission inherited."
       ],
       "notAdmitted": [
-        "HyperBoost",
         "Manual fan writes",
         "Fan curves",
         "Lighting writes",

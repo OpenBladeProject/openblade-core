@@ -50,6 +50,10 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
         ReportApplicationContextRequest request,
         CancellationToken token) => SendMutationAsync(request, token);
 
+    public Task<ControlOperationResult> ReportWindowsDynamicLightingAdvisoryAsync(
+        ReportWindowsDynamicLightingAdvisoryRequest request,
+        CancellationToken token) => SendMutationAsync(request, token);
+
     public Task<ControlOperationResult> SetCoolingPadSettingsAsync(CoolingPadSettings settings, CancellationToken token) =>
         SendMutationAsync(new SetCoolingPadSettingsRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), settings), token);
 
@@ -572,6 +576,11 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
                 OpenBladeIpc.ProtocolVersion,
                 Guid.NewGuid(),
                 value),
+            token);
+
+    public Task<ControlOperationResult> ClearLocalDimmingAsync(CancellationToken token) =>
+        SendMutationAsync(
+            new ClearLocalDimmingRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()),
             token);
 
     public Task<ControlOperationResult> ShutdownOpenBladeAsync(CancellationToken token) =>

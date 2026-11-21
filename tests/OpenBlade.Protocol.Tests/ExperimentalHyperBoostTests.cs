@@ -91,8 +91,8 @@ public sealed partial class ExperimentalThermalExpansionTests
         {
             var session = new Session();
             await using var port = new ExperimentalBladePort(session, new(), model, new(model),
-                () => true, () => PowerSource.PluggedIn, coolingPadDiscovery: new Pad());
-            if (model.ProductId is not (0x029F or 0x029D))
+                () => true, () => PowerSource.PluggedIn, coolingPadDiscovery: new Pad(), systemSku: AdmittedSku);
+            if (model.ProductId is not (0x029F or 0x029D or 0x02B7))
             {
                 await Assert.ThrowsAsync<CapabilityUnavailableException>(() =>
                     port.SetHyperBoostAsync(true, PerformancePreset.Balanced, false, CancellationToken.None));
@@ -100,7 +100,7 @@ public sealed partial class ExperimentalThermalExpansionTests
                     port.SetHyperBoostAsync(true, PerformancePreset.Balanced, true, CancellationToken.None));
             }
             Assert.Empty(session.Commands);
-            Assert.Equal(model.ProductId is 0x029F or 0x029D ? DeviceFeatureAccess.ReadWrite : (DeviceFeatureAccess?)null,
+            Assert.Equal(model.ProductId is 0x029F or 0x029D or 0x02B7 ? DeviceFeatureAccess.ReadWrite : (DeviceFeatureAccess?)null,
                 port.Capabilities.HyperBoostWithoutCoolingPadAccess);
         }
     }
@@ -160,7 +160,7 @@ public sealed partial class ExperimentalThermalExpansionTests
         };
         var policy = new ExperimentalFeaturesPolicy(Model(0x029F));
         await using var port = new ExperimentalBladePort(session, new(), Model(0x029F), policy,
-            () => exact, () => source, coolingPadDiscovery: new Pad());
+            () => exact, () => source, coolingPadDiscovery: new Pad(), systemSku: AdmittedSku);
         BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
             port.SetHyperBoostAsync(true, PerformancePreset.Performance, true, CancellationToken.None));
         Assert.Equal(WriteSubmissionState.KnownNotApplied, failure.SubmissionState);
@@ -271,14 +271,127 @@ public sealed partial class ExperimentalThermalExpansionTests
         Assert.True(policy.WritesAllowed);
     }
 
+    // Synapse writes raw 6 on battery and sets the plugged-in mode on AC attach
+    // without reading it first, so raw 6 can remain after external power returns.
+    // It reads as DC Balanced there: no AC intent matches it, and a typed AC set
+    // leaves it without a prerequisite write.
     [Theory]
-    [InlineData(PowerSource.PluggedIn)]
-    [InlineData(PowerSource.UsbC)]
-    public async Task Blade16_DcBalancedIsRejectedOnExternalPower(PowerSource source)
+    [InlineData(0x029F, PowerSource.PluggedIn)]
+    [InlineData(0x029F, PowerSource.UsbC)]
+    [InlineData(0x029D, PowerSource.PluggedIn)]
+    [InlineData(0x029D, PowerSource.UsbC)]
+    public async Task Blade16_RawSixOnExternalPowerIsTransitionalDcBalanced(int pid, PowerSource source)
+    {
+        var session = new Session { Mode = 6, AdapterPowerPayload = source == PowerSource.UsbC ? [2, 17] : [17, 17] };
+        await using var port = Create(pid, session, power: () => source);
+        ProductionPerformanceFanState state = await port.QueryPerformanceFanStateAsync(CancellationToken.None);
+        Assert.Equal(PerformancePreset.BatteryBalanced, state.Performance);
+        Assert.False(state.HyperBoostActive);
+        Assert.Empty(session.Writes);
+        await port.SetPerformanceAsync(PerformancePreset.Balanced, CancellationToken.None);
+        Assert.Equal(new byte[][] { [1, 1, 0, 0], [1, 2, 0, 0] },
+            session.Writes.Select(command => command.Arguments.ToArray()).ToArray());
+        Assert.Equal(PerformancePreset.Balanced,
+            (await port.QueryPerformanceFanStateAsync(CancellationToken.None)).Performance);
+    }
+
+    [Theory]
+    [InlineData(0x029F)]
+    [InlineData(0x029D)]
+    public async Task Blade16_BatteryExitThenReplugLeavesRawSixUntilTypedAcSet(int pid)
+    {
+        PowerSource source = PowerSource.PluggedIn;
+        // Silent is a direct entry base on both products.
+        var session = new Session { Mode = 5, HyperBoostFirmware = [1, 5, 0, 0] };
+        await using var port = HyperBoostPort(session, new Pad(), power: () => source, pid: pid);
+        await port.SetHyperBoostAsync(true, PerformancePreset.Silent, true, CancellationToken.None);
+        Assert.Equal(7, session.Mode);
+
+        source = PowerSource.Battery;
+        session.AdapterPowerPayload = [0, 17];
+        await port.SetHyperBoostAsync(false, PerformancePreset.Silent, true, CancellationToken.None);
+        Assert.Equal(6, session.Mode);
+        Assert.Equal(PerformancePreset.Balanced,
+            (await port.QueryPerformanceFanStateAsync(CancellationToken.None)).Performance);
+
+        source = PowerSource.PluggedIn;
+        session.AdapterPowerPayload = [17, 17];
+        int writes = session.Writes.Count();
+        ProductionPerformanceFanState replugged = await port.QueryPerformanceFanStateAsync(CancellationToken.None);
+        Assert.Equal(PerformancePreset.BatteryBalanced, replugged.Performance);
+        Assert.False(replugged.HyperBoostActive);
+        Assert.Equal(writes, session.Writes.Count());
+
+        await port.SetPerformanceAsync(PerformancePreset.Silent, CancellationToken.None);
+        Assert.Equal(5, session.Mode);
+        Assert.Equal(PerformancePreset.Silent,
+            (await port.QueryPerformanceFanStateAsync(CancellationToken.None)).Performance);
+        await port.SetHyperBoostAsync(true, PerformancePreset.Silent, true, CancellationToken.None);
+        Assert.Equal(7, session.Mode);
+        Assert.True((await port.QueryPerformanceFanStateAsync(CancellationToken.None)).HyperBoostActive);
+    }
+
+    // Synapse enters Custom directly from the current mode (671 mw-6737 bytes
+    // 1,398,696/1,398,993; 669 bytes 1,558,801/1,559,098; 695 bytes
+    // 1,893,039/1,893,371), so a plugged-in Custom profile leaves raw 6 itself.
+    [Theory]
+    [InlineData(0x029F, 0, "RZ09-0483TEH3")]
+    [InlineData(0x029D, 0, "RZ09-0483TEH3")]
+    [InlineData(0x02B7, 1, "RZ09-0510TEH3")]
+    public async Task ModeSeven_CustomPluggedInProfileLeavesRawSixAfterBatteryExit(int pid, byte acMode, string sku)
+    {
+        PowerSource source = PowerSource.PluggedIn;
+        CustomPerformanceCombination combination = ExperimentalBladePort.CreateCapabilities(Model(pid), true)
+            .CustomPerformance!.AllowedCombinations.OrderBy(item => item.Cpu).ThenBy(item => item.Gpu).First();
+        var custom = new CustomPerformanceSettings(combination.Cpu, combination.Gpu);
+        var session = new Session { Mode = acMode, HyperBoostFirmware = [1, 5, 0, 0] };
+        var policy = new ExperimentalFeaturesPolicy(Model(pid));
+        await using var port = HyperBoostPort(session, new Pad { State = CoolingPadConnectionState.Absent }, policy,
+            power: () => source, pid: pid, sku: sku);
+        await port.SetCustomPerformanceAsync(custom, CancellationToken.None);
+        await port.SetHyperBoostAsync(true, PerformancePreset.Custom, false, CancellationToken.None);
+        Assert.Equal(7, session.Mode);
+
+        source = PowerSource.Battery;
+        session.AdapterPowerPayload = [0, 17];
+        await port.SetHyperBoostAsync(false, PerformancePreset.Custom, false, CancellationToken.None);
+        Assert.Equal(6, session.Mode);
+        // On battery Custom stays refused from raw 6, as before.
+        await Assert.ThrowsAsync<BladeWriteException>(
+            () => port.SetCustomPerformanceAsync(custom, CancellationToken.None));
+        Assert.Equal(6, session.Mode);
+
+        source = PowerSource.PluggedIn;
+        session.AdapterPowerPayload = [17, 17];
+        Assert.Equal(PerformancePreset.BatteryBalanced,
+            (await port.QueryPerformanceFanStateAsync(CancellationToken.None)).Performance);
+        int before = session.Writes.Count();
+        await port.SetCustomPerformanceAsync(custom, CancellationToken.None);
+        Assert.Equal(new byte[][] { [1, 1, 4, 0], [1, 2, 4, 0] },
+            session.Writes.Skip(before).Where(command => command.ClassId == 0x0D && command.CommandId == 0x02)
+                .Select(command => command.Arguments.ToArray()).ToArray());
+        ProductionPerformanceFanState applied = await port.QueryPerformanceFanStateAsync(CancellationToken.None);
+        Assert.Equal(PerformancePreset.Custom, applied.Performance);
+        Assert.Equal(custom with { MaximumFans = false }, applied.CustomPerformance! with { MaximumFans = false });
+        Assert.True(policy.WritesAllowed);
+
+        // HyperBoost re-entry from the applied Custom profile is a direct entry.
+        await port.SetHyperBoostAsync(true, PerformancePreset.Custom, false, CancellationToken.None);
+        Assert.Equal(7, session.Mode);
+    }
+
+    // The DC Balanced Custom baseline is admitted only on the three mode-7 models.
+    [Fact]
+    public async Task OtherDcBalancedModel_CustomFromRawSixStaysRefusedOnAc()
     {
         var session = new Session { Mode = 6 };
-        await using var port = Create(0x029F, session, power: () => source);
-        await Assert.ThrowsAsync<RazerProtocolException>(() => port.QueryPerformanceFanStateAsync(CancellationToken.None));
+        await using var port = Create(0x02C5, session, power: () => PowerSource.PluggedIn);
+        Assert.Equal(PerformancePreset.BatteryBalanced,
+            (await port.QueryPerformanceFanStateAsync(CancellationToken.None)).Performance);
+        CustomPerformanceCombination combination = ExperimentalBladePort.CreateCapabilities(Model(0x02C5), true)
+            .CustomPerformance!.AllowedCombinations.First();
+        await Assert.ThrowsAsync<BladeWriteException>(() => port.SetCustomPerformanceAsync(
+            new(combination.Cpu, combination.Gpu), CancellationToken.None));
         Assert.Empty(session.Writes);
     }
 
@@ -309,10 +422,14 @@ public sealed partial class ExperimentalThermalExpansionTests
         }
     }
 
+    // SKU character 9 is T: outside the vendor HyperBoost recheck's disabled set.
+    private const string AdmittedSku = "RZ09-0483TEH3";
+
     private static ExperimentalBladePort HyperBoostPort(Session session, Pad pad,
-        ExperimentalFeaturesPolicy? policy = null, Func<PowerSource>? power = null, int pid = 0x029F) =>
+        ExperimentalFeaturesPolicy? policy = null, Func<PowerSource>? power = null, int pid = 0x029F,
+        string? sku = AdmittedSku) =>
         new(session, new(), Model(pid), policy ?? new(Model(pid)), () => true,
-            power ?? (() => PowerSource.ExternalUnknown), coolingPadDiscovery: pad);
+            power ?? (() => PowerSource.ExternalUnknown), coolingPadDiscovery: pad, systemSku: sku);
 
     private sealed class Pad : ICoolingPadDiscoverySource
     {

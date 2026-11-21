@@ -26,6 +26,7 @@ internal enum DeviceStateQuery
     LogoLightingCombination,
     KeyboardLightingEffect,
     KeyboardLightingCombination,
+    LocalDimming,
 }
 
 public sealed class RazerProtocolException : Exception

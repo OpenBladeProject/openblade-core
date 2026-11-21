@@ -118,6 +118,56 @@ public sealed class ExperimentalEvidenceCatalogTests
                     Assert.Equal("ExactMcuAndSelectedSynapseFieldsWithoutPhysicalValidation", feature.Basis);
                     Assert.Equal("evidence/source-reviewed-blades/2026-11-13-rz09-0529-keyboard-frames.json", feature.Sources[1]);
                 }
+                else if (feature.Feature is "CpuPowerLimit" or "IntelCpuPowerLimits" or "FirmwareGamingGpuOverclock"
+                    or "LocalDimmingClearOnMiniLedPanels" or "LocalDimmingFollowsWindowsHdr")
+                {
+                    Assert.StartsWith("SynapseSource", feature.Basis);
+                    Assert.Equal(ExperimentalBladePort.ObservedFeaturesReview, feature.Sources[^1]);
+                    Assert.All(feature.Sources.SkipLast(1), source =>
+                    {
+                        Assert.StartsWith($"https://apps.razer.com/synapse/products/{model.ProductId}/", source);
+                        Assert.Matches(@";SHA256=[0-9A-F]{64}$", source);
+                    });
+                }
+                else if (feature.Feature == "HyperBoostSystemSkuRecheck"
+                    || model.ProductId == 0x02B7 && feature.Feature is "HyperBoost" or "PadlessHyperBoost")
+                {
+                    // Products 671 and 695 both run the vendor SKU recheck; 669 does not.
+                    Assert.Contains(model.ProductId, new ushort[] { 0x029F, 0x02B7 });
+                    Assert.Equal(feature.Feature switch
+                    {
+                        "HyperBoostSystemSkuRecheck" => "SynapseSourceBackedCapabilityGate",
+                        "HyperBoost" => "SynapseSourceBackedWithoutPhysicalValidation",
+                        _ => "SourceBackedExtrapolationWithoutPhysicalValidation",
+                    }, feature.Basis);
+                    Assert.Equal(ExperimentalBladeModels.Rz090510HyperBoostEvidence, feature.Sources[^1]);
+                    Assert.All(feature.Sources.SkipLast(1), source =>
+                    {
+                        Assert.StartsWith($"https://apps.razer.com/synapse/products/{model.ProductId}/mw/", source);
+                        Assert.Matches(@";SHA256=[0-9A-F]{64}$", source);
+                    });
+                }
+                else if (feature.Feature == "VaporChamberHostFramesWithRestorableBaseline")
+                {
+                    Assert.Equal((ushort)0x02C7, model.ProductId);
+                    Assert.Equal("ExactMcuSourceBackedWithoutPhysicalValidation", feature.Basis);
+                    Assert.Equal(2, feature.Sources.Count);
+                    Assert.Contains(";SHA256=", feature.Sources[0], StringComparison.Ordinal);
+                    Assert.Equal("evidence/source-reviewed-blades/2026-11-13-rz09-0529-keyboard-frames.json", feature.Sources[1]);
+                }
+                else if (feature.Feature is "KeyboardOnlyCustomFramesGridAndUniformEffects" or "KeyboardCustomFrames")
+                {
+                    bool admitted = feature.Feature == "KeyboardOnlyCustomFramesGridAndUniformEffects";
+                    Assert.Contains(model.ProductId, admitted
+                        ? new ushort[] { 0x0245, 0x028A, 0x028B, 0x028C } : new ushort[] { 0x02B7, 0x02B8 });
+                    Assert.Equal(admitted ? "ExactMcuSourceBackedWithoutPhysicalValidation"
+                        : "NotEstablishedLampArrayAutonomousModeSelectsDisplayedBuffer", feature.Basis);
+                    Assert.Equal(2, feature.Sources.Count);
+                    Assert.Matches(@";SHA256=[0-9A-F]{64}$", feature.Sources[0]);
+                    Assert.Equal($"evidence/source-reviewed-blades/2026-11-19-{model.ModelNumber.ToLowerInvariant()}-keyboard-frames.json",
+                        feature.Sources[1]);
+                    Assert.Equal("Pending", snapshot.PhysicalValidation);
+                }
                 else if (model.ThermalPolicy is not null)
                 {
                     Assert.Equal("Supported", snapshot.SupportStatus);
@@ -166,6 +216,13 @@ public sealed class ExperimentalEvidenceCatalogTests
                     Assert.Equal(blade14 ? basis + "NotPubliclyListed" : basis, feature.Basis);
                     Assert.All(feature.Sources, source => Assert.StartsWith(
                         $"https://apps.razer.com/synapse/products/{(blade14 ? 669 : 671)}/mw/", source));
+                }
+                else if (feature.Feature is "MaximumFans" or "PowerModeCpuBoost" && model.ProductId == 0x029D)
+                {
+                    // The evidence record, not a second hand-written copy, defines the pins.
+                    (string basis, string[] sources) = Blade14PowerModeControlEvidence.CatalogFeature(feature.Feature);
+                    Assert.Equal(basis, feature.Basis);
+                    Assert.Equal(sources, feature.Sources);
                 }
                 else if (feature.Feature == "FireAndWheel")
                 {

@@ -5,14 +5,15 @@ namespace OpenBlade.Protocol.Tests;
 public sealed partial class SourceReviewedBladeModelTests
 {
     [Fact]
-    public void Rz090301_IndependentLightingCoexistsWithReviewedEffectsWithoutFrames()
+    public void Rz090301_IndependentLightingCoexistsWithReviewedEffectsAndGridFrames()
     {
         DeviceCapabilities capabilities = ExperimentalBladePort.CreateCapabilities(Model(0x0245), true);
         Assert.True(capabilities.SupportsIndependentLightingControls);
         Assert.True(capabilities.SupportsKeyboardBrightness);
-        Assert.Equal(new HashSet<LightingEffect> { LightingEffect.Off, LightingEffect.Static, LightingEffect.Spectrum, LightingEffect.Breathing, LightingEffect.Wave }, capabilities.LightingEffects.ToHashSet());
+        Assert.Equal(new HashSet<LightingEffect>([LightingEffect.Off, LightingEffect.Static, LightingEffect.Spectrum,
+            LightingEffect.Breathing, LightingEffect.Wave, .. ReviewedMcuFrameEffects]), capabilities.LightingEffects.ToHashSet());
         Assert.Contains(LightingEffect.Static, capabilities.ObservedLightingEffects);
-        Assert.False(capabilities.SupportsUniformLightingFrames);
+        Assert.True(capabilities.SupportsUniformLightingFrames);
         Assert.Equal(3, capabilities.LogoLightingModes.Count);
         Assert.Null(capabilities.KeyboardLightingLayoutId);
     }

@@ -88,6 +88,8 @@ public sealed class ServiceMessageContractTests
             (typeof(ApplyOneShotLaptopControlRequest), "applyOneShotLaptopControl"),
             (typeof(ReportSessionPowerTransitionRequest), "reportSessionPowerTransition"),
             (typeof(ReportApplicationContextRequest), "reportApplicationContext"),
+            (typeof(ClearLocalDimmingRequest), "clearLocalDimming"),
+            (typeof(ReportWindowsDynamicLightingAdvisoryRequest), "reportWindowsDynamicLightingAdvisory"),
             (typeof(ShutdownOpenBladeRequest), "shutdownOpenBlade"));
         AssertDerivedTypes(
             typeof(ServiceServerFrame),
@@ -119,7 +121,7 @@ public sealed class ServiceMessageContractTests
             "ControlAccess", "AllowUntestedFirmware", "AllowExperimentalFeatures",
             "IsExperimentalDevice", "ExperimentalSupportSource", "ExperimentalWritesPaused", "FirmwareCompatibility",
             "DisplayBrightnessHidAvailability", "BatterySaverFanStopStatus", "FanStopStatus",
-            "CpuTuning",
+            "CpuTuning", "WindowsDynamicLightingAdvisory",
         ];
 
         Assert.Equal(

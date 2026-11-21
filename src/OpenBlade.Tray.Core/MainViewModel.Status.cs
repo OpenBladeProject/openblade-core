@@ -67,6 +67,7 @@ public sealed partial class MainViewModel
         && left.DisplayBrightnessHidAvailability
             == right.DisplayBrightnessHidAvailability
         && left.KeyboardLightingControlMode == right.KeyboardLightingControlMode
+        && left.WindowsDynamicLightingAdvisory == right.WindowsDynamicLightingAdvisory
         && (left.LightingSuppressions ?? []).SequenceEqual(
             right.LightingSuppressions ?? [])
         && left.Firmware == right.Firmware
@@ -127,12 +128,16 @@ public sealed partial class MainViewModel
                 left.CustomPerformance,
                 right.CustomPerformance)
             && left.CpuPowerLimit == right.CpuPowerLimit
+            && left.IntelCpuPowerLimit == right.IntelCpuPowerLimit
+            && left.FirmwareGamingGpuOverclockAccess == right.FirmwareGamingGpuOverclockAccess
+            && left.LocalDimming == right.LocalDimming
             && left.CpuVoltageOptimizer == right.CpuVoltageOptimizer
             && left.GpuOverclock == right.GpuOverclock
             && left.HyperBoostAccess == right.HyperBoostAccess
             && left.HyperBoostWithoutCoolingPadAccess
                 == right.HyperBoostWithoutCoolingPadAccess
             && left.HyperBoostBaseModes == right.HyperBoostBaseModes
+            && left.HyperBoostEntryRestriction == right.HyperBoostEntryRestriction
             && left.SpecialKeyBindingsAccess == right.SpecialKeyBindingsAccess
             && left.WritableSpecialKeySlots == right.WritableSpecialKeySlots
             && left.LampArrayLightingAccess == right.LampArrayLightingAccess

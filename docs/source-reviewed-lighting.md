@@ -17,12 +17,12 @@ control, driver installation or firmware updater execution was performed.
 | RZ09-0483, RZ09-0482, RZ09-0530, RZ09-0484, RZ09-0328 | Existing source-reviewed backends retain their controls | Exact-model vendor/upstream definitions and available MCU proofs |
 | RZ09-0287, RZ09-0314, RZ09-0330, RZ09-0370, RZ09-0409, RZ09-0508 | Independent keyboard brightness; logo Off, Static and Breathing | Exact Synapse LED getters/setters; upstream cross-check |
 | RZ09-0300, RZ09-0351 | Independent keyboard brightness | Exact vendor control list has no logo controls |
-| RZ09-0301 | Brightness; keyboard Off, Static, Breathing, Spectrum and Wave; logo controls; independent field editing retained | Exact PID 0245 image embedded in the official keyboard updater |
-| RZ09-0421 | Brightness; keyboard Off, Breathing, Spectrum and Wave | CH580 MCU and exact vendor definitions |
-| RZ09-0423, RZ09-0427 | Brightness; keyboard Off, Static, Breathing, Spectrum and Wave; logo controls | DI780 and PI480 MCUs and exact vendor definitions |
+| RZ09-0301 | Brightness; keyboard Off, Static, Breathing, Spectrum and Wave; host-drawn Fire, Wheel, Starlight, Tidal, Ambient Awareness and Audio Meter; logo controls; independent field editing retained | Exact PID 0245 image embedded in the official keyboard updater |
+| RZ09-0421 | Brightness; keyboard Off, Breathing, Spectrum and Wave; host-drawn Fire, Wheel, Starlight, Tidal, Ambient Awareness and Audio Meter | CH580 MCU and exact vendor definitions |
+| RZ09-0423, RZ09-0427 | Brightness; keyboard Off, Static, Breathing, Spectrum and Wave; host-drawn Fire, Wheel, Starlight, Tidal, Ambient Awareness and Audio Meter; logo controls | DI780 and PI480 MCUs and exact vendor definitions |
 | RZ09-0510 | Brightness; keyboard Off, Breathing and Wave; logo controls | SO6100 MCU and exact vendor definitions |
 | RZ09-0509 | Brightness; keyboard Off, Static, Breathing and Wave; logo controls | KI8100 MCU and exact vendor definitions |
-| RZ09-0529 | All twelve Synapse-listed keyboard effects; per-key editor and animation import; Off, brightness and logo; VC enabled and touchpad-status indicator | KI8110 MCU, exact product711 engine and regional maps; [expansion review](rz09-0529-lighting-expansion.md) |
+| RZ09-0529 | All twelve Synapse-listed keyboard effects, with host-rendered effects also on the VC; per-key editor and animation import; Off, brightness and logo; VC enabled and touchpad-status indicator | KI8110 MCU, exact product711 engine and regional maps; [expansion review](rz09-0529-lighting-expansion.md) |
 
 All fifteen expanded profiles support independent brightness and available logo
 editing, even when the keyboard effect is unknown. All seven MCU-backed additions support random, single-color and dual-color
@@ -30,7 +30,7 @@ Breathing, and both Wave directions. Static is unavailable on RZ09-0421 and
 RZ09-0510 because their renderers can select a hidden palette instead of the
 stored RGB returned by the getter. Native Spectrum remains observed-only on the three
 newer images because its separate policy/palette is not reported. RZ09-0529
-provides Spectrum through its keyboard-only software renderer instead.
+provides Spectrum through its software renderer instead.
 
 The [complete per-model ledger](../evidence/source-reviewed-blades/2026-11-13-complete-lighting-pass.json)
 records the admitted controls and remaining gaps. The
@@ -147,9 +147,56 @@ recovery observation; its pixels are not fabricated.
 
 ## Frames and input mapping
 
-The new MCU records establish frame bounds, but no new custom-frame backend is
-admitted here. Activation, ownership lifecycle and durable restoration need a
-complete reviewed path. Neither mode 8 nor application memory reconstructs pixels.
+RZ09-0301, RZ09-0421, RZ09-0423 and RZ09-0427 have an exact-image
+[keyboard frame review](../evidence/source-reviewed-blades/2026-11-19-rz09-0301-keyboard-frames.json)
+([0421](../evidence/source-reviewed-blades/2026-11-19-rz09-0421-keyboard-frames.json),
+[0423](../evidence/source-reviewed-blades/2026-11-19-rz09-0423-keyboard-frames.json),
+[0427](../evidence/source-reviewed-blades/2026-11-19-rz09-0427-keyboard-frames.json)).
+They share one keyboard-only contract:
+
+- Six `03/0B` rows, rows 0..5, each `[FF,row,0,15,RGB x16]` (52 bytes), fill
+  keyboard staging. `0F/03` is never sent: its rows overflow the logo buffer.
+- `0F/02 [0,5,8]` selects custom mode 8 on LED 5 only and persists nothing.
+  `0F/82` must then report mode 8.
+- Before the first write, OpenBlade journals the confirmed built-in baseline.
+  It refuses a custom, Spectrum or mode 5/6/7 baseline because it cannot
+  restore it exactly. An unreadable, corrupt or downgraded journal blocks every
+  lighting change on these models, built-in effects included, until the
+  protected data storage is repaired, as on RZ09-0529.
+- Each later frame batch first rereads `0F/82`. Any mode other than 8 means a
+  GPIO event or another controller changed the keyboard. Rendering stops with
+  no further write and no restore, and the owner faults until the user chooses
+  an effect. The same check precedes the normal restore. Ambient Awareness and
+  Audio Meter select mode 8 only with their first frame; until then the reread
+  before that frame, before a replacement and before release must still show
+  the journaled baseline effect.
+- A read refused before it reaches the keyboard (busy operation gate, canceled
+  queue or closed session) skips that frame without a fault or journal change.
+  After 5 seconds without a fresh read, rendering stops without a write. A
+  read that may have reached the keyboard and failed stops at once.
+- A GPIO event or MCU reset makes `0F/82` report the saved effect. When that
+  equals the journaled baseline in mode and parameters, OpenBlade records it as
+  externally restored to baseline. The pending journal then admits a new
+  host-drawn owner with that same baseline, and the normal restore still writes
+  the flag-clearing `03/0A` setter: after a GPIO event the custom frame can
+  remain displayed while the saved mode is reported. This holds for any owner
+  of a baseline for which mode 8 was selected, including a sampled owner
+  released before its first frame and a journal left by an earlier run. Any
+  other effect keeps the fault until the user chooses an effect.
+- Restoration uses the legacy `03/0A` setters, which clear custom ownership.
+  Brightness is reread after the effect and written only if the setter changed it.
+
+Fire, Wheel, Starlight and Tidal render on the 6x16 grid. Ambient Awareness and
+Audio Meter render uniform frames. Reactive, Ripple and sequences remain
+observed-only because none of the four has a reviewed input-to-light map.
+Breathing, Wave and Spectrum keep their built-in setters.
+
+RZ09-0509 and RZ09-0510
+([0509](../evidence/source-reviewed-blades/2026-11-19-rz09-0509-keyboard-frames.json),
+[0510](../evidence/source-reviewed-blades/2026-11-19-rz09-0510-keyboard-frames.json))
+share the row transport, but their LampArray AutonomousMode handler selects the
+displayed buffer, so their frames are not established. For every other new MCU
+record, neither mode 8 nor application memory reconstructs pixels.
 
 For the existing RZ09-0482/RZ09-0483 grid backends, the additional
 [PI490](../evidence/source-reviewed-blades/2026-11-13-rz09-0482-descriptor-followup.json)
@@ -171,5 +218,6 @@ python tools/firmware/verify_source_reviewed_lighting.py <firmware> --carrier <c
 
 Vendor firmware bytes are not committed. Focused software tests cover direct
 color/count changes, necessary bridges, dark state, custom-to-built-in changes,
-independent field recovery and stop-on-ambiguity behavior. Physical validation
-of the additions remains pending.
+independent field recovery, frame journaling, lost custom selection, partial
+frame submission and stop-on-ambiguity behavior. Physical validation of the
+additions, including host-drawn frames, remains pending.

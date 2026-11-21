@@ -93,8 +93,14 @@ public sealed class IpcWireShapeManifestTests
             84 => "7698A5B8C9679FCDE35762221E1DBD8A31E92086588511320CB0D5D87473D306",
             // Protocol 85 adds the cooling-pad Auto fan mode and CoolingPadSettings.AutoProfile.
             85 => "A471FE3A7AD4994630D5137AB901C3599358B1546ED1797B4A4E7E0B4203CEB3",
+            // Protocol 86 adds the HyperBoost Turbo base-mode slot and entry restriction.
+            86 => "450C7529BFF97066D3CE0478544FEB808A540D20A2E1C7B7C66CEE686A42F590",
+            // Protocol 87 adds the advisory Windows Dynamic Lighting report and status.
+            87 => "CB77D50C4764B3E1792C3EF11DB825E8F7FA65D8A63D64CF479F9D41B65B231B",
+            // Protocol 88 adds Intel CPU power limits, firmware Gaming GPU overclock and local dimming.
+            88 => "30A176D7BA27B101AD4317681A16B3AC3419096E239F9A4050F93E5046D60E30",
             // Protocol 89 adds the RZ09-0530 keyboard-MCU edition for regional key maps.
-            89 => "D454C539819CFF7EAC6A8E433EDD02B59A97AB44617905186ACC15C08A1B50D5",
+            89 => "DF84C6FAB3E8A12689F1F0CFC6AFECFC75A1411F8BA10B51757DE3FF5C931DE3",
             _ => null,
         };
 

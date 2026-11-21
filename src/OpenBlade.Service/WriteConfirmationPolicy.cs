@@ -123,7 +123,10 @@ internal static class WriteConfirmationPolicy
             {
                 Performance: var restoredPerformance,
                 Fans: FanMode.Automatic,
-            } && restoredPerformance == pending.HyperBoostBaseMode
+            } && (restoredPerformance == pending.HyperBoostBaseMode
+                // A battery exit confirms as BatteryBalanced on models with a DC preset.
+                || pending is { HyperBoostBaseMode: { } requestedBase, HyperBoostExitPowerSource: { } exitSource }
+                    && HyperBoostCapabilityPolicy.IsRestoredBase(requestedBase, restoredPerformance, exitSource))
                 ? PendingConfirmationResult.Match
                 : confirmed.Performance is not null
                     && confirmed.Fans is not null
@@ -228,7 +231,8 @@ internal readonly record struct WriteConfirmationExpectation(
     bool? HyperBoostActive = null,
     PerformancePreset? HyperBoostBaseMode = null,
     bool GpuClockTuningOnly = false,
-    BatteryConfirmationScope BatteryConfirmation = BatteryConfirmationScope.All);
+    BatteryConfirmationScope BatteryConfirmation = BatteryConfirmationScope.All,
+    PowerSource? HyperBoostExitPowerSource = null);
 
 internal enum BatteryConfirmationScope
 {
