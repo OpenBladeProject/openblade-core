@@ -16,6 +16,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 ### Fixed
 
 - Turning only Custom Maximum Fans on or off now reaches the laptop on Blade 16 (2023, RZ09-0483), Blade 18 (2023, RZ09-0484) and Blade 14, 16 and 18 (2024, RZ09-0508, RZ09-0510 and RZ09-0509), and ending HyperBoost on the Blade 16 turns it back on. Before, OpenBlade reported the change as applied without writing it. At the next start, a saved Custom profile now sets Maximum Fans to match: fans run at maximum if the profile has it on, and a Maximum Fans setting made in Synapse is turned off if the profile has it off. ([#986](https://github.com/OpenBladeProject/openblade-core/pull/986))
+- Keep Razer-driver function-row media keys and SnapTap working after focus briefly leaves every window, such as at the lock screen, and when a key is pressed while Windows is still starting. Previously they stopped until Windows restarted or the setting was toggled. ([#990](https://github.com/OpenBladeProject/openblade-core/pull/990))
 
 ## [0.65.1-nightly.117] - 2026-11-20
 

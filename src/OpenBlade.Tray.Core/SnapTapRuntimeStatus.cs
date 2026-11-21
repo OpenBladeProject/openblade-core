@@ -198,7 +198,10 @@ public static class SnapTapStatusStore
         && status.ProcessId >= 0
         && status.UpdatedAt >= DateTimeOffset.UnixEpoch
         && status.UpdatedAt <= DateTimeOffset.UtcNow.AddMinutes(1)
-        && (status.Failure is null || IsTerminalState(status.State) && status.Failure.IsValid())
+        // Paused may carry its reason: the supervisor requires the driver worker's
+        // ForegroundUnavailable diagnostic before it rearms after a clean focus pause.
+        && (status.Failure is null || (IsTerminalState(status.State) || status.State == SnapTapRuntimeState.Paused)
+            && status.Failure.IsValid())
         && (status.DriverModel is null || status.DriverModel.Length <= 96);
 
     private static bool IsProcessCurrent(SnapTapRuntimeStatus status)
