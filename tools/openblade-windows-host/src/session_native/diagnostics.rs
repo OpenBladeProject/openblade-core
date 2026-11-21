@@ -8,8 +8,9 @@ struct Classified {
     event: Event,
     error: io::Error,
     attempted: bool,
-    /// The first-instance pipe claim failed because another Agent owns it.
-    conflict: bool,
+    /// The first-instance pipe claim failed because another Agent owns it; the
+    /// OS error that said so.
+    conflict: Option<i32>,
 }
 
 impl fmt::Display for Classified {
@@ -44,10 +45,10 @@ fn classified(error: &io::Error) -> Option<&Classified> {
 }
 
 fn attach(error: io::Error, event: Event, attempted: bool) -> io::Error {
-    attach_as(error, event, attempted, false)
+    attach_as(error, event, attempted, None)
 }
 
-fn attach_as(error: io::Error, event: Event, attempted: bool, conflict: bool) -> io::Error {
+fn attach_as(error: io::Error, event: Event, attempted: bool, conflict: Option<i32>) -> io::Error {
     if classified(&error).is_some() {
         return error;
     }
@@ -93,17 +94,17 @@ pub(crate) fn is_origin(error: &io::Error) -> bool {
 pub(super) fn claim(error: io::Error) -> io::Error {
     const ERROR_ACCESS_DENIED: i32 = 5;
     const ERROR_PIPE_BUSY: i32 = 231;
-    let conflict = matches!(
-        error.raw_os_error(),
-        Some(ERROR_ACCESS_DENIED | ERROR_PIPE_BUSY)
-    );
+    let conflict = error
+        .raw_os_error()
+        .filter(|code| matches!(*code, ERROR_ACCESS_DENIED | ERROR_PIPE_BUSY));
     let event = Event::Listener(error.kind(), error.raw_os_error());
     attach_as(error, event, false, conflict)
 }
 
+/// The OS error of a tagged claim conflict.
 #[cfg_attr(test, allow(dead_code))]
-pub(crate) fn is_claim_conflict(error: &io::Error) -> bool {
-    classified(error).is_some_and(|cause| cause.conflict)
+pub(crate) fn claim_conflict(error: &io::Error) -> Option<i32> {
+    classified(error).and_then(|cause| cause.conflict)
 }
 
 // Only the endpoints that serve a pipe claim a listener.

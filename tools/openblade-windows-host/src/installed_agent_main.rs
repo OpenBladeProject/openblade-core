@@ -74,6 +74,29 @@ fn main() -> std::process::ExitCode {
                     openblade_platform_windows::agent_diagnostics::record,
                 );
             },
+            |owned| {
+                // Managed traces this and exits 0. One non-terminal line, never a
+                // failure record, so a genuine claim failure stays visible.
+                #[cfg(openblade_agent_endpoint)]
+                openblade_platform_windows::agent_diagnostics::record(match owned {
+                    session_native::exit::Owned::Pipe(code) => {
+                        openblade_platform_windows::agent_diagnostics::Event::PipeAlreadyOwned(code)
+                    }
+                    session_native::exit::Owned::StopEndpoint(code) => {
+                        openblade_platform_windows::agent_diagnostics::Event::StopEndpointAlreadyOwned(
+                            code,
+                        )
+                    }
+                });
+                #[cfg(not(openblade_agent_endpoint))]
+                {
+                    use std::io::Write;
+                    let _ = writeln!(
+                        std::io::stderr(),
+                        "OpenBlade installed Session Agent candidate: {owned:?}"
+                    );
+                }
+            },
             raise_fail_fast,
         )
     }

@@ -36,6 +36,10 @@ pub enum Event {
     Origin(io::ErrorKind, Option<i32>),
     Listener(io::ErrorKind, Option<i32>),
     AgentFailure(io::ErrorKind, Option<i32>),
+    /// Another Agent already owns a feature pipe or the stop event. Not a
+    /// failure: the Agent exits 0 quietly, as managed does, leaving this line.
+    PipeAlreadyOwned(Option<i32>),
+    StopEndpointAlreadyOwned(Option<i32>),
 }
 
 // Both fixed names match the existing managed diagnostics export glob. Keep
@@ -226,6 +230,28 @@ mod tests {
         // the last sink is best-effort and cannot replace the product outcome.
         fallback(event, None, &mut &mut [][..]);
     }
+    #[test]
+    fn an_already_owned_note_is_a_fixed_non_failure_line_with_the_os_error() {
+        for (event, expected) in [
+            (
+                Event::PipeAlreadyOwned(Some(5)),
+                &b"OpenBlade.SessionAgent.Native PipeAlreadyOwned(Some(5))
+"[..],
+            ),
+            (
+                Event::StopEndpointAlreadyOwned(Some(183)),
+                &b"OpenBlade.SessionAgent.Native StopEndpointAlreadyOwned(Some(183))
+"[..],
+            ),
+        ] {
+            let mut bytes = Vec::new();
+            fallback(event, None, &mut bytes);
+            assert_eq!(bytes, expected);
+            // The terminal failure record is a different event.
+            assert!(!matches!(event, Event::AgentFailure(..)));
+        }
+    }
+
     #[test]
     fn typed_native_events_are_exportable_bounded_and_reject_foreign_hardlinks() {
         let mut id = GUID::default();

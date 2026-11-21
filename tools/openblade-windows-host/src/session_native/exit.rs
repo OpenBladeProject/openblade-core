@@ -17,6 +17,13 @@ use std::{
     process::ExitCode,
 };
 
+/// What another Agent owns, with the OS error that said so.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub(crate) enum Owned {
+    Pipe(Option<i32>),
+    StopEndpoint(Option<i32>),
+}
+
 /// Why `entry_installed` did not end in a deliberate stop.
 #[derive(Debug)]
 pub(crate) enum Failure {
@@ -26,8 +33,8 @@ pub(crate) enum Failure {
     /// A selected role, the status watch or a supplier failed after admission.
     Fault(io::Error),
     /// Another Agent already owns the stop event or a pipe. Managed returns 0
-    /// quietly, without a diagnostic.
-    Quiet,
+    /// and writes one trace line, kept here as a non-terminal note.
+    Quiet(Owned),
 }
 
 pub(crate) enum Outcome {
@@ -50,11 +57,15 @@ pub(crate) fn guarded(entry: impl FnOnce() -> Result<(), Failure>) -> Outcome {
 pub(crate) fn conclude(
     outcome: Outcome,
     report: impl FnOnce(&io::Error),
+    note: impl FnOnce(Owned),
     fail_fast: impl FnOnce(),
 ) -> ExitCode {
     match outcome {
         Outcome::Stopped => ExitCode::SUCCESS,
-        Outcome::Failed(Failure::Quiet) => ExitCode::SUCCESS,
+        Outcome::Failed(Failure::Quiet(owned)) => {
+            note(owned);
+            ExitCode::SUCCESS
+        }
         Outcome::Failed(Failure::Denied(error)) => {
             report(&error);
             ExitCode::FAILURE
@@ -73,15 +84,16 @@ pub(crate) fn conclude(
 }
 
 /// The Agent's stop event is first-instance: another Agent already owns it.
-pub(crate) fn singleton(already_owned: bool) -> Result<(), Failure> {
-    if already_owned {
-        Err(Failure::Quiet)
-    } else {
-        Ok(())
+/// `existing` is the OS error that said the event already existed.
+pub(crate) fn singleton(existing: Option<i32>) -> Result<(), Failure> {
+    match existing {
+        Some(code) => Err(Failure::Quiet(Owned::StopEndpoint(Some(code)))),
+        None => Ok(()),
     }
 }
 
 type Check = fn(&io::Error) -> bool;
+type Conflict = fn(&io::Error) -> Option<i32>;
 
 /// Classify the result of the running roles. After a deliberate stop any
 /// failure is a drain error: it is reported, but the exit stays ordinary and is
@@ -90,17 +102,17 @@ type Check = fn(&io::Error) -> bool;
 /// anything else after admission is a fault.
 pub(crate) fn classify_run(result: io::Result<()>, deliberate: bool) -> Result<(), Failure> {
     #[cfg(openblade_agent_endpoint)]
-    let (is_origin, is_conflict): (Check, Check) = (
+    let (is_origin, is_conflict): (Check, Conflict) = (
         super::diagnostics::is_origin,
-        super::diagnostics::is_claim_conflict,
+        super::diagnostics::claim_conflict,
     );
     #[cfg(not(openblade_agent_endpoint))]
-    let (is_origin, is_conflict): (Check, Check) = (|_| false, |_| false);
+    let (is_origin, is_conflict): (Check, Conflict) = (|_| false, |_| None);
     result.map_err(|error| {
         if deliberate {
             Failure::Denied(error)
-        } else if is_conflict(&error) {
-            Failure::Quiet
+        } else if let Some(code) = is_conflict(&error) {
+            Failure::Quiet(Owned::Pipe(Some(code)))
         } else if is_origin(&error) {
             Failure::Denied(error)
         } else {
@@ -138,6 +150,7 @@ mod tests {
         let code = conclude(
             outcome,
             |_| log.borrow_mut().push("report"),
+            |_| log.borrow_mut().push("note"),
             || log.borrow_mut().push("fail-fast"),
         );
         (code, log.into_inner())
@@ -184,6 +197,7 @@ mod tests {
             conclude(
                 outcome,
                 |_| log.borrow_mut().push("report"),
+                |_| log.borrow_mut().push("note"),
                 || log.borrow_mut().push("fail-fast"),
             );
             assert_eq!(*log.borrow(), ["released", "report", "fail-fast"]);
@@ -205,11 +219,16 @@ mod tests {
 
     #[test]
     fn another_agent_owning_the_stop_event_is_a_quiet_exit_and_the_first_is_not() {
-        assert!(singleton(false).is_ok());
-        let quiet = Outcome::Failed(singleton(true).unwrap_err());
-        let (code, log) = run(quiet);
+        assert!(singleton(None).is_ok());
+        let failure = singleton(Some(183)).unwrap_err();
+        assert!(matches!(
+            failure,
+            Failure::Quiet(Owned::StopEndpoint(Some(183)))
+        ));
+        // One non-terminal note, no failure report and no crash.
+        let (code, log) = run(Outcome::Failed(failure));
         assert_eq!(code, ExitCode::SUCCESS);
-        assert!(log.is_empty());
+        assert_eq!(log, ["note"]);
     }
 
     #[test]
@@ -273,7 +292,10 @@ mod tests {
         async fn a_pipe_claim_conflict_flowing_out_of_the_roles_is_quiet() {
             for code in [5, 231] {
                 let result = failing(diagnostics::claim(io::Error::from_raw_os_error(code))).await;
-                assert!(matches!(classify_run(result, false), Err(Failure::Quiet)));
+                assert!(matches!(
+                    classify_run(result, false),
+                    Err(Failure::Quiet(Owned::Pipe(Some(c)))) if c == code
+                ));
             }
             // Another claim failure is a listener fault, not a conflict.
             let result = failing(diagnostics::claim(io::Error::from_raw_os_error(2))).await;

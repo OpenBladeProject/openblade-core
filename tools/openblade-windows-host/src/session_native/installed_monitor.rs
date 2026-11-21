@@ -35,7 +35,8 @@ pub(super) fn run(
     if raw.is_null() {
         return Err(Denied(io::Error::last_os_error()));
     }
-    let existing = unsafe { GetLastError() } == ERROR_ALREADY_EXISTS;
+    let existing =
+        (unsafe { GetLastError() } == ERROR_ALREADY_EXISTS).then_some(ERROR_ALREADY_EXISTS as i32);
     let stop = unsafe { OwnedHandle::from_raw_handle(raw) };
     // Managed exits 0 quietly when another Agent owns its stop event.
     singleton(existing)?;
