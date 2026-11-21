@@ -380,7 +380,7 @@ fn fan_control(v: &Value) -> io::Result<()> {
 pub(super) use crate::service_status::PerformanceOverride as Override;
 /// The destination saved Custom settings name on exact RZ09-0581, if the
 /// model admits them (`Destination::custom`). Settings without both levels
-/// name none; `profile_custom` supplies a profile's missing levels first.
+/// name none; `Selected::profile` supplies a profile's missing levels first.
 pub(super) fn custom_destination(settings: &Value) -> Option<Destination> {
     Destination::custom(
         settings["cpu"].as_u64()?,
@@ -478,8 +478,10 @@ fn fan_settings(settings: &FanControl) -> Value {
     json!({"mode":settings.mode.0,"fixedSpeedRpm":settings.fixed_speed_rpm,"manualCurve":{"cpu":points(&curve.cpu),"gpu":points(&curve.gpu),"useHigherTemperatureForBoth":curve.use_higher_temperature_for_both}})
 }
 /// The foreground application one interactive session reported: the path
-/// in `NormalizeExecutablePath` form and the active pair managed
-/// `SetApplicationContext` keeps for it.
+/// in `NormalizeExecutablePath` form and a context for the active pair
+/// managed `SetApplicationContext` keeps for it. In Stage 4b B1 the context
+/// stays empty: each read selects the reported path again in the profiles it
+/// read (`Storage::profile_layer`). B2 selects at the report and fills it.
 #[derive(Clone, Debug, Default)]
 pub(super) struct Foreground {
     reported: Option<String>,
@@ -721,8 +723,8 @@ impl Storage {
     /// for the reported path over the profiles just read, so a profile edit
     /// takes effect at the next read without a new report.
     pub(super) fn profile_layer(&self, foreground: &Foreground) -> io::Result<ProfileLayer> {
-        let set = aggregate(self.files.as_ref(), self.same_path)?
-            .map(|doc| typed_profiles(&doc["profiles"]))
+        let set = committed_aggregate(self.files.as_ref(), self.same_path)?
+            .map(|committed| typed_profiles(&committed))
             .transpose()?;
         let mut context = foreground.context.clone();
         context.report(
@@ -1379,6 +1381,21 @@ impl Storage {
 // explicitly represented performance fields. Missing configuration does not
 // materialize or activate a default.
 fn aggregate(files: &dyn Files, same_path: fn(&str, &str) -> bool) -> io::Result<Option<Value>> {
+    Ok(committed_aggregate(files, same_path)?.map(|committed| committed.document))
+}
+
+/// An aggregate `aggregate` admitted, with the committed `profiles.json` bytes
+/// it was read from and their schema.
+struct Committed {
+    document: Value,
+    profile: Vec<u8>,
+    schema: i32,
+}
+
+fn committed_aggregate(
+    files: &dyn Files,
+    same_path: fn(&str, &str) -> bool,
+) -> io::Result<Option<Committed>> {
     if files.read(configuration::RECOVERY_REQUIRED)?.is_some() {
         return Err(denied());
     }
@@ -1485,17 +1502,31 @@ fn aggregate(files: &dyn Files, same_path: fn(&str, &str) -> bool) -> io::Result
     if schema == 26 {
         preserve_legacy_independent_intent(&mut doc["profiles"]);
     }
-    Ok(Some(doc))
+    Ok(Some(Committed {
+        document: doc,
+        profile: profile.ok_or_else(denied)?,
+        schema,
+    }))
 }
 
-/// The typed set of an aggregate `aggregate` admitted: its `profiles` member
-/// as managed `ProfileStore` binds it. The domain decoder refuses a member
-/// managed would not bind, and then nothing resolves.
-fn typed_profiles(profiles: &Value) -> io::Result<ProfileSet> {
-    let bytes = serde_json::to_vec(profiles)?;
-    let json = openblade_domain::profile_set::json::parse(&bytes).map_err(|_| denied())?;
-    openblade_domain::profile_set::decode::profile_set(&json, Dialect::Document)
-        .map_err(|_| denied())
+/// The typed set of an aggregate `committed_aggregate` admitted: the
+/// `profiles` member of its committed bytes as managed `ProfileStore` binds
+/// it, with the schema-26 `PreserveLegacyIndependentProfileIntent` that
+/// `aggregate` applies to its `Value`. The bytes go through the domain's
+/// ordered reader, never through `Value`: this host's serde_json keeps no
+/// member order, so a `Value` writes members alphabetically, and the decoder
+/// needs the lighting `kind` discriminator first. A round trip would refuse
+/// every Static, Breathing or other effect with members after `kind`. The
+/// decoder refuses a member managed would not bind, and then nothing resolves.
+fn typed_profiles(committed: &Committed) -> io::Result<ProfileSet> {
+    use openblade_domain::profile_set::{decode, json, normalize};
+    let root = json::parse(&committed.profile).map_err(|_| denied())?;
+    let profiles = root.member("profiles").ok_or_else(denied)?;
+    let mut set = decode::profile_set(profiles, Dialect::Document).map_err(|_| denied())?;
+    if committed.schema == 26 {
+        normalize::preserve_legacy_independent_profile_intent(&mut set);
+    }
+    Ok(set)
 }
 
 /// Managed `LightingSettingsFactory.PreserveLegacyIndependentProfileIntent`,
