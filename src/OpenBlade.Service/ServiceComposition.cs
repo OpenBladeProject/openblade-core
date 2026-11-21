@@ -142,8 +142,12 @@ internal static class ServiceComposition
                 ? UnavailableExperimentalFanRpmFactory.Instance
                 : BatteryValidationFactory.CreateWindowsFanRpmForService(
                     provider.GetRequiredService<FirmwareCompatibilityPolicy>()));
-        services.AddSingleton<IGpuClockOffsetController>(_ =>
-            new NvidiaGpuClockOffsetController());
+        services.AddSingleton<IGpuClockOffsetController>(provider =>
+            provider.GetRequiredService<IProductionBatteryPortFactory>() is ExperimentalBladeFactory experimental
+                ? new NvidiaGpuClockOffsetController(
+                    NvidiaNvmlClockOffsetApi.Instance,
+                    experimental.GpuClockOffsetDeviceNames)
+                : new NvidiaGpuClockOffsetController());
         services.AddSingleton<IVerifiedBladeDeviceProvider>(provider =>
         {
             FirmwareCompatibilityPolicy compatibilityPolicy =

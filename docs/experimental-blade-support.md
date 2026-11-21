@@ -45,7 +45,7 @@ are listed in the [complete fan review](source-reviewed-thermal-967.md).
 
 | Laptop | Model number | Controls |
 | --- | --- | --- |
-| Blade 14 (2025) | `RZ09-0530` | Balanced, Silent, Maximum Power, battery modes, Custom levels, fixed fans and curves, keyboard and logo lighting, 50–100% charge limits, optional [THX audio](thx-audio.md) with a supported installed stack |
+| Blade 14 (2025) | `RZ09-0530` | Balanced, Silent, Maximum Power, battery modes, Custom levels, fixed fans and curves, GPU core and memory clock offsets, keyboard and logo lighting, 50–100% charge limits, optional [THX audio](thx-audio.md) with a supported installed stack |
 | Blade 16 (2023) | `RZ09-0483` | Performance and Custom levels with CPU Boost, HyperBoost with or without the cooling pad, fixed and maximum fans, host curves in Balanced/Silent/Performance/Custom on confirmed full-power AC, keyboard and logo lighting, 50–100% charge limits |
 | Blade 14 (2023) | `RZ09-0482` | Balanced, Silent, Custom levels, HyperBoost with or without the cooling pad, fixed fans, host curves in Balanced/Silent/Custom on confirmed full-power AC, keyboard and logo lighting, 50–100% charge limits |
 | Blade 18 (2023) | `RZ09-0484` | Performance and Custom levels, including every CPU Boost/GPU level combination and High/High, linked fixed fans in Balanced/Silent, fan curves in Balanced/Silent and Custom Maximum Fans, keyboard and logo lighting, 50–100% charge limits |
@@ -62,7 +62,7 @@ temperature holds 5000 RPM. Physical curve validation remains pending; see the
 
 | Laptop | Model number | Controls |
 | --- | --- | --- |
-| Blade 18 (2025) | `RZ09-0529` | Balanced, Silent, Turbo, Maximum Power, Battery Saver, Custom Low/Medium/High, Automatic, fixed fans and curves, charge limits 50–80% in 5% steps or protection off |
+| Blade 18 (2025) | `RZ09-0529` | Balanced, Silent, Turbo, Maximum Power, Battery Saver, Custom Low/Medium/High, Automatic, fixed fans and curves, GPU core and memory clock offsets, charge limits 50–80% in 5% steps or protection off |
 | Blade 14 (2024) | `RZ09-0508` | Balanced, Silent, Turbo, Custom Low/Medium/High with CPU Boost, Automatic, fixed fans and curves, Maximum Fans, charge limits 50–80% in 5% steps or protection off |
 | Blade 16 (2024) | `RZ09-0510` | Balanced, Silent, Turbo, Custom Low/Medium/High with CPU Boost, Automatic, fixed fans and curves, Maximum Fans, charge limits 50–80% in 5% steps or protection off |
 | Blade 18 (2024) | `RZ09-0509` | Balanced, Silent, Turbo, Custom Low/Medium/High, Automatic, fixed fans and curves, Maximum Fans, charge limits 50–80% in 5% steps or protection off |
@@ -74,6 +74,20 @@ All four offer Balanced on battery. The other listed presets require confirmed
 full-power AC, except Battery Saver on Blade 18 (2025), which is a battery mode.
 Fixed speeds and curves follow the [per-preset fan review](source-reviewed-thermal-967.md).
 See the [exact-model admission guide](source-reviewed-blade-models.md) for the other controls and evidence.
+
+### GPU clock offsets
+
+RZ09-0529 and RZ09-0530 offer the GPU core and memory clock offsets on confirmed
+full-power AC. Synapse enables its NVIDIA overclock panel for products 711 and
+709 with core -1000 to 400 MHz and memory -1000 to 3000 MHz in 1 MHz steps; the
+pinned UI chunks are listed in each model's diagnostics evidence. OpenBlade
+writes through the NVIDIA driver, never through the laptop firmware, and applies
+the intersection of that envelope and the range the driver reports. As in
+Synapse, the control is hidden on battery and in low power, and OpenBlade
+applies no offsets there. The GPU must be one of the exact names Razer lists for the model
+(RZ09-0529: RTX 5070 Ti, 5080, 5090; RZ09-0530: RTX 5060, 5070, 5070 Ti Laptop
+GPU) and the only NVIDIA GPU present; otherwise the control stays unavailable.
+This support is source-reviewed; physical validation is pending.
 
 ### Additional 2021/2022 models
 

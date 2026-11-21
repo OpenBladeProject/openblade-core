@@ -1458,6 +1458,52 @@ public sealed partial class WindowsVerifiedBladeDeviceProviderProductionTests
         Assert.Equal(0, factory.OpenCount);
     }
 
+    [Theory]
+    [InlineData((ushort)0x02C7)]
+    [InlineData((ushort)0x02C5)]
+    public async Task SourceReviewedGpuAdmission_WritesInPolicyAndRejectsOutsideOrUnreadableDriverRange(ushort product)
+    {
+        DeviceCapabilities capabilities = ExperimentalBladePort.CreateCapabilities(
+            ExperimentalBladeModels.All.Single(model => model.ProductId == product),
+            enabled: true);
+        var gpu = new FakeGpuClockOffsetController();
+        var factory = new FakeProductionFactory(capabilities);
+        using var provider = ReadyProvider(factory, gpu);
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+        var edge = new GpuClockOffsetSettings(400, 3000);
+        Assert.True(gpu.Capabilities!.Supports(new GpuClockOffsetSettings(405, 5)));
+
+        await device.SetGpuClockOffsetsAsync(edge, default);
+        await Assert.ThrowsAsync<CapabilityUnavailableException>(() =>
+            device.SetGpuClockOffsetsAsync(new GpuClockOffsetSettings(405, 5), default));
+        gpu.Capabilities = null;
+        await Assert.ThrowsAsync<CapabilityUnavailableException>(() =>
+            device.SetGpuClockOffsetsAsync(new GpuClockOffsetSettings(5, 5), default));
+
+        Assert.Equal([edge], gpu.Writes);
+        Assert.Equal(3, gpu.QueryCount);
+        Assert.Equal(0, factory.OpenCount);
+    }
+
+    [Theory]
+    [InlineData((ushort)0x02C7)]
+    [InlineData((ushort)0x02C5)]
+    public async Task SourceReviewedGpuAdmission_PausedWritesRejectWithoutDriverQuery(ushort product)
+    {
+        DeviceCapabilities capabilities = ExperimentalBladePort.CreateCapabilities(
+            ExperimentalBladeModels.All.Single(model => model.ProductId == product),
+            enabled: false);
+        var gpu = new FakeGpuClockOffsetController();
+        using var provider = ReadyProvider(new FakeProductionFactory(capabilities), gpu);
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+
+        await Assert.ThrowsAsync<CapabilityUnavailableException>(() =>
+            device.SetGpuClockOffsetsAsync(new GpuClockOffsetSettings(5, 5), default));
+
+        Assert.Equal(0, gpu.QueryCount);
+        Assert.Empty(gpu.Writes);
+    }
+
     [Fact]
     public async Task SetGpuClockOffsets_StepLessReadWritePolicyAdmitsInRangeWrite()
     {

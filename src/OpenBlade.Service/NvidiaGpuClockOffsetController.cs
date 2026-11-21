@@ -29,9 +29,10 @@ internal sealed class NvidiaGpuClockOffsetController : IGpuClockOffsetController
     private const uint ClockOffsetStructVersion = (1u << 24) | 24u;
     private const int PerformanceStateZero = 0;
     private const int NvmlMemoryOffsetMultiplier = 2;
-    private const string AdmittedDeviceName = "NVIDIA GeForce RTX 5090 Laptop GPU";
+    private const string DefaultAdmittedDeviceName = "NVIDIA GeForce RTX 5090 Laptop GPU";
 
     private readonly INvidiaNvmlClockOffsetApi api;
+    private readonly IReadOnlySet<string> admittedDeviceNames;
 
     internal NvidiaGpuClockOffsetController()
         : this(NvidiaNvmlClockOffsetApi.Instance)
@@ -39,8 +40,20 @@ internal sealed class NvidiaGpuClockOffsetController : IGpuClockOffsetController
     }
 
     internal NvidiaGpuClockOffsetController(INvidiaNvmlClockOffsetApi api)
+        : this(api, admittedDeviceNames: null)
+    {
+    }
+
+    // A model that admits GPU tuning names its exact NVML GPU names. Omitting them
+    // keeps the originally validated RTX 5090 Laptop GPU as the only admitted name.
+    internal NvidiaGpuClockOffsetController(
+        INvidiaNvmlClockOffsetApi api,
+        IReadOnlySet<string>? admittedDeviceNames)
     {
         this.api = api ?? throw new ArgumentNullException(nameof(api));
+        this.admittedDeviceNames = admittedDeviceNames is { Count: > 0 }
+            ? new HashSet<string>(admittedDeviceNames, StringComparer.Ordinal)
+            : new HashSet<string>(StringComparer.Ordinal) { DefaultAdmittedDeviceName };
     }
 
     public GpuClockOffsetCapabilities? Query()
@@ -173,10 +186,11 @@ internal sealed class NvidiaGpuClockOffsetController : IGpuClockOffsetController
         EnsureSuccess(
             api.GetDeviceName(device, name, checked((uint)name.Capacity)),
             "read the NVIDIA GPU name");
-        // Both admitted Blade SKUs were validated with this exact laptop GPU.
+        // The validated Blade SKUs use the default laptop GPU; source-reviewed models
+        // name their own exact GPUs.
         // Recheck the current target for every query and write; a previous
         // successful query does not authorize another GPU selected later.
-        if (!string.Equals(name.ToString(), AdmittedDeviceName, StringComparison.Ordinal))
+        if (!admittedDeviceNames.Contains(name.ToString()))
         {
             throw new NvmlClockOffsetException(
                 status: -1,

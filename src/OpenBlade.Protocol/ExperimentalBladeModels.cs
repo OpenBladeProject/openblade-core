@@ -95,6 +95,7 @@ internal static class ExperimentalBladeModels
                 new("AdapterPowerClassification", "SynapseSourceBacked", sources),
                 .. OrdinaryThermalEvidenceFor(model),
                 .. FanStopEvidenceFor(model),
+                .. GpuClockOffsetEvidenceFor(model),
                 .. (model.ProductId == 0x02C7
                     ? new ExperimentalFeatureEvidence[]
                     {
@@ -259,11 +260,21 @@ internal static class ExperimentalBladeModels
                 new(model.ProductId == 0x0255 ? "CreatorPerformanceRaw2" : "MaximumPowerPerformanceRaw2",
                     "SynapseSourceBackedWithoutPhysicalValidation", exactSources)];
         }
-        features = [.. features, .. FanStopEvidenceFor(model), .. OrdinaryThermalEvidenceFor(model), .. CpuVoltageEvidenceFor(model)];
+        features = [.. features, .. FanStopEvidenceFor(model), .. OrdinaryThermalEvidenceFor(model), .. CpuVoltageEvidenceFor(model),
+            .. GpuClockOffsetEvidenceFor(model)];
         return model.AdapterPowerEvidenceSource is { } source
             ? [.. features, new("AdapterPowerClassification", "SynapseSourceBacked", [source])]
             : features;
     }
+
+    private static IEnumerable<ExperimentalFeatureEvidence> GpuClockOffsetEvidenceFor(ExperimentalBladeModel model) =>
+        !ExperimentalBladePort.SupportsExperimentalGpuClockOffsets(model) ? [] :
+        [new("GpuClockOffsets", "SynapseSourceBackedNvmlWithoutPhysicalValidation",
+            model.ProductId == 0x02C7
+                ? ["https://apps.razer.com/synapse/products/711/ui/static/js/892.12b29c32.chunk.js;SHA256=FE1298AD9FAAE66301E76B439311F19393E4A46E1F8C5EB42B65350DA88F9100",
+                    "https://apps.razer.com/synapse/products/711/ui/static/js/main.a649ed49.js;SHA256=4B42EF4995470865B7D02587B85724247B886BDF2376EB6A78DA38BB9B6CBF99"]
+                : ["https://apps.razer.com/synapse/products/709/ui/static/js/2915.4e513855.chunk.js;SHA256=6D6106090CDC8D26F527F0265C07DBB4035EC57FBD0BDC41F0EDB1A205ADCEB2",
+                    "https://apps.razer.com/synapse/products/709/ui/static/js/main.fd91712e.js;SHA256=338D8F51C9A1179D3B2436F77FD44B3D393C3CC987D0EC73928E1F636BF3A9B7"])];
 
     private static IEnumerable<ExperimentalFeatureEvidence> CpuVoltageEvidenceFor(ExperimentalBladeModel model) =>
         model.ProductId is not (0x02B6 or 0x029D or 0x02C5) ? [] :

@@ -80,6 +80,19 @@ public sealed class ExperimentalEvidenceCatalogTests
                     Assert.Equal("evidence/source-reviewed-blades/2026-11-13-rz09-0529-keyboard-frames.json", feature.Sources[1]);
                     Assert.EndsWith(";SHA256=FDD5D817BF28F152B3DF498AC6E908291993BBCC6939BE4D86F94AD74F52A9F1", feature.Sources[2]);
                 }
+                else if (feature.Feature == "GpuClockOffsets")
+                {
+                    Assert.Contains(model.ProductId, new ushort[] { 0x02C5, 0x02C7 });
+                    Assert.Equal("SynapseSourceBackedNvmlWithoutPhysicalValidation", feature.Basis);
+                    Assert.Equal("Pending", snapshot.PhysicalValidation);
+                    Assert.Equal(2, feature.Sources.Count);
+                    Assert.StartsWith($"https://apps.razer.com/synapse/products/{(model.ProductId == 0x02C7 ? 711 : 709)}/ui/static/js/", feature.Sources[0]);
+                    Assert.All(feature.Sources, source =>
+                    {
+                        Assert.StartsWith($"https://apps.razer.com/synapse/products/{(model.ProductId == 0x02C7 ? 711 : 709)}/ui/", source);
+                        Assert.Matches(@";SHA256=[0-9A-F]{64}$", source);
+                    });
+                }
                 else if (feature.Feature == "CpuVoltageOptimizer")
                 {
                     Assert.Contains(model.ProductId, new ushort[] { 0x02B6, 0x029D, 0x02C5 });

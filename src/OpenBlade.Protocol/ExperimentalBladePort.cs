@@ -218,7 +218,49 @@ internal sealed partial class ExperimentalBladePort(
                     DeviceFeatureAccess.ReadWrite,
                     ThxAudioProductIds.Rznb11)
                 : null,
+            GpuOverclock = enabled && SupportsExperimentalGpuClockOffsets(model)
+                ? CreateGpuOverclockCapabilities()
+                : null,
         };
+
+    // Synapse sets isNvidiaOverclockUISupported for products 709 (RZ09-0530) and 711
+    // (RZ09-0529). Their pinned UI chunks (709 2915, 711 892) bound core -1000..400
+    // and memory -1000..3000 in 1 MHz steps, the same policy envelope as the
+    // validated backends. The write goes through the NVIDIA API, never HID, so the
+    // driver-reported range and exact GPU name remain independent per-write gates.
+    internal static bool SupportsExperimentalGpuClockOffsets(ExperimentalBladeModel model) =>
+        model.ProductId is 0x02C7 or 0x02C5;
+
+    internal static GpuOverclockCapabilities CreateGpuOverclockCapabilities() =>
+        new(new DeviceNumericRange(-1000, 400, 1),
+            new DeviceNumericRange(-1000, 3000, 1),
+            DeviceFeatureAccess.ReadWrite)
+        {
+            SupportsEnableDisable = true,
+        };
+
+    // Exact NVML names of the GPUs Razer lists for each model. The controller still
+    // requires one NVIDIA GPU and re-reads the name before every query and write.
+    internal static IReadOnlySet<string> GetExperimentalGpuClockOffsetDeviceNames(ExperimentalBladeModel model)
+    {
+        string[] names = model.ProductId switch
+        {
+            0x02C7 =>
+            [
+                "NVIDIA GeForce RTX 5070 Ti Laptop GPU",
+                "NVIDIA GeForce RTX 5080 Laptop GPU",
+                "NVIDIA GeForce RTX 5090 Laptop GPU",
+            ],
+            0x02C5 =>
+            [
+                "NVIDIA GeForce RTX 5060 Laptop GPU",
+                "NVIDIA GeForce RTX 5070 Laptop GPU",
+                "NVIDIA GeForce RTX 5070 Ti Laptop GPU",
+            ],
+            _ => [],
+        };
+        return new HashSet<string>(names, StringComparer.Ordinal);
+    }
 
     private static bool SupportsExperimentalCustom(ExperimentalBladeModel model) =>
         model.ThermalPolicy?.SupportsCustom ?? (model.ProductId is 0x029F or 0x029D or 0x02C5 or 0x0255 or 0x02A0);
