@@ -418,6 +418,56 @@ async fn a_single_stalled_power_read_refuses_no_recipe() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn a_stalled_power_read_is_charged_once_at_its_own_length() {
+    // Silent with one 07/8C read held S ms, the recipe's first reading or the
+    // first setter's own, checks at 920 + S ms. Five exchanges are left: one is
+    // charged at the slowest (230 + S) and four at the second longest (230), so
+    // the check ends at 2070 + 2S ms and in 6 s runs up to S = 1965 ms. Replies
+    // are polled every 5 ms, so the refused case is the next stall on that
+    // grid, 1970 ms. Charging the stall at the second longest would let it run.
+    for read in [1, 2] {
+        for (stall, runs) in [(1965, true), (1970, false)] {
+            let fixture = balanced();
+            fixture.state.lock().unwrap().power_stall = Some((read, Duration::from_millis(stall)));
+            let permit = Paced {
+                destination: Some(Destination::Preset(Preset::Silent)),
+                ..Paced::default()
+            };
+            let started = Instant::now();
+            let observed = apply(&fixture, &permit, Duration::from_secs(6)).await;
+            let case = format!("{stall} ms on read {read}");
+            if runs {
+                assert_eq!(
+                    observed,
+                    Some(ObservedPerformance::SilentAutomatic),
+                    "{case}"
+                );
+                assert!(permit.refusals.lock().unwrap().is_empty(), "{case}");
+                assert_eq!(
+                    started.elapsed(),
+                    Duration::from_millis(2070 + stall),
+                    "{case}"
+                );
+            } else {
+                assert_eq!(observed, None, "{case}");
+                assert_eq!(
+                    *permit.refusals.lock().unwrap(),
+                    [Refusal::Deadline],
+                    "{case}"
+                );
+                assert_eq!(*permit.rows.lock().unwrap(), [Progress::Prepared], "{case}");
+                assert_eq!(fixture.state.lock().unwrap().writes, 0, "{case}");
+                assert_eq!(
+                    started.elapsed(),
+                    Duration::from_millis(920 + stall),
+                    "{case}"
+                );
+            }
+        }
+    }
+}
+
+#[tokio::test(start_paused = true)]
 async fn a_stalled_prepared_append_refuses_at_the_derived_threshold() {
     // With every exchange at 230 ms, a Prepared append of P ms checks at
     // 920 + P ms. Silent has four exchanges after its next one and five rows
@@ -455,6 +505,43 @@ async fn a_stalled_prepared_append_refuses_at_the_derived_threshold() {
                     "{case}"
                 );
             }
+        }
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_fan_recipe_charges_a_stalled_prepared_append_for_each_row() {
+    // Fixed fans from Balanced with a Prepared append of P ms check at
+    // 920 + P ms. Nine exchanges follow the next one, the spacing is 275 ms
+    // and nine rows are left (two per setter and the settled row): the check
+    // ends at 3265 + 10P ms, so in 6 s it runs up to P = 273 ms.
+    for (stall, runs) in [(273, true), (274, false)] {
+        let fixture = balanced();
+        let permit = Paced {
+            fan: FanIntent::checked(1, 3700),
+            prepared_append: Duration::from_millis(stall),
+            ..Paced::default()
+        };
+        let started = Instant::now();
+        let observed = apply(&fixture, &permit, Duration::from_secs(6)).await;
+        let case = format!("{stall} ms");
+        assert_eq!(observed.is_some(), runs, "{case}");
+        if runs {
+            assert!(permit.refusals.lock().unwrap().is_empty(), "{case}");
+            assert_eq!(fixture.state.lock().unwrap().writes, 4, "{case}");
+        } else {
+            assert_eq!(
+                *permit.refusals.lock().unwrap(),
+                [Refusal::Deadline],
+                "{case}"
+            );
+            assert_eq!(*permit.fan_rows.lock().unwrap(), [0], "{case}");
+            assert_eq!(fixture.state.lock().unwrap().writes, 0, "{case}");
+            assert_eq!(
+                started.elapsed(),
+                Duration::from_millis(920 + stall),
+                "{case}"
+            );
         }
     }
 }
