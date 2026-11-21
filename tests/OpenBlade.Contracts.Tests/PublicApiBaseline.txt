@@ -360,6 +360,19 @@ type sealed class OpenBlade.Contracts.BreathingLightingParameters
   property OpenBlade.Contracts.BreathingColorMode ColorMode { get; init; }
   property System.Nullable<OpenBlade.Contracts.RgbColor> PrimaryColor { get; init; }
   property System.Nullable<OpenBlade.Contracts.RgbColor> SecondaryColor { get; init; }
+type sealed class OpenBlade.Contracts.ClearLocalDimmingRequest
+  base OpenBlade.Contracts.ServiceRequest
+  interface System.IEquatable<OpenBlade.Contracts.ClearLocalDimmingRequest>
+  ctor (System.Int32 Version, System.Guid RequestId)
+  method System.Void Deconstruct(out System.Int32 Version, out System.Guid RequestId)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method sealed override System.Boolean Equals(OpenBlade.Contracts.ServiceRequest other)
+  method static System.Boolean op_Equality(OpenBlade.Contracts.ClearLocalDimmingRequest left, OpenBlade.Contracts.ClearLocalDimmingRequest right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.ClearLocalDimmingRequest left, OpenBlade.Contracts.ClearLocalDimmingRequest right)
+  method virtual OpenBlade.Contracts.ClearLocalDimmingRequest <Clone>$()
+  method virtual System.Boolean Equals(OpenBlade.Contracts.ClearLocalDimmingRequest other)
 type sealed class OpenBlade.Contracts.ConfirmedBatteryState
   interface System.IEquatable<OpenBlade.Contracts.ConfirmedBatteryState>
   ctor (System.Boolean protectionEnabled, System.Nullable<System.Int32> chargeLimitPercent, System.Nullable<System.Boolean> temporaryFullCharge)
@@ -389,6 +402,7 @@ type sealed class OpenBlade.Contracts.ConfirmedDeviceState
   method System.Nullable<OpenBlade.Contracts.LogoLightingMode> get_LogoLighting()
   method System.Nullable<OpenBlade.Contracts.PerformancePreset> get_Performance()
   method System.Nullable<System.Boolean> get_HyperBoostActive()
+  method System.Nullable<System.Boolean> get_LocalDimmingActive()
   method System.Void Deconstruct(out System.Nullable<OpenBlade.Contracts.PerformancePreset> Performance, out System.Nullable<OpenBlade.Contracts.FanMode> Fans, out OpenBlade.Contracts.ConfirmedBatteryState Battery, out OpenBlade.Contracts.LightingSettings Lighting)
   method System.Void set_Battery(OpenBlade.Contracts.ConfirmedBatteryState value)
   method System.Void set_CustomPerformance(OpenBlade.Contracts.CustomPerformanceSettings value)
@@ -397,6 +411,7 @@ type sealed class OpenBlade.Contracts.ConfirmedDeviceState
   method System.Void set_HyperBoostActive(System.Nullable<System.Boolean> value)
   method System.Void set_IndependentLighting(OpenBlade.Contracts.IndependentLightingSettings value)
   method System.Void set_Lighting(OpenBlade.Contracts.LightingSettings value)
+  method System.Void set_LocalDimmingActive(System.Nullable<System.Boolean> value)
   method System.Void set_LogoLighting(System.Nullable<OpenBlade.Contracts.LogoLightingMode> value)
   method System.Void set_Performance(System.Nullable<OpenBlade.Contracts.PerformancePreset> value)
   method override System.Boolean Equals(System.Object obj)
@@ -414,6 +429,7 @@ type sealed class OpenBlade.Contracts.ConfirmedDeviceState
   property System.Nullable<OpenBlade.Contracts.LogoLightingMode> LogoLighting { get; init; }
   property System.Nullable<OpenBlade.Contracts.PerformancePreset> Performance { get; init; }
   property System.Nullable<System.Boolean> HyperBoostActive { get; init; }
+  property System.Nullable<System.Boolean> LocalDimmingActive { get; init; }
 type sealed class OpenBlade.Contracts.ControlOperationResult
   interface System.IEquatable<OpenBlade.Contracts.ControlOperationResult>
   ctor (OpenBlade.Contracts.ControlOperationStatus Status, System.String Message)
@@ -1100,6 +1116,8 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   method OpenBlade.Contracts.FanSpeedRange get_FanSpeedRange()
   method OpenBlade.Contracts.GpuOverclockCapabilities get_GpuOverclock()
   method OpenBlade.Contracts.HyperBoostBaseModeCapabilities get_HyperBoostBaseModes()
+  method OpenBlade.Contracts.IntelCpuPowerLimitCapabilities get_IntelCpuPowerLimit()
+  method OpenBlade.Contracts.LocalDimmingCapabilities get_LocalDimming()
   method OpenBlade.Contracts.SpecialKeySlotSet get_WritableSpecialKeySlots()
   method OpenBlade.Contracts.ThxAudioCapabilities get_ThxAudio()
   method System.Boolean SupportsBreathingMode(OpenBlade.Contracts.BreathingColorMode mode)
@@ -1137,6 +1155,7 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   method System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.OneShotLaptopControl> get_OneShotLaptopControls()
   method System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.PerformancePreset> get_PerformancePresets()
   method System.Collections.Generic.IReadOnlySet<System.Int32> get_ChargeLimits()
+  method System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> get_FirmwareGamingGpuOverclockAccess()
   method System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> get_HyperBoostAccess()
   method System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> get_HyperBoostWithoutCoolingPadAccess()
   method System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> get_LampArrayLightingAccess()
@@ -1153,6 +1172,7 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   method System.Void set_FanModes(System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.FanMode> value)
   method System.Void set_FanSpeedRange(OpenBlade.Contracts.FanSpeedRange value)
   method System.Void set_FanSpeedRangesByPerformancePreset(System.Collections.Generic.IReadOnlyDictionary<OpenBlade.Contracts.PerformancePreset, OpenBlade.Contracts.FanSpeedRange> value)
+  method System.Void set_FirmwareGamingGpuOverclockAccess(System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> value)
   method System.Void set_GpuOverclock(OpenBlade.Contracts.GpuOverclockCapabilities value)
   method System.Void set_HasFanStopSourceEvidence(System.Boolean value)
   method System.Void set_HasFanStopTrialEvidence(System.Boolean value)
@@ -1161,9 +1181,11 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   method System.Void set_HyperBoostBaseModes(OpenBlade.Contracts.HyperBoostBaseModeCapabilities value)
   method System.Void set_HyperBoostEntryRestriction(System.Nullable<OpenBlade.Contracts.HyperBoostEntryRestriction> value)
   method System.Void set_HyperBoostWithoutCoolingPadAccess(System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> value)
+  method System.Void set_IntelCpuPowerLimit(OpenBlade.Contracts.IntelCpuPowerLimitCapabilities value)
   method System.Void set_KeyboardLightingLayoutId(System.String value)
   method System.Void set_LampArrayLightingAccess(System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> value)
   method System.Void set_LightingEffects(System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.LightingEffect> value)
+  method System.Void set_LocalDimming(OpenBlade.Contracts.LocalDimmingCapabilities value)
   method System.Void set_LogoLightingModes(System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.LogoLightingMode> value)
   method System.Void set_ObservedFanSpeedRangesByPerformancePreset(System.Collections.Generic.IReadOnlyDictionary<OpenBlade.Contracts.PerformancePreset, OpenBlade.Contracts.FanSpeedRange> value)
   method System.Void set_ObservedLightingEffects(System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.LightingEffect> value)
@@ -1206,6 +1228,8 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   property OpenBlade.Contracts.FanSpeedRange FanSpeedRange { get; init; }
   property OpenBlade.Contracts.GpuOverclockCapabilities GpuOverclock { get; init; }
   property OpenBlade.Contracts.HyperBoostBaseModeCapabilities HyperBoostBaseModes { get; init; }
+  property OpenBlade.Contracts.IntelCpuPowerLimitCapabilities IntelCpuPowerLimit { get; init; }
+  property OpenBlade.Contracts.LocalDimmingCapabilities LocalDimming { get; init; }
   property OpenBlade.Contracts.SpecialKeySlotSet WritableSpecialKeySlots { get; init; }
   property OpenBlade.Contracts.ThxAudioCapabilities ThxAudio { get; init; }
   property System.Boolean HasFanStopEvidence { get; }
@@ -1241,6 +1265,7 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   property System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.OneShotLaptopControl> OneShotLaptopControls { get; init; }
   property System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.PerformancePreset> PerformancePresets { get; init; }
   property System.Collections.Generic.IReadOnlySet<System.Int32> ChargeLimits { get; init; }
+  property System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> FirmwareGamingGpuOverclockAccess { get; init; }
   property System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> HyperBoostAccess { get; init; }
   property System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> HyperBoostWithoutCoolingPadAccess { get; init; }
   property System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> LampArrayLightingAccess { get; init; }
@@ -2009,6 +2034,45 @@ type sealed class OpenBlade.Contracts.IndependentLightingSettings
   property System.Nullable<System.Boolean> TouchpadStatusIndicatorEnabled { get; init; }
   property System.Nullable<System.Boolean> VaporChamberLightingEnabled { get; init; }
   property System.Nullable<System.Byte> Brightness { get; init; }
+type sealed class OpenBlade.Contracts.IntelCpuPowerLimitCapabilities
+  interface System.IEquatable<OpenBlade.Contracts.IntelCpuPowerLimitCapabilities>
+  ctor (OpenBlade.Contracts.DeviceNumericRange LongTermPowerMilliwatts, OpenBlade.Contracts.DeviceNumericRange ShortTermPowerMilliwatts, System.Collections.Generic.IReadOnlyList<System.Int32> TimeWindowSeconds, System.Int32 DefaultLongTermPowerMilliwatts, System.Int32 DefaultShortTermPowerMilliwatts, System.Int32 DefaultTimeWindowSeconds, OpenBlade.Contracts.DeviceFeatureAccess Access)
+  method OpenBlade.Contracts.DeviceFeatureAccess get_Access()
+  method OpenBlade.Contracts.DeviceNumericRange get_LongTermPowerMilliwatts()
+  method OpenBlade.Contracts.DeviceNumericRange get_ShortTermPowerMilliwatts()
+  method OpenBlade.Contracts.IntelCpuPowerLimitCapabilities <Clone>$()
+  method System.Boolean get_IsWellFormed()
+  method System.Boolean get_RangesKnown()
+  method System.Boolean get_SupportsShortTermPowerEnableDisable()
+  method System.Collections.Generic.IReadOnlyList<System.Int32> get_TimeWindowSeconds()
+  method System.Int32 get_DefaultLongTermPowerMilliwatts()
+  method System.Int32 get_DefaultShortTermPowerMilliwatts()
+  method System.Int32 get_DefaultTimeWindowSeconds()
+  method System.Void Deconstruct(out OpenBlade.Contracts.DeviceNumericRange LongTermPowerMilliwatts, out OpenBlade.Contracts.DeviceNumericRange ShortTermPowerMilliwatts, out System.Collections.Generic.IReadOnlyList<System.Int32> TimeWindowSeconds, out System.Int32 DefaultLongTermPowerMilliwatts, out System.Int32 DefaultShortTermPowerMilliwatts, out System.Int32 DefaultTimeWindowSeconds, out OpenBlade.Contracts.DeviceFeatureAccess Access)
+  method System.Void set_Access(OpenBlade.Contracts.DeviceFeatureAccess value)
+  method System.Void set_DefaultLongTermPowerMilliwatts(System.Int32 value)
+  method System.Void set_DefaultShortTermPowerMilliwatts(System.Int32 value)
+  method System.Void set_DefaultTimeWindowSeconds(System.Int32 value)
+  method System.Void set_LongTermPowerMilliwatts(OpenBlade.Contracts.DeviceNumericRange value)
+  method System.Void set_ShortTermPowerMilliwatts(OpenBlade.Contracts.DeviceNumericRange value)
+  method System.Void set_SupportsShortTermPowerEnableDisable(System.Boolean value)
+  method System.Void set_TimeWindowSeconds(System.Collections.Generic.IReadOnlyList<System.Int32> value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Contracts.IntelCpuPowerLimitCapabilities left, OpenBlade.Contracts.IntelCpuPowerLimitCapabilities right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.IntelCpuPowerLimitCapabilities left, OpenBlade.Contracts.IntelCpuPowerLimitCapabilities right)
+  method virtual System.Boolean Equals(OpenBlade.Contracts.IntelCpuPowerLimitCapabilities other)
+  property OpenBlade.Contracts.DeviceFeatureAccess Access { get; init; }
+  property OpenBlade.Contracts.DeviceNumericRange LongTermPowerMilliwatts { get; init; }
+  property OpenBlade.Contracts.DeviceNumericRange ShortTermPowerMilliwatts { get; init; }
+  property System.Boolean IsWellFormed { get; }
+  property System.Boolean RangesKnown { get; }
+  property System.Boolean SupportsShortTermPowerEnableDisable { get; init; }
+  property System.Collections.Generic.IReadOnlyList<System.Int32> TimeWindowSeconds { get; init; }
+  property System.Int32 DefaultLongTermPowerMilliwatts { get; init; }
+  property System.Int32 DefaultShortTermPowerMilliwatts { get; init; }
+  property System.Int32 DefaultTimeWindowSeconds { get; init; }
 type static class OpenBlade.Contracts.IpcJsonValidation
   method static System.Void ValidateNoDuplicateMembers(System.ReadOnlySpan<System.Byte> payload)
 type static class OpenBlade.Contracts.IpcMessageCodec
@@ -2289,6 +2353,25 @@ type sealed class OpenBlade.Contracts.LiveReadings
   property System.Nullable<System.Int32> Fan1Rpm { get; init; }
   property System.Nullable<System.Int32> Fan2Rpm { get; init; }
   property System.Nullable<System.Int32> GpuTemperatureCelsius { get; init; }
+type sealed class OpenBlade.Contracts.LocalDimmingCapabilities
+  interface System.IEquatable<OpenBlade.Contracts.LocalDimmingCapabilities>
+  ctor (OpenBlade.Contracts.DeviceFeatureAccess Access, System.Boolean SupportsClear)
+  method OpenBlade.Contracts.DeviceFeatureAccess get_Access()
+  method OpenBlade.Contracts.LocalDimmingCapabilities <Clone>$()
+  method System.Boolean get_IsWellFormed()
+  method System.Boolean get_SupportsClear()
+  method System.Void Deconstruct(out OpenBlade.Contracts.DeviceFeatureAccess Access, out System.Boolean SupportsClear)
+  method System.Void set_Access(OpenBlade.Contracts.DeviceFeatureAccess value)
+  method System.Void set_SupportsClear(System.Boolean value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Contracts.LocalDimmingCapabilities left, OpenBlade.Contracts.LocalDimmingCapabilities right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.LocalDimmingCapabilities left, OpenBlade.Contracts.LocalDimmingCapabilities right)
+  method virtual System.Boolean Equals(OpenBlade.Contracts.LocalDimmingCapabilities other)
+  property OpenBlade.Contracts.DeviceFeatureAccess Access { get; init; }
+  property System.Boolean IsWellFormed { get; }
+  property System.Boolean SupportsClear { get; init; }
 type enum OpenBlade.Contracts.LogoLightingMode
   field System.Int32 value__
   field const OpenBlade.Contracts.LogoLightingMode Breathing = 1
@@ -2390,7 +2473,7 @@ type static class OpenBlade.Contracts.OpenBladeIpc
   field const System.Int32 MaximumDiagnosticArchiveBytes = 16777216
   field const System.Int32 MaximumDiagnosticResponseBytes = 25165824
   field const System.Int32 MaximumMessageBytes = 65536
-  field const System.Int32 ProtocolVersion = 87
+  field const System.Int32 ProtocolVersion = 88
   field const System.Int32 ReadOnlyCompatibilityProtocolVersion = 51
   field const System.String PipeName = "OpenBlade.Service.v2"
 type static class OpenBlade.Contracts.OpenBladeProductVersion

@@ -229,6 +229,11 @@ public interface IServiceClient : IServiceStatusWatcher
         ApplyOneShotLaptopControl value,
         CancellationToken token);
 
+    Task<ControlOperationResult> ClearLocalDimmingAsync(CancellationToken token) =>
+        Task.FromResult(new ControlOperationResult(
+            ControlOperationStatus.Blocked,
+            "Local dimming can't be turned off right now."));
+
     Task<ControlOperationResult> ShutdownOpenBladeAsync(CancellationToken token);
 
 }

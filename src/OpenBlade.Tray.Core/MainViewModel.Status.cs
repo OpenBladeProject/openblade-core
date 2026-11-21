@@ -128,6 +128,9 @@ public sealed partial class MainViewModel
                 left.CustomPerformance,
                 right.CustomPerformance)
             && left.CpuPowerLimit == right.CpuPowerLimit
+            && left.IntelCpuPowerLimit == right.IntelCpuPowerLimit
+            && left.FirmwareGamingGpuOverclockAccess == right.FirmwareGamingGpuOverclockAccess
+            && left.LocalDimming == right.LocalDimming
             && left.CpuVoltageOptimizer == right.CpuVoltageOptimizer
             && left.GpuOverclock == right.GpuOverclock
             && left.HyperBoostAccess == right.HyperBoostAccess

@@ -96,6 +96,8 @@ public sealed class IpcWireShapeManifestTests
             86 => "450C7529BFF97066D3CE0478544FEB808A540D20A2E1C7B7C66CEE686A42F590",
             // Protocol 87 adds the advisory Windows Dynamic Lighting report and status.
             87 => "CB77D50C4764B3E1792C3EF11DB825E8F7FA65D8A63D64CF479F9D41B65B231B",
+            // Protocol 88 adds Intel CPU power limits, firmware Gaming GPU overclock and local dimming.
+            88 => "30A176D7BA27B101AD4317681A16B3AC3419096E239F9A4050F93E5046D60E30",
             _ => null,
         };
 

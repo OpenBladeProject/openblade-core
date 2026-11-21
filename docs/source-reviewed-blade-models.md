@@ -227,6 +227,12 @@ package declarations do not establish a complete runtime or installation recipe.
 No model inherits another laptop's key map, frame mask, driver stack or physical
 validation results.
 
+Synapse CPU power limits, the Gaming-mode GPU overclock on the 2019/2020 Base
+models and HDR-coupled local dimming are reported as observed only; see
+[Synapse features shown without controls](experimental-blade-support.md#synapse-features-shown-without-controls).
+The Blade 16 (2024) and Blade 18 (2024) admit only the local dimming Clear on a
+confirmed mini-LED panel.
+
 Owner reports can establish the specific applied setting, independent readback,
 restoration, adapter and battery behavior, and lifecycle conditions exercised.
 Record those results per model and feature. An attended sleep/resume check needs

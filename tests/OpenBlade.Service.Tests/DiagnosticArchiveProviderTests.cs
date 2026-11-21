@@ -10,7 +10,7 @@ using static OpenBlade.Service.Tests.VerifiedBladeProviderFixture;
 
 namespace OpenBlade.Service.Tests;
 
-public sealed class DiagnosticArchiveProviderTests
+public sealed partial class DiagnosticArchiveProviderTests
 {
     [Theory]
     [InlineData("RZ09-0528", "Supported", "PhysicallyValidated", "Validated")]

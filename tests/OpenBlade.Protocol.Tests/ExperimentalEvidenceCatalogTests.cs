@@ -118,6 +118,17 @@ public sealed class ExperimentalEvidenceCatalogTests
                     Assert.Equal("ExactMcuAndSelectedSynapseFieldsWithoutPhysicalValidation", feature.Basis);
                     Assert.Equal("evidence/source-reviewed-blades/2026-11-13-rz09-0529-keyboard-frames.json", feature.Sources[1]);
                 }
+                else if (feature.Feature is "CpuPowerLimit" or "IntelCpuPowerLimits" or "FirmwareGamingGpuOverclock"
+                    or "LocalDimmingClearOnMiniLedPanels" or "LocalDimmingFollowsWindowsHdr")
+                {
+                    Assert.StartsWith("SynapseSource", feature.Basis);
+                    Assert.Equal(ExperimentalBladePort.ObservedFeaturesReview, feature.Sources[^1]);
+                    Assert.All(feature.Sources.SkipLast(1), source =>
+                    {
+                        Assert.StartsWith($"https://apps.razer.com/synapse/products/{model.ProductId}/", source);
+                        Assert.Matches(@";SHA256=[0-9A-F]{64}$", source);
+                    });
+                }
                 else if (feature.Feature == "HyperBoostSystemSkuRecheck"
                     || model.ProductId == 0x02B7 && feature.Feature is "HyperBoost" or "PadlessHyperBoost")
                 {

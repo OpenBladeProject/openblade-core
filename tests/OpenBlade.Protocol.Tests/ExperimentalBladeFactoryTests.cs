@@ -523,13 +523,17 @@ public sealed partial class ExperimentalBladeFactoryTests
         var identity = new MutableSkuIdentity(model.ProductName) { Sku = first };
         var factory = new ExperimentalBladeFactory(model, identity, native, new Guard(), new Io(),
             () => PowerSource.PluggedIn);
+        bool panelUnresolved = ExperimentalBladePort.SupportsLocalDimmingClear(model);
         foreach (string? sku in new[] { first, later, first })
         {
             identity.Sku = sku;
             int readsBefore = identity.ReadCount;
             HidSessionResult<IProductionBatteryPort> opened = await factory.OpenAsync(CancellationToken.None);
             await using var port = Assert.IsType<ExperimentalBladePort>(opened.Value);
-            Assert.Equal(1, identity.ReadCount - readsBefore);
+            // One admission read per open, plus the exact-host check before the
+            // one-time mini-LED panel read on local-dimming models.
+            Assert.Equal(panelUnresolved ? 2 : 1, identity.ReadCount - readsBefore);
+            panelUnresolved = false;
             bool excluded = sku is { Length: > 9 } && sku[9] is 'R' or 'S' or '5' or '6';
             Assert.Equal(DeviceFeatureAccess.ReadWrite, port.Capabilities.HyperBoostAccess);
             Assert.Equal(DeviceFeatureAccess.ReadWrite, factory.Capabilities.HyperBoostAccess);
