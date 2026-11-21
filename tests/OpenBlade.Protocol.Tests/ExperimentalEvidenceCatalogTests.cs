@@ -80,6 +80,24 @@ public sealed class ExperimentalEvidenceCatalogTests
                     Assert.Equal("evidence/source-reviewed-blades/2026-11-13-rz09-0529-keyboard-frames.json", feature.Sources[1]);
                     Assert.EndsWith(";SHA256=FDD5D817BF28F152B3DF498AC6E908291993BBCC6939BE4D86F94AD74F52A9F1", feature.Sources[2]);
                 }
+                else if (feature.Feature == "GpuClockOffsets")
+                {
+                    Assert.Contains(model.ProductId, new ushort[] { 0x02C5, 0x02C7 });
+                    Assert.Equal("SynapseSourceBackedNvmlWithoutPhysicalValidation", feature.Basis);
+                    Assert.Equal("Pending", snapshot.PhysicalValidation);
+                    // The mw main sets isNvidiaOverclockUISupported; the UI chunk
+                    // carries the offset envelope. Further pinned files may follow.
+                    string product = $"https://apps.razer.com/synapse/products/{(model.ProductId == 0x02C7 ? 711 : 709)}/";
+                    string envelopeChunk = model.ProductId == 0x02C7 ? "892.12b29c32.chunk.js" : "2915.4e513855.chunk.js";
+                    Assert.Single(feature.Sources, source => source.StartsWith($"{product}mw/main.", StringComparison.Ordinal));
+                    Assert.Single(feature.Sources, source => source.StartsWith(
+                        $"{product}ui/static/js/{envelopeChunk};", StringComparison.Ordinal));
+                    Assert.All(feature.Sources, source =>
+                    {
+                        Assert.StartsWith(product, source);
+                        Assert.Matches(@";SHA256=[0-9A-F]{64}$", source);
+                    });
+                }
                 else if (feature.Feature == "CpuVoltageOptimizer")
                 {
                     Assert.Contains(model.ProductId, new ushort[] { 0x02B6, 0x029D, 0x02C5 });

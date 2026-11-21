@@ -99,6 +99,7 @@ internal static class ExperimentalBladeModels
                 new("AdapterPowerClassification", "SynapseSourceBacked", sources),
                 .. OrdinaryThermalEvidenceFor(model),
                 .. FanStopEvidenceFor(model),
+                .. GpuClockOffsetEvidenceFor(model),
                 .. (ExperimentalBladePort.SupportsReviewedMcuKeyboardFrames(model)
                     ? new ExperimentalFeatureEvidence[] { new("KeyboardOnlyCustomFramesGridAndUniformEffects",
                         "ExactMcuSourceBackedWithoutPhysicalValidation",
@@ -298,11 +299,25 @@ internal static class ExperimentalBladeModels
                     "SynapseSourceBackedWithoutPhysicalValidation", exactSources)];
         }
         features = [.. features, .. FanStopEvidenceFor(model), .. OrdinaryThermalEvidenceFor(model), .. CpuVoltageEvidenceFor(model),
+            .. GpuClockOffsetEvidenceFor(model),
             .. TemporaryFullChargeEvidenceFor(model)];
         return model.AdapterPowerEvidenceSource is { } source
             ? [.. features, new("AdapterPowerClassification", "SynapseSourceBacked", [source])]
             : features;
     }
+
+    // The mw main sets isNvidiaOverclockUISupported (711 at byte 175107, 709 at
+    // byte 169200); the UI chunk (711 892, 709 2915) carries the offset envelope.
+    private static IEnumerable<ExperimentalFeatureEvidence> GpuClockOffsetEvidenceFor(ExperimentalBladeModel model) =>
+        !ExperimentalBladePort.SupportsExperimentalGpuClockOffsets(model) ? [] :
+        [new("GpuClockOffsets", "SynapseSourceBackedNvmlWithoutPhysicalValidation",
+            model.ProductId == 0x02C7
+                ? ["https://apps.razer.com/synapse/products/711/mw/main.1f8e0c604f19af3ea24c.js;SHA256=C8C0C794D6D01867CD9C6020869808428B81CB98AE297E46EC700F3B935BFF7E",
+                    "https://apps.razer.com/synapse/products/711/ui/static/js/892.12b29c32.chunk.js;SHA256=FE1298AD9FAAE66301E76B439311F19393E4A46E1F8C5EB42B65350DA88F9100",
+                    "https://apps.razer.com/synapse/products/711/ui/static/js/main.a649ed49.js;SHA256=4B42EF4995470865B7D02587B85724247B886BDF2376EB6A78DA38BB9B6CBF99"]
+                : ["https://apps.razer.com/synapse/products/709/mw/main.bb0dd1873a58a987c63a.js;SHA256=CC8E0EFD2B37F1ED5AF6C8CC8C3AB1327B9502927DC05F20EE7465486AB006F1",
+                    "https://apps.razer.com/synapse/products/709/ui/static/js/2915.4e513855.chunk.js;SHA256=6D6106090CDC8D26F527F0265C07DBB4035EC57FBD0BDC41F0EDB1A205ADCEB2",
+                    "https://apps.razer.com/synapse/products/709/ui/static/js/main.fd91712e.js;SHA256=338D8F51C9A1179D3B2436F77FD44B3D393C3CC987D0EC73928E1F636BF3A9B7"])];
 
     // Exact product 709 and 711 command and middleware pins; see
     // evidence/source-reviewed-blades/2026-11-19-temporary-full-charge-rz09-0529-0530.json.

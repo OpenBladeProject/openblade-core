@@ -9,6 +9,9 @@ internal enum GpuClockOffsetManagementState
     ResetConfirmed = 2,
     Relinquished = 3,
     RelinquishedDefaultConfirmed = 4,
+    // An NVML submission may have changed the offsets and nothing confirmed the
+    // result. The next managed read queries the driver to resolve it.
+    SubmissionUncertain = 5,
 }
 
 internal interface IGpuClockOffsetManagementDevice
@@ -27,9 +30,18 @@ internal interface IGpuClockOffsetManagementDevice
         bool retainManagement,
         CancellationToken cancellationToken);
 
+    // Resolves an uncertain submission with a read-only driver query first; an
+    // unreadable driver keeps the submission uncertain and nothing is released.
     Task RelinquishGpuClockOffsetManagementAsync(CancellationToken cancellationToken);
 
     Task<bool> InvalidateGpuClockOffsetConfirmationAsync(CancellationToken cancellationToken);
+
+    // A power change allows one more read-only driver query, whatever the GPU
+    // activity, to resolve an uncertain submission before the destination writes
+    // or relinquishes the offsets.
+    void RearmUncertainGpuClockOffsetResolution()
+    {
+    }
 }
 
 // Prior ownership is separate from the read-interest used to observe Stop.

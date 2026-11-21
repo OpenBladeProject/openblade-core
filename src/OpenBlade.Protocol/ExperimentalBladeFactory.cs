@@ -65,6 +65,9 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
 
     internal string LaptopControlRecoveryIdentity => $"{model.ModelNumber}|1532:{model.ProductId:X4}";
 
+    internal bool AdmitsNvidiaLaptopGpuForClockOffsets =>
+        ExperimentalBladePort.AdmitsNvidiaLaptopGpuForClockOffsets(model);
+
     // The SKU admission of the last admitted session. Before one exists it is
     // NotApplicable, so no entry restriction is reported; each port still checks
     // its own SKU admission before an entry.

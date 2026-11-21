@@ -1458,6 +1458,9 @@
   <data name="OpenBlade could not confirm a previous change. Select Check current state before trying again." xml:space="preserve">
     <value>OpenBlade не удалось подтвердить предыдущее изменение. Перед повторной попыткой выберите «Проверить текущее состояние».</value>
   </data>
+  <data name="OpenBlade could not confirm a previous change. Select Check current state. If GPU clock tuning was part of it, OpenBlade checks it again when the GPU is next in use or the power source changes." xml:space="preserve">
+    <value>OpenBlade не удалось подтвердить предыдущее изменение. Выберите «Проверить текущее состояние». Если оно касалось настройки частоты GPU, OpenBlade проверит её снова, когда GPU в следующий раз будет использоваться или сменится источник питания.</value>
+  </data>
   <data name="OpenBlade could not identify the charger. Connect the laptop’s AC charger, then select Check current state." xml:space="preserve">
     <value>OpenBlade не удалось определить зарядное устройство. Подключите штатный сетевой адаптер ноутбука, затем выберите «Проверить текущее состояние».</value>
   </data>

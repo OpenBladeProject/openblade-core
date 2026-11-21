@@ -750,7 +750,13 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             }
             if (latestStatus.UnconfirmedWrites.Count > 0)
             {
-                return TrayText.Get("OpenBlade could not confirm a previous change. Select Check current state before trying again.");
+                // An uncertain GPU clock change is checked from a driver read, which
+                // waits for GPU activity or a power-source change while the GPU is idle.
+                return latestStatus.UnconfirmedWrites.Contains(DeviceSubsystem.Performance)
+                    && (latestStatus.DesiredState.GpuClockTuning is not null
+                        || latestStatus.Capabilities?.GpuOverclock is not null)
+                    ? TrayText.Get("OpenBlade could not confirm a previous change. Select Check current state. If GPU clock tuning was part of it, OpenBlade checks it again when the GPU is next in use or the power source changes.")
+                    : TrayText.Get("OpenBlade could not confirm a previous change. Select Check current state before trying again.");
             }
             if (latestStatus.ActivePowerSource == PowerSource.ExternalUnknown)
             {
