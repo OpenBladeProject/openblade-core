@@ -422,10 +422,11 @@ internal sealed partial class ExperimentalBladePort(
         FanMode fans = first.Span[3] == 0 ? FanMode.Automatic : FanMode.Fixed;
         CustomPerformanceSettings? custom = mode == 4 && SupportsExperimentalCustom(model)
             ? await ReadCustomPerformanceAsync(cancellationToken).ConfigureAwait(false) : null;
-        // Synapse can run 02B7 HyperBoost with manual fans (product 695 main byte
-        // 145,857 lists 3400-5200 RPM for mode 7). No admitted dynamic range covers mode 7, so
-        // report HyperBoost with manual fans instead of rejecting the whole state.
-        if (hyperBoost && fans == FanMode.Fixed && UsesDynamicExperimentalFanRange(model))
+        // Synapse runs mode-7 HyperBoost with manual fans at 3400-5200 RPM (main bytes
+        // 28,478 for 671, 145,346 for 669 and 145,857 for 695). No admitted range covers
+        // mode 7 on any of them, so report HyperBoost with manual fans and skip the
+        // target read instead of rejecting the whole state.
+        if (hyperBoost && fans == FanMode.Fixed)
         {
             RecordQuery("FanTargets", "NotQueried", failure: "HyperBoostHasNoAdmittedFanRange");
         }

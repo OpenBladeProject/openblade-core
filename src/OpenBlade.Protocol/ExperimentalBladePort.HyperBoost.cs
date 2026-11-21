@@ -51,8 +51,8 @@ internal sealed partial class ExperimentalBladePort
             // Balanced on battery as DC raw 6 (policy bytes 1,398,122 for 671,
             // 1,558,223 for 669 and 1,892,480 for 695) and restores its
             // pre-HyperBoost mode on AC only (bytes 172,278, 1,240,504 and
-            // 1,295,406). The service keeps the owned base and saved profile as
-            // intent for the next AC reconciliation.
+            // 1,295,406). OpenBlade does not carry the owned base over: when AC
+            // returns, the plugged-in profile applies again.
             bool batteryHandoff = !enabled && source == PowerSource.Battery;
             if (!ExternalPowerReported(source) && !batteryHandoff)
             {
@@ -171,8 +171,11 @@ internal sealed partial class ExperimentalBladePort
             }
             ProductionPerformanceFanState confirmed = await ReadPerformanceAsync(cancellationToken).ConfigureAwait(false);
             // The battery handoff submits raw 6; 02B7 reports it as its DC Balanced preset.
+            // An AC exit must land on the owned base. Every exit hands fans to Automatic.
             if (confirmed.HyperBoostActive != enabled || confirmed.Fans != FanMode.Automatic
-                || !enabled && !HyperBoostCapabilityPolicy.IsRestoredBase(baseMode, confirmed.Performance, source))
+                || !enabled && !(batteryHandoff
+                    ? confirmed.Performance is PerformancePreset.Balanced or PerformancePreset.BatteryBalanced
+                    : confirmed.Performance == baseMode))
             {
                 throw new IOException("Independent HyperBoost readback did not confirm the requested state.");
             }

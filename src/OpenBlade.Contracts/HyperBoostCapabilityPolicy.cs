@@ -75,8 +75,8 @@ public static class HyperBoostCapabilityPolicy
     // the owned base. On AC that is the owned base itself. On battery the mode-7
     // backends (RZ09-0483, RZ09-0482, RZ09-0510) hand off to Balanced, DC raw 6,
     // whatever base they own; models with a distinct DC Balanced preset
-    // (RZ09-0510) confirm that raw value as BatteryBalanced. The owned base and the
-    // saved profile stay intent for the next AC reconciliation. Backends whose
+    // (RZ09-0510) confirm that raw value as BatteryBalanced. The owned base is not
+    // carried over: when AC returns, the plugged-in profile applies again. Backends whose
     // reviewed exit restores the owned base on battery still confirm that base.
     public static bool IsRestoredBase(
         PerformancePreset ownedBase,

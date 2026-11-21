@@ -8,6 +8,21 @@ public sealed partial class ExperimentalThermalExpansionTests
     // RZ09-0510 SKU letters from the EC/MCU updater: 0510T, 05102 and 05103 run HyperBoost.
     private const string Rz090510Sku = "RZ09-0510TEH3";
 
+    // The restriction qualifies a writable HyperBoost only; a disabled table has none to restrict.
+    [Fact]
+    public void Rz090510_EntryRestrictionNeedsAWritableHyperBoost()
+    {
+        DeviceCapabilities restricted = ExperimentalBladePort.CreateCapabilities(
+            Model(0x02B7), true, HyperBoostSystemSkuAdmission.DisabledByVendorSkuPolicy);
+        DeviceCapabilities disabled = ExperimentalBladePort.CreateCapabilities(
+            Model(0x02B7), false, HyperBoostSystemSkuAdmission.DisabledByVendorSkuPolicy);
+
+        Assert.Equal(HyperBoostEntryRestriction.VendorSystemSku, restricted.HyperBoostEntryRestriction);
+        Assert.Equal(DeviceFeatureAccess.ReadWrite, restricted.HyperBoostAccess);
+        Assert.Null(disabled.HyperBoostEntryRestriction);
+        Assert.NotEqual(DeviceFeatureAccess.ReadWrite, disabled.HyperBoostAccess);
+    }
+
     [Theory]
     [InlineData(0, false)]
     [InlineData(1, true)]
@@ -278,7 +293,7 @@ public sealed partial class ExperimentalThermalExpansionTests
         Assert.False(state.HyperBoostActive);
         Assert.Equal(FanMode.Automatic, state.Fans);
         Assert.Equal(pid == 0x02B7 ? PerformancePreset.BatteryBalanced : PerformancePreset.Balanced, state.Performance);
-        // The saved Custom levels are not touched; the service keeps the owned base as intent.
+        // The saved Custom levels are not touched.
         Assert.Equal(1, session.Cpu);
         Assert.Equal(2, session.Gpu);
         Assert.True(policy.WritesAllowed);
@@ -286,34 +301,70 @@ public sealed partial class ExperimentalThermalExpansionTests
             && item.Stage == "Readback" && item.RequestedValue == $"{baseMode}/BatteryHandoff=Balanced");
     }
 
-    // Synapse can leave mode 7 with manual fans (RZ09-0510). Its setter writes
-    // [1, selector, mode, 0] from any state, so exit admits that baseline, reads no
-    // mode-7 fan targets on 02B7, and confirms Automatic fans.
+    // Synapse can leave mode 7 with manual fans at 3400-5200 RPM on products 671, 669
+    // and 695. Its setter writes [1, selector, mode, 0] from any state, so exit admits
+    // that baseline, reads no mode-7 fan targets on any of them, and confirms
+    // Automatic fans. 5100 and 5200 RPM are outside the ordinary 029F/029D range.
     [Theory]
-    [InlineData(0x02B7, PerformancePreset.Turbo, 1)]
-    [InlineData(0x02B7, PerformancePreset.Balanced, 0)]
-    [InlineData(0x029F, PerformancePreset.Performance, 2)]
-    public async Task HyperBoostExit_FromManualFansConfirmsAutomatic(int pid, PerformancePreset baseMode, byte raw)
+    [InlineData(0x02B7, PerformancePreset.Turbo, 1, 52)]
+    [InlineData(0x02B7, PerformancePreset.Balanced, 0, 34)]
+    [InlineData(0x029F, PerformancePreset.Performance, 2, 41)]
+    [InlineData(0x029F, PerformancePreset.Performance, 2, 51)]
+    [InlineData(0x029F, PerformancePreset.Balanced, 0, 52)]
+    [InlineData(0x029D, PerformancePreset.Balanced, 0, 51)]
+    [InlineData(0x029D, PerformancePreset.Silent, 5, 52)]
+    public async Task HyperBoostExit_FromManualFansConfirmsAutomatic(int pid, PerformancePreset baseMode, byte raw, byte target)
     {
-        var session = new Session { Mode = 7, Fan = 1 };
+        var session = new Session { Mode = 7, Fan = 1, FirstTarget = target, SecondTarget = target };
         var policy = new ExperimentalFeaturesPolicy(Model(pid));
-        await using var port = HyperBoostPort(session, new Pad(), policy, power: () => PowerSource.PluggedIn,
-            pid: pid, sku: pid == 0x02B7 ? Rz090510Sku : AdmittedSku);
+        await using var port = HyperBoostPort(session, new Pad { State = CoolingPadConnectionState.Absent }, policy,
+            power: () => PowerSource.PluggedIn, pid: pid, sku: pid == 0x02B7 ? Rz090510Sku : null);
 
-        await port.SetHyperBoostAsync(false, baseMode, true, CancellationToken.None);
+        await port.SetHyperBoostAsync(false, baseMode, false, CancellationToken.None);
 
         Assert.Equal(new byte[][] { [1, 1, raw, 0], [1, 2, raw, 0] },
             session.Writes.Select(command => command.Arguments.ToArray()).ToArray());
         Assert.Equal(0, session.Fan);
         Assert.Contains(policy.Snapshot().Observations, item => item.Operation == "HyperBoostRestore"
             && item.Stage == "Baseline" && item.ConfirmedValue == "/Fixed;HyperBoost=True");
-        if (pid == 0x02B7)
+        // The baseline read never asks for mode-7 fan targets, which have no admitted range.
+        Assert.DoesNotContain(session.Commands, command => command.ClassId == 0x0D && command.CommandId == 0x81);
+        Assert.Contains(policy.Snapshot().Observations, item => item.Operation == "FanTargets"
+            && item.Outcome == "NotQueried" && item.FailureCategory == "HyperBoostHasNoAdmittedFanRange");
+    }
+
+    // The exit readback must show Automatic fans and, on AC, the owned base itself.
+    // On battery only the Balanced handoff confirms, never the owned AC base.
+    [Theory]
+    [InlineData(0x02B7, PerformancePreset.Turbo, false, 1, 1)]
+    [InlineData(0x029F, PerformancePreset.Performance, false, 2, 1)]
+    [InlineData(0x02B7, PerformancePreset.Turbo, false, 0, 0)]
+    [InlineData(0x029F, PerformancePreset.Performance, false, 0, 0)]
+    [InlineData(0x029D, PerformancePreset.Silent, false, 0, 0)]
+    [InlineData(0x029F, PerformancePreset.Performance, true, 6, 1)]
+    [InlineData(0x02B7, PerformancePreset.Turbo, true, 1, 0)]
+    [InlineData(0x029F, PerformancePreset.Performance, true, 2, 0)]
+    public async Task HyperBoostExit_RejectsAnyOtherReadback(
+        int pid, PerformancePreset baseMode, bool battery, byte readbackMode, byte readbackFan)
+    {
+        var session = new Session { Mode = 7, AdapterPowerPayload = battery ? [0, 17] : [0x11, 0x11] };
+        session.BeforeSubmission = command =>
         {
-            // The baseline read never asks for mode-7 fan targets, which have no admitted range.
-            Assert.DoesNotContain(session.Commands, command => command.ClassId == 0x0D && command.CommandId == 0x81);
-            Assert.Contains(policy.Snapshot().Observations, item => item.Operation == "FanTargets"
-                && item.Outcome == "NotQueried" && item.FailureCategory == "HyperBoostHasNoAdmittedFanRange");
-        }
+            if (command is { ClassId: 0x0D, CommandId: 0x82 } && session.Writes.Count() == 2)
+            {
+                session.Mode = readbackMode;
+                session.Fan = readbackFan;
+            }
+        };
+        await using var port = HyperBoostPort(session, new Pad { State = CoolingPadConnectionState.Absent },
+            power: () => battery ? PowerSource.Battery : PowerSource.PluggedIn,
+            pid: pid, sku: pid == 0x02B7 ? Rz090510Sku : null);
+
+        BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetHyperBoostAsync(false, baseMode, false, CancellationToken.None));
+
+        Assert.Equal(2, session.Writes.Count());
+        Assert.NotEqual(WriteSubmissionState.KnownNotApplied, failure.SubmissionState);
     }
 
     // Product 695 does not clear Maximum Fans before HyperBoost (its device definition

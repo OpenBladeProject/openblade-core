@@ -1,4 +1,5 @@
 using OpenBlade.Contracts;
+using OpenBlade.Protocol;
 
 namespace OpenBlade.Service.Tests;
 
@@ -70,28 +71,10 @@ public sealed partial class ServiceControlRuntimeTests
             hyperBoostOwnershipJournalStore: journal);
         ConfigurePadlessHyperBoost(context);
         context.Device.UseScopedPerformanceFanRead = true;
-        // RZ09-0510 shape: product 695 lists Turbo (raw 1) and DC Balanced, not Performance.
-        context.Device.Capabilities = context.Device.Capabilities with
-        {
-            PerformancePresets = new HashSet<PerformancePreset>
-            {
-                PerformancePreset.Balanced,
-                PerformancePreset.Silent,
-                PerformancePreset.Turbo,
-                PerformancePreset.Custom,
-                PerformancePreset.BatteryBalanced,
-                PerformancePreset.BatterySaver,
-            },
-            HyperBoostBaseModes = new HyperBoostBaseModeCapabilities(
-                DeviceFeatureAccess.ReadWrite,
-                DeviceFeatureAccess.ReadWrite,
-                DeviceFeatureAccess.ObservedOnly)
-            {
-                Custom = DeviceFeatureAccess.ReadWrite,
-                Turbo = DeviceFeatureAccess.ReadWrite,
-                CoolingPadEntryBaseMode = PerformancePreset.Turbo,
-            },
-        };
+        // The real RZ09-0510 table: product 695 lists Turbo (raw 1) and DC Balanced,
+        // not Performance, and no Battery Saver.
+        context.Device.Capabilities = ExperimentalBladePort.CreateCapabilities(
+            ExperimentalBladeModels.All.Single(item => item.ProductId == 0x02B7), true);
         await context.Runtime.ObserveAsync(CancellationToken.None);
         return (context, journal);
     }

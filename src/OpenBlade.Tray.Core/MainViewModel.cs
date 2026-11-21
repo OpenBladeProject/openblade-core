@@ -3465,9 +3465,15 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                     "Laptop controls are currently unavailable. Check Troubleshooting for details.");
             }
 
-            if (!IsHyperBoostWritable)
+            // An entry restriction explains only why HyperBoost can't start. While it
+            // is active and the exit is admitted, the reason lies elsewhere.
+            if (!IsHyperBoostWritable
+                && !(HyperBoostActive && HyperBoostCapabilityPolicy.CanExit(Capabilities)))
             {
-                return HyperBoostDescription;
+                return HyperBoostActive && Capabilities.HyperBoostEntryRestriction is not null
+                    ? TrayText.Get(
+                        "Detected on this laptop, but OpenBlade cannot safely change it with the current evidence.")
+                    : HyperBoostDescription;
             }
 
             if (!HyperBoostActive && HyperBoostRequiresCoolingPad && !HyperBoostPadReady)

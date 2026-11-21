@@ -594,6 +594,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
     private PerformancePreset? ownedHyperBoostBaseMode;
     private HyperBoostRestoreIntent? ownedHyperBoostRestoreIntent;
     private bool ownedHyperBoostSourceChangePending;
+    private PerformancePreset? hyperBoostHandoffPerformance;
     private bool hyperBoostSourceBoundarySafetyBlock;
     private bool hyperBoostSourceBoundaryPriorSafetyBlock;
     private Guid? ownedHyperBoostTransitionId;
@@ -5916,6 +5917,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         long expectedSessionAdmissionEpoch =
             Interlocked.Read(ref sessionAdmissionEpoch);
         string? expectedActiveUserSid = Volatile.Read(ref activeUserSid);
+        // A retry repeats the step whose submission was last admitted.
+        ThermalTransitionStepPurpose submittedPurpose = ThermalTransitionStepPurpose.Requested;
         string? TransitionWriteBlockReason()
         {
             if (stillPreparing?.Invoke() == false)
@@ -5965,6 +5968,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 performanceWriteBlockReason: TransitionWriteBlockReason,
                 fanWriteBlockReason: TransitionWriteBlockReason),
             (_, cancellationToken) => RevalidateHyperBoostTransitionRetryAsync(
+                submittedPurpose,
                 enabled,
                 baseMode,
                 expectedIntent,
@@ -5981,7 +5985,9 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 cancellationToken),
             recoveryState: recoveryState,
             revalidateSubmission: (purpose, _, cancellationToken) =>
-                RevalidateHyperBoostTransitionSubmissionAsync(
+            {
+                submittedPurpose = purpose;
+                return RevalidateHyperBoostTransitionSubmissionAsync(
                     purpose,
                     enabled,
                     baseMode,
@@ -5996,8 +6002,18 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                     allowIntentRebase,
                     validationOnly,
                     TransitionWriteBlockReason,
-                    cancellationToken));
+                    cancellationToken);
+            });
     }
+
+    // An exit command (the battery handoff or the owned AC base) is never gated on
+    // the destination intent: the default battery profile (BatterySaver) is in no
+    // mode-7 table, and gating on it kept HyperBoost on. Entries and the restore
+    // steps after an exit still require an admitted intent.
+    private static bool HyperBoostStepRequiresAdmittedIntent(
+        bool enabled,
+        ThermalTransitionStepPurpose purpose) =>
+        enabled || purpose != ThermalTransitionStepPurpose.HyperBoost;
 
     private string? HyperBoostTransitionWriteBlockReason(
         HyperBoostRestoreIntent expectedIntent,
@@ -6146,10 +6162,20 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             DeviceCapabilities capabilities = await admittedDevice
                 .ReadCapabilitiesAsync(cancellationToken)
                 .ConfigureAwait(false);
-            if (!IsSupportedHyperBoostRestoreIntent(capabilities, expectedIntent))
+            if (HyperBoostStepRequiresAdmittedIntent(enabled, purpose)
+                && !IsSupportedHyperBoostRestoreIntent(capabilities, expectedIntent))
             {
                 return ThermalRetryAdmission.Block(
                     "The saved HyperBoost thermal intent is no longer admitted for this exact device.");
+            }
+
+            // A restricted entry is refused at every step, so a stale status cannot
+            // submit a fan or performance bridge write before the HyperBoost command.
+            if (enabled
+                && capabilities.HyperBoostEntryRestriction is { } submissionRestriction)
+            {
+                return ThermalRetryAdmission.Block(
+                    HyperBoostEntryRestrictionMessage(submissionRestriction));
             }
 
             if (hyperBoostCommand)
@@ -6161,7 +6187,6 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                         : null);
                 if (capabilities.HyperBoostAccess
                         != DeviceFeatureAccess.ReadWrite
-                    || enabled && HyperBoostCapabilityPolicy.IsEntryRestricted(capabilities)
                     || enabled && baseAccess != DeviceFeatureAccess.ReadWrite
                     || enabled && !validationOnly
                         && !HyperBoostCapabilityPolicy.IsDirectEntryBase(
@@ -6212,6 +6237,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
 
     private async Task<ThermalRetryAdmission>
         RevalidateHyperBoostTransitionRetryAsync(
+        ThermalTransitionStepPurpose purpose,
         bool enabled,
         PerformancePreset baseMode,
         HyperBoostRestoreIntent expectedIntent,
@@ -6317,17 +6343,23 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 ?? (baseMode == PerformancePreset.Balanced
                     ? capabilities.HyperBoostAccess
                     : null);
+            if (enabled
+                && capabilities.HyperBoostEntryRestriction is { } retryRestriction)
+            {
+                return ThermalRetryAdmission.Block(
+                    HyperBoostEntryRestrictionMessage(retryRestriction));
+            }
             if (capabilities.HyperBoostAccess != DeviceFeatureAccess.ReadWrite
-                || enabled && HyperBoostCapabilityPolicy.IsEntryRestricted(capabilities)
                 || enabled && baseAccess != DeviceFeatureAccess.ReadWrite
                 || enabled && !validationOnly
                     && !HyperBoostCapabilityPolicy.IsDirectEntryBase(
                             capabilities,
                             expectedJournal?.RequiresCoolingPad == true,
                             baseMode)
-                || !IsSupportedHyperBoostRestoreIntent(
-                    capabilities,
-                    expectedIntent)
+                || HyperBoostStepRequiresAdmittedIntent(enabled, purpose)
+                    && !IsSupportedHyperBoostRestoreIntent(
+                        capabilities,
+                        expectedIntent)
                 || enabled && expectedJournal?.RequiresCoolingPad != true
                     && (validationOnly
                         ? capabilities.HyperBoostWithoutCoolingPadAccess
@@ -6696,9 +6728,16 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                                 == powerSourceGeneration
                                 ? exitSource
                                 : current.ActivePowerSource);
-            if (enabled && !IsSupportedHyperBoostRestoreIntent(
-                    current.Capabilities!,
-                    transitionIntent))
+            // Only an entry requires the destination intent up front. An exit is
+            // submitted regardless; its restore step runs only for an admitted intent
+            // and is otherwise skipped, leaving the saved intent unchanged.
+            bool transitionIntentAdmitted = IsSupportedHyperBoostRestoreIntent(
+                current.Capabilities!,
+                transitionIntent);
+            bool restoreIntentSkipped = !enabled
+                && restoreUserIntent
+                && !transitionIntentAdmitted;
+            if (enabled && !transitionIntentAdmitted)
             {
                 return new ControlOperationResult(
                     ControlOperationStatus.Blocked,
@@ -7041,7 +7080,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 if (readback.HyperBoostActive == false
                     && transitionIntent is not null
                     && (enabled && baselineTransitionCompleted
-                        || !enabled && restoreUserIntent))
+                        || !enabled && restoreUserIntent && !restoreIntentSkipped))
                 {
                     failedTransitionRestore = await RestoreHyperBoostIntentAsync(
                             transitionRunner.CurrentDevice,
@@ -7213,7 +7252,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             resumeStateValidation.RecordConfirmedWrite(DeviceSubsystem.Fans);
             bool maximumFansNotRestored = false;
             string? maximumFansRestoreFailure = null;
-            if (!enabled && restoreUserIntent && transitionIntent is not null)
+            if (!enabled && restoreUserIntent && !restoreIntentSkipped && transitionIntent is not null)
             {
                 HyperBoostIntentRestorationResult restoration =
                     await RestoreHyperBoostIntentAsync(
@@ -7384,6 +7423,14 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             driftTracker.Observe(readback);
             driftTracker.ConfirmIntentional(DeviceSubsystem.Performance, matched: true);
             driftTracker.ConfirmIntentional(DeviceSubsystem.Fans, matched: true);
+            // A skipped restore leaves the mode the exit landed on. No saved intent
+            // names it (on battery only Battery Saver and Battery Balanced are
+            // intents, and RZ09-0483/0482 have neither), so remember it as
+            // OpenBlade's own result: a later transition does not read it as an
+            // outside change, and the plugged-in profile applies again on AC.
+            hyperBoostHandoffPerformance = restoreIntentSkipped && disableJournalCleared
+                ? readback.Performance
+                : null;
 
             string resultMessage = enabled
                 ? journalRequiresCoolingPad
@@ -7395,6 +7442,9 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 // failure and journal-safety text, which keep writes blocked.
                 : maximumFansNotRestored
                     ? $"HyperBoost is off, but the prior performance or fan intent was not fully restored. {maximumFansRestoreFailure} Its ownership journal could not be made safe, so control writes remain blocked. Maximum Fans was not turned back on."
+                : restoreIntentSkipped
+                    ? $"HyperBoost is off and the laptop stays in {PerformanceLabel(readback.Performance ?? requestedBaseMode)} until the power source changes. The saved {PerformanceLabel(transitionIntent!.Performance)} setting isn't available on this laptop, so it was not applied."
+                        + (disableJournalCleared ? string.Empty : " Its ownership journal could not be cleared; control writes remain blocked.")
                 : disableJournalCleared
                     ? $"HyperBoost is off and the prior {PerformanceLabel(transitionIntent?.Performance ?? requestedBaseMode)} performance and fan intent is restored."
                     : $"HyperBoost is off and the prior {PerformanceLabel(transitionIntent?.Performance ?? requestedBaseMode)} performance and fan intent is restored, but its ownership journal could not be cleared; control writes remain blocked.";
@@ -7417,7 +7467,9 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 resultMessage)
             {
                 HyperBoostRestoredPerformance = !enabled && disableJournalCleared
-                    ? transitionIntent?.Performance ?? requestedBaseMode
+                    ? restoreIntentSkipped
+                        ? readback.Performance ?? requestedBaseMode
+                        : transitionIntent?.Performance ?? requestedBaseMode
                     : null,
             };
             history.RecordSummary(result.Status, result.Message);
@@ -8021,7 +8073,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
 
     // The exit lands on the owned base on AC. On battery a mode-7 backend hands off
     // to Balanced whatever base it owns, so a confirmed Balanced (or DC Balanced)
-    // with no Custom levels also matches; the journal keeps the owned base as intent.
+    // with no Custom levels also matches. The journal records the owned base for
+    // this check only; when AC returns, the plugged-in profile applies again.
     private static bool ConfirmedStateMatchesHyperBoostTransitionBaseline(
         ConfirmedDeviceState confirmed,
         HyperBoostOwnershipJournal journal) =>
@@ -18749,11 +18802,25 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         }
 
         initialAutomaticComparisons.Add(DeviceSubsystem.Performance);
+        bool handoff = MatchesHyperBoostHandoff(confirmed);
+        if (!handoff)
+        {
+            hyperBoostHandoffPerformance = null;
+        }
         driftTracker.ConfirmIntentional(
             DeviceSubsystem.Performance,
-            PerformanceMatchesDesired(confirmed, priorDesired)
+            handoff
+                || PerformanceMatchesDesired(confirmed, priorDesired)
                 || PerformanceMatchesDesired(confirmed, newDesired));
     }
+
+    // The unchanged mode an owned HyperBoost exit landed on without a restore.
+    private bool MatchesHyperBoostHandoff(ConfirmedDeviceState confirmed) =>
+        hyperBoostHandoffPerformance is { } handoff
+        && confirmed.HyperBoostActive == false
+        && confirmed.Fans == FanMode.Automatic
+        && confirmed.Performance == handoff
+        && (handoff == PerformancePreset.Custom || confirmed.CustomPerformance is null);
 
     private static bool PerformanceMatchesDesired(
         ConfirmedDeviceState confirmed,
@@ -22005,6 +22072,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         PerformancePreset.MaximumPower => "Maximum Power",
         PerformancePreset.Gaming => "Gaming",
         PerformancePreset.Creator => "Creator",
+        PerformancePreset.BatterySaver => "Battery Saver",
+        PerformancePreset.BatteryBalanced => "Battery Balanced",
         _ => mode.ToString(),
     };
 

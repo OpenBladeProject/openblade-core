@@ -127,31 +127,6 @@ public sealed partial class ServiceControlRuntimeTests
         await AssertBatteryHandoffAsync(context, journal, entryMode);
     }
 
-    [Theory]
-    [InlineData(PerformancePreset.Performance)]
-    [InlineData(PerformancePreset.Silent)]
-    [InlineData(PerformancePreset.Balanced)]
-    public async Task HyperBoostBatteryExit_ConfirmsTheBalancedHandoffOnPerformanceBaseModels(
-        PerformancePreset entryMode)
-    {
-        // The RZ09-0483 and RZ09-0482 shape: Performance (raw 2) is the high base.
-        var journal = new RecordingHyperBoostOwnershipJournalStore();
-        TestContext context = CreateContext(true,
-            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(CoolingPadConnectionState.Absent),
-            hyperBoostOwnershipJournalStore: journal);
-        ConfigurePadlessHyperBoost(context);
-        context.Device.Capabilities = context.Device.Capabilities with
-        {
-            HyperBoostBaseModes = new HyperBoostBaseModeCapabilities(
-                DeviceFeatureAccess.ReadWrite,
-                DeviceFeatureAccess.ReadWrite,
-                DeviceFeatureAccess.ReadWrite),
-        };
-        context.Device.HyperBoostExitPowerSource = () => context.Telemetry.Current.PowerSource;
-        await context.Runtime.ObserveAsync(CancellationToken.None);
-        await AssertBatteryHandoffAsync(context, journal, entryMode);
-    }
-
     private static async Task AssertBatteryHandoffAsync(
         TestContext context,
         RecordingHyperBoostOwnershipJournalStore journal,
@@ -175,8 +150,9 @@ public sealed partial class ServiceControlRuntimeTests
         Assert.False(status.WritesBlocked, status.Message);
         Assert.Empty(status.UnconfirmedWrites);
         Assert.DoesNotContain("did not match", status.Message ?? string.Empty, StringComparison.Ordinal);
-        // The saved AC intent stays for the next AC reconciliation.
+        // The saved profiles are unchanged; the plugged-in one applies again on AC.
         Assert.Equal(entryMode, status.Profiles.PluggedIn.Performance);
+        Assert.Equal(PerformancePreset.BatterySaver, status.Profiles.Battery.Performance);
 
         context.Telemetry.Current = CreateTelemetry(PowerSource.PluggedIn);
         await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
@@ -188,34 +164,43 @@ public sealed partial class ServiceControlRuntimeTests
     private static async Task ApplyPluggedInPerformanceAsync(TestContext context, PerformancePreset performance)
     {
         ProfileSet profiles = context.Runtime.GetStatus().Profiles;
+        CustomPerformanceSettings? custom = performance == PerformancePreset.Custom
+            ? profiles.PluggedIn.CustomPerformance ?? CustomPerformanceSettings.Default
+            : null;
         Assert.Equal(ControlOperationStatus.Stored,
             (await context.Runtime.UpdateProfilesAsync(profiles with
             {
-                PluggedIn = profiles.PluggedIn with { Performance = performance },
+                PluggedIn = profiles.PluggedIn with
+                {
+                    Performance = performance,
+                    CustomPerformance = custom ?? profiles.PluggedIn.CustomPerformance,
+                },
             }, CancellationToken.None)).Status);
         if (context.Device.ConfirmedState.Performance != performance)
         {
             Assert.Equal(ControlOperationStatus.Applied,
                 (await context.Runtime.SetPerformanceConfigurationOverrideAsync(
-                    new PerformanceOverride(performance, OverrideLifetime.UntilPowerSourceChange),
+                    new PerformanceOverride(performance, OverrideLifetime.UntilPowerSourceChange, custom),
                     CancellationToken.None)).Status);
         }
         Assert.Equal(performance, context.Device.ConfirmedState.Performance);
     }
 
     [Theory]
-    [InlineData(PowerSource.Battery, true)]
-    [InlineData(PowerSource.PluggedIn, false)]
+    [InlineData(PerformancePreset.Performance, PowerSource.Battery, true)]
+    [InlineData(PerformancePreset.Performance, PowerSource.PluggedIn, false)]
+    // A Custom base hands off too; Balanced carries no Custom levels to compare.
+    [InlineData(PerformancePreset.Custom, PowerSource.Battery, true)]
     public async Task HyperBoostRestoreRecovery_AcceptsTheBalancedHandoffOnlyForABatteryExit(
-        PowerSource exitPowerSource, bool matchesTransition)
+        PerformancePreset ownedBase, PowerSource exitPowerSource, bool matchesTransition)
     {
-        // A restore left pending after the exit landed: the owned base was
-        // Performance, and fresh readback shows Balanced with Automatic fans.
+        // A restore left pending after the exit landed: fresh readback shows
+        // Balanced with Automatic fans rather than the owned base.
         var journal = new RecordingHyperBoostOwnershipJournalStore
         {
             Journal = CreateRestorePendingJournal(FanControlSettings.Default) with
             {
-                BaseMode = PerformancePreset.Performance,
+                BaseMode = ownedBase,
                 RestorePowerSource = exitPowerSource,
             },
         };
