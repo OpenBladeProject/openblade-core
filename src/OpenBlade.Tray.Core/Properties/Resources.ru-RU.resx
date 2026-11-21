@@ -1302,6 +1302,12 @@
   <data name="Windows did not confirm the requested start-at-sign-in setting." xml:space="preserve">
     <value>Windows не подтвердила запрошенный параметр запуска при входе.</value>
   </data>
+  <data name="Windows Dynamic Lighting is on and can override OpenBlade keyboard and Vapor chamber lighting. If your OpenBlade lighting doesn’t show, turn off Use Dynamic Lighting on my devices in Settings &gt; Personalization &gt; Dynamic Lighting." xml:space="preserve">
+    <value>Функция «Динамическое освещение» Windows включена и может заменять подсветку клавиатуры и испарительной камеры из OpenBlade. Если подсветка OpenBlade не отображается, отключите параметр «Использовать динамическое освещение на моих устройствах» в разделе «Параметры» &gt; «Персонализация» &gt; «Динамическое освещение».</value>
+  </data>
+  <data name="Windows Dynamic Lighting is on and can override OpenBlade keyboard lighting. If your OpenBlade lighting doesn’t show, turn off Use Dynamic Lighting on my devices in Settings &gt; Personalization &gt; Dynamic Lighting." xml:space="preserve">
+    <value>Функция «Динамическое освещение» Windows включена и может заменять подсветку клавиатуры из OpenBlade. Если подсветка OpenBlade не отображается, отключите параметр «Использовать динамическое освещение на моих устройствах» в разделе «Параметры» &gt; «Персонализация» &gt; «Динамическое освещение».</value>
+  </data>
   <data name="Windows Dynamic Lighting manages keyboard lighting." xml:space="preserve">
     <value>Подсветкой клавиатуры управляет функция «Динамическое освещение» Windows.</value>
   </data>

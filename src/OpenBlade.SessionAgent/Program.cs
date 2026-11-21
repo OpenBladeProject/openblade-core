@@ -493,16 +493,20 @@ internal static class Program
                         "Observe",
                         exception),
                     statusWatcher: statusFeed);
+                await using var lampArrayAdvisoryServiceClient = new ServiceClient();
                 var lampArrayObservation = new ServiceLampArrayObservationLoop(
                     statusFeed,
                     new WindowsLampArrayObservationSource(),
-                    observation => System.Diagnostics.Trace.TraceInformation(
+                    (eligibility, observation) => System.Diagnostics.Trace.TraceInformation(
                         "OpenBlade LampArray observation: {0}",
-                        observation.ToSanitizedSummary()),
+                        observation.ToSanitizedSummary(eligibility.Profile.ModelNumber)),
                     exception => DiagnosticTrace.TraceException(
                         "OpenBlade.SessionAgent.LampArray",
                         "Observe",
-                        exception));
+                        exception),
+                    settingSource: new WindowsDynamicLightingUserSettingSource(),
+                    advisoryReporter: lampArrayAdvisoryServiceClient
+                        .ReportWindowsDynamicLightingAdvisoryAsync);
 
                 Task statusFeedTask = statusFeed.RunAsync(lifetime.Token);
                 Task specialKeyBindingsTask = specialKeyBindings.RunAsync(lifetime.Token);

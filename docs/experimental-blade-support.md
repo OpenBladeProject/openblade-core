@@ -224,6 +224,18 @@ newer profiles accept an optional returned-state byte. Independent requested-sta
 readback remains required. This software tolerance does not establish firmware
 latency on every model.
 
+## Windows Dynamic Lighting
+
+On Blade 18 (2025), Blade 18 (2024), Blade 16 (2024), Blade 14 (2025) and
+Blade 16 (2025), Windows Dynamic Lighting can override OpenBlade keyboard
+lighting while it is on. OpenBlade then shows a notice on the Lighting page;
+its lighting controls stay available. On Blade 18 (2025) this also covers the
+Vapor chamber. If your OpenBlade lighting doesn't show, turn off **Use Dynamic
+Lighting on my devices** in **Settings > Personalization > Dynamic Lighting**.
+The notice has not yet been checked on these laptops. See the
+[advisory review](source-reviewed-blade-models.md#windows-dynamic-lighting-advisory)
+for the evidence.
+
 ## Send a useful test report
 
 The earlier five models also offer [SnapTap](snap-tap.md#supported-driver-profiles) through

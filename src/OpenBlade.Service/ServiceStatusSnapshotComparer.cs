@@ -73,6 +73,7 @@ internal static class ServiceStatusSnapshotComparer
         && left.DisplayBrightnessHidAvailability
             == right.DisplayBrightnessHidAvailability
         && left.KeyboardLightingControlMode == right.KeyboardLightingControlMode
+        && left.WindowsDynamicLightingAdvisory == right.WindowsDynamicLightingAdvisory
         && left.LightingRendererOwnership == right.LightingRendererOwnership
         && (left.LightingSuppressions ?? []).SequenceEqual(
             right.LightingSuppressions ?? [])

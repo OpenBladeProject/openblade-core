@@ -7,6 +7,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- Show a notice on the Lighting page when Windows Dynamic Lighting is on and can override OpenBlade keyboard lighting on Blade 16 (2025, RZ09-0528), Blade 18 (2025, RZ09-0529), Blade 18 (2024, RZ09-0509), Blade 16 (2024, RZ09-0510) and Blade 14 (2025, RZ09-0530). On Blade 18 (2025) it also names the Vapor chamber. Lighting controls stay available; the notice explains where to turn Dynamic Lighting off. ([#992](https://github.com/OpenBladeProject/openblade-core/pull/992))
 - Add an Automatic fan mode for the cooling pad with Quiet, Balanced and Performance profiles, following the CPU, the GPU or both the way Razer Synapse does. ([#983](https://github.com/OpenBladeProject/openblade-core/pull/983))
 
 ### Changed

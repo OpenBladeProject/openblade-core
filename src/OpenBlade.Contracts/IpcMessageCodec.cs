@@ -9,7 +9,10 @@ namespace OpenBlade.Contracts;
 public static class OpenBladeIpc
 {
     // Protocol 85 adds the cooling-pad Auto fan mode and its profile.
-    public const int ProtocolVersion = 85;
+    // Protocol 87 adds the Session Agent's advisory Windows Dynamic Lighting
+    // report and the matching status field. Protocol 86 is held by a
+    // concurrent pull request.
+    public const int ProtocolVersion = 87;
     public const int ReadOnlyCompatibilityProtocolVersion = 51;
     public const int MaximumMessageBytes = 64 * 1024;
     public const int MaximumDiagnosticArchiveBytes = 16 * 1024 * 1024;
@@ -285,6 +288,11 @@ public static class IpcMessageCodec
                 && report.Sequence > 0
                 && (report.ExecutablePath is null
                     || ValidApplicationExecutablePath(report.ExecutablePath)),
+            ReportWindowsDynamicLightingAdvisoryRequest report =>
+                report.Advisory is WindowsDynamicLightingAdvisory.Off
+                    or WindowsDynamicLightingAdvisory.MayControl
+                && WindowsDynamicLightingLampArrays.Find(report.ModelNumber) is { } profile
+                && string.Equals(profile.ModelNumber, report.ModelNumber, StringComparison.Ordinal),
             SetPerformanceOverrideRequest set =>
                 set.Value is null
                 || set.Value.IsWellFormed(),
@@ -706,6 +714,11 @@ public static class IpcMessageCodec
         if (!Enum.IsDefined(status.KeyboardLightingControlMode))
         {
             throw InvalidStatus("keyboard-lighting control mode is unknown");
+        }
+
+        if (!Enum.IsDefined(status.WindowsDynamicLightingAdvisory))
+        {
+            throw InvalidStatus("Windows Dynamic Lighting advisory is unknown");
         }
 
         if (!Enum.IsDefined(status.LightingRefreshRate))
@@ -1375,6 +1388,9 @@ public static class IpcMessageCodec
                     .ShouldSerialize = static (_, _) => false;
                 typeInfo.Properties.Single(property => string.Equals(
                     property.Name, "effectiveLaptopBehavior", StringComparison.OrdinalIgnoreCase))
+                    .ShouldSerialize = static (_, _) => false;
+                typeInfo.Properties.Single(property => string.Equals(
+                    property.Name, "windowsDynamicLightingAdvisory", StringComparison.OrdinalIgnoreCase))
                     .ShouldSerialize = static (_, _) => false;
             }
 
