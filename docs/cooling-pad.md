@@ -17,8 +17,10 @@ from 500 to 3200 RPM in 50-RPM steps, a manual fan curve, or Off. Automatic and
 manual curves follow the CPU, the GPU, or both; with both, the higher demand wins.
 Curve input uses the same smoothed temperatures as the laptop's manual fan
 curve, so a brief package spike does not change the fan speed. Fixed targets come from the selected mode configuration; Smart targets are the
-ramping speed the firmware reports. Neither is measured fan speed. Missing or stale temperature readings
-pause curve updates. Curves use the same CPU package and GPU readings as the
+ramping speed the firmware reports. Neither is measured fan speed. A missing or stale
+temperature reading pauses curve updates; the pad keeps its last speed and control
+continues. A GPU that Windows reports powered down is ignored: with both sources the
+curve follows the CPU, and a GPU-only curve runs at its first point. Curves use the same CPU package and GPU readings as the
 laptop's manual fan curve. Stop competing pad controllers before applying settings.
 Any running Razer service blocks pad writes, except Razer Experience Service, a
 model runner that Razer's driver packages install; it has no HID device access.
@@ -199,7 +201,7 @@ before the input follows it. There is no timed cooldown hold. A missing sensor
 or a sample gap over 10 seconds starts a fresh history. Safety decisions keep
 using the raw readings: the laptop curve still forces maximum speed immediately
 for a missing CPU reading, an unconfirmed missing GPU, CPU at 95 °C or GPU at
-87 °C, and the pad's unavailable-source pause checks the raw reading.
+87 °C, and the pad's missing-reading pause checks the raw reading.
 
 ## Typed cooling-demand API
 

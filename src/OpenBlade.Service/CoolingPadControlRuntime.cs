@@ -212,9 +212,14 @@ internal sealed class CoolingPadControlRuntime(
             if (submitted) { Pause("Cooling pad submission was interrupted. Read its configuration before continuing."); }
             throw;
         }
+        // The target is computed before any submission, so a missing reading is a refusal.
+        catch (TemperatureUnavailableException exception) when (!submitted) { return Block(exception.Message); }
         catch (Exception exception) { return Fail(exception, submitted); }
         finally { gate.Release(); }
     }
+
+    private sealed class TemperatureUnavailableException()
+        : InvalidOperationException("Cooling pad curve is waiting for a reading from its selected temperature source.");
 
     internal async Task<ControlOperationResult> ReleaseAsync(Func<bool> admission, CancellationToken token,
         bool serviceOwnedRestoration = false)
@@ -319,6 +324,12 @@ internal sealed class CoolingPadControlRuntime(
         {
             // Proven local deferral submitted no native write and changed no firmware state.
             // Preserve the healthy owned epoch; the next scheduled tick gets fresh admission.
+        }
+        catch (TemperatureUnavailableException exception) when (!submitted)
+        {
+            // A missing reading pauses curve updates only. The last confirmed target keeps
+            // running, and no write can use a stale reading because freshness was cleared.
+            UpdateStatus(previous => previous with { Message = exception.Message });
         }
         catch (Exception exception) { Fail(exception, submitted); }
         finally { gate.Release(); }
@@ -510,23 +521,29 @@ internal sealed class CoolingPadControlRuntime(
         bool gpu = settings.TemperatureSource is CoolingPadTemperatureSource.Gpu or CoolingPadTemperatureSource.Both;
         FanTemperatureReadings reading = await temperatures.ReadForFanCurveAsync(cpu, gpu, token).ConfigureAwait(false);
         long acquired = clock.GetTimestamp();
+        // A GPU confirmed powered down (Windows D3) produces no heat and has no reading.
+        // As in the laptop curve, it is ignored rather than treated as missing; workload
+        // absence alone does not establish that.
+        bool gpuOff = gpu && reading.GpuCelsius is null && reading.GpuPoweredDown;
         // Availability is judged on the raw sample; only the curve input is conditioned.
-        if (cpu && reading.CpuCelsius is not (>= 0 and <= 115) || gpu && reading.GpuCelsius is not (>= 0 and <= 115))
+        if (cpu && reading.CpuCelsius is not (>= 0 and <= 115) || gpu && !gpuOff && reading.GpuCelsius is not (>= 0 and <= 115))
         {
             temperatureFilter.Reset();
-            throw new InvalidOperationException("Cooling pad curve paused because a selected temperature source is unavailable.");
+            throw new TemperatureUnavailableException();
         }
         FanTemperatureReadings filtered = temperatureFilter.Filter(reading);
         int target;
         if (settings.FanMode == CoolingPadFanMode.Auto)
         {
             target = CoolingPadAutoCurves.Target(settings.AutoProfile, settings.TemperatureSource,
-                filtered.CpuCelsius, filtered.GpuCelsius);
+                filtered.CpuCelsius, gpuOff ? null : filtered.GpuCelsius);
         }
         else
         {
             target = cpu ? Evaluate(settings.CpuCurve, filtered.CpuCelsius!.Value) : CoolingPadSettings.MinimumRpm;
-            if (gpu) { target = Math.Max(target, Evaluate(settings.GpuCurve, filtered.GpuCelsius!.Value)); }
+            if (gpu && !gpuOff) { target = Math.Max(target, Evaluate(settings.GpuCurve, filtered.GpuCelsius!.Value)); }
+            // A GPU-only curve with the GPU off runs at its coolest point.
+            else if (gpu && !cpu) { target = settings.GpuCurve[0].Rpm; }
         }
         lastTemperatureTimestamp = acquired;
         return target;

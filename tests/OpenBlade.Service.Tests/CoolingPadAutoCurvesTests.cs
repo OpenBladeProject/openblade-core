@@ -57,7 +57,15 @@ public sealed class CoolingPadAutoCurvesTests
         Assert.Equal(2700, CoolingPadAutoCurves.Target(CoolingPadAutoProfile.Performance, CoolingPadTemperatureSource.Both, 50, 50));
         Assert.Equal(2200, CoolingPadAutoCurves.Target(CoolingPadAutoProfile.Balanced, CoolingPadTemperatureSource.Both, 95, 20));
         Assert.Throws<InvalidOperationException>(() =>
-            CoolingPadAutoCurves.Target(CoolingPadAutoProfile.Balanced, CoolingPadTemperatureSource.Both, 60, null));
+            CoolingPadAutoCurves.Target(CoolingPadAutoProfile.Balanced, CoolingPadTemperatureSource.Cpu, null, 60));
+    }
+
+    [Fact]
+    public void PoweredDownGpuLeavesBothOnTheCpuAndGpuOnlyAtItsCoolestPoint()
+    {
+        Assert.Equal(2200, CoolingPadAutoCurves.Target(CoolingPadAutoProfile.Balanced, CoolingPadTemperatureSource.Both, 60, null));
+        Assert.Equal(CoolingPadAutoCurves.Gpu(CoolingPadAutoProfile.Performance)[0].Rpm,
+            CoolingPadAutoCurves.Target(CoolingPadAutoProfile.Performance, CoolingPadTemperatureSource.Gpu, null, null));
     }
 
     private static string Format(IReadOnlyList<CoolingPadCurvePoint> points) =>

@@ -66,13 +66,19 @@ internal static class CoolingPadAutoCurves
         return table[^1].Rpm;
     }
 
-    /// <summary>Cpu and Gpu use their own table; Both takes the higher of the two results.</summary>
+    /// <summary>
+    /// Cpu and Gpu use their own table; Both takes the higher of the two results. A null
+    /// GPU reading means the caller confirmed the GPU powered down: Both then follows the
+    /// CPU, and a GPU-only source runs at the GPU table's coolest point.
+    /// </summary>
     internal static int Target(CoolingPadAutoProfile profile, CoolingPadTemperatureSource source, int? cpu, int? gpu) =>
         source switch
         {
             CoolingPadTemperatureSource.Cpu => Evaluate(Cpu(profile), Required(cpu)),
-            CoolingPadTemperatureSource.Gpu => Evaluate(Gpu(profile), Required(gpu)),
-            CoolingPadTemperatureSource.Both => Math.Max(Evaluate(Cpu(profile), Required(cpu)), Evaluate(Gpu(profile), Required(gpu))),
+            CoolingPadTemperatureSource.Gpu => gpu is int g ? Evaluate(Gpu(profile), g) : Gpu(profile)[0].Rpm,
+            CoolingPadTemperatureSource.Both => gpu is int g
+                ? Math.Max(Evaluate(Cpu(profile), Required(cpu)), Evaluate(Gpu(profile), g))
+                : Evaluate(Cpu(profile), Required(cpu)),
             _ => throw new ArgumentOutOfRangeException(nameof(source)),
         };
 

@@ -79,13 +79,15 @@ public sealed class CoolingPadControlRuntimeTests
     }
 
     [Fact]
-    public async Task MissingTelemetryPausesWithoutInventingATarget()
+    public async Task MissingTelemetryRefusesWithoutInventingATarget()
     {
         var provider = new Provider();
         var store = new CoolingPadStateStore();
         var runtime = await CreateAsync(provider, store, new Temperatures { Reading = new(65, null) });
         ControlOperationResult result = await runtime.ApplyAsync(Fixed with { FanMode = CoolingPadFanMode.HostCurve }, () => true, default);
-        Assert.Equal(ControlOperationStatus.Failed, result.Status);
+        // Nothing was submitted, so this is a refusal, not an uncertain failure.
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.False(runtime.Status.RecoveryRequired);
         Assert.Empty(provider.Pad.Writes);
         Assert.False(runtime.Status.Active);
         Assert.Null(await store.LoadOwnershipAsync(default));
@@ -556,7 +558,7 @@ public sealed class CoolingPadControlRuntimeTests
     }
 
     [Fact]
-    public async Task AutoPausesOnAnUnavailableRawSourceAndAcceptsDemandLeases()
+    public async Task AutoHoldsItsTargetWhileARawSourceIsMissingAndAcceptsDemandLeases()
     {
         var provider = new Provider();
         var clock = new Clock();
@@ -573,8 +575,77 @@ public sealed class CoolingPadControlRuntimeTests
         temperatures.Reading = new(65, null);
         clock.Now = clock.Now.AddSeconds(1);
         await runtime.MaintainAsync(() => true, default);
-        Assert.False(runtime.Status.Active);
+        // A missing reading pauses curve updates only; control and its last target remain.
+        Assert.True(runtime.Status.Active);
+        Assert.False(runtime.Status.RecoveryRequired);
+        Assert.Contains("waiting for a reading", runtime.Status.Message);
         Assert.Equal(2, provider.Pad.Writes.Count);
+        Assert.Equal(3000, runtime.Status.ConfirmedTargetRpm);
+    }
+
+    [Fact]
+    public async Task CurveResumesWhenAMissingReadingReturns()
+    {
+        var provider = new Provider();
+        var clock = new Clock();
+        var temperatures = new Temperatures();
+        var runtime = new CoolingPadControlRuntime(provider, new(), temperatures, clock);
+        await runtime.SetUserAsync("owner", default);
+        var settings = Fixed with
+        {
+            FanMode = CoolingPadFanMode.HostCurve,
+            TemperatureSource = CoolingPadTemperatureSource.Cpu,
+            CpuCurve = [new(40, 500), new(60, 1000), new(75, 1000), new(90, 3000)],
+        };
+        Assert.Equal(ControlOperationStatus.Applied, (await runtime.ApplyAsync(settings, () => true, default)).Status);
+        temperatures.Reading = new(null, null);
+        for (int second = 0; second < 3; second++)
+        {
+            clock.Now = clock.Now.AddSeconds(1);
+            await runtime.MaintainAsync(() => true, default);
+        }
+        Assert.True(runtime.Status.Active);
+        Assert.Single(provider.Pad.Writes);
+
+        // The filter restarts from the fresh reading, so sustained heat raises the target.
+        temperatures.Reading = new(95, null);
+        clock.Now = clock.Now.AddSeconds(1);
+        await runtime.MaintainAsync(() => true, default);
+        Assert.True(runtime.Status.Active);
+        Assert.Equal(3000, runtime.Status.ConfirmedTargetRpm);
+        Assert.Equal(2, provider.Pad.Writes.Count);
+    }
+
+    public static TheoryData<CoolingPadSettings, int> PoweredDownGpuModes => new()
+    {
+        { Fixed with { FanMode = CoolingPadFanMode.Auto, AutoProfile = CoolingPadAutoProfile.Balanced, TemperatureSource = CoolingPadTemperatureSource.Both }, 2200 },
+        { Fixed with { FanMode = CoolingPadFanMode.Auto, AutoProfile = CoolingPadAutoProfile.Balanced, TemperatureSource = CoolingPadTemperatureSource.Gpu },
+            CoolingPadAutoCurves.Gpu(CoolingPadAutoProfile.Balanced)[0].Rpm },
+        { Fixed with { FanMode = CoolingPadFanMode.HostCurve, TemperatureSource = CoolingPadTemperatureSource.Both }, 1500 },
+        { Fixed with { FanMode = CoolingPadFanMode.HostCurve, TemperatureSource = CoolingPadTemperatureSource.Gpu },
+            new CoolingPadSettings().GpuCurve[0].Rpm },
+    };
+
+    [Theory]
+    [MemberData(nameof(PoweredDownGpuModes))]
+    public async Task ConfirmedPoweredDownGpuIsIgnoredRatherThanMissing(CoolingPadSettings settings, int expected)
+    {
+        var provider = new Provider();
+        var clock = new Clock();
+        var temperatures = new Temperatures { Reading = new(65, null, GpuPoweredDown: true) };
+        var runtime = new CoolingPadControlRuntime(provider, new(), temperatures, clock);
+        await runtime.SetUserAsync("owner", default);
+        Assert.Equal(ControlOperationStatus.Applied, (await runtime.ApplyAsync(settings, () => true, default)).Status);
+        Assert.Equal(expected, runtime.Status.ConfirmedTargetRpm);
+        // The GPU flips between D0 and D3 every few seconds on some hosts.
+        temperatures.Reading = new(65, 60);
+        clock.Now = clock.Now.AddSeconds(1);
+        await runtime.MaintainAsync(() => true, default);
+        temperatures.Reading = new(65, null, GpuPoweredDown: true);
+        clock.Now = clock.Now.AddSeconds(1);
+        await runtime.MaintainAsync(() => true, default);
+        Assert.True(runtime.Status.Active);
+        Assert.False(runtime.Status.RecoveryRequired);
     }
 
     public static TheoryData<CoolingPadSettings> TemperatureDrivenModes => new()
