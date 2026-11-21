@@ -167,6 +167,15 @@ public enum CoolingPadConnectionState
     ObservationFailed,
 }
 
+// Why an exact model declines a new HyperBoost entry while exit and restoration
+// stay admitted. It never limits turning HyperBoost off.
+public enum HyperBoostEntryRestriction
+{
+    // The exact model's vendor source does not offer HyperBoost for this
+    // system SKU (Synapse shouldDisableHyperboost).
+    VendorSystemSku,
+}
+
 public sealed record HyperBoostBaseModeCapabilities(
     DeviceFeatureAccess Silent,
     DeviceFeatureAccess Balanced,
@@ -174,6 +183,10 @@ public sealed record HyperBoostBaseModeCapabilities(
 {
     // Direct entry from and restoration to Custom; null where it has not been admitted.
     public DeviceFeatureAccess? Custom { get; init; }
+
+    // Direct entry from and restoration to Turbo (raw 1) on models whose ordinary
+    // modes include Turbo, such as RZ09-0510; null where it has not been admitted.
+    public DeviceFeatureAccess? Turbo { get; init; }
 
     // Explicit cooling-pad entry baseline for models whose vendor path does not use Performance.
     // Omitted capabilities retain the legacy inferred Performance baseline.
@@ -187,6 +200,7 @@ public sealed record HyperBoostBaseModeCapabilities(
         PerformancePreset.Balanced => Balanced,
         PerformancePreset.Performance => Performance,
         PerformancePreset.Custom => Custom,
+        PerformancePreset.Turbo => Turbo,
         _ => null,
     };
 
@@ -195,11 +209,13 @@ public sealed record HyperBoostBaseModeCapabilities(
         && Enum.IsDefined(Balanced)
         && Enum.IsDefined(Performance)
         && (Custom is null || Enum.IsDefined(Custom.Value))
+        && (Turbo is null || Enum.IsDefined(Turbo.Value))
         && (CoolingPadEntryBaseMode is null
             || CoolingPadEntryBaseMode is PerformancePreset.Silent
                 or PerformancePreset.Balanced
                 or PerformancePreset.Performance
                 or PerformancePreset.Custom
+                or PerformancePreset.Turbo
                 && AccessFor(CoolingPadEntryBaseMode.Value) == DeviceFeatureAccess.ReadWrite);
 }
 
@@ -324,6 +340,10 @@ public sealed record DeviceCapabilities(
 
     public HyperBoostBaseModeCapabilities? HyperBoostBaseModes { get; init; }
 
+    // Set when entry is declined for this laptop; exit and restoration keep
+    // HyperBoostAccess and HyperBoostBaseModes.
+    public HyperBoostEntryRestriction? HyperBoostEntryRestriction { get; init; }
+
     public DeviceFeatureAccess? SpecialKeyBindingsAccess { get; init; }
 
     public SpecialKeySlotSet WritableSpecialKeySlots { get; init; }
@@ -400,7 +420,12 @@ public sealed record DeviceCapabilities(
                 && HyperBoostBaseModes.Balanced <= HyperBoostAccess.Value
                 && HyperBoostBaseModes.Performance <= HyperBoostAccess.Value
                 && (HyperBoostBaseModes.Custom is null
-                    || HyperBoostBaseModes.Custom <= HyperBoostAccess.Value))
+                    || HyperBoostBaseModes.Custom <= HyperBoostAccess.Value)
+                && (HyperBoostBaseModes.Turbo is null
+                    || HyperBoostBaseModes.Turbo <= HyperBoostAccess.Value))
+        && (HyperBoostEntryRestriction is null
+            || HyperBoostAccess is not null
+                && Enum.IsDefined(HyperBoostEntryRestriction.Value))
         && (SpecialKeyBindingsAccess is null
             || Enum.IsDefined(SpecialKeyBindingsAccess.Value))
         && HasValidSpecialKeySlots()
@@ -420,8 +445,9 @@ public sealed record DeviceCapabilities(
         && IsValidEnumSet(HostManagedLaptopControls)
         && HostManagedLaptopControls.All(control => control is
             OneShotLaptopControl.FunctionKeyPrimary or OneShotLaptopControl.GamingMode)
-        && !HostManagedLaptopControls.Overlaps(OneShotLaptopControls)
+        // Check the set before Overlaps, which throws on a null set from the wire.
         && IsValidEnumSet(OneShotLaptopControls)
+        && !HostManagedLaptopControls.Overlaps(OneShotLaptopControls)
         && ObservedPowerSourceBehaviors is not null
         && ObservedPowerSourceBehaviors.All(
             observation => observation is not null && observation.IsWellFormed)

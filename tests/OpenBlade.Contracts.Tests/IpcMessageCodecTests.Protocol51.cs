@@ -269,6 +269,9 @@ public sealed partial class IpcMessageCodecTests
                     DeviceFeatureAccess.ReadWrite, DeviceFeatureAccess.ReadWrite, DeviceFeatureAccess.ReadWrite)
                 {
                     Custom = DeviceFeatureAccess.ReadWrite,
+                    // The frozen v51 reader rejects unknown members, so this proves the
+                    // read-only projection hides the protocol 86 Turbo slot.
+                    Turbo = DeviceFeatureAccess.ReadWrite,
                     CoolingPadEntryBaseMode = PerformancePreset.Balanced,
                 },
                 ObservedPowerSourceBehaviors =
