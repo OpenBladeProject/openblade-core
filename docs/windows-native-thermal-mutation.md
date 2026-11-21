@@ -522,6 +522,42 @@ capability by name, whatever else a record claims. A profile-serving image
 cannot be packaged, bound or installed, as the temporary-charge composition it
 extends or as anything else. Tests on both sides pin the refusal. Admitting it belongs to the packaging stage.
 
+### Active application profile
+
+Resolution of the active application profile is ported, write-free, and not
+yet called by the installed Service; a later slice wires it to saves,
+foreground reports, lease expiry and power changes.
+`openblade_domain::application_context` holds managed `ProfileAutomationState`'s
+selection rules over borrowed rules: the first enabled rule whose path matches
+a report (`SetApplicationContext`, `ProfileAutomationState.cs:216-236`), the
+update that keeps the active pair only while an enabled rule with its id still
+holds the reported path (`UpdateProfiles`, `:130-143`), the rule whose overrides
+apply (`GetApplicationOverride`, `:632-639`) and the save path's
+`activeApplicationIntentChanged` predicate (`ServiceControlRuntime.cs:2116-2119`).
+`profile_set::application` binds them to the typed set with managed's
+`OrdinalIgnoreCase` table and resolves the active id, the profile `Resolve`
+starts from (`:332-344`, the base profile with the override for that power
+source applied) and `EffectiveLaptopBehavior` (`:99-110`). The replay's
+`application_runtime::Lease` uses the same rules.
+
+`profile-resolution-vectors.json` pins it. `NativeProfileResolutionVectors`
+drives `ProfileAutomationState` through reports, updates and power changes,
+and drives the real `UpdateProfilesAsync` for the predicate, recording its
+inputs and whether the full transition ran.
+
+Differences from managed:
+
+- A reported path not already in `NormalizeExecutablePath` form is refused.
+  Managed normalises it first; the native wire admits only that spelling.
+- `ExternalUnknown` resolves no profile. Managed builds that base from
+  confirmed firmware state, which the host supplies.
+- The predicate compares the desired state its caller passes. Managed compares
+  the whole `ResolveAutomationDesired` result, including overrides and
+  confirmed state, which the wiring slice resolves; the vectors take that
+  comparison as managed observed it.
+- The replay matches paths with the Windows ordinal comparison, as noted
+  above; the typed binding uses managed's table.
+
 ## Submission, ambiguity and finite transport lifetime
 
 The portable typed pair resolves both 0D/02 reports before the first mutation.
