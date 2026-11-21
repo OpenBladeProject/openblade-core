@@ -251,7 +251,7 @@ fn every_managed_store_open_migrates_alike() {
     // when its normalisation changes it, and the legacy profile.
     assert_eq!(schemas, (1..=27).collect());
     assert!(legacy >= 50 && migrations >= 45 && kept >= 1 && refusals >= 50 && envelope >= 4);
-    assert_eq!(differences, 5);
+    assert_eq!(differences, 10);
 }
 
 #[test]

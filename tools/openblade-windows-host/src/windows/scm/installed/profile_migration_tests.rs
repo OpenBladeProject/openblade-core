@@ -146,7 +146,7 @@ fn every_managed_store_open_leaves_what_managed_leaves() {
         migrations >= 45 && preserved >= 50,
         "{migrations} {preserved}"
     );
-    assert_eq!(differences, 5);
+    assert_eq!(differences, 10);
 }
 
 /// Pending override or journal evidence refuses the open before the

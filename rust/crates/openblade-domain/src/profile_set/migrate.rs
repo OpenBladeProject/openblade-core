@@ -84,11 +84,11 @@ pub fn migrate(stored: Stored<'_>, validator: &Validator) -> Result<Option<Migra
             if schema > CURRENT_SCHEMA || [profile, preferences].into_iter().any(future_schema) {
                 return Err(Refusal::FutureSchema);
             }
-            // A declared difference: below schema 22 a null application
-            // profile, or one with null overrides or a null path, and below
-            // schema 12 null Windows power modes, are refused by the decoder,
-            // where managed reads them and then discards them
-            // (`ProfileStore.cs:235-256`).
+            // A declared difference: the decoder refuses a null application
+            // profile list and null Windows power modes below schema 15, and
+            // a null application profile or one with null overrides, path or
+            // name below 22, where managed reads them and then discards or
+            // migrates them (`ProfileStore.cs:235-256`, `:492-553`).
             let aggregate = read_aggregate(schema, profile, preferences, validator)
                 .map_err(Refusal::Invalid)?;
             // `ReadCommittedSnapshot` reports `ConfigurationMigrated`; only
