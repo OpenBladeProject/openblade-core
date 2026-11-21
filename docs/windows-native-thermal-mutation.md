@@ -608,6 +608,9 @@ The typed model, codec and validator are in
 - `document`, `preferences`: `ProfileStore.ReadDocument` and
   `BatteryConfigurationStore.ReadPreferences` for schemas 1 to 27, and the
   documents managed writes back.
+- `migrate`: the rewrite `BatteryConfigurationStore.LoadCoreAsync` makes when
+  the store opens, for a committed aggregate and for the schema-less legacy
+  profile. See [Migration when the store opens](#migration-when-the-store-opens).
 - `update`: the intent half of `UpdateProfilesAsync`.
 
 A request is handled in managed's order:
@@ -654,10 +657,11 @@ unchanged: a failed `manual-overrides.json.pending` and a pending journal stay
 on disk as the evidence the handback to managed preserves, and the installed
 store refuses to discard either.
 
-Managed is the reference, and four shared vector files under
+Managed is the reference, and five shared vector files under
 `tools/openblade-windows-host/tests/data` pin it:
 `profile-set-vectors-v27.json` (decode, validation, reply and stored bytes),
 `profile-aggregate-vectors.json` (loading and migrating schemas 1 to 27),
+`profile-migration-vectors.json` (what opening the store leaves on disk),
 `profile-ordinal-ignore-case.json` (the comparison that finds duplicates) and
 `profile-capabilities-rz09-0581.json`. The managed tests
 `ServiceControlRuntimeTests.NativeProfile*` record every expectation from the
@@ -725,11 +729,108 @@ Differences from managed:
   the .NET I/O exception.
 - The published status carries no `Profiles stored...` message.
 
-Not done here: the read path still refuses a committed schema 24 or older
-aggregate and the schema-less legacy profile before any request is served, so
-the migration this stage can perform is reachable for schemas 25 and 26 and
-for an absent aggregate, which is materialised from the safe defaults on the
-first save.
+An older aggregate is migrated when the store opens, as described next. An
+absent aggregate is still materialised from the safe defaults by the first
+save.
+
+### Migration when the store opens
+
+Managed migrates when it loads the configuration, not at the first save.
+`BatteryConfigurationStore.LoadCoreAsync` (`BatteryConfigurationStore.cs:349-417`)
+writes the aggregate back through `SaveConfigurationTransactionAsync` whenever
+`ReadCommittedSnapshot` reports a migration, and always for a legacy candidate.
+Native does the same when `Storage::open_with` runs, before its reader admits
+the aggregate: `profile_storage::migrate_on_open`, called once from
+`thermal_storage.rs`. Only `service-profiles-v1` has the call. The other lanes
+still refuse schema 24 and older and the legacy profile, and write no profile
+document.
+
+Two sources migrate, through `profile_set::migrate`:
+
+- A committed aggregate at schemas 1 to 27 that `read_aggregate` reports as
+  migrated: every schema below 27, and a schema 27 aggregate that
+  normalisation changes. This is managed's chain. `ProfileStore.ReadDocument`
+  (`ProfileStore.cs:182-310`) rejects lighting members newer than the document
+  (`:205-216`) and normalises the battery profile
+  (`NormalizeLegacyBatteryProfile`, `:384-437`), taking the protection default
+  from the preferences below schema 11 (`:228-234`). It clears Windows power
+  modes below 12, migrates the per-profile modes of 12 to 14 and clears any
+  left at 15 and later (`:235-252`, `:492-553`). It clears application
+  profiles and display brightness below 22 (`:253-256`, `:359-372`), holds
+  schemas through 17 to the 50 to 80 percent grid (`:291-294`, `:374-382`),
+  clears Battery Saver fan stop below 23 (`:295-303`) and keeps schema 26's
+  independent intent (`:304-307`). `BatteryConfigurationStore.ReadPreferences`
+  (`BatteryConfigurationStore.cs:573-686`) drops the protection setting, sets
+  Maintain desired state with the disclosure pending below 16, defaults Fan
+  Stop below 24, derives its cutoffs at 24, and re-enables experimental
+  features.
+- The schema-less legacy profile: `profiles.json` alone, with exactly
+  `pluggedIn`, `battery` and `batteryPolicy` (`ReadLegacy`, `:525-571`). A
+  power profile has exactly `performance`, `fans` and `lighting`; lighting has
+  exactly `effect`, `color` and `brightness`; a color has any of `red`,
+  `green` and `blue`, and an absent one is 0. Every value is a JSON number
+  that fits a 32-bit integer, and a color or brightness also fits a byte, so
+  `-0` is zero and `"80"`, `80.0` and `8e1` are refused. `temporaryFullCharge`
+  must be `false`. The limit must be 50 to 99 for `BatteryPolicy` and then 50
+  to 80 in steps of 5. USB-C takes the safe defaults and battery protection
+  defaults to on. The preferences are the defaults with Maintain desired state
+  and the upgrade disclosure pending (`:354-362`). A lone profile that declares
+  a schema is incomplete, or future above 27, as managed reports it.
+
+The documents are the bytes `SaveConfigurationTransactionAsync` writes
+(`:696-702`), and they go through the save's recorded transaction above: an
+exact backup of each existing document, the record, profile, preferences and
+marker, verification, then removal of the record and backups. The originals
+stay on disk until the migrated bytes are verified. Managed leaves only the
+three documents behind, and so does native; managed's backups and stages carry
+a random transaction identifier, native's the change digest and `.pending`.
+
+Everything else is left exactly as stored for the reader to admit or refuse: an
+aggregate managed preserves (a future schema in any file, a missing file, a
+marker of other bytes, a mixed or an invalid document), a recorded
+transaction, an absent aggregate, and one this service's reader would refuse
+once migrated.
+
+A crash at each durable step leaves:
+
+- In a backup's stage or backup, or the record's stage: the documents
+  untouched and no record. The next open removes the stage, reuses an exact
+  backup and migrates.
+- After the record lands, through every document replacement and the marker
+  (the commit), until the record is removed: the record, exact backups, and
+  each document holding its prior or its migrated bytes. The store stays
+  closed and nothing is touched, as managed's `CheckRecoveryRequired` does.
+- After the record is removed: the migrated documents and possibly some exact
+  backups, which nothing reads. The store opens.
+
+A failure that does not stop the process restores the prior documents and the
+open fails with `The saved configuration could not be migrated to the current
+schema. It is unchanged, and the next start migrates it again.` If the restore
+cannot be confirmed, the record stays: `Configuration transaction recovery is
+required. ...`. Managed's load throws its I/O exception in both cases.
+
+`profile-migration-vectors.json` holds 105 cases recorded from
+`BatteryConfigurationStore.LoadAsync` by
+`ServiceControlRuntimeTests.NativeProfileMigrationVectors`: every schema from 1
+to 26, schema 27 left alone, boundary values, 53 legacy profiles and the
+envelopes managed preserves, each with the files left on disk and their
+digests. The domain test `profile_migration_vectors` migrates every case the
+payload reader sees. The host tests in `profile_migration_tests.rs` open the
+store on every case and compare the files, fail and crash each write, and
+repeat the open; four real-file tests run through `ProtectedFiles` with the
+injected verifier. Both readers refuse a malformed or unknown row.
+
+Differences from managed:
+
+- An absent aggregate is not materialised at open; the first save does it.
+- A migration that `thermal_storage::aggregate` would refuse once written is
+  not written, so a schema 24 or older aggregate in that state keeps the store
+  closed where managed migrates it. Duplicate application paths are compared
+  as managed compares them, so this needs another disagreement between that
+  reader and `read_aggregate`.
+- A document with a duplicate member that also declares a future schema is
+  refused as invalid by the domain reader; managed names it a future schema.
+  Both leave the files untouched and the store closed.
 
 Packaging refuses this composition. `build.rs` gives a build with
 `service-profiles-v1` the temporary-charge capabilities followed by
