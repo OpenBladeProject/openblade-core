@@ -87,7 +87,10 @@ and applies the intersection of that envelope and the range the driver reports.
 Synapse also hides the panel when the adapter is below its recommended wattage;
 OpenBlade keeps the same external-power rule it uses on RZ09-0581 and RZ09-0528,
 so the offsets stay available on a limited adapter. Switching to battery stops
-OpenBlade managing the offsets; it does not write them back to 0.
+OpenBlade managing the offsets; it does not write them back to 0. After an
+interrupted GPU write, OpenBlade first reads the offsets from the driver; if the
+driver cannot be read, it keeps managing them and reports the change as
+unconfirmed.
 
 Synapse applies the envelope per product, with no GPU-name check. OpenBlade adds
 its own guard: the laptop must have exactly one NVIDIA GPU, named
