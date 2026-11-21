@@ -1471,6 +1471,19 @@ public sealed class CapabilityPresentationTests
     }
 
     [Fact]
+    public void MainWindow_ChromaImportPassesTheRegionalEditionOfTheConnectedLaptop()
+    {
+        // The import dialog cannot run in a unit test, so pin the capabilities it hands the adapter.
+        string source = ReadTraySource("MainWindow.xaml.cs");
+
+        Assert.Matches(
+            @"RazerChromaFileAdapter\.Deserialize\(\s*content,\s*Path\.GetFileNameWithoutExtension\(result\.Path\),\s*"
+            + @"ViewModel\.Capabilities\.KeyboardLightingLayoutId,\s*ViewModel\.Capabilities\.Blade18KeyboardLayoutId,\s*"
+            + @"ViewModel\.Capabilities\.Blade14KeyboardEdition\)",
+            source);
+    }
+
+    [Fact]
     public void MainWindow_RuntimeBoundResponsiveChoicesDoNotReplaceBindings()
     {
         string source = ReadTraySource("MainWindow.xaml.cs");

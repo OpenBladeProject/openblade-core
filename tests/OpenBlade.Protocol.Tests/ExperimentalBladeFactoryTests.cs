@@ -601,6 +601,7 @@ public sealed partial class ExperimentalBladeFactoryTests
         internal bool FailRead { get; init; }
         internal (byte Class, byte Id)? StatusFailure { get; init; }
         internal int StatusFailuresRemaining { get; set; }
+        internal byte? LayoutReplyDataSize { get; init; }
 
         public Task<HidFeatureIoResult> ExecuteAsync(OpenedHidHandle handle, uint controlCode,
             byte[] buffer, CancellationToken callerCancellation, CancellationToken deadlineCancellation)
@@ -638,6 +639,11 @@ public sealed partial class ExperimentalBladeFactoryTests
                 {
                     buffer[9] = 12;
                     buffer[89] ^= 12;
+                    if (LayoutReplyDataSize is { } size)
+                    {
+                        buffer[89] ^= (byte)(buffer[6] ^ size);
+                        buffer[6] = size;
+                    }
                 }
                 if (TrackLightingEffect && lastRequest[7] == 0x0F)
                 {

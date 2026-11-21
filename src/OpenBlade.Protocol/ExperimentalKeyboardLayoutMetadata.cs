@@ -3,9 +3,11 @@ namespace OpenBlade.Protocol;
 /// <summary>
 /// Factory-lifetime result of an exact model's optional keyboard-layout read.
 /// The value is a static MCU property, so it is read once for each admitted host
-/// and HID identity. A confirmed value and a completed failure are both kept, so
+/// and HID identity. A confirmed value and a failure the device answered (a status
+/// rejection, an invalid payload, or a GET that poisoned the session) are both kept, so
 /// battery, lighting and recovery sessions do not repeat a GET that firmware
-/// rejected and that would poison each new session. A changed identity starts a
+/// rejected and that would poison each new session. A refusal before submission, a
+/// gate timeout, a no-response timeout and cancellation are not kept. A changed identity starts a
 /// fresh read. Every session still passes its own fresh identity and safety
 /// admission; this cache only removes repeated metadata reads.
 /// </summary>
@@ -52,7 +54,7 @@ internal sealed class ExperimentalKeyboardLayoutMetadata
         }
     }
 
-    /// <summary>Records a confirmed value, or null after a completed failed read.</summary>
+    /// <summary>Records a confirmed value, or null after a device-answered failed read.</summary>
     internal void Settle(Key current, byte? result)
     {
         lock (sync)

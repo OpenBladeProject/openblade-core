@@ -28,14 +28,44 @@ internal sealed partial class ExperimentalBladePort
     private void SettleKeyboardLayout(byte? value) =>
         keyboardLayoutMetadata?.Settle(keyboardLayoutMetadataKey, value);
 
-    // A completed failure is a result for this identity: firmware that rejected the
-    // GET, or poisoned the session, would do so again. Cancellation is not a result.
-    private void SettleFailedKeyboardLayout(CancellationToken cancellationToken)
+    // Only a failure that says something about this device is a result for its identity:
+    // firmware that answered with a rejection or an invalid payload, or whose GET
+    // poisoned the session, would do so again. A refusal before submission, a
+    // shared-gate timeout, a no-response timeout that left the session healthy, and
+    // cancellation never reached the device, so the next session reads again.
+    private void SettleFailedKeyboardLayout(IOException failure, CancellationToken cancellationToken)
     {
-        if (!cancellationToken.IsCancellationRequested)
+        if (!cancellationToken.IsCancellationRequested
+            && KeyboardLayoutFailureIsDeviceResult(failure, session.Disposition))
         {
             SettleKeyboardLayout(null);
         }
+    }
+
+    internal static bool KeyboardLayoutFailureIsDeviceResult(
+        IOException failure, RazerCommandSessionDisposition disposition)
+    {
+        if (failure is not NativeDeviceReadException read)
+        {
+            // The reply arrived and failed this port's own contract check.
+            return true;
+        }
+        if (read.Diagnostic is { Phase: HidSessionFailurePhase.ProtocolValidation } diagnostic
+            && diagnostic.ProtocolValidationFailure is HidProtocolValidationFailure.Status
+                or HidProtocolValidationFailure.PayloadLength or HidProtocolValidationFailure.PayloadValidator)
+        {
+            return true;
+        }
+        if (read.Diagnostic?.Phase is HidSessionFailurePhase.Guard or HidSessionFailurePhase.SharedGateAdmission
+            || read.Failure is HidSessionFailureKind.IdentityBlocked or HidSessionFailureKind.ConflictBlocked
+                or HidSessionFailureKind.ConflictDetectionFailed or HidSessionFailureKind.QueuedCanceled
+                or HidSessionFailureKind.Canceled or HidSessionFailureKind.Exhausted
+                or HidSessionFailureKind.Disposed)
+        {
+            return false;
+        }
+        // A submitted GET that retired the session would retire the next one too.
+        return disposition != RazerCommandSessionDisposition.Healthy;
     }
 
     // Exact RZ09-0530 PI4110 1.04.00 image (decoded SHA256 1AC3F054...8F11):
@@ -43,8 +73,8 @@ internal sealed partial class ExperimentalBladePort
     // Class 00 command 86 takes two data bytes and returns RAM 0x10001870 at
     // payload 0, the byte selector 0x5D24 uses for the descriptor table. Payload 1
     // stays opaque. This read is optional metadata: any failure keeps the common
-    // map. It never sends a setter, and it runs at most once for each admitted
-    // device identity, before the first port for that identity is published.
+    // map. It never sends a setter. The device identity repeats it only until the
+    // device settles it, before the first port for that identity is published.
     internal async Task InitializeBlade14KeyboardEditionAsync(CancellationToken cancellationToken)
     {
         if (model.ProductId != 0x02C5)
@@ -75,9 +105,9 @@ internal sealed partial class ExperimentalBladePort
             RecordQuery("KeyboardLayout", "Confirmed",
                 $"Edition={edition};Map={Blade14KeyboardLightingLayout.GetMapId(edition)}");
         }
-        catch (IOException)
+        catch (IOException failure)
         {
-            SettleFailedKeyboardLayout(cancellationToken);
+            SettleFailedKeyboardLayout(failure, cancellationToken);
             if (session.Disposition != RazerCommandSessionDisposition.Healthy)
             {
                 throw;
@@ -134,9 +164,9 @@ internal sealed partial class ExperimentalBladePort
                 RecordQuery("KeyboardLayout", "UnsupportedState", failure: "UnknownRegionalLayout");
             }
         }
-        catch (IOException)
+        catch (IOException failure)
         {
-            SettleFailedKeyboardLayout(cancellationToken);
+            SettleFailedKeyboardLayout(failure, cancellationToken);
             if (session.Disposition != RazerCommandSessionDisposition.Healthy)
             {
                 throw;
