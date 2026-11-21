@@ -215,7 +215,8 @@ Battery Saver and Battery Balanced on battery power.
 - Charge limits use 1% steps; 100% turns protection off. The Blade 15 does not
   support charge limits. Blade 18 and Blade 14 (2025) also offer experimental
   temporary full charge after valid state readback. Enabling it requires an active charge limit; other
-  Power Mode Control options must be off.
+  Power Mode Control options must be off. On Blade 14 (2025), Windows HDR can turn on local
+  dimming, one of those options. Turn off Windows HDR (or local dimming in Synapse), then retry.
 
 Battery changes on these profiles and the seven newer limiter profiles share a
 bounded confirmation window: only GETs returning the exact pre-write raw byte

@@ -162,7 +162,7 @@ Blade 14 (2025) 在电池供电时还提供电池节能和电池平衡模式。
   OpenBlade 尚不能在此机型上恢复该选项。
   Blade 18 (2023) 仍只能读取状态；更改性能设置前，请先在 Synapse 中关闭 HyperBoost。
 - 充电上限每次可调整 1%，设为 100% 时会关闭充电保护。
-  Blade 15 不支持充电上限。Blade 18 和 Blade 14 (2025) 在成功读取状态后支持实验性的临时充满；开启时需要已启用充电上限，且不能覆盖其他 Power Mode Control 选项。
+  Blade 15 不支持充电上限。Blade 18 和 Blade 14 (2025) 在成功读取状态后支持实验性的临时充满；开启时需要已启用充电上限，且不能覆盖其他 Power Mode Control 选项。在 Blade 14 (2025) 上，Windows HDR 可能会开启局部调光（属于这些选项之一）。请关闭 Windows HDR（或在 Synapse 中关闭局部调光），然后重试。
 
 <a id="send-a-useful-test-report"></a>
 

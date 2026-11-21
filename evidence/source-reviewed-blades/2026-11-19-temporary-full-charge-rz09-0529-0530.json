@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "audit": "temporary full charge source review for RZ09-0529 and RZ09-0530",
   "base": "571d7ef7",
-  "coordinates": "zero-based UTF8 byte offsets of the first byte of each quoted snippet; all quoted files are ASCII",
+  "coordinates": "zero-based UTF-8 byte offsets of the first byte of each quoted snippet. The rzDevice25, main and 709 subclass files contain only ASCII bytes, so their byte and character offsets agree. The 6737 policy files do not: 711-policy has 1590 non-ASCII bytes (first at 140038) and 709-policy has 1581 (first at 140040), so their offsets are byte offsets, not character offsets.",
   "physicalValidation": "none; downloaded vendor files inspected read-only; no vendor code executed and no hardware commands sent",
   "provenance": "Cached copies were stored with CRLF line endings; removing every CR reproduces the pinned size and SHA-256 exactly. The 709 policy and main files match their pins without normalization.",
   "contract": "Same as product 672 (RZ09-0484): GET 07/8F [0], SET 07/0F [mask], Power Mode Control bits cpuBoost 01, maxFanSpeedMode 02, oneTimeOverride 04, localDimming 08; the battery charging override changes bit 04 by read-modify-write and clears it whenever the charge limiter is disabled.",
@@ -100,7 +100,7 @@
           "text": "hasBatteryChargingOverrideEnabled:!0"
         }
       ],
-      "implementation": "ExperimentalBladePort.SupportsTemporaryFullCharge admits 0x02C7 beside 0x02A0. Writes stay limited to 00/04 with the other shared bits clear, an admitted enabled charge limit for enablement, confirmed connected power for enablement, fresh exact-device admission, independent readback of the flag and the raw charge policy, and a write pause after any possibly submitted failure."
+      "implementation": "ExperimentalBladePort.SupportsTemporaryFullCharge admits 0x02C7 beside 0x02A0. Writes stay limited to 00/04 with the other shared bits clear, an admitted enabled charge limit for enablement, Windows-reported external power for enablement (ExternalUnknown counts, Battery refuses; cancellation needs no power), fresh exact-device admission, independent readback of the flag and the raw charge policy, and a write pause after any possibly submitted failure. 07/8F has not been observed on this model: a failed or undecodable read leaves the override unknown and blocks only override changes, while the limiter write, its confirmation and fan, performance and lighting recovery keep their previous behaviour. Only a positive override blocks the limiter, and only a possibly submitted 07/0F write makes 07/8F a recovery prerequisite."
     },
     {
       "model": "RZ09-0530",
@@ -196,8 +196,75 @@
           "text": "hasBatteryChargingOverrideEnabled:!0"
         }
       ],
+      "panel": {
+        "result": "Panel type not established. Bit 08 (localDimming) can be set on this model, so OpenBlade keeps refusing the override while it is set and tells the user to turn off Windows HDR (or local dimming in Synapse), then retry.",
+        "findings": [
+          {
+            "source": "709-main",
+            "claim": "Product 709 enables the local-dimming feature",
+            "offsetUtf8": 161869,
+            "text": "hasLocalDimming:!0"
+          },
+          {
+            "source": "709-main",
+            "claim": "Panel notification flag; it names no panel technology",
+            "offsetUtf8": 161888,
+            "text": "requireBOENotification:!0"
+          },
+          {
+            "source": "709-main",
+            "claim": "Device class",
+            "offsetUtf8": 162396,
+            "text": "rzDevice25LedMatrixBlade2"
+          },
+          {
+            "source": "709-subclass-blade",
+            "claim": "Mini-LED resolution methods are declared on the intermediate class shared by Blade models, so they do not establish this panel",
+            "offsetUtf8": 12462,
+            "text": "getMiniLEDPanelResolution("
+          },
+          {
+            "source": "709-subclass-blade",
+            "claim": "Setter counterpart",
+            "offsetUtf8": 12552,
+            "text": "setMiniLEDPanelResolution("
+          },
+          {
+            "source": "711-main",
+            "claim": "For comparison, product 711 sets the same notification flag and device class (168018) but has no localDimming string",
+            "offsetUtf8": 167435,
+            "text": "requireBOENotification:!0"
+          }
+        ]
+      },
+      "subclassChain": {
+        "result": "Closed: rzDevice25LedMatrixBlade2 extends rzDevice25LedMatrixBlade, which extends rzDevice25LedMatrix, which extends rzDevice25 module 74503 in 709-device (offset 72342). None of the three subclass files mentions PowerModeControl or overrides sendCommand, so the pinned rzDevice25 helpers are the ones product 709 uses. Chunk URLs were built from the 709-main name map (5634 at 182235, 5794 at 182312, 6832 at 182500) and hash map (5634 at 184242, 5794 at 184298, 6832 at 184522); the files were read as data and never executed.",
+        "sources": [
+          {
+            "id": "709-subclass-blade2",
+            "url": "https://apps.razer.com/synapse/products/709/mw/rzDevice25LedMatrixBlade2.da34a4070bcb5ea45648.js",
+            "bytes": 20253,
+            "sha256": "41408CFD6CAB1117D49B13EB40FE68182EC395F63B2228C058BC0517A5C87E77",
+            "findings": "Chunk 5794, module 56193. class S extends n.default at 1281 with n=i(77127) at 642. Its only sendCommand is a call, this.sendCommand(i,\"Set Audio Mute Status\",o) at 2573. HDR goes through DLL actions GetBladeMonitorWindowsHDRMode (14081) and SetBladeMonitorWindowsHDRMode (14357), not 07/0F."
+          },
+          {
+            "id": "709-subclass-blade",
+            "url": "https://apps.razer.com/synapse/products/709/mw/rzDevice25LedMatrixBlade.bf83967de3685c97c672.js",
+            "bytes": 13099,
+            "sha256": "36E74625AC6A46619E8E9F1ABB3D9C2451ECE9DB7CEBD64BD2E2681A40BBC8B5",
+            "findings": "Chunk 6832, module 77127. class N extends o.default at 1260 with o=i(71513) at 642. It overrides getBatteryChargeLimiterControl and setBatteryChargeLimiterControl (12265 and 12360) through shared helpers, and declares the mini-LED resolution methods; no sendCommand."
+          },
+          {
+            "id": "709-subclass-ledmatrix",
+            "url": "https://apps.razer.com/synapse/products/709/mw/rzDevice25LedMatrix.53b59e4d2e7d14746530.js",
+            "bytes": 6461,
+            "sha256": "193FD57388F190A35B24386C04FD0D8B08B303476DF01EE9023856015D764EF0",
+            "findings": "Chunk 5634, module 71513. class u extends r.default at 998 with r=a(74503) at 605; no sendCommand."
+          }
+        ]
+      },
       "ackContract": "The existing 0x02C5 backend already uses the status-only SET acknowledgment contract (ExperimentalBladePort.UsesSourceBackedSetAckContract) for its other source-reviewed setters; the 709 helper parses payload only when packetSizeReturned > 0, so the 07/0F write accepts a status-only ACK and does not require an echo.",
-      "implementation": "ExperimentalBladePort.SupportsTemporaryFullCharge admits 0x02C5 with the same safeguards as 0x02C7. Product 709 also enables localDimming; any set 08 bit blocks the write, and no Clear action is offered for it here."
+      "implementation": "ExperimentalBladePort.SupportsTemporaryFullCharge admits 0x02C5 with the same safeguards as 0x02C7, including the same handling of an unreadable 07/8F. Product 709 also enables localDimming; any set 08 bit blocks the write, since the shared guard does not read-modify-write other bits, and no Clear action is offered for it here."
     }
   ]
 }

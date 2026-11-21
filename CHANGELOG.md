@@ -7,7 +7,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
-- Add experimental temporary full charge on Blade 14 (2025, RZ09-0530) and Blade 18 (2025, RZ09-0529), using the same checks as Blade 18 (2023): an active charge limit, other Power Mode Control options off, and readback of both the setting and the charge limit. ([#987](https://github.com/OpenBladeProject/openblade-core/pull/987))
+- Add experimental temporary full charge on Blade 14 (2025, RZ09-0530) and Blade 18 (2025, RZ09-0529), using the same checks as Blade 18 (2023): an active charge limit, other Power Mode Control options off, and readback of both the setting and the charge limit. On Blade 14 (2025), turn off Windows HDR (or local dimming in Synapse) before you turn it on. On all three laptops, temporary full charge now turns on whenever Windows reports the charger connected, and the charge limit stays available when the temporary full charge state can't be read. ([#987](https://github.com/OpenBladeProject/openblade-core/pull/987))
 
 ### Changed
 
