@@ -14,6 +14,9 @@ internal sealed class SourceBackedCoolingPadDevice(
     private byte? brightnessRegion;
     private CoolingPadDeviceMode? originalMirrorMode;
     private bool partialMutation;
+    // The firmware runs the preset set last by either owner and cannot report which one that was.
+    // Until this session confirms its own fan write, the firmware-owned selection is reported.
+    private CoolingPadFanOwnership runningOwner = CoolingPadFanOwnership.Firmware;
     public string Identity { get; } = identity;
 
     public void BindLightingBaseline(CoolingPadDeviceSnapshot baseline)
@@ -62,7 +65,9 @@ internal sealed class SourceBackedCoolingPadDevice(
         var appMode = fan.Preset == CoolingPadFanPreset.Off ? CoolingPadFanMode.Off
             : fan.Ownership == CoolingPadFanOwnership.Synapse ? CoolingPadFanMode.Fixed : (CoolingPadFanMode?)null;
         var lightMode = DecodeLight(light!.Effect);
-        int configuredTarget = fan.Ownership == CoolingPadFanOwnership.Synapse ? fan.ConfiguredRpm
+        // Low/Medium/High report their configured speed; Smart presets only the ramping speed from 0D/81.
+        int configuredTarget = fan.Preset is CoolingPadFanPreset.Low or CoolingPadFanPreset.Medium or CoolingPadFanPreset.High
+            ? fan.ConfiguredRpm
             : fan.Preset == CoolingPadFanPreset.Off ? 0 : target.Span[2] * 50;
         return new(Identity, appMode, configuredTarget,
             CoolingPadProtocol.RawToPercent(brightness.Span[2]), lightMode)
@@ -99,9 +104,8 @@ internal sealed class SourceBackedCoolingPadDevice(
                     var smart = new CoolingPadFanConfiguration(CoolingPadFanOwnership.Firmware, CoolingPadFanPreset.Quiet, 0);
                     await WriteFan(smart, submissionAllowed, cancellationToken).ConfigureAwait(false);
                 }
+                // The verified echo confirms the demand; 0D/81 reports the ramping speed, not this target.
                 await Execute(CoolingPadProtocol.DemandSet(rpm!.Value), true, submissionAllowed, cancellationToken).ConfigureAwait(false);
-                var target = await Execute(CoolingPadProtocol.TargetQuery(), false, null, cancellationToken).ConfigureAwait(false);
-                if (target.Span[2] * 50 != rpm) { FailReadback("Cooling-pad target readback differs from the request."); }
             }
             else
             {
@@ -119,14 +123,18 @@ internal sealed class SourceBackedCoolingPadDevice(
     private async Task WriteFan(CoolingPadFanConfiguration state, Func<bool> allowed, CancellationToken token)
     {
         await Execute(CoolingPadProtocol.FanSet(state), true, allowed, token).ConfigureAwait(false);
-        var confirmed = await ReadFan(token).ConfigureAwait(false);
+        // The firmware records the selection under the writing owner; confirm that owner's record.
+        var confirmed = await ReadFan(state.Ownership, token).ConfigureAwait(false);
         if (confirmed != state) { FailReadback("Cooling-pad fan-mode readback differs from the request."); }
+        runningOwner = state.Ownership;
     }
 
-    private async Task<CoolingPadFanConfiguration> ReadFan(CancellationToken token)
+    private Task<CoolingPadFanConfiguration> ReadFan(CancellationToken token) => ReadFan(runningOwner, token);
+
+    private async Task<CoolingPadFanConfiguration> ReadFan(CoolingPadFanOwnership owner, CancellationToken token)
     {
-        var data = await Execute(CoolingPadProtocol.FanQuery(), false, null, token).ConfigureAwait(false);
-        CoolingPadProtocol.TryDecodeFan(data.Span, out var fan);
+        var data = await Execute(CoolingPadProtocol.FanQuery(owner), false, null, token).ConfigureAwait(false);
+        CoolingPadProtocol.TryDecodeFan(data.Span, owner, out var fan);
         return fan!;
     }
 
@@ -222,9 +230,8 @@ internal sealed class SourceBackedCoolingPadDevice(
                     && fan.Preset is CoolingPadFanPreset.Quiet or CoolingPadFanPreset.Balanced or CoolingPadFanPreset.Performance
                     && baseline.TargetRpm is >= 500 and <= 3200)
                 {
+                    // The verified echo confirms the demand; 0D/81 reports the ramping speed, not this target.
                     await Execute(CoolingPadProtocol.DemandSet(baseline.TargetRpm.Value), true, submissionAllowed, cancellationToken).ConfigureAwait(false);
-                    var target = await Execute(CoolingPadProtocol.TargetQuery(), false, null, cancellationToken).ConfigureAwait(false);
-                    if (target.Span[2] * 50 != baseline.TargetRpm) { FailReadback("Cooling-pad target restoration was not confirmed."); }
                 }
             }
             if (restoreLighting)

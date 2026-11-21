@@ -11,8 +11,20 @@ internal static class CoolingPadProtocol
     internal const int LedCount = 18;
     internal const int MaximumConfiguredRpm = 3200;
 
-    internal static RazerCommandSpec FanQuery() => new(0x0D, 0x90, [0, 0, 0], 3,
-        p => TryDecodeFan(p.Span, out _));
+    /// <summary>
+    /// Firmware 1.10.00 (class 0D handler, image 0x3228) keeps one selection per owner:
+    /// selector 0 is the firmware-owned preset and 1 the Synapse-owned preset. The GET echoes the
+    /// selector and returns that owner's last selection, with its speed only for Low/Medium/High.
+    /// The running preset is whichever owner set it last; no command reports which that was.
+    /// </summary>
+    internal static RazerCommandSpec FanQuery(CoolingPadFanOwnership owner = CoolingPadFanOwnership.Firmware) =>
+        Enum.IsDefined(owner)
+            ? new(0x0D, 0x90, [(byte)owner, 0, 0], 3, p => TryDecodeFan(p.Span, owner, out _)) { AllowVariableResponseLength = true }
+            : throw new ArgumentOutOfRangeException(nameof(owner));
+    /// <summary>
+    /// Image 0x3190 reports the ramping fan speed, and the target only once the two are within
+    /// 50 RPM. It cannot confirm a newly requested target.
+    /// </summary>
     internal static RazerCommandSpec TargetQuery() => new(0x0D, 0x81, [1, 5, 0], 3,
         p => p.Span is [1, 5, <= 64]);
     internal static RazerCommandSpec DeviceModeQuery() => new(0, 0x84, [0, 0], 2,
@@ -20,19 +32,27 @@ internal static class CoolingPadProtocol
     internal static RazerCommandSpec DeviceModeSet(CoolingPadDeviceMode mode) =>
         Enum.IsDefined(mode) ? Echo(0, 4, [(byte)mode, 0]) : throw new ArgumentOutOfRangeException(nameof(mode));
 
-    internal static bool TryDecodeFan(ReadOnlySpan<byte> p, out CoolingPadFanConfiguration? state)
+    internal static bool TryDecodeFan(ReadOnlySpan<byte> p, CoolingPadFanOwnership owner, out CoolingPadFanConfiguration? state)
     {
         state = null;
-        if (p.Length != 3 || p[0] > 1 || p[1] > 6 || p[2] > 64) { return false; }
-        state = new((CoolingPadFanOwnership)p[0], (CoolingPadFanPreset)p[1], p[2] * 50);
+        // Low/Medium/High (0..2) reply with three bytes including the speed; other presets with two.
+        if (p.Length is not (2 or 3) || p[0] != (byte)owner || p[1] > 6 || (p[1] < 3) != (p.Length == 3)
+            || p.Length == 3 && p[2] > 64)
+        { return false; }
+        state = new(owner, (CoolingPadFanPreset)p[1], p.Length == 3 ? p[2] * 50 : 0);
         return true;
     }
 
     internal static RazerCommandSpec FanSet(CoolingPadFanConfiguration state)
     {
         ArgumentNullException.ThrowIfNull(state);
+        // Image 0x3290: the Synapse owner accepts only Low/Medium/High; those three need a 500..3200 RPM
+        // speed. Other presets ignore the speed byte and read back without one.
+        bool speedPreset = state.Preset is CoolingPadFanPreset.Low or CoolingPadFanPreset.Medium or CoolingPadFanPreset.High;
         if (!Enum.IsDefined(state.Ownership) || !Enum.IsDefined(state.Preset)
-            || state.ConfiguredRpm is < 0 or > MaximumConfiguredRpm || state.ConfiguredRpm % 50 != 0)
+            || state.Ownership == CoolingPadFanOwnership.Synapse && !speedPreset
+            || (speedPreset ? state.ConfiguredRpm is < 500 or > MaximumConfiguredRpm : state.ConfiguredRpm != 0)
+            || state.ConfiguredRpm % 50 != 0)
         { throw new ArgumentOutOfRangeException(nameof(state)); }
         return Echo(0x0D, 0x10, [(byte)state.Ownership, (byte)state.Preset, (byte)(state.ConfiguredRpm / 50)]);
     }

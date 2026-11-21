@@ -11,8 +11,8 @@ their separate model admission. Connect one pad, choose its settings, then selec
 OpenBlade or reconnecting the pad does not start control automatically.
 
 Choose a fixed target from 500 to 3200 RPM in 50-RPM steps, turn the fan off, or
-use a CPU curve, a GPU curve, or both. With both selected, the higher demand wins. Fixed targets come from the selected mode configuration; Smart targets come from
-the separate host-demand register. Neither is measured fan speed. Missing or stale temperature readings
+use a CPU curve, a GPU curve, or both. With both selected, the higher demand wins. Fixed targets come from the selected mode configuration; Smart targets are the
+ramping speed the firmware reports. Neither is measured fan speed. Missing or stale temperature readings
 pause curve updates. The shared CPU temperature source currently rejects the
 firmware's constant readings, so CPU and combined CPU/GPU curves remain unavailable
 until a supported changing CPU reading is provided. GPU-only curves can use an
@@ -89,9 +89,9 @@ is introduced.
 
 | Command | Source module | Meaning |
 | --- | --- | --- |
-| `0D/90` | 63472, 91655 | Read `[ownership,preset,speed]`; zero selector matches the generic omitted/default selector |
-| `0D/10` | 63472, 91655, 87887 | Set saved or requested fan configuration directly |
-| `0D/81` | 63472, 91655 | Read configured target for class 1, fan 5; not a tachometer |
+| `0D/90` | 63472, 91655, firmware | Read one owner's selection: `[owner,preset,speed]` for Low/Medium/High, `[owner,preset]` otherwise |
+| `0D/10` | 63472, 91655, 87887, firmware | Set an owner's selection directly; it becomes the running preset |
+| `0D/81` | 63472, 91655, firmware | Read the ramping speed for class 1, fan 5; not a tachometer |
 | `0D/01` | 91655, exact-pad scheduler | Set class 1, fan 5 target in 50-RPM units |
 | `0F/80` | 65430, 9069, firmware | Read the five-byte region record; admit one row of 18 LEDs |
 | `0F/84`, `0F/04` | 65430, 9069, 85191 | Read actual first-region brightness; write profile 1, region 0; preserve raw 0..255 baseline |
@@ -107,8 +107,26 @@ existing Smart preset or directly selects Quiet `[0,3,0]`, then sends calculated
 required. Source initialization enters Driver `03 00` directly; ordinary pad
 cleanup in Synapse skips a blanket Normal handoff for this Chroma device.
 
-The firmware 1.10.00 image (Cortex-M0, class `0F` handler at `0x64E0`) defines
-the lighting replies:
+The firmware 1.10.00 image (class `0D` handler at `0x3144`) defines the fan
+replies:
+
+- `0D/90` (`0x3228`) treats byte 0 as an owner selector. The firmware (`0`) and
+  Synapse (`1`) owners each keep their own last selection. The reply echoes the
+  selector, then the preset, then the speed only for Low, Medium and High. Other
+  selectors fail.
+- `0D/10` (`0x3290`) accepts presets 0 to 6 from the firmware owner and only
+  Low, Medium and High from the Synapse owner. Those three need a speed from
+  500 to 3200 RPM and share one speed per preset between both owners. The
+  selection written last runs; no command reports which owner that was.
+- `0D/81` (`0x3190`) reports the ramping speed, and the target only once the
+  two are within 50 RPM. It cannot confirm a new `0D/01` demand; the verified
+  echo does.
+
+Fan readback therefore queries the owner OpenBlade just wrote. Until a session
+confirms its own fan write, status reports the firmware owner's selection.
+
+The same image (Cortex-M0, class `0F` handler at `0x64E0`) defines the lighting
+replies:
 
 - `0F/80` (`0x657C`) returns exactly `[05,19,03,01,12]`: region 5, then one row
   at byte 3 and 18 LEDs at byte 4.

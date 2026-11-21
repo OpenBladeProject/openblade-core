@@ -16,11 +16,29 @@ public sealed class CoolingPadSourceProtocolTests
     [Fact]
     public void FanReadbackPreservesVendorPresetRatherThanInventingAnActiveCurve()
     {
-        Assert.True(CoolingPadProtocol.TryDecodeFan([0, 4, 0], out var state));
+        // Image 0x3228: the reply echoes the owner selector; Smart presets and Off carry no speed byte.
+        Assert.True(CoolingPadProtocol.TryDecodeFan([0, 4], CoolingPadFanOwnership.Firmware, out var state));
         Assert.Equal(new CoolingPadFanConfiguration(CoolingPadFanOwnership.Firmware, CoolingPadFanPreset.Balanced, 0), state);
-        Assert.False(CoolingPadProtocol.TryDecodeFan([2, 4, 0], out _));
-        Assert.False(CoolingPadProtocol.TryDecodeFan([0, 7, 0], out _));
-        Assert.False(CoolingPadProtocol.TryDecodeFan([1, 1, 65], out _));
+        Assert.True(CoolingPadProtocol.TryDecodeFan([1, 1, 40], CoolingPadFanOwnership.Synapse, out var fixedState));
+        Assert.Equal(new CoolingPadFanConfiguration(CoolingPadFanOwnership.Synapse, CoolingPadFanPreset.Medium, 2000), fixedState);
+        Assert.False(CoolingPadProtocol.TryDecodeFan([0, 1, 40], CoolingPadFanOwnership.Synapse, out _));
+        Assert.False(CoolingPadProtocol.TryDecodeFan([0, 4, 0], CoolingPadFanOwnership.Firmware, out _));
+        Assert.False(CoolingPadProtocol.TryDecodeFan([0, 1], CoolingPadFanOwnership.Firmware, out _));
+        Assert.False(CoolingPadProtocol.TryDecodeFan([0, 7], CoolingPadFanOwnership.Firmware, out _));
+        Assert.False(CoolingPadProtocol.TryDecodeFan([1, 1, 65], CoolingPadFanOwnership.Synapse, out _));
+    }
+
+    [Fact]
+    public void FanSetFollowsTheFirmwareOwnerAndSpeedRules()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => CoolingPadProtocol.FanSet(
+            new(CoolingPadFanOwnership.Synapse, CoolingPadFanPreset.Quiet, 0)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => CoolingPadProtocol.FanSet(
+            new(CoolingPadFanOwnership.Firmware, CoolingPadFanPreset.Low, 0)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => CoolingPadProtocol.FanSet(
+            new(CoolingPadFanOwnership.Firmware, CoolingPadFanPreset.Balanced, 1500)));
+        Assert.Equal([0, 6, 0], CoolingPadProtocol.FanSet(new(CoolingPadFanOwnership.Firmware, CoolingPadFanPreset.Off, 0)).Arguments.ToArray());
+        Assert.Equal([1, 1, 40], CoolingPadProtocol.FanSet(new(CoolingPadFanOwnership.Synapse, CoolingPadFanPreset.Medium, 2000)).Arguments.ToArray());
     }
 
     [Fact]
@@ -74,7 +92,8 @@ public sealed class CoolingPadSourceProtocolTests
     {
         var wire = new Wire(); await using var device = Create(wire);
         await device.SetFanAsync(CoolingPadFanMode.Fixed, 2200, () => true, default);
-        Assert.Equal(new[] { "0D10:01012C", "0D90:000000" }, wire.Commands);
+        // Readback queries the Synapse-owner record that the write updated.
+        Assert.Equal(new[] { "0D10:01012C", "0D90:010000" }, wire.Commands);
         Assert.Equal(new CoolingPadFanConfiguration(CoolingPadFanOwnership.Synapse, CoolingPadFanPreset.Medium, 2200), wire.Fan);
         Assert.DoesNotContain(wire.Commands, x => x.StartsWith("0004", StringComparison.Ordinal));
     }
@@ -82,12 +101,41 @@ public sealed class CoolingPadSourceProtocolTests
     [Fact]
     public async Task FixedConfiguredTargetDoesNotReuseAnOlderHostDemandReading()
     {
-        var wire = new Wire { Fan = new(CoolingPadFanOwnership.Synapse, CoolingPadFanPreset.Medium, 2200) };
+        var wire = new Wire { Fan = new(CoolingPadFanOwnership.Firmware, CoolingPadFanPreset.Low, 1000) };
         await using var device = Create(wire);
-        // The independent host-demand register starts at zero; the fixed-mode target is in0D90.
+        await device.SetFanAsync(CoolingPadFanMode.Fixed, 2200, () => true, default);
+        // The independent host-demand register starts at zero; the fixed-mode target is in 0D90.
         var snapshot = await device.ReadSnapshotAsync(default);
         Assert.Equal(2200, snapshot.TargetRpm);
         Assert.Equal(CoolingPadFanMode.Fixed, snapshot.FanMode);
+    }
+
+    [Fact]
+    public async Task UnconfirmedSessionReportsTheFirmwareOwnedSelection()
+    {
+        // Without its own confirmed write, the session cannot know which owner selected last.
+        var wire = new Wire { Fan = new(CoolingPadFanOwnership.Synapse, CoolingPadFanPreset.Medium, 2200) };
+        wire.Fan = new(CoolingPadFanOwnership.Firmware, CoolingPadFanPreset.Balanced, 0);
+        await using var device = Create(wire);
+        var snapshot = await device.ReadSnapshotAsync(default);
+        Assert.Equal(new CoolingPadFanConfiguration(CoolingPadFanOwnership.Firmware, CoolingPadFanPreset.Balanced, 0), snapshot.FanConfiguration);
+        Assert.Contains("0D90:000000", wire.Commands);
+    }
+
+    [Fact]
+    public async Task RestoringTheFirmwareSelectionAfterFixedConfirmsTheFirmwareRecord()
+    {
+        var wire = new Wire { Fan = new(CoolingPadFanOwnership.Firmware, CoolingPadFanPreset.Medium, 1600) };
+        await using var device = Create(wire);
+        var baseline = await device.ReadSnapshotAsync(default);
+        await device.SetFanAsync(CoolingPadFanMode.Fixed, 2000, () => true, default);
+        // Medium's speed is shared, so the firmware record now reads 2000 until restoration.
+        Assert.Equal(2000, wire.Selection(CoolingPadFanOwnership.Firmware).ConfiguredRpm);
+        wire.Commands.Clear();
+        await device.RestoreAsync(baseline, true, false, () => true, default);
+        Assert.Equal(new[] { "0D10:000120", "0D90:000000" }, wire.Commands);
+        Assert.Equal(baseline.FanConfiguration, wire.Fan);
+        Assert.Null((await device.ReadSnapshotAsync(default)).FanMode);
     }
     [Fact]
     public async Task SmartTransitionPreservesSelectedSmartPresetAndDoesNotResetThroughFixed()
@@ -95,7 +143,8 @@ public sealed class CoolingPadSourceProtocolTests
         var wire = new Wire { Fan = new(CoolingPadFanOwnership.Firmware, CoolingPadFanPreset.Performance, 0) };
         await using var device = Create(wire);
         await device.SetFanAsync(CoolingPadFanMode.HostCurve, 1500, () => true, default);
-        Assert.Equal(new[] { "0D90:000000", "0D01:01051E", "0D81:010500" }, wire.Commands);
+        // The demand echo confirms it; 0D81 reports the ramping speed and is not used as confirmation.
+        Assert.Equal(new[] { "0D90:000000", "0D01:01051E" }, wire.Commands);
         Assert.Equal(CoolingPadFanPreset.Performance, wire.Fan.Preset);
     }
 
@@ -357,7 +406,33 @@ public sealed class CoolingPadSourceProtocolTests
 
     private sealed class Wire : IRazerCommandSession, IRazerSetFeatureCommandSession
     {
-        internal CoolingPadFanConfiguration Fan { get; set; } = new(CoolingPadFanOwnership.Firmware, CoolingPadFanPreset.Off, 0);
+        // Firmware 1.10.00 fan state (image 0x3228/0x3290): one selection per owner, a speed table
+        // shared by Low/Medium/High, and the selection written last runs.
+        private readonly byte[] ownerPresets = [(byte)CoolingPadFanPreset.Off, (byte)CoolingPadFanPreset.Low];
+        private readonly byte[] speeds = [20, 30, 40];
+        private CoolingPadFanOwnership runningOwner = CoolingPadFanOwnership.Firmware;
+        internal CoolingPadFanConfiguration Fan
+        {
+            get
+            {
+                byte preset = ownerPresets[(int)runningOwner];
+                return new(runningOwner, (CoolingPadFanPreset)preset, preset < 3 ? speeds[preset] * 50 : 0);
+            }
+            set => StoreFan((byte)value.Ownership, (byte)value.Preset, (byte)(value.ConfiguredRpm / 50));
+        }
+        internal CoolingPadFanConfiguration Selection(CoolingPadFanOwnership owner)
+        {
+            byte preset = ownerPresets[(int)owner];
+            return new(owner, (CoolingPadFanPreset)preset, preset < 3 ? speeds[preset] * 50 : 0);
+        }
+        private bool StoreFan(byte owner, byte preset, byte speed)
+        {
+            if (owner > 1 || preset > 6 || owner == 1 && preset >= 3 || preset < 3 && speed is < 10 or > 64) { return false; }
+            ownerPresets[owner] = preset;
+            if (preset < 3) { speeds[preset] = speed; }
+            runningOwner = (CoolingPadFanOwnership)owner;
+            return true;
+        }
         // Firmware 1.10.00 effect records in GET order: [0, region 5, effect, flags, rate, count, slot 1, slot 2].
         private byte[] persistentRecord = Record(new(1, 0, 1, 0, 0, [new(0, 255, 0)]));
         private byte[]? volatileRecord;
@@ -389,8 +464,11 @@ public sealed class CoolingPadSourceProtocolTests
             if (command.CommandId < 128 && FailNextSet) { FailNextSet = false; return new(default, HidSessionFailureKind.NativeIoFailure); }
             switch ((command.ClassId, command.CommandId))
             {
-                case (13, 16): CoolingPadProtocol.TryDecodeFan(p, out var fan); Fan = fan!; target = Fan.ConfiguredRpm; break;
-                case (13, 144): p = [(byte)Fan.Ownership, (byte)Fan.Preset, (byte)(WrongFanReadback ? 1 : Fan.ConfiguredRpm / 50)]; break;
+                case (13, 16): Assert.True(StoreFan(p[0], p[1], p[2])); break;
+                case (13, 144):
+                    byte selected = ownerPresets[p[0]];
+                    p = selected < 3 ? [p[0], selected, (byte)(WrongFanReadback ? 11 : speeds[selected])] : [p[0], selected];
+                    break;
                 case (13, 1): target = p[2] * 50; break;
                 case (13, 129): p = [1, 5, (byte)(target / 50)]; break;
                 case (0, 4): Mode = (CoolingPadDeviceMode)p[0]; break;
