@@ -2764,12 +2764,18 @@ fn installed_storage_reads_schema26_lighting_as_managed_normalises_it() {
             &profiles["pluggedIn"]["lighting"],
             &profiles["applicationProfiles"][0]["overrides"]["battery"]["lighting"],
         ] {
+            // With service-profiles-v1 the store migrates the document when
+            // it opens, and managed's writer omits a false keyboard effect
+            // and a null independent control.
+            let keyboard = lighting.get("controlsKeyboardEffect");
             assert_eq!(
-                lighting["controlsKeyboardEffect"], case["controlsKeyboardEffect"],
+                keyboard.unwrap_or(&json!(false)),
+                &case["controlsKeyboardEffect"],
                 "{name}"
             );
             assert_eq!(
-                lighting["independentControls"], case["set"]["independentControls"],
+                lighting["independentControls"]["brightness"],
+                case["set"]["independentControls"]["brightness"],
                 "{name}"
             );
         }

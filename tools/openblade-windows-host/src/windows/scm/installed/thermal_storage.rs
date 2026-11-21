@@ -506,6 +506,9 @@ impl Storage {
                 return Err(denied());
             }
         }
+        // Managed migrates an older aggregate when it loads it.
+        #[cfg(feature = "service-profiles-v1")]
+        profiles::migrate_on_open(files.as_ref(), same_path)?;
         aggregate(files.as_ref(), same_path)?;
         let bytes = files.read(OVERRIDES)?;
         let document = overrides(bytes.as_deref())?;

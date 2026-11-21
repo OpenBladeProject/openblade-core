@@ -21,9 +21,13 @@
 //! of its own that fails, and before it starts it removes any stage an
 //! earlier attempt left under a name it writes. With no record there is no
 //! open transaction for such a stage to belong to.
+//!
+//! The same transaction migrates an older aggregate when the store opens, as
+//! managed's load does: see [`migrate_on_open`].
 use super::*;
 use openblade_domain::profile_set::{
     self as profile_set, Capabilities, ProfileSet, ValidationPolicy, Validator, encode,
+    migrate::{self, Stored},
     preferences::{Preferences, commit_marker, preferences_document, read_aggregate},
     update,
 };
@@ -39,6 +43,10 @@ const RECOVERY_REQUIRED: &str = "The requested intent was rejected: Configuratio
 const STAGE_BLOCKED: &str = "The requested intent was rejected: A staging file left by an earlier configuration save could not be removed. The saved configuration is unchanged.";
 /// The set is valid, but this service's own reader would refuse it once stored.
 const UNREADABLE: &str = "The requested intent was rejected: This service cannot read the profile set back once it is stored. The saved configuration is unchanged.";
+/// A migration at open that left the stored aggregate as it was.
+const MIGRATION_UNCHANGED: &str = "The saved configuration could not be migrated to the current schema. It is unchanged, and the next start migrates it again.";
+/// A migration at open whose restore could not be confirmed.
+const MIGRATION_RECOVERY_REQUIRED: &str = "Configuration transaction recovery is required. The recovery-required record and the original transaction backups are preserved.";
 
 const NAMES: [&str; 3] = [
     configuration::PROFILE,
@@ -89,22 +97,8 @@ fn committed(files: &dyn Files, validator: &Validator) -> io::Result<Option<Comm
 /// The three documents, when they are one committed aggregate this
 /// composition reads.
 fn read_committed(files: &dyn Files, validator: &Validator) -> io::Result<Option<Committed>> {
-    let mut prior: [Option<Vec<u8>>; 3] = Default::default();
-    for (bytes, name) in prior.iter_mut().zip(NAMES) {
-        *bytes = files.read(name)?;
-    }
-    fn file(bytes: &Option<Vec<u8>>) -> ConfigFile<'_> {
-        bytes
-            .as_deref()
-            .map_or(ConfigFile::Missing, ConfigFile::Bytes)
-    }
-    let inspection = configuration::inspect(configuration::Snapshot {
-        profile: file(&prior[0]),
-        preferences: file(&prior[1]),
-        commit: file(&prior[2]),
-        recovery: RecoveryRecord::Missing,
-    });
-    Ok(match inspection {
+    let prior = read_documents(files)?;
+    Ok(match inspect(&prior) {
         // Managed materialises its safe defaults on load; an absent aggregate
         // is that same starting point here.
         Inspection::Empty => Some(Committed {
@@ -128,6 +122,91 @@ fn read_committed(files: &dyn Files, validator: &Validator) -> io::Result<Option
         }
         // A schema-less legacy profile and every preserved state need managed.
         _ => None,
+    })
+}
+
+/// The three documents as they are stored, in managed's order.
+fn read_documents(files: &dyn Files) -> io::Result<[Option<Vec<u8>>; 3]> {
+    let mut documents: [Option<Vec<u8>>; 3] = Default::default();
+    for (bytes, name) in documents.iter_mut().zip(NAMES) {
+        *bytes = files.read(name)?;
+    }
+    Ok(documents)
+}
+
+/// The envelope inspection of `documents`, for a caller that found no record.
+fn inspect(documents: &[Option<Vec<u8>>; 3]) -> Inspection {
+    let file = |index: usize| {
+        documents[index]
+            .as_deref()
+            .map_or(ConfigFile::Missing, ConfigFile::Bytes)
+    };
+    configuration::inspect(configuration::Snapshot {
+        profile: file(0),
+        preferences: file(1),
+        commit: file(2),
+        recovery: RecoveryRecord::Missing,
+    })
+}
+
+/// The uppercase hexadecimal SHA-256 the marker binds each document with.
+fn sha256(bytes: &[u8]) -> String {
+    format!("{:X}", Sha256::digest(bytes))
+}
+
+/// Managed `LoadCoreAsync` with `materializeAdmittedState`
+/// (`BatteryConfigurationStore.cs:349-417`): when the store opens, a
+/// committed aggregate whose reading migrated something, and the schema-less
+/// legacy profile, are replaced by the documents managed writes for them.
+/// Managed does this when it loads, not at the first save, and so does this.
+///
+/// The replacement is the save's recorded transaction: the same backups,
+/// record, verification and restore, so the original bytes stay on disk
+/// until the migrated ones are verified. Everything else is left exactly as
+/// it is for the store's own reader to admit or refuse: an absent aggregate
+/// (the first save materialises it), a recorded or preserved state, an
+/// aggregate managed would quarantine, and one this service could not read
+/// back once migrated.
+pub(super) fn migrate_on_open(
+    files: &dyn Files,
+    same_path: fn(&str, &str) -> bool,
+) -> io::Result<()> {
+    if files.read(configuration::RECOVERY_REQUIRED)?.is_some() {
+        return Ok(());
+    }
+    let prior = read_documents(files)?;
+    let stored = match (inspect(&prior), &prior) {
+        (Inspection::LegacyCandidate, [Some(profile), None, None]) => Stored::Legacy { profile },
+        (Inspection::CommittedEnvelope { schema }, [Some(profile), Some(preferences), Some(_)]) => {
+            Stored::Committed {
+                schema,
+                profile,
+                preferences,
+            }
+        }
+        _ => return Ok(()),
+    };
+    let (_, validator) = validator();
+    let Ok(Some(migration)) = migrate::migrate(stored, &validator) else {
+        return Ok(());
+    };
+    let intended = migration.documents(sha256);
+    if !reopens(&intended, same_path) {
+        return Ok(());
+    }
+    let transaction = Transaction::new(
+        files,
+        &prior,
+        intended,
+        &migration.profiles,
+        &migration.preferences,
+        &validator,
+    );
+    transaction.run().map_err(|failure| {
+        io::Error::other(match failure {
+            Failure::RecoveryRequired => MIGRATION_RECOVERY_REQUIRED,
+            Failure::StageBlocked | Failure::Unchanged | Failure::Restored => MIGRATION_UNCHANGED,
+        })
     })
 }
 
@@ -162,7 +241,31 @@ struct Transaction<'a> {
     validator: &'a Validator,
 }
 
-impl Transaction<'_> {
+impl<'a> Transaction<'a> {
+    fn new(
+        files: &'a dyn Files,
+        prior: &'a [Option<Vec<u8>>; 3],
+        intended: [Vec<u8>; 3],
+        admitted: &'a ProfileSet,
+        preferences: &'a Preferences,
+        validator: &'a Validator,
+    ) -> Self {
+        let mut change = Sha256::new();
+        for bytes in prior.iter().flatten().chain(&intended) {
+            change.update((bytes.len() as u64).to_le_bytes());
+            change.update(bytes);
+        }
+        Self {
+            files,
+            prior,
+            intended,
+            id: format!("{:x}", change.finalize())[..32].to_owned(),
+            admitted,
+            preferences,
+            validator,
+        }
+    }
+
     fn backup(&self, index: usize) -> String {
         format!("{}.transaction-{}.backup", NAMES[index], self.id)
     }
@@ -365,30 +468,23 @@ impl Storage {
             Some(bytes) if !saved.migrated => bytes.clone(),
             _ => preferences_document(profile_set::CURRENT_SCHEMA, &saved.preferences),
         };
-        let digest = |bytes: &[u8]| format!("{:X}", Sha256::digest(bytes));
         let marker = commit_marker(
             profile_set::CURRENT_SCHEMA,
-            &digest(&profile),
-            &digest(&preferences),
+            &sha256(&profile),
+            &sha256(&preferences),
         );
         let intended = [profile, preferences, marker];
         if !reopens(&intended, self.same_path) {
             return Ok(ProfileSave::Rejected(UNREADABLE.into()));
         }
-        let mut change = Sha256::new();
-        for bytes in prior.iter().flatten().chain(&intended) {
-            change.update((bytes.len() as u64).to_le_bytes());
-            change.update(bytes);
-        }
-        let transaction = Transaction {
-            files: self.files.as_ref(),
+        let transaction = Transaction::new(
+            self.files.as_ref(),
             prior,
             intended,
-            id: format!("{:x}", change.finalize())[..32].to_owned(),
-            admitted: &admitted,
-            preferences: &saved.preferences,
-            validator: &validator,
-        };
+            &admitted,
+            &saved.preferences,
+            &validator,
+        );
         Ok(match transaction.run() {
             Ok(()) => ProfileSave::Stored,
             Err(Failure::StageBlocked) => ProfileSave::Rejected(STAGE_BLOCKED.into()),

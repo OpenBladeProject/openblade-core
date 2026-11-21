@@ -1013,3 +1013,6 @@ fn every_managed_path_vector_is_answered_and_read_back_with_the_installed_compar
 
 #[path = "profile_storage_real_tests.rs"]
 mod real;
+
+#[path = "profile_migration_tests.rs"]
+mod migration;

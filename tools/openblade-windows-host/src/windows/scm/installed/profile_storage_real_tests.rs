@@ -1,6 +1,7 @@
 //! The profile transaction on real files through the protected store, in a
 //! private directory under the temporary directory. The security verifier is
 //! injected; every open, rename, deletion and sharing rule is the system's.
+use super::migration::{case, migrated};
 use super::*;
 use crate::installed::readiness::thermal_native::ProtectedFiles;
 use std::os::windows::fs::OpenOptionsExt;
@@ -22,6 +23,29 @@ impl Root {
             std::fs::write(root.0.join(name), bytes).unwrap();
         }
         root
+    }
+
+    /// A directory holding exactly `files`.
+    fn holding(tag: &str, files: &BTreeMap<String, Vec<u8>>) -> Self {
+        let root = Self::new(tag);
+        for name in NAMES {
+            std::fs::remove_file(root.path(name)).unwrap();
+        }
+        for (name, bytes) in files {
+            std::fs::write(root.path(name), bytes).unwrap();
+        }
+        root
+    }
+
+    /// Every file but the store's own lock, with its bytes.
+    fn contents(&self) -> BTreeMap<String, Vec<u8>> {
+        self.listing()
+            .into_iter()
+            .map(|name| {
+                let bytes = std::fs::read(self.path(&name)).unwrap();
+                (name, bytes)
+            })
+            .collect()
     }
 
     fn files(&self) -> ProtectedFiles {
@@ -297,4 +321,83 @@ fn the_installed_store_never_discards_a_pending_journal_or_override_document() {
     std::fs::write(root.path(&stage(NAMES[2])), b"{").unwrap();
     Files::discard_stage(&files, NAMES[2]).unwrap();
     assert!(!root.path(&stage(NAMES[2])).exists());
+}
+
+#[test]
+fn an_older_aggregate_is_migrated_on_open_and_nothing_else_remains() {
+    for name in [
+        "legacy profile",
+        "schema 1 committed aggregate",
+        "schema 24 committed aggregate",
+    ] {
+        let source = case(name);
+        let root = Root::holding("migrate", &source.files);
+
+        let storage = root.storage();
+
+        assert_eq!(root.contents(), migrated(&source.files), "{name}");
+        root.assert_only_documents();
+        assert!(!storage.pending(), "{name}");
+        // A restart opens the migrated aggregate and changes nothing.
+        drop(storage);
+        let migrated = root.contents();
+        drop(root.storage());
+        assert_eq!(root.contents(), migrated, "{name}");
+    }
+}
+
+#[test]
+fn a_refused_rename_at_open_keeps_the_original_until_the_next_open() {
+    let source = case("schema 24 committed aggregate");
+    for held in NAMES {
+        let root = Root::holding("migrate-rename", &source.files);
+        // Another reader that does not share deletion: the rename over the
+        // document fails for as long as it is open.
+        let reader = hold(&root.path(held));
+
+        let opened = Storage::open(Box::new(root.files()), SID);
+
+        drop(reader);
+        assert_eq!(
+            opened.err().map(|error| error.to_string()).as_deref(),
+            Some(MIGRATION_UNCHANGED),
+            "{held}"
+        );
+        // The original bytes, and no stage, record or backup.
+        assert_eq!(root.contents(), source.files, "{held}");
+        drop(root.storage());
+        assert_eq!(root.contents(), migrated(&source.files), "{held}");
+    }
+}
+
+#[test]
+fn a_future_or_corrupt_aggregate_on_real_files_is_left_untouched() {
+    for name in [
+        "schema 28 is a future schema",
+        "legacy with a future schema version",
+        "schema 24 profile that is not JSON",
+    ] {
+        let source = case(name);
+        let root = Root::holding("migrate-refused", &source.files);
+
+        assert!(
+            Storage::open(Box::new(root.files()), SID).is_err(),
+            "{name}"
+        );
+
+        assert_eq!(root.contents(), source.files, "{name}");
+    }
+}
+
+#[test]
+fn a_stage_a_crash_left_beside_a_legacy_profile_is_removed_by_the_open() {
+    let source = case("legacy profile");
+    for name in [RECORD, NAMES[0], NAMES[1]] {
+        let root = Root::holding("migrate-crash", &source.files);
+        std::fs::write(root.path(&stage(name)), b"{\"pluggedIn\":").unwrap();
+
+        drop(root.storage());
+
+        assert_eq!(root.contents(), migrated(&source.files), "{name}");
+    }
 }
