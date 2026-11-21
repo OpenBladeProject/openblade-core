@@ -46,27 +46,17 @@ public sealed class ExperimentalGpuClockOffsetCapabilityTests
         {
             Assert.False(ExperimentalBladePort.SupportsExperimentalGpuClockOffsets(model), model.ModelNumber);
             Assert.Null(ExperimentalBladePort.CreateCapabilities(model, enabled: true).GpuOverclock);
-            Assert.Empty(ExperimentalBladePort.GetExperimentalGpuClockOffsetDeviceNames(model));
+            Assert.False(ExperimentalBladePort.AdmitsNvidiaLaptopGpuForClockOffsets(model), model.ModelNumber);
             Assert.DoesNotContain(new ExperimentalFeaturesPolicy(model).Snapshot().FeatureEvidence,
                 feature => feature.Feature == "GpuClockOffsets");
         }
     }
 
-    [Fact]
-    public void ExactGpuNames_AreModelScopedLaptopGpus()
-    {
-        IReadOnlySet<string> blade18 = ExperimentalBladePort.GetExperimentalGpuClockOffsetDeviceNames(Model(0x02C7));
-        IReadOnlySet<string> blade14 = ExperimentalBladePort.GetExperimentalGpuClockOffsetDeviceNames(Model(0x02C5));
-
-        Assert.Contains("NVIDIA GeForce RTX 5090 Laptop GPU", blade18);
-        Assert.DoesNotContain("NVIDIA GeForce RTX 5090 Laptop GPU", blade14);
-        Assert.DoesNotContain("NVIDIA GeForce RTX 5060 Laptop GPU", blade18);
-        Assert.All(blade18.Concat(blade14), name =>
-        {
-            Assert.StartsWith("NVIDIA GeForce RTX 50", name, StringComparison.Ordinal);
-            Assert.EndsWith(" Laptop GPU", name, StringComparison.Ordinal);
-        });
-    }
+    [Theory]
+    [InlineData((ushort)0x02C7)]
+    [InlineData((ushort)0x02C5)]
+    public void LaptopGpuFormGuard_IsSelectedOnlyForTheTwoModels(ushort product) =>
+        Assert.True(ExperimentalBladePort.AdmitsNvidiaLaptopGpuForClockOffsets(Model(product)));
 
     [Theory]
     [InlineData((ushort)0x02C7)]

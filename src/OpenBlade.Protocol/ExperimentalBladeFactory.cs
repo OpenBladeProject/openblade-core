@@ -56,8 +56,8 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
 
     internal string LaptopControlRecoveryIdentity => $"{model.ModelNumber}|1532:{model.ProductId:X4}";
 
-    internal IReadOnlySet<string> GpuClockOffsetDeviceNames =>
-        ExperimentalBladePort.GetExperimentalGpuClockOffsetDeviceNames(model);
+    internal bool AdmitsNvidiaLaptopGpuForClockOffsets =>
+        ExperimentalBladePort.AdmitsNvidiaLaptopGpuForClockOffsets(model);
 
     public DeviceCapabilities Capabilities => ExperimentalBladePort.WithConfirmedExperimentalFanRange(
         ExperimentalBladePort.WithStartupReadAdmission(

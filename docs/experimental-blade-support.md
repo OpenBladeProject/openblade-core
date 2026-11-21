@@ -84,9 +84,18 @@ pinned UI chunks are listed in each model's diagnostics evidence. OpenBlade
 writes through the NVIDIA driver, never through the laptop firmware, and applies
 the intersection of that envelope and the range the driver reports. As in
 Synapse, the control is hidden on battery and in low power, and OpenBlade
-applies no offsets there. The GPU must be one of the exact names Razer lists for the model
-(RZ09-0529: RTX 5070 Ti, 5080, 5090; RZ09-0530: RTX 5060, 5070, 5070 Ti Laptop
-GPU) and the only NVIDIA GPU present; otherwise the control stays unavailable.
+refuses new offsets there. Leaving AC stops OpenBlade managing the offsets; it
+does not write them back to 0.
+
+Synapse applies the envelope per product, with no GPU-name check. OpenBlade adds
+its own guard: the laptop must have exactly one NVIDIA GPU, named
+`NVIDIA GeForce RTX <name> Laptop GPU`, which is rechecked on every query and
+write. Any other name, a desktop name or a second GPU leaves the control
+unavailable. This is not a vendor list. The product 711 VBIOS update list (RTX
+5070, 5080, 5090, matched by substring; `main.1f8e0c604f19af3ea24c.js`, SHA-256
+`C8C0C794D6D01867CD9C6020869808428B81CB98AE297E46EC700F3B935BFF7E`)
+corroborates the RZ09-0529 configurations; product 709 lists no GPU. RZ09-0581 and
+RZ09-0528 keep their exact RTX 5090 Laptop GPU pin.
 This support is source-reviewed; physical validation is pending.
 
 ### Additional 2021/2022 models

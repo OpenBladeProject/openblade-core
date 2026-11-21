@@ -239,28 +239,15 @@ internal sealed partial class ExperimentalBladePort(
             SupportsEnableDisable = true,
         };
 
-    // Exact NVML names of the GPUs Razer lists for each model. The controller still
-    // requires one NVIDIA GPU and re-reads the name before every query and write.
-    internal static IReadOnlySet<string> GetExperimentalGpuClockOffsetDeviceNames(ExperimentalBladeModel model)
-    {
-        string[] names = model.ProductId switch
-        {
-            0x02C7 =>
-            [
-                "NVIDIA GeForce RTX 5070 Ti Laptop GPU",
-                "NVIDIA GeForce RTX 5080 Laptop GPU",
-                "NVIDIA GeForce RTX 5090 Laptop GPU",
-            ],
-            0x02C5 =>
-            [
-                "NVIDIA GeForce RTX 5060 Laptop GPU",
-                "NVIDIA GeForce RTX 5070 Laptop GPU",
-                "NVIDIA GeForce RTX 5070 Ti Laptop GPU",
-            ],
-            _ => [],
-        };
-        return new HashSet<string>(names, StringComparer.Ordinal);
-    }
+    // OpenBlade guard, not a vendor list: exactly one NVIDIA laptop dGPU named
+    // "NVIDIA GeForce RTX <name> Laptop GPU" on the exactly admitted laptop. Synapse
+    // applies this envelope per product (isNvidiaOverclockUISupported) with no GPU-name
+    // check; its only GPU names (711 VBIOS update list: RTX 5070/5080/5090, substring
+    // match; main.1f8e0c604f19af3ea24c.js SHA-256 C8C0C794...BFF7E) corroborate the 0529
+    // configurations. Product 709 lists no GPU. The controller re-checks the name on every
+    // query and write.
+    internal static bool AdmitsNvidiaLaptopGpuForClockOffsets(ExperimentalBladeModel model) =>
+        SupportsExperimentalGpuClockOffsets(model);
 
     private static bool SupportsExperimentalCustom(ExperimentalBladeModel model) =>
         model.ThermalPolicy?.SupportsCustom ?? (model.ProductId is 0x029F or 0x029D or 0x02C5 or 0x0255 or 0x02A0);

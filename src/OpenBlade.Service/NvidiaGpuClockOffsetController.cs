@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Text.RegularExpressions;
 using OpenBlade.Contracts;
 using OpenBlade.Protocol;
 
@@ -23,7 +24,7 @@ internal sealed class UnavailableGpuClockOffsetController : IGpuClockOffsetContr
         "GPU clock tuning is unavailable.");
 }
 
-internal sealed class NvidiaGpuClockOffsetController : IGpuClockOffsetController
+internal sealed partial class NvidiaGpuClockOffsetController : IGpuClockOffsetController
 {
     private const int Success = 0;
     private const uint ClockOffsetStructVersion = (1u << 24) | 24u;
@@ -32,7 +33,7 @@ internal sealed class NvidiaGpuClockOffsetController : IGpuClockOffsetController
     private const string DefaultAdmittedDeviceName = "NVIDIA GeForce RTX 5090 Laptop GPU";
 
     private readonly INvidiaNvmlClockOffsetApi api;
-    private readonly IReadOnlySet<string> admittedDeviceNames;
+    private readonly bool admitNvidiaLaptopGpuForm;
 
     internal NvidiaGpuClockOffsetController()
         : this(NvidiaNvmlClockOffsetApi.Instance)
@@ -40,21 +41,31 @@ internal sealed class NvidiaGpuClockOffsetController : IGpuClockOffsetController
     }
 
     internal NvidiaGpuClockOffsetController(INvidiaNvmlClockOffsetApi api)
-        : this(api, admittedDeviceNames: null)
+        : this(api, admitNvidiaLaptopGpuForm: false)
     {
     }
 
-    // A model that admits GPU tuning names its exact NVML GPU names. Omitting them
-    // keeps the originally validated RTX 5090 Laptop GPU as the only admitted name.
+    // One shared predicate: the exact validated name OR, for models whose factory
+    // selects it, the NVIDIA laptop dGPU form "NVIDIA GeForce RTX <name> Laptop GPU".
+    // The form is an OpenBlade guard (one NVIDIA laptop dGPU on the exactly admitted
+    // laptop), not a vendor list; Synapse applies the envelope per product with no
+    // GPU-name check. The single-GPU requirement and per-query/per-write recheck apply.
     internal NvidiaGpuClockOffsetController(
         INvidiaNvmlClockOffsetApi api,
-        IReadOnlySet<string>? admittedDeviceNames)
+        bool admitNvidiaLaptopGpuForm)
     {
         this.api = api ?? throw new ArgumentNullException(nameof(api));
-        this.admittedDeviceNames = admittedDeviceNames is { Count: > 0 }
-            ? new HashSet<string>(admittedDeviceNames, StringComparer.Ordinal)
-            : new HashSet<string>(StringComparer.Ordinal) { DefaultAdmittedDeviceName };
+        this.admitNvidiaLaptopGpuForm = admitNvidiaLaptopGpuForm;
     }
+
+    internal static bool IsAdmittedDeviceName(string name, bool admitNvidiaLaptopGpuForm) =>
+        string.Equals(name, DefaultAdmittedDeviceName, StringComparison.Ordinal)
+        || admitNvidiaLaptopGpuForm && LaptopGpuName().IsMatch(name);
+
+    [GeneratedRegex(
+        @"^NVIDIA GeForce RTX [A-Za-z0-9]+( [A-Za-z0-9]+)* Laptop GPU\z",
+        RegexOptions.CultureInvariant)]
+    private static partial Regex LaptopGpuName();
 
     public GpuClockOffsetCapabilities? Query()
     {
@@ -186,11 +197,11 @@ internal sealed class NvidiaGpuClockOffsetController : IGpuClockOffsetController
         EnsureSuccess(
             api.GetDeviceName(device, name, checked((uint)name.Capacity)),
             "read the NVIDIA GPU name");
-        // The validated Blade SKUs use the default laptop GPU; source-reviewed models
-        // name their own exact GPUs.
+        // The validated Blade SKUs use the default exact name; the source-reviewed
+        // RZ09-0529 and RZ09-0530 admit the NVIDIA laptop dGPU form.
         // Recheck the current target for every query and write; a previous
         // successful query does not authorize another GPU selected later.
-        if (!admittedDeviceNames.Contains(name.ToString()))
+        if (!IsAdmittedDeviceName(name.ToString(), admitNvidiaLaptopGpuForm))
         {
             throw new NvmlClockOffsetException(
                 status: -1,

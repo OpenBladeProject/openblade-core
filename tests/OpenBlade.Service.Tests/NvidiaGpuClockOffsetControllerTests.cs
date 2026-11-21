@@ -190,46 +190,64 @@ public sealed class NvidiaGpuClockOffsetControllerTests
         Assert.Equal(2, api.ShutdownCalls);
     }
 
-    [Fact]
-    public void ModelScopedNames_AdmitOnlyTheNamedGpusAndKeepDefaultElsewhere()
+    [Theory]
+    [InlineData("NVIDIA GeForce RTX 5060 Laptop GPU")]
+    [InlineData("NVIDIA GeForce RTX 5070 Laptop GPU")]
+    [InlineData("NVIDIA GeForce RTX 5070 Ti Laptop GPU")]
+    [InlineData("NVIDIA GeForce RTX 5080 Laptop GPU")]
+    [InlineData("NVIDIA GeForce RTX 5090 Laptop GPU")]
+    public void LaptopGpuForm_AdmitsQueryAndWrite(string name)
     {
-        IReadOnlySet<string> admitted = new HashSet<string>(StringComparer.Ordinal)
-        {
-            "NVIDIA GeForce RTX 5070 Ti Laptop GPU",
-        };
-        var api = new FakeNvmlApi { DeviceName = "NVIDIA GeForce RTX 5070 Ti Laptop GPU" };
+        var api = new FakeNvmlApi { DeviceName = name };
+        var controller = new NvidiaGpuClockOffsetController(api, admitNvidiaLaptopGpuForm: true);
 
-        GpuClockOffsetCapabilities? named =
-            new NvidiaGpuClockOffsetController(api, admitted).Query();
-        GpuClockOffsetCapabilities confirmed =
-            new NvidiaGpuClockOffsetController(api, admitted).Set(new GpuClockOffsetSettings(25, 100));
-
-        Assert.Equal("NVIDIA GeForce RTX 5070 Ti Laptop GPU", named?.DeviceName);
-        Assert.Equal(new GpuClockOffsetSettings(25, 100), confirmed.Current);
-        // The default controller still admits only the validated RTX 5090 Laptop GPU.
-        Assert.Null(new NvidiaGpuClockOffsetController(api).Query());
-        Assert.Null(new NvidiaGpuClockOffsetController(api, admittedDeviceNames: null).Query());
-        Assert.Null(new NvidiaGpuClockOffsetController(
-            api, new HashSet<string>(StringComparer.Ordinal)).Query());
-        api.DeviceName = "NVIDIA GeForce RTX 5090 Laptop GPU";
-        Assert.Null(new NvidiaGpuClockOffsetController(api, admitted).Query());
+        Assert.Equal(name, controller.Query()?.DeviceName);
+        Assert.Equal(new GpuClockOffsetSettings(25, 100), controller.Set(new GpuClockOffsetSettings(25, 100)).Current);
     }
 
     [Theory]
-    [InlineData(2, "NVIDIA GeForce RTX 5070 Ti Laptop GPU")]
-    [InlineData(1, "NVIDIA GeForce RTX 5090 Laptop GPU")]
-    public void ModelScopedNames_StillRejectUnnamedOrAmbiguousTargetsWithoutWrites(int count, string name)
+    [InlineData(1, "NVIDIA GeForce RTX 5090")]
+    [InlineData(1, "NVIDIA GeForce RTX 5090 Ti")]
+    [InlineData(1, "AMD Radeon RX 7900 Laptop GPU")]
+    [InlineData(1, "Intel Arc A770 Laptop GPU")]
+    [InlineData(1, "NVIDIA GeForce RTX  Laptop GPU")]
+    [InlineData(1, "NVIDIA GeForce RTX 5070 Laptop GPU extra")]
+    [InlineData(1, "")]
+    [InlineData(2, "NVIDIA GeForce RTX 5070 Laptop GPU")]
+    public void LaptopGpuForm_RefusesOtherNamesAndMultipleGpusWithoutWrites(int count, string name)
     {
         var api = new FakeNvmlApi { DeviceCount = checked((uint)count), DeviceName = name };
-        var controller = new NvidiaGpuClockOffsetController(
-            api,
-            new HashSet<string>(StringComparer.Ordinal) { "NVIDIA GeForce RTX 5070 Ti Laptop GPU" });
+        var controller = new NvidiaGpuClockOffsetController(api, admitNvidiaLaptopGpuForm: true);
 
         Assert.Null(controller.Query());
         BladeWriteException error = Assert.Throws<BladeWriteException>(() =>
             controller.Set(new GpuClockOffsetSettings(5, 5)));
 
         Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+        Assert.Empty(api.Writes);
+    }
+
+    [Fact]
+    public void LaptopGpuForm_RechecksNameAfterSuccessfulQuery()
+    {
+        var api = new FakeNvmlApi { DeviceName = "NVIDIA GeForce RTX 5070 Laptop GPU" };
+        var controller = new NvidiaGpuClockOffsetController(api, admitNvidiaLaptopGpuForm: true);
+        Assert.NotNull(controller.Query());
+        api.DeviceName = "NVIDIA GeForce RTX 5090";
+
+        Assert.Throws<BladeWriteException>(() => controller.Set(new GpuClockOffsetSettings(5, 5)));
+        Assert.Empty(api.Writes);
+    }
+
+    [Theory]
+    [InlineData("NVIDIA GeForce RTX 5070 Ti Laptop GPU")]
+    [InlineData("NVIDIA GeForce RTX 5080 Laptop GPU")]
+    public void DefaultController_StillAdmitsOnlyTheValidatedRtx5090LaptopGpu(string name)
+    {
+        var api = new FakeNvmlApi { DeviceName = name };
+
+        Assert.Null(new NvidiaGpuClockOffsetController(api).Query());
+        Assert.Null(new NvidiaGpuClockOffsetController(api, admitNvidiaLaptopGpuForm: false).Query());
         Assert.Empty(api.Writes);
     }
 

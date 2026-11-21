@@ -146,7 +146,7 @@ internal static class ServiceComposition
             provider.GetRequiredService<IProductionBatteryPortFactory>() is ExperimentalBladeFactory experimental
                 ? new NvidiaGpuClockOffsetController(
                     NvidiaNvmlClockOffsetApi.Instance,
-                    experimental.GpuClockOffsetDeviceNames)
+                    experimental.AdmitsNvidiaLaptopGpuForClockOffsets)
                 : new NvidiaGpuClockOffsetController());
         services.AddSingleton<IVerifiedBladeDeviceProvider>(provider =>
         {
