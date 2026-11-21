@@ -48,8 +48,11 @@ internal static class SnapTapDriverLoop
             stage = "HeartbeatOpen";
             using EventWaitHandle heartbeat = EventWaitHandle.OpenExisting(
                 SnapTapDriverSupervisor.HeartbeatName(parentId));
+            using EventWaitHandle admitting = EventWaitHandle.OpenExisting(
+                SnapTapDriverSupervisor.AdmissionName(parentId));
             stage = "TransportOpen";
-            transport = new RazerSnapTapDriverTransport(endpoint!.Path, () => admission.IsCurrent(endpoint),
+            transport = new RazerSnapTapDriverTransport(endpoint!.Path,
+                () => AdmitWithProgress(() => admission.IsCurrent(endpoint), () => heartbeat.Set(), admitting),
                 () => !shouldStop() && AllReleased() && (functionContext is null || functionContext.Ready), CanOutput, purpose);
             if (functionContext is not null)
             {
@@ -271,6 +274,24 @@ internal static class SnapTapDriverLoop
                 sent++;
             }
             return sent;
+        }
+    }
+
+    // Brackets only the user-mode admission that precedes each driver mutation, never
+    // the driver request itself. Progress is signalled before the window flag is
+    // cleared so the supervisor cannot see a closed window with a stale heartbeat.
+    internal static bool AdmitWithProgress(Func<bool> admit, Action signalProgress, EventWaitHandle window)
+    {
+        signalProgress();
+        window.Set();
+        try
+        {
+            return admit();
+        }
+        finally
+        {
+            signalProgress();
+            window.Reset();
         }
     }
 

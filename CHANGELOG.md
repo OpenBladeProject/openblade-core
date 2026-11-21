@@ -11,7 +11,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
-- Keep Razer-driver function-row media keys and SnapTap working after focus briefly leaves every window, such as at the lock screen. Previously they stopped until Windows restarted. ([#990](https://github.com/OpenBladeProject/openblade-core/pull/990))
+- Keep Razer-driver function-row media keys and SnapTap working after focus briefly leaves every window, such as at the lock screen, and when a key is pressed while Windows is still starting. Previously they stopped until Windows restarted or the setting was toggled. ([#990](https://github.com/OpenBladeProject/openblade-core/pull/990))
 
 ## [0.65.1-nightly.117] - 2026-11-20
 
