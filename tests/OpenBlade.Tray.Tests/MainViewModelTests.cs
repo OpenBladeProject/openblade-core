@@ -2630,11 +2630,34 @@ public sealed partial class MainViewModelTests
         Assert.Null(client.CurrentStatus!.ConfirmedState!.Battery!.TemporaryFullCharge);
     }
 
+    [Fact]
+    public async Task BatteryLimiter_UnknownTemporaryFullChargeKeepsLimiterAndBlocksOverride()
+    {
+        var client = new FakeServiceClient();
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot status = CreateStatus(verified: true, blocked: false);
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel, status with
+        {
+            Capabilities = status.Capabilities! with { SupportsTemporaryFullCharge = true },
+            ConfirmedState = status.ConfirmedState! with
+            {
+                Battery = new ConfirmedBatteryState(true, 80, null),
+            },
+        });
+
+        Assert.True(viewModel.CanAdjustChargeLimit);
+        Assert.True(viewModel.SetChargeLimitCommand.CanExecute(75));
+        Assert.False(viewModel.ToggleFullChargeCommand.CanExecute(true));
+        Assert.False(viewModel.ToggleFullChargeCommand.CanExecute(false));
+        Assert.Equal(0, client.MutationCalls);
+    }
+
     [Theory]
-    [InlineData(true, null)]
     [InlineData(true, true)]
     [InlineData(false, true)]
-    public async Task BatteryLimiter_ManagedUnknownOrKnownActiveTemporaryFullChargeBlocksOrdinaryControls(
+    public async Task BatteryLimiter_ManagedKnownActiveTemporaryFullChargeBlocksOrdinaryControls(
         bool supportsTemporaryFullCharge, bool? temporaryFullCharge)
     {
         var client = new FakeServiceClient();
@@ -12484,6 +12507,14 @@ public sealed partial class MainViewModelTests
             CancellationToken token)
         {
             ResumeExperimentalWritesCalls++;
+            return MutateAsync(token);
+        }
+
+        public int ClearLocalDimmingCalls { get; private set; }
+
+        public Task<ControlOperationResult> ClearLocalDimmingAsync(CancellationToken token)
+        {
+            ClearLocalDimmingCalls++;
             return MutateAsync(token);
         }
 

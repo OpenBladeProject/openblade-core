@@ -468,6 +468,20 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
             capabilities.CpuPowerLimit?.IsWellFormed == true;
         result["performance.cpuPowerLimit.write"] =
             capabilities.CpuPowerLimit?.Access == DeviceFeatureAccess.ReadWrite;
+        result["performance.intelCpuPowerLimit.observed"] =
+            capabilities.IntelCpuPowerLimit?.IsWellFormed == true;
+        result["performance.intelCpuPowerLimit.write"] =
+            capabilities.IntelCpuPowerLimit?.Access == DeviceFeatureAccess.ReadWrite;
+        result["performance.intelCpuPowerLimit.rangesKnown"] =
+            capabilities.IntelCpuPowerLimit?.RangesKnown == true;
+        result["performance.firmwareGamingGpuOverclock.observed"] =
+            capabilities.FirmwareGamingGpuOverclockAccess is not null;
+        result["performance.firmwareGamingGpuOverclock.write"] =
+            capabilities.FirmwareGamingGpuOverclockAccess == DeviceFeatureAccess.ReadWrite;
+        result["display.localDimming.observed"] =
+            capabilities.LocalDimming is not null;
+        result["display.localDimming.clear"] =
+            capabilities.LocalDimming?.SupportsClear == true;
         result["performance.cpuVoltageOptimizer.observed"] =
             capabilities.CpuVoltageOptimizer?.IsWellFormed == true;
         result["performance.cpuVoltageOptimizer.write"] =
@@ -596,6 +610,8 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
             ["desired.lighting.source"] = status.DesiredState.Lighting.Source.ToString(),
             ["lighting.rendererOwnership"] =
                 status.LightingRendererOwnership.ToString(),
+            ["lighting.windowsDynamicLightingAdvisory"] =
+                status.WindowsDynamicLightingAdvisory.ToString(),
             ["lighting.alwaysOverrideExternalChanges"] =
                 status.AlwaysOverrideExternalLightingChanges.ToString(),
             ["lighting.refreshRate"] = status.LightingRefreshRate.ToString(),
@@ -658,10 +674,14 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
             ["capability.hyperBoostWithoutCoolingPadAccess"] =
                 capabilities.HyperBoostWithoutCoolingPadAccess?.ToString()
                     ?? "Unavailable",
+            ["capability.hyperBoostEntryRestriction"] =
+                capabilities.HyperBoostEntryRestriction?.ToString() ?? "None",
             ["capability.hyperBoostBase.Balanced"] =
                 capabilities.HyperBoostBaseModes?.Balanced.ToString() ?? "Unavailable",
             ["capability.hyperBoostBase.Custom"] =
                 capabilities.HyperBoostBaseModes?.Custom?.ToString() ?? "Unavailable",
+            ["capability.hyperBoostBase.Turbo"] =
+                capabilities.HyperBoostBaseModes?.Turbo?.ToString() ?? "Unavailable",
             ["capability.fanSpeedMinimumRpm"] = NumberOrUnavailable(
                 capabilities.FanSpeedRange?.MinimumRpm),
             ["capability.reportsPerformanceWithManualFans"] =

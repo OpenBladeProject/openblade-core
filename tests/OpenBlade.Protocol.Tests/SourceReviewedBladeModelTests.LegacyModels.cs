@@ -29,8 +29,8 @@ public sealed partial class SourceReviewedBladeModelTests
         Assert.Empty(capabilities.ChargeLimits);
         if (product == 0x0245)
         {
-            Assert.Equal(new[] { LightingEffect.Off, LightingEffect.Static, LightingEffect.Spectrum,
-                LightingEffect.Breathing, LightingEffect.Wave }.Order(), capabilities.LightingEffects.Order());
+            Assert.Equal(new LightingEffect[] { LightingEffect.Off, LightingEffect.Static, LightingEffect.Spectrum,
+                LightingEffect.Breathing, LightingEffect.Wave }.Concat(ReviewedMcuFrameEffects).Order(), capabilities.LightingEffects.Order());
         }
         else { Assert.Empty(capabilities.LightingEffects); }
         LogoLightingMode[] expectedLogo = IsLegacyAdvanced(product)
@@ -46,7 +46,7 @@ public sealed partial class SourceReviewedBladeModelTests
         Assert.Null(capabilities.HyperBoostAccess);
         Assert.Null(capabilities.ThxAudio);
         Assert.True(capabilities.SupportsKeyboardBrightness);
-        Assert.False(capabilities.SupportsUniformLightingFrames);
+        Assert.Equal(product == 0x0245, capabilities.SupportsUniformLightingFrames);
         if (IsLegacyAdvanced(product))
         {
             CustomPerformanceCapabilities custom = Assert.IsType<CustomPerformanceCapabilities>(capabilities.CustomPerformance);

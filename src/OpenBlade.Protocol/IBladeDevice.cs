@@ -112,6 +112,10 @@ public interface IBladeDevice
 
     Task SetTemporaryFullChargeAsync(bool enabled, CancellationToken cancellationToken);
 
+    /// <summary>Turns display local dimming off once; there is no matching enable.</summary>
+    Task ClearLocalDimmingAsync(CancellationToken cancellationToken) =>
+        Task.FromException(new CapabilityUnavailableException("Local dimming has no admitted Clear."));
+
     /// <summary>Whether this backend needs a live host renderer for the selected setting.
     /// This describes implementation, not firmware readback or write admission.</summary>
     bool RequiresLightingRendererOwnership(LightingSettings settings) =>

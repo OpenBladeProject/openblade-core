@@ -147,6 +147,62 @@ public sealed class NvidiaGpuClockOffsetControllerTests
         }
     }
 
+    // A driver that refuses every clock-offset write, the restore included, still
+    // shows the prior offsets: the fresh readback proves nothing was applied.
+    [Fact]
+    public void Set_EveryWriteRefused_IsKnownNotAppliedFromTheReadback()
+    {
+        var api = new FakeNvmlApi
+        {
+            CoreCurrent = 50,
+            MemoryCurrent = 400,
+            RefuseEveryWrite = true,
+        };
+
+        BladeWriteException error = Assert.Throws<BladeWriteException>(() =>
+            new NvidiaGpuClockOffsetController(api).Set(
+                new GpuClockOffsetSettings(125, 500)));
+
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+        Assert.Equal((50, 400), (api.CoreCurrent, api.MemoryCurrent));
+        Assert.Equal(
+            [
+                (NvmlClockType.Graphics, 125),
+                (NvmlClockType.Graphics, 50),
+            ],
+            api.Writes);
+        Assert.Equal(1, api.ShutdownCalls);
+    }
+
+    // The memory restore is still attempted when the core restore fails, so the
+    // driver keeps as little unconfirmed change as possible.
+    [Fact]
+    public void Set_CoreRestoreRefused_StillRestoresMemory()
+    {
+        var api = new FakeNvmlApi
+        {
+            CoreCurrent = 50,
+            MemoryCurrent = 400,
+            FailAfterMutation = NvmlClockType.Memory,
+            RefuseCoreRestore = true,
+        };
+
+        BladeWriteException error = Assert.Throws<BladeWriteException>(() =>
+            new NvidiaGpuClockOffsetController(api).Set(
+                new GpuClockOffsetSettings(125, 500)));
+
+        Assert.Equal(WriteSubmissionState.Indeterminate, error.SubmissionState);
+        Assert.Equal((125, 400), (api.CoreCurrent, api.MemoryCurrent));
+        Assert.Equal(
+            [
+                (NvmlClockType.Graphics, 125),
+                (NvmlClockType.Memory, 1000),
+                (NvmlClockType.Graphics, 50),
+                (NvmlClockType.Memory, 400),
+            ],
+            api.Writes);
+    }
+
     [Theory]
     [InlineData(0, "NVIDIA GeForce RTX 5090 Laptop GPU")]
     [InlineData(2, "NVIDIA GeForce RTX 5090 Laptop GPU")]
@@ -190,6 +246,98 @@ public sealed class NvidiaGpuClockOffsetControllerTests
         Assert.Equal(2, api.ShutdownCalls);
     }
 
+    [Theory]
+    [InlineData("NVIDIA GeForce RTX 5060 Laptop GPU")]
+    [InlineData("NVIDIA GeForce RTX 5070 Laptop GPU")]
+    [InlineData("NVIDIA GeForce RTX 5070 Ti Laptop GPU")]
+    [InlineData("NVIDIA GeForce RTX 5080 Laptop GPU")]
+    [InlineData("NVIDIA GeForce RTX 5090 Laptop GPU")]
+    public void LaptopGpuForm_AdmitsQueryAndWrite(string name)
+    {
+        var api = new FakeNvmlApi { DeviceName = name };
+        var controller = new NvidiaGpuClockOffsetController(api, admitNvidiaLaptopGpuForm: true);
+
+        Assert.Equal(name, controller.Query()?.DeviceName);
+        Assert.Equal(new GpuClockOffsetSettings(25, 100), controller.Set(new GpuClockOffsetSettings(25, 100)).Current);
+    }
+
+    [Theory]
+    [InlineData(1, "NVIDIA GeForce RTX 5090")]
+    [InlineData(1, "NVIDIA GeForce RTX 5090 Ti")]
+    [InlineData(1, "AMD Radeon RX 7900 Laptop GPU")]
+    [InlineData(1, "Intel Arc A770 Laptop GPU")]
+    [InlineData(1, "NVIDIA GeForce RTX  Laptop GPU")]
+    [InlineData(1, "NVIDIA GeForce RTX 5070 Laptop GPU extra")]
+    [InlineData(1, "")]
+    [InlineData(2, "NVIDIA GeForce RTX 5070 Laptop GPU")]
+    public void LaptopGpuForm_RefusesOtherNamesAndMultipleGpusWithoutWrites(int count, string name)
+    {
+        var api = new FakeNvmlApi { DeviceCount = checked((uint)count), DeviceName = name };
+        var controller = new NvidiaGpuClockOffsetController(api, admitNvidiaLaptopGpuForm: true);
+
+        Assert.Null(controller.Query());
+        BladeWriteException error = Assert.Throws<BladeWriteException>(() =>
+            controller.Set(new GpuClockOffsetSettings(5, 5)));
+
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+        Assert.Empty(api.Writes);
+    }
+
+    [Fact]
+    public void LaptopGpuForm_RechecksNameAfterSuccessfulQuery()
+    {
+        var api = new FakeNvmlApi { DeviceName = "NVIDIA GeForce RTX 5070 Laptop GPU" };
+        var controller = new NvidiaGpuClockOffsetController(api, admitNvidiaLaptopGpuForm: true);
+        Assert.NotNull(controller.Query());
+        api.DeviceName = "NVIDIA GeForce RTX 5090";
+
+        Assert.Throws<BladeWriteException>(() => controller.Set(new GpuClockOffsetSettings(5, 5)));
+        Assert.Empty(api.Writes);
+    }
+
+    // The form is an ordinal, whole-string match of ASCII words separated by
+    // single spaces. Older RTX laptop names also match, which the single-GPU,
+    // exact-laptop admission bounds.
+    [Theory]
+    [InlineData("NVIDIA GeForce RTX 5090 Laptop GPU", true)]
+    [InlineData("NVIDIA GeForce RTX 5070 Ti Laptop GPU", true)]
+    [InlineData("NVIDIA GeForce RTX 4090 Laptop GPU", true)]
+    [InlineData("NVIDIA GeForce RTX 3080 Ti Laptop GPU", true)]
+    [InlineData("NVIDIA GeForce RTX Laptop GPU Laptop GPU", true)]
+    [InlineData("NVIDIA GeForce RTX 5090 Laptop GPU\n", false)]
+    [InlineData("NVIDIA GeForce RTX 5090 Laptop GPU ", false)]
+    [InlineData(" NVIDIA GeForce RTX 5090 Laptop GPU", false)]
+    [InlineData("NVIDIA GeForce RTX Laptop GPU", false)]
+    [InlineData("NVIDIA GeForce RTX 5070\tTi Laptop GPU", false)]
+    [InlineData("NVIDIA GeForce RTX 5070  Ti Laptop GPU", false)]
+    [InlineData("nvidia geforce rtx 5070 laptop gpu", false)]
+    [InlineData("NVIDIA GeForce RTX ５０７０ Laptop GPU", false)]
+    [InlineData("NVIDIA GeForce GTX 1650 Laptop GPU", false)]
+    [InlineData("NVIDIA RTX 5000 Ada Generation Laptop GPU", false)]
+    [InlineData("NVIDIA GeForce RTX 5090", false)]
+    [InlineData("NVIDIA GeForce RTX 5070 Laptop GPU\0", false)]
+    [InlineData("X NVIDIA GeForce RTX 5070 Laptop GPU", false)]
+    [InlineData("NVIDIA GeForce RTX 5070-Ti Laptop GPU", false)]
+    public void LaptopGpuForm_NamePredicateIsExact(string name, bool expected)
+    {
+        Assert.Equal(expected, NvidiaGpuClockOffsetController.IsAdmittedDeviceName(name, admitNvidiaLaptopGpuForm: true));
+        Assert.Equal(
+            name == "NVIDIA GeForce RTX 5090 Laptop GPU",
+            NvidiaGpuClockOffsetController.IsAdmittedDeviceName(name, admitNvidiaLaptopGpuForm: false));
+    }
+
+    [Theory]
+    [InlineData("NVIDIA GeForce RTX 5070 Ti Laptop GPU")]
+    [InlineData("NVIDIA GeForce RTX 5080 Laptop GPU")]
+    public void DefaultController_StillAdmitsOnlyTheValidatedRtx5090LaptopGpu(string name)
+    {
+        var api = new FakeNvmlApi { DeviceName = name };
+
+        Assert.Null(new NvidiaGpuClockOffsetController(api).Query());
+        Assert.Null(new NvidiaGpuClockOffsetController(api, admitNvidiaLaptopGpuForm: false).Query());
+        Assert.Empty(api.Writes);
+    }
+
     private sealed class FakeNvmlApi : INvidiaNvmlClockOffsetApi
     {
         public int InitializeStatus { get; init; }
@@ -211,6 +359,10 @@ public sealed class NvidiaGpuClockOffsetControllerTests
         public NvmlClockType? FailAfterMutation { get; init; }
 
         public bool FailRestoration { get; init; }
+
+        public bool RefuseEveryWrite { get; init; }
+
+        public bool RefuseCoreRestore { get; init; }
 
         public List<(NvmlClockType Type, int Offset)> Writes { get; } = [];
 
@@ -265,8 +417,16 @@ public sealed class NvidiaGpuClockOffsetControllerTests
         public int SetClockOffsets(nint device, ref NvmlClockOffset info)
         {
             Writes.Add((info.Type, info.CurrentMegahertz));
+            if (RefuseEveryWrite)
+            {
+                return 999;
+            }
             NvmlClockType type = info.Type;
             int channelWrites = Writes.Count(write => write.Type == type);
+            if (RefuseCoreRestore && type == NvmlClockType.Graphics && channelWrites > 1)
+            {
+                return 3;
+            }
             if (FailRestoration && FailAfterMutation == type && channelWrites > 1)
             {
                 return 3;
