@@ -1015,10 +1015,30 @@ it: a persistent performance override (source 4), then a temporary one (3),
 then the resolved profile, sourced from the application (2) only when its
 override sets the preset and from the power profile (1) otherwise. Fan intent
 is an unexpired temporary fan override, then a persistent one, then the
-resolved profile's fan control, or the legacy default for its mode. A step
-that reaches a setter resolves again before it (`destination_holds`, and the
-fan permit's `authorize` when its policy digest changed), so a profile edit
-during a request still stops it.
+resolved profile's fan control, or the legacy default for its mode.
+
+The layer is resolved again only where the step re-checks saved policy:
+
+- A thermal request resolves once, before it stores its override. A
+  document the domain decoder refuses then stores nothing, as on the fan
+  path.
+- A thermal pair resolves again only when the power class changes between
+  its setters (`destination_holds`, through `Power::admits`). A profile edit
+  during a pair on one class does not stop it, as before.
+- The fan permit resolves again in `destination_holds` before each fan
+  setter, and in `authorize` when its policy digest changed. A profile edit
+  during a fan request therefore stops it.
+
+The profiles are decoded from the committed `profiles.json` bytes with the
+domain's ordered reader (`typed_profiles`), never through a `Value`. This
+host's serde_json keeps no member order, so a `Value` writes members
+alphabetically. The decoder needs a lighting `kind` discriminator first, as
+managed does, so a round trip would refuse every saved Static, Breathing or
+other effect with members after `kind`. Schema 26 gets the same
+`PreserveLegacyIndependentProfileIntent` on the typed set that `aggregate`
+applies to its `Value`. The domain decoder also refuses what managed
+`ProfileStore` would not bind, such as an unknown member, so such an
+aggregate resolves nothing and every profile read fails closed.
 
 Native applies no profile on unclassified external or unknown power, where
 `Resolve` takes `CreateObservedFallbackProfile`: there only explicit overrides
