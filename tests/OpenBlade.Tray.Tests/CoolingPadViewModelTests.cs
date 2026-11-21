@@ -241,9 +241,10 @@ public sealed class CoolingPadViewModelTests
     [Fact]
     public async Task AutomaticRefreshRunsOnlyWhileVisibleAndPausesWhileACheckIsNeeded()
     {
-        var client = new PadClient();
+        var fixedSpeed = CoolingPadSettings.Default with { FanMode = CoolingPadFanMode.Fixed };
+        var client = new PadClient { NextStatus = new() { Connected = true, Active = true, ConfirmedTargetRpm = 1500, Requested = fixedSpeed } };
         await using var vm = new CoolingPadViewModel(client, new InlineDispatcher(), applyDelay: TimeSpan.Zero, refreshInterval: TimeSpan.FromMilliseconds(20));
-        vm.ApplyStatus(new() { Connected = true, Active = true, Requested = CoolingPadSettings.Default with { FanMode = CoolingPadFanMode.Fixed } });
+        vm.ApplyStatus(new() { Connected = true, Active = true, Requested = fixedSpeed });
         await Task.Delay(100);
         Assert.Equal(0, client.Reads);
         vm.IsPageVisible = true;
@@ -552,6 +553,93 @@ public sealed class CoolingPadViewModelTests
         Assert.All(keys, key => Assert.Contains("<data name=\"" + key + "\"", catalog, StringComparison.Ordinal));
     }
 
+    [Fact]
+    public async Task RequestChangedOutsideThePageReloadsTheEditorWithoutWriting()
+    {
+        var client = new PadClient();
+        await using var vm = Create(client);
+        var quietCpu = CoolingPadSettings.Default with
+        {
+            FanMode = CoolingPadFanMode.Auto,
+            AutoProfile = CoolingPadAutoProfile.Quiet,
+            TemperatureSource = CoolingPadTemperatureSource.Cpu,
+        };
+        vm.ApplyStatus(new() { Connected = true, Requested = quietCpu });
+        Assert.Null(vm.FanMode);
+
+        // Control started by another client: the page shows what the service runs.
+        var balancedBoth = quietCpu with { AutoProfile = CoolingPadAutoProfile.Balanced, TemperatureSource = CoolingPadTemperatureSource.Both };
+        vm.ApplyStatus(new() { Connected = true, Active = true, Requested = balancedBoth });
+        Assert.Equal(CoolingPadFanMode.Auto, vm.FanMode?.Value);
+        Assert.Equal(CoolingPadAutoProfile.Balanced, vm.AutoProfile?.Value);
+        Assert.Equal(CoolingPadTemperatureSource.Both, vm.TemperatureSource?.Value);
+
+        // A curve-only change is a different request too.
+        var curve = balancedBoth with { FanMode = CoolingPadFanMode.HostCurve, CpuCurve = [new(40, 600), new(90, 2400)] };
+        vm.ApplyStatus(new() { Connected = true, Active = true, Requested = curve });
+        Assert.Equal(CoolingPadFanMode.HostCurve, vm.FanMode?.Value);
+        Assert.Equal([600, 2400], vm.CpuCurve.Select(point => point.SpeedRpm));
+
+        // Control ending elsewhere returns the selectors to the pad.
+        vm.ApplyStatus(new() { Connected = true, Requested = curve });
+        Assert.Null(vm.FanMode);
+        await Task.Delay(50);
+        Assert.Equal(0, client.Writes);
+
+        // The next choice sends the request the service last ran.
+        vm.FanMode = Choice(vm.FanModes, CoolingPadFanMode.Auto);
+        Assert.Equal(CoolingPadTemperatureSource.Both, client.Submitted!.TemperatureSource);
+        Assert.Equal(CoolingPadAutoProfile.Balanced, client.Submitted.AutoProfile);
+    }
+
+    [Fact]
+    public async Task ALocalChangeWaitingToApplyWinsOverAnOlderStatus()
+    {
+        var client = new PadClient();
+        await using var vm = new CoolingPadViewModel(client, new InlineDispatcher(), applyDelay: TimeSpan.FromMilliseconds(150), refreshInterval: TimeSpan.FromHours(1));
+        var fixedSpeed = CoolingPadSettings.Default with { FanMode = CoolingPadFanMode.Fixed };
+        vm.ApplyStatus(new() { Connected = true, Active = true, Requested = fixedSpeed });
+        vm.FixedRpm = 2000;
+        vm.ApplyStatus(new() { Connected = true, Active = true, Requested = fixedSpeed });
+        Assert.Equal(2000, vm.FixedRpm);
+        await WaitUntilAsync(() => client.Writes == 1 && !vm.IsBusy);
+        Assert.Equal(2000, client.Submitted!.FixedRpm);
+        // The applied request now matches the service, so later statuses keep it.
+        vm.ApplyStatus(new() { Connected = true, Active = true, Requested = client.Submitted });
+        Assert.Equal(2000, vm.FixedRpm);
+    }
+
+    [Fact]
+    public async Task AnApplyInFlightWinsOverAnOlderStatus()
+    {
+        var client = new PadClient { Gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously) };
+        await using var vm = Create(client);
+        var fixedSpeed = CoolingPadSettings.Default with { FanMode = CoolingPadFanMode.Fixed };
+        vm.ApplyStatus(new() { Connected = true, Active = true, Requested = fixedSpeed });
+        vm.FixedRpm = 1800;
+        Assert.True(vm.IsApplying);
+        vm.ApplyStatus(new() { Connected = true, Active = true, Requested = fixedSpeed });
+        Assert.Equal(1800, vm.FixedRpm);
+        client.Gate.SetResult();
+        await WaitUntilAsync(() => !vm.IsBusy);
+        Assert.Equal(1800, vm.FixedRpm);
+        Assert.Equal(1, client.Writes);
+    }
+
+    [Fact]
+    public async Task ARefusedChangeReturnsTheEditorToTheServiceRequest()
+    {
+        var client = new PadClient { BlockedResult = true };
+        await using var vm = Create(client);
+        var fixedSpeed = CoolingPadSettings.Default with { FanMode = CoolingPadFanMode.Fixed };
+        vm.ApplyStatus(new() { Connected = true, Active = true, Requested = fixedSpeed });
+        vm.FixedRpm = 2400;
+        await WaitUntilAsync(() => client.Writes == 1 && !vm.IsBusy);
+        vm.ApplyStatus(new() { Connected = true, Active = true, Requested = fixedSpeed });
+        Assert.Equal(fixedSpeed.FixedRpm, vm.FixedRpm);
+        Assert.Equal(1, client.Writes);
+    }
+
     private static CoolingPadViewModel Create(PadClient client) =>
         new(client, new InlineDispatcher(), applyDelay: TimeSpan.Zero, refreshInterval: TimeSpan.FromHours(1));
 
@@ -611,7 +699,8 @@ public sealed class CoolingPadViewModelTests
                     new(profiles.PluggedIn.Fans, SettingValueSource.PowerProfile),
                     new(profiles.PluggedIn.Lighting, SettingValueSource.PowerProfile),
                     new(profiles.BatteryPolicy, true, false)), PowerSource.PluggedIn, null, null, null, null, false)
-            { CoolingPad = NextStatus });
+            // The service stores an accepted request exactly as it was sent.
+            { CoolingPad = Submitted is { } submitted && !BlockedResult ? NextStatus with { Requested = submitted } : NextStatus });
         }
     }
 }

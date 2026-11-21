@@ -9,8 +9,10 @@ identity; pad commands do not depend on the laptop model. Laptop controls retain
 their separate model admission. Connect one pad and choose a fan or lighting
 setting; each change applies after a short pause, like the laptop controls, and
 the page refreshes the pad status while it is open. Until you choose a setting,
-the pad keeps its own settings. Starting OpenBlade or reconnecting the pad does
-not start control automatically.
+the pad keeps its own settings. The page always shows the settings the service
+is running, including ones changed by another OpenBlade client; a change you are
+making takes precedence until it applies. Starting OpenBlade or reconnecting the
+pad does not start control automatically.
 
 Choose Automatic with a Quiet, Balanced or Performance profile, a fixed target
 from 500 to 3200 RPM in 50-RPM steps, a manual fan curve, or Off. Automatic and

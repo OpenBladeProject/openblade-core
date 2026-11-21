@@ -26,7 +26,11 @@ public sealed class CoolingPadViewModel : INotifyPropertyChanged, IAsyncDisposab
     private bool editorInitialized;
     private bool suppressApply;
     private bool applyPending;
+    private bool changePending;
     private long applyTicket;
+    // The service request and control state the editor currently shows.
+    private CoolingPadSettings? editorSource;
+    private bool editorShowsModes;
     private bool serviceAvailable;
     private bool lastConfirmedConnected;
     private bool connectionKnown;
@@ -254,10 +258,18 @@ public sealed class CoolingPadViewModel : INotifyPropertyChanged, IAsyncDisposab
                 RecoveryRequired = status.RecoveryRequired || snapshot.RecoveryRequired,
             };
         }
+        bool showModes = snapshot.Active || snapshot.RecoveryRequired;
         if (!editorInitialized && confirmedPresent)
         {
             editorInitialized = true;
-            LoadEditor(snapshot.Requested, showModes: snapshot.Active || snapshot.RecoveryRequired);
+            LoadEditor(snapshot.Requested, showModes);
+        }
+        else if (editorInitialized && confirmedPresent && !applying && !changePending
+            && (showModes != editorShowsModes || !SameSettings(editorSource, snapshot.Requested)))
+        {
+            // Another client, a restarted service or an install changed what the service
+            // runs. Show that request; a local change still waiting to apply wins.
+            LoadEditor(snapshot.Requested, showModes);
         }
         NotifyState();
     }
@@ -287,13 +299,21 @@ public sealed class CoolingPadViewModel : INotifyPropertyChanged, IAsyncDisposab
             CpuCurve = CreateCurve(requested.CpuCurve);
             GpuCurve = CreateCurve(requested.GpuCurve);
             Notify(nameof(CpuCurve)); Notify(nameof(GpuCurve));
+            editorSource = requested;
+            editorShowsModes = showModes;
         }
         finally { suppressApply = false; }
     }
 
+    private static bool SameSettings(CoolingPadSettings? shown, CoolingPadSettings requested) =>
+        shown is not null
+        && shown with { CpuCurve = requested.CpuCurve, GpuCurve = requested.GpuCurve } == requested
+        && shown.CpuCurve.SequenceEqual(requested.CpuCurve) && shown.GpuCurve.SequenceEqual(requested.GpuCurve);
+
     private void ScheduleApply()
     {
         if (suppressApply || !editorInitialized || lifetime.IsCancellationRequested) { return; }
+        changePending = true;
         long ticket = ++applyTicket;
         _ = ApplyAfterDelayAsync(ticket);
     }
@@ -331,6 +351,8 @@ public sealed class CoolingPadViewModel : INotifyPropertyChanged, IAsyncDisposab
     {
         bool apply = operation == Operation.Apply;
         bool release = operation == Operation.Release;
+        // An apply that starts, or cannot run, settles the pending change either way.
+        if (apply && !busy) { changePending = false; }
         if (busy || (apply && !CanApply) || (release && !CanRelease)
             || (operation is Operation.ExplicitRead or Operation.AutomaticRead && !CanRefresh))
         {
@@ -372,6 +394,8 @@ public sealed class CoolingPadViewModel : INotifyPropertyChanged, IAsyncDisposab
                 mayHaveSubmitted = result.Status != ControlOperationStatus.Blocked;
                 await dispatcher.InvokeAsync(() =>
                 {
+                    // The editor no longer matches the service request; the next status reloads it.
+                    if (apply) { editorSource = null; }
                     uncertainSubmission = result.Status == ControlOperationStatus.Failed;
                     feedback = result.Status == ControlOperationStatus.Failed
                         ? null
@@ -382,6 +406,12 @@ public sealed class CoolingPadViewModel : INotifyPropertyChanged, IAsyncDisposab
             ServiceStatusSnapshot readback = await client.ReadCoolingPadStatusAsync(token);
             await dispatcher.InvokeAsync(() =>
             {
+                if (apply)
+                {
+                    // The service stores the accepted request as sent.
+                    editorSource = settings;
+                    editorShowsModes = readback.CoolingPad.Active || readback.CoolingPad.RecoveryRequired;
+                }
                 ApplyStatus(readback.CoolingPad);
                 // Failed submissions return above without a recovery read. Only
                 // a separate explicit confirmed read clears their uncertainty.
@@ -395,6 +425,7 @@ public sealed class CoolingPadViewModel : INotifyPropertyChanged, IAsyncDisposab
                     suppressApply = true;
                     try { FanMode = null; LightingMode = null; }
                     finally { suppressApply = false; }
+                    editorShowsModes = false;
                 }
                 if (operation != Operation.AutomaticRead) { feedback = null; }
             }, token);
