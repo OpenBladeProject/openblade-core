@@ -729,12 +729,13 @@ async fn a_fan_return_applies_the_default_levels_for_a_saved_custom_without_them
     assert_eq!(out["result"]["status"], 1, "{out}");
     let setters = thermal_setters(&r);
     assert_eq!(setters[setters.len() - 4..], custom_setters(1, 2)[..]);
-    let s = r.port.state.lock().unwrap();
-    assert_eq!(
-        (s.selectors, s.fans, s.custom_levels),
-        ([4; 2], [0; 2], [1, 2])
-    );
-    drop(s);
+    {
+        let s = r.port.state.lock().unwrap();
+        assert_eq!(
+            (s.selectors, s.fans, s.custom_levels),
+            ([4; 2], [0; 2], [1, 2])
+        );
+    }
     r.origin.stop();
     r.stop().await;
 }
@@ -1040,7 +1041,11 @@ async fn a_recipe_runs_within_the_recipe_budget_and_refuses_one_it_cannot_finish
     );
     assert!(setters(&rig).is_empty());
     assert_eq!(progress(&rig), [json!(0), json!(6)]);
-    assert!(!rig.storage.pending());
+    assert!(
+        !Storage::open(Box::new(rig.files.clone()), SID)
+            .unwrap()
+            .pending()
+    );
     assert_eq!(
         rig.files.document("manual-overrides.json")["overrides"]["performance"],
         SILENT.0
@@ -1072,7 +1077,11 @@ async fn one_slow_power_read_refuses_a_custom_recipe_before_its_first_setter() {
     );
     assert!(thermal_setters(&rig).is_empty());
     assert_eq!(progress(&rig), [json!(0), json!(6)]);
-    assert!(!rig.storage.pending());
+    assert!(
+        !Storage::open(Box::new(rig.files.clone()), SID)
+            .unwrap()
+            .pending()
+    );
     rig.stop().await;
 }
 
@@ -1117,6 +1126,10 @@ async fn a_slow_journal_append_refuses_a_recipe_before_its_first_setter() {
     );
     assert!(setters(&rig).is_empty());
     assert_eq!(progress(&rig), [json!(0), json!(6)]);
-    assert!(!rig.storage.pending());
+    assert!(
+        !Storage::open(Box::new(rig.files.clone()), SID)
+            .unwrap()
+            .pending()
+    );
     rig.stop().await;
 }
