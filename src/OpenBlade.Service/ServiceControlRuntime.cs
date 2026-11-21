@@ -17978,8 +17978,13 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 ? powerSourceGeneration : -1;
             if (!preserveOverrides)
             {
+                bool pendingBlockReleased = pendingWriteConfirmations.HasPending;
                 InvalidatePendingWriteConfirmations(markExternal: true);
                 explicitLightingOwnershipActive = false;
+                if (pendingBlockReleased)
+                {
+                    ReleaseWriteBlockHeldByPendingConfirmations(powerSource);
+                }
             }
             lightingRecoveryPauseMessage = null;
             AdoptDisplayOffSuppressionForPowerSource();
@@ -18481,6 +18486,24 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         history.RecordSummary(blocked.Status, blocked.Message);
         PublishIfChanged(GetStatus() with { Message = blocked.Message });
         return blocked;
+    }
+
+    // A power change abandons pending confirmations, and with them the published
+    // write block they held. Without this the destination transition's thermal
+    // step is refused on that stale block. Every other explicit block is kept, and
+    // the transition still performs its fresh read, power, session, controller and
+    // ownership admission before any write.
+    private void ReleaseWriteBlockHeldByPendingConfirmations(PowerSource powerSource)
+    {
+        ServiceStatusSnapshot current = GetStatus();
+        if (current is not { DeviceVerified: true, WritesBlocked: true }
+            || powerSource == PowerSource.ExternalUnknown
+            || IsUnclassifiedExternalContext
+            || HasExplicitNonPowerWriteBlock(current))
+        {
+            return;
+        }
+        PublishIfChanged(current with { WritesBlocked = false });
     }
 
     private void InvalidatePendingWriteConfirmations(bool markExternal)
