@@ -168,4 +168,38 @@ public sealed partial class MainViewModelTests
         Assert.Equal(warning, viewModel.IsReadinessWarning);
         Assert.False(viewModel.CanControlHardware);
     }
+
+    // An unconfirmed performance change on a laptop with GPU clock tuning may be
+    // waiting for a driver read, which an idle GPU defers; say when it resolves.
+    [Theory]
+    [InlineData(DeviceSubsystem.Performance, true, true)]
+    [InlineData(DeviceSubsystem.Performance, false, false)]
+    [InlineData(DeviceSubsystem.Fans, true, false)]
+    public async Task UnconfirmedWrite_MessageSaysWhenGpuClockTuningIsCheckedAgain(
+        DeviceSubsystem unconfirmed,
+        bool gpuTuning,
+        bool mentionsGpu)
+    {
+        var client = new FakeServiceClient();
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot status = CreateStatus(verified: true, blocked: true);
+        status = status with
+        {
+            UnconfirmedWrites = [unconfirmed],
+            DesiredState = status.DesiredState with
+            {
+                GpuClockTuning = gpuTuning
+                    ? new GpuClockTuningSettings(true, new GpuClockOffsetSettings(200, 500))
+                    : null,
+            },
+        };
+
+        await PushAsync(client, dispatcher, status);
+
+        string message = viewModel.HardwareControlUnavailableMessage;
+        Assert.StartsWith("OpenBlade could not confirm a previous change.", message, StringComparison.Ordinal);
+        Assert.Equal(mentionsGpu, message.Contains("when the GPU is next in use or the power source changes", StringComparison.Ordinal));
+    }
 }
