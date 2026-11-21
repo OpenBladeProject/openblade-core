@@ -68,4 +68,51 @@ public sealed partial class MainViewModelTests
         Assert.Equal(1, client.ClearLocalDimmingCalls);
         Assert.False(viewModel.IsClearLocalDimmingOperationInProgress);
     }
+
+    [Fact]
+    public async Task LocalDimmingClear_RefusalShowsItsReasonOnTheCardWithoutTheSavedChangeText()
+    {
+        const string refusal = "OpenBlade can’t turn off local dimming while Maximum Fans is on. Turn off Maximum Fans in Synapse, then try again.";
+        var client = new FakeServiceClient
+        {
+            NextResult = new ControlOperationResult(ControlOperationStatus.Blocked, refusal),
+        };
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
+        await viewModel.StartAsync();
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel, CreateLocalDimmingStatus(
+            new LocalDimmingCapabilities(DeviceFeatureAccess.ReadOnly, SupportsClear: true), active: true));
+
+        Assert.False(await viewModel.ClearLocalDimmingAsync(CancellationToken.None));
+
+        Assert.Equal(refusal, viewModel.LocalDimmingStatusMessage);
+        Assert.True(viewModel.HasLocalDimmingStatusMessage);
+        Assert.DoesNotContain("saved the change", viewModel.OperationFeedbackMessage, StringComparison.Ordinal);
+        Assert.False(viewModel.HasOperationFeedback);
+
+        client.NextResult = new ControlOperationResult(ControlOperationStatus.Applied, "Local dimming is off.");
+        Assert.True(await viewModel.ClearLocalDimmingAsync(CancellationToken.None));
+        Assert.Equal(string.Empty, viewModel.LocalDimmingStatusMessage);
+        Assert.False(viewModel.HasLocalDimmingStatusMessage);
+    }
+
+    [Fact]
+    public async Task LocalDimmingClear_FailureShowsTheServiceMessageOnTheCard()
+    {
+        const string failure = "OpenBlade couldn't turn off local dimming. Try again.";
+        var client = new FakeServiceClient
+        {
+            NextResult = new ControlOperationResult(ControlOperationStatus.Failed, failure),
+        };
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
+        await viewModel.StartAsync();
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel, CreateLocalDimmingStatus(
+            new LocalDimmingCapabilities(DeviceFeatureAccess.ReadOnly, SupportsClear: true), active: true));
+
+        Assert.False(await viewModel.ClearLocalDimmingAsync(CancellationToken.None));
+
+        Assert.Equal(failure, viewModel.LocalDimmingStatusMessage);
+        Assert.True(viewModel.HasOperationFeedback);
+    }
 }

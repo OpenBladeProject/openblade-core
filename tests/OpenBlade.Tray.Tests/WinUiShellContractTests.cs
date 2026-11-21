@@ -47,6 +47,12 @@ public sealed class WinUiShellContractTests
         Assert.Contains(row, button.Ancestors());
         Assert.Equal("{StaticResource AppCommandButtonStyle}", Attribute(button, "Style"));
         Assert.Equal("{x:Bind ViewModel.ClearLocalDimmingCommand}", Attribute(button, "Command"));
+        // The Clear result shows on the card itself, collapsed when empty.
+        XElement status = NamedElement(document, "TextBlock", "LocalDimmingStatusText");
+        Assert.Contains(row, status.Ancestors());
+        Assert.Equal("{x:Bind ViewModel.LocalDimmingStatusMessage, Mode=OneWay}", Attribute(status, "Text"));
+        Assert.Equal("{x:Bind ViewModel.HasLocalDimmingStatusMessage, Mode=OneWay}", Attribute(status, "Visibility"));
+        Assert.Equal("Wrap", Attribute(status, "TextWrapping"));
     }
 
     [Fact]

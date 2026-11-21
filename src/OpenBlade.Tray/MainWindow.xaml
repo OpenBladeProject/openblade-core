@@ -4889,6 +4889,12 @@
                                         <TextBlock Text="{CustomResource MainWindow_LocalDimmingDescription.Text}"
                                                    Style="{StaticResource SecondaryTextStyle}"
                                                    TextWrapping="Wrap" />
+                                        <TextBlock x:Name="LocalDimmingStatusText"
+                                                   Text="{x:Bind ViewModel.LocalDimmingStatusMessage, Mode=OneWay}"
+                                                   Visibility="{x:Bind ViewModel.HasLocalDimmingStatusMessage, Mode=OneWay}"
+                                                   Style="{StaticResource SecondaryTextStyle}"
+                                                   TextWrapping="Wrap"
+                                                   AutomationProperties.LiveSetting="Polite" />
                                     </StackPanel>
                                     <Button x:Name="LocalDimmingTurnOffButton"
                                             Grid.Column="1"
