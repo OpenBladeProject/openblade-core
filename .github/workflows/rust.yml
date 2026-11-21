@@ -322,6 +322,9 @@ jobs:
               ($reporter + 'native_package'),
               ($reporter + 'feature_lifetime'),
               ($functionRow + 'session_native::function_row'),
+              # The status subscription every Agent role shares, including its
+              # missed-tick behavior after a suspend.
+              ($functionRow + 'service_client::tests::subscription'),
               ($functionRow + 'native_package'),
               ($functionRow + 'feature_lifetime'))) {
             # Capture the exit code instead of throwing, so the output is printed first.
