@@ -3361,7 +3361,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         CanMutate
         && !IsThermalStateUnknown
         && !IsPowerClassificationUnavailable
-        && IsHyperBoostWritable
+        // An entry restriction declines new entries; it never removes the exit.
+        && (HyperBoostActive
+            ? HyperBoostCapabilityPolicy.CanExit(Capabilities)
+            : IsHyperBoostWritable)
         && !IsHyperBoostOperationInProgress
         && !IsPerformanceOperationInProgress
         && !HasControllerDetectionWarning
@@ -3493,7 +3496,13 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
     }
 
-    public string HyperBoostDescription => IsHyperBoostWritable
+    public string HyperBoostDescription => Capabilities.HyperBoostEntryRestriction is not null
+        ? HyperBoostActive
+            ? TrayText.Get(
+                "Synapse doesn't offer HyperBoost on this laptop configuration. You can still turn it off.")
+            : TrayText.Get(
+                "Synapse doesn't offer HyperBoost on this laptop configuration, so OpenBlade doesn't start it.")
+        : IsHyperBoostWritable
         ? HyperBoostRequiresCoolingPad
             ? TrayText.Get("HyperBoost requires the supported cooling pad to stay connected.")
             : HyperBoostActive

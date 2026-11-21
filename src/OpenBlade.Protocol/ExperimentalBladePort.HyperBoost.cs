@@ -21,20 +21,20 @@ internal sealed partial class ExperimentalBladePort
     public async Task SetHyperBoostAsync(bool enabled, PerformancePreset baseMode,
         bool requiresCoolingPad, CancellationToken cancellationToken)
     {
-        if (SupportsExperimentalHyperBoost(model) && !HyperBoostSystemSkuPolicy.AllowsWrites(HyperBoostSkuAdmission))
-        {
-            policy.Record(enabled ? "HyperBoost" : "HyperBoostRestore", "Guard", "Blocked",
-                confirmed: HyperBoostSkuDiagnostic,
-                failure: HyperBoostSkuAdmission.ToString());
-            throw new CapabilityUnavailableException(
-                HyperBoostSkuAdmission == HyperBoostSystemSkuAdmission.DisabledByVendorSkuPolicy
-                    ? HyperBoostSystemSkuPolicy.DisabledMessage : HyperBoostSystemSkuPolicy.UnavailableMessage);
-        }
         if (!SupportsExperimentalHyperBoost(model)
             || Capabilities.HyperBoostAccess != DeviceFeatureAccess.ReadWrite
             || Capabilities.HyperBoostBaseModes?.AccessFor(baseMode) != DeviceFeatureAccess.ReadWrite)
         {
             throw new CapabilityUnavailableException("HyperBoost is outside this exact experimental model's contract.");
+        }
+        // The vendor SKU recheck declines new entries only. Exit and restoration
+        // never depend on it, so a laptop can always leave HyperBoost.
+        if (enabled && !HyperBoostSystemSkuPolicy.AllowsEntry(HyperBoostSkuAdmission))
+        {
+            policy.Record("HyperBoost", "Guard", "Blocked",
+                confirmed: HyperBoostSkuDiagnostic,
+                failure: HyperBoostSkuAdmission.ToString());
+            throw new CapabilityUnavailableException(HyperBoostSystemSkuPolicy.EntryRestrictedMessage);
         }
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         bool submitted = false;
@@ -45,9 +45,16 @@ internal sealed partial class ExperimentalBladePort
         {
             RequireWriteAdmission();
             PowerSource source = capturePowerSource();
-            bool balancedCleanup = !enabled && baseMode == PerformancePreset.Balanced;
-            bool batteryCleanup = balancedCleanup && source == PowerSource.Battery;
-            if (!ExternalPowerReported(source) && !batteryCleanup)
+            // On battery this contract admits only the Balanced handoff (DC raw 6),
+            // so every battery exit sends it, whatever base the session owns. The
+            // owned AC base is not a battery mode to restore: Synapse's setter sends
+            // Balanced on battery as DC raw 6 (policy bytes 1,398,122 for 671,
+            // 1,558,223 for 669 and 1,892,480 for 695) and restores its
+            // pre-HyperBoost mode on AC only (bytes 172,278, 1,240,504 and
+            // 1,295,406). The service keeps the owned base and saved profile as
+            // intent for the next AC reconciliation.
+            bool batteryHandoff = !enabled && source == PowerSource.Battery;
+            if (!ExternalPowerReported(source) && !batteryHandoff)
             {
                 throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
                     "HyperBoost requires confirmed external power; battery exit restores Balanced with Automatic fans.");
@@ -76,12 +83,17 @@ internal sealed partial class ExperimentalBladePort
             ProductionPerformanceFanState baseline = await ReadPerformanceAsync(cancellationToken).ConfigureAwait(false);
             if (enabled ? baseline.HyperBoostActive || baseline.Performance != baseMode
                 || baseline.Fans is not (FanMode.Automatic or FanMode.Fixed)
-                : !baseline.HyperBoostActive || baseline.Fans != FanMode.Automatic)
+                // Synapse's setter writes [1, selector, mode, 0] from any state,
+                // including mode 7 with manual fans (695 policy setter at byte 1,891,618;
+                // fanModeValue auto:0 at byte 2,362,420). Exit admits that baseline
+                // and the readback below must confirm Automatic fans.
+                : !baseline.HyperBoostActive || baseline.Fans is not (FanMode.Automatic or FanMode.Fixed))
             {
                 throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
                     "The confirmed HyperBoost transition baseline changed.");
             }
-            policy.Record(operation, "Baseline", "Confirmed", requested: enabled ? "HyperBoost" : baseMode.ToString(),
+            string requested = enabled ? "HyperBoost" : batteryHandoff ? $"{baseMode}/BatteryHandoff=Balanced" : baseMode.ToString();
+            policy.Record(operation, "Baseline", "Confirmed", requested: requested,
                 confirmed: $"{baseline.Performance}/{baseline.Fans};HyperBoost={baseline.HyperBoostActive}");
             // Synapse clears Maximum Fans when leaving Custom. Reuse the shared
             // whole-byte guard: never clear local dimming or another power option.
@@ -92,11 +104,16 @@ internal sealed partial class ExperimentalBladePort
                 {
                     // Products 671/669 both clear this bit before any non-Custom
                     // setter (671 policy byte 1397809, 669 policy byte 1557908).
-                    // 029F/029D represent it in Custom intent. The service journals
-                    // that intent, and on exit its Custom restore compares Maximum
-                    // Fans with the confirmed flag and writes it back when needed.
-                    // Every model that admits HyperBoost today also admits Maximum
-                    // Fans, so this refusal is a guard for a future model without
+                    // Product 695 gates that clear on hasMaxFanSpeedModeEnabled,
+                    // which its device definition omits (policy bytes 1,892,259 and
+                    // 1,893,528), so Synapse leaves the bit set before HyperBoost on
+                    // 02B7. OpenBlade still clears it there: a documented deviation
+                    // that keeps one guarded cleanup on every mode-7 model.
+                    // 029F/029D/02B7 represent the bit in Custom intent. The service
+                    // journals that intent, and on exit its Custom restore compares
+                    // Maximum Fans with the confirmed flag and writes it back when
+                    // needed. Every model that admits HyperBoost today also admits
+                    // Maximum Fans, so this refusal guards a future model without
                     // representable intent: never clear a flag it cannot restore.
                     if (!CreateCustomCapabilities(model).SupportsMaximumFans)
                     {
@@ -125,13 +142,13 @@ internal sealed partial class ExperimentalBladePort
                     maximumFansCleared = true;
                 }
             }
-            byte mode = enabled ? (byte)7 : (byte)(baseMode switch
+            byte mode = enabled ? (byte)7 : batteryHandoff ? (byte)6 : (byte)(baseMode switch
             {
-                PerformancePreset.Balanced => source == PowerSource.Battery ? 6 : 0,
+                PerformancePreset.Balanced => 0,
                 PerformancePreset.Performance => 2,
                 PerformancePreset.Silent => 5,
                 PerformancePreset.Custom => 4,
-                // Product 695 lists Turbo_Mode (main.27df2e7ddab0b6bc34cc.js byte 144,379)
+                // Product 695 lists Turbo_Mode (main.27df2e7ddab0b6bc34cc.js byte 144,362)
                 // and sends it as Gaming_Mode raw 1 (bytes 117,552 and 48,781).
                 PerformancePreset.Turbo => 1,
                 _ => throw new CapabilityUnavailableException("Unrepresentable HyperBoost restore mode."),
@@ -153,14 +170,14 @@ internal sealed partial class ExperimentalBladePort
                 submitted = true;
             }
             ProductionPerformanceFanState confirmed = await ReadPerformanceAsync(cancellationToken).ConfigureAwait(false);
-            // The battery exit submits raw 6; 02B7 reports it as its DC Balanced preset.
+            // The battery handoff submits raw 6; 02B7 reports it as its DC Balanced preset.
             if (confirmed.HyperBoostActive != enabled || confirmed.Fans != FanMode.Automatic
                 || !enabled && !HyperBoostCapabilityPolicy.IsRestoredBase(baseMode, confirmed.Performance, source))
             {
                 throw new IOException("Independent HyperBoost readback did not confirm the requested state.");
             }
             policy.Record(operation, "Readback", "Confirmed", true,
-                enabled ? "HyperBoost" : baseMode.ToString(),
+                requested,
                 enabled ? "HyperBoost/Automatic" : $"{confirmed.Performance}/Automatic");
         }
         catch (Exception exception)
@@ -189,8 +206,11 @@ internal sealed partial class ExperimentalBladePort
     private static bool SupportsExperimentalHyperBoost(ExperimentalBladeModel model) =>
         model.ProductId is 0x029F or 0x029D or 0x02B7;
 
-    // Products 671/669 report battery Balanced as raw 6 without a separate DC preset.
-    // Product 695 declares isBalancedDCSupported, so 02B7 keeps BatteryBalanced.
+    // Products 671, 669 and 695 all declare isBalancedDCSupported (671 main byte
+    // 61,433, 669 main byte 164,049, 695 main byte 164,228), so each sends battery
+    // Balanced as raw 6. 029F/029D keep their earlier admitted presentation, which
+    // shows raw 6 on battery as Balanced without a separate DC preset; 02B7's
+    // reviewed thermal policy lists that preset, so it reports BatteryBalanced.
     private static bool UsesRaw6AsBatteryBalanced(ExperimentalBladeModel model) =>
         model.ProductId is 0x029F or 0x029D;
 

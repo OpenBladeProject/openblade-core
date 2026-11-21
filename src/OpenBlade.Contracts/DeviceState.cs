@@ -167,6 +167,15 @@ public enum CoolingPadConnectionState
     ObservationFailed,
 }
 
+// Why an exact model declines a new HyperBoost entry while exit and restoration
+// stay admitted. It never limits turning HyperBoost off.
+public enum HyperBoostEntryRestriction
+{
+    // The exact model's vendor source does not offer HyperBoost for this
+    // system SKU (Synapse shouldDisableHyperboost).
+    VendorSystemSku,
+}
+
 public sealed record HyperBoostBaseModeCapabilities(
     DeviceFeatureAccess Silent,
     DeviceFeatureAccess Balanced,
@@ -331,6 +340,10 @@ public sealed record DeviceCapabilities(
 
     public HyperBoostBaseModeCapabilities? HyperBoostBaseModes { get; init; }
 
+    // Set when entry is declined for this laptop; exit and restoration keep
+    // HyperBoostAccess and HyperBoostBaseModes.
+    public HyperBoostEntryRestriction? HyperBoostEntryRestriction { get; init; }
+
     public DeviceFeatureAccess? SpecialKeyBindingsAccess { get; init; }
 
     public SpecialKeySlotSet WritableSpecialKeySlots { get; init; }
@@ -410,6 +423,9 @@ public sealed record DeviceCapabilities(
                     || HyperBoostBaseModes.Custom <= HyperBoostAccess.Value)
                 && (HyperBoostBaseModes.Turbo is null
                     || HyperBoostBaseModes.Turbo <= HyperBoostAccess.Value))
+        && (HyperBoostEntryRestriction is null
+            || HyperBoostAccess is not null
+                && Enum.IsDefined(HyperBoostEntryRestriction.Value))
         && (SpecialKeyBindingsAccess is null
             || Enum.IsDefined(SpecialKeyBindingsAccess.Value))
         && HasValidSpecialKeySlots()

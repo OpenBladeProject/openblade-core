@@ -57,8 +57,9 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
 
     internal string LaptopControlRecoveryIdentity => $"{model.ModelNumber}|1532:{model.ProductId:X4}";
 
-    // The SKU admission of the last admitted session. Before one exists, HyperBoost is
-    // observed only on the SKU-gated models; their ports carry their own admission.
+    // The SKU admission of the last admitted session. Before one exists it is
+    // NotApplicable, so no entry restriction is reported; each port still checks
+    // its own SKU admission before an entry.
     private volatile HyperBoostSystemSkuAdmission hyperBoostSkuAdmission;
 
     public DeviceCapabilities Capabilities => ExperimentalBladePort.WithConfirmedExperimentalFanRange(
@@ -406,11 +407,12 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
             hyperBoostSkuAdmission = admitted.HyperBoostSkuAdmission;
             if (admitted.HyperBoostSkuAdmission != HyperBoostSystemSkuAdmission.NotApplicable)
             {
-                // Deduplicated query record: the reason HyperBoost is or is not writable.
+                // Deduplicated query record: why HyperBoost entry is or is not offered.
+                // Exit and restoration never depend on it.
                 policy.Record("HyperBoostSystemSku", "Query",
-                    HyperBoostSystemSkuPolicy.AllowsWrites(admitted.HyperBoostSkuAdmission) ? "Confirmed" : "Blocked",
+                    HyperBoostSystemSkuPolicy.AllowsEntry(admitted.HyperBoostSkuAdmission) ? "Confirmed" : "Blocked",
                     confirmed: admitted.HyperBoostSkuDiagnostic,
-                    failure: HyperBoostSystemSkuPolicy.AllowsWrites(admitted.HyperBoostSkuAdmission)
+                    failure: HyperBoostSystemSkuPolicy.AllowsEntry(admitted.HyperBoostSkuAdmission)
                         ? null : admitted.HyperBoostSkuAdmission.ToString());
             }
             // Startup animation is queried independently by the service. Temporary full

@@ -14,7 +14,7 @@ public sealed partial class ExperimentalThermalExpansionTests
     public async Task Rz090510_DecodesModeSevenAsHyperBoostEvenWithoutWriteAdmission(byte fan, bool admitted)
     {
         var session = new Session { Mode = 7, Fan = fan };
-        await using var port = HyperBoostPort(session, new Pad(), pid: 0x02B7, sku: admitted ? Rz090510Sku : null);
+        await using var port = HyperBoostPort(session, new Pad(), pid: 0x02B7, sku: admitted ? Rz090510Sku : "RZ09-0510SEH3");
         ProductionPerformanceFanState state = await port.QueryPerformanceFanStateAsync(CancellationToken.None);
         Assert.True(state.HyperBoostActive);
         Assert.Null(state.Performance);
@@ -166,47 +166,169 @@ public sealed partial class ExperimentalThermalExpansionTests
     [InlineData(0x029F, 'S')]
     [InlineData(0x029F, '5')]
     [InlineData(0x029F, '6')]
-    public async Task HyperBoostSkuRecheck_VendorDisabledCharacterKeepsHyperBoostObservedOnly(int pid, char character)
+    public async Task HyperBoostSkuRecheck_VendorDisabledCharacterDeclinesEntryOnly(int pid, char character)
     {
         string sku = $"RZ09-0510{character}EH3";
         var session = new Session { Mode = pid == 0x02B7 ? (byte)1 : (byte)2 };
         var policy = new ExperimentalFeaturesPolicy(Model(pid));
-        await using var port = HyperBoostPort(session, new Pad(), policy, pid: pid, sku: sku);
-        AssertHyperBoostObservedOnly(port.Capabilities);
+        await using var port = HyperBoostPort(session, new Pad(), policy, power: () => PowerSource.PluggedIn,
+            pid: pid, sku: sku);
+        DeviceCapabilities capabilities = port.Capabilities;
+        // Exit and restore access never depend on the SKU; only entry is declined.
+        Assert.Equal(DeviceFeatureAccess.ReadWrite, capabilities.HyperBoostAccess);
+        Assert.Equal(DeviceFeatureAccess.ReadWrite, capabilities.HyperBoostWithoutCoolingPadAccess);
+        Assert.NotNull(capabilities.HyperBoostBaseModes);
+        Assert.Equal(HyperBoostEntryRestriction.VendorSystemSku, capabilities.HyperBoostEntryRestriction);
+        Assert.False(HyperBoostCapabilityPolicy.IsWritable(capabilities));
+        Assert.True(HyperBoostCapabilityPolicy.CanExit(capabilities));
         CapabilityUnavailableException failure = await Assert.ThrowsAsync<CapabilityUnavailableException>(() =>
             port.SetHyperBoostAsync(true, CancellationToken.None));
-        Assert.Equal(HyperBoostSystemSkuPolicy.DisabledMessage, failure.Message);
+        Assert.Equal(HyperBoostSystemSkuPolicy.EntryRestrictedMessage, failure.Message);
         Assert.Empty(session.Commands);
         Assert.True(policy.WritesAllowed);
         Assert.Contains(policy.Snapshot().Observations, item => item.Operation == "HyperBoost"
             && item.Stage == "Guard" && item.ConfirmedValue == $"SkuCharacter9={character}"
             && item.FailureCategory == nameof(HyperBoostSystemSkuAdmission.DisabledByVendorSkuPolicy));
-        // Other controls keep their ordinary write admission.
-        Assert.NotEmpty(port.Capabilities.PerformancePresets);
+        Assert.NotEmpty(capabilities.PerformancePresets);
     }
 
+    // Synapse's charAt(9) of a missing or short SKU is "", so HyperBoost stays offered.
     [Theory]
     [InlineData(null)]
     [InlineData("")]
     [InlineData("   ")]
     [InlineData("RZ09-0510")]
-    public async Task HyperBoostSkuRecheck_UnreadableSkuFailsClosedForHyperBoostOnly(string? sku)
+    public async Task HyperBoostSkuRecheck_UnreadableSkuAdmitsEntryLikeSynapse(string? sku)
     {
         foreach (int pid in new[] { 0x02B7, 0x029F })
         {
             var session = new Session { Mode = 0 };
             var policy = new ExperimentalFeaturesPolicy(Model(pid));
             await using var port = HyperBoostPort(session, new Pad(), policy, pid: pid, sku: sku);
-            AssertHyperBoostObservedOnly(port.Capabilities);
-            CapabilityUnavailableException failure = await Assert.ThrowsAsync<CapabilityUnavailableException>(() =>
-                port.SetHyperBoostAsync(true, PerformancePreset.Balanced, true, CancellationToken.None));
-            Assert.Equal(HyperBoostSystemSkuPolicy.UnavailableMessage, failure.Message);
-            Assert.Empty(session.Commands);
-            Assert.Contains(policy.Snapshot().Observations, item => item.Stage == "Guard"
-                && item.ConfirmedValue == "SkuCharacter9=Unavailable"
-                && item.FailureCategory == nameof(HyperBoostSystemSkuAdmission.SkuUnavailable));
-            Assert.Contains(PerformancePreset.Balanced, port.Capabilities.PerformancePresets);
+            Assert.Equal(DeviceFeatureAccess.ReadWrite, port.Capabilities.HyperBoostAccess);
+            Assert.Null(port.Capabilities.HyperBoostEntryRestriction);
+            Assert.Equal("SkuCharacter9=Unavailable", port.HyperBoostSkuDiagnostic);
+            await port.SetHyperBoostAsync(true, PerformancePreset.Balanced, true, CancellationToken.None);
+            Assert.Equal(7, session.Mode);
+            Assert.DoesNotContain(policy.Snapshot().Observations, item => item.Stage == "Guard");
         }
+    }
+
+    // A running HyperBoost session can always be turned off, whatever the SKU reads.
+    [Theory]
+    [InlineData(0x02B7, "RZ09-0510SEH3", PowerSource.PluggedIn)]
+    [InlineData(0x02B7, "RZ09-0510SEH3", PowerSource.Battery)]
+    [InlineData(0x02B7, null, PowerSource.PluggedIn)]
+    [InlineData(0x02B7, null, PowerSource.Battery)]
+    [InlineData(0x02B7, Rz090510Sku, PowerSource.PluggedIn)]
+    [InlineData(0x02B7, Rz090510Sku, PowerSource.Battery)]
+    [InlineData(0x029F, "RZ09-0483SEH3", PowerSource.PluggedIn)]
+    [InlineData(0x029F, "RZ09-0483SEH3", PowerSource.Battery)]
+    [InlineData(0x029F, null, PowerSource.PluggedIn)]
+    [InlineData(0x029F, null, PowerSource.Battery)]
+    [InlineData(0x029D, null, PowerSource.Battery)]
+    public async Task HyperBoostSkuRecheck_ExitSucceedsWhateverTheSku(int pid, string? sku, PowerSource source)
+    {
+        var session = new Session
+        {
+            Mode = 7,
+            AdapterPowerPayload = source == PowerSource.Battery ? [0, 17] : [0x11, 0x11],
+        };
+        var policy = new ExperimentalFeaturesPolicy(Model(pid));
+        await using var port = HyperBoostPort(session, new Pad { State = CoolingPadConnectionState.Absent }, policy,
+            power: () => source, pid: pid, sku: sku);
+        Assert.True((await port.QueryPerformanceFanStateAsync(CancellationToken.None)).HyperBoostActive);
+        session.Commands.Clear();
+
+        await port.SetHyperBoostAsync(false, PerformancePreset.Balanced, false, CancellationToken.None);
+
+        byte expected = source == PowerSource.Battery ? (byte)6 : (byte)0;
+        Assert.Equal(new byte[][] { [1, 1, expected, 0], [1, 2, expected, 0] },
+            session.Writes.Select(command => command.Arguments.ToArray()).ToArray());
+        Assert.True(policy.WritesAllowed);
+        Assert.DoesNotContain(policy.Snapshot().Observations, item => item.Stage == "Guard");
+    }
+
+    // Every battery exit hands off to Balanced (DC raw 6), whatever base the session owns.
+    // 029F/029D show raw 6 on battery as Balanced; 02B7 as its DC Balanced preset.
+    [Theory]
+    [InlineData(0x02B7, PerformancePreset.Turbo)]
+    [InlineData(0x02B7, PerformancePreset.Silent)]
+    [InlineData(0x02B7, PerformancePreset.Custom)]
+    [InlineData(0x02B7, PerformancePreset.Balanced)]
+    [InlineData(0x029F, PerformancePreset.Performance)]
+    [InlineData(0x029F, PerformancePreset.Silent)]
+    [InlineData(0x029F, PerformancePreset.Custom)]
+    [InlineData(0x029F, PerformancePreset.Balanced)]
+    [InlineData(0x029D, PerformancePreset.Silent)]
+    [InlineData(0x029D, PerformancePreset.Custom)]
+    [InlineData(0x029D, PerformancePreset.Balanced)]
+    public async Task HyperBoostBatteryExit_HandsOffToBalancedFromEveryBase(int pid, PerformancePreset baseMode)
+    {
+        var session = new Session { Mode = 7, Cpu = 1, Gpu = 2, AdapterPowerPayload = [0, 17] };
+        var policy = new ExperimentalFeaturesPolicy(Model(pid));
+        await using var port = HyperBoostPort(session, new Pad { State = CoolingPadConnectionState.Absent }, policy,
+            power: () => PowerSource.Battery, pid: pid, sku: pid == 0x02B7 ? Rz090510Sku : null);
+
+        await port.SetHyperBoostAsync(false, baseMode, false, CancellationToken.None);
+
+        Assert.Equal(new byte[][] { [1, 1, 6, 0], [1, 2, 6, 0] },
+            session.Writes.Select(command => command.Arguments.ToArray()).ToArray());
+        ProductionPerformanceFanState state = await port.QueryPerformanceFanStateAsync(CancellationToken.None);
+        Assert.False(state.HyperBoostActive);
+        Assert.Equal(FanMode.Automatic, state.Fans);
+        Assert.Equal(pid == 0x02B7 ? PerformancePreset.BatteryBalanced : PerformancePreset.Balanced, state.Performance);
+        // The saved Custom levels are not touched; the service keeps the owned base as intent.
+        Assert.Equal(1, session.Cpu);
+        Assert.Equal(2, session.Gpu);
+        Assert.True(policy.WritesAllowed);
+        Assert.Contains(policy.Snapshot().Observations, item => item.Operation == "HyperBoostRestore"
+            && item.Stage == "Readback" && item.RequestedValue == $"{baseMode}/BatteryHandoff=Balanced");
+    }
+
+    // Synapse can leave mode 7 with manual fans (RZ09-0510). Its setter writes
+    // [1, selector, mode, 0] from any state, so exit admits that baseline, reads no
+    // mode-7 fan targets on 02B7, and confirms Automatic fans.
+    [Theory]
+    [InlineData(0x02B7, PerformancePreset.Turbo, 1)]
+    [InlineData(0x02B7, PerformancePreset.Balanced, 0)]
+    [InlineData(0x029F, PerformancePreset.Performance, 2)]
+    public async Task HyperBoostExit_FromManualFansConfirmsAutomatic(int pid, PerformancePreset baseMode, byte raw)
+    {
+        var session = new Session { Mode = 7, Fan = 1 };
+        var policy = new ExperimentalFeaturesPolicy(Model(pid));
+        await using var port = HyperBoostPort(session, new Pad(), policy, power: () => PowerSource.PluggedIn,
+            pid: pid, sku: pid == 0x02B7 ? Rz090510Sku : AdmittedSku);
+
+        await port.SetHyperBoostAsync(false, baseMode, true, CancellationToken.None);
+
+        Assert.Equal(new byte[][] { [1, 1, raw, 0], [1, 2, raw, 0] },
+            session.Writes.Select(command => command.Arguments.ToArray()).ToArray());
+        Assert.Equal(0, session.Fan);
+        Assert.Contains(policy.Snapshot().Observations, item => item.Operation == "HyperBoostRestore"
+            && item.Stage == "Baseline" && item.ConfirmedValue == "/Fixed;HyperBoost=True");
+        if (pid == 0x02B7)
+        {
+            // The baseline read never asks for mode-7 fan targets, which have no admitted range.
+            Assert.DoesNotContain(session.Commands, command => command.ClassId == 0x0D && command.CommandId == 0x81);
+            Assert.Contains(policy.Snapshot().Observations, item => item.Operation == "FanTargets"
+                && item.Outcome == "NotQueried" && item.FailureCategory == "HyperBoostHasNoAdmittedFanRange");
+        }
+    }
+
+    // Product 695 does not clear Maximum Fans before HyperBoost (its device definition
+    // omits hasMaxFanSpeedModeEnabled). OpenBlade keeps its guarded cleanup on 02B7.
+    [Fact]
+    public async Task Rz090510_EntryFromCustomClearsMaximumFansFirst()
+    {
+        var session = new Session { Mode = 4, Cpu = 1, Gpu = 2, PowerModeControlFlags = 2, HyperBoostFirmware = [1, 3, 0, 0] };
+        await using var port = HyperBoostPort(session, new Pad(), power: () => PowerSource.PluggedIn,
+            pid: 0x02B7, sku: Rz090510Sku);
+        await port.SetHyperBoostAsync(true, PerformancePreset.Custom, true, CancellationToken.None);
+        Assert.Equal(0, session.PowerModeControlFlags);
+        Assert.Equal(new byte[] { 0x0F, 2, 2 }, session.Writes.Select(command => command.CommandId).ToArray());
+        Assert.Equal(new byte[] { 0 }, session.Writes.First().Arguments.ToArray());
+        Assert.Equal(7, session.Mode);
     }
 
     [Theory]
@@ -237,6 +359,11 @@ public sealed partial class ExperimentalThermalExpansionTests
             HyperBoostSystemSkuPolicy.Evaluate(0x02B7, "RZ09-0510TRS56"));
         Assert.Equal(HyperBoostSystemSkuAdmission.SkuUnavailable,
             HyperBoostSystemSkuPolicy.Evaluate(0x02B7, "RZ09-051"));
+        // Only a positively read excluded character declines entry.
+        Assert.False(HyperBoostSystemSkuPolicy.AllowsEntry(HyperBoostSystemSkuAdmission.DisabledByVendorSkuPolicy));
+        Assert.True(HyperBoostSystemSkuPolicy.AllowsEntry(HyperBoostSystemSkuAdmission.SkuUnavailable));
+        Assert.True(HyperBoostSystemSkuPolicy.AllowsEntry(HyperBoostSystemSkuAdmission.Admitted));
+        Assert.True(HyperBoostSystemSkuPolicy.AllowsEntry(HyperBoostSystemSkuAdmission.NotApplicable));
     }
 
     [Theory]
@@ -274,12 +401,5 @@ public sealed partial class ExperimentalThermalExpansionTests
         // Potential capabilities, used for profile validation, describe the model before a SKU is read.
         Assert.Equal(DeviceFeatureAccess.ReadWrite,
             ExperimentalBladePort.CreateCapabilities(Model(0x02B7), true).HyperBoostBaseModes!.Turbo);
-    }
-
-    private static void AssertHyperBoostObservedOnly(DeviceCapabilities capabilities)
-    {
-        Assert.Equal(DeviceFeatureAccess.ObservedOnly, capabilities.HyperBoostAccess);
-        Assert.Null(capabilities.HyperBoostWithoutCoolingPadAccess);
-        Assert.Null(capabilities.HyperBoostBaseModes);
     }
 }

@@ -658,6 +658,8 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
             ["capability.hyperBoostWithoutCoolingPadAccess"] =
                 capabilities.HyperBoostWithoutCoolingPadAccess?.ToString()
                     ?? "Unavailable",
+            ["capability.hyperBoostEntryRestriction"] =
+                capabilities.HyperBoostEntryRestriction?.ToString() ?? "None",
             ["capability.hyperBoostBase.Balanced"] =
                 capabilities.HyperBoostBaseModes?.Balanced.ToString() ?? "Unavailable",
             ["capability.hyperBoostBase.Custom"] =

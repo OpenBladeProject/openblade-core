@@ -126,6 +126,7 @@ public sealed class DiagnosticArchiveProviderTests
                 {
                     Turbo = DeviceFeatureAccess.ReadWrite,
                 },
+                HyperBoostEntryRestriction = HyperBoostEntryRestriction.VendorSystemSku,
                 SpecialKeyBindingsAccess = DeviceFeatureAccess.ReadWrite,
                 WritableSpecialKeySlots =
                     SpecialKeySlotSet.M3
@@ -290,6 +291,11 @@ public sealed class DiagnosticArchiveProviderTests
             DeviceFeatureAccess.ReadWrite.ToString(),
             configuration.RootElement
                 .GetProperty("capability.hyperBoostWithoutCoolingPadAccess")
+                .GetString());
+        Assert.Equal(
+            nameof(HyperBoostEntryRestriction.VendorSystemSku),
+            configuration.RootElement
+                .GetProperty("capability.hyperBoostEntryRestriction")
                 .GetString());
         Assert.Equal(
             DeviceFeatureAccess.ReadWrite.ToString(),

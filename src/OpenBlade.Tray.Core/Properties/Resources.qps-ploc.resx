@@ -1374,6 +1374,12 @@
   <data name="Pad-less HyperBoost is detected but is not available with the current admission evidence." xml:space="preserve">
     <value>[!! Pád-léss HýpérBóóst ís détéctéd bút ís nót áváíláblé wíth thé cúrrént ádmíssíón évídéncé. ~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
+  <data name="Synapse doesn't offer HyperBoost on this laptop configuration, so OpenBlade doesn't start it." xml:space="preserve">
+    <value>[!! Sýnápsé dóésn't óffér HýpérBóóst ón thís láptóp cónfígúrátíón, só OpenBlade dóésn't stárt ít. ~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Synapse doesn't offer HyperBoost on this laptop configuration. You can still turn it off." xml:space="preserve">
+    <value>[!! Sýnápsé dóésn't óffér HýpérBóóst ón thís láptóp cónfígúrátíón. Ýóú cán stíll túrn ít óff. ~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
   <data name="Detected on this laptop, but OpenBlade cannot safely change it with the current evidence." xml:space="preserve">
     <value>[!! Détéctéd ón thís láptóp, bút OpenBlade cánnót sáfélý chángé ít wíth thé cúrrént évídéncé. ~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>

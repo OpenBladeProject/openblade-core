@@ -6161,6 +6161,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                         : null);
                 if (capabilities.HyperBoostAccess
                         != DeviceFeatureAccess.ReadWrite
+                    || enabled && HyperBoostCapabilityPolicy.IsEntryRestricted(capabilities)
                     || enabled && baseAccess != DeviceFeatureAccess.ReadWrite
                     || enabled && !validationOnly
                         && !HyperBoostCapabilityPolicy.IsDirectEntryBase(
@@ -6317,6 +6318,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                     ? capabilities.HyperBoostAccess
                     : null);
             if (capabilities.HyperBoostAccess != DeviceFeatureAccess.ReadWrite
+                || enabled && HyperBoostCapabilityPolicy.IsEntryRestricted(capabilities)
                 || enabled && baseAccess != DeviceFeatureAccess.ReadWrite
                 || enabled && !validationOnly
                     && !HyperBoostCapabilityPolicy.IsDirectEntryBase(
@@ -6528,6 +6530,17 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 return new ControlOperationResult(
                     ControlOperationStatus.Blocked,
                     "HyperBoost control is unavailable right now.");
+            }
+
+            // An entry restriction declines new entries only. Exit, the owned
+            // lifecycle restore and journal recovery keep the access checked above.
+            if (enabled
+                && confirmed.HyperBoostActive == false
+                && current.Capabilities?.HyperBoostEntryRestriction is { } entryRestriction)
+            {
+                return new ControlOperationResult(
+                    ControlOperationStatus.Blocked,
+                    HyperBoostEntryRestrictionMessage(entryRestriction));
             }
 
             if (confirmed.HyperBoostActive == enabled)
@@ -7956,6 +7969,14 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         HyperBoostRestoreIntent intent)
         => Automation.RestoreHyperBoostIntentUntilPowerSourceChange(intent);
 
+    internal static string HyperBoostEntryRestrictionMessage(
+        HyperBoostEntryRestriction restriction) => restriction switch
+        {
+            HyperBoostEntryRestriction.VendorSystemSku =>
+                "Synapse doesn't offer HyperBoost on this laptop configuration, so OpenBlade doesn't start it. You can still turn HyperBoost off.",
+            _ => "HyperBoost can't start on this laptop right now. You can still turn it off.",
+        };
+
     private static bool IsSupportedHyperBoostRestoreIntent(
         DeviceCapabilities capabilities,
         HyperBoostRestoreIntent intent)
@@ -7998,13 +8019,18 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         && confirmed.Fans == FanMode.Automatic
         && intent.GpuClockTuning is null;
 
+    // The exit lands on the owned base on AC. On battery a mode-7 backend hands off
+    // to Balanced whatever base it owns, so a confirmed Balanced (or DC Balanced)
+    // with no Custom levels also matches; the journal keeps the owned base as intent.
     private static bool ConfirmedStateMatchesHyperBoostTransitionBaseline(
         ConfirmedDeviceState confirmed,
         HyperBoostOwnershipJournal journal) =>
         confirmed.HyperBoostActive == false
-        && confirmed.Performance == journal.BaseMode
+        && HyperBoostCapabilityPolicy.IsRestoredBase(
+            journal.BaseMode, confirmed.Performance, journal.RestorePowerSource)
         && confirmed.Fans == FanMode.Automatic
         && (journal.BaseMode == PerformancePreset.Custom
+            && confirmed.Performance == PerformancePreset.Custom
             ? journal.RestoreIntent.Performance == PerformancePreset.Custom
                 && confirmed.CustomPerformance
                     == journal.RestoreIntent.CustomPerformance

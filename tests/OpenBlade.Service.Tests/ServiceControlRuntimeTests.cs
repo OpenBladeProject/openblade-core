@@ -32749,6 +32749,10 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
         // RZ09-0510 reports the battery exit's raw 6 as its DC Balanced preset.
         public bool ReportsBatteryBalancedForBalancedExit { get; set; }
 
+        // The mode-7 port rule: an exit on battery submits Balanced (raw 6)
+        // whatever base the service passes, and clears Custom levels.
+        public Func<PowerSource>? HyperBoostExitPowerSource { get; set; }
+
         public Queue<Exception> HyperBoostFailures { get; } = new();
 
         public Action? AfterHyperBoostFailure { get; set; }
@@ -33160,13 +33164,22 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
                     Fans = FanMode.Automatic,
                     HyperBoostActive = true,
                 }
-                : ConfirmedState with
-                {
-                    Performance = ReportsBatteryBalancedForBalancedExit && baseMode == PerformancePreset.Balanced
-                        ? PerformancePreset.BatteryBalanced : baseMode,
-                    Fans = FanMode.Automatic,
-                    HyperBoostActive = false,
-                };
+                : HyperBoostExitPowerSource?.Invoke() == PowerSource.Battery
+                    ? ConfirmedState with
+                    {
+                        Performance = ReportsBatteryBalancedForBalancedExit
+                            ? PerformancePreset.BatteryBalanced : PerformancePreset.Balanced,
+                        CustomPerformance = null,
+                        Fans = FanMode.Automatic,
+                        HyperBoostActive = false,
+                    }
+                    : ConfirmedState with
+                    {
+                        Performance = ReportsBatteryBalancedForBalancedExit && baseMode == PerformancePreset.Balanced
+                            ? PerformancePreset.BatteryBalanced : baseMode,
+                        Fans = FanMode.Automatic,
+                        HyperBoostActive = false,
+                    };
             return Task.CompletedTask;
         }
 

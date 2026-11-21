@@ -20,7 +20,7 @@ internal sealed partial class ExperimentalBladePort(
     : IProductionBatteryPort, IProductionLightingPort, ILightingRecoveryWriteAdmission
 {
     // Read once from the exact host identity that admitted this session. Only
-    // HyperBoost depends on it; an unreadable SKU leaves every other control unchanged.
+    // HyperBoost entry depends on it; exit, restoration and every other control do not.
     internal HyperBoostSystemSkuAdmission HyperBoostSkuAdmission { get; } =
         HyperBoostSystemSkuPolicy.Evaluate(model.ProductId, systemSku);
 
@@ -151,13 +151,15 @@ internal sealed partial class ExperimentalBladePort(
     };
 
     // A null SKU admission describes the model's potential capabilities, before a host SKU is read.
+    // The SKU recheck only restricts entry; access and restore bases never depend on it.
     internal static DeviceCapabilities CreateCapabilities(ExperimentalBladeModel model, bool enabled,
         HyperBoostSystemSkuAdmission? hyperBoostSku = null) =>
-        CreateCapabilitiesCore(model, enabled, SupportsExperimentalHyperBoost(model) && enabled
-            && (hyperBoostSku is not { } sku || HyperBoostSystemSkuPolicy.AllowsWrites(sku)));
+        CreateCapabilitiesCore(model, enabled, SupportsExperimentalHyperBoost(model) && enabled,
+            hyperBoostSku is { } sku && !HyperBoostSystemSkuPolicy.AllowsEntry(sku)
+                ? HyperBoostEntryRestriction.VendorSystemSku : null);
 
     private static DeviceCapabilities CreateCapabilitiesCore(ExperimentalBladeModel model, bool enabled,
-        bool hyperBoostWritable) =>
+        bool hyperBoostWritable, HyperBoostEntryRestriction? hyperBoostEntryRestriction) =>
         new(enabled ? CreatePerformancePresets(model) : new HashSet<PerformancePreset>(),
             enabled && GetExperimentalFanRange(model) is not null
                 ? model.ProductId == 0x02A0 || UsesDynamicExperimentalFanRange(model) || SupportsStaticSourceHostCurves(model)
@@ -204,7 +206,6 @@ internal sealed partial class ExperimentalBladePort(
                     ObservedLightingZone.UnderGlass,
                 }
                 : new HashSet<ObservedLightingZone>(),
-            // A SKU-disabled or unreadable-SKU HyperBoost stays visible as observed only.
             HyperBoostAccess = hyperBoostWritable ? DeviceFeatureAccess.ReadWrite
                 : model.ProductId is 0x02A0 or 0x029F or 0x029D or 0x02B7 ? DeviceFeatureAccess.ObservedOnly : null,
             HyperBoostWithoutCoolingPadAccess = hyperBoostWritable ? DeviceFeatureAccess.ReadWrite : null,
@@ -218,6 +219,7 @@ internal sealed partial class ExperimentalBladePort(
                     Turbo = model.ProductId == 0x02B7 ? DeviceFeatureAccess.ReadWrite : null,
                     CoolingPadEntryBaseMode = HyperBoostCoolingPadEntryBaseMode(model),
                 } : null,
+            HyperBoostEntryRestriction = hyperBoostWritable ? hyperBoostEntryRestriction : null,
             OneShotLaptopControls = enabled && model.ProductId == 0x02A0
                 ? new HashSet<OneShotLaptopControl> { OneShotLaptopControl.StartupAnimation } : [],
             HostManagedLaptopControls = enabled && model.ProductId == 0x02A0
