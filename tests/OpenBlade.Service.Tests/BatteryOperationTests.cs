@@ -288,6 +288,35 @@ public sealed class BatteryOperationTests
         Assert.Equal(["SetChargeLimit"], device.BatterySetterCalls);
     }
 
+    // A contradicted limiter readback is a mismatch, not missing confirmation,
+    // when the limiter does not depend on the unreadable override.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ChargeLimit_MismatchWithUnknownOverrideIsUnavailableOnlyForDependentLimiter(bool independent)
+    {
+        BatteryTestDevice device = new BatteryTestDevice();
+        device.Capabilities = device.Capabilities with
+        {
+            SupportsTemporaryFullCharge = true,
+            ChargePolicyIndependentOfTemporaryFullCharge = independent,
+        };
+        device.AfterSetter = _ => device.State = device.State with
+        {
+            Battery = new ConfirmedBatteryState(true, 70, null),
+        };
+
+        ScopedApplyOutcome outcome = await new ControlCoordinator(device).ApplyChargeLimitOutcomeAsync(
+            BatteryPolicy.Create(75),
+            CancellationToken.None);
+
+        Assert.True(outcome.WriteAttempted);
+        Assert.False(outcome.ReadbackMatched);
+        Assert.Equal(BatteryConfirmationScope.PolicyOnly, outcome.BatteryConfirmation);
+        Assert.Equal(!independent, outcome.ConfirmationUnavailable);
+        Assert.Equal(["SetChargeLimit"], device.BatterySetterCalls);
+    }
+
     [Fact]
     public async Task ChargeLimit_CanceledAfterAck_PropagatesIndeterminateCancellation()
     {

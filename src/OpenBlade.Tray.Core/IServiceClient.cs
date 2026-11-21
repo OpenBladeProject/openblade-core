@@ -37,6 +37,13 @@ public interface IServiceClient : IServiceStatusWatcher
                 ControlOperationStatus.Blocked,
                 "Application profile reporting is unavailable."));
 
+    Task<ControlOperationResult> ReportWindowsDynamicLightingAdvisoryAsync(
+        ReportWindowsDynamicLightingAdvisoryRequest request,
+        CancellationToken token) => Task.FromResult(
+            new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "Windows Dynamic Lighting reporting is unavailable."));
+
     Task<ServiceStatusSnapshot> GetStatusAsync(CancellationToken token);
 
     Task<ServiceStatusSnapshot> ReadCoolingPadStatusAsync(CancellationToken token) => GetStatusAsync(token);
@@ -221,6 +228,11 @@ public interface IServiceClient : IServiceStatusWatcher
     Task<ControlOperationResult> ApplyOneShotLaptopControlAsync(
         ApplyOneShotLaptopControl value,
         CancellationToken token);
+
+    Task<ControlOperationResult> ClearLocalDimmingAsync(CancellationToken token) =>
+        Task.FromResult(new ControlOperationResult(
+            ControlOperationStatus.Blocked,
+            "Local dimming can't be turned off right now."));
 
     Task<ControlOperationResult> ShutdownOpenBladeAsync(CancellationToken token);
 

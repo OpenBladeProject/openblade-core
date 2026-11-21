@@ -1117,6 +1117,9 @@ public sealed partial class ExperimentalBladeLightingTests
         internal bool IgnoreEffect { get; set; }
         internal byte[] EditionReply { get; set; } = [1, 0, 0];
         internal bool FailEditionRead { get; set; }
+        // Production retires a session after an unanswered GET; model that disposition.
+        internal bool PoisonOnFailedEditionRead { get; set; }
+        private bool poisoned;
         internal CancellationTokenSource? CancelEditionRead { get; set; }
         internal bool FailEffect { get; set; }
         internal bool IgnoreBrightness { get; set; }
@@ -1132,7 +1135,8 @@ public sealed partial class ExperimentalBladeLightingTests
             new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal List<RazerCommandSpec> Commands { get; } = [];
         internal List<(int ClassId, int CommandId, FirmwareQueryOutcome Outcome)> RetainedQueryFailures { get; } = [];
-        public RazerCommandSessionDisposition Disposition => RazerCommandSessionDisposition.Healthy;
+        public RazerCommandSessionDisposition Disposition => poisoned
+            ? RazerCommandSessionDisposition.RecoveryRequired : RazerCommandSessionDisposition.Healthy;
         public void RetainQueryFailure(byte classId, byte commandId, FirmwareQueryOutcome outcome) =>
             RetainedQueryFailures.Add((classId, commandId, outcome));
         public Task<HidSessionResult<ReadOnlyMemory<byte>>> ExecuteAsync(RazerCommandSpec command,
@@ -1169,10 +1173,11 @@ public sealed partial class ExperimentalBladeLightingTests
             byte[] response;
             if (command.ClassId == 0 && command.CommandId == 0x86)
             {
-                Assert.Equal(new byte[] { 0, 0, 0 }, args);
+                Assert.True(args is [0, 0, 0] or [0, 0]);
                 CancelEditionRead?.Cancel();
                 if (FailEditionRead || CancelEditionRead is not null)
                 {
+                    poisoned = PoisonOnFailedEditionRead;
                     return Task.FromResult(new HidSessionResult<ReadOnlyMemory<byte>>(default, HidSessionFailureKind.Timeout));
                 }
                 response = EditionReply;

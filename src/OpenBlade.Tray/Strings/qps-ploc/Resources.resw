@@ -3124,6 +3124,18 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   <data name="MainWindow_KeyColorEditor_SelectedKey" xml:space="preserve">
     <value>[!! Séléctéd kéý: {0} ~~~~ !!]</value>
   </data>
+  <data name="MainWindow_LocalDimmingTitle.Text" xml:space="preserve">
+    <value>[!! Lócál dímmíng ~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_LocalDimmingDescription.Text" xml:space="preserve">
+    <value>[!! Lócál dímmíng ís ón. OpenBlade cán túrn ít óff, bút nót báck ón. ~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_LocalDimmingTurnOffButton.Content" xml:space="preserve">
+    <value>[!! Túrn óff ~~~ !!]</value>
+  </data>
+  <data name="MainWindow_LocalDimmingTurnOffButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! Túrn óff lócál dímmíng ~~~~~~~ !!]</value>
+  </data>
   <data name="MainWindow_CoolingPadBrightnessReadoutLabelText.Text" xml:space="preserve">
     <value>[!! Bríghtnéss ~~~~ !!]</value>
   </data>

@@ -1,14 +1,15 @@
-# Experimental HyperBoost on Blade 14 and Blade 16 (2023)
+# Experimental HyperBoost on Blade 14 (2023) and Blade 16 (2023, 2024)
 
 Razer's [14 October 2026 Synapse release notes](https://insider.razer.com/release-versions-feedback-67/14-october-2026-synapse-chroma-for-windows-90679)
 name Blade 16 (2023–2026) with the Razer Laptop Cooling Pad. This is model-family
 availability evidence, not a command specification or evidence for padless use.
 Blade 16 (2025), RZ09-0528 / `1532:02C6`, already has independently admitted
 HyperBoost and padless HyperBoost in OpenBlade. Its command fixtures and physical
-validation do not transfer to the 2023 laptop.
+validation do not transfer to the 2023 or 2024 laptops.
 
-The experimental additions use the existing exact RZ09-0483 (`1532:029F`)
-and RZ09-0482 (`1532:029D`) profiles and their own Synapse definitions.
+The experimental additions use the existing exact RZ09-0483 (`1532:029F`),
+RZ09-0482 (`1532:029D`) and RZ09-0510 (`1532:02B7`) profiles and their own
+Synapse definitions.
 Other experimental Blade families retain their existing capabilities.
 
 ## Published compatibility and experimental scope
@@ -19,7 +20,7 @@ checked on 2026-10-16, names these models:
 | Blade 16 | Model | Listed NVIDIA GPUs | OpenBlade status |
 | --- | --- | --- | --- |
 | 2023 | `RZ09-0483` | RTX 4060–4090 | Existing experimental profile; HyperBoost added here |
-| 2024 | `RZ09-0510` | RTX 4060–4090 | Outside the current model registry |
+| 2024 | `RZ09-0510` | RTX 4060–4090 | Existing source-reviewed profile; HyperBoost added from product 695 |
 | 2025 | `RZ09-0528` | RTX 5080–5090 | Existing validated backend with HyperBoost |
 | 2026 | `RZ09-0581` | RTX 5070 Ti–5090 | Existing validated backend with HyperBoost |
 
@@ -27,9 +28,8 @@ Razer's [2024 support page](https://mysupport.razer.com/app/answers/detail/a_id/
 and [2025 BIOS page](https://mysupport.razer.com/app/answers/detail/a_id/15235)
 confirm the distinct model numbers. RZ09-0528 is the 2025 laptop.
 
-The 2024 Blade requires a separate exact-model backend and is outside this
-change's existing-experimental-model scope. The Blade 14 (2025), Blade 18
-(2023), and Blade 15 Base (2020) gain no HyperBoost writes. A shared mode-7
+The 2024 Blade uses its own product-695 definitions, described below. The Blade
+14 (2025), Blade 18 (2023), and Blade 15 Base (2020) gain no HyperBoost writes. A shared mode-7
 enum alone does not establish an exact model's command contract.
 
 ### Blade 14 (2023): exact Synapse definitions
@@ -54,15 +54,166 @@ Useful character offsets: main 142,139 (identity), 142,487 (MCU minimum),
 (pad/firmware gate) and 1,876,601 (DC Balanced 6); base codec 59,644 and 70,580
 (thermal GET/SET); subclass 8,491 (overclocking dispatch, no mode-7 extra write).
 
-The source clears Maximum Fans before non-Custom transitions. OpenBlade cannot
-yet journal and restore that option on this model. HyperBoost therefore queries
-`07/8F` and blocks before any setter if Maximum Fans bit 2 is on. It never sends
-`07/0F` on the Blade 14, and preserves unrelated flags. This prerequisite applies
-to HyperBoost entry; ordinary Blade 14 mode transitions retain their existing
-behavior. The Blade 16 retains its separately admitted cleanup and restoration.
+The source clears Maximum Fans before non-Custom transitions. Product 669 also
+offers Maximum Fans as a user-facing Custom switch with the Blade 16 setter
+contract ([source review](../evidence/source-reviewed-blades/2026-11-19-rz09-0482-maximum-fans.json)),
+so the Blade 14 now represents it in Custom intent. HyperBoost entry and ordinary
+transitions out of Custom use the same guarded `07/0F [0]` cleanup as the Blade
+16: a fresh `07/8F` must show no other option set, and the cleared bit is
+confirmed before the mode setter. On exit, the service compares the journaled
+Custom intent with the confirmed flag and writes Maximum Fans back on. A refusal
+after the confirmed cleanup and before mode 7 reports a known state.
 Blade 18 product 672 has no HyperBoost entry in its exact mode list. A shared
 enum reference is insufficient to enable it. Its existing observed-only state
 remains unchanged.
+
+### Blade 16 (2024): exact Synapse definitions
+
+Product 695's exact Blade 16 module declares `isHyperBoostSystem`, a HyperBoost
+mode entry with its own fan range, the shared mode-7 value and MCU minimum
+1.3.0.0. Its ordinary modes are Balanced (0), Silent (5), Turbo (1) and Custom
+(4), with DC Balanced (6) on battery. It has no Performance (2) mode, so Turbo,
+the default AC mode, is the pad-present entry base. Silent, Balanced, Turbo and
+Custom enter directly and are restored on exit on AC. The battery exit hands off to
+DC Balanced raw 6 and confirms it as DC Balanced. Both pad paths use the same paired setter and
+independent readback as the 2023 laptop; padless use remains a source-backed
+extrapolation. No accessory-status write emulates a pad.
+
+| Official product-695 source | SHA-256 |
+| --- | --- |
+| [main.27df2e7ddab0b6bc34cc.js](https://apps.razer.com/synapse/products/695/mw/main.27df2e7ddab0b6bc34cc.js) | `A12CD7047CC1CF093DBB458D703BA4D18CFE77110F47391B180EA5B33BA5E379` |
+| [6737.7ec91e479ef65c194b6c.js](https://apps.razer.com/synapse/products/695/mw/6737.7ec91e479ef65c194b6c.js) | `22D359EB7EDA08A9D2F4766EB6898A875A5F009EDB666BA4CD5A0425491AD1DA` |
+| [rzDevice25.60bfcef58690c8bb715d.js](https://apps.razer.com/synapse/products/695/mw/rzDevice25.60bfcef58690c8bb715d.js) | `2D69449422DAC50C23A0EC81A5421CAB178BD04610725273FA67497574195491` |
+| [ui main.65ed4ee5.js](https://apps.razer.com/synapse/products/695/ui/static/js/main.65ed4ee5.js) | `74ECA71816B57B4C9BE3F83D3E5D894F95A2050D88FB2DF4B63A5AFFF5271612` |
+
+Useful byte offsets: main 48,781 and 48,922 (raw mode enum, including mode 7),
+117,552 (Turbo sent as raw 1), 141,152 (identity), 141,503 (MCU minimum),
+144,362 and 145,857 (Turbo and HyperBoost mode entries), 158,285
+(`defaultACPerformanceMode:1`), 163,099 (`needHyperboostRecheck`), 163,410
+(`isHyperBoostSystem`) and 101,870 (`systemSKU` getter); policy 1,255,621 (SKU
+predicates), 1,256,337 and 1,278,858 (`shouldDisableHyperboost`), 1,793,192 and 1,795,779 (mode and pad
+offer gated on it) and 2,386,571 (`isFirmwareSupported`). The
+[evidence record](../evidence/source-reviewed-blades/2026-11-20-rz09-0510-hyperboost.json)
+lists each finding.
+
+Product 695 omits `hasMaxFanSpeedModeEnabled` and `hasCpuBoostEnabled`. In its policy the
+first gates only the Maximum Fans clear and reapply around mode changes (bytes
+1,892,259 and 1,893,528) and a startup UI restore (1,295,124); the second gates a
+separate battery CPU Boost toggle (1,295,285). The UI still renders the Maximum
+Fans switch (ui byte 6,906,405) and the CPU Boost level (6,906,371), and the
+Maximum Fans setter handler (policy byte 1,189,750) is ungated, so both existing
+admissions stay. Synapse therefore does not clear Maximum Fans before HyperBoost
+on this laptop. OpenBlade deliberately deviates: it keeps the guarded cleanup it
+uses on the 2023 laptops and restores the saved Custom intent on exit, so every
+mode-7 laptop shares one cleanup path.
+
+### System SKU recheck
+
+Products 671 and 695 set `needHyperboostRecheck`. Their policies then set
+`shouldDisableHyperboost` when the tenth character of the Windows system SKU
+(`systemSKU.charAt(9)`) is `R`, `S`, `5` or `6`, and Synapse then offers no
+HyperBoost mode and no pad offer. OpenBlade matches that on RZ09-0483 and
+RZ09-0510: it declines new HyperBoost entries on those configurations and reports
+why. The check never limits turning HyperBoost off, restoring the saved mode, or
+recovering an interrupted session, so a laptop that is already in HyperBoost can
+always leave it. Like Synapse, a SKU that is missing or shorter than ten
+characters admits HyperBoost: `charAt(9)` then returns an empty string, which
+matches no excluded character. The SKU is read again whenever the laptop is
+opened, so a later read can add or remove the restriction. Other controls and
+host admission are unaffected, and diagnostics record only the evaluated
+character. Product 669's policy has a `5`/`6` predicate behind the same feature
+guard, but its main module never requests the recheck, so the RZ09-0482 stays
+ungated.
+
+The meaning of the character is not established. The RZ09-0510 updater lists four
+SKU cases, each with its own graphics BIOS: `RZ09-0510S` with 95.06.2F.00.1E,
+`RZ09-0510T` with 95.04.5F.00.39, and `RZ09-05102` and `RZ09-05103` with
+95.03.3B.00.2F ([models record](../evidence/source-reviewed-blades/2026-11-07-models.json)).
+So the character changes with the graphics BIOS family, but no reviewed source
+names the GPU or explains why Synapse excludes the `S` case. OpenBlade follows
+the predicate as written.
+
+### Battery exit
+
+On battery, every HyperBoost exit hands off to Balanced (DC raw 6), whatever base
+the session owns, and the readback confirms Balanced or DC Balanced with
+Automatic fans. Synapse sends Balanced on battery as raw 6 (policy byte
+1,398,122 for 671, 1,558,223 for 669 and 1,892,480 for 695) and restores its
+pre-HyperBoost mode only on AC (bytes 172,278, 1,240,504 and 1,295,406).
+
+The exit command is never gated on the destination intent. Battery intents are
+limited to Battery Saver and Battery Balanced, and the default battery profile is
+Battery Saver, which no mode-7 table lists; RZ09-0483 and RZ09-0482 have neither.
+When the saved battery mode isn't available, the exit still runs, the restore
+write is skipped, and the saved profile is kept. OpenBlade records the mode the
+exit landed on as its own result, so automation does not treat it as an outside
+change. That record covers the transition that made it and the next one, AC
+return included; any other confirmed state, before or after the startup
+reconciliation, or a new session, clears it. On RZ09-0483 and RZ09-0482 the
+record treats the Balanced battery reading and the DC Balanced reading after AC
+returns as the same raw 6; RZ09-0510 lists DC Balanced as its own preset, so
+its raw 0 Balanced is a different mode there. The owned base is not carried
+over: when AC returns, the plugged-in profile applies again.
+
+Synapse sets the plugged-in mode on AC attach without reading the current mode
+first (671 policy bytes 1,398,128 and 1,941,140; 669 bytes 1,558,229 and
+1,699,212), so the controller can still hold raw 6 after external power
+returns. Off battery, RZ09-0483 and RZ09-0482 read raw 6 as DC Balanced: no
+plugged-in intent matches it, and the typed plugged-in set leaves it with one
+write. On a transition from battery, that transitional reading is not an outside
+change, with or without a handoff record (for example after the service started
+on battery or a new Windows user signed in on battery), so the plugged-in profile
+applies through its normal fresh admission; any real AC mode is still compared.
+Raw 6 that another controller selects while external power stays connected is an
+outside change, and a later transition between external sources, such as plugged
+in to USB-C, keeps it that way without a write. RZ09-0510 reports raw 6 as DC
+Balanced on any source and lists it, so there it stays an outside change unless
+the handoff record covers it. RZ09-0484 shares the RZ09-0483 table but HyperBoost
+is observed only there, so it never makes this handoff and its raw 6 is compared.
+
+Synapse also enters Custom straight from the current mode, with the same per-fan
+mode-4 writes and, off battery, the CPU and GPU level writes, without reading or
+leaving that mode first (671 mw-6737 bytes 1,398,696 and 1,398,993; 669 bytes
+1,558,801 and 1,559,098; 695 bytes 1,893,039 and 1,893,371). OpenBlade's Custom
+setter therefore accepts a DC Balanced baseline off battery on these three
+models only, keeping its fan-baseline, Maximum Fans, stored-level and readback
+checks, so a plugged-in Custom profile also returns after a battery exit.
+
+The restore-only paths follow the same rule, on battery only. When firmware has
+already left mode 7 at the battery boundary, when an indeterminate exit is shown
+by a fresh read to have applied, or when a pending restore names a battery mode
+the table lacks, OpenBlade retires the journal once a fresh read on battery
+confirms HyperBoost off with Automatic fans and no write awaits confirmation.
+Nothing is written or replayed, the saved profile is kept, and the landed mode is
+recorded as above. The explicit recovery does the same on battery instead of
+waiting for AC. A lifecycle exit reports the skipped restore instead of claiming
+the entry-time profile. Every other pending restore keeps its earlier path: on AC
+a battery-mode journal is recovered to the current plugged-in destination, a
+deferred retry restores its current destination, and an AC intent that a fresh
+fan range narrows stays pending.
+
+The compensating exit after a failed journal finalization is an exit too: an
+entry restriction, direct-entry base or cooling-pad state that appears after
+activation doesn't refuse it.
+
+Before this change the battery exit was refused for every base with the real
+capability tables, because the destination intent was checked before the exit
+command and Battery Saver is in none of them. A session could stay in HyperBoost
+after unplugging. The shared fix applies to RZ09-0483, RZ09-0482 and RZ09-0510.
+
+The SKU entry restriction applies to the forward steps of an entry only. If it
+appears after a bridge write, the rollback to the entry-time intent still runs.
+
+### Manual fans
+
+Synapse's setter writes `[1, selector, mode, 0]` from any state (695 policy
+setter at byte 1,891,618; fan flag `auto:0` at byte 2,362,420), so it can leave
+mode 7 with manual fans set by its own UI. Its HyperBoost manual range is
+3400-5200 RPM (671 main byte 28,478, 669 main byte 145,346 and 695 main byte
+145,857). OpenBlade reports that state as HyperBoost with manual fans on every
+mode-7 model, without reading fan targets, and admits the exit from it; the
+readback must confirm Automatic fans. Entry still requires a confirmed ordinary
+mode.
 
 ## Vendor evidence
 
@@ -110,11 +261,13 @@ Every submitted entry command requires fresh exact identity, controller,
 full-power adapter and the journaled pad path, including at native submission.
 Pad-present entry requires the exact pad; padless entry requires confirmed
 absence. Ambiguous discovery admits neither path.
-The exact product modules declare MCU minimum 1.1.1.3 for Blade 14 and
-1.5.0.0 for Blade 16. Entry queries `00/87` (four zero request bytes, four version bytes)
+The exact product modules declare MCU minimum 1.1.1.3 for Blade 14,
+1.5.0.0 for Blade 16 (2023) and 1.3.0.0 for Blade 16 (2024). Entry queries `00/87` (four zero request bytes, four version bytes)
 and requires the model-specific minimum; this is an explicit source-backed MCU restriction,
 not a BIOS-version restriction. Exit remains available without this entry gate.
-Both models declare DC Balanced raw mode 6; AC Balanced is raw 0.
+All three models use DC Balanced raw mode 6; AC Balanced is raw 0. The 2023
+laptops report raw 6 as Balanced; the 2024 laptop reports it as DC Balanced, and
+the exit readback accepts that preset only on battery.
 
 Pad loss between selectors stops the sequence. A possibly submitted or
 unconfirmed write pauses all experimental writes; no alternate sequence or
@@ -122,11 +275,15 @@ setter replay follows. The existing service ownership journal records saved
 performance, Custom levels and fan intent for explicit exit and lifecycle
 cleanup. Exiting remains available after pad removal. Low-power cleanup selects
 the admitted Balanced/Automatic destination directly and preserves saved intent.
+A battery exit hands off to Balanced from every base, as described above.
 
 This is source-backed experimental support. No physical HyperBoost, thermal,
-sleep/resume or crash-recovery validation on an RZ09-0482 or RZ09-0483 was performed for this
-change. Existing RZ09-0528/0581 physical results do not establish those outcomes.
+sleep/resume or crash-recovery validation on an RZ09-0482, RZ09-0483 or RZ09-0510 was
+performed for these changes. Existing RZ09-0528/0581 physical results do not establish those outcomes.
 
 The explicit Blade 14 cooling-pad entry baseline is carried in IPC protocol 67.
 Protocol-66 readers reject the added nested member, so service and clients must
-be updated together through a full installation.
+be updated together through a full installation. IPC protocol 86 adds the Turbo
+base slot for the 2024 laptop and the HyperBoost entry restriction, and admits
+HyperBoost with manual fans, under the same full-installation rule; protocol 85
+is reserved by a separate pending change.

@@ -52,6 +52,24 @@ public sealed class BatteryOperationPlannerTests
         Assert.False(plan.Matches(new ConfirmedBatteryState(true, 80, false)));
     }
 
+    // A limiter that does not depend on the override already matches with an
+    // unreadable flag; nothing is written and nothing is blocked.
+    [Fact]
+    public void DesiredState_UnknownFullChargeMatchesIndependentLimiter()
+    {
+        var device = AdmittedDevice();
+        DeviceCapabilities capabilities = device.Capabilities with { ChargePolicyIndependentOfTemporaryFullCharge = true };
+        Assert.True(capabilities.SupportsTemporaryFullCharge);
+        BatteryOperationPlan plan = BatteryOperationPlanner.CreateBatteryPlan(
+            new DesiredBatteryState(BatteryPolicy.Create(80), true, false),
+            capabilities, new ConfirmedBatteryState(true, 80, null));
+
+        Assert.True(plan.Supported);
+        Assert.True(plan.InitiallyMatching);
+        Assert.IsType<BatteryOperation.None>(plan.Operation);
+        Assert.False(plan.Matches(new ConfirmedBatteryState(true, 80, true)));
+    }
+
     [Fact]
     public void EnableProtection_UsesStoredPolicyAndRequiresExactReadback()
     {

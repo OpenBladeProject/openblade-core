@@ -299,6 +299,13 @@ public sealed class ControlRequestHandler
                     report,
                     stillControlsActiveLocalSession,
                     cancellationToken)),
+            ReportWindowsDynamicLightingAdvisoryRequest report => Result(
+                request.RequestId,
+                await runtime.ReportWindowsDynamicLightingAdvisoryAsync(
+                    report,
+                    client.UserSid.Value,
+                    stillControlsActiveLocalSession,
+                    cancellationToken)),
             SetPerformanceOverrideRequest set => Result(
                 request.RequestId,
                 await runtime.SetPerformanceConfigurationOverrideAsync(
@@ -457,6 +464,9 @@ public sealed class ControlRequestHandler
                 await runtime.ApplyOneShotLaptopControlAsync(
                     apply.Value,
                     cancellationToken)),
+            ClearLocalDimmingRequest => Result(
+                request.RequestId,
+                await runtime.ClearLocalDimmingAsync(cancellationToken)),
             ExportDiagnosticsRequest export => await ExportDiagnosticsAsync(
                 export.RequestId,
                 export.LiveReadingsEnabled,

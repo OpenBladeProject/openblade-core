@@ -97,15 +97,34 @@ brightness read and the requested brightness target when necessary.
 
 These controls coexist with independent field editing. Old unmanaged profiles
 remain unmanaged; explicitly selecting an effect records separate keyboard-effect
-intent. That intent is not a firmware observation. The MCU establishes 6×16 row
-bounds, but no custom-frame backend or input-to-light map is admitted here.
+intent. That intent is not a firmware observation.
+
+## Host-drawn effects
+
+The [keyboard frame review](../evidence/source-reviewed-blades/2026-11-19-rz09-0301-keyboard-frames.json)
+of the same image admits Fire, Wheel, Starlight and Tidal on the 6×16 grid, and
+uniform Ambient Awareness and Audio Meter frames. OpenBlade writes six `03/0B`
+rows, selects custom mode 8 with `0F/02 [0,5,8]` and confirms it through `0F/82`.
+It never sends `0F/03`. Before the first write it journals the confirmed
+built-in effect, and it refuses to start from custom, Spectrum or another
+unrestorable mode. Restoration uses the legacy `03/0A` setter and rewrites
+brightness only when the setter changed it.
+
+Every later frame first rereads `0F/82`. If a GPIO event or another app leaves
+mode 8, rendering stops with no further write or restore until the user
+chooses an effect. An unreadable, corrupt or downgraded recovery journal blocks
+every lighting change until the protected data storage is repaired. If the
+keyboard reports exactly the journaled baseline again, a new host-drawn effect
+may start from it, and every restore after a mode 8 selection uses the
+flag-clearing setter.
+Reactive, Ripple and sequences stay unavailable because no
+reviewed input-to-light map exists for this model.
 
 ## Remaining source limits and verification
 
 Custom mode 8 is observed without pixel contents. A new typed built-in effect
 can replace it directly, but it cannot supply a framebuffer restoration baseline.
-Host-frame ownership, lifecycle and exact restoration retain their separate
-implementation limits.
+Host-drawn frames therefore require a restorable built-in baseline first.
 
 Charge limits and temporary full charge remain unadmitted: product 581 does not
 enable the shared battery-optimizer path. Shared helper presence does not prove

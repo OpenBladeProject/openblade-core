@@ -85,7 +85,7 @@ internal sealed partial class ExperimentalBladePort
                         or LightingRendererOwnershipState.Ripple)
                     || !(model.ProductId == 0x02C7
                         ? Rz090529KeyboardLightingLayout.IsKeySlot(pulse.MatrixSlot)
-                        : Blade14KeyboardLightingLayout.IsKeySlot(pulse.MatrixSlot)))
+                        : Blade14KeyboardLightingLayout.IsKeySlot(blade14KeyboardEdition, pulse.MatrixSlot)))
                 {
                     throw new CapabilityUnavailableException(
                         "Key-triggered lighting input is outside the reviewed Blade 14 map or owner.");
@@ -127,6 +127,7 @@ internal sealed partial class ExperimentalBladePort
         bool keyTriggered = gridEffect?.IsKeyTriggered == true || spatialEffect?.IsKeyTriggered == true;
         // StartAnimationCore follows the successful initial frame submission.
         IReadOnlyList<RgbColor>? lastKeyFrame = keyTriggered ? keyboardMirrorFrame : null;
+        IReadOnlyList<RgbColor>? lastVaporChamberFrame = keyTriggered ? vaporChamberMirrorFrame : null;
         long lastKeyFrameTimestamp = started;
         bool sequencePlayback = sequenceEffect is not null || gridEffect?.IsSequence == true;
         TimeSpan? firstChange = gridEffect?.IsSequence == true
@@ -165,12 +166,20 @@ internal sealed partial class ExperimentalBladePort
                         if (gridEffect is not null)
                         {
                             IReadOnlyList<RgbColor> colors;
-                            lock (animationEffectSync) { colors = gridEffect.RenderFrame(elapsed); }
-                            if (ShouldSubmitFrame(colors))
+                            IReadOnlyList<RgbColor>? vaporChamber = null;
+                            lock (animationEffectSync)
                             {
-                                await SubmitExperimentalGridFrameAsync(colors, activate: false,
+                                colors = gridEffect.RenderFrame(elapsed);
+                                if (lightingOwnership.VaporChamberFrames)
+                                {
+                                    vaporChamber = gridEffect.RenderVaporChamber(elapsed);
+                                }
+                            }
+                            if (ShouldSubmitFrame(colors, vaporChamber))
+                            {
+                                await SubmitExperimentalGridFrameAsync(colors, vaporChamber, activate: false,
                                     CancellationToken.None, static () => { }).ConfigureAwait(false);
-                                RecordSubmittedFrame(colors);
+                                RecordSubmittedFrame(colors, vaporChamber);
                             }
                         }
                         else
@@ -193,10 +202,12 @@ internal sealed partial class ExperimentalBladePort
                             }
                         }
                     }
-                    catch (BladeWriteException exception) when (LightingRecoveryWriteGate.IsDeferral(exception))
+                    catch (BladeWriteException exception) when (LightingRecoveryWriteGate.IsDeferral(exception)
+                        || exception.FailurePhase == BladeWriteFailurePhase.LightingSelectionRead)
                     {
                         // Nothing was submitted. Advance to the next animation time;
-                        // recovery admission keeps every later row paused as needed.
+                        // recovery admission keeps every later row paused as needed,
+                        // and a refused ownership read observed no external change.
                     }
                     catch (Exception error)
                     {
@@ -237,21 +248,32 @@ internal sealed partial class ExperimentalBladePort
         {
         }
 
-        bool ShouldSubmitFrame(IReadOnlyList<RgbColor> colors) => !keyTriggered
-            || lastKeyFrame is null
-            || !colors.SequenceEqual(lastKeyFrame)
+        bool ShouldSubmitFrame(IReadOnlyList<RgbColor> colors, IReadOnlyList<RgbColor>? vaporChamber = null) =>
+            !keyTriggered
+            || !IsRepeatedKeyTriggeredFrame(colors, vaporChamber, lastKeyFrame, lastVaporChamberFrame)
             || animationTime.GetElapsedTime(lastKeyFrameTimestamp) >= KeyTriggeredFrameKeepalive;
 
-        void RecordSubmittedFrame(IReadOnlyList<RgbColor> colors)
+        void RecordSubmittedFrame(IReadOnlyList<RgbColor> colors, IReadOnlyList<RgbColor>? vaporChamber = null)
         {
             if (keyTriggered)
             {
                 lastKeyFrame = colors;
+                lastVaporChamberFrame = vaporChamber;
                 lastKeyFrameTimestamp = animationTime.GetTimestamp();
             }
             policy.RecordAnimationFrameApplied(settings.Effect);
         }
     }
+
+    // Keyboard and LED38 rows form one submitted frame for duplicate suppression:
+    // a changed LED38 row, or adding or dropping it, is a new frame.
+    internal static bool IsRepeatedKeyTriggeredFrame(
+        IReadOnlyList<RgbColor> colors, IReadOnlyList<RgbColor>? vaporChamber,
+        IReadOnlyList<RgbColor>? lastColors, IReadOnlyList<RgbColor>? lastVaporChamber) =>
+        lastColors is not null && colors.SequenceEqual(lastColors)
+        && (vaporChamber is null
+            ? lastVaporChamber is null
+            : lastVaporChamber is not null && vaporChamber.SequenceEqual(lastVaporChamber));
 
     private async Task SubmitBlade18FrameAsync(
         Blade18LightingFrame frame,

@@ -89,12 +89,12 @@ internal sealed class LampArrayGeometryFingerprintCache
 internal sealed class WindowsLampArrayObservationSource : ILampArrayObservationSource
 {
     private const ushort TargetVendorId = 0x1532;
-    private const ushort TargetProductId = 0x02C6;
     private static readonly TimeSpan EnumerationTimeout = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan ObservationTimeout = TimeSpan.FromSeconds(10);
     private readonly LampArrayGeometryFingerprintCache geometryCache = new();
 
     public async Task<LampArrayObservation> ObserveAsync(
+        ushort productId,
         CancellationToken cancellationToken)
     {
         using var bounded = CancellationTokenSource.CreateLinkedTokenSource(
@@ -119,7 +119,7 @@ internal sealed class WindowsLampArrayObservationSource : ILampArrayObservationS
                         .ConfigureAwait(false);
                     if (lampArray is not null
                         && lampArray.HardwareVendorId == TargetVendorId
-                        && lampArray.HardwareProductId == TargetProductId)
+                        && lampArray.HardwareProductId == productId)
                     {
                         exact.Add((device.Id, lampArray));
                     }
