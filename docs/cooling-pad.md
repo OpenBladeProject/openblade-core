@@ -18,10 +18,8 @@ manual curves follow the CPU, the GPU, or both; with both, the higher demand win
 Curve input uses the same smoothed temperatures as the laptop's manual fan
 curve, so a brief package spike does not change the fan speed. Fixed targets come from the selected mode configuration; Smart targets are the
 ramping speed the firmware reports. Neither is measured fan speed. Missing or stale temperature readings
-pause curve updates. The shared CPU temperature source currently rejects the
-firmware's constant readings, so CPU and combined CPU/GPU curves remain unavailable
-until a supported changing CPU reading is provided. GPU-only curves can use an
-active GPU's fresh temperature. Stop competing pad controllers before applying settings.
+pause curve updates. Curves use the same CPU package and GPU readings as the
+laptop's manual fan curve. Stop competing pad controllers before applying settings.
 Any running Razer service blocks pad writes, except Razer Experience Service, a
 model runner that Razer's driver packages install; it has no HID device access.
 
