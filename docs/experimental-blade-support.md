@@ -207,8 +207,9 @@ Battery Saver and Battery Balanced on battery power.
   full-power AC, with or without the Razer Laptop Cooling Pad. They require MCU
   firmware 1.1.1.3 or later on the Blade 14, 1.5.0.0 or later on the Blade 16
   (2023), and 1.3.0.0 or later on the Blade 16 (2024). Like Synapse, OpenBlade
-  turns HyperBoost off on Blade 16 configurations whose system SKU Synapse
-  excludes, and when it cannot read the SKU.
+  doesn't start HyperBoost on Blade 16 configurations whose system SKU Synapse
+  excludes; you can still turn it off there. On battery, HyperBoost ends in
+  Balanced, and your plugged-in mode returns when you plug in again.
   Blade 18 (2023) remains observed-only: turn HyperBoost off in Synapse before
   changing performance.
 - Charge limits use 1% steps; 100% turns protection off. The Blade 15 does not

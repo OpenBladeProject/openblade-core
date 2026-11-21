@@ -74,8 +74,8 @@ mode entry with its own fan range, the shared mode-7 value and MCU minimum
 1.3.0.0. Its ordinary modes are Balanced (0), Silent (5), Turbo (1) and Custom
 (4), with DC Balanced (6) on battery. It has no Performance (2) mode, so Turbo,
 the default AC mode, is the pad-present entry base. Silent, Balanced, Turbo and
-Custom enter directly and are restored on exit. The battery exit sends raw 6 and
-confirms it as DC Balanced. Both pad paths use the same paired setter and
+Custom enter directly and are restored on exit on AC. The battery exit hands off to
+DC Balanced raw 6 and confirms it as DC Balanced. Both pad paths use the same paired setter and
 independent readback as the 2023 laptop; padless use remains a source-backed
 extrapolation. No accessory-status write emulates a pad.
 
@@ -88,10 +88,10 @@ extrapolation. No accessory-status write emulates a pad.
 
 Useful byte offsets: main 48,781 and 48,922 (raw mode enum, including mode 7),
 117,552 (Turbo sent as raw 1), 141,152 (identity), 141,503 (MCU minimum),
-144,379 and 145,857 (Turbo and HyperBoost mode entries), 158,285
-(`defaultACPerformanceMode:1`), 163,111 (`needHyperboostRecheck`) and 163,422
-(`isHyperBoostSystem`); policy 1,255,621 (SKU predicates), 1,256,342 and
-1,278,863 (`shouldDisableHyperboost`), 1,793,192 and 1,795,779 (mode and pad
+144,362 and 145,857 (Turbo and HyperBoost mode entries), 158,285
+(`defaultACPerformanceMode:1`), 163,099 (`needHyperboostRecheck`), 163,410
+(`isHyperBoostSystem`) and 101,870 (`systemSKU` getter); policy 1,255,621 (SKU
+predicates), 1,256,337 and 1,278,858 (`shouldDisableHyperboost`), 1,793,192 and 1,795,779 (mode and pad
 offer gated on it) and 2,386,571 (`isFirmwareSupported`). The
 [evidence record](../evidence/source-reviewed-blades/2026-11-20-rz09-0510-hyperboost.json)
 lists each finding.
@@ -103,24 +103,57 @@ separate battery CPU Boost toggle (1,295,285). The UI still renders the Maximum
 Fans switch (ui byte 6,906,405) and the CPU Boost level (6,906,371), and the
 Maximum Fans setter handler (policy byte 1,189,750) is ungated, so both existing
 admissions stay. Synapse therefore does not clear Maximum Fans before HyperBoost
-on this laptop. OpenBlade keeps its guarded cleanup and restores the saved Custom
-intent on exit, as on the 2023 laptops.
+on this laptop. OpenBlade deliberately deviates: it keeps the guarded cleanup it
+uses on the 2023 laptops and restores the saved Custom intent on exit, so every
+mode-7 laptop shares one cleanup path.
 
 ### System SKU recheck
 
-Products 671 and 695 set `needHyperboostRecheck`. Their policies then turn
-HyperBoost off when the tenth character of the Windows system SKU
-(`systemSKU.charAt(9)`) is `R`, `S`, `5` or `6`. A disabled laptop shows no
-HyperBoost mode and no pad offer in Synapse. The meaning of that character is not
-established; OpenBlade follows the predicate as written on RZ09-0483 and RZ09-0510
-and reports HyperBoost as observed only on those configurations. The RZ09-0510
-updater lists SKUs `RZ09-0510S`, `RZ09-0510T`, `RZ09-05102` and `RZ09-05103`,
-so the `S` variant is excluded. Synapse admits a SKU too short to evaluate;
-OpenBlade instead keeps HyperBoost observed only when the SKU is missing or
-shorter than ten characters, because that is not evidence about the predicate.
-Other controls and host admission are unaffected, and diagnostics record only the
-evaluated character. Product 669's policy has a `5`/`6` predicate, but its main
-module never requests the recheck, so the RZ09-0482 stays ungated.
+Products 671 and 695 set `needHyperboostRecheck`. Their policies then set
+`shouldDisableHyperboost` when the tenth character of the Windows system SKU
+(`systemSKU.charAt(9)`) is `R`, `S`, `5` or `6`, and Synapse then offers no
+HyperBoost mode and no pad offer. OpenBlade matches that on RZ09-0483 and
+RZ09-0510: it declines new HyperBoost entries on those configurations and reports
+why. The check never limits turning HyperBoost off, restoring the saved mode, or
+recovering an interrupted session, so a laptop that is already in HyperBoost can
+always leave it. Like Synapse, a SKU that is missing or shorter than ten
+characters admits HyperBoost: `charAt(9)` then returns an empty string, which
+matches no excluded character. The SKU is read again whenever the laptop is
+opened, so a later read can add or remove the restriction. Other controls and
+host admission are unaffected, and diagnostics record only the evaluated
+character. Product 669's policy has a `5`/`6` predicate behind the same feature
+guard, but its main module never requests the recheck, so the RZ09-0482 stays
+ungated.
+
+The meaning of the character is not established. The RZ09-0510 updater lists four
+SKU cases, each with its own graphics BIOS: `RZ09-0510S` with 95.06.2F.00.1E,
+`RZ09-0510T` with 95.04.5F.00.39, and `RZ09-05102` and `RZ09-05103` with
+95.03.3B.00.2F ([models record](../evidence/source-reviewed-blades/2026-11-07-models.json)).
+So the character changes with the graphics BIOS family, but no reviewed source
+names the GPU or explains why Synapse excludes the `S` case. OpenBlade follows
+the predicate as written.
+
+### Battery exit
+
+On battery, every HyperBoost exit hands off to Balanced (DC raw 6), whatever base
+the session owns, and the readback confirms Balanced or DC Balanced with
+Automatic fans. The owned base and the saved profile stay as intent, and the next
+AC reconciliation restores them. Synapse sends Balanced on battery as raw 6
+(policy byte 1,398,122 for 671, 1,558,223 for 669 and 1,892,480 for 695) and
+restores its pre-HyperBoost mode only on AC (bytes 172,278, 1,240,504 and
+1,295,406). Before this change the port refused a battery exit from any base
+other than Balanced, so a session entered from Performance, Silent, Custom or
+Turbo could stay in HyperBoost after unplugging. The shared fix applies to RZ09-0483,
+RZ09-0482 and RZ09-0510.
+
+### Manual fans
+
+Synapse's setter writes `[1, selector, mode, 0]` from any state (695 policy
+setter at byte 1,891,618; fan flag `auto:0` at byte 2,362,420), so it can leave
+mode 7 with manual fans set by its own UI. OpenBlade reports that state as
+HyperBoost with manual fans, without reading fan targets, and admits the exit
+from it; the readback must confirm Automatic fans. Entry still requires a
+confirmed ordinary mode.
 
 ## Vendor evidence
 
@@ -182,6 +215,7 @@ setter replay follows. The existing service ownership journal records saved
 performance, Custom levels and fan intent for explicit exit and lifecycle
 cleanup. Exiting remains available after pad removal. Low-power cleanup selects
 the admitted Balanced/Automatic destination directly and preserves saved intent.
+A battery exit hands off to Balanced from every base, as described above.
 
 This is source-backed experimental support. No physical HyperBoost, thermal,
 sleep/resume or crash-recovery validation on an RZ09-0482, RZ09-0483 or RZ09-0510 was
@@ -190,5 +224,6 @@ performed for these changes. Existing RZ09-0528/0581 physical results do not est
 The explicit Blade 14 cooling-pad entry baseline is carried in IPC protocol 67.
 Protocol-66 readers reject the added nested member, so service and clients must
 be updated together through a full installation. IPC protocol 86 adds the Turbo
-base slot for the 2024 laptop under the same full-installation rule; protocol 85
+base slot for the 2024 laptop and the HyperBoost entry restriction, and admits
+HyperBoost with manual fans, under the same full-installation rule; protocol 85
 is reserved by a separate pending change.
