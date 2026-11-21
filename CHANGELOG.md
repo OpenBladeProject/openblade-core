@@ -8,6 +8,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 ### Added
 
 - Add the Custom Maximum Fans switch on Blade 14 (2023, RZ09-0482), following its own Synapse source. Starting HyperBoost from Custom turns Maximum Fans off, and ending HyperBoost turns it back on. Maximum Fans can't change while CPU Boost or another option set in Synapse is on; turn it off there first. ([#986](https://github.com/OpenBladeProject/openblade-core/pull/986))
+- Add Fire, Wheel, Starlight, Tidal, Ambient Awareness and Audio Meter keyboard lighting on Blade 15 Advanced (Mid 2019, RZ09-0301), Blade 15 (2022, RZ09-0421), Blade 17 (2022, RZ09-0423) and Blade 14 (2022, RZ09-0427). Start them from Off, Breathing, Wave or, where available, Static so OpenBlade can put that effect back afterwards. If another app changes the keyboard effect, OpenBlade stops drawing until you choose an effect. These effects are based on firmware review and have not been tested on these laptops yet. ([#988](https://github.com/OpenBladeProject/openblade-core/pull/988))
+- Light the Vapor Chamber on Blade 18 (2025, RZ09-0529) with the keyboard's Spectrum, Fire, Wheel, Starlight, Tidal, Ripple, Ambient Awareness and Audio Meter effects when its current effect is Off, Static, Breathing or Wave, so OpenBlade can put it back afterwards. With any other Vapor Chamber effect, these effects stay on the keyboard. ([#985](https://github.com/OpenBladeProject/openblade-core/pull/985))
 - Add an Automatic fan mode for the cooling pad with Quiet, Balanced and Performance profiles, following the CPU, the GPU or both the way Razer Synapse does. ([#983](https://github.com/OpenBladeProject/openblade-core/pull/983))
 
 ### Changed

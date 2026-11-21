@@ -504,6 +504,8 @@ public sealed partial class SourceReviewedBladeModelTests
         internal byte LogoOn = 1;
         internal byte LogoEffect;
         internal byte[] McuLighting = [0, 5, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        // LED38 defaults to unrestorable Spectrum, so frames stay keyboard-only.
+        internal byte[] McuVaporChamber = [0, 38, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0];
         internal bool EchoLightingAck;
         internal bool EchoThermalAck;
         internal byte SavedBrightness = 128;
@@ -514,6 +516,13 @@ public sealed partial class SourceReviewedBladeModelTests
         private RazerCommandSessionDisposition disposition;
         internal bool RejectLogoQuery;
         internal bool RejectVaporChamberQuery;
+        // Rejects the LED38 effect GET (0F/82 region 38), not the 03/80 enabled GET.
+        internal bool RejectVaporChamberEffectQuery;
+        // Acknowledges LED38 effect SETs without changing the record.
+        internal bool IgnoreVaporChamberWrites;
+        // Returned for the LED38 effect GET before it is recorded, like a refusal
+        // that never reaches the device.
+        internal HidSessionResult<ReadOnlyMemory<byte>>? VaporChamberEffectQueryRefusal;
         internal byte Fan1 = 45;
         internal byte Fan2 = 45;
         internal byte[] DynamicFanRange = [0, 0, 0, 0, 0, 0, 37, 0, 45, 0, 53, 0];
@@ -529,6 +538,9 @@ public sealed partial class SourceReviewedBladeModelTests
         internal HidSessionResult<ReadOnlyMemory<byte>>? AdapterResult;
         internal bool AdapterResponseAvailable;
         internal Action<RazerCommandSpec>? BeforeSubmission;
+        // One-shot failures of the next keyboard 0F/82 read.
+        internal HidSessionFailureKind? McuSelectionReadFailure;
+        internal Exception? McuSelectionReadException;
         internal List<(byte ClassId, byte CommandId, FirmwareQueryOutcome Outcome)> RetainedQueryFailures { get; } = [];
         public void RetainQueryFailure(byte classId, byte commandId, FirmwareQueryOutcome outcome) =>
             RetainedQueryFailures.Add((classId, commandId, outcome));
@@ -547,8 +559,26 @@ public sealed partial class SourceReviewedBladeModelTests
                     Diagnostic = new(HidSessionFailurePhase.Guard, HidSessionFailureKind.IdentityBlocked, null, null),
                 });
             }
+            if (VaporChamberEffectQueryRefusal is { } refusal && command.ClassId == 0x0F
+                && command.CommandId == 0x82 && command.Arguments.Span[1] == 38)
+            {
+                return Task.FromResult(refusal);
+            }
             Commands.Add(command);
             Transactions.Add(assignTransactionId().TransactionId);
+            if (command.ClassId == 0x0F && command.CommandId == 0x82 && command.Arguments.Span[1] == 5)
+            {
+                if (McuSelectionReadException is { } thrown)
+                {
+                    McuSelectionReadException = null;
+                    throw thrown;
+                }
+                if (McuSelectionReadFailure is { } kind)
+                {
+                    McuSelectionReadFailure = null;
+                    return Task.FromResult(new HidSessionResult<ReadOnlyMemory<byte>>(default, kind));
+                }
+            }
             if (command.ClassId == 0x07 && command.CommandId == 0x8C && AdapterResult is { } adapterResult)
             {
                 return Task.FromResult(adapterResult);
@@ -559,6 +589,8 @@ public sealed partial class SourceReviewedBladeModelTests
                 || RejectLightingQuery && command.ClassId == 0x03 && command.CommandId >= 0x80
                 || RejectLogoQuery && command.ClassId == 0x03 && command.CommandId is 0x80 or 0x82
                 || RejectVaporChamberQuery && command.ClassId == 0x03 && command.CommandId == 0x80
+                    && command.Arguments.Span[1] == 38
+                || RejectVaporChamberEffectQuery && command.ClassId == 0x0F && command.CommandId == 0x82
                     && command.Arguments.Span[1] == 38)
             {
                 if (RetireOnQueryFailure)
@@ -575,7 +607,7 @@ public sealed partial class SourceReviewedBladeModelTests
                 (0x00, 0xD9) => [0, 1, 1],
                 (0x03, 0x82) => [0, 4, LogoEffect],
                 (0x03, 0x00) or (0x03, 0x02) or (0x03, 0x03) => EchoLightingAck ? arguments : [],
-                (0x0F, 0x82) => McuLighting.ToArray(),
+                (0x0F, 0x82) => arguments[1] == 38 ? McuVaporChamber.ToArray() : McuLighting.ToArray(),
                 (0x0F, 0x02) => arguments,
                 (0x03, 0x0A) or (0x03, 0x0B) => [],
                 (0x07, 0x8C) => Adapter,
@@ -616,6 +648,28 @@ public sealed partial class SourceReviewedBladeModelTests
                         }
                         Brightness = SavedBrightness;
                         McuCustomOverlay = false;
+                        break;
+                    case (0x0F, 0x02) when arguments[1] == 38 && IgnoreVaporChamberWrites:
+                        break;
+                    case (0x0F, 0x02) when arguments[1] == 38:
+                        // KI8110 LED38 setter shortcuts: same Off, same-count
+                        // Breathing and same-direction Wave keep the record.
+                        if (arguments[2] == McuVaporChamber[2] && (arguments[2] == 0
+                            || arguments[2] == 2 && arguments[5] == McuVaporChamber[5]
+                            || arguments[2] == 4 && arguments[3] == McuVaporChamber[3]))
+                        {
+                            break;
+                        }
+                        McuVaporChamber = [0, 38, arguments[2], 0, 0, 0, 0, 0, 0, 0, 0, 0];
+                        if (arguments[2] is 1 or 2)
+                        {
+                            arguments.AsSpan(3).CopyTo(McuVaporChamber.AsSpan(3));
+                        }
+                        if (arguments[2] == 4)
+                        {
+                            McuVaporChamber[3] = arguments[3];
+                            McuVaporChamber[4] = 40;
+                        }
                         break;
                     case (0x0F, 0x02):
                         if (arguments[2] == 0 && McuLighting[2] == 0)

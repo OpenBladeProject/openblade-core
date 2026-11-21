@@ -73,7 +73,7 @@ internal sealed partial class ExperimentalBladePort
             && !actual.Slice(6, arguments.Length - 6).SequenceEqual(arguments.AsSpan(6));
     }
 
-    private static byte[] CreateReviewedMcuBreathingArguments(LightingSettings settings, bool legacy)
+    private static byte[] CreateReviewedMcuBreathingArguments(LightingSettings settings, bool legacy, byte region = 5)
     {
         byte count;
         byte[] colors;
@@ -95,15 +95,15 @@ internal sealed partial class ExperimentalBladePort
             default:
                 throw new CapabilityUnavailableException("The requested MCU Breathing colors are not admitted.");
         }
-        return legacy ? [3, count == 0 ? (byte)3 : count, .. colors] : [0, 5, 2, 0, 0, count, .. colors];
+        return legacy ? [3, count == 0 ? (byte)3 : count, .. colors] : [0, region, 2, 0, 0, count, .. colors];
     }
 
-    private static byte[] CreateReviewedMcuEffectArguments(LightingSettings settings) => settings.Effect switch
+    private static byte[] CreateReviewedMcuEffectArguments(LightingSettings settings, byte region = 5) => settings.Effect switch
     {
-        LightingEffect.Off => [0, 5, 0],
-        LightingEffect.Static => [0, 5, 1, 0, 0, 1, settings.Color.Red, settings.Color.Green, settings.Color.Blue],
-        LightingEffect.Breathing => CreateReviewedMcuBreathingArguments(settings, legacy: false),
-        LightingEffect.Wave => [0, 5, 4, ReviewedMcuWaveDirection(settings)],
+        LightingEffect.Off => [0, region, 0],
+        LightingEffect.Static => [0, region, 1, 0, 0, 1, settings.Color.Red, settings.Color.Green, settings.Color.Blue],
+        LightingEffect.Breathing => CreateReviewedMcuBreathingArguments(settings, legacy: false, region),
+        LightingEffect.Wave => [0, region, 4, ReviewedMcuWaveDirection(settings)],
         _ => throw new CapabilityUnavailableException("This MCU lighting destination is not admitted."),
     };
 
@@ -150,6 +150,8 @@ internal sealed partial class ExperimentalBladePort
             [0, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], false, token,
             variableResponse: true, payloadValidator: static value => value.Length == 12)
             .ConfigureAwait(false);
+        // Any answer from this register ends a run of refused ownership reads.
+        ResetReviewedMcuSelectionDeferral();
         try
         {
             _ = DecodeReviewedMcuEffect(payload.Span, 100);
@@ -247,4 +249,248 @@ internal sealed partial class ExperimentalBladePort
         "The reviewed MCU lighting reply has an unknown effect or inconsistent parameters.",
         DeviceStateQuery.KeyboardLightingEffect,
         DeviceStateContentRejection.FormatPayload(payload));
+
+    // LED38, the RZ09-0529 Vapor Chamber. Only Synapse product 711 wires
+    // hasVCLed. KI8110 1.07.00 (class-0F handler 0x9400, get table 0x9524,
+    // set table 0x96B2) keeps its bank-0 record at 0x100015D6 + 0x40 * 2.
+    // See docs/rz09-0529-lighting-expansion.md.
+    private const byte VaporChamberRegion = 38;
+
+    private static bool SupportsRz090529VaporChamberFrames(ExperimentalBladeModel model) =>
+        model.ProductId == 0x02C7;
+
+    private ExperimentalVaporChamberAvailability? vaporChamberAvailability;
+    private ExperimentalVaporChamberAvailability.Key vaporChamberAvailabilityKey;
+    private bool vaporChamberReadFailed;
+
+    // The factory binds its identity-scoped result so every later session for the
+    // same device reuses a completed failure. A directly constructed port keeps
+    // only its own result.
+    internal void BindVaporChamberAvailability(
+        ExperimentalVaporChamberAvailability availability, ExperimentalVaporChamberAvailability.Key key)
+    {
+        vaporChamberAvailability = availability;
+        vaporChamberAvailabilityKey = key;
+    }
+
+    private bool VaporChamberReadAvailable => !vaporChamberReadFailed
+        && vaporChamberAvailability?.Get(vaporChamberAvailabilityKey) != false;
+
+    private void SettleVaporChamberAvailability(bool available)
+    {
+        vaporChamberReadFailed |= !available;
+        vaporChamberAvailability?.Settle(vaporChamberAvailabilityKey, available);
+    }
+
+    // Only a GET that the MCU could have received settles LED38 availability. A
+    // shared-gate refusal, queued cancellation, exhausted transaction IDs or an
+    // already unusable session never sent it, so the next open probes again.
+    private static bool VaporChamberReadReachedDevice(IOException exception) =>
+        exception is not NativeDeviceReadException native
+        || native.Diagnostic?.Phase is not (HidSessionFailurePhase.SharedGateAdmission or HidSessionFailurePhase.Guard)
+            && native.Failure is not (HidSessionFailureKind.QueuedCanceled or HidSessionFailureKind.Canceled
+                or HidSessionFailureKind.Exhausted or HidSessionFailureKind.Disposed
+                or HidSessionFailureKind.Poisoned);
+
+    // Optional open-time probe, run once for each admitted identity before the port
+    // is published. Shipped keyboard effects never depend on it: a rejected GET
+    // leaves later frames keyboard-only, and a GET that poisons this session is
+    // rethrown so the factory drains it and opens one fresh session without it.
+    internal async Task InitializeRz090529VaporChamberAvailabilityAsync(CancellationToken cancellationToken)
+    {
+        if (!SupportsRz090529VaporChamberFrames(model) || vaporChamberAvailability is null)
+        {
+            return;
+        }
+        await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (vaporChamberAvailability.Get(vaporChamberAvailabilityKey) is not null)
+            {
+                return;
+            }
+            if (!exactHostStillPresent())
+            {
+                throw new CapabilityUnavailableException("The exact Blade 18 is no longer verified.");
+            }
+            _ = await ReadReviewedVaporChamberEffectAsync(cancellationToken).ConfigureAwait(false);
+            SettleVaporChamberAvailability(true);
+        }
+        catch (IOException exception)
+        {
+            // A wait canceled at the shared command gate is cancellation, as for
+            // the Blade 18 layout probe.
+            cancellationToken.ThrowIfCancellationRequested();
+            bool answered = VaporChamberReadReachedDevice(exception);
+            if (answered)
+            {
+                SettleVaporChamberAvailability(false);
+            }
+            if (session.Disposition != RazerCommandSessionDisposition.Healthy)
+            {
+                throw;
+            }
+            RecordQuery("VaporChamberEffect", "Unavailable",
+                failure: answered ? "VaporChamberFramesUnavailable" : "VaporChamberProbeDeferred");
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
+
+    // Reads LED38 for a host-frame decision. When OpenBlade selected LED38 the read
+    // is required to return it. Otherwise LED38 is optional: a failed read on a
+    // usable session leaves this owner keyboard-only, and a poisoned session still
+    // fails the request before any write. Only a device answer keeps later
+    // requests from reading again. A read that never reached the MCU (shared-gate
+    // refusal, queued cancellation) leaves just this request keyboard-only, so a
+    // running renderer is replaced normally instead of being faulted.
+    private async Task<(LightingSettings? Settings, byte Mode)?> ReadVaporChamberForFramesAsync(
+        bool required, CancellationToken token)
+    {
+        try
+        {
+            return await ReadReviewedVaporChamberEffectAsync(token).ConfigureAwait(false);
+        }
+        catch (IOException exception) when (!token.IsCancellationRequested)
+        {
+            if (required)
+            {
+                throw;
+            }
+            bool answered = VaporChamberReadReachedDevice(exception);
+            if (answered)
+            {
+                SettleVaporChamberAvailability(false);
+            }
+            if (session.Disposition != RazerCommandSessionDisposition.Healthy)
+            {
+                throw;
+            }
+            RecordQuery("VaporChamberEffect", "Unavailable",
+                failure: answered ? "VaporChamberFramesUnavailable" : "VaporChamberReadDeferred");
+            return null;
+        }
+    }
+
+    // Write-ahead record that LED38 may be selected, saved before [0,38,8] can be
+    // submitted. Only this record lets a later restore write LED38.
+    private void RecordRz090529VaporChamberSelection()
+    {
+        ExperimentalLightingBaseline baseline = lightingOwnership.Baseline
+            ?? throw new IOException("The pre-frame lighting baseline is unavailable.");
+        if (baseline.VaporChamber is not null)
+        {
+            return;
+        }
+        ExperimentalLightingBaseline selected = baseline with
+        {
+            VaporChamber = lightingOwnership.VaporChamberDestination
+                ?? throw new IOException("The Vapor Chamber restore destination is unavailable."),
+        };
+        lightingOwnership.Journal?.ReplacePendingVaporChamber(selected);
+        lightingOwnership.Baseline = selected;
+    }
+
+    // LED38 is no longer OpenBlade's: it was restored, or another controller took it.
+    private void ReleaseRz090529VaporChamberSelection()
+    {
+        if (lightingOwnership.Baseline is not { VaporChamber: not null } baseline)
+        {
+            return;
+        }
+        ExperimentalLightingBaseline released = baseline with { VaporChamber = null };
+        lightingOwnership.Journal?.ReplacePendingVaporChamber(released);
+        lightingOwnership.Baseline = released;
+        lightingOwnership.VaporChamberFrames = false;
+    }
+
+    private async Task<(LightingSettings? Settings, byte Mode)> ReadReviewedVaporChamberEffectAsync(
+        CancellationToken token)
+    {
+        ReadOnlyMemory<byte> payload = await ExchangeAsync("VaporChamberEffect", 0x0F, 0x82,
+            [0, VaporChamberRegion, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], false, token,
+            variableResponse: true, payloadValidator: static value => value.Length == 12)
+            .ConfigureAwait(false);
+        LightingSettings? settings = DecodeReviewedVaporChamberEffect(payload.Span);
+        RecordQuery("VaporChamberEffect", settings is null ? "Unavailable" : "Confirmed",
+            settings?.Effect.ToString() ?? $"Mode{payload.Span[2]}",
+            settings is null ? "EffectParametersReadbackUnavailable" : null);
+        return (settings, payload.Span[2]);
+    }
+
+    // Returns null for a record that cannot be restored: Spectrum's hidden
+    // gate/palette, Starlight's unreturned rec+0xA, mode 9's external
+    // parameters, custom pixels and any incomplete record. A reply that does
+    // not echo region 38 is a read failure, not an unrestorable record.
+    private static LightingSettings? DecodeReviewedVaporChamberEffect(ReadOnlySpan<byte> payload)
+    {
+        if (payload.Length != 12 || payload[0] != 0 || payload[1] != VaporChamberRegion)
+        {
+            throw new IOException("The Vapor Chamber effect reply did not match the region 38 contract.");
+        }
+        // No VC setter changes record brightness; the restore destination is
+        // the effect and its parameters at full nominal brightness.
+        const byte brightness = 100;
+        bool unusedFlags = payload[3] == 0 && payload[4] == 0;
+        RgbColor primary = new(payload[6], payload[7], payload[8]);
+        RgbColor secondary = new(payload[9], payload[10], payload[11]);
+        return payload[2] switch
+        {
+            0 when !payload[3..].ContainsAnyExcept((byte)0) => LightingSettingsFactory.Off(),
+            1 when unusedFlags && payload[5] == 1 && !payload[9..].ContainsAnyExcept((byte)0)
+                => LightingSettingsFactory.Static(primary, brightness),
+            2 when unusedFlags && payload[5] == 0 && !payload[6..].ContainsAnyExcept((byte)0)
+                => LightingSettingsFactory.BreathingRandom(brightness),
+            2 when unusedFlags && payload[5] == 1 && !payload[9..].ContainsAnyExcept((byte)0)
+                => LightingSettingsFactory.BreathingSingle(primary, brightness),
+            2 when unusedFlags && payload[5] == 2
+                => LightingSettingsFactory.BreathingDual(primary, secondary, brightness),
+            4 when payload[3] is 1 or 2 && payload[4] == 40 && !payload[5..].ContainsAnyExcept((byte)0)
+                => LightingSettingsFactory.Wave(payload[3] == 1
+                    ? LightingDirection.Leftward : LightingDirection.Rightward, brightness),
+            _ => null,
+        };
+    }
+
+    // Restore LED38 only when the durable record says OpenBlade may have selected
+    // it and it still reads custom mode 8. From mode 8 every restorable setter
+    // clears the custom-ownership flag and bypasses its same-mode shortcuts
+    // (KI8110 1.07.00 set table 0x96B2), so no bridge effect is needed. Any other
+    // mode means another controller replaced the frame; leave it unchanged. The
+    // selection record is removed only after a confirmed restore or a skip.
+    private async Task RestoreRz090529VaporChamberAsync(ExperimentalLightingBaseline baseline,
+        byte? currentMode, CancellationToken token, Action markSubmitted)
+    {
+        // Only RZ09-0529 has a reviewed LED38 contract; the journal rejects an
+        // LED38 record for any other product.
+        if (!SupportsRz090529VaporChamberFrames(model) || baseline.VaporChamber is not { } destination)
+        {
+            return;
+        }
+        byte mode = currentMode ?? (await ReadReviewedVaporChamberEffectAsync(token).ConfigureAwait(false)).Mode;
+        if (mode != 8)
+        {
+            policy.Record("VaporChamberEffect", "Restore", "Skipped",
+                requested: destination.Effect.ToString(), confirmed: $"Mode{mode}",
+                failure: "ExternallyChanged");
+            ReleaseRz090529VaporChamberSelection();
+            return;
+        }
+        RequireWriteAdmission();
+        await ExchangeAsync("VaporChamberEffect", 0x0F, 0x02,
+            CreateReviewedMcuEffectArguments(destination, VaporChamberRegion), true, token,
+            variableResponse: true, payloadValidator: static value => value.Length <= RazerReport.MaximumPayloadLength,
+            requireEcho: false).ConfigureAwait(false);
+        markSubmitted();
+        (LightingSettings? actual, _) = await ReadReviewedVaporChamberEffectAsync(token).ConfigureAwait(false);
+        if (actual is null || !KeyboardSettingsMatch(actual, destination))
+        {
+            throw new IOException("Independent Vapor Chamber readback did not confirm restoration.");
+        }
+        policy.Record("VaporChamberEffect", "Restore", "Confirmed", true,
+            requested: destination.Effect.ToString(), confirmed: actual.Effect.ToString());
+        ReleaseRz090529VaporChamberSelection();
+    }
 }
