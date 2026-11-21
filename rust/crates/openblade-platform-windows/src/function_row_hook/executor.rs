@@ -247,7 +247,8 @@ fn require_applied(outcome: EffectOutcome<()>) -> Result<(), ActionFailure> {
 }
 
 /// Single current-user consumer. The caller supplies the effects and owns
-/// their lifetime. There is no installed host wired to this worker.
+/// their lifetime. The native Agent role `agent-function-row-v1` runs it with
+/// effects that submit nothing.
 pub struct ActionWorker {
     actions: HookActions,
     executor: Executor,

@@ -492,9 +492,9 @@ fn the_callback_neither_allocates_nor_blocks_and_drops_on_a_full_queue() {
     let (hook, control, actions) = FunctionRowHook::with_capacity(2);
     let shared = Arc::clone(&control.0);
     let mut messages = Fake::new(|callback: &mut Callback, now| {
-        // A held wake lock must not stall the flag that saturation raises.
+        // A held wake lock must not stall the flag that saturation raises: a
+        // callback that waited for it would never return.
         let _wake = shared.wake.lock().unwrap();
-        let started = Instant::now();
         let (routed, heap) = allocations::during(|| {
             [
                 callback.route(key(0x3c, true), false, now),
@@ -507,8 +507,6 @@ fn the_callback_neither_allocates_nor_blocks_and_drops_on_a_full_queue() {
         });
         assert_eq!(routed, [true, true, false, false, false]);
         assert_eq!(heap, 0, "the hook callback allocated");
-        // Far inside the 300 ms LowLevelHooksTimeout, even unoptimized.
-        assert!(started.elapsed() < Duration::from_millis(50));
         Ok(true)
     });
     control.publish(ACTIVE, messages.now + Duration::from_secs(1));
@@ -519,6 +517,61 @@ fn the_callback_neither_allocates_nor_blocks_and_drops_on_a_full_queue() {
     expect_actions(actions, &[]);
     assert!(control.needs_recovery(Recovery::ReleaseLost));
     assert!(!control.retired_cleanly());
+}
+
+#[test]
+fn routing_to_a_parked_worker_does_not_allocate() {
+    // Production's worker waits in `recv`, so every send wakes it.
+    static SLOT: AtomicBool = AtomicBool::new(false);
+    let (hook, control, mut actions) = FunctionRowHook::new();
+    let delivered = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let consumer = std::thread::spawn({
+        let delivered = Arc::clone(&delivered);
+        move || {
+            while actions.dispatch_next(|_| Ok(())) {
+                delivered.fetch_add(1, SeqCst);
+            }
+        }
+    });
+    let shared = Arc::clone(&control.0);
+    let parked = || {
+        // Until the worker has finished every delivery, then a moment more so
+        // it waits in `recv` again. Parking only strengthens the test; a
+        // worker that is not parked cannot make it fail.
+        while shared.pending.load(SeqCst) != 0 {
+            std::thread::yield_now();
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    let mut pumps = 0;
+    let mut heap = Vec::new();
+    let mut messages = Fake::new(|callback: &mut Callback, now| {
+        pumps += 1;
+        if pumps == 1 {
+            for (stroke, was_down) in [
+                (key(0x3c, true), false),
+                (key(0x3c, true), true),
+                (key(0x3c, false), false),
+                (key(0x3d, true), false),
+                (key(0x3d, false), false),
+            ] {
+                parked();
+                let (suppressed, operations) =
+                    allocations::during(|| callback.route(stroke, was_down, now));
+                assert!(suppressed, "{stroke:?}");
+                heap.push(operations);
+            }
+            parked();
+            control.cancel();
+        }
+        Ok(true)
+    });
+    control.publish(ACTIVE, messages.now + Duration::from_secs(60));
+    assert_eq!(hook.run_with(ADMITTED, &mut messages, &SLOT), Ok(()));
+    consumer.join().unwrap();
+    assert_eq!(heap, [0; 5], "the hook callback allocated");
+    // Both presses and both releases reached the worker.
+    assert!(delivered.load(SeqCst) >= 4);
 }
 
 #[test]

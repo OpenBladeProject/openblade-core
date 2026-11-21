@@ -345,8 +345,9 @@ impl HookActions {
     }
 }
 
-/// Run on a dedicated current-user message thread. This adapter has no
-/// production caller in this stage.
+/// Run on a dedicated current-user message thread. The native Agent role
+/// `agent-function-row-v1` runs it on RZ09-0581; packaging still refuses that
+/// role.
 pub struct FunctionRowHook {
     shared: Arc<Shared>,
     sender: SyncSender<Delivery>,
