@@ -167,6 +167,13 @@ fn main() {
         } else {
             "none"
         };
+        // No package reader admits the read-only keyboard Driver mode, so its
+        // marker follows whatever composition the Service otherwise claims.
+        let capabilities = if role == "service" && has("service-keyboard-driver-mode-read-v1") {
+            format!("{capabilities},service-keyboard-driver-mode-read-v1")
+        } else {
+            capabilities.to_owned()
+        };
         let record = format!(
             "OpenBlade.NativeArtifact.v2\n{id}\n{role}\n{target}\n{source}\n{}\n{}\n{profile}\n{capabilities}\n",
             features.join(","),

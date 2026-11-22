@@ -11,17 +11,30 @@ use std::{
 
 use tokio::time::{Instant, sleep, timeout_at};
 
+#[cfg(feature = "service-keyboard-driver-mode-read-v1")]
+use super::DeviceModeRead;
 use super::{
-    Admission, DeviceModeRead, Limit, MAX_OBSERVATION, ObservationProof, ObservedPerformance, POLL,
-    blocked,
+    Admission, Limit, MAX_OBSERVATION, ObservationProof, ObservedPerformance, POLL, blocked,
 };
 
 pub(crate) struct Reading<A = Admission> {
     pub(crate) admission: A,
     pub(crate) performance: ObservedPerformance,
     // Only the installed mailbox reader asks for it.
-    #[cfg_attr(not(feature = "service-mailbox-observation-v1"), allow(dead_code))]
+    #[cfg(feature = "service-keyboard-driver-mode-read-v1")]
     pub(crate) device_mode: DeviceModeRead,
+}
+
+impl<A> Reading<A> {
+    /// A thermal reading that carries no device-mode result.
+    pub(crate) fn thermal(admission: A, performance: ObservedPerformance) -> Self {
+        Self {
+            admission,
+            performance,
+            #[cfg(feature = "service-keyboard-driver-mode-read-v1")]
+            device_mode: DeviceModeRead::NotRequested,
+        }
+    }
 }
 
 pub(super) struct Job {
@@ -29,6 +42,7 @@ pub(super) struct Job {
     cancelled: Arc<AtomicBool>,
     pub(super) session: Option<u32>,
     // Also query the keyboard device mode after the thermal observation.
+    #[cfg(feature = "service-keyboard-driver-mode-read-v1")]
     pub(super) device_mode: bool,
 }
 
@@ -130,10 +144,17 @@ impl<A: ObservationProof> Worker<A> {
         session: Option<u32>,
         budget: std::time::Duration,
     ) -> io::Result<Option<Reading<A>>> {
-        self.run_job(deadline, session, budget, false).await
+        self.run_job(
+            deadline,
+            session,
+            budget,
+            #[cfg(feature = "service-keyboard-driver-mode-read-v1")]
+            false,
+        )
+        .await
     }
     /// A thermal observation that also queries the keyboard device mode once.
-    #[cfg(any(test, feature = "service-mailbox-observation-v1"))]
+    #[cfg(feature = "service-keyboard-driver-mode-read-v1")]
     pub(crate) async fn observe_with_device_mode(
         &self,
         deadline: Instant,
@@ -145,10 +166,16 @@ impl<A: ObservationProof> Worker<A> {
         deadline: Instant,
         session: Option<u32>,
         budget: std::time::Duration,
-        device_mode: bool,
+        #[cfg(feature = "service-keyboard-driver-mode-read-v1")] device_mode: bool,
     ) -> io::Result<Option<Reading<A>>> {
         let deadline = deadline.min(Instant::now() + budget);
-        let Some(_cancel) = self.start(deadline, session, device_mode)? else {
+        let Some(_cancel) = self.start(
+            deadline,
+            session,
+            #[cfg(feature = "service-keyboard-driver-mode-read-v1")]
+            device_mode,
+        )?
+        else {
             return Ok(None);
         };
         if timeout_at(deadline, self.wait()).await.is_err() {
@@ -166,7 +193,7 @@ impl<A: ObservationProof> Worker<A> {
         &self,
         deadline: Instant,
         session: Option<u32>,
-        device_mode: bool,
+        #[cfg(feature = "service-keyboard-driver-mode-read-v1")] device_mode: bool,
     ) -> io::Result<Option<Cancel>> {
         let mut state = self.state.borrow_mut();
         if state.stopped || state.unconfirmed || Instant::now() >= deadline {
@@ -192,6 +219,7 @@ impl<A: ObservationProof> Worker<A> {
             deadline,
             cancelled: cancel.clone(),
             session,
+            #[cfg(feature = "service-keyboard-driver-mode-read-v1")]
             device_mode,
         };
         let run = self.run.clone();

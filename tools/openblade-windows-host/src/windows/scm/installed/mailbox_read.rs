@@ -24,8 +24,15 @@ use windows_sys::{
     Win32::Storage::FileSystem::{FILE_GENERIC_READ, FILE_SHARE_READ},
 };
 
+#[cfg(feature = "service-keyboard-driver-mode-read-v1")]
 #[path = "driver_mode.rs"]
 mod driver_mode;
+#[cfg(all(test, not(feature = "service-keyboard-driver-mode-read-v1")))]
+#[path = "driver_mode_absent_tests.rs"]
+mod driver_mode_absent_tests;
+#[cfg(test)]
+#[path = "driver_mode_rig.rs"]
+mod driver_mode_rig;
 
 struct Resources {
     root: File,
@@ -919,6 +926,7 @@ pub(super) struct ReadSource {
     #[cfg(feature = "service-thermal-mutation-v1")]
     battery_expiry: Rc<RefCell<Option<ExpiryFn>>>,
     last: Rc<RefCell<Option<(Snapshot, Instant)>>>,
+    #[cfg(feature = "service-keyboard-driver-mode-read-v1")]
     driver_mode: Rc<driver_mode::Cadence>,
     metadata: Rc<RefCell<Option<Arc<Publication>>>>,
 }
@@ -981,6 +989,7 @@ impl ReadSource {
             #[cfg(feature = "service-thermal-mutation-v1")]
             battery_expiry: Rc::default(),
             last: Rc::default(),
+            #[cfg(feature = "service-keyboard-driver-mode-read-v1")]
             driver_mode: Rc::default(),
             metadata: Rc::default(),
         }
@@ -1112,13 +1121,32 @@ impl ReadSource {
             #[cfg(feature = "service-thermal-mutation-v1")]
             source.drain_mutation(true).await?;
             let worker = source.worker.borrow().clone();
+            #[cfg(not(feature = "service-keyboard-driver-mode-read-v1"))]
+            let result = worker.observe(deadline, None).await;
             // The 00/84 query rides this serialized job at the managed
             // observation cadence; it adds no HID traffic between those reads.
-            let result = if source
-                .driver_mode
-                .due(source.lease.authorize(), Instant::now())
-            {
-                worker.observe_with_device_mode(deadline).await
+            // One instant per job decides the query, records its result and
+            // selects the published value.
+            #[cfg(feature = "service-keyboard-driver-mode-read-v1")]
+            let job = Instant::now();
+            #[cfg(feature = "service-keyboard-driver-mode-read-v1")]
+            let asked = source
+                .lease
+                .authorize()
+                .filter(|admission| source.driver_mode.due(*admission, job));
+            #[cfg(feature = "service-keyboard-driver-mode-read-v1")]
+            let result = if let Some(asked) = asked {
+                let result = worker.observe_with_device_mode(deadline).await;
+                // A query that was asked for and brought back no result, or a
+                // job that brought back nothing, is unknown until the next
+                // interval: it is never retried in between. One skipped for
+                // lack of job time sent nothing and stays due.
+                let read = match &result {
+                    Ok(Some(reading)) if reading.admission == asked => reading.device_mode,
+                    _ => crate::discovery::performance::DeviceModeRead::Unconfirmed,
+                };
+                source.driver_mode.record(asked, read, job);
+                result
             } else {
                 worker.observe(deadline, None).await
             };
@@ -1143,19 +1171,20 @@ impl ReadSource {
             }
             let lease = source.lease.clone();
             let proof = reading.admission;
-            let now = Instant::now();
-            source.driver_mode.record(proof, reading.device_mode, now);
             // Metadata may refresh while the native worker runs outside the
             // source mutex. Never assign its newer revision to an old snapshot.
             let current = publisher.borrow().active.clone();
-            let mut observed = current
-                .with_mailbox_read(
-                    reading.performance,
-                    crate::service_status::ReadConfirmation::new(deadline, move || {
-                        lease.authorize() == Some(proof)
-                    }),
-                )
-                .with_keyboard_driver_mode(source.driver_mode.active(proof, now));
+            let mut observed = current.with_mailbox_read(
+                reading.performance,
+                crate::service_status::ReadConfirmation::new(deadline, move || {
+                    lease.authorize() == Some(proof)
+                }),
+            );
+            #[cfg(feature = "service-keyboard-driver-mode-read-v1")]
+            {
+                observed =
+                    observed.with_keyboard_driver_mode(source.driver_mode.active(proof, job));
+            }
             *source.last.borrow_mut() = Some((observed.clone(), Instant::now()));
             source.decorate(&publisher, None)?;
             #[cfg(feature = "service-thermal-mutation-v1")]

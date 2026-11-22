@@ -716,6 +716,50 @@ fn a_profile_serving_service_is_not_admitted_as_any_composition() {
 }
 
 #[test]
+fn a_keyboard_driver_mode_reader_is_not_admitted_by_feature_or_marker() {
+    // The features and the marker build.rs gives each admitted Service
+    // composition built with service-keyboard-driver-mode-read-v1. Packaging
+    // has not admitted the 00/84 read, so the reader refuses the image by name
+    // rather than take it for the composition it extends.
+    const MARKER: &str = "service-keyboard-driver-mode-read-v1";
+    let observation = "firmware-performance-compile-check,hid-identity-compile-check,installed-service-candidate,lifecycle-evidence-compile-check,service-hardware-compile-check,service-mailbox-observation-v1,startup-custody-v1";
+    let mutation = "controller-admission-compile-check,firmware-performance-compile-check,hid-identity-compile-check,installed-service-candidate,lifecycle-evidence-compile-check,service-hardware-compile-check,service-mailbox-observation-v1,service-thermal-mutation-v1,startup-custody-v1";
+    let temporary = "controller-admission-compile-check,firmware-performance-compile-check,hid-identity-compile-check,installed-service-candidate,lifecycle-evidence-compile-check,service-battery-policy-v1,service-fan-mutation-v2,service-hardware-compile-check,service-mailbox-observation-v1,service-temporary-charge-v1,service-thermal-mutation-v1,startup-custody-v1";
+    for (features, admitted) in [
+        (
+            observation,
+            "private-service-custody-v1,service-mailbox-observation-v1",
+        ),
+        (
+            mutation,
+            "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1",
+        ),
+        (
+            temporary,
+            "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1,service-fan-mutation-v2,service-battery-policy-v1,service-temporary-charge-v1",
+        ),
+    ] {
+        // Without the feature this is an admitted composition.
+        assert!(capabilities(2, "service", features, admitted).is_ok());
+        let built = features.replace(
+            "service-mailbox-observation-v1,",
+            "service-keyboard-driver-mode-read-v1,service-mailbox-observation-v1,",
+        );
+        let marked = format!("{admitted},{MARKER}");
+        // The build's own record, and one that keeps the feature but claims
+        // only the composition it extends, in either role or schema.
+        for claimed in [marked.as_str(), admitted, "none"] {
+            for role in ["service", "agent"] {
+                assert!(capabilities(2, role, &built, claimed).is_err());
+                assert!(capabilities(1, role, &built, claimed).is_err());
+            }
+        }
+        // A forged marker without the feature is no better.
+        assert!(capabilities(2, "service", features, &marked).is_err());
+    }
+}
+
+#[test]
 fn an_application_reporter_agent_is_not_admitted_by_feature_or_marker() {
     // The feature and the marker build.rs gives a build with
     // agent-application-reporter-v1. Packaging has not admitted either, so the

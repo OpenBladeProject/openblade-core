@@ -841,12 +841,27 @@ impl Snapshot {
             full_charge_override: false,
             control_access,
             service_version: env!("CARGO_PKG_VERSION").into(),
-            // Managed publishes no Driver mode for an unverified device.
-            feature_fields: Map::from_iter([
-                ("unsupportedLaptop".into(), json!(unsupported_laptop)),
-                ("keyboardDriverModeActive".into(), Value::Null),
-            ]),
+            feature_fields: Map::from_iter([(
+                "unsupportedLaptop".into(),
+                json!(unsupported_laptop),
+            )]),
         }
+        .with_unknown_keyboard_driver_mode()
+    }
+    /// Managed publishes no Driver mode for an unverified device, but its status
+    /// always carries the member. Without the read feature it stays absent.
+    #[cfg(feature = "service-keyboard-driver-mode-read-v1")]
+    fn with_unknown_keyboard_driver_mode(mut self) -> Self {
+        self.feature_fields
+            .insert("keyboardDriverModeActive".into(), Value::Null);
+        self
+    }
+    #[cfg(all(
+        feature = "installed-service-candidate",
+        not(feature = "service-keyboard-driver-mode-read-v1")
+    ))]
+    fn with_unknown_keyboard_driver_mode(self) -> Self {
+        self
     }
     #[cfg(all(windows, feature = "installed-service-candidate"))]
     #[allow(dead_code)] // Shared with the Agent, which only decodes the reply.
@@ -889,6 +904,7 @@ impl Snapshot {
         ]));
         self.device_verified = true; // Real opened exact host/HID validation preceded this result.
         // Only a mode this read job confirmed may follow (`with_keyboard_driver_mode`).
+        #[cfg(feature = "service-keyboard-driver-mode-read-v1")]
         self.feature_fields
             .insert("keyboardDriverModeActive".into(), Value::Null);
         self.writes_blocked = true;
@@ -900,7 +916,7 @@ impl Snapshot {
     /// Managed `KeyboardDriverModeActive`: the confirmed firmware mode, true for
     /// Driver and false for Normal, whoever set it. Unknown is null, and so is
     /// any mode on an unverified status.
-    #[cfg(all(windows, feature = "service-mailbox-observation-v1"))]
+    #[cfg(all(windows, feature = "service-keyboard-driver-mode-read-v1"))]
     pub(crate) fn with_keyboard_driver_mode(mut self, active: Option<bool>) -> Self {
         let active = active.filter(|_| self.device_verified);
         self.feature_fields.insert(
@@ -1557,6 +1573,7 @@ impl Snapshot {
             result.read_confirmation = self.read_confirmation.clone();
             result.device_verified = self.device_verified;
             // Managed copies the mode only with a verified device.
+            #[cfg(feature = "service-keyboard-driver-mode-read-v1")]
             result.feature_fields.insert(
                 "keyboardDriverModeActive".into(),
                 self.feature_fields

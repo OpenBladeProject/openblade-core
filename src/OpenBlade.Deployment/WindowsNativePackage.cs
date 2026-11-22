@@ -79,6 +79,11 @@ internal sealed record NativeArtifact(string Id, string Role, string Target, str
         // feature and the capability by name, whatever else the record claims.
         if (features.Contains("service-profiles-v1", StringComparer.Ordinal) || capabilities.Split(',').Contains("service-profiles-v1", StringComparer.Ordinal))
         { throw new InvalidDataException("Profile serving is not admitted for packaging."); }
+        // The read-only keyboard Driver mode sends a command no admitted composition sends. Refuse its
+        // feature and its capability marker by name until a packaging stage admits it
+        // (docs/windows-rust-development-service.md).
+        if (features.Contains("service-keyboard-driver-mode-read-v1", StringComparer.Ordinal) || capabilities.Split(',').Contains("service-keyboard-driver-mode-read-v1", StringComparer.Ordinal))
+        { throw new InvalidDataException("The keyboard Driver-mode read is not admitted for packaging."); }
         // The application-context reporter is not admitted for packaging either. Refuse its
         // feature and its capability marker by name until a packaging stage admits both.
         // That stage must also pair the reporter with a Service built with service-thermal-mutation-v1,

@@ -708,6 +708,13 @@ fn capabilities(schema: u8, role: &str, features: &str, value: &str) -> io::Resu
     if has(PROFILES) || value.split(',').any(|capability| capability == PROFILES) {
         return Err(deny());
     }
+    // The read-only keyboard Driver mode sends a command no admitted
+    // composition sends. Refuse its feature and its capability marker by name
+    // until a packaging stage admits it; see docs/windows-rust-development-service.md.
+    const DRIVER_MODE: &str = "service-keyboard-driver-mode-read-v1";
+    if has(DRIVER_MODE) || value.split(',').any(|capability| capability == DRIVER_MODE) {
+        return Err(deny());
+    }
     // The application-context reporter is not admitted for packaging either:
     // refuse its feature and its capability marker by name, whatever else the
     // record claims, until a packaging stage admits both.

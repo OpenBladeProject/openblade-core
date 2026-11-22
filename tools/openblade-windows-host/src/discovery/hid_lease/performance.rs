@@ -22,12 +22,16 @@ mod tests;
 #[cfg(test)]
 pub(crate) mod worker_tests;
 
-#[cfg(any(test, feature = "firmware-performance-compile-check"))]
+#[cfg(any(test, feature = "service-keyboard-driver-mode-read-v1"))]
 mod device_mode;
-#[cfg(any(test, feature = "firmware-performance-compile-check"))]
+#[cfg(any(test, feature = "service-keyboard-driver-mode-read-v1"))]
 pub(crate) use device_mode::DeviceModeRead;
 #[cfg(feature = "service-thermal-mutation-v1")]
 mod battery;
+#[cfg(test)]
+mod device_mode_guard_tests;
+#[cfg(test)]
+pub(crate) mod device_mode_tests;
 #[cfg(feature = "service-thermal-mutation-v1")]
 mod fan;
 #[cfg(feature = "service-thermal-mutation-v1")]
@@ -253,6 +257,50 @@ impl<P: Port, A: ObservationProof> Reader<P, A> {
         let result = attempt.read_pair(authorize, admission, limit).await;
         attempt.completed = result.is_some();
         result
+    }
+
+    /// One worker job on this freshly opened Reader, shared by the native
+    /// worker and the fixture workers: the reads the job asks for (none when
+    /// the port did not bind), retirement, then the fresh admission check on
+    /// the job clock. A result past the deadline or after admission was lost
+    /// is discarded.
+    #[cfg(any(test, feature = "firmware-performance-compile-check"))]
+    async fn job(
+        &mut self,
+        authorize: Authorize<'_, A>,
+        job: &worker::Job,
+        bound: bool,
+    ) -> io::Result<Option<worker::Reading<A>>> {
+        let limit = job.limit();
+        let admission = self.admission;
+        let reading = if !bound {
+            None
+        } else {
+            #[cfg(feature = "service-keyboard-driver-mode-read-v1")]
+            {
+                self.observe_job(&mut *authorize, limit, job.device_mode)
+                    .await
+                    .map(|(performance, device_mode)| worker::Reading {
+                        admission,
+                        performance,
+                        device_mode,
+                    })
+            }
+            #[cfg(not(feature = "service-keyboard-driver-mode-read-v1"))]
+            {
+                self.observe(&mut *authorize, limit)
+                    .await
+                    .map(|performance| worker::Reading::thermal(admission, performance))
+            }
+        };
+        // Caller timeout revokes delivery, but the worker owns the native
+        // resources until terminal I/O and callback drain are both confirmed.
+        self.retire(None).await?;
+        Ok(reading.filter(|_| {
+            limit.check().is_ok()
+                && verify_admission(authorize, admission).is_ok()
+                && limit.check().is_ok()
+        }))
     }
 
     // Once retirement begins no further traffic is permitted, even if a

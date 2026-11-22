@@ -502,6 +502,51 @@ public sealed class WindowsNativeEpochTests
     }
 
     [Fact]
+    public void KeyboardDriverModeReadIsNotAdmittedByFeatureOrMarker()
+    {
+        // The features and the marker build.rs gives each admitted Service composition
+        // built with service-keyboard-driver-mode-read-v1. Packaging has not admitted the
+        // 00/84 read, so the image is refused by name rather than taken for the
+        // composition it extends.
+        const string marker = "service-keyboard-driver-mode-read-v1";
+        const string refusal = "The keyboard Driver-mode read is not admitted for packaging.";
+        (string Features, string Admitted, string Policy)[] compositions =
+        [
+            ("firmware-performance-compile-check,hid-identity-compile-check,installed-service-candidate,lifecycle-evidence-compile-check,service-hardware-compile-check,service-mailbox-observation-v1,startup-custody-v1",
+                "private-service-custody-v1,service-mailbox-observation-v1", "service-mailbox-observation-v1"),
+            ("controller-admission-compile-check,firmware-performance-compile-check,hid-identity-compile-check,installed-service-candidate,lifecycle-evidence-compile-check,service-hardware-compile-check,service-mailbox-observation-v1,service-thermal-mutation-v1,startup-custody-v1",
+                "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1", "service-thermal-mutation-v1"),
+            ("controller-admission-compile-check,firmware-performance-compile-check,hid-identity-compile-check,installed-service-candidate,lifecycle-evidence-compile-check,service-battery-policy-v1,service-fan-mutation-v2,service-hardware-compile-check,service-mailbox-observation-v1,service-temporary-charge-v1,service-thermal-mutation-v1,startup-custody-v1",
+                "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1,service-fan-mutation-v2,service-battery-policy-v1,service-temporary-charge-v1", "service-temporary-charge-v1"),
+        ];
+        foreach ((string features, string admitted, string policy) in compositions)
+        {
+            // Without the feature this is an admitted composition.
+            Assert.Equal(policy, NativeArtifact.Inspect(
+                [.. Image("service", schema: 2, features: features, capabilities: admitted)], "service", new string('a', 40)).StartupPolicy);
+            string built = features.Replace("service-mailbox-observation-v1,", marker + ",service-mailbox-observation-v1,", StringComparison.Ordinal);
+            // The build's own record, and one that keeps the feature but claims only the
+            // composition it extends.
+            foreach (string claimed in new[] { admitted + "," + marker, admitted })
+            {
+                var refused = Assert.Throws<InvalidDataException>(() => NativeArtifact.Inspect(
+                    [.. Image("service", schema: 2, features: built, capabilities: claimed)], "service", new string('a', 40)));
+                Assert.Equal(refusal, refused.Message);
+            }
+
+            // The Agent of the same build carries the Service features beside its own entry.
+            string paired = built.Replace("lifecycle-evidence-compile-check,", "lifecycle-evidence-compile-check,native-agent-entry-compile-check,", StringComparison.Ordinal);
+            var agent = Assert.Throws<InvalidDataException>(() => NativeArtifact.Inspect(
+                [.. Image("agent", schema: 2, features: paired, capabilities: "none")], "agent", new string('a', 40)));
+            Assert.Equal(refusal, agent.Message);
+            // A forged marker without the feature is no better.
+            var forged = Assert.Throws<InvalidDataException>(() => NativeArtifact.Inspect(
+                [.. Image("service", schema: 2, features: features, capabilities: admitted + "," + marker)], "service", new string('a', 40)));
+            Assert.Equal(refusal, forged.Message);
+        }
+    }
+
+    [Fact]
     public void ApplicationReporterAgentIsNotAdmittedUntilPackagingAdmitsIt()
     {
         string source = new('a', 40);

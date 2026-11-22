@@ -202,11 +202,7 @@ impl Fixture {
                                 |p| p.result_admitted(admission),
                             )
                         });
-                        Ok(observed.map(|performance| Reading {
-                            admission,
-                            performance,
-                            device_mode: super::DeviceModeRead::NotRequested,
-                        }))
+                        Ok(observed.map(|performance| Reading::thermal(admission, performance)))
                     })
             },
             None,

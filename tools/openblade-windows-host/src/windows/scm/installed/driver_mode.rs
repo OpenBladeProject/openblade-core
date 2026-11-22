@@ -1,4 +1,5 @@
-//! Read-only keyboard Driver-mode status, managed `KeyboardDriverModeActive`.
+//! Read-only keyboard Driver-mode status, managed `KeyboardDriverModeActive`
+//! (`service-keyboard-driver-mode-read-v1`).
 //!
 //! Managed publishes the confirmed firmware mode, not ownership:
 //! `ProductionLightingPort.MaintainDriverModeAsync` returns true for a device
@@ -11,10 +12,10 @@
 //! (`ServicePeriodicObservationLoop.ObservationInterval`). The native Service
 //! has no hardware loop: each fresh thermal observation is one serialized,
 //! freshly admitted read job, and the query rides the first job once the last
-//! result is 15 s old. Between queries a verified status repeats the last
-//! result, as managed status does between its ticks. A result is bound to the
-//! read admission it was read under, so any lifecycle, custody or generation
-//! change makes it unknown until a new job reads it.
+//! result is 15 s old. Until then, each fresh read under the same admission
+//! publishes the cached result without reading it again. A result is bound to
+//! the read admission it was read under, so any lifecycle, custody or
+//! generation change makes it unknown until a new job reads it.
 use crate::discovery::performance::{DeviceModeRead, ReadAdmission};
 use openblade_protocol::device_mode::DeviceMode;
 use std::{cell::Cell, time::Duration};
@@ -34,14 +35,16 @@ struct Observed {
 pub(super) struct Cadence(Cell<Option<Observed>>);
 
 impl Cadence {
-    /// Whether a read job under `admission` should also query 00/84.
-    pub(super) fn due(&self, admission: Option<ReadAdmission>, now: Instant) -> bool {
-        admission.is_some_and(|admission| self.current(admission, now).is_none())
+    /// Whether a read job under `admission`, starting at `now`, should also
+    /// query 00/84.
+    pub(super) fn due(&self, admission: ReadAdmission, now: Instant) -> bool {
+        self.current(admission, now).is_none()
     }
 
-    /// Record what a job read under `admission`. A job that did not query
-    /// leaves the last result in place; a failed query is unknown until the
-    /// next interval, as managed publishes null until its next tick.
+    /// Record what the job that started at `now` read under `admission`. A
+    /// job that sent no query leaves the last result in place; a failed query
+    /// is unknown until the next interval, as managed publishes null until its
+    /// next tick.
     pub(super) fn record(&self, admission: ReadAdmission, read: DeviceModeRead, now: Instant) {
         let active = match read {
             DeviceModeRead::NotRequested => return,
@@ -55,7 +58,8 @@ impl Cadence {
         }));
     }
 
-    /// The value a verified status read under `admission` publishes.
+    /// The value that a verified status read under `admission` by the job
+    /// that started at `now` publishes.
     pub(super) fn active(&self, admission: ReadAdmission, now: Instant) -> Option<bool> {
         self.current(admission, now)?.active
     }

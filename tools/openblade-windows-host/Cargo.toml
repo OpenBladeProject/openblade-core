@@ -66,6 +66,10 @@ service-fan-mutation-v2 = ["service-thermal-mutation-v1"]
 # rules before anything is stored, so this lane needs the domain profile set.
 service-thermal-mutation-v1 = ["service-mailbox-observation-v1", "controller-admission-compile-check", "openblade-domain/profile-set"]
 service-mailbox-observation-v1 = ["service-hardware-compile-check"]
+# Read-only RZ09-0581 keyboard Driver mode: the reviewed 00/84 query on the
+# installed mailbox read job and the managed `keyboardDriverModeActive` member.
+# It sends no setter. Packaging refuses an image that carries it.
+service-keyboard-driver-mode-read-v1 = ["service-mailbox-observation-v1"]
 service-hardware-compile-check = ["installed-service-candidate", "firmware-performance-compile-check"]
 installed-service-candidate = [
     "startup-custody-v1",

@@ -108,33 +108,13 @@ fn run<A: ObservationProof>(
         return Ok(None);
     };
     let mut reader = Reader::new(port, admission);
-    let observed = runtime.block_on(async {
-        let observed = if reader
+    runtime.block_on(async {
+        let bound = reader
             .port
             .bind(selection, &mut authorize, admission, limit)
-            .is_ok()
-        {
-            reader
-                .observe_job(&mut authorize, limit, job.device_mode)
-                .await
-        } else {
-            None
-        };
-        // Caller timeout revokes delivery, but the worker owns the native
-        // resources until terminal I/O and callback drain are both confirmed.
-        reader.retire(None).await?;
-        Ok::<_, io::Error>(observed)
-    })?;
-    let fresh = observed.filter(|_| {
-        limit.check().is_ok()
-            && verify_admission(&mut authorize, admission).is_ok()
-            && limit.check().is_ok()
-    });
-    Ok(fresh.map(|(performance, device_mode)| Reading {
-        admission,
-        performance,
-        device_mode,
-    }))
+            .is_ok();
+        reader.job(&mut authorize, &job, bound).await
+    })
 }
 
 impl NativePort {
@@ -406,11 +386,7 @@ pub(super) fn mutation_worker(
             })?;
             Ok(observed
                 .filter(|_| limit.check().is_ok() && permit.result_admitted(admission))
-                .map(|performance| Reading {
-                    admission,
-                    performance,
-                    device_mode: super::DeviceModeRead::NotRequested,
-                }))
+                .map(|performance| Reading::thermal(admission, performance)))
         },
         Some(&OCCUPIED),
     )

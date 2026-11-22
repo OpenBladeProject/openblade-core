@@ -296,6 +296,11 @@ jobs:
           # The function-row lane selects the role alone for the same reason. Its
           # hook tests script the message loop and install no Windows hook.
           $functionRow = @('openblade-windows-agent-candidate', 'agent-function-row-v1')
+          # The read-only keyboard Driver mode alone, and beside every Service
+          # write it can publish through. The lanes without it pin that their
+          # images send no 00/84 query and publish no Driver-mode member.
+          $driverMode = @('openblade-windows-service-candidate', 'service-keyboard-driver-mode-read-v1')
+          $driverModeProfiles = @('openblade-windows-service-candidate', 'service-keyboard-driver-mode-read-v1,service-profiles-v1')
           # One run per filter, so a filter that matches no test fails the step.
           foreach ($run in @(
               @('openblade-windows-service-candidate', 'service-temporary-charge-v1', 'service_status::object_tests'),
@@ -326,7 +331,14 @@ jobs:
               # missed-tick behavior after a suspend.
               ($functionRow + 'service_client::tests::subscription'),
               ($functionRow + 'native_package'),
-              ($functionRow + 'feature_lifetime'))) {
+              ($functionRow + 'feature_lifetime'),
+              ($driverMode + 'driver_mode::tests'),
+              ($driverMode + 'device_mode'),
+              ($driverMode + 'native_package'),
+              ($driverModeProfiles + 'driver_mode::tests'),
+              @('openblade-windows-service-candidate', 'service-mailbox-observation-v1', 'driver_mode_absent'),
+              @('openblade-windows-service-candidate', 'service-profiles-v1', 'driver_mode_absent'),
+              @('openblade-windows-service-candidate', 'service-profiles-v1', 'device_mode'))) {
             # Capture the exit code instead of throwing, so the output is printed first.
             $PSNativeCommandUseErrorActionPreference = $false
             $output = cargo test --locked --manifest-path $manifest --target ${{ matrix.target }} --bin $run[0] --features $run[1] -- $run[2]
@@ -366,6 +378,9 @@ jobs:
               @('openblade-windows-service-candidate', 'service-battery-policy-v1'),
               @('openblade-windows-service-candidate', 'service-temporary-charge-v1'),
               @('openblade-windows-service-candidate', 'service-profiles-v1'),
+              # The read-only observation lane alone carries older unused-code
+              # warnings, so the Driver-mode read is linted beside every write.
+              @('openblade-windows-service-candidate', 'service-keyboard-driver-mode-read-v1,service-profiles-v1'),
               @('openblade-windows-agent-candidate', 'agent-display-brightness-write-v1'),
               @('openblade-windows-agent-candidate', 'agent-display-profile-apply-v1'),
               @('openblade-windows-agent-candidate', 'agent-battery-report-v1'),
