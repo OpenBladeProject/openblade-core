@@ -76,13 +76,16 @@ public sealed partial class ServiceControlRuntime
         string? user = Volatile.Read(ref activeUserSid);
         long sessionEpoch = Interlocked.Read(ref sessionAdmissionEpoch);
         long powerEpoch = Interlocked.Read(ref powerAdmissionEpoch);
+        // The pad follows "If settings change outside OpenBlade" for changes found while it is
+        // controlled and for resuming control after a handback.
+        bool restoreOutsideChanges = CoolingPadRestoresOutsideChanges();
         try
         {
             await coolingPadControl.MaintainAsync(
                 () => sessionEpoch == Interlocked.Read(ref sessionAdmissionEpoch)
                     && powerEpoch == Interlocked.Read(ref powerAdmissionEpoch)
-                    && CoolingPadWriteAdmission(user, allowLowPower: false), token).ConfigureAwait(false);
-            if (user is not null && !coolingPadControl.Status.Active)
+                    && CoolingPadWriteAdmission(user, allowLowPower: false), token, restoreOutsideChanges).ConfigureAwait(false);
+            if (user is not null && restoreOutsideChanges && !coolingPadControl.Status.Active)
             {
                 // Same admission as a user's Apply, bound to the active session. Shutdown
                 // has already handed the pad back and must not be undone.
@@ -98,6 +101,11 @@ public sealed partial class ServiceControlRuntime
         }
         finally { PublishCoolingPadStatus(); }
     }
+
+    // "Restore them" restores; "Notify me" leaves the pad to the change. The pad has no
+    // laptop thermal ledger, so the saved choice applies directly.
+    private bool CoolingPadRestoresOutsideChanges() =>
+        preferences.ThermalControlPolicy == ThermalControlPolicy.MaintainDesiredState;
 
     private bool CoolingPadSessionContinues(string expectedUser, Func<bool> stillControlsSession)
     {

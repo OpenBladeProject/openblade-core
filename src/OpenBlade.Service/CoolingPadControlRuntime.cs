@@ -40,6 +40,14 @@ internal sealed class CoolingPadControlRuntime(
     // An attempt that reached the pad and was refused retries at the longer interval.
     internal static readonly TimeSpan ResumeAdmissionInterval = TimeSpan.FromSeconds(1);
     internal static readonly TimeSpan ResumeRetryInterval = TimeSpan.FromSeconds(5);
+    // The configuration read after this session's last confirmed write, while it controls the pad.
+    private CoolingPadDeviceSnapshot? controlled;
+    private DateTimeOffset nextOutsideCheck;
+    private readonly Queue<DateTimeOffset> outsideRestorations = new();
+    internal static readonly TimeSpan OutsideChangeCheckInterval = TimeSpan.FromSeconds(3);
+    // Restoring a change made elsewhere is bounded so OpenBlade never fights another controller.
+    internal const int OutsideRestorationLimit = 3;
+    internal static readonly TimeSpan OutsideRestorationWindow = TimeSpan.FromMinutes(10);
 
     internal CoolingPadStatusSnapshot Status => Volatile.Read(ref status);
 
@@ -137,9 +145,20 @@ internal sealed class CoolingPadControlRuntime(
         Func<bool> admission, CancellationToken token, Func<bool>? continuedOwnership = null)
     {
         if (!CoolingPadSettings.IsWellFormed(settings)) { return Block("Cooling pad settings are invalid."); }
-        settings = Freeze(settings);
         await gate.WaitAsync(token).ConfigureAwait(false);
+        // A chosen setting starts a new allowance for restoring changes made elsewhere.
+        outsideRestorations.Clear();
+        try { return await ApplyCoreAsync(Freeze(settings), admission, token, continuedOwnership).ConfigureAwait(false); }
+        finally { gate.Release(); }
+    }
+
+    // Runs under the serial gate. A refusal before submission saves nothing, so maintenance and
+    // resumption cannot later apply settings that were reported as not accepted.
+    private async Task<ControlOperationResult> ApplyCoreAsync(CoolingPadSettings settings,
+        Func<bool> admission, CancellationToken token, Func<bool>? continuedOwnership)
+    {
         bool submitted = false;
+        bool fanCompleted = false;
         try
         {
             await LoadOwnershipAsync(token).ConfigureAwait(false);
@@ -163,6 +182,11 @@ internal sealed class CoolingPadControlRuntime(
             int? target = IsTemperatureDriven(settings.FanMode)
                 ? await CurveTargetAsync(settings, token).ConfigureAwait(false)
                 : settings.FanMode == CoolingPadFanMode.Fixed ? settings.FixedRpm : null;
+            long epoch = Interlocked.Read(ref generation);
+            bool Allowed() => epoch == Interlocked.Read(ref generation) && !token.IsCancellationRequested && admission();
+            // Refuse before saving anything. Saving first let maintenance or resumption apply a
+            // request this call had just reported as not accepted.
+            if (!Allowed()) { return Block("Cooling pad authority changed before submission."); }
             await store.SaveSettingsAsync(owner, settings, token).ConfigureAwait(false);
             if (resumeIntent != (fan || lighting))
             {
@@ -172,10 +196,7 @@ internal sealed class CoolingPadControlRuntime(
             UpdateStatus(previous => previous with { Requested = settings });
             if (!settings.AllowDemandApi) { leases.Clear(); }
             authority = continuedOwnership ?? admission;
-            long epoch = Interlocked.Read(ref generation);
-            bool Allowed() => epoch == Interlocked.Read(ref generation) && !token.IsCancellationRequested && admission();
             bool OwnershipContinues() => epoch == Interlocked.Read(ref generation) && !token.IsCancellationRequested && authority();
-            if (!Allowed()) { return Block("Cooling pad authority changed before submission."); }
             if (fan || lighting)
             {
                 CoolingPadDeviceSnapshot saved = ownership?.Baseline ?? baseline;
@@ -203,6 +224,7 @@ internal sealed class CoolingPadControlRuntime(
                 await device!.SetFanAsync(settings.FanMode, target,
                     () => Allowed() && (!IsTemperatureDriven(settings.FanMode) || TemperatureIsFresh()), token,
                     SmartPreset(settings)).ConfigureAwait(false);
+                fanCompleted = true;
             }
             if (lighting)
             {
@@ -212,7 +234,8 @@ internal sealed class CoolingPadControlRuntime(
                 submitted = true;
                 await device!.SetLightingAsync(settings, Allowed, token).ConfigureAwait(false);
             }
-            Project(await device!.ReadSnapshotAsync(token).ConfigureAwait(false));
+            CoolingPadDeviceSnapshot applied = FreezeSnapshot(await device!.ReadSnapshotAsync(token).ConfigureAwait(false));
+            Project(applied);
             UpdateStatus(previous => previous with
             {
                 Active = (fan || lighting) && OwnershipContinues(),
@@ -220,6 +243,9 @@ internal sealed class CoolingPadControlRuntime(
                 WritesPaused = false,
                 Message = fan || lighting ? "Cooling pad settings applied." : "Cooling pad settings saved.",
             });
+            // The confirmed configuration a later read compares to find a change made elsewhere.
+            controlled = status.Active ? applied : null;
+            nextOutsideCheck = clock.GetUtcNow() + OutsideChangeCheckInterval;
             nextCurveRead = clock.GetUtcNow().AddSeconds(1);
             mirroredSequence = -1;
             return Result(fan || lighting ? ControlOperationStatus.Applied : ControlOperationStatus.Stored);
@@ -231,8 +257,15 @@ internal sealed class CoolingPadControlRuntime(
         }
         // The target is computed before any submission, so a missing reading is a refusal.
         catch (TemperatureUnavailableException exception) when (!submitted) { return Block(exception.Message); }
+        catch (CoolingPadOperationException exception) when (exception.LocalAdmissionDeferred && !exception.SubmissionUnknown
+            && !fanCompleted)
+        {
+            // Native submission proved that admission closed before the first SET of this
+            // apply. Nothing reached the pad, so this is a refusal the caller may retry.
+            Fail(exception, false);
+            return Result(ControlOperationStatus.Blocked);
+        }
         catch (Exception exception) { return Fail(exception, submitted); }
-        finally { gate.Release(); }
     }
 
     private sealed class TemperatureUnavailableException() : InvalidOperationException(Text)
@@ -275,6 +308,7 @@ internal sealed class CoolingPadControlRuntime(
             Project(await device.ReadSnapshotAsync(token).ConfigureAwait(false));
             await store.ClearOwnershipAsync(token).ConfigureAwait(false);
             ownership = null;
+            controlled = null;
             UpdateStatus(previous => previous with { Active = false, RecoveryRequired = false, WritesPaused = false, Message = "Saved cooling pad settings restored." });
             await CloseDeviceAsync(token).ConfigureAwait(false);
             return Result(ControlOperationStatus.Applied);
@@ -288,7 +322,11 @@ internal sealed class CoolingPadControlRuntime(
         finally { gate.Release(); }
     }
 
-    internal async Task MaintainAsync(Func<bool> admission, CancellationToken token)
+    /// <param name="restoreOutsideChanges">
+    /// Follows "If settings change outside OpenBlade": true restores the saved settings when a
+    /// read finds them changed elsewhere; false releases control and leaves that change in place.
+    /// </param>
+    internal async Task MaintainAsync(Func<bool> admission, CancellationToken token, bool restoreOutsideChanges = true)
     {
         await gate.WaitAsync(token).ConfigureAwait(false);
         bool submitted = false;
@@ -312,6 +350,7 @@ internal sealed class CoolingPadControlRuntime(
             bool Allowed() => epoch == Interlocked.Read(ref generation) && !token.IsCancellationRequested
                 && Status.Active && authority() && admission();
             CoolingPadSettings settings = status.Requested;
+            int? fanTarget = null;
             if (clock.GetUtcNow() >= nextCurveRead
                 && (settings.FanMode == CoolingPadFanMode.Fixed || IsTemperatureDriven(settings.FanMode)))
             {
@@ -324,14 +363,43 @@ internal sealed class CoolingPadControlRuntime(
                     UpdateStatus(previous => previous with { Message = "Cooling pad curve is following its temperature source again." });
                 }
                 if (settings.AllowDemandApi && leases.Count != 0) { target = Math.Max(target, leases.Values.Max(value => value.Rpm)); }
-                if (status.ConfirmedTargetRpm != target)
+                if (status.ConfirmedTargetRpm != target) { fanTarget = target; }
+            }
+            // A fan write reselects the mode's preset, which would hide a change made elsewhere,
+            // so one runs only after a fresh comparison. Otherwise compare at a bounded interval.
+            if (controlled is { } expected && (fanTarget is not null || clock.GetUtcNow() >= nextOutsideCheck))
+            {
+                nextOutsideCheck = clock.GetUtcNow() + OutsideChangeCheckInterval;
+                CoolingPadDeviceSnapshot current;
+                try { current = FreezeSnapshot(await ReadDeviceAsync(token).ConfigureAwait(false)); }
+                catch (Exception exception) when (exception is IOException or TimeoutException)
                 {
-                    submitted = true;
-                    await device!.SetFanAsync(settings.FanMode, target,
-                        () => Allowed() && (!IsTemperatureDriven(settings.FanMode) || TemperatureIsFresh()), token,
-                        SmartPreset(settings)).ConfigureAwait(false);
-                    // Typed SetFan completes only after independent fan configuration readback.
-                    UpdateStatus(previous => previous with { ConfirmedTargetRpm = target });
+                    // A failed read is not a change and submitted nothing. Keep control and defer
+                    // this tick's write; the next tick reads again.
+                    DiagnosticTrace.TraceException(nameof(CoolingPadControlRuntime), nameof(MaintainAsync), exception);
+                    return;
+                }
+                (bool fanOutside, bool lightingOutside) = OutsideChanges(expected, current, settings);
+                if (fanOutside || lightingOutside)
+                {
+                    await HandleOutsideChangeAsync(current, fanOutside, lightingOutside, restoreOutsideChanges, admission, token)
+                        .ConfigureAwait(false);
+                    return;
+                }
+            }
+            if (fanTarget is int demand)
+            {
+                submitted = true;
+                await device!.SetFanAsync(settings.FanMode, demand,
+                    () => Allowed() && (!IsTemperatureDriven(settings.FanMode) || TemperatureIsFresh()), token,
+                    SmartPreset(settings)).ConfigureAwait(false);
+                // Typed SetFan completes only after independent fan configuration readback.
+                UpdateStatus(previous => previous with { ConfirmedTargetRpm = demand });
+                if (settings.FanMode == CoolingPadFanMode.Fixed && controlled is not null)
+                {
+                    // A fixed target is stored in the fan record; compare later reads with the new one.
+                    CoolingPadDeviceSnapshot written = await device.ReadSnapshotAsync(token).ConfigureAwait(false);
+                    controlled = controlled with { FanConfiguration = written.FanConfiguration };
                 }
             }
             if (settings.LightingMode == CoolingPadLightingMode.KeyboardMirror
@@ -363,6 +431,94 @@ internal sealed class CoolingPadControlRuntime(
         catch (Exception exception) { Fail(exception, submitted); }
         finally { gate.Release(); }
     }
+
+    // Runs under the serial gate from maintenance, after a read found the pad's controlled
+    // settings changed by another controller, the pad itself or its buttons.
+    private async Task HandleOutsideChangeAsync(CoolingPadDeviceSnapshot current, bool fanOutside, bool lightingOutside,
+        bool restore, Func<bool> admission, CancellationToken token)
+    {
+        DateTimeOffset now = clock.GetUtcNow();
+        while (outsideRestorations.Count != 0 && now - outsideRestorations.Peek() >= OutsideRestorationWindow)
+        { outsideRestorations.Dequeue(); }
+        if (restore && outsideRestorations.Count < OutsideRestorationLimit)
+        {
+            // The same admitted, read-back apply as a user's change. A refused or failed
+            // apply reports and stops as it would for the user; it is not retried here.
+            outsideRestorations.Enqueue(now);
+            ControlOperationResult result = await ApplyCoreAsync(status.Requested, admission, token, authority).ConfigureAwait(false);
+            if (result.Status == ControlOperationStatus.Applied)
+            { UpdateStatus(previous => previous with { Message = "Cooling pad settings changed outside OpenBlade and were restored." }); }
+            return;
+        }
+        // Notify me, or another controller keeps changing the pad: stop instead of fighting it.
+        await ReleaseAfterOutsideChangeAsync(current, fanOutside, lightingOutside, restore
+            ? "Another app keeps changing the cooling pad. OpenBlade stopped controlling it."
+            : "Cooling pad settings changed outside OpenBlade. OpenBlade stopped controlling it.",
+            admission, token).ConfigureAwait(false);
+    }
+
+    // Release control without overwriting the change: restore the original settings only for
+    // the parts this session changed and nothing else has changed since, as Release would.
+    private async Task ReleaseAfterOutsideChangeAsync(CoolingPadDeviceSnapshot current, bool fanOutside,
+        bool lightingOutside, string message, Func<bool> admission, CancellationToken token)
+    {
+        Revoke();
+        leases.Clear();
+        authority = static () => false;
+        controlled = null;
+        bool submitted = false;
+        try
+        {
+            if (owner is not null && resumeIntent)
+            {
+                // As with Release, later handbacks must not start control again.
+                await store.SaveResumeIntentAsync(owner, false, token).ConfigureAwait(false);
+                resumeIntent = false;
+            }
+            if (ownership is { } owned)
+            {
+                bool restoreFan = owned.FanChanged && !fanOutside;
+                bool restoreLighting = owned.LightingChanged && !lightingOutside;
+                if (restoreFan || restoreLighting)
+                {
+                    long epoch = Interlocked.Read(ref generation);
+                    bool Allowed() => epoch == Interlocked.Read(ref generation) && !token.IsCancellationRequested && admission();
+                    submitted = true;
+                    await device!.RestoreAsync(owned.Baseline, restoreFan, restoreLighting, Allowed, token).ConfigureAwait(false);
+                    current = await device.ReadSnapshotAsync(token).ConfigureAwait(false);
+                }
+                await store.ClearOwnershipAsync(token).ConfigureAwait(false);
+                ownership = null;
+            }
+            Project(current);
+            UpdateStatus(previous => previous with { Active = false, RecoveryRequired = false, WritesPaused = false, Message = message });
+            await CloseDeviceAsync(token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            if (submitted) { Pause("Cooling pad restoration was interrupted. Read its configuration before continuing."); }
+            throw;
+        }
+        catch (Exception exception) { Fail(exception, submitted); }
+    }
+
+    /// <summary>Which controlled parts a read shows changed since this session confirmed them.</summary>
+    internal static (bool Fan, bool Lighting) OutsideChanges(CoolingPadDeviceSnapshot expected,
+        CoolingPadDeviceSnapshot current, CoolingPadSettings settings)
+    {
+        // The fan demand and ramping speed vary on their own; the selected fan record does not.
+        bool fan = settings.FanMode != CoolingPadFanMode.Keep && current.FanConfiguration != expected.FanConfiguration;
+        bool lighting = settings.LightingMode != CoolingPadLightingMode.Keep
+            && (!SameEffect(expected.LightingConfiguration, current.LightingConfiguration)
+                || !SameEffect(expected.ActiveLightingConfiguration, current.ActiveLightingConfiguration)
+                || expected.BrightnessRaw != current.BrightnessRaw
+                || expected.DeviceMode != current.DeviceMode);
+        return (fan, lighting);
+    }
+
+    private static bool SameEffect(CoolingPadLightingConfiguration? expected, CoolingPadLightingConfiguration? current) =>
+        expected is null ? current is null
+            : current is not null && expected with { Colors = current.Colors } == current && expected.Colors.SequenceEqual(current.Colors);
 
     private async Task ObserveConnectionCoreAsync(CancellationToken token)
     {

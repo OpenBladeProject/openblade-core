@@ -14,11 +14,17 @@ public sealed class CoolingPadViewModel : INotifyPropertyChanged, IAsyncDisposab
 {
     private static readonly TimeSpan DefaultApplyDelay = TimeSpan.FromMilliseconds(400);
     private static readonly TimeSpan DefaultRefreshInterval = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan DefaultRetryDelay = TimeSpan.FromSeconds(3);
+    // A refused change is tried again this many times before the page reports it.
+    internal const int MaxRefusedRetries = 5;
     private readonly IServiceClient client;
     private readonly IUiDispatcher dispatcher;
     private readonly CancellationToken lifetime;
     private readonly TimeSpan applyDelay;
     private readonly TimeSpan refreshInterval;
+    private readonly TimeSpan retryDelay;
+    private int refusedRetries;
+    private bool retryPending;
     private CoolingPadStatusSnapshot status = new();
     private bool busy;
     private bool applying;
@@ -49,13 +55,14 @@ public sealed class CoolingPadViewModel : INotifyPropertyChanged, IAsyncDisposab
     private RgbColor secondaryColor = new(0, 0, 255);
 
     public CoolingPadViewModel(IServiceClient client, IUiDispatcher dispatcher, CancellationToken lifetime = default,
-        TimeSpan? applyDelay = null, TimeSpan? refreshInterval = null)
+        TimeSpan? applyDelay = null, TimeSpan? refreshInterval = null, TimeSpan? retryDelay = null)
     {
         this.client = client ?? throw new ArgumentNullException(nameof(client));
         this.dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
         this.lifetime = lifetime;
         this.applyDelay = applyDelay ?? DefaultApplyDelay;
         this.refreshInterval = refreshInterval ?? DefaultRefreshInterval;
+        this.retryDelay = retryDelay ?? DefaultRetryDelay;
         FanModes = [new(CoolingPadFanMode.Auto, TrayText.Get("Automatic")),
             new(CoolingPadFanMode.Fixed, TrayText.Get("Fixed speed")),
             new(CoolingPadFanMode.HostCurve, TrayText.Get("Manual fan curve")),
@@ -102,7 +109,7 @@ public sealed class CoolingPadViewModel : INotifyPropertyChanged, IAsyncDisposab
     /// <summary>A user change or release is in flight; background reads do not show progress.</summary>
     public bool IsApplying => applying;
     public bool ShowRelease => !NeedsCheck;
-    /// <summary>A change may have reached the pad unconfirmed; only an explicit read continues.</summary>
+    /// <summary>A change may have reached the pad unconfirmed; writes wait for a confirmed read.</summary>
     public bool NeedsCheck => uncertainSubmission || status.WritesPaused;
     public bool ShowDemandApiOption => FanMode?.Value is CoolingPadFanMode.Fixed or CoolingPadFanMode.HostCurve or CoolingPadFanMode.Auto;
     public bool AllowDemandApi { get => allowDemandApi; set { if (SetField(ref allowDemandApi, value)) { ScheduleApply(); } } }
@@ -204,7 +211,7 @@ public sealed class CoolingPadViewModel : INotifyPropertyChanged, IAsyncDisposab
     }
 
     public string StatusText => feedback ?? (NeedsCheck
-        ? TrayText.Get("A change to the cooling pad could not be confirmed. Check the pad before making another change.")
+        ? TrayText.Get("A change to the cooling pad could not be confirmed. OpenBlade is checking the pad.")
         : !serviceAvailable ? TrayText.Get("Reconnecting. Showing the last confirmed cooling-pad state.")
         : !connectionKnown ? TrayText.Get("Cooling-pad status is unavailable. Showing the last confirmed state.")
         : status.RecoveryRequired ? TrayText.Get("Choose a setting, or release control to restore the pad's own settings.")
@@ -313,17 +320,27 @@ public sealed class CoolingPadViewModel : INotifyPropertyChanged, IAsyncDisposab
     private void ScheduleApply()
     {
         if (suppressApply || !editorInitialized || lifetime.IsCancellationRequested) { return; }
+        // A new user change starts its own retry allowance.
+        refusedRetries = 0;
         changePending = true;
         long ticket = ++applyTicket;
-        _ = ApplyAfterDelayAsync(ticket);
+        _ = ApplyAfterDelayAsync(ticket, applyDelay);
     }
 
-    private async Task ApplyAfterDelayAsync(long ticket)
+    private void ScheduleRetry()
+    {
+        if (lifetime.IsCancellationRequested) { return; }
+        changePending = true;
+        long ticket = ++applyTicket;
+        _ = ApplyAfterDelayAsync(ticket, retryDelay);
+    }
+
+    private async Task ApplyAfterDelayAsync(long ticket, TimeSpan delay)
     {
         try
         {
             // Coalesce slider drags and color-picker movement into one apply.
-            if (applyDelay > TimeSpan.Zero) { await Task.Delay(applyDelay, lifetime); }
+            if (delay > TimeSpan.Zero) { await Task.Delay(delay, lifetime); }
             if (ticket != applyTicket) { return; }
             if (busy) { applyPending = true; return; }
             await ExecuteAsync(Operation.Apply, lifetime);
@@ -337,9 +354,9 @@ public sealed class CoolingPadViewModel : INotifyPropertyChanged, IAsyncDisposab
         {
             while (!token.IsCancellationRequested)
             {
-                // An unconfirmed change stops automatic reads: only the explicit
-                // check may clear it after the user sees the warning.
-                if (serviceAvailable && lastConfirmedConnected && !busy && !NeedsCheck)
+                // An unconfirmed change keeps writes stopped; this read-only check is how the
+                // page recovers by itself once the service confirms the pad's state.
+                if (serviceAvailable && lastConfirmedConnected && !busy)
                 { await ExecuteAsync(Operation.AutomaticRead, token); }
                 await Task.Delay(refreshInterval, token);
             }
@@ -394,9 +411,20 @@ public sealed class CoolingPadViewModel : INotifyPropertyChanged, IAsyncDisposab
                 mayHaveSubmitted = result.Status != ControlOperationStatus.Blocked;
                 await dispatcher.InvokeAsync(() =>
                 {
+                    uncertainSubmission = result.Status == ControlOperationStatus.Failed;
+                    if (apply && result.Status == ControlOperationStatus.Blocked && refusedRetries < MaxRefusedRetries)
+                    {
+                        // Nothing reached the pad. Keep the change and try it again shortly,
+                        // with fresh admission; conditions such as power or session settle.
+                        refusedRetries++;
+                        retryPending = true;
+                        // Hold the draft so a status update cannot replace it before the retry.
+                        changePending = true;
+                        feedback = TrayText.Get("The cooling pad has not accepted the change yet. OpenBlade will try again.");
+                        return;
+                    }
                     // The editor no longer matches the service request; the next status reloads it.
                     if (apply) { editorSource = null; }
-                    uncertainSubmission = result.Status == ControlOperationStatus.Failed;
                     feedback = result.Status == ControlOperationStatus.Failed
                         ? null
                         : TrayText.Get("The cooling pad did not accept the change. Check Troubleshooting for the reason.");
@@ -413,12 +441,13 @@ public sealed class CoolingPadViewModel : INotifyPropertyChanged, IAsyncDisposab
                     editorShowsModes = readback.CoolingPad.Active || readback.CoolingPad.RecoveryRequired;
                 }
                 ApplyStatus(readback.CoolingPad);
-                // Failed submissions return above without a recovery read. Only
-                // a separate explicit confirmed read clears their uncertainty.
-                if (operation == Operation.ExplicitRead && connectionKnown)
+                // Failed submissions return above without a recovery read. A separate
+                // confirmed read, explicit or automatic, clears their uncertainty.
+                if (operation is Operation.ExplicitRead or Operation.AutomaticRead && connectionKnown)
                 {
                     uncertainSubmission = false;
                 }
+                if (apply) { refusedRetries = 0; }
                 if (release && !readback.CoolingPad.Active)
                 {
                     // The pad runs its own settings again; keep the editor values for next time.
@@ -461,8 +490,15 @@ public sealed class CoolingPadViewModel : INotifyPropertyChanged, IAsyncDisposab
                 await dispatcher.InvokeAsync(NotifyState, lifetime);
                 if (applyPending)
                 {
+                    // A user change made during this operation supersedes any retry.
                     applyPending = false;
+                    retryPending = false;
                     ScheduleApply();
+                }
+                else if (retryPending)
+                {
+                    retryPending = false;
+                    ScheduleRetry();
                 }
             }
         }

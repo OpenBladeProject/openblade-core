@@ -193,6 +193,44 @@ public sealed partial class ServiceControlRuntimeTests
         Assert.Equal(2, pad.FanWrites);
     }
 
+    [Fact]
+    public async Task CoolingPadResumptionFollowsTheNotifyMePolicy()
+    {
+        var time = new ManualTimeProvider();
+        var gate = new LowPowerGate();
+        var pad = new LifecyclePad();
+        string machineRoot = Path.Combine(directory, "pad-notify-me");
+        var user = new SecurityIdentifier("S-1-5-21-100-200-300-1001");
+        string userRoot = Path.Combine(machineRoot, "users", user.Value);
+        var validator = ProfileSetValidator.CreateUnverifiedSafeDefaults();
+        var configurationStore = new BatteryConfigurationStore(Path.Combine(userRoot, "profiles.json"),
+            Path.Combine(userRoot, "battery-preferences.json"), Path.Combine(userRoot, "battery-configuration.commit.json"), validator);
+        BatteryConfiguration configuration = await configurationStore.LoadAsync(default);
+        await configurationStore.SaveConfigurationAsync(configuration.Profiles,
+            configuration.Preferences with { ThermalControlPolicy = ThermalControlPolicy.Strict }, default);
+        TestContext context = CreateContext(providerAvailable: true, lowPowerGate: gate, timeProvider: time,
+            userConfigurationRepository: new ThermalTestUserConfigurationRepository(machineRoot, validator),
+            coolingPadDeviceProvider: new LifecyclePadProvider(pad));
+        await context.Runtime.ObserveAsync(default);
+        await context.Runtime.ActivateUserAsync(user, () => true, default);
+        Assert.Equal(ControlOperationStatus.Applied, (await context.Runtime.SetCoolingPadSettingsAsync(
+            new CoolingPadSettings { FanMode = CoolingPadFanMode.Fixed, FixedRpm = 1500 }, user, () => true, default)).Status);
+        gate.Enter();
+        _ = await context.Runtime.PrepareForLowPowerAsync(gate.Generation, () => true, default);
+        Assert.Equal(1, pad.RestoreCalls);
+
+        // "Notify me" leaves the pad on its own settings after the handback; "Restore them"
+        // resumes them, as CoolingPadResumesSavedSettingsAfterWakeButNotAfterShutdownHandback shows.
+        gate.Exit();
+        for (int attempt = 0; attempt < 3; attempt++)
+        {
+            time.Advance(CoolingPadControlRuntime.ResumeRetryInterval);
+            await context.Runtime.MaintainCoolingPadAsync(default);
+        }
+        Assert.False(context.Runtime.GetStatus().CoolingPad.Active);
+        Assert.Equal(1, pad.FanWrites);
+    }
+
     private async Task<(TestContext Context, SecurityIdentifier User)> CreateActiveLifecyclePadContextAsync(
         LifecyclePad pad, LowPowerGate? gate = null, bool laptopAvailable = true, TimeProvider? timeProvider = null)
     {
