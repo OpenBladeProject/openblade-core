@@ -1,0 +1,318 @@
+{
+  "schema": 1,
+  "families": {
+    "display": {
+      "version": 2,
+      "maxMessageBytes": 65536,
+      "pipeAffix": "OpenBlade.Session.Display.v1",
+      "requests": [
+        {
+          "id": "query",
+          "input": {
+            "operation": "query",
+            "version": 2,
+            "requestId": "11111111-2222-4333-8444-555555555555"
+          }
+        },
+        {
+          "id": "setRefreshRate",
+          "input": {
+            "operation": "setRefreshRate",
+            "version": 2,
+            "requestId": "11111111-2222-4333-8444-555555555555",
+            "expectedPowerSource": 0,
+            "refreshRateKey": "dynamic-48-240"
+          }
+        },
+        {
+          "id": "setHdr",
+          "input": {
+            "operation": "setHdr",
+            "version": 2,
+            "requestId": "11111111-2222-4333-8444-555555555555",
+            "expectedPowerSource": 1,
+            "enabled": true
+          }
+        },
+        {
+          "id": "setColorProfile",
+          "input": {
+            "operation": "setColorProfile",
+            "version": 2,
+            "requestId": "11111111-2222-4333-8444-555555555555",
+            "expectedPowerSource": 2,
+            "colorProfileKey": "synthetic.icm"
+          }
+        },
+        {
+          "id": "setBrightness",
+          "input": {
+            "operation": "setBrightness",
+            "version": 2,
+            "requestId": "11111111-2222-4333-8444-555555555555",
+            "expectedPowerSource": 0,
+            "percent": 75
+          }
+        },
+        {
+          "id": "applyProfile",
+          "input": {
+            "operation": "applyProfile",
+            "version": 2,
+            "requestId": "11111111-2222-4333-8444-555555555555",
+            "expectedPowerSource": 0,
+            "settings": {
+              "refreshRateKey": "fixed-240",
+              "hdrEnabled": false,
+              "colorProfileKey": "synthetic.icm",
+              "brightnessPercent": null,
+              "isConfigured": true
+            }
+          }
+        },
+        {
+          "id": "old-version",
+          "input": {
+            "operation": "query",
+            "version": 1,
+            "requestId": "11111111-2222-4333-8444-555555555555"
+          },
+          "failure": "versionMismatch"
+        },
+        {
+          "id": "oversize-prefix",
+          "declaredLength": 65537,
+          "failure": "lengthOutOfRange"
+        },
+        {
+          "id": "unknown-member",
+          "input": {
+            "operation": "query",
+            "version": 2,
+            "requestId": "11111111-2222-4333-8444-555555555555",
+            "futureMember": true
+          },
+          "failure": "unknownMember"
+        }
+      ]
+    },
+    "gpu": {
+      "version": 2,
+      "maxMessageBytes": 65536,
+      "pipeAffix": "OpenBlade.Session.Gpu.v2",
+      "requests": [
+        {
+          "id": "query",
+          "input": {
+            "operation": "query",
+            "version": 2,
+            "requestId": "11111111-2222-4333-8444-555555555555"
+          }
+        },
+        {
+          "id": "close",
+          "input": {
+            "operation": "close",
+            "version": 2,
+            "requestId": "11111111-2222-4333-8444-555555555555",
+            "force": false,
+            "targets": [
+              {
+                "processId": 123,
+                "startTimeUtcTicks": 638900000000000001,
+                "name": "synthetic"
+              }
+            ]
+          }
+        },
+        {
+          "id": "old-version",
+          "input": {
+            "operation": "query",
+            "version": 1,
+            "requestId": "11111111-2222-4333-8444-555555555555"
+          },
+          "failure": "versionMismatch"
+        },
+        {
+          "id": "oversize-prefix",
+          "declaredLength": 65537,
+          "failure": "lengthOutOfRange"
+        },
+        {
+          "id": "unknown-member",
+          "input": {
+            "operation": "query",
+            "version": 2,
+            "requestId": "11111111-2222-4333-8444-555555555555",
+            "futureMember": true
+          },
+          "failure": "unknownMember"
+        }
+      ]
+    },
+    "audio": {
+      "version": 2,
+      "maxMessageBytes": 65536,
+      "pipeAffix": "OpenBlade.Session.Audio.v2",
+      "requests": [
+        {
+          "id": "discover",
+          "input": {
+            "operation": "discover",
+            "version": 2,
+            "requestId": "11111111-2222-4333-8444-555555555555"
+          }
+        },
+        {
+          "id": "read",
+          "input": {
+            "operation": "read",
+            "version": 2,
+            "requestId": "11111111-2222-4333-8444-555555555555",
+            "endpoint": 0
+          }
+        },
+        {
+          "id": "connect",
+          "input": {
+            "operation": "connect",
+            "version": 2,
+            "requestId": "11111111-2222-4333-8444-555555555555",
+            "endpoint": 0
+          }
+        },
+        {
+          "id": "setSpatial",
+          "input": {
+            "operation": "setSpatial",
+            "version": 2,
+            "requestId": "11111111-2222-4333-8444-555555555555",
+            "endpoint": 1,
+            "enabled": true
+          }
+        },
+        {
+          "id": "setEqualizer",
+          "input": {
+            "operation": "setEqualizer",
+            "version": 2,
+            "requestId": "11111111-2222-4333-8444-555555555555",
+            "endpoint": 0,
+            "enabled": false
+          }
+        },
+        {
+          "id": "selectPreset",
+          "input": {
+            "operation": "selectPreset",
+            "version": 2,
+            "requestId": "11111111-2222-4333-8444-555555555555",
+            "endpoint": 0,
+            "presetId": "music",
+            "gainsDb": [
+              -3,
+              -2,
+              -1,
+              0,
+              1,
+              2,
+              3
+            ]
+          }
+        },
+        {
+          "id": "setEnhancement",
+          "input": {
+            "operation": "setEnhancement",
+            "version": 2,
+            "requestId": "11111111-2222-4333-8444-555555555555",
+            "endpoint": 0,
+            "kind": 0,
+            "enabled": true,
+            "levelPercent": 55
+          }
+        },
+        {
+          "id": "applyApplicationProfile",
+          "input": {
+            "operation": "applyApplicationProfile",
+            "version": 2,
+            "requestId": "11111111-2222-4333-8444-555555555555",
+            "endpoint": 1,
+            "executableName": "synthetic.exe",
+            "mode": 1
+          }
+        },
+        {
+          "id": "old-version",
+          "input": {
+            "operation": "discover",
+            "version": 1,
+            "requestId": "11111111-2222-4333-8444-555555555555"
+          },
+          "failure": "versionMismatch"
+        },
+        {
+          "id": "oversize-prefix",
+          "declaredLength": 65537,
+          "failure": "lengthOutOfRange"
+        },
+        {
+          "id": "unknown-member",
+          "input": {
+            "operation": "discover",
+            "version": 2,
+            "requestId": "11111111-2222-4333-8444-555555555555",
+            "futureMember": true
+          },
+          "failure": "unknownMember"
+        }
+      ],
+      "legacyResponse": {
+        "version": 2,
+        "requestId": "11111111-2222-4333-8444-555555555555",
+        "status": 1,
+        "availability": 2,
+        "error": "Synthetic audio components absent.",
+        "state": null
+      }
+    },
+    "battery": {
+      "version": 1,
+      "maxMessageBytes": 262144,
+      "pipeAffix": ".Battery.v1",
+      "requests": [
+        {
+          "id": "report",
+          "input": {
+            "version": 1,
+            "requestId": "11111111-2222-4333-8444-555555555555"
+          }
+        },
+        {
+          "id": "old-version",
+          "input": {
+            "version": 0,
+            "requestId": "11111111-2222-4333-8444-555555555555"
+          },
+          "failure": "versionMismatch"
+        },
+        {
+          "id": "oversize-prefix",
+          "declaredLength": 262145,
+          "failure": "lengthOutOfRange"
+        },
+        {
+          "id": "unknown-member",
+          "input": {
+            "version": 1,
+            "requestId": "11111111-2222-4333-8444-555555555555",
+            "futureMember": true
+          },
+          "failure": "unknownMember"
+        }
+      ]
+    }
+  }
+}
