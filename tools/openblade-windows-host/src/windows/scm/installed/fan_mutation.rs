@@ -188,8 +188,8 @@ impl Runtime {
     /// the low-power gate is set: the override is validated and stored as
     /// `FanPermit::resolve_fan` stores it at a battery reading, and nothing is
     /// read or submitted. The reply is managed's committed message with its
-    /// per-write refusal (`LOW_POWER_STEP`), and the pair owes a
-    /// reconciliation for the first report after the gate clears
+    /// per-write refusal (`deferred_fan`), and the pair owes a reconciliation
+    /// for the first report after the gate clears
     /// (`Runtime::owe_stored_intent`). Only Windows battery classifies power
     /// without an adapter reading (`triggers::deferred_store_refusal`).
     ///
@@ -198,14 +198,12 @@ impl Runtime {
     /// the handback it owes needs a write.
     fn store_fan_deferred(
         &self,
-        storage: &Storage,
-        fresh: &dyn Fresh,
-        application: &Foreground,
-        pair: (&str, u32),
-        (value, settings): (Option<FanOverride>, Option<Value>),
+        store: super::triggers::DeferredStore<'_>,
+        value: Option<FanOverride>,
+        settings: Option<Value>,
     ) -> io::Result<Outcome> {
-        use super::triggers::{BATTERY, DeferredRefusal, LOW_POWER_STEP};
-        match super::triggers::deferred_store_refusal(fresh) {
+        use super::triggers::DeferredRefusal;
+        match super::triggers::deferred_store_refusal(store.fresh) {
             Some(DeferredRefusal::Admission) => {
                 return Ok(Outcome::blocked(FAN_ADMISSION_UNAVAILABLE));
             }
@@ -214,69 +212,97 @@ impl Runtime {
             }
             None => {}
         }
-        if storage.outstanding_fan() {
+        if store.storage.outstanding_fan() {
             return Ok(Outcome::blocked(FAN_HANDBACK_OWED));
         }
-        let committed = if value.is_none() {
-            "Fan override was cleared."
-        } else {
-            "Fan override intent was stored."
-        };
-        let stored = (|| {
-            let generation = fresh
-                .power_generation()
-                .ok_or(io::ErrorKind::PermissionDenied)?;
-            storage.observe_power(BATTERY, generation)?;
-            if let Some(message) = override_rejected(storage, fresh, value.as_ref(), BATTERY)? {
-                return Ok(Err(message));
-            }
-            // A saved document the domain decoder refuses stores nothing.
-            let layer = storage.profile_layer(application)?;
-            let profile = layer.at(BATTERY)?;
-            let profile = profile.as_ref();
-            let leaving_manual = storage.desired_manual_fans(BATTERY, profile)?;
-            storage.save_fan(value, settings, BATTERY)?;
-            // Managed's return to Automatic from saved manual intent
-            // (`ApplyDirectAutomaticFanTransitionOutcomeAsync`) applies the
-            // saved preset first, and its gate refuses that step: the reply
-            // names the preset, as `FanPermit::resolve_fan` carries it.
-            let returning = leaving_manual
-                && storage.desired_fan(BATTERY, profile)?.is_some_and(|s| {
-                    FanIntent::checked(
-                        s["mode"].as_u64().unwrap_or(255) as u8,
-                        s["fixedSpeedRpm"].as_u64().unwrap_or(0) as u16,
-                    )
-                    .is_some_and(|i| !i.manual())
-                });
-            if !returning {
-                return Ok(Ok(None));
-            }
-            Ok(Ok(match storage.desired(BATTERY, profile)? {
+        match self.store_fan_now(store, value, settings) {
+            Err(error) if is_fatal_admission(&error) => Err(error),
+            Err(_) => Ok(Outcome::blocked(FAN_NOT_ACCEPTED)),
+            stored => stored,
+        }
+    }
+    /// Every check and read of the store first, including the settings the
+    /// save leaves (`Storage::plan_fan_save`), then the save and the debt
+    /// together: an error before the save stores nothing, and nothing after
+    /// it can fail.
+    fn store_fan_now(
+        &self,
+        store: super::triggers::DeferredStore<'_>,
+        value: Option<FanOverride>,
+        settings: Option<Value>,
+    ) -> io::Result<Outcome> {
+        use super::triggers::BATTERY;
+        let super::triggers::DeferredStore {
+            storage,
+            fresh,
+            application,
+            pair,
+        } = store;
+        let generation = fresh
+            .power_generation()
+            .ok_or(io::ErrorKind::PermissionDenied)?;
+        storage.observe_power(BATTERY, generation)?;
+        if let Some(message) = override_rejected(storage, fresh, value.as_ref(), BATTERY)? {
+            return Ok(rejected_outcome(&message));
+        }
+        // A saved document the domain decoder refuses stores nothing.
+        let layer = storage.profile_layer(application)?;
+        let profile = layer.at(BATTERY)?;
+        let profile = profile.as_ref();
+        let plan = storage.plan_fan_save(value.as_ref(), settings.as_ref(), BATTERY, profile)?;
+        // Managed's return to Automatic from saved manual intent
+        // (`ApplyDirectAutomaticFanTransitionOutcomeAsync`) applies the saved
+        // preset first, and its gate refuses that step: the reply names the
+        // preset, as `FanPermit::resolve_fan` carries it.
+        let returning = if plan.leaving_manual && plan.settings.as_ref().is_some_and(automatic) {
+            match storage.desired(BATTERY, profile)? {
                 Some((destination, _)) => Some(destination.name()),
                 None if storage.custom_unsupported(BATTERY, profile)? => Some("Custom"),
                 None => None,
-            }))
-        })();
-        Ok(match stored {
-            Err(error) if is_fatal_admission(&error) => return Err(error),
-            Err(_) => Outcome::blocked(FAN_NOT_ACCEPTED),
-            Ok(Err(message)) => Outcome {
-                status: 3,
-                message: format!("The requested intent was rejected: {message}"),
-            },
-            Ok(Ok(returning)) => {
-                self.owe_stored_intent(pair);
-                let returning = returning.map_or(String::new(), |name| {
-                    format!(
-                        "Fans could not return to Automatic with the saved {name} performance intent. "
-                    )
-                });
-                Outcome::blocked(format!(
-                    "{committed} Hardware result: {returning}{LOW_POWER_STEP}"
-                ))
             }
-        })
+        } else {
+            None
+        };
+        let cleared = value.is_none();
+        storage.save_fan(value, settings, BATTERY)?;
+        self.owe_stored_intent(pair);
+        Ok(deferred_fan(cleared, returning))
     }
+}
+/// Whether fan `settings` decode to an Automatic intent.
+#[cfg(feature = "service-profile-triggers-v1")]
+fn automatic(settings: &Value) -> bool {
+    FanIntent::checked(
+        settings["mode"].as_u64().unwrap_or(255) as u8,
+        settings["fixedSpeedRpm"].as_u64().unwrap_or(0) as u16,
+    )
+    .is_some_and(|intent| !intent.manual())
+}
+/// Managed's reply for a fan override its own checks reject.
+fn rejected_outcome(message: &str) -> Outcome {
+    Outcome {
+        status: 3,
+        message: format!("The requested intent was rejected: {message}"),
+    }
+}
+/// The reply of an explicit fan request whose intent was stored while the
+/// low-power gate was set: the committed message, a refused return to
+/// Automatic with the saved preset `returning` names, and managed's per-write
+/// refusal (`LOW_POWER_STEP`).
+#[cfg(feature = "service-profile-triggers-v1")]
+fn deferred_fan(cleared: bool, returning: Option<&str>) -> Outcome {
+    let committed = if cleared {
+        "Fan override was cleared."
+    } else {
+        "Fan override intent was stored."
+    };
+    let returning = returning.map_or(String::new(), |name| {
+        format!("Fans could not return to Automatic with the saved {name} performance intent. ")
+    });
+    Outcome::blocked(format!(
+        "{committed} Hardware result: {returning}{}",
+        super::triggers::LOW_POWER_STEP
+    ))
 }
 /// A fan request that stored nothing: admission or persistence failed.
 const FAN_NOT_ACCEPTED: &str =
@@ -469,16 +495,24 @@ impl Permit for FanPermit {
         // reads the fans firmware reports instead, as its order does
         // (`DeviceSubsystemOrder.ForTransition`). It stores nothing, so the
         // override document is checked as a save would check it.
-        let leaving_manual = match self.reconcile {
+        // An explicit request reads everything its save leaves before the save
+        // commits (`Storage::plan_fan_save`), so settings the domain decoder
+        // refuses store nothing.
+        let (leaving_manual, saved) = match self.reconcile {
             Some(_) => {
                 self.storage.verify_overrides()?;
-                baseline.projection().1 != 0
+                (baseline.projection().1 != 0, None)
             }
             None => {
-                let prior = self.storage.desired_manual_fans(power, profile)?;
+                let plan = self.storage.plan_fan_save(
+                    self.value.as_ref(),
+                    self.settings.as_ref(),
+                    power,
+                    profile,
+                )?;
                 self.storage
                     .save_fan(self.value.clone(), self.settings.clone(), power)?;
-                prior
+                (plan.leaving_manual, Some(plan.settings))
             }
         };
         self.accepted.store(true, Ordering::Release);
@@ -494,7 +528,11 @@ impl Permit for FanPermit {
             *self.selected.lock().map_err(|_| io::ErrorKind::Other)? = Some((power, Value::Null));
             return Ok(FanIntent::checked(0, 3700).map(|i| (i, None)));
         }
-        let Some(settings) = self.storage.desired_fan(power, profile)? else {
+        let settings = match saved {
+            Some(settings) => settings,
+            None => self.storage.desired_fan(power, profile)?,
+        };
+        let Some(settings) = settings else {
             return Ok(None);
         };
         let intent = FanIntent::checked(
@@ -943,11 +981,14 @@ impl Runtime {
                 ));
                 return self
                     .store_fan_deferred(
-                        &storage,
-                        fresh.as_ref(),
-                        &self.foreground(&sid, caller.session),
-                        (&sid, caller.session),
-                        (value, settings),
+                        super::triggers::DeferredStore {
+                            storage: &storage,
+                            fresh: fresh.as_ref(),
+                            application: &self.foreground(&sid, caller.session),
+                            pair: (&sid, caller.session),
+                        },
+                        value,
+                        settings,
                     )
                     .map(|outcome| Stepped::new(outcome, None));
             }
@@ -981,6 +1022,11 @@ impl Runtime {
                 None,
             ));
         }
+        // The gate once an explicit request holds its own write admission, for
+        // a request the gate overtakes later (`overtaken_by_gate`). A
+        // reconciliation reads its own before each step.
+        #[cfg(feature = "service-profile-triggers-v1")]
+        let mark = reconcile.is_none().then(|| self.gate_mark());
         let application = self.foreground(&sid, caller.session);
         #[cfg(feature = "service-profile-triggers-v1")]
         if let Some(classes) = reconcile
@@ -1140,6 +1186,33 @@ impl Runtime {
         if result.as_ref().is_err_and(is_fatal_admission) {
             return result.map(|_| unreachable!());
         }
+        // Stored but not confirmed while the gate set, or set and cleared, with
+        // nothing submitted: the deferral it would have taken had the gate set
+        // first. A confirmed result, even one with no setter, keeps its reply.
+        #[cfg(feature = "service-profile-triggers-v1")]
+        if let Some(mark) = mark
+            && status != 1
+            && permit.accepted.load(Ordering::Acquire)
+            && self.overtaken_by_gate(mark, &permit.storage, &permit.request)
+        {
+            self.owe_stored_intent((&sid, caller.session));
+            let performance = *permit
+                .performance
+                .lock()
+                .map_err(|_| io::ErrorKind::Other)?;
+            let returning = match performance {
+                _ if !permit.returning.load(Ordering::Acquire) => None,
+                Some(preset) => Some(preset.name()),
+                None => permit
+                    .custom_unsupported
+                    .load(Ordering::Acquire)
+                    .then_some("Custom"),
+            };
+            return Ok(Stepped::new(
+                deferred_fan(permit.value.is_none(), returning),
+                None,
+            ));
+        }
         if permit.unchanged.load(Ordering::Acquire) {
             // Nothing was accepted or written; the reconciliation replies.
             return Ok(Stepped::unchanged());
@@ -1239,10 +1312,7 @@ impl Runtime {
             .clone()
             .filter(|_| !permit.accepted.load(Ordering::Acquire));
         let outcome = if let Some(rejected) = rejected {
-            Outcome {
-                status: 3,
-                message: format!("The requested intent was rejected: {rejected}"),
-            }
+            rejected_outcome(&rejected)
         } else if permit.unclassified_blocked.load(Ordering::Acquire)
             && !permit.accepted.load(Ordering::Acquire)
         {

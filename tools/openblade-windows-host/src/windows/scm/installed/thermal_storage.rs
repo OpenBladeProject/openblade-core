@@ -1176,13 +1176,7 @@ impl Storage {
         if s.quarantined || s.last.as_ref().is_some_and(|e| !settled(e.progress)) {
             return Err(denied());
         }
-        let resolved = value.as_ref().map(|v| {
-            let mut s = settings.unwrap_or_else(|| legacy_fan(v.value));
-            if v.value == 3 {
-                s["fixedSpeedRpm"] = json!(5400);
-            }
-            s
-        });
+        let resolved = value.as_ref().map(|v| resolved_fan(v, settings));
         let saved = value.as_ref().is_some_and(|v| v.lifetime == 1);
         let mut next = s.document.clone();
         next["overrides"]["fans"] = if saved {
@@ -1274,6 +1268,40 @@ impl Storage {
         }
         Ok(())
     }
+    /// What a `save_fan` of `value` and `settings` at class `power` leaves,
+    /// read before it commits: whether the saved intent it replaces is manual
+    /// (`desired_manual_fans`), and the settings `desired_fan` then selects.
+    /// Every check of that later read but the override document's, which the
+    /// save itself replaces, runs here, so a request whose resulting fan
+    /// settings the domain decoder refuses stores nothing.
+    pub(super) fn plan_fan_save(
+        &self,
+        value: Option<&crate::service_status::FanOverride>,
+        settings: Option<&Value>,
+        power: i32,
+        profile: Option<&Resolution<'_>>,
+    ) -> io::Result<FanSave> {
+        openblade_domain::fan_history::validate_requested(
+            &json!({"value":value,"settings":settings}),
+        )?;
+        let leaving_manual = self.desired_manual_fans(power, profile)?;
+        let settings = match value {
+            // A temporary override is selected as resolved; a persistent one
+            // is admitted as `desired_fan` admits the saved document.
+            Some(v) => {
+                let resolved = resolved_fan(v, settings.cloned());
+                if v.lifetime == 1 {
+                    openblade_domain::fan_history::validate_settings(&resolved)?;
+                }
+                Some(resolved)
+            }
+            None => profile_fan(power, profile)?,
+        };
+        Ok(FanSave {
+            leaving_manual,
+            settings,
+        })
+    }
     pub(super) fn desired_fan(
         &self,
         power: i32,
@@ -1301,19 +1329,7 @@ impl Storage {
             return Ok(Some(selected));
         }
         drop(s);
-        // The resolved profile's fan control: the application's when its
-        // override sets one, its legacy default when the override sets only
-        // the mode, and otherwise the power profile's, or the legacy default
-        // for the profile's mode (`resolve::apply`).
-        let Some(resolution) = profile_layer(profile, power) else {
-            return Ok(None);
-        };
-        let selected = match &resolution.profile.fan_control {
-            Some(settings) => fan_settings(settings),
-            None => legacy_fan(resolution.profile.fans.0 as u8),
-        };
-        openblade_domain::fan_history::validate_settings(&selected)?;
-        Ok(Some(selected))
+        profile_fan(power, profile)
     }
     pub(super) fn record_fan(&self, mut entry: Entry, cleanup: bool) -> io::Result<()> {
         let mut s = self.state.lock().map_err(|_| denied())?;
@@ -1869,6 +1885,37 @@ pub(super) fn legacy_fan(mode: u8) -> Value {
             .collect::<Vec<_>>()
     };
     json!({"mode":mode,"fixedSpeedRpm":if mode==3{5400}else{3700},"manualCurve":{"cpu":points([40,50,60,70,80,90],[2000,2100,2600,3400,4400,5400]),"gpu":points([35,45,55,65,75,85],[2000,2100,2700,3600,4500,5400]),"useHigherTemperatureForBoth":true}})
+}
+/// The settings a fan override saves: the requested ones, or the legacy
+/// defaults for its mode, with Maximum at its fixed bound.
+fn resolved_fan(value: &crate::service_status::FanOverride, settings: Option<Value>) -> Value {
+    let mut s = settings.unwrap_or_else(|| legacy_fan(value.value));
+    if value.value == 3 {
+        s["fixedSpeedRpm"] = json!(5400);
+    }
+    s
+}
+/// The resolved profile's fan control at class `power`: the application's
+/// when its override sets one, its legacy default when the override sets
+/// only the mode, and otherwise the power profile's, or the legacy default
+/// for the profile's mode (`resolve::apply`), admitted by the domain decoder.
+fn profile_fan(power: i32, profile: Option<&Resolution<'_>>) -> io::Result<Option<Value>> {
+    let Some(resolution) = profile_layer(profile, power) else {
+        return Ok(None);
+    };
+    let selected = match &resolution.profile.fan_control {
+        Some(settings) => fan_settings(settings),
+        None => legacy_fan(resolution.profile.fans.0 as u8),
+    };
+    openblade_domain::fan_history::validate_settings(&selected)?;
+    Ok(Some(selected))
+}
+/// What a fan save leaves, read before it commits (`Storage::plan_fan_save`).
+pub(super) struct FanSave {
+    /// The saved intent the save replaces is manual.
+    pub(super) leaving_manual: bool,
+    /// The settings `desired_fan` selects after the save.
+    pub(super) settings: Option<Value>,
 }
 #[cfg(test)]
 #[path = "thermal_storage_open_tests.rs"]

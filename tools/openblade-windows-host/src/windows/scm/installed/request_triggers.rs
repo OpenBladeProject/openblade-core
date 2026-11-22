@@ -102,6 +102,32 @@ pub(super) fn deferred_store_refusal(fresh: &dyn Fresh) -> Option<DeferredRefusa
     }
 }
 
+/// What an explicit request's low-power store reads and records: its
+/// capture's storage and storage admission, the foreground it resolves the
+/// profiles for, and the `(sid, session)` pair that then owes a
+/// reconciliation (`Runtime::owe_stored_intent`).
+pub(super) struct DeferredStore<'a> {
+    pub(super) storage: &'a Storage,
+    pub(super) fresh: &'a dyn Fresh,
+    pub(super) application: &'a Foreground,
+    pub(super) pair: (&'a str, u32),
+}
+
+/// Managed `AnyWritesAttempted` or `SubmissionPossible` for the step or
+/// request `id`: a journal row of it that is not known unsubmitted, or a
+/// fence that may hide a submission. A fence that provably reached none,
+/// such as a changed override document, is not.
+fn submission_possible(storage: &Storage, id: &str) -> bool {
+    storage.submission_possible()
+        || (storage.last_request().as_deref() == Some(id)
+            && storage.progress() != Some(Progress::KnownNotSubmitted as u8))
+}
+
+/// The low-power gate as an explicit request found it before its capture
+/// (`Runtime::overtaken_by_gate`).
+#[derive(Clone, Copy)]
+pub(super) struct GateMark(Gate);
+
 /// One reading of the low-power gate (`Runtime::gate`).
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Gate {
@@ -805,9 +831,7 @@ impl Runtime {
             // row of this step that is not known unsubmitted, or a fence that
             // may hide a submission. A fence that provably reached none, such
             // as a changed override document, is Blocked.
-            let possible = storage.submission_possible()
-                || (storage.last_request().as_deref() == Some(id.as_str())
-                    && storage.progress() != Some(Progress::KnownNotSubmitted as u8));
+            let possible = submission_possible(storage, &id);
             match stepped {
                 Ok(stepped) => {
                     let stepped = stepped?;
@@ -927,6 +951,29 @@ impl Runtime {
     /// capture (`Runtime::capture_intent`); nothing is admitted to write.
     pub(super) fn in_low_power(&self) -> bool {
         self.gate() == Gate::Low
+    }
+
+    /// The gate now, for `overtaken_by_gate` after the request.
+    pub(super) fn gate_mark(&self) -> GateMark {
+        GateMark(self.gate())
+    }
+
+    /// Whether an explicit request that stored its intent and then lost its
+    /// own write admission was overtaken by the low-power gate: the gate set
+    /// at some time after `mark`, even if it cleared again, nothing of the
+    /// request can have been submitted (`submission_possible`), and the store
+    /// is not fenced. It is the rule by which `reconcile_locked` takes a
+    /// refused step as a deferral, so the request replies as one stored while
+    /// the gate was set and owes the same reconciliation
+    /// (`owe_stored_intent`). A request that may have submitted keeps its own
+    /// result.
+    pub(super) fn overtaken_by_gate(
+        &self,
+        mark: GateMark,
+        storage: &Storage,
+        request: &str,
+    ) -> bool {
+        !submission_possible(storage, request) && !storage.pending() && self.gate() != mark.0
     }
 
     /// An explicit request stored new intent while the gate was set: the

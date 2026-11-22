@@ -751,13 +751,14 @@ impl Runtime {
                     caller.session,
                     reader.custody(),
                 ));
-                let application = self.foreground(&sid, caller.session);
                 return self
                     .store_performance_deferred(
-                        &storage,
-                        fresh.as_ref(),
-                        &application,
-                        (&sid, caller.session),
+                        triggers::DeferredStore {
+                            storage: &storage,
+                            fresh: fresh.as_ref(),
+                            application: &self.foreground(&sid, caller.session),
+                            pair: (&sid, caller.session),
+                        },
                         value,
                     )
                     .map(|outcome| Stepped::new(outcome, None));
@@ -767,6 +768,11 @@ impl Runtime {
                 None,
             ));
         };
+        // The gate once an explicit request holds its own write admission, for
+        // a request the gate overtakes later (`overtaken_by_gate`). A
+        // reconciliation reads its own before each step.
+        #[cfg(feature = "service-profile-triggers-v1")]
+        let mark = reconcile.is_none().then(|| self.gate_mark());
         let application = self.foreground(&sid, caller.session);
         #[cfg(feature = "service-profile-triggers-v1")]
         if let Some(classes) = reconcile
@@ -809,6 +815,19 @@ impl Runtime {
         };
         permit.fresh.verify_health()?;
         if final_proof != Some(proof) {
+            // Stored, then refused at its own write admission because the gate
+            // set: the deferral it would have taken had the gate set first.
+            #[cfg(feature = "service-profile-triggers-v1")]
+            if let Some(mark) = mark
+                && permit.accepted.load(Ordering::Acquire)
+                && self.overtaken_by_gate(mark, &permit.storage, &permit.request)
+            {
+                self.owe_stored_intent((&sid, caller.session));
+                return Ok(Stepped::new(
+                    deferred_performance(permit.value.is_none()),
+                    None,
+                ));
+            }
             return Ok(Stepped::new(
                 Outcome::blocked(
                     "Thermal result lost caller or owner admission; submission evidence is retained.",
@@ -858,11 +877,7 @@ impl Runtime {
             } else {
                 // Saved but unapplied: Blocked, prefixed as ExecuteScopedMutationAsync
                 // prefixes the hardware result after committing managed intent.
-                let committed = if permit.value.is_none() {
-                    "Performance override was cleared."
-                } else {
-                    "Performance override intent was stored."
-                };
+                let committed = performance_committed(permit.value.is_none());
                 // The policy can select and confirm another destination while the
                 // requested value itself stays saved but unapplied.
                 let reason = if observed.is_some() && !requested_applied {
@@ -1180,20 +1195,17 @@ impl Runtime {
     /// request while the low-power gate is set: the override is validated
     /// and stored as `RequestPermit::resolve` stores it at a battery reading,
     /// and nothing is read or submitted. The reply is managed's committed
-    /// message with its per-write refusal (`LOW_POWER_PERFORMANCE`), and the
+    /// message with its per-write refusal (`deferred_performance`), and the
     /// pair owes a reconciliation for the first report after the gate clears
     /// (`Runtime::owe_stored_intent`). Only Windows battery classifies power
     /// without an adapter reading (`triggers::deferred_store_refusal`).
     fn store_performance_deferred(
         &self,
-        storage: &Storage,
-        fresh: &dyn Fresh,
-        application: &Foreground,
-        pair: (&str, u32),
+        store: triggers::DeferredStore<'_>,
         value: Option<Override>,
     ) -> io::Result<Outcome> {
-        use triggers::{BATTERY, DeferredRefusal, LOW_POWER_PERFORMANCE};
-        match triggers::deferred_store_refusal(fresh) {
+        use triggers::DeferredRefusal;
+        match triggers::deferred_store_refusal(store.fresh) {
             Some(DeferredRefusal::Admission) => {
                 return Ok(Outcome::blocked(CURRENT_ADMISSION_UNAVAILABLE));
             }
@@ -1202,44 +1214,68 @@ impl Runtime {
             }
             None => {}
         }
-        let committed = if value.is_none() {
-            "Performance override was cleared."
-        } else {
-            "Performance override intent was stored."
-        };
-        let stored = (|| {
-            let generation = fresh
-                .power_generation()
-                .ok_or(io::ErrorKind::PermissionDenied)?;
-            storage.observe_power(BATTERY, generation)?;
-            if let Some(message) = combination_rejected(storage, fresh, value.as_ref(), BATTERY)? {
-                return Ok(Some(message));
-            }
-            // A saved document the domain decoder refuses stores nothing.
-            storage.profile_layer(application)?.at(BATTERY)?;
-            storage.save(value, BATTERY)?;
-            Ok(None)
-        })();
-        Ok(match stored {
-            Err(error) if is_fatal_admission(&error) => return Err(error),
-            Err(_) if storage.configuration_failed() => Outcome::blocked(
+        let storage = store.storage;
+        match self.store_performance_now(store, value) {
+            Err(error) if is_fatal_admission(&error) => Err(error),
+            Err(_) if storage.configuration_failed() => Ok(Outcome::blocked(
                 "Saved configuration replacement failed. Intent was not accepted; no thermal command was submitted. Storage reconciliation is required.",
-            ),
-            Err(_) => Outcome::blocked(
+            )),
+            Err(_) => Ok(Outcome::blocked(
                 "Performance intent was not accepted; admission or protected persistence failed.",
-            ),
-            Ok(Some(message)) => Outcome {
+            )),
+            stored => stored,
+        }
+    }
+    /// Every check and read of the store first, then the save and the debt
+    /// together: an error before the save stores nothing.
+    fn store_performance_now(
+        &self,
+        store: triggers::DeferredStore<'_>,
+        value: Option<Override>,
+    ) -> io::Result<Outcome> {
+        use triggers::BATTERY;
+        let triggers::DeferredStore {
+            storage,
+            fresh,
+            application,
+            pair,
+        } = store;
+        let generation = fresh
+            .power_generation()
+            .ok_or(io::ErrorKind::PermissionDenied)?;
+        storage.observe_power(BATTERY, generation)?;
+        if let Some(message) = combination_rejected(storage, fresh, value.as_ref(), BATTERY)? {
+            return Ok(Outcome {
                 status: 3,
                 message: Cause::Rejected(message).message(),
-            },
-            Ok(None) => {
-                self.owe_stored_intent(pair);
-                Outcome::blocked(format!(
-                    "{committed} Hardware result: {LOW_POWER_PERFORMANCE}"
-                ))
-            }
-        })
+            });
+        }
+        // A saved document the domain decoder refuses stores nothing.
+        storage.profile_layer(application)?.at(BATTERY)?;
+        let cleared = value.is_none();
+        storage.save(value, BATTERY)?;
+        self.owe_stored_intent(pair);
+        Ok(deferred_performance(cleared))
     }
+}
+/// Managed's committed message for an explicit performance request.
+fn performance_committed(cleared: bool) -> &'static str {
+    if cleared {
+        "Performance override was cleared."
+    } else {
+        "Performance override intent was stored."
+    }
+}
+/// The reply of an explicit performance request whose intent was stored
+/// while the low-power gate was set: the committed message with managed's
+/// per-write refusal (`LOW_POWER_PERFORMANCE`).
+#[cfg(feature = "service-profile-triggers-v1")]
+fn deferred_performance(cleared: bool) -> Outcome {
+    Outcome::blocked(format!(
+        "{} Hardware result: {}",
+        performance_committed(cleared),
+        triggers::LOW_POWER_PERFORMANCE
+    ))
 }
 /// Managed `ValidateThermalOverrideCombination` on classified power, run
 /// before the performance override `value` is stored: the requested preset
