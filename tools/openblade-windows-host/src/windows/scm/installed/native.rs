@@ -58,20 +58,12 @@ unsafe extern "system" fn service_main(argc: u32, argv: *mut *mut u16) {
 fn service() {
     registered_service(NAME, |runtime, handle, stop| {
         // Power-setting changes arrive at the SCM handler, which forwards
-        // them to the lifecycle. A registration failure fails start, as the
-        // managed lifecycle source's constructor does.
+        // them to the lifecycle. The supplier registers once RUNNING is
+        // reported and unregisters before STOPPED is.
         #[cfg(feature = "service-thermal-mutation-v1")]
-        let notices = match super::power_notifications::Registrations::register(
+        let mut notices = super::power_notifications::Supplier::new(
             super::power_notifications::native::ServiceHandle(handle),
-        ) {
-            Ok(notices) => notices,
-            Err(_) => {
-                let failed =
-                    crate::scm_host::status_for(crate::scm_host::Phase::Stopped { failed: true });
-                let _ = report(handle, &failed);
-                return;
-            }
-        };
+        );
         let _ = runtime.block_on(run_candidate(
             &CONTROLS,
             stop,
@@ -82,19 +74,17 @@ fn service() {
             admit_candidate,
             prepare_installed_endpoint,
             |status| {
-                // Unregister before the terminal report: SCM may end the
-                // process once it reads SERVICE_STOPPED.
                 #[cfg(feature = "service-thermal-mutation-v1")]
-                if status.dwCurrentState == windows_sys::Win32::System::Services::SERVICE_STOPPED
-                    && notices.close().is_err()
-                {
-                    let mut failed = *status;
-                    failed.dwWin32ExitCode = windows_sys::Win32::Foundation::ERROR_GEN_FAILURE;
-                    return report(handle, &failed);
-                }
+                return notices.report(status.dwCurrentState, || report(handle, status));
+                #[cfg(not(feature = "service-thermal-mutation-v1"))]
                 report(handle, status)
             },
         ));
+        // The Service has no native diagnostics sink yet. Managed's matching
+        // cleanup exception also escapes only after SERVICE_STOPPED, and the
+        // process exit releases any registration that failed to unregister.
+        #[cfg(feature = "service-thermal-mutation-v1")]
+        let _ = notices.take_cleanup_failure();
     });
 }
 

@@ -14,7 +14,8 @@
 //! device-discovery trigger, not a power notice, and stays out of this slice.
 //!
 //! Registration is all or nothing, as the managed constructor is: a failed
-//! registration unregisters what it registered and fails Service start.
+//! registration unregisters what it registered and fails Service start;
+//! `Supplier` places both against the SCM reports.
 //! Close unregisters once, in managed's order (power source, then console
 //! display), attempts both even when the first fails, and keeps returning
 //! the first outcome (managed `WindowsLifecycleRegistrationCleanup`).
@@ -112,6 +113,73 @@ impl<A: Api> Drop for Registrations<A> {
     }
 }
 
+/// When the Service registers and unregisters, around its own SCM reports.
+///
+/// Registration follows a successful SERVICE_RUNNING report, whose accepted
+/// controls include SERVICE_ACCEPT_POWEREVENT. Windows sends each setting's
+/// current value when it is registered, and SCM drops a power event the
+/// current status does not accept, so registering while START_PENDING (which
+/// accepts nothing) would lose the initial console display state. Managed's
+/// callback registration has no accept mask and receives that first value.
+/// A registration failure is returned from the RUNNING report, which
+/// `run_candidate` treats as a failed start: it retires the endpoint and
+/// reports SERVICE_STOPPED with a failure, as managed's constructor fails
+/// start.
+///
+/// Unregistration precedes the SERVICE_STOPPED report, because SCM may end
+/// the process once it reads it. Its failure never changes that report:
+/// managed's lifecycle source rethrows it only from host disposal, after the
+/// Windows service lifetime reported SERVICE_STOPPED, so a requested stop
+/// still reports its own outcome and the failure actions do not restart it.
+/// The failure is kept for the caller.
+pub(super) struct Supplier<A: Api> {
+    api: Option<A>,
+    registrations: Option<Registrations<A>>,
+    cleanup_failure: Option<io::Error>,
+}
+
+impl<A: Api> Supplier<A> {
+    pub(super) fn new(api: A) -> Self {
+        Self {
+            api: Some(api),
+            registrations: None,
+            cleanup_failure: None,
+        }
+    }
+
+    /// Reports one SCM status (`state` is its `dwCurrentState`) through
+    /// `report`, registering after RUNNING and unregistering before STOPPED.
+    pub(super) fn report(
+        &mut self,
+        state: u32,
+        report: impl FnOnce() -> io::Result<()>,
+    ) -> io::Result<()> {
+        use windows_sys::Win32::System::Services::{SERVICE_RUNNING, SERVICE_STOPPED};
+        if state == SERVICE_STOPPED {
+            // Nothing registers after the terminal report is decided.
+            self.api = None;
+            if let Some(registrations) = self.registrations.take()
+                && let Err(error) = registrations.close()
+            {
+                self.cleanup_failure = Some(error);
+            }
+            return report();
+        }
+        report()?;
+        if state == SERVICE_RUNNING
+            && let Some(api) = self.api.take()
+        {
+            self.registrations = Some(Registrations::register(api)?);
+        }
+        Ok(())
+    }
+
+    /// The unregistration failure of the terminal report, if any.
+    pub(super) fn take_cleanup_failure(&mut self) -> Option<io::Error> {
+        self.cleanup_failure.take()
+    }
+}
+
 /// RegisterPowerSettingNotification against the SCM status handle.
 #[cfg(not(test))]
 pub(super) mod native {
@@ -205,6 +273,108 @@ mod tests {
 
     fn calls(fake: &Fake) -> Vec<String> {
         fake.calls.borrow().clone()
+    }
+
+    use windows_sys::Win32::System::Services::{
+        SERVICE_RUNNING, SERVICE_START_PENDING, SERVICE_STOP_PENDING, SERVICE_STOPPED,
+    };
+
+    fn report(supplier: &mut Supplier<&Fake>, fake: &Fake, state: u32) -> io::Result<()> {
+        supplier.report(state, || {
+            fake.calls.borrow_mut().push(format!("report {state}"));
+            Ok(())
+        })
+    }
+
+    #[test]
+    fn the_supplier_registers_after_running_and_unregisters_before_stopped() {
+        let fake = Fake::default();
+        let mut supplier = Supplier::new(&fake);
+        for state in [SERVICE_START_PENDING, SERVICE_RUNNING, SERVICE_STOP_PENDING] {
+            report(&mut supplier, &fake, state).unwrap();
+        }
+        assert_eq!(
+            fake.calls.borrow().len(),
+            5,
+            "STOP_PENDING unregisters nothing"
+        );
+        report(&mut supplier, &fake, SERVICE_STOPPED).unwrap();
+        assert!(supplier.take_cleanup_failure().is_none());
+        drop(supplier);
+        assert_eq!(
+            calls(&fake),
+            [
+                "report 2",
+                "report 4",
+                "register PowerSource",
+                "register ConsoleDisplay",
+                "report 3",
+                "unregister 10",
+                "unregister 11",
+                "report 1"
+            ]
+        );
+    }
+
+    #[test]
+    fn a_failed_running_report_registers_nothing() {
+        let fake = Fake::default();
+        let mut supplier = Supplier::new(&fake);
+        let failed = supplier.report(SERVICE_RUNNING, || Err(io::ErrorKind::BrokenPipe.into()));
+        assert_eq!(failed.unwrap_err().kind(), io::ErrorKind::BrokenPipe);
+        report(&mut supplier, &fake, SERVICE_STOPPED).unwrap();
+        assert_eq!(calls(&fake), ["report 1"]);
+    }
+
+    #[test]
+    fn a_failed_registration_fails_the_running_report_and_leaves_nothing_to_close() {
+        let fake = Fake {
+            fail_register: Some(Setting::ConsoleDisplay),
+            ..Fake::default()
+        };
+        let mut supplier = Supplier::new(&fake);
+        let failed = report(&mut supplier, &fake, SERVICE_RUNNING).unwrap_err();
+        assert_eq!(failed.raw_os_error(), Some(5));
+        report(&mut supplier, &fake, SERVICE_STOPPED).unwrap();
+        assert!(supplier.take_cleanup_failure().is_none());
+        assert_eq!(
+            calls(&fake),
+            [
+                "report 4",
+                "register PowerSource",
+                "register ConsoleDisplay",
+                "unregister 10",
+                "report 1"
+            ]
+        );
+    }
+
+    #[test]
+    fn an_unregistration_failure_keeps_the_stopped_report_and_is_kept_for_the_caller() {
+        let fake = Fake {
+            fail_unregister: vec![10],
+            ..Fake::default()
+        };
+        let mut supplier = Supplier::new(&fake);
+        report(&mut supplier, &fake, SERVICE_RUNNING).unwrap();
+        // The stop's own outcome is reported unchanged.
+        report(&mut supplier, &fake, SERVICE_STOPPED).unwrap();
+        assert_eq!(
+            calls(&fake)[3..],
+            ["unregister 10", "unregister 11", "report 1"]
+        );
+        assert!(supplier.take_cleanup_failure().is_some());
+        assert!(supplier.take_cleanup_failure().is_none());
+    }
+
+    #[test]
+    fn a_stop_before_running_never_registers() {
+        let fake = Fake::default();
+        let mut supplier = Supplier::new(&fake);
+        report(&mut supplier, &fake, SERVICE_START_PENDING).unwrap();
+        report(&mut supplier, &fake, SERVICE_STOPPED).unwrap();
+        report(&mut supplier, &fake, SERVICE_RUNNING).unwrap();
+        assert_eq!(calls(&fake), ["report 2", "report 1", "report 4"]);
     }
 
     #[test]
