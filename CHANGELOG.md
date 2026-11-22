@@ -27,6 +27,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Fix the GPU temperature going blank while the NVIDIA GPU is on but idle, for example when an app keeps it awake without using it. Update the service. ([#1002](https://github.com/OpenBladeProject/openblade-core/pull/1002))
 - Return fans from a fixed speed or fan curve to Automatic without stopping the OpenBlade service. A performance mode chosen while the fans were manual is applied once when they return to Automatic. Clear manual overrides no longer reapplies the cleared mode first. ([#989](https://github.com/OpenBladeProject/openblade-core/pull/989))
 - Fix fan and performance controls staying blocked on laptops with GPU clock offsets after a performance or GPU change whose offsets were never changed or whose confirmation was lost. **Resume laptop controls** now clears it, and OpenBlade sends the offsets again with the next change. After a power-source change, the remaining fan, lighting and battery settings still apply if the GPU step fails. ([#991](https://github.com/OpenBladeProject/openblade-core/pull/991))
 - Fix the new profile's performance setting being refused after a power-source change when an earlier unconfirmed change had in fact been applied. ([#991](https://github.com/OpenBladeProject/openblade-core/pull/991))
