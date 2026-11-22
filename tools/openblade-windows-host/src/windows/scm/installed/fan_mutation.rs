@@ -44,6 +44,8 @@ pub(super) struct FanPermit {
     // A reconciliation's own adapter reading found a classified class
     // outside its classes: nothing was accepted or written.
     unchanged: AtomicBool,
+    // The classified class a reconciliation's reading found inside its classes.
+    class: Mutex<Option<i32>>,
     application: Foreground,
     proof: ReadAdmission,
     selected: Mutex<Option<(i32, Value)>>,
@@ -322,10 +324,14 @@ impl Permit for FanPermit {
         }
         self.observe_power(power)?;
         // A reconciliation applies only at the classes its trigger changed.
-        if self.reconcile.is_some_and(|classes| !classes.contains(power)) {
+        if self
+            .reconcile
+            .is_some_and(|classes| !classes.contains(power))
+        {
             self.unchanged.store(true, Ordering::Release);
             return Ok(None);
         }
+        *self.class.lock().map_err(|_| io::ErrorKind::Other)? = Some(power);
         // A reconciliation validates no override, as managed
         // `ApplyFullTransitionAsync` does not.
         if self.reconcile.is_none()
@@ -762,15 +768,18 @@ impl Runtime {
         let (storage, fresh) = match self.capture(&sid, caller.session, reader.custody()) {
             Ok(v) => v,
             Err(e) if is_fatal_admission(&e) => return Err(e),
+            // Nothing was read from firmware or submitted.
             Err(e) => {
-                return Ok(Stepped::new(
-                    Outcome::blocked(format!("Fan configuration admission failed: {e}")),
-                    None,
-                ));
+                return Ok(Stepped::transient(Outcome::blocked(format!(
+                    "Fan configuration admission failed: {e}"
+                ))));
             }
         };
         if storage.pending() {
-            return Ok(Stepped::new(Outcome::blocked(storage.pending_reason()?), None));
+            return Ok(Stepped::new(
+                Outcome::blocked(storage.pending_reason()?),
+                None,
+            ));
         }
         fresh.verify_health()?;
         let Some(proof) = fresh.authorize() else {
@@ -805,6 +814,13 @@ impl Runtime {
             ));
         }
         let application = self.foreground(&sid, caller.session);
+        #[cfg(feature = "service-profile-triggers-v1")]
+        if let Some(classes) = reconcile
+            && let Some(refused) =
+                refused_by_saved_intent(&storage, &application, classes, fresh.as_ref())?
+        {
+            return Ok(refused);
+        }
         if let Some(p) = &prior {
             p.fresh.verify_health()?;
         }
@@ -824,6 +840,7 @@ impl Runtime {
             settings,
             reconcile,
             unchanged: AtomicBool::new(false),
+            class: Mutex::new(None),
             application,
             proof,
             selected: Mutex::new(None),
@@ -957,12 +974,21 @@ impl Runtime {
         }
         if permit.unchanged.load(Ordering::Acquire) {
             // Nothing was accepted or written; the reconciliation replies.
-            return Ok(Stepped {
-                outcome: Outcome::blocked(UNCHANGED_CLASS),
-                snapshot: None,
-                unchanged: true,
-            });
+            return Ok(Stepped::unchanged());
         }
+        // A job that ended before its intent was accepted, which journals
+        // nothing (an adapter not classified yet, or time or admission that ran
+        // out while reading; a reconciliation is never rejected), a pace
+        // refusal, or a job that prepared a plan and then ran out of time or
+        // admission. An accepted job that prepared nothing found no native
+        // plan, which the same saved intent finds again. A job that stopped
+        // after its intent row may have submitted: the journal says so, and
+        // the reconciliation then retries nothing.
+        let transient = observed_none(&result)
+            && (!permit.accepted.load(Ordering::Acquire)
+                || permit.deadline.load(Ordering::Acquire)
+                || permit.prepared.load(Ordering::Acquire));
+        let class = *permit.class.lock().map_err(|_| io::ErrorKind::Other)?;
         // A return to Automatic that carried the saved destination reports it as
         // managed does, with managed's PerformancePreset names.
         let performance = *permit
@@ -1130,7 +1156,11 @@ impl Runtime {
             ))
         };
         match project() {
-            Ok(snapshot) => Ok(Stepped::new(outcome, snapshot)),
+            Ok(snapshot) => Ok(Stepped {
+                transient,
+                class,
+                ..Stepped::new(outcome, snapshot)
+            }),
             Err(error) if permit.reconcile.is_none() || is_fatal_admission(&error) => Err(error),
             // A reconciliation may already have written: its reply must reach
             // the trigger's caller (`after_write_unreadable`).
@@ -1222,6 +1252,64 @@ impl Runtime {
             .or(self.fan_owner.borrow().clone())?;
         owner.release.store(true, Ordering::Release);
         Some(FanSettlePermit::capture(&owner)?)
+    }
+}
+/// Whether a fan job returned no reading.
+fn observed_none(result: &io::Result<Option<ObservedPerformance>>) -> bool {
+    result.as_ref().is_ok_and(Option::is_none)
+}
+/// The hardware result of a fan job that ended without a native plan for the
+/// saved intent, as a reconciliation reports it.
+#[cfg(feature = "service-profile-triggers-v1")]
+const NO_RECIPE: &str = "This source or observed mode needs a native recipe that is not yet implemented, or admission/transaction capacity did not complete. No applied target is claimed.";
+/// A reconciliation's fan step refused from saved intent alone, before any
+/// firmware read or transaction pair (`Runtime::reconcile_locked`): at every
+/// class its reading could find, the saved fan intent has no native plan
+/// whatever the baseline. A mode `FanIntent::checked` refuses, such as
+/// ManualCurve, has no recipe, and manual fans have none on battery
+/// (`Plan::select` admits external sources only); the step would end with
+/// `NO_RECIPE` after reading. As for the performance step
+/// (`thermal_mutation::refused_by_saved_intent`), `classes` must cover every
+/// class fresh Windows power admits.
+#[cfg(feature = "service-profile-triggers-v1")]
+fn refused_by_saved_intent(
+    storage: &Storage,
+    application: &Foreground,
+    classes: Classes,
+    fresh: &dyn Fresh,
+) -> io::Result<Option<Stepped>> {
+    if classes != Classes::admitted(fresh) {
+        return Ok(None);
+    }
+    let refused = (|| {
+        storage.verify_overrides()?;
+        let layer = storage.profile_layer(application)?;
+        storage.unexpired(|| {
+            for class in classes.iter() {
+                let profile = layer.at(class)?;
+                let intent = storage.desired_fan(class, profile.as_ref())?.and_then(|s| {
+                    FanIntent::checked(
+                        s["mode"].as_u64().unwrap_or(255) as u8,
+                        s["fixedSpeedRpm"].as_u64().unwrap_or(0) as u16,
+                    )
+                });
+                if intent.is_some_and(|intent| !intent.manual() || class != 1) {
+                    return Ok(false);
+                }
+            }
+            Ok(true)
+        })
+    })();
+    match refused {
+        Ok(refused) => Ok(refused.then(|| Stepped::new(Outcome::blocked(NO_RECIPE), None))),
+        Err(error) if is_fatal_admission(&error) => Err(error),
+        Err(_) if storage.pending() => Ok(Some(Stepped::new(
+            Outcome::blocked(storage.pending_reason()?),
+            None,
+        ))),
+        Err(error) => Ok(Some(Stepped::transient(Outcome::blocked(format!(
+            "Fan configuration admission failed: {error}"
+        ))))),
     }
 }
 /// Managed `PerformancePreset` display words for a confirmed performance wire value.

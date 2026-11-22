@@ -919,24 +919,29 @@ impl Storage {
         Ok(next)
     }
     /// The terms managed `UpdateProfilesAsync` compares around a save, read
-    /// at classified class `power` (`SaveIntent::changed`). No adapter
-    /// reading established `power`, so the read retires no temporary: the
-    /// override reads expire one kept for another class, and that state is
-    /// put back afterwards.
+    /// at classified class `power` (`SaveIntent::changed`), without an
+    /// adapter reading (`unexpired`).
     #[cfg(feature = "service-profile-triggers-v1")]
     pub(super) fn save_intent(
         &self,
         foreground: &Foreground,
         power: i32,
     ) -> io::Result<SaveIntent> {
+        self.unexpired(|| self.save_intent_at(foreground, power))
+    }
+    /// Runs `read` over saved intent at classes no adapter reading
+    /// established, so it retires no temporary: the override reads expire one
+    /// kept for another class, and that state is put back afterwards.
+    #[cfg(feature = "service-profile-triggers-v1")]
+    pub(super) fn unexpired<T>(&self, read: impl FnOnce() -> io::Result<T>) -> io::Result<T> {
         let kept = {
             let s = self.state.lock().map_err(|_| denied())?;
             (s.temporary.clone(), s.temporary_fan.clone())
         };
-        let intent = self.save_intent_at(foreground, power);
+        let result = read();
         let mut s = self.state.lock().map_err(|_| denied())?;
         (s.temporary, s.temporary_fan) = kept;
-        intent
+        result
     }
     #[cfg(feature = "service-profile-triggers-v1")]
     fn save_intent_at(&self, foreground: &Foreground, power: i32) -> io::Result<SaveIntent> {

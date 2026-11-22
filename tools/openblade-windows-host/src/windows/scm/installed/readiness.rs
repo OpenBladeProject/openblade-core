@@ -764,8 +764,10 @@ fn mutation_budget(request: &StatusRequest) -> Duration {
 /// A request that may reconcile saved intent after it has committed
 /// (`service-profile-triggers-v1`). Its runtime bounds itself instead of the
 /// outer wait: it refuses before committing once the deadline has passed,
-/// and after committing each step refuses at its measured pace, so a late
-/// result is still answered rather than dropped with the connection.
+/// after committing each step refuses at its measured pace, and a step still
+/// waiting on a transfer `RECONCILE_MARGIN` past the deadline is dropped with
+/// the drop safety of an explicit request (`Runtime::reconcile_locked`). A
+/// late result is still answered rather than dropped with the connection.
 #[cfg(feature = "service-thermal-mutation-v1")]
 fn reconciles(request: &StatusRequest) -> bool {
     cfg!(feature = "service-profile-triggers-v1")

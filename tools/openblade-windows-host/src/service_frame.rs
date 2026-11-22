@@ -19,6 +19,13 @@ pub(crate) const FRAME_TIMEOUT: Duration = Duration::from_secs(2);
 // budget.
 #[allow(dead_code)]
 pub(crate) const RECONCILE_BUDGET: Duration = Duration::from_secs(11);
+/// How long past its deadline the Service waits for a reconciliation step
+/// whose transfer has not retired before it answers without that step. It is
+/// under one frame, so the reply still arrives within the Agent's wait.
+#[cfg(feature = "service-profile-triggers-v1")]
+pub(crate) const RECONCILE_MARGIN: Duration = Duration::from_secs(1);
+#[cfg(feature = "service-profile-triggers-v1")]
+const _: () = assert!(RECONCILE_MARGIN.as_nanos() < FRAME_TIMEOUT.as_nanos());
 
 pub(crate) fn is_guid(id: &str) -> bool {
     id.len() == 36

@@ -442,7 +442,8 @@ const REPORT_CONNECT_BUDGET: Duration = Duration::from_secs(2);
 /// unacknowledged and the report pending.
 #[cfg(feature = "agent-application-reporter-v1")]
 const REPORT_REPLY_BUDGET: Duration = Duration::from_secs(
-    crate::service_frame::RECONCILE_BUDGET.as_secs() + crate::service_frame::FRAME_TIMEOUT.as_secs(),
+    crate::service_frame::RECONCILE_BUDGET.as_secs()
+        + crate::service_frame::FRAME_TIMEOUT.as_secs(),
 );
 
 #[cfg(feature = "agent-application-reporter-v1")]
@@ -502,7 +503,11 @@ impl<'a> ReportChannel<'a> {
         verify_peer(generation.as_ref(), pid, &stream, &peer)?;
         let exchanged = async {
             write_payload(&mut stream, &payload).await?;
-            timeout_at(Instant::now() + REPORT_REPLY_BUDGET, read_payload(&mut stream)).await?
+            timeout_at(
+                Instant::now() + REPORT_REPLY_BUDGET,
+                read_payload(&mut stream),
+            )
+            .await?
         }
         .await;
         let reply = match exchanged {

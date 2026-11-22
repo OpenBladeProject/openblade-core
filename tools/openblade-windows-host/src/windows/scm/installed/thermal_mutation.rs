@@ -85,7 +85,9 @@ mod profiles;
 #[path = "request_triggers.rs"]
 mod triggers;
 #[cfg(all(test, feature = "service-profile-triggers-v1"))]
-pub(super) use triggers::{APPLICATION_SESSION_REQUIRED, fans_first, is_step_request, operation_status};
+pub(super) use triggers::{
+    APPLICATION_SESSION_REQUIRED, fans_first, is_step_request, operation_status,
+};
 pub(super) trait Fresh: Send + Sync {
     /// The fresh Windows power kind: `Some(false)` is AC (ACLineStatus
     /// online), `Some(true)` battery and `None` unknown. It is never wattage
@@ -177,10 +179,10 @@ type ReleaseHook = Rc<dyn Fn()>;
 pub(super) struct Runtime {
     factory: Rc<Factory>,
     application: Rc<RefCell<Option<Application>>>,
-    // The `(sid, session)` pairs whose saved intent was reconciled since the
-    // service started or their intent last changed (`triggers`).
+    // What each `(sid, session)` pair owes a reconciliation of its saved
+    // intent (`triggers::Debt`); a pair without an entry owes its startup one.
     #[cfg(feature = "service-profile-triggers-v1")]
-    reconciled: Rc<RefCell<std::collections::HashSet<(String, u32)>>>,
+    debts: Rc<RefCell<std::collections::HashMap<(String, u32), triggers::Debt>>>,
     fan_owner: Rc<RefCell<Option<Arc<fan::FanPermit>>>>,
     temporary_owner: Rc<RefCell<Option<Arc<battery::BatteryPermit>>>>,
     temporary_pending: Rc<RefCell<Option<Arc<battery::BatteryPermit>>>>,
@@ -235,14 +237,25 @@ impl Classes {
         (0..=2).contains(&class) && self.0 & (1 << class) != 0
     }
 }
-/// One step's reply and status projection, and whether a reconciliation's
-/// step found its class outside `Classes` and so wrote nothing.
+/// One step's reply and status projection, and what a reconciliation
+/// (`triggers`) reads of it: whether the step found its class outside
+/// `Classes` and so wrote nothing, whether its refusal may clear by itself
+/// before any submission, and the class its reading found.
 pub(super) struct Stepped {
     pub(super) outcome: Outcome,
     pub(super) snapshot: Option<Snapshot>,
-    // Only a reconciliation (`triggers`) reads it.
+    // Only a reconciliation (`triggers`) reads these.
     #[cfg_attr(not(feature = "service-profile-triggers-v1"), allow(dead_code))]
     pub(super) unchanged: bool,
+    // Refused before any setter for a cause that may clear by itself: the
+    // measured pace (`Refusal::Deadline`), an adapter reading that is not
+    // classified yet, or a store or profile read that failed. Whether the step
+    // submitted anything is the journal's to say (`Runtime::reconcile_locked`).
+    #[cfg_attr(not(feature = "service-profile-triggers-v1"), allow(dead_code))]
+    pub(super) transient: bool,
+    // The classified class the step's reading found inside its classes.
+    #[cfg_attr(not(feature = "service-profile-triggers-v1"), allow(dead_code))]
+    pub(super) class: Option<i32>,
 }
 impl Stepped {
     fn new(outcome: Outcome, snapshot: Option<Snapshot>) -> Self {
@@ -250,6 +263,23 @@ impl Stepped {
             outcome,
             snapshot,
             unchanged: false,
+            transient: false,
+            class: None,
+        }
+    }
+    /// A refusal before any firmware access that may clear by itself.
+    fn transient(outcome: Outcome) -> Self {
+        Self {
+            transient: true,
+            ..Self::new(outcome, None)
+        }
+    }
+    /// A reconciliation step whose own reading found a classified class its
+    /// trigger did not change: nothing was accepted or written.
+    fn unchanged() -> Self {
+        Self {
+            unchanged: true,
+            ..Self::new(Outcome::blocked(UNCHANGED_CLASS), None)
         }
     }
     fn reply(self) -> (Outcome, Option<Snapshot>) {
@@ -326,7 +356,7 @@ impl Runtime {
             factory: Rc::new(factory),
             application: Rc::default(),
             #[cfg(feature = "service-profile-triggers-v1")]
-            reconciled: Rc::default(),
+            debts: Rc::default(),
             fan_owner: Rc::default(),
             temporary_owner: Rc::default(),
             temporary_pending: Rc::default(),
@@ -391,7 +421,7 @@ impl Runtime {
             }),
             application: Rc::default(),
             #[cfg(feature = "service-profile-triggers-v1")]
-            reconciled: Rc::default(),
+            debts: Rc::default(),
             fan_owner: Rc::default(),
             temporary_owner: Rc::default(),
             temporary_pending: Rc::default(),
@@ -558,11 +588,7 @@ impl Runtime {
     /// reconciliation of saved intent (`ThermalStep::reconcile`), which
     /// stores nothing and keeps every per-write admission, re-check,
     /// readback and stop-on-ambiguity path of the request.
-    async fn apply_locked(
-        &self,
-        mailbox: MailboxSource,
-        step: ThermalStep,
-    ) -> io::Result<Stepped> {
+    async fn apply_locked(&self, mailbox: MailboxSource, step: ThermalStep) -> io::Result<Stepped> {
         let ThermalStep {
             caller,
             sid,
@@ -596,18 +622,19 @@ impl Runtime {
             Err(e) if is_fatal_admission(&e) => {
                 return Err(e);
             }
+            // Nothing was read from firmware or submitted.
             Err(e) => {
-                return Ok(Stepped::new(
-                    Outcome::blocked(format!(
-                        "Saved thermal configuration or fresh admission is unavailable: {e}"
-                    )),
-                    None,
-                ));
+                return Ok(Stepped::transient(Outcome::blocked(format!(
+                    "Saved thermal configuration or fresh admission is unavailable: {e}"
+                ))));
             }
         };
         fresh.verify_health()?;
         if storage.pending() {
-            return Ok(Stepped::new(Outcome::blocked(storage.pending_reason()?), None));
+            return Ok(Stepped::new(
+                Outcome::blocked(storage.pending_reason()?),
+                None,
+            ));
         }
         let proof = fresh.authorize();
         fresh.verify_health()?;
@@ -620,6 +647,13 @@ impl Runtime {
             ));
         };
         let application = self.foreground(&sid, caller.session);
+        #[cfg(feature = "service-profile-triggers-v1")]
+        if let Some(classes) = reconcile
+            && let Some(refused) =
+                refused_by_saved_intent(&storage, &application, classes, fresh.as_ref())?
+        {
+            return Ok(refused);
+        }
         reader.retain_policy(self.thermal_policy(sid.clone(), caller.session, reader.custody()));
         let intent = format!("{:x}", Sha256::digest(serde_json::to_vec(&value)?));
         let permit = Arc::new(RequestPermit {
@@ -741,17 +775,22 @@ impl Runtime {
             Cause::Unchanged
         ) {
             // Nothing was accepted or written; the reconciliation replies.
-            return Ok(Stepped {
-                outcome: Outcome::blocked(UNCHANGED_CLASS),
-                snapshot: None,
-                unchanged: true,
-            });
+            return Ok(Stepped::unchanged());
         } else {
             Outcome::blocked(
                 "Performance intent was not accepted; admission or protected persistence failed.",
             )
         };
         let power = *permit.power.lock().map_err(|_| io::ErrorKind::Other)?;
+        // A pace refusal, an adapter not classified yet, or a job that ran out
+        // of time or admission at a reading or checkpoint without a refusal of
+        // its own. A job that stopped after its intent row may have submitted:
+        // the journal says so, and the reconciliation then retries nothing.
+        let transient = observed.is_none()
+            && matches!(
+                *permit.cause.lock().map_err(|_| io::ErrorKind::Other)?,
+                Cause::Deadline | Cause::UnclassifiedBlocked | Cause::CurrentAdmission
+            );
         let selected_source = *permit
             .selected_source
             .lock()
@@ -785,7 +824,11 @@ impl Runtime {
             }))
         };
         match project(status) {
-            Ok(snapshot) => Ok(Stepped::new(outcome, snapshot)),
+            Ok(snapshot) => Ok(Stepped {
+                transient,
+                class: power,
+                ..Stepped::new(outcome, snapshot)
+            }),
             Err(error) if reconcile.is_none() || is_fatal_admission(&error) => Err(error),
             // A reconciliation may already have written: its reply must reach
             // the trigger's caller, so a store that changed or cannot be read
@@ -793,6 +836,59 @@ impl Runtime {
             // ending the Service.
             Err(_) => Ok(Stepped::new(after_write_unreadable(&permit.storage)?, None)),
         }
+    }
+}
+/// A reconciliation's performance step refused from saved intent alone, before
+/// any firmware read or transaction pair (`Runtime::reconcile_locked`): at every
+/// class its reading could find, the saved policy carries a GPU clock effect,
+/// which has no native writer, or selects no destination. The step would read
+/// the adapter only to reach the same refusal at whichever class it found.
+/// `classes` must cover every class fresh Windows power admits, or the reading
+/// could find one the trigger did not change, which writes nothing either but
+/// replies so. A store or profile read that fails is a transient refusal; a
+/// changed override document fences the store, as the step's own check would.
+#[cfg(feature = "service-profile-triggers-v1")]
+fn refused_by_saved_intent(
+    storage: &Storage,
+    application: &Foreground,
+    classes: Classes,
+    fresh: &dyn Fresh,
+) -> io::Result<Option<Stepped>> {
+    if classes != Classes::admitted(fresh) {
+        return Ok(None);
+    }
+    let refusal = (|| {
+        storage.verify_overrides()?;
+        let layer = storage.profile_layer(application)?;
+        storage.unexpired(|| {
+            let mut causes = Vec::new();
+            for class in classes.iter() {
+                let profile = layer.at(class)?;
+                let cause = if storage.gpu_incomplete(class, profile.as_ref())? {
+                    Cause::Gpu
+                } else if storage.desired(class, profile.as_ref())?.is_none() {
+                    Cause::NoEligiblePolicy
+                } else {
+                    return Ok(None);
+                };
+                let message = cause.message();
+                if !causes.contains(&message) {
+                    causes.push(message);
+                }
+            }
+            Ok(Some(causes.join(" ")))
+        })
+    })();
+    match refusal {
+        Ok(refused) => Ok(refused.map(|message| Stepped::new(Outcome::blocked(message), None))),
+        Err(error) if is_fatal_admission(&error) => Err(error),
+        Err(_) if storage.pending() => Ok(Some(Stepped::new(
+            Outcome::blocked(storage.pending_reason()?),
+            None,
+        ))),
+        Err(error) => Ok(Some(Stepped::transient(Outcome::blocked(format!(
+            "Saved thermal configuration or fresh admission is unavailable: {error}"
+        ))))),
     }
 }
 /// The saved policy's destination for one fresh class, and why it may not be
@@ -1106,7 +1202,10 @@ impl Permit for RequestPermit {
             self.observe_power(power)?;
             // A reconciliation applies only at the classes its trigger changed;
             // only this reading tells the external classes apart.
-            if self.reconcile.is_some_and(|classes| !classes.contains(power)) {
+            if self
+                .reconcile
+                .is_some_and(|classes| !classes.contains(power))
+            {
                 self.set_cause(Cause::Unchanged);
                 return Ok(None);
             }

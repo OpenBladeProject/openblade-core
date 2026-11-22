@@ -3,22 +3,28 @@
 //! the saved intent through `ApplyFullTransitionAsync`.
 //!
 //! A pair owes a reconciliation from service start and after each change of
-//! its active application or saved thermal intent (`Runtime::reconciled`).
-//! A report reconciles while the pair owes one, and a save that changes the
-//! active application's thermal intent reconciles at the changed classes.
-//! Only an outcome that may have submitted, or that confirmed there is
-//! nothing to do, settles the debt: a refusal that provably submitted
-//! nothing leaves it owed for the next report.
+//! its active application or saved thermal intent (`Debt`). A report
+//! reconciles while the pair owes one, and a save that changes the active
+//! application's thermal intent reconciles at the changed classes. Every
+//! reconciliation that reads firmware settles the debt, as managed attempts a
+//! changed pair once, except a refusal that may clear by itself and
+//! submitted nothing (`RETRIES`). Refusals before any step (unknown power,
+//! no admission, a fenced store) read no firmware and leave the debt as it
+//! was; a step refused by saved intent alone reads none either
+//! (`refused_by_saved_intent`).
 //!
 //! Each step runs under its own journal id (`step_request`), with every
 //! per-write admission, `destination_holds` re-check, readback and
 //! stop-on-ambiguity path of an explicit request. Nothing is stored and no
-//! step is replayed: a fenced store stops the reconciliation.
+//! step is replayed: a fenced store stops the reconciliation. A step still
+//! waiting on a transfer `RECONCILE_MARGIN` past the deadline is dropped as
+//! an explicit request is at its own deadline, and the trigger answers.
 use super::fan::FanRequest;
 use super::profiles::Updated;
 use super::*;
 use crate::installed::readiness::thermal_storage::ProfileSave;
 use openblade_domain::profile_set::{ProfileSet, update::STORED_MESSAGE};
+use tokio::time::timeout_at;
 
 /// Managed `ReportApplicationContextAsync` (Blocked) for a reporter that no
 /// longer controls the active local session.
@@ -30,6 +36,18 @@ const DEADLINE_PASSED: &str = "The request deadline passed before it was admitte
 const RECORDED: &str = "The active application profile was recorded.";
 const RENEWED: &str = "The active application profile lease was renewed.";
 const INACTIVE: &str = "No application profile is active.";
+/// A reconciliation answered at its bound while a step had not finished.
+const UNFINISHED: &str = "The reconciliation did not finish within its budget.";
+/// The same, when that step had journaled nothing that could be submitted.
+const UNFINISHED_UNSUBMITTED: &str =
+    "The reconciliation did not finish within its budget; no thermal setter was submitted.";
+/// A pair whose reconciliation was refused for a cause that may clear by
+/// itself, before any submission (`Stepped::transient`), stays owed and is
+/// retried on later reports, at most this many times: one change reads
+/// firmware for at most three reconciliations. A renewal arrives every 5 s,
+/// so an unbounded debt would read firmware, and draw transaction pairs, on
+/// each one.
+const RETRIES: u8 = 2;
 
 /// The classified classes fresh Windows power admits before any adapter
 /// reading: battery, or on AC the two classified external classes, which
@@ -44,6 +62,11 @@ fn reconcile_classes(fresh: &dyn Fresh) -> &'static [i32] {
     }
 }
 impl Classes {
+    const ALL: Self = Self(0b111);
+    /// The classes fresh Windows power admits (`reconcile_classes`).
+    pub(super) fn admitted(fresh: &dyn Fresh) -> Self {
+        Self::of(reconcile_classes(fresh).iter().copied())
+    }
     fn of(classes: impl IntoIterator<Item = i32>) -> Self {
         Self(
             classes
@@ -55,15 +78,47 @@ impl Classes {
     fn is_empty(self) -> bool {
         self.0 == 0
     }
-    fn iter(self) -> impl Iterator<Item = i32> {
+    fn union(self, other: Self) -> Self {
+        Self(self.0 | other.0)
+    }
+    fn intersection(self, other: Self) -> Self {
+        Self(self.0 & other.0)
+    }
+    pub(super) fn iter(self) -> impl Iterator<Item = i32> {
         (0..=2).filter(move |&class| self.contains(class))
+    }
+}
+
+/// What one `(sid, session)` pair owes (`Runtime::debts`). A pair without
+/// an entry owes its startup reconciliation at every class.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Debt {
+    Settled,
+    /// The saved intent at `classes` needs a reconciliation; `attempts`
+    /// counts the transient refusals already spent on it (`RETRIES`).
+    Owed {
+        classes: Classes,
+        attempts: u8,
+    },
+}
+impl Debt {
+    /// A new change at `classes`, with no attempt spent.
+    fn owed(classes: Classes) -> Self {
+        Self::Owed {
+            classes,
+            attempts: 0,
+        }
     }
 }
 
 /// Managed `ServiceTransitionApplicationOutcome.ToOperationResult`: Applied
 /// (1) when fully applied, else Stored (0) when the trigger stored intent,
 /// else Failed (3) when a setter may have been submitted, else Blocked (2).
-pub(in super::super) fn operation_status(fully_applied: bool, intent_stored: bool, submitted: bool) -> u8 {
+pub(in super::super) fn operation_status(
+    fully_applied: bool,
+    intent_stored: bool,
+    submitted: bool,
+) -> u8 {
     if fully_applied {
         1
     } else if intent_stored {
@@ -143,30 +198,48 @@ struct Reconciled {
     submitted: bool,
     // Every step found its class unchanged and wrote nothing.
     unchanged: bool,
+    // Not applied, but each step that needed a change was confirmed or was
+    // refused transiently (`Stepped::transient`) with nothing of it
+    // journaled as possibly submitted, and the store is not fenced: running
+    // the steps again replays no submission.
+    retry: bool,
+    // The classes the readings of the steps that needed a change found.
+    read: Classes,
+    // A step had not finished at the bound (`RECONCILE_MARGIN`).
+    unfinished: bool,
     message: String,
     snapshot: Option<Snapshot>,
 }
 impl Reconciled {
-    /// Whether the outcome settles the pair's owed reconciliation: it may
-    /// have submitted, which is never replayed, or it confirmed there is
-    /// nothing left to apply.
-    fn settles(&self) -> bool {
-        self.applied || self.submitted || self.unchanged
+    /// The debt a report's reconciliation of `classes` leaves after
+    /// `attempts` earlier transient refusals: settled, unless it may be
+    /// retried and `RETRIES` allows another.
+    fn after(&self, classes: Classes, attempts: u8) -> Debt {
+        if self.retry && attempts < RETRIES {
+            Debt::Owed {
+                classes,
+                attempts: attempts + 1,
+            }
+        } else {
+            Debt::Settled
+        }
     }
     /// Managed `ToOperationResult(intentStored)`, with the trigger's prefix.
+    /// Managed waits for every step; native answers at its bound while a step
+    /// may still be submitting, which is Failed even after a save, so the
+    /// caller does not take the stored profiles for a settled hardware result.
     fn into_outcome(self, intent_stored: bool, prefix: &str) -> (Outcome, Option<Snapshot>) {
         let message = if self.message.is_empty() {
             prefix.to_owned()
         } else {
             format!("{prefix} {}", self.message)
         };
-        (
-            Outcome {
-                status: operation_status(self.applied, intent_stored, self.submitted),
-                message,
-            },
-            self.snapshot,
-        )
+        let status = if self.unfinished && self.submitted {
+            3
+        } else {
+            operation_status(self.applied, intent_stored, self.submitted)
+        };
+        (Outcome { status, message }, self.snapshot)
     }
 }
 /// One admitted profile save (`Runtime::save_profiles_locked`).
@@ -294,20 +367,28 @@ impl Runtime {
         let active = next.active_id().is_some();
         record(next);
         let key = (sid.clone(), caller.session);
-        if changed {
-            self.reconciled.borrow_mut().remove(&key);
-        }
         let idle = if active { RENEWED } else { INACTIVE };
-        if self.reconciled.borrow().contains(&key) {
+        // A changed pair owes a new reconciliation at every class.
+        let debt = if changed {
+            Debt::owed(Classes::ALL)
+        } else {
+            self.debt(&key)
+        };
+        self.debts.borrow_mut().insert(key.clone(), debt);
+        let Debt::Owed {
+            classes: owed,
+            attempts,
+        } = debt
+        else {
             return stored(idle);
-        }
+        };
         let unapplied = if changed { RECORDED } else { idle };
         // Managed applies only on classified power with a verified device and
         // writes not blocked (`ActivePowerSource`, `DeviceVerified`,
         // `WritesBlocked`); every write still passes its own admission, and
         // each step refuses an adapter its own reading finds unclassified.
-        // A refusal here leaves the reconciliation owed.
-        let classes = Classes::of(reconcile_classes(fresh.as_ref()).iter().copied());
+        // A refusal here reads no firmware and leaves the debt as it was.
+        let classes = owed.intersection(Classes::admitted(fresh.as_ref()));
         // A fenced store, such as an override document changed outside the
         // Service, names its storage reconciliation before any submission.
         if storage.pending() {
@@ -336,9 +417,9 @@ impl Runtime {
                 },
             )
             .await?;
-        if reconciled.settles() {
-            self.reconciled.borrow_mut().insert(key);
-        }
+        self.debts
+            .borrow_mut()
+            .insert(key, reconciled.after(owed, attempts));
         if reconciled.unchanged {
             return stored(unapplied);
         }
@@ -441,10 +522,18 @@ impl Runtime {
             return stored();
         }
         let key = (sid.clone(), caller.session);
-        self.reconciled.borrow_mut().remove(&key);
+        let prior = self.debt(&key);
+        // The save's change, with what the pair owed before it.
+        let combined = match prior {
+            Debt::Owed { classes, .. } => classes.union(changed),
+            Debt::Settled => changed,
+        };
+        self.debts
+            .borrow_mut()
+            .insert(key.clone(), Debt::owed(combined));
         // Managed also needs a verified device with writes not blocked; every
-        // write still passes its own admission. A refusal here leaves the
-        // reconciliation owed to the next report.
+        // write still passes its own admission. A refusal here reads no
+        // firmware and leaves the change owed to the next report.
         fresh.verify_health()?;
         let admitted = !storage.pending() && fresh.authorize().is_some();
         fresh.verify_health()?;
@@ -465,11 +554,29 @@ impl Runtime {
                 },
             )
             .await?;
-        if reconciled.settles() {
-            self.reconciled.borrow_mut().insert(key);
-        }
-        // The adapter reports a class the save did not change: managed
-        // compares there and applies nothing.
+        let debt = if reconciled.unchanged {
+            // The adapter reports a class the save did not change: managed
+            // compares there and applies nothing, and what the pair owed
+            // before the save is left as it was.
+            prior
+        } else if reconciled.retry {
+            // The save was the first attempt; later reports retry.
+            Debt::Owed {
+                classes: combined,
+                attempts: 1,
+            }
+        } else {
+            match prior {
+                // A debt owed before the save is settled only by a
+                // reconciliation whose reading found one of its classes:
+                // the steps there apply the whole saved intent of that class.
+                Debt::Owed { classes, .. } if reconciled.read.intersection(classes).is_empty() => {
+                    prior
+                }
+                _ => Debt::Settled,
+            }
+        };
+        self.debts.borrow_mut().insert(key, debt);
         if reconciled.unchanged {
             return stored();
         }
@@ -517,64 +624,110 @@ impl Runtime {
         } else {
             [Step::Performance, Step::Fans]
         };
-        let mut steps = Vec::with_capacity(order.len());
-        let mut submitted = false;
+        // The trigger answers by this bound even when a step's transfer has
+        // not retired (`RECONCILE_MARGIN`).
+        let bound = deadline + crate::service_frame::RECONCILE_MARGIN;
+        // Each step, and whether it may have submitted.
+        let mut steps: Vec<(Stepped, bool)> = Vec::with_capacity(order.len());
+        let mut unfinished = false;
         for kind in order {
             if storage.pending() {
                 break;
             }
             let id = step_request(&request, kind);
-            let stepped = match kind {
-                Step::Performance => {
-                    self.apply_locked(
-                        mailbox.clone(),
-                        ThermalStep {
-                            caller,
-                            sid: sid.clone(),
-                            request: id.clone(),
-                            value: None,
-                            reconcile: Some(classes),
-                            deadline,
-                            status: status.clone(),
-                        },
-                    )
-                    .await?
-                }
-                Step::Fans => {
-                    self.apply_fan_locked(
-                        mailbox.clone(),
-                        FanRequest {
-                            caller,
-                            sid: sid.clone(),
-                            request: id.clone(),
-                            value: None,
-                            settings: None,
-                            deadline,
-                            status: status.clone(),
-                        },
-                        Some(classes),
-                    )
-                    .await?
+            let step = async {
+                match kind {
+                    Step::Performance => {
+                        self.apply_locked(
+                            mailbox.clone(),
+                            ThermalStep {
+                                caller,
+                                sid: sid.clone(),
+                                request: id.clone(),
+                                value: None,
+                                reconcile: Some(classes),
+                                deadline,
+                                status: status.clone(),
+                            },
+                        )
+                        .await
+                    }
+                    Step::Fans => {
+                        self.apply_fan_locked(
+                            mailbox.clone(),
+                            FanRequest {
+                                caller,
+                                sid: sid.clone(),
+                                request: id.clone(),
+                                value: None,
+                                settings: None,
+                                deadline,
+                                status: status.clone(),
+                            },
+                            Some(classes),
+                        )
+                        .await
+                    }
                 }
             };
+            // At the bound the step is dropped exactly as `serve_mutation`
+            // drops an explicit request at its deadline: the Reader keeps the
+            // worker and permit it registered, so every later mutation first
+            // waits for that worker's own retirement and then settles the
+            // permit (`ReadSource::drain_mutation`), and a journal row past
+            // its intent stays unsettled, fencing the store. No later request
+            // can submit while this worker still might.
+            let stepped = timeout_at(bound, step).await;
             // Managed `AnyWritesAttempted` or `SubmissionPossible`: a journal
             // row of this step that is not known unsubmitted, or a fence that
             // may hide a submission. A fence that provably reached none, such
             // as a changed override document, is Blocked.
-            submitted |= storage.submission_possible()
+            let possible = storage.submission_possible()
                 || (storage.last_request().as_deref() == Some(id.as_str())
                     && storage.progress() != Some(Progress::KnownNotSubmitted as u8));
-            steps.push(stepped);
+            match stepped {
+                Ok(stepped) => steps.push((stepped?, possible)),
+                Err(_) => {
+                    unfinished = true;
+                    let stepped = if possible {
+                        let reason = if storage.pending() {
+                            storage.pending_reason()?
+                        } else {
+                            ""
+                        };
+                        Stepped::new(
+                            Outcome {
+                                status: 3,
+                                message: format!("{UNFINISHED} {reason}").trim_end().to_owned(),
+                            },
+                            None,
+                        )
+                    } else {
+                        Stepped::transient(Outcome::blocked(UNFINISHED_UNSUBMITTED))
+                    };
+                    steps.push((stepped, possible));
+                    break;
+                }
+            }
         }
-        let ran = steps.len() == order.len();
-        let unchanged = ran && steps.iter().all(|s| s.unchanged);
+        let submitted = steps.iter().any(|(_, possible)| *possible);
+        let ran = !unfinished && steps.len() == order.len();
+        let unchanged = ran && steps.iter().all(|(s, _)| s.unchanged);
         // A step whose class did not change needed nothing; every other step
         // must be confirmed.
-        let needed: Vec<&Stepped> = steps.iter().filter(|s| !s.unchanged).collect();
-        let applied = ran && !needed.is_empty() && needed.iter().all(|s| s.outcome.status == 1);
+        let needed: Vec<&(Stepped, bool)> = steps.iter().filter(|(s, _)| !s.unchanged).collect();
+        let applied =
+            ran && !needed.is_empty() && needed.iter().all(|(s, _)| s.outcome.status == 1);
+        let retry = !applied
+            && !needed.is_empty()
+            && !storage.pending()
+            && needed
+                .iter()
+                .all(|(s, possible)| s.outcome.status == 1 || (s.transient && !possible));
+        let read = Classes::of(needed.iter().filter_map(|(s, _)| s.class));
         // Both steps can refuse for one cause, which is said once.
         let mut said: Vec<&str> = Vec::with_capacity(steps.len());
-        for stepped in if needed.is_empty() {
+        for (stepped, _) in if needed.is_empty() {
             steps.iter().collect()
         } else {
             needed
@@ -588,9 +741,21 @@ impl Runtime {
             applied,
             submitted,
             unchanged,
+            retry,
+            read,
+            unfinished,
             message,
-            snapshot: steps.into_iter().rev().find_map(|s| s.snapshot),
+            snapshot: steps.into_iter().rev().find_map(|(s, _)| s.snapshot),
         })
+    }
+
+    /// What the pair `key` owes; startup is owed until it is settled.
+    fn debt(&self, key: &(String, u32)) -> Debt {
+        self.debts
+            .borrow()
+            .get(key)
+            .copied()
+            .unwrap_or(Debt::owed(Classes::ALL))
     }
 
     /// Whether the saved fan intent is manual at any of `classes`.
