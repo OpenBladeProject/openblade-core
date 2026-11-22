@@ -205,6 +205,7 @@ impl Fixture {
                         Ok(observed.map(|performance| Reading {
                             admission,
                             performance,
+                            device_mode: super::DeviceModeRead::NotRequested,
                         }))
                     })
             },

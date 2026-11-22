@@ -108,13 +108,15 @@ fn run<A: ObservationProof>(
         return Ok(None);
     };
     let mut reader = Reader::new(port, admission);
-    let performance = runtime.block_on(async {
+    let observed = runtime.block_on(async {
         let observed = if reader
             .port
             .bind(selection, &mut authorize, admission, limit)
             .is_ok()
         {
-            reader.observe(&mut authorize, limit).await
+            reader
+                .observe_job(&mut authorize, limit, job.device_mode)
+                .await
         } else {
             None
         };
@@ -123,14 +125,15 @@ fn run<A: ObservationProof>(
         reader.retire(None).await?;
         Ok::<_, io::Error>(observed)
     })?;
-    let fresh = performance.filter(|_| {
+    let fresh = observed.filter(|_| {
         limit.check().is_ok()
             && verify_admission(&mut authorize, admission).is_ok()
             && limit.check().is_ok()
     });
-    Ok(fresh.map(|performance| Reading {
+    Ok(fresh.map(|(performance, device_mode)| Reading {
         admission,
         performance,
+        device_mode,
     }))
 }
 
@@ -406,6 +409,7 @@ pub(super) fn mutation_worker(
                 .map(|performance| Reading {
                     admission,
                     performance,
+                    device_mode: super::DeviceModeRead::NotRequested,
                 }))
         },
         Some(&OCCUPIED),

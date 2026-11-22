@@ -22,6 +22,10 @@ mod tests;
 #[cfg(test)]
 pub(crate) mod worker_tests;
 
+#[cfg(any(test, feature = "firmware-performance-compile-check"))]
+mod device_mode;
+#[cfg(any(test, feature = "firmware-performance-compile-check"))]
+pub(crate) use device_mode::DeviceModeRead;
 #[cfg(feature = "service-thermal-mutation-v1")]
 mod battery;
 #[cfg(feature = "service-thermal-mutation-v1")]

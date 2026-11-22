@@ -24,6 +24,9 @@ use windows_sys::{
     Win32::Storage::FileSystem::{FILE_GENERIC_READ, FILE_SHARE_READ},
 };
 
+#[path = "driver_mode.rs"]
+mod driver_mode;
+
 struct Resources {
     root: File,
     _ancestors: Vec<File>,
@@ -916,6 +919,7 @@ pub(super) struct ReadSource {
     #[cfg(feature = "service-thermal-mutation-v1")]
     battery_expiry: Rc<RefCell<Option<ExpiryFn>>>,
     last: Rc<RefCell<Option<(Snapshot, Instant)>>>,
+    driver_mode: Rc<driver_mode::Cadence>,
     metadata: Rc<RefCell<Option<Arc<Publication>>>>,
 }
 impl ReadSource {
@@ -977,6 +981,7 @@ impl ReadSource {
             #[cfg(feature = "service-thermal-mutation-v1")]
             battery_expiry: Rc::default(),
             last: Rc::default(),
+            driver_mode: Rc::default(),
             metadata: Rc::default(),
         }
     }
@@ -1107,7 +1112,16 @@ impl ReadSource {
             #[cfg(feature = "service-thermal-mutation-v1")]
             source.drain_mutation(true).await?;
             let worker = source.worker.borrow().clone();
-            let result = worker.observe(deadline, None).await;
+            // The 00/84 query rides this serialized job at the managed
+            // observation cadence; it adds no HID traffic between those reads.
+            let result = if source
+                .driver_mode
+                .due(source.lease.authorize(), Instant::now())
+            {
+                worker.observe_with_device_mode(deadline).await
+            } else {
+                worker.observe(deadline, None).await
+            };
             #[cfg(feature = "service-thermal-mutation-v1")]
             source.lease.verify_integrity()?;
             let reading = match result {
@@ -1129,15 +1143,19 @@ impl ReadSource {
             }
             let lease = source.lease.clone();
             let proof = reading.admission;
+            let now = Instant::now();
+            source.driver_mode.record(proof, reading.device_mode, now);
             // Metadata may refresh while the native worker runs outside the
             // source mutex. Never assign its newer revision to an old snapshot.
             let current = publisher.borrow().active.clone();
-            let mut observed = current.with_mailbox_read(
-                reading.performance,
-                crate::service_status::ReadConfirmation::new(deadline, move || {
-                    lease.authorize() == Some(proof)
-                }),
-            );
+            let mut observed = current
+                .with_mailbox_read(
+                    reading.performance,
+                    crate::service_status::ReadConfirmation::new(deadline, move || {
+                        lease.authorize() == Some(proof)
+                    }),
+                )
+                .with_keyboard_driver_mode(source.driver_mode.active(proof, now));
             *source.last.borrow_mut() = Some((observed.clone(), Instant::now()));
             source.decorate(&publisher, None)?;
             #[cfg(feature = "service-thermal-mutation-v1")]

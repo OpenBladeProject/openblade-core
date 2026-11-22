@@ -841,10 +841,11 @@ impl Snapshot {
             full_charge_override: false,
             control_access,
             service_version: env!("CARGO_PKG_VERSION").into(),
-            feature_fields: Map::from_iter([(
-                "unsupportedLaptop".into(),
-                json!(unsupported_laptop),
-            )]),
+            // Managed publishes no Driver mode for an unverified device.
+            feature_fields: Map::from_iter([
+                ("unsupportedLaptop".into(), json!(unsupported_laptop)),
+                ("keyboardDriverModeActive".into(), Value::Null),
+            ]),
         }
     }
     #[cfg(all(windows, feature = "installed-service-candidate"))]
@@ -887,10 +888,25 @@ impl Snapshot {
             })),
         ]));
         self.device_verified = true; // Real opened exact host/HID validation preceded this result.
+        // Only a mode this read job confirmed may follow (`with_keyboard_driver_mode`).
+        self.feature_fields
+            .insert("keyboardDriverModeActive".into(), Value::Null);
         self.writes_blocked = true;
         self.capabilities = None;
         self.set_public_message("Thermal settings read. Native controls remain unavailable.");
         self.read_confirmation = Some(confirmation);
+        self
+    }
+    /// Managed `KeyboardDriverModeActive`: the confirmed firmware mode, true for
+    /// Driver and false for Normal, whoever set it. Unknown is null, and so is
+    /// any mode on an unverified status.
+    #[cfg(all(windows, feature = "service-mailbox-observation-v1"))]
+    pub(crate) fn with_keyboard_driver_mode(mut self, active: Option<bool>) -> Self {
+        let active = active.filter(|_| self.device_verified);
+        self.feature_fields.insert(
+            "keyboardDriverModeActive".into(),
+            active.map_or(Value::Null, Value::Bool),
+        );
         self
     }
 
@@ -1540,6 +1556,14 @@ impl Snapshot {
             result.confirmed_state = self.confirmed_state.clone();
             result.read_confirmation = self.read_confirmation.clone();
             result.device_verified = self.device_verified;
+            // Managed copies the mode only with a verified device.
+            result.feature_fields.insert(
+                "keyboardDriverModeActive".into(),
+                self.feature_fields
+                    .get("keyboardDriverModeActive")
+                    .cloned()
+                    .unwrap_or(Value::Null),
+            );
             result.writes_blocked = self.writes_blocked;
         }
         if let Some(sid) = self.private_user_sid.as_deref() {

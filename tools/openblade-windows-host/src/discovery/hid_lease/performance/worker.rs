@@ -12,18 +12,24 @@ use std::{
 use tokio::time::{Instant, sleep, timeout_at};
 
 use super::{
-    Admission, Limit, MAX_OBSERVATION, ObservationProof, ObservedPerformance, POLL, blocked,
+    Admission, DeviceModeRead, Limit, MAX_OBSERVATION, ObservationProof, ObservedPerformance, POLL,
+    blocked,
 };
 
 pub(crate) struct Reading<A = Admission> {
     pub(crate) admission: A,
     pub(crate) performance: ObservedPerformance,
+    // Only the installed mailbox reader asks for it.
+    #[cfg_attr(not(feature = "service-mailbox-observation-v1"), allow(dead_code))]
+    pub(crate) device_mode: DeviceModeRead,
 }
 
 pub(super) struct Job {
     deadline: Instant,
     cancelled: Arc<AtomicBool>,
     pub(super) session: Option<u32>,
+    // Also query the keyboard device mode after the thermal observation.
+    pub(super) device_mode: bool,
 }
 
 impl Job {
@@ -124,8 +130,25 @@ impl<A: ObservationProof> Worker<A> {
         session: Option<u32>,
         budget: std::time::Duration,
     ) -> io::Result<Option<Reading<A>>> {
+        self.run_job(deadline, session, budget, false).await
+    }
+    /// A thermal observation that also queries the keyboard device mode once.
+    #[cfg(any(test, feature = "service-mailbox-observation-v1"))]
+    pub(crate) async fn observe_with_device_mode(
+        &self,
+        deadline: Instant,
+    ) -> io::Result<Option<Reading<A>>> {
+        self.run_job(deadline, None, MAX_OBSERVATION, true).await
+    }
+    async fn run_job(
+        &self,
+        deadline: Instant,
+        session: Option<u32>,
+        budget: std::time::Duration,
+        device_mode: bool,
+    ) -> io::Result<Option<Reading<A>>> {
         let deadline = deadline.min(Instant::now() + budget);
-        let Some(_cancel) = self.start(deadline, session)? else {
+        let Some(_cancel) = self.start(deadline, session, device_mode)? else {
             return Ok(None);
         };
         if timeout_at(deadline, self.wait()).await.is_err() {
@@ -139,7 +162,12 @@ impl<A: ObservationProof> Worker<A> {
         Ok(result.filter(|_| Instant::now() < deadline))
     }
 
-    fn start(&self, deadline: Instant, session: Option<u32>) -> io::Result<Option<Cancel>> {
+    fn start(
+        &self,
+        deadline: Instant,
+        session: Option<u32>,
+        device_mode: bool,
+    ) -> io::Result<Option<Cancel>> {
         let mut state = self.state.borrow_mut();
         if state.stopped || state.unconfirmed || Instant::now() >= deadline {
             return Ok(None);
@@ -164,6 +192,7 @@ impl<A: ObservationProof> Worker<A> {
             deadline,
             cancelled: cancel.clone(),
             session,
+            device_mode,
         };
         let run = self.run.clone();
         // Use an owned OS thread, outside the Service runtime's blocking pool.

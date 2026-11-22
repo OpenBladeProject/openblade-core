@@ -153,6 +153,7 @@ fn blocking_worker_with_script<A: ObservationProof>(
                     Ok(performance.map(|performance| Reading {
                         admission,
                         performance,
+                        device_mode: DeviceModeRead::NotRequested,
                     }))
                 })
         },
@@ -419,6 +420,129 @@ pub(crate) fn custom_io_worker(
                     Ok(performance.map(|performance| Reading {
                         admission,
                         performance,
+                        device_mode: DeviceModeRead::NotRequested,
+                    }))
+                })
+        },
+        None,
+    )
+}
+
+/// A keyboard answering the paired thermal getters (Balanced, Automatic) and
+/// the 00/84 query through the real Worker, Reader and retirement. Each reply
+/// is a whole managed report with the row's status and payload; `None` returns
+/// no reply. `envelope` is the query reply's (length, report ID). Every
+/// submitted report is recorded as (class, ID, payload).
+pub(crate) struct KeyboardIo {
+    transactions: Transactions,
+    pub(crate) mode: Mutex<Option<(u8, Vec<u8>)>>,
+    pub(crate) envelope: Mutex<(usize, u8)>,
+    pub(crate) sent: Mutex<Vec<(u8, u8, Vec<u8>)>>,
+}
+impl KeyboardIo {
+    pub(crate) fn new(mode: Option<(u8, Vec<u8>)>) -> Arc<Self> {
+        Arc::new(Self {
+            transactions: Transactions::new(),
+            mode: Mutex::new(mode),
+            envelope: Mutex::new((FRAME_LENGTH, 0)),
+            sent: Mutex::default(),
+        })
+    }
+    pub(crate) fn queries(&self) -> usize {
+        let sent = self.sent.lock().unwrap();
+        sent.iter().filter(|(class, ..)| *class == 0).count()
+    }
+}
+struct KeyboardPort {
+    io: Arc<KeyboardIo>,
+    reply: Option<(usize, Frame)>,
+    pending: Option<io::Result<(usize, Frame)>>,
+}
+impl Port for KeyboardPort {
+    fn reserve_pair(&mut self) -> Option<[u8; 2]> {
+        self.io.transactions.reserve_pair()
+    }
+    fn verify(&mut self, limit: Limit<'_>) -> io::Result<()> {
+        limit.check()
+    }
+    fn submit(&mut self, transfer: Transfer, limit: Limit<'_>) -> io::Result<()> {
+        limit.check()?;
+        assert!(self.pending.is_none());
+        self.pending = Some(match transfer {
+            Transfer::SendGetter(frame) => {
+                let (transaction, class, id) = (frame[2], frame[7], frame[8]);
+                let payload = frame[9..9 + usize::from(frame[6])].to_vec();
+                self.io
+                    .sent
+                    .lock()
+                    .unwrap()
+                    .push((class, id, payload.clone()));
+                self.reply = match (class, id) {
+                    (CLASS, GET_THERMAL) => Some((
+                        FRAME_LENGTH,
+                        super::tests::reply(transaction, &[1, payload[1], 0, 0]),
+                    )),
+                    (0, 0x84) => self.io.mode.lock().unwrap().clone().map(|(status, body)| {
+                        let mut reply = [0; FRAME_LENGTH];
+                        let report = RazerReport::create(transaction, 0, 0x84, &body).unwrap();
+                        reply[1..].copy_from_slice(&report.encode());
+                        reply[1] = status;
+                        let (length, id) = *self.io.envelope.lock().unwrap();
+                        reply[0] = id;
+                        (length, reply)
+                    }),
+                    _ => None,
+                };
+                Ok((0, frame))
+            }
+            #[cfg(feature = "service-thermal-mutation-v1")]
+            Transfer::SendMutation(_) => panic!("read-only fixture received a mutation"),
+            Transfer::ReceiveReply => self
+                .reply
+                .take()
+                .ok_or_else(|| io::ErrorKind::UnexpectedEof.into()),
+        });
+        Ok(())
+    }
+    fn poll(&mut self) -> Option<io::Result<(usize, Frame)>> {
+        self.pending.take()
+    }
+    fn cancel(&mut self) {}
+    fn poll_retirement(&mut self) -> io::Result<bool> {
+        self.pending.take();
+        Ok(true)
+    }
+}
+pub(crate) fn keyboard_io_worker(
+    io: Arc<KeyboardIo>,
+    authorize: impl Fn() -> Option<ReadAdmission> + Send + Sync + 'static,
+) -> Worker<ReadAdmission> {
+    Worker::new(
+        move |job| {
+            let Some(admission) = authorize() else {
+                return Ok(None);
+            };
+            let mut reader = Reader::new(
+                KeyboardPort {
+                    io: io.clone(),
+                    reply: None,
+                    pending: None,
+                },
+                admission,
+            );
+            tokio::runtime::Builder::new_current_thread()
+                .enable_time()
+                .start_paused(true)
+                .build()?
+                .block_on(async {
+                    let observed = reader
+                        .observe_job(&mut || authorize(), job.limit(), job.device_mode)
+                        .await;
+                    reader.retire(None).await?;
+                    Ok(observed.map(|(performance, device_mode)| Reading {
+                        admission,
+                        performance,
+                        device_mode,
                     }))
                 })
         },
