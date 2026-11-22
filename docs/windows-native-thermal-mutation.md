@@ -1394,17 +1394,28 @@ A trigger, save or explicit override that arrives while the gate is set is
 refused by the write capture, which requires an active lifecycle, and then
 takes the storage-only capture (`WindowsGuard::capture_storage`, through
 `Runtime::capture_intent`). That capture admits storing intent and nothing
-else. It keeps every check of the write capture except the lifecycle epoch:
-the custody's integrity and health, the exact device and mutation artifact,
-the console session, logon identity, unlocked console, fresh Windows power
-status, no competing controller (`WindowsGuard::admits`), and the custody's
-own original-identity admission (`ReadCustody::authorize_storage`). Its
-`authorize` is always `None`, so no read, transaction pair or write can be
-admitted through it, and every step and write still takes the full capture,
-`authorize` and the per-write epoch check, unchanged. It is taken only when
-the gate reads set and the write capture's refusal was not fatal. A store
-fenced by an earlier submission (`Storage::pending`) or a saved document the
-domain decoder refuses still stores nothing.
+else. It is an `Identity` without a lifecycle epoch (`StorageGuard`), so it
+cannot hold a read or write proof; a `WindowsGuard` always pins one. It keeps
+every Windows supplier check of the write capture except the epoch
+(`Identity::admits`): origin and package trust, the mutation artifact, the
+custody's integrity and health, the same console session unlocked, the same
+primary SID and logon LUID, a known AC line status, and fresh
+competing-controller absence. It also needs the custody's own
+original-identity admission (`ReadCustody::authorize_storage`). It names no
+device: the exact HID identity belongs to the mailbox custody, admitted when
+the Service opened it, and only a write's own `authorize` reaches that
+custody's reader. Every step and write still takes the full capture,
+`authorize` and the per-write epoch check, unchanged. The storage capture is
+taken only when the gate reads set and the write capture's refusal was not
+fatal. A store fenced by an earlier submission (`Storage::pending`) or a
+saved document the domain decoder refuses still stores nothing.
+
+The storage capture skips one awake refusal: a Reader that cannot activate
+its mutation owner (activation known unpublished, or uncertain and fenced)
+refuses the awake request before anything is stored, while in low power no
+activation is attempted, so the request stores. The reconciliation it owes
+after the gate clears is refused at the same activation, writes nothing and
+settles the debt. Storing intent is not a write, so this is kept.
 
 The deferral then runs as it does when the gate sets after the capture:
 nothing is read, the debt stays owed with no attempt spent, and the first
@@ -1483,21 +1494,53 @@ with "... was cleared." for a clear. A fan return to Automatic from saved
 manual intent names the saved preset first, "Fans could not return to
 Automatic with the saved BatterySaver performance intent.", as managed's
 `ApplyDirectAutomaticFanTransitionOutcomeAsync` does when its performance
-step is refused.
+step is refused. Every check and read of the store runs before the save,
+including the fan settings it leaves (`Storage::plan_fan_save`), and the
+save and the debt are recorded together: a request that fails before the
+save stores nothing and owes nothing, and nothing after it can fail. The
+awake fan request reads the same plan before its save, so profile fan
+settings the domain decoder refuses (a fixed speed above 5400 RPM, for
+example) store nothing there either.
 
-Three differences from managed remain:
+An explicit request whose write capture and authorization passed, but which
+the gate overtakes after its store, is the same deferral. Its final
+authorization (performance) or its unconfirmed result (fans) is refused, and
+`Runtime::overtaken_by_gate` applies the rule a reconciliation step uses:
+the gate generation moved since the request's own authorization, nothing of
+it can have been submitted (`submission_possible`: no journal row of the
+request past a known-unsubmitted intent, and no fence that may hide a
+submission), and the store is not fenced. The request then replies as one
+stored while the gate was set and owes the same reconciliation. A request
+that may have submitted keeps its own result and is never relabelled.
 
-- Only Windows battery classifies power without an adapter reading. On AC,
-  native classifies the external adapter only from a fresh reading, which
-  the gate refuses, so an explicit request stores nothing and replies
-  Blocked "Hardware application was not confirmed. The external power
-  adapter could not be classified; overrides and control writes are
-  blocked." Managed stores the override against the adapter it last read.
+Four differences from managed remain:
+
+- Native declines the adapter reading in low power. Production Windows
+  reports AC to managed only as `ExternalUnknown`, so managed samples the
+  adapter from firmware while its gate is set; when that reading
+  classifies, managed stores the override, and when it does not, managed
+  stores nothing and replies with the same Blocked "Hardware application
+  was not confirmed. The external power adapter could not be classified;
+  overrides and control writes are blocked." that native gives. The
+  recorded `pluggedIn` rows come from a test double that classifies the
+  adapter. Native admits no firmware read while the gate is set, so on AC
+  it always takes the unclassified reply and stores nothing; only Windows
+  battery classifies power without a reading. This fails closed and is
+  kept.
 - A fan request while OpenBlade still owns a fan change that has not been
   handed back stores nothing and replies Blocked "Fan intent was not stored:
   OpenBlade still owns a fan change that has not been handed back to
   firmware Automatic, and the laptop is in a low-power transition." The
   handback it owes needs a write, which the gate refuses.
+- When the last transition ran on AC and the laptop is unplugged after the
+  gate set, managed's next `ApplyFullTransitionAsync` is interrupted by the
+  gate and does not store an explicit override that arrives then
+  (`ServiceControlRuntime.cs:14483-14489`, `:16360-16364`). Native classifies
+  the request at the Windows battery reading, stores it and owes the
+  reconciliation. Storing is not a write: the stored intent is applied only
+  after the gate clears, through a fresh capture, a fresh adapter reading
+  and every per-write admission. There is no safety reason to drop it, so
+  native keeps it.
 - The stored intent is applied by the next report after the gate clears,
   at most one 5 s lease renewal later. Managed reconverges after resume
   through its convergence loop (below). Applying owed pairs on resume
