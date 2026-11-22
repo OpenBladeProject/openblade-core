@@ -705,3 +705,47 @@ async fn tfc_release_outcome_refused_automatic_cancel_retains_full_intent_withou
     );
     r.stop().await;
 }
+#[tokio::test]
+async fn tfc_release_a_power_setting_read_during_the_battery_event_does_not_pause_the_cancel() {
+    use openblade_domain::power_setting::{PBT_POWERSETTINGCHANGE, PowerSetting};
+    use windows_sys::Win32::System::Services::SERVICE_CONTROL_POWEREVENT;
+    // An unplug delivers PBT_APMPOWERSTATUSCHANGE and, with B2's registration,
+    // a GUID_ACDC_POWER_SOURCE read. The read lands after the tick took its
+    // epoch and before the cancel is authorized. Managed fences nothing on
+    // that read, so the one-shot cancel is written on this tick, exactly once.
+    let r = Rig::new(MemoryFiles::default());
+    policy_and_enable(&r, 950).await;
+    let before = r.port.state.lock().unwrap().writes;
+    source_battery(&r);
+    *r.custody.notice_during_authorize.lock().unwrap() = Some((
+        SERVICE_CONTROL_POWEREVENT,
+        PBT_POWERSETTINGCHANGE,
+        Some(PowerSetting::PowerSource(1)),
+    ));
+    r.source.lock().await.process_power_source().await.unwrap();
+    assert!(
+        r.custody.notice_during_authorize.lock().unwrap().is_none(),
+        "the read was delivered inside the authorization"
+    );
+    for _ in 0..4 {
+        r.source.lock().await.process_power_source().await.unwrap();
+    }
+    assert_eq!(r.port.state.lock().unwrap().writes - before, 1);
+    let view = immediate_battery_view(&r, Some(SID)).await;
+    assert_eq!(
+        view["desiredState"]["battery"]["temporaryFullCharge"],
+        false
+    );
+    assert_eq!(
+        view["confirmedState"]["battery"]["temporaryFullCharge"],
+        false
+    );
+    assert!(
+        view["message"]
+            .as_str()
+            .unwrap()
+            .contains("canceled on Battery by independent readback"),
+        "{view}"
+    );
+    r.stop().await;
+}

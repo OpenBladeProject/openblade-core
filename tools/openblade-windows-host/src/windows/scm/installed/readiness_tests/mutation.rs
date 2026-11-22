@@ -442,6 +442,15 @@ struct Custody {
     lifecycle: crate::scm_host::Lifecycle,
     activations: AtomicUsize,
     retired: AtomicBool,
+    // One SCM notice delivered inside the next fresh authorization, after the
+    // caller read its epoch: the race a second power notice can win.
+    notice_during_authorize: StdMutex<
+        Option<(
+            u32,
+            u32,
+            Option<openblade_domain::power_setting::PowerSetting>,
+        )>,
+    >,
     port: Arc<StdMutex<crate::discovery::performance::mutation_fixture::State>>,
 }
 impl Custody {
@@ -465,6 +474,7 @@ impl Custody {
             lifecycle: Default::default(),
             activations: AtomicUsize::new(0),
             retired: AtomicBool::new(false),
+            notice_during_authorize: StdMutex::new(None),
         })
     }
 }
@@ -594,6 +604,9 @@ impl Fresh for Custody {
         self.lifecycle.verify_health()
     }
     fn authorize(&self) -> Option<ReadAdmission> {
+        if let Some((code, event, setting)) = self.notice_during_authorize.lock().unwrap().take() {
+            self.lifecycle.notice(code, event, setting);
+        }
         if self.fresh_refuse.load(Ordering::Acquire) || self.fatal_health.load(Ordering::Acquire) {
             return None;
         }
