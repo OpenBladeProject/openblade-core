@@ -1470,9 +1470,8 @@ submitted. Otherwise the intent stays saved, no setter is submitted, retirement 
 submitted, and the reply is Blocked with "The remaining request time cannot
 cover this recipe at the measured device pace; no thermal setter was
 submitted." (no fan setter, for a fan request). Owned Stop cleanup is not
-paced. The refused recipe's transaction IDs are not reused: the pool is never
-reclaimed within a process, and a refusal consumes no more of it than running
-the recipe would have.
+paced. The refused recipe's transaction IDs were reserved but never sent, so
+retirement returns them to the pool.
 
 With `service-profile-triggers-v1`, `reportApplicationContext` and
 `updateProfiles` run for an 11 s reconciliation budget
@@ -1544,7 +1543,9 @@ Configuration replacement failure, accepted but ineligible intent, transaction
 capacity, pre-submission refusal and possible submission have distinct outcomes.
 A known-unpublished activation refusal may reconstruct a reader only after real
 drain; uncertain publication retains the fence. Initial read admission precedes
-ID reservation, and IDs already reserved are never reclaimed.
+ID reservation. A sent ID returns to the pool only after a later answer to the
+same command; see the allocator rules in
+[the native development Service](windows-rust-development-service.md).
 
 After ambiguity, explicit observation remains read-only. It can report current
 thermal state but does not clear the durable mutation fence or replay an uncertain

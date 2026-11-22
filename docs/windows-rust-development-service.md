@@ -213,10 +213,9 @@ A Service built with `service-keyboard-driver-mode-read-v1` also reports the
 RZ09-0581 keyboard device mode as managed `keyboardDriverModeActive`. The
 feature implies `service-mailbox-observation-v1` and adds the capability marker
 `service-keyboard-driver-mode-read-v1`. Both package readers refuse the feature
-and the marker by name, so no admitted image sends the query. Do not admit it
-until the process-wide transaction pool can be reclaimed (see below). A build
-without
-the feature sends no `00/84` query and publishes no `keyboardDriverModeActive`
+and the marker by name, so no admitted image sends the query. The transaction
+pool that blocked it is now reclaimed (see below); admitting the feature is a
+separate decision. A build without the feature sends no `00/84` query and publishes no `keyboardDriverModeActive`
 member, as before.
 
 The read sends only the reviewed `00/84:0000` query from the exact-device
@@ -256,12 +255,14 @@ the job deadline is discarded. So a stalled query whose canceled GET retires
 more than about 500 ms late costs the thermal read of that job, as a stalled
 thermal getter already does.
 
-Each query uses one more pair from the process-wide 127-pair transaction
-budget, on a job that already spends one (two for Custom). With one job every
-15 seconds the pool runs out after about 15 minutes 45 seconds, or 10 minutes
-30 seconds in Custom; with a thermal read every 5 seconds, after about
-7.9 minutes. The pool cannot be reclaimed yet (see above), so this read must
-not be admitted until it can. It changes no allocation.
+Each query reserves one more pair of transaction IDs, on a job that already
+reserves one (two for Custom). It sends the first ID, and retirement frees the
+unsent second. An answered ID returns to the pool once a later request with
+the same command is answered, so read jobs, with or without the query, keep
+at most one answered ID per command out of the pool and never exhaust it at
+any interval (`transaction_tests`). Before reclamation the pool ran out after
+about 15 minutes 45 seconds of one job every 15 seconds. The packaging refusal
+is unchanged.
 
 The read-only composition publishes its status feed unverified, and in the
 mutation compositions a feed status verified after a mutation carries `null`,
@@ -328,10 +329,36 @@ Explicit in-memory fixtures exercise acquisition, loss during the real getter
 reader, stale and mismatched epochs, refusal before the worker factory,
 replacement/rollback refusal during unresolved retirement, and native drain
 before owner release. Real Windows adapters are compiled and linked only.
-The transaction allocator retains its process-wide limit of 127 pairs. The
-managed command/session ordering provides no reviewed mailbox-flush or delayed
-reply reuse contract for this worker. Exhaustion remains terminal for further
-observations in that process, with no wrap or automatic restart.
+One process-wide pool issues the transaction IDs 1 to 254 in pairs. The
+firmware keeps its reply in a device mailbox that GET_FEATURE reads, and
+neither canceling Windows I/O nor reopening the handle drains it. A request
+whose SET did not take effect reads the older reply, which only the ID, class
+and command tell apart, so the pool issues an ID again only with proof that no
+reply bearing it can be read again:
+
+- An ID that was never sent returns when its Reader retires.
+- An ID whose correlated terminal reply was read (checksum, ID, class and
+  command match; success, or a completed FAILED or NOT_SUPPORTED rejection)
+  returns once a later request with the same class and command is answered.
+  The firmware answers each request once, and the newer reply replaced it,
+  whether the firmware keeps one reply buffer or one per command.
+- An ID sent without such a reply (canceled, timed out, busy, malformed or
+  uncorrelated) never returns in that process. A reopened handle proves
+  nothing.
+- IDs a fan record or a temporary-charge cancellation names stay pinned for
+  the process: a later Reader sends them, and the journal requires a live fan
+  owner's IDs to stay distinct from later battery IDs. A fan request that
+  prepares no record, such as an Automatic no-op, returns its preflight IDs.
+
+Issue is round-robin, so a returned ID comes back only after every other free
+ID. Managed restarts its finite IDs at 1 for every reopened session after a
+poisoned one; native does not, because the mailbox outlives the handle.
+Unanswered exchanges and pinned records can still exhaust the pool. A thermal,
+battery or temporary-charge request then refuses with its transaction-capacity
+reason, even when the baseline read is the first reservation to fail; read jobs
+publish no reading. `Attempt::transfer` is the only path that marks a request
+sent or answered. `transactions.rs` rebuilds the sent request to correlate its
+reply, which is why the encoder guard lists it.
 
 The replay in `tools/openblade-windows-host/tests/fixtures/get-status-v79.frames`
 contains two consecutive managed codec frames recorded before the IPC80 bump.

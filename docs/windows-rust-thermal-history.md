@@ -29,8 +29,8 @@ Each immutable segment and active raw tail is bounded to 1 MiB. A segment ends
 settled and a new operation starts with Prepared. Request chronology is checked
 across segment boundaries; segmentation cannot restart the same request.
 Original row bytes and all owner records remain intact indefinitely. No original
-row is relabeled to the checkpoint publisher. Owner and attempt budgets and
-finite native transaction IDs are neither reset nor replenished.
+row is relabeled to the checkpoint publisher. Segmentation resets no owner or
+attempt budget and frees no native transaction ID.
 
 Files under owner/thermal-history use checked unsigned 64-bit counters:
 segment-NNNNNNNNNNNNNNNNNNNN.bin contains exact raw rows. The corresponding
