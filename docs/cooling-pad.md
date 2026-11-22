@@ -16,9 +16,21 @@ control automatically.
 
 OpenBlade hands the pad back to its own settings when the laptop sleeps or shuts
 down and when the service stops, for example during an update. Once Windows is
-awake and you are signed in again, it applies your cooling-pad settings again.
-**Release control** stops this until you choose a setting again. If the handback
-was not confirmed, the page asks you to check the pad first.
+awake and you are signed in again, it applies your cooling-pad settings again
+when **If settings change outside OpenBlade** is set to **Restore them**.
+**Release control** stops this until you choose a setting again.
+
+While OpenBlade controls the pad, it reads the pad every few seconds. If its fan
+mode, lighting effect or brightness changes elsewhere, such as in Synapse or
+with the pad's own controls, **Restore them** applies your settings again, up to
+three times in ten minutes. **Notify me**, or a fourth change, releases control
+instead: the changed part stays as it is, the parts OpenBlade changed return to
+the pad's own settings, and control stays off until you choose a setting.
+
+A change the service refuses before sending it, for example while Windows
+settles after waking, is tried again a few times. An unconfirmed change pauses
+the page's controls until a read confirms the pad's state; the page checks
+automatically while it is open, and **Check** reads it at once.
 
 Choose Automatic with a Quiet, Balanced or Performance profile, a fixed target
 from 500 to 3200 RPM in 50-RPM steps, a manual fan curve, or Off. Automatic and
@@ -59,7 +71,8 @@ sync (profile 0) and restoration (profile 0 when the baseline has it). Otherwise
 write, or after a controller or identity boundary, the lighting mode is
 unconfirmed instead of read from profile 1 alone.
 
-The service resumes control only after a clean service-owned handback. It keeps a
+The service resumes control only after a clean service-owned handback, and only
+under **Restore them**. It keeps a
 per-user resume record beside the saved settings, written by an Apply that takes
 control and removed by **Release control**. A retained restoration journal,
 paused writes, a failed Apply or a configuration failure all wait for the user.
@@ -67,8 +80,21 @@ Resumption uses the same session, power and per-command admission as an Apply,
 checks a closed admission again each second, and waits five seconds after an
 attempt that reached the pad and was refused. Shutdown cleanup is never undone.
 
+An Apply refused before submission saves nothing: the saved request, resume
+record and restoration journal stay as they were, so maintenance and resumption
+cannot later apply a change the page reported as not accepted. A native
+submission that proves admission closed before the first write is also a
+refusal. Outside-change detection compares the fan record of the running owner,
+both effect records, raw brightness and device mode with the read taken after
+the last confirmed write; the fan demand and ramping speed are not compared.
+A fan write in maintenance runs only after a fresh comparison, because selecting
+a preset would otherwise hide the change. A failed comparison read defers that
+tick without stopping control. The firmware cannot report which owner's fan
+record is running, so a change written under the other owner is not detected.
+
 A failed or ambiguous submission pauses control. Read the current state before
-choosing an explicit recovery action. OpenBlade retains a write-ahead recovery
+choosing an explicit recovery action. The tray's automatic read is read-only and
+never resends the change. OpenBlade retains a write-ahead recovery
 record across service restarts; it does not replay the last demand or erase an
 unresolved operation. User changes restore the original protected baseline
 before binding the new user; unresolved restoration remains visible.
