@@ -1186,33 +1186,6 @@ impl Runtime {
         if result.as_ref().is_err_and(is_fatal_admission) {
             return result.map(|_| unreachable!());
         }
-        // Stored but not confirmed while the gate set, or set and cleared, with
-        // nothing submitted: the deferral it would have taken had the gate set
-        // first. A confirmed result, even one with no setter, keeps its reply.
-        #[cfg(feature = "service-profile-triggers-v1")]
-        if let Some(mark) = mark
-            && status != 1
-            && permit.accepted.load(Ordering::Acquire)
-            && self.overtaken_by_gate(mark, &permit.storage, &permit.request)
-        {
-            self.owe_stored_intent((&sid, caller.session));
-            let performance = *permit
-                .performance
-                .lock()
-                .map_err(|_| io::ErrorKind::Other)?;
-            let returning = match performance {
-                _ if !permit.returning.load(Ordering::Acquire) => None,
-                Some(preset) => Some(preset.name()),
-                None => permit
-                    .custom_unsupported
-                    .load(Ordering::Acquire)
-                    .then_some("Custom"),
-            };
-            return Ok(Stepped::new(
-                deferred_fan(permit.value.is_none(), returning),
-                None,
-            ));
-        }
         if permit.unchanged.load(Ordering::Acquire) {
             // Nothing was accepted or written; the reconciliation replies.
             return Ok(Stepped::unchanged());
@@ -1335,6 +1308,30 @@ impl Runtime {
         } else {
             Outcome { status, message }
         };
+        // Stored but left Blocked while the gate set, or set and cleared, with
+        // nothing submitted: the deferral it would have taken had the gate set
+        // first. A confirmed result, even one with no setter, and a Stored
+        // reply (a clear on unclassified power) keep theirs.
+        #[cfg(feature = "service-profile-triggers-v1")]
+        if let Some(mark) = mark
+            && outcome.status == 2
+            && permit.accepted.load(Ordering::Acquire)
+            && self.overtaken_by_gate(mark, &permit.storage, &permit.request)
+        {
+            self.owe_stored_intent((&sid, caller.session));
+            let returning = match performance {
+                _ if !permit.returning.load(Ordering::Acquire) => None,
+                Some(preset) => Some(preset.name()),
+                None => permit
+                    .custom_unsupported
+                    .load(Ordering::Acquire)
+                    .then_some("Custom"),
+            };
+            return Ok(Stepped::new(
+                deferred_fan(permit.value.is_none(), returning),
+                None,
+            ));
+        }
         let project = || -> io::Result<Option<Snapshot>> {
             if !permit.accepted.load(Ordering::Acquire) {
                 return Ok(None);

@@ -950,6 +950,37 @@ mod fans {
         }
     }
 
+    // A clear with nothing owned is accepted, writes nothing and Stores. A
+    // gate generation that moves while it runs (set and cleared again) does
+    // not relabel that Stored reply as a low-power deferral: only a Blocked
+    // reply takes it (`overtaken_by_gate`). This rig never reported, so its
+    // pair still owes startup and the debt cannot tell the two apart.
+    #[cfg(feature = "service-profile-triggers-v1")]
+    #[tokio::test]
+    async fn a_stored_clear_the_gate_generation_passes_keeps_its_reply() {
+        use openblade_domain::low_power_gate::Transition;
+        let rig = unclassified_fan_rig(2, 0, Form::Rejected(5));
+        let moved = Arc::new(AtomicBool::new(false));
+        let probe = moved.clone();
+        rig.runtime.read_low_power(move || {
+            Some(Transition {
+                generation: if probe.load(Ordering::Acquire) { 2 } else { 0 },
+                timestamp: 0,
+            })
+        });
+        let hook = moved.clone();
+        rig.port.state.lock().unwrap().on_mutation_retired = Some(Arc::new(move || {
+            hook.store(true, Ordering::Release);
+        }));
+        let out = rig.request(fan_request(1, None, 0)).await;
+        assert!(moved.load(Ordering::Acquire), "{out}");
+        assert_eq!(out["result"]["status"], 0, "{out}");
+        assert_eq!(out["result"]["message"], CLEARED);
+        assert_eq!(writes(&rig), 0);
+        rig.origin.stop();
+        rig.stop().await;
+    }
+
     // With manual fans saved, a performance request is deferred on every
     // external class, as the managed coordinator leaves manual fans in place.
     #[tokio::test]
