@@ -28,6 +28,58 @@ fn retired_writes(rig: &Rig) -> usize {
     state.writes
 }
 
+/// Starts an observation whose read job is held on the port, then drops the
+/// observation: the job stays abandoned on the reader until it is released.
+async fn abandon_held_read(rig: &Rig, held: &Arc<AtomicBool>) {
+    rig.reader.expire_for_tests();
+    let opened = rig.port.state.lock().unwrap().opened;
+    rig.port.state.lock().unwrap().held_read = Some(held.clone());
+    let observation = rig
+        .source
+        .lock()
+        .await
+        .observe_performance(USER, Instant::now() + Duration::from_secs(3));
+    tokio::pin!(observation);
+    let entered = async {
+        while rig.port.state.lock().unwrap().opened == opened {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    };
+    tokio::select! {
+        _ = &mut observation => panic!("the held read returned"),
+        () = entered => {}
+    }
+}
+
+/// Lets the abandoned read job finish.
+fn release_held_read(rig: &Rig, held: &AtomicBool) {
+    held.store(true, Ordering::Release);
+    rig.port.state.lock().unwrap().held_read = None;
+}
+
+/// One framed request whose connection may end in a runtime error, which
+/// `Rig::request` refuses. Returns the server's result and the reply bytes.
+async fn exchange(rig: &Rig, request: Value) -> (Result<(), ExchangeError>, io::Result<Vec<u8>>) {
+    let (mut client, server) = duplex(65536);
+    let publications = rig.source.lock().await.publications();
+    let server = serve_connection(
+        Box::new(SidStream {
+            inner: test_stream(server, USER, Fault::None),
+            sid: SID.into(),
+        }),
+        rig.source.clone(),
+        publications,
+        Rc::new(Subscriptions::new(2)),
+    );
+    let client = async {
+        crate::service_frame::write_payload(&mut client, &serde_json::to_vec(&request).unwrap())
+            .await
+            .unwrap();
+        crate::service_frame::read_payload(&mut client).await
+    };
+    tokio::join!(server, client)
+}
+
 /// A permit refused at the Reader's own admission, before any submission.
 struct Refused(Option<ReadAdmission>);
 impl Permit for Refused {
@@ -70,27 +122,8 @@ async fn a_drain_without_a_mutation_leaves_the_next_read_running() {
 async fn a_canceled_drain_still_restarts_the_next_read() {
     let rig = Rig::new(MemoryFiles::default());
     assert!(reads(&rig).await);
-    rig.reader.expire_for_tests();
     let held = Arc::new(AtomicBool::new(false));
-    let opened = rig.port.state.lock().unwrap().opened;
-    rig.port.state.lock().unwrap().held_read = Some(held.clone());
-    {
-        let observation = rig
-            .source
-            .lock()
-            .await
-            .observe_performance(USER, Instant::now() + Duration::from_secs(3));
-        tokio::pin!(observation);
-        let entered = async {
-            while rig.port.state.lock().unwrap().opened == opened {
-                tokio::time::sleep(Duration::from_millis(5)).await;
-            }
-        };
-        tokio::select! {
-            _ = &mut observation => panic!("the held read returned"),
-            () = entered => {}
-        }
-    }
+    abandon_held_read(&rig, &held).await;
     {
         let drain = rig.reader.drain_active();
         tokio::pin!(drain);
@@ -103,8 +136,7 @@ async fn a_canceled_drain_still_restarts_the_next_read() {
     }
     // The abandoned job still holds the port: no read restarts beside it.
     assert!(!reads(&rig).await);
-    held.store(true, Ordering::Release);
-    rig.port.state.lock().unwrap().held_read = None;
+    release_held_read(&rig, &held);
     assert!(reads(&rig).await);
     retired_writes(&rig);
     rig.stop().await;
@@ -151,7 +183,8 @@ async fn reader_admission_refusals_leave_the_next_read_running() {
 }
 
 /// An uncertain activation fences the source. A later drain, as the battery
-/// and fan entry points run before their own admission, never unseals it.
+/// and fan entry points run before their own admission, never unseals it, and
+/// no later mutation activates again, before or after that drain.
 #[tokio::test]
 async fn a_drain_of_a_fenced_source_keeps_reads_sealed() {
     let rig = Rig::new(MemoryFiles::default());
@@ -160,8 +193,10 @@ async fn a_drain_of_a_fenced_source_keeps_reads_sealed() {
     assert_eq!(rig.set(91, value(1, 1)).await["result"]["status"], 2);
     assert!(!reads(&rig).await);
     rig.custody.activation_refusal.store(0, Ordering::Release);
+    assert_eq!(rig.set(92, value(1, 1)).await["result"]["status"], 2);
     rig.reader.drain_active().await.unwrap();
     assert!(!reads(&rig).await);
+    assert_eq!(rig.set(93, value(1, 1)).await["result"]["status"], 2);
     let deadline = Instant::now() + Duration::from_secs(3);
     let current = ReadCustody::authorize(rig.custody.as_ref());
     assert!(
@@ -174,6 +209,44 @@ async fn a_drain_of_a_fenced_source_keeps_reads_sealed() {
     assert_eq!(retired_writes(&rig), 0);
     assert_eq!(rig.custody.activations.load(Ordering::Acquire), 0);
     rig.stop().await;
+}
+
+/// A drain whose reader stop is unconfirmed stays sealed. An abandoned read
+/// job fails at retirement while a fan request's drain waits for it. No read
+/// restarts over that worker, even once the fault clears, and the next
+/// mutation is refused before any activation or write.
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn an_unconfirmed_reader_stop_at_a_drain_keeps_reads_sealed() {
+    let rig = fan_rig(2, 0);
+    assert!(reads(&rig).await);
+    rig.port.state.lock().unwrap().read_worker_error = Some(Arc::new(|| {
+        io::Error::other("injected read retirement failure")
+    }));
+    let held = Arc::new(AtomicBool::new(false));
+    abandon_held_read(&rig, &held).await;
+    // Released before or after the drain reaches it, the job's failure is
+    // what the drain's stop reaps.
+    let release = async {
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        release_held_read(&rig, &held);
+    };
+    let (refused, ()) = tokio::join!(exchange(&rig, fan_request(1, Some(1), 3700)), release);
+    // The unconfirmed stop ends the request with its own runtime error.
+    assert!(
+        matches!(&refused.0, Err(ExchangeError::Runtime(error)) if error.to_string() == "injected read retirement failure"),
+        "{:?}",
+        refused.0.err()
+    );
+    assert!(refused.1.is_err());
+    rig.port.state.lock().unwrap().read_worker_error = None;
+    let opened = rig.port.state.lock().unwrap().opened;
+    assert!(!reads(&rig).await);
+    assert_eq!(rig.set(2, value(1, 1)).await["result"]["status"], 2);
+    assert!(!reads(&rig).await);
+    assert_eq!(rig.port.state.lock().unwrap().opened, opened);
+    assert_eq!(retired_writes(&rig), 0);
+    assert_eq!(rig.custody.activations.load(Ordering::Acquire), 0);
 }
 
 /// Integrity loss after a drain is terminal: no read restarts, even once the
@@ -265,6 +338,53 @@ async fn a_fan_request_refused_in_low_power_reads_again_after_resume() {
     assert!(!rig.custody.lifecycle.low_power_or_unknown());
     assert!(reads(&rig).await);
     assert_eq!(rig.port.state.lock().unwrap().writes, 0);
+    rig.origin.stop();
+    rig.stop().await;
+}
+
+/// The production-shaped variant of the low-power case: with the scoped
+/// capture (`CapturedFresh`, as `WindowsGuard::capture`), fan and battery
+/// requests while suspended are refused at capture, after their drain. Read
+/// custody refuses too, so no read job runs until resume; then reads run
+/// without a mutation.
+#[cfg(feature = "service-battery-policy-v1")]
+#[tokio::test]
+async fn requests_refused_at_capture_in_low_power_read_again_after_resume() {
+    use windows_sys::Win32::System::Services::SERVICE_CONTROL_POWEREVENT as POWER;
+    let rig = fan_rig(2, 0);
+    assert!(reads(&rig).await);
+    rig.custody.scoped_fresh.store(true, Ordering::Release);
+    rig.custody.lifecycle.ingress(POWER, 4);
+    let opened = rig.port.state.lock().unwrap().opened;
+    let fan = rig.request(fan_request(1, Some(1), 3700)).await;
+    assert_eq!(fan["result"]["status"], 2, "{fan}");
+    assert!(
+        fan["result"]["message"]
+            .as_str()
+            .unwrap()
+            .starts_with("Fan configuration admission failed"),
+        "{fan}"
+    );
+    let battery = rig
+        .request(battery_request(
+            2,
+            "setBatteryPolicy",
+            json!({"chargeLimitPercent":70}),
+        ))
+        .await;
+    assert_eq!(battery["result"]["status"], 2, "{battery}");
+    assert!(
+        battery["result"]["message"]
+            .as_str()
+            .unwrap()
+            .starts_with("Battery configuration admission failed"),
+        "{battery}"
+    );
+    assert!(!reads(&rig).await);
+    assert_eq!(rig.port.state.lock().unwrap().opened, opened);
+    rig.custody.lifecycle.ingress(POWER, 18);
+    assert!(reads(&rig).await);
+    assert_eq!(retired_writes(&rig), 0);
     rig.origin.stop();
     rig.stop().await;
 }

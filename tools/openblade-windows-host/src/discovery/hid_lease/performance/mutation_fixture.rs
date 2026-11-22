@@ -33,6 +33,8 @@ pub(crate) struct State {
     pub(crate) on_power: Option<Arc<dyn Fn(usize) + Send + Sync>>,
     pub(crate) on_mutation_retired: Option<Arc<dyn Fn() + Send + Sync>>,
     pub(crate) mutation_worker_error: Option<Arc<dyn Fn() -> io::Error + Send + Sync>>,
+    // A read job fails after its port retires, so its worker's stop stays unconfirmed.
+    pub(crate) read_worker_error: Option<Arc<dyn Fn() -> io::Error + Send + Sync>>,
     pub(crate) actual: u8,
     pub(crate) recommended: u8,
     pub(crate) selectors: [u8; 2],
@@ -229,10 +231,17 @@ impl Fixture {
                             if let Some(hook) = hook {
                                 hook();
                             }
-                            let error = fixture.state.lock().unwrap().mutation_worker_error.clone();
-                            if let Some(error) = error {
-                                return Err(error());
+                        }
+                        let error = {
+                            let state = fixture.state.lock().unwrap();
+                            if permit.is_some() {
+                                state.mutation_worker_error.clone()
+                            } else {
+                                state.read_worker_error.clone()
                             }
+                        };
+                        if let Some(error) = error {
+                            return Err(error());
                         }
                         let observed = observed.filter(|_| {
                             permit.as_ref().map_or_else(
