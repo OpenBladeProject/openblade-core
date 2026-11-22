@@ -61,22 +61,16 @@ clock whose frequency does not divide ten million.
 
 The shipping epoch `Lifecycle` (`origin_lifetime.rs`) holds the gate under the
 lock that guards the epoch. The gate replaced the former `awake` flag and is the
-only low-power state. `ingress` stamps each SCM callback with
-`QueryPerformanceCounter`. The pure `signal_for` maps a power event's
-PBT_APMSUSPEND to `Signal::Suspend`, and PBT_APMRESUMESUSPEND or
-PBT_APMRESUMEAUTOMATIC to `Signal::Resume`. A session notice never signals,
-whatever its event number. Every power and session notice still advances the
-epoch, a stale signal included. A power-setting supplier calls
-`record(code, signal, timestamp)`. Managed raises DisplayOn only for a console
-display transition from off to on or dimmed (`ClassifyConsoleDisplayTransition`,
-`WindowsServiceLifecycleEventSource.cs:539-547`). B2 must port that classifier
-and pass `Signal::DisplayOn` only for such a transition, so that a dimmed-to-on
-or repeated on notice during a suspend never clears the latch. Display-off,
-dimmed-to-on and AC/DC notices carry no signal and only fence. The 5 s
-duplicate-resume window and the display recovery in the unwired lifecycle worker (`windows/scm/lifecycle.rs`)
-decide dispatch, not gate state. That worker's `Activity` sequences evidence
-only. Before the worker is wired, it must read activity from this gate rather
-than keep its own.
+only low-power state. `notice` stamps each SCM callback with
+`QueryPerformanceCounter`. `signal_for` maps a power event's
+PBT_APMSUSPEND to `Signal::Suspend`, PBT_APMRESUMESUSPEND or
+PBT_APMRESUMEAUTOMATIC to `Signal::Resume`, and a console display read from
+off to on or dimmed to `Signal::DisplayOn` (see Power-setting notifications).
+A session notice never signals, whatever its event number. Every power and
+session notice still advances the epoch, a stale signal included. Display-off,
+other display changes and AC/DC notices carry no signal and only fence. The
+5 s duplicate-resume window decides managed dispatch, not gate state; it
+belongs with the refresh dispatch in C3.
 
 `epoch_for(WriteScope)` is the low-power clause of managed
 `ScopedThermalWriteBlockReason` (`ServiceControlRuntime.cs:15410-15421`). Only
@@ -101,6 +95,65 @@ fence or recapture after such a notice, and record which. `low_power()` returns
 the current transition for timers that ask outside a write, and `None`
 (unreadable or exhausted) means low power. Timers that need only the answer
 use `low_power_or_unknown()`, which is true for `None`.
+
+### Power-setting notifications
+
+Managed subscribes to suspend/resume, `GUID_ACDC_POWER_SOURCE` and
+`GUID_CONSOLE_DISPLAY_STATE` with `DEVICE_NOTIFY_CALLBACK`
+(`WindowsServiceLifecycleEventSource.cs:571-648`). The native Service
+registers the two settings against its SCM status handle with
+`DEVICE_NOTIFY_SERVICE_HANDLE` instead (`installed/power_notifications.rs`).
+Each change then reaches the one SCM handler as `SERVICE_CONTROL_POWEREVENT`
+with `PBT_POWERSETTINGCHANGE` and the same `POWERBROADCAST_SETTING` payload
+managed reads, ordered against every other power and session notice. Suspend
+and resume need no registration: `SERVICE_ACCEPT_POWEREVENT` already delivers
+them. Managed's HID interface registration is a device trigger, not a power
+notice, and is not part of this supplier. Only the thermal composition, which
+accepts power events, registers.
+
+Registration runs after `RegisterServiceCtrlHandlerExW` and before startup. A
+failure unregisters what it registered and stops the Service as failed, as the
+managed constructor throws. The Service unregisters in managed's order (power
+source, then console display) when it reports `SERVICE_STOPPED`, before that
+report, because SCM may end the process once it reads it. Both are attempted
+even if one fails, the first outcome is kept, and a failure turns the terminal
+status into `ERROR_GEN_FAILURE`. `Drop` covers an exit that never reached the
+report. The registration calls sit behind an injected `Api`; tests never call
+the real one.
+
+`scm_host::control` forwards `event_data` only for a power-setting change. It
+copies the header and at most one DWORD of the payload `DataLength` declares,
+byte by byte, then `openblade_domain::power_setting::decode` ports
+`TryReadPowerSettingDword`: a registered GUID, `DataLength` of at least four
+and a DWORD of 0, 1 or 2, otherwise nothing. Managed has one callback per GUID;
+the shared handler dispatches on the GUID instead. A refused payload is still a
+power event: it fences, and the installed hook still samples the power kind.
+`classify_console_display_transition` ports `ClassifyConsoleDisplayTransition`
+exactly. The display state lives under the lifecycle lock, starts unknown and
+changes only on a valid read, as managed's `consoleDisplayState` does. AC/DC
+needs no decoded value: managed's callback publishes `PowerChanged` without
+reading it, and the existing `observe_power_kind(sample_power_kind())` runs on
+every power event. `PowerSettingNativeVectorsTests` records
+`power-setting-vectors.json` (the classifier, the decode with malformed rows,
+and the notice-to-signal mapping), which the domain test
+`power_setting_vectors` and the host's SCM payload test replay.
+
+A Modern Standby display-off sends no `PBT_APMSUSPEND`, so the gate stays
+clear and the notice only fences, as in managed. A later off-to-on read clears
+a suspend whose resume was missed.
+
+The unwired lifecycle worker in `windows/scm/lifecycle.rs` was retired rather
+than wired. It kept its own `Activity`, display state and resume window, and
+nothing in the installed Service consumed it; wiring it would have made a
+second low-power state beside the gate. The file now keeps only the read-only
+power evidence that `installed/status_source.rs` includes. Its development
+metadata fixture went with it.
+
+Attended validation still needed on a live Service: both GUIDs are delivered
+to the SCM handler with this registration; a Modern Standby entry and exit
+produce display notices and no suspend, and leave the gate clear; and the gate
+clears after resume from both Modern Standby and S3, including when the resume
+is missed and display-on recovers it.
 
 ## Saved intent and the bounded compatible slice
 
