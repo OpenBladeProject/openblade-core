@@ -1090,7 +1090,7 @@ async fn a_fan_step_refused_at_its_pace_is_retried_on_the_next_report() {
 /// real clock.
 #[tokio::test]
 async fn a_reconciliation_waiting_on_a_transfer_answers_at_its_bound() {
-    use std::time::{Duration, Instant};
+    use std::time::Instant;
     let reporting = rig_at(files_with_game(json!({"pluggedIn":{"performance":2}})), 0);
     let saving = rig_at(files_with_game(json!({"pluggedIn":{"performance":1}})), 0);
     // The rule's preset is already confirmed, so this report writes nothing.
@@ -1109,11 +1109,11 @@ async fn a_reconciliation_waiting_on_a_transfer_answers_at_its_bound() {
         saving.request(update(2, &with_game_performance(&saving.files, 2))),
     );
     let elapsed = started.elapsed();
+    // The deadline is taken after `started`, so the replies cannot come
+    // before the bound; the transfer is never released, so an unbounded wait
+    // would never reply. The upper limit leaves room for a loaded host.
     let bound = crate::service_frame::RECONCILE_BUDGET + crate::service_frame::RECONCILE_MARGIN;
-    assert!(
-        elapsed >= bound - Duration::from_millis(500) && elapsed < bound + Duration::from_secs(1),
-        "{elapsed:?}"
-    );
+    assert!(elapsed >= bound && elapsed < bound * 2, "{elapsed:?}");
     assert_eq!(
         reported["result"],
         json!({"status":3,"message":format!("{RECORDED} {UNFINISHED} {SUBMITTED}")})
@@ -1286,3 +1286,65 @@ async fn a_temporary_fan_override_on_the_limited_adapter_survives_the_fan_pre_ch
     let _ = rig.source.lock().await.drain().await;
 }
 
+/// A fan step whose fresh admission is refused after its Prepared row and
+/// before any setter journals the row as not submitted. That may clear by
+/// itself, so the debt stays owed and the next report applies the Fixed fans.
+#[tokio::test]
+async fn a_fan_step_that_loses_admission_after_its_prepared_row_is_retried() {
+    let rig = rig_at(files_with_game(json!({"pluggedIn":{"fans":1}})), 0);
+    let custody = Arc::downgrade(&rig.custody);
+    // The third adapter reading is the fan step's check before its first
+    // setter, after its Prepared row and before the setter's intent row.
+    rig.port.state.lock().unwrap().on_power = Some(Arc::new(move |read| {
+        if read == 3 {
+            custody
+                .upgrade()
+                .unwrap()
+                .fresh_refuse
+                .store(true, Ordering::Release);
+        }
+    }));
+    let refused = report(&rig, 1, Some(r"C:\Games\Game.exe")).await;
+    rig.port.state.lock().unwrap().on_power = None;
+    rig.custody.fresh_refuse.store(false, Ordering::Release);
+    assert_eq!(
+        refused["result"],
+        json!({"status":2,"message":format!("{RECORDED} {CONFIRMED} {NO_RECIPE}")})
+    );
+    assert_eq!(writes(&rig), 0);
+    assert!(!rig.storage.pending());
+    let next = report(&rig, 2, Some(r"C:\Games\Game.exe")).await;
+    assert_eq!(
+        next["result"],
+        json!({"status":1,"message":format!("{RECORDED} {CONFIRMED} {FIXED}")})
+    );
+    assert_eq!(rig.port.state.lock().unwrap().fans, [1; 2]);
+    rig.stop().await;
+}
+
+/// An override document changed outside the Service while the performance
+/// step reads its baseline, after the trigger's checks and the saved-intent
+/// pre-check, is found by the step's own check before any setter.
+#[tokio::test]
+async fn an_override_document_changed_during_the_baseline_reading_fences_before_any_write() {
+    let rig = rig_at(files_with_game(json!({"pluggedIn":{"performance":2}})), 0);
+    let files = rig.files.clone();
+    rig.port.state.lock().unwrap().on_power = Some(Arc::new(move |read| {
+        if read == 1 {
+            files.put(
+                "manual-overrides.json",
+                json!({"schemaVersion":10,"overrides":{"performance":null,"fans":null,"lighting":null,"customPerformance":null,"fanControl":null,"gpuClockTuning":null}}),
+            );
+        }
+    }));
+    let refused = report(&rig, 1, Some(r"C:\Games\Game.exe")).await;
+    rig.port.state.lock().unwrap().on_power = None;
+    assert_eq!(
+        refused["result"],
+        json!({"status":2,"message":format!("{RECORDED} {CHANGED}")})
+    );
+    assert_eq!(writes(&rig), 0);
+    assert!(rig.storage.pending());
+    rig.origin.stop();
+    let _ = rig.source.lock().await.drain().await;
+}
