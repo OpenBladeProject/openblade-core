@@ -661,10 +661,11 @@ fn this_composition_declares_profile_serving_in_its_compiled_identity() {
             .split(',')
             .any(|feature| feature == "service-profiles-v1")
     );
-    assert_eq!(
-        fields[8],
-        "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1,service-fan-mutation-v2,service-battery-policy-v1,service-temporary-charge-v1,service-profiles-v1"
-    );
+    let expected = "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1,service-fan-mutation-v2,service-battery-policy-v1,service-temporary-charge-v1,service-profiles-v1";
+    // The read-only Driver-mode build appends its own refused marker.
+    #[cfg(feature = "service-keyboard-driver-mode-read-v1")]
+    let expected = format!("{expected},service-keyboard-driver-mode-read-v1");
+    assert_eq!(fields[8], expected);
 }
 
 /// A profile save that sets a Static keyboard colour, in the member order the
