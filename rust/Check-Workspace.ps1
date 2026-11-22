@@ -85,10 +85,11 @@ try {
         # the profile-set feature. profile_migration_vectors reads the managed
         # store-open migration vectors; like profile_set_vectors it needs both features.
         # function_row_vectors reads the managed Windows-hook function-row vectors.
-        # low_power_gate_vectors reads the managed LowPowerGate vectors.
+        # low_power_gate_vectors reads the managed LowPowerGate vectors and
+        # power_setting_vectors the managed power-setting notice vectors.
         'openblade-domain' = @('automation_policy', 'function_row_policy', 'function_row_vectors',
-            'low_power_gate_vectors', 'profile_migration_vectors', 'profile_policy', 'profile_resolution_vectors',
-            'profile_set_vectors', 'recovery_replay')
+            'low_power_gate_vectors', 'power_setting_vectors', 'profile_migration_vectors', 'profile_policy',
+            'profile_resolution_vectors', 'profile_set_vectors', 'recovery_replay')
     }
 
     $metadataJson = cargo metadata --locked --offline --format-version 1
