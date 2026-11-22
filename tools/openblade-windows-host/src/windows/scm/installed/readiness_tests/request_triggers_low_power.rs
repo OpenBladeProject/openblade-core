@@ -1527,8 +1527,14 @@ fn suspend_at_power_read(rig: &Rig, at: usize) {
 /// during its first setter's adapter reading, has stored its intent and
 /// submitted nothing: it replies, owes and is applied after the gate clears
 /// exactly as the same request does when the gate was already set.
+///
+/// The overtaken request has journaled Prepared. The rig's journal refuses a
+/// plain append while the lifecycle reads low power, as `ReadLease` does, so
+/// this pins that the Prepared row settles through the custody's retirement
+/// and the store is left neither quarantined nor pending.
 #[tokio::test]
 async fn an_explicit_request_the_gate_overtakes_before_submission_is_a_deferral() {
+    let mut applied_writes = None;
     for overtaken in [false, true] {
         let rig = battery_rig(gated).await;
         rig.custody.scoped_fresh.store(true, Ordering::Release);
@@ -1537,17 +1543,33 @@ async fn an_explicit_request_the_gate_overtakes_before_submission_is_a_deferral(
         } else {
             suspend(&rig);
         }
+        let rows = fan_rows(&rig).len();
         let reply = rig.set(2, value(4, 1)).await;
         rig.port.state.lock().unwrap().on_power = None;
         assert_eq!(reply["result"], stored_performance(), "{overtaken}");
         assert_eq!(overrides(&rig)["performance"], 4, "{overtaken}");
         assert_eq!(owed(&rig), Some(0), "{overtaken}");
-        assert_eq!(writes(&rig), 0, "{overtaken}");
+        assert!(!rig.storage.pending(), "{overtaken}");
+        let journaled: Vec<_> = fan_rows(&rig)[rows..]
+            .iter()
+            .map(|row| row["progress"].as_u64().unwrap())
+            .collect();
+        // Prepared, settled as known not submitted; the storage capture
+        // journals nothing.
+        let expected: &[u64] = if overtaken { &[0, 6] } else { &[] };
+        assert_eq!(journaled, expected, "{overtaken}");
         resume(&rig);
+        // Nothing is written until the next report reconciles.
+        assert_eq!(writes(&rig), 0, "{overtaken}");
         let applied = report(&rig, 3, Some(r"C:\Tools\Other.exe")).await;
         assert_eq!(applied["result"]["status"], 1, "{overtaken} {applied}");
         assert_eq!(owed(&rig), None, "{overtaken} {applied}");
         assert_eq!(rig.port.state.lock().unwrap().selectors, [6; 2]);
+        // One apply: the same writes as the control, and none after it.
+        let after = writes(&rig);
+        assert_eq!(*applied_writes.get_or_insert(after), after, "{overtaken}");
+        report(&rig, 4, Some(r"C:\Tools\Other.exe")).await;
+        assert_eq!(writes(&rig), after, "{overtaken}");
         rig.stop().await;
     }
 }
@@ -1596,6 +1618,38 @@ async fn a_possibly_submitted_request_the_gate_overtakes_keeps_its_result() {
     rig.port.state.lock().unwrap().on_power = None;
     assert!(writes(&rig) > 0, "{reply}");
     assert_ne!(reply["result"], stored_performance(), "{reply}");
+    assert_eq!(owed(&rig), None, "{reply}");
+    rig.origin.stop();
+    let _ = rig.source.lock().await.drain().await;
+}
+
+/// A request whose setter was submitted and its chain settled, which the
+/// gate overtakes after the worker retired and before the request's final
+/// authorization, keeps its own result. Its journal is settled and the store
+/// is not pending, so only its own submitted row (`submission_possible`)
+/// tells it from a store with nothing submitted.
+#[tokio::test]
+async fn a_settled_submission_the_gate_overtakes_before_its_final_authorization_keeps_its_result() {
+    let rig = battery_rig(gated).await;
+    rig.custody.scoped_fresh.store(true, Ordering::Release);
+    let custody = rig.custody.clone();
+    let once = AtomicBool::new(false);
+    rig.port.state.lock().unwrap().on_mutation_retired = Some(Arc::new(move || {
+        if !once.swap(true, Ordering::AcqRel) {
+            custody.lifecycle.ingress(POWER, SUSPEND);
+        }
+    }));
+    let reply = rig.set(2, value(4, 1)).await;
+    rig.port.state.lock().unwrap().on_mutation_retired = None;
+    assert!(writes(&rig) > 0, "{reply}");
+    assert!(!rig.storage.pending(), "{reply}");
+    let last = fan_rows(&rig).last().unwrap().clone();
+    assert_eq!(last["request"], "aaaaaaaa-bbbb-cccc-dddd-000000000002");
+    assert!(!matches!(last["progress"].as_u64(), Some(0 | 6)), "{last}");
+    assert_eq!(
+        reply["result"],
+        json!({"status":2,"message":"Thermal result lost caller or owner admission; submission evidence is retained."})
+    );
     assert_eq!(owed(&rig), None, "{reply}");
     rig.origin.stop();
     let _ = rig.source.lock().await.drain().await;

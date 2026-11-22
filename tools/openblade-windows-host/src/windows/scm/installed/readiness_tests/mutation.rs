@@ -426,6 +426,86 @@ impl Files for MemoryFiles {
         Ok(())
     }
 }
+/// The rig storage's journal as production's `CustodialFiles` reaches it
+/// through `ReadLease`: a reservation or plain append needs the custody's
+/// ordinary authorization, which reads the lifecycle epoch and so refuses
+/// while the low-power gate is set; a cleanup append needs the owned-stop
+/// authorization; a Prepared retirement needs only intact custody, no pending
+/// stage and exactly the Prepared row settled as 6 under the lease's own
+/// owner. Production binds that owner when the lease opens, so a later
+/// change of `Custody::generation`, which models a fresh-proof owner change,
+/// does not change it. Other files pass through.
+#[derive(Clone)]
+struct CustodialMemory {
+    files: MemoryFiles,
+    custody: Arc<Custody>,
+    owner: String,
+}
+impl CustodialMemory {
+    fn new(files: MemoryFiles, custody: Arc<Custody>) -> Self {
+        use sha2::Digest;
+        let generation = [custody.generation.load(Ordering::Acquire); 32];
+        let owner = format!("{:x}", sha2::Sha256::digest(generation));
+        Self {
+            files,
+            custody,
+            owner,
+        }
+    }
+}
+const CUSTODY_JOURNAL: &str = "thermal-mutation.journal";
+fn custody_admits(admitted: bool) -> io::Result<()> {
+    admitted
+        .then_some(())
+        .ok_or_else(|| io::ErrorKind::PermissionDenied.into())
+}
+impl Files for CustodialMemory {
+    fn read(&self, name: &str) -> io::Result<Option<Vec<u8>>> {
+        self.files.read(name)
+    }
+    fn read_release(&self, name: &str) -> io::Result<Option<Vec<u8>>> {
+        self.files.read_release(name)
+    }
+    fn reserve(&self, expected: Option<&[u8]>, needed: usize) -> io::Result<Option<Vec<u8>>> {
+        custody_admits(ReadCustody::authorize(&*self.custody).is_some())?;
+        self.files.reserve(expected, needed)
+    }
+    fn replace(&self, name: &str, expected: Option<&[u8]>, bytes: &[u8]) -> io::Result<()> {
+        if name == CUSTODY_JOURNAL {
+            custody_admits(ReadCustody::authorize(&*self.custody).is_some())?;
+        }
+        self.files.replace(name, expected, bytes)
+    }
+    fn replace_cleanup(&self, name: &str, expected: Option<&[u8]>, bytes: &[u8]) -> io::Result<()> {
+        custody_admits(
+            name == CUSTODY_JOURNAL && ReadCustody::authorize_owned_stop(&*self.custody).is_some(),
+        )?;
+        self.files.replace(name, expected, bytes)
+    }
+    fn replace_retired(&self, name: &str, expected: Option<&[u8]>, bytes: &[u8]) -> io::Result<()> {
+        custody_admits(name == CUSTODY_JOURNAL)?;
+        self.custody.verify_integrity()?;
+        crate::thermal_history::validate_prepared_retirement(
+            expected.ok_or(io::ErrorKind::PermissionDenied)?,
+            bytes,
+            &self.owner,
+        )?;
+        custody_admits(
+            self.files
+                .read("thermal-mutation.journal.pending")?
+                .is_none(),
+        )?;
+        self.files.replace(name, expected, bytes)
+    }
+    #[cfg(feature = "service-profiles-v1")]
+    fn remove(&self, name: &str, expected: &[u8]) -> io::Result<()> {
+        self.files.remove(name, expected)
+    }
+    #[cfg(feature = "service-profiles-v1")]
+    fn discard_stage(&self, name: &str) -> io::Result<()> {
+        self.files.discard_stage(name)
+    }
+}
 struct Custody {
     me: std::sync::Weak<Custody>,
     current_sid: StdMutex<String>,
@@ -877,8 +957,10 @@ impl Rig {
                 write: Box::new(move |permit| write.write(permit)),
             },
         );
-        let storage = Storage::open(Box::new(files.clone()), SID).unwrap();
-        let other_files = files.clone();
+        // Storage reaches the journal through custody, as `CustodialFiles` does.
+        let custodial = CustodialMemory::new(files.clone(), custody.clone());
+        let storage = Storage::open(Box::new(custodial.clone()), SID).unwrap();
+        let other_files = custodial;
         #[cfg(feature = "service-fan-mutation-v2")]
         let retained_storage = storage.clone();
         let fresh = custody.clone();
