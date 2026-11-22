@@ -281,8 +281,8 @@ public sealed class CoolingPadSourceProtocolTests
     [Fact]
     public async Task LightingModeIsConfirmedOnlyWhenBothProfilesHoldTheSameEffect()
     {
-        // Restoring a baseline whose saved effect is Off but whose unsaved effect is
-        // Spectrum lit the pad. Profile 1 alone must not report that as Off.
+        // The strip shows the last effect written. A saved Off beside a different
+        // unsaved effect must not be reported as Off from profile 1 alone.
         var wire = new Wire { Effect = new(1, 0, 0, 0, 0, []), ActiveEffect = new(0, 0, 3, 0, 0, []) };
         await using var device = Create(wire);
         Assert.Null((await device.ReadSnapshotAsync(default)).LightingMode);
