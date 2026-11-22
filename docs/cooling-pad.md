@@ -52,9 +52,12 @@ after a service restart; unreadable current pixels are never treated as saved.
 Both persistent profile 1 and volatile profile 0 effect parameters are saved. Pixel data from another custom renderer remains unreadable.
 Byte 0 of `0F/02` is the store flag that openrazer and padctl call VARSTORE (`1`)
 and NOSTORE (`0`); the strip shows whichever effect was written last. When the
-two records hold different effects, a read cannot tell which one is showing, so
-the service reports the lighting mode as unconfirmed instead of reading profile 1
-alone.
+two records hold different effects, a read cannot tell which one is showing on
+its own. The service then reports the effect it wrote last and confirmed while
+that record still holds it, which covers its own Apply (profile 1), keyboard
+sync (profile 0) and restoration (profile 0 when the baseline has it). Otherwise, including after a restart before its next lighting
+write, or after a controller or identity boundary, the lighting mode is
+unconfirmed instead of read from profile 1 alone.
 
 The service resumes control only after a clean service-owned handback. It keeps a
 per-user resume record beside the saved settings, written by an Apply that takes
