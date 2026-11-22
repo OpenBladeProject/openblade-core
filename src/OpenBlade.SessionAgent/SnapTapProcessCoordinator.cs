@@ -54,6 +54,9 @@ public sealed class SnapTapProcessCoordinator(
     public bool HasChild => Volatile.Read(ref hasChild) != 0;
     public bool HasFunctionRowOwner => HasChild && Volatile.Read(ref functionRowInput) != 0;
     public bool FunctionRowRecoveryRequired => Volatile.Read(ref functionRowRecovery) != 0;
+    // True only while starting the first child after an explicit Off generation
+    // cleared a latched outcome. Start delegates read it to mark that launch.
+    public bool LaunchIsExplicitRetry { get; private set; }
     public bool CanTransferOwnership => (!HasChild || Volatile.Read(ref sharedInput) == 0)
         && Volatile.Read(ref ownershipRecovery) == 0;
     public bool CanTransferFunctionRowOwnership => (!HasChild || Volatile.Read(ref functionRowInput) == 0)
@@ -83,6 +86,8 @@ public sealed class SnapTapProcessCoordinator(
         DateTimeOffset childStartedAt = DateTimeOffset.MinValue;
         bool latched = false;
         bool admissionOnlyLatch = false;
+        bool retryAuthorized = false;
+        bool childRetry = false;
         KeyboardInputBackend childBackend = KeyboardInputBackend.RazerDriver;
         bool stopping = false;
         bool supervisionFailed = false;
@@ -108,6 +113,9 @@ public sealed class SnapTapProcessCoordinator(
                 observedOff = currentOff;
                 if (offObserved)
                 {
+                    // Off generations come only from preference changes. Clearing a
+                    // latch this way is the user's explicit retry of that outcome.
+                    retryAuthorized |= latched;
                     latched = false;
                     admissionOnlyLatch = false;
                 }
@@ -198,6 +206,13 @@ public sealed class SnapTapProcessCoordinator(
                         admissionOnlyLatch = false;
                     }
                     bool cleanupConfirmed = successful && stopping && terminal?.Failure?.MayHaveSubmitted != true;
+                    if (cleanupConfirmed && childRetry)
+                    {
+                        // A retried owner started only after its checks released the
+                        // earlier journal, and has now proved its own cleanup.
+                        ClearOwnedRecovery();
+                    }
+                    childRetry = false;
                     stopping = false;
                     // Complete terminal publication before another coordinator may
                     // transfer ownership of the same physical pair.
@@ -241,7 +256,11 @@ public sealed class SnapTapProcessCoordinator(
                             childBackend = selected;
                             Volatile.Write(ref sharedInput, ownsSharedInput?.Invoke() != false ? 1 : 0);
                             Volatile.Write(ref functionRowInput, ownsFunctionRowInput?.Invoke() == true ? 1 : 0);
-                            child = startBackendChild is null ? startChild() : startBackendChild(selected);
+                            childRetry = retryAuthorized;
+                            retryAuthorized = false;
+                            LaunchIsExplicitRetry = childRetry;
+                            try { child = startBackendChild is null ? startChild() : startBackendChild(selected); }
+                            finally { LaunchIsExplicitRetry = false; }
                             Volatile.Write(ref hasChild, 1);
                             exited = child.WaitForExitAsync(CancellationToken.None);
                             NotifyOwnershipChanged(cleanupConfirmed: false);
@@ -413,6 +432,12 @@ public sealed class SnapTapProcessCoordinator(
     {
         if (Volatile.Read(ref sharedInput) != 0) { Volatile.Write(ref ownershipRecovery, 1); }
         if (Volatile.Read(ref functionRowInput) != 0) { Volatile.Write(ref functionRowRecovery, 1); }
+    }
+
+    private void ClearOwnedRecovery()
+    {
+        if (Volatile.Read(ref sharedInput) != 0) { Volatile.Write(ref ownershipRecovery, 0); }
+        if (Volatile.Read(ref functionRowInput) != 0) { Volatile.Write(ref functionRowRecovery, 0); }
     }
 
     private void NotifyOwnershipChanged(bool cleanupConfirmed)

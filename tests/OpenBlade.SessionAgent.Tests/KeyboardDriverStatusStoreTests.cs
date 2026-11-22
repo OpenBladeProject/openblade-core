@@ -33,10 +33,13 @@ public sealed class KeyboardDriverStatusStoreTests
     }
 
     [Theory]
-    [InlineData(KeyboardDriverFeatures.FunctionRow)]
-    [InlineData(KeyboardDriverFeatures.SnapTap)]
-    [InlineData(KeyboardDriverFeatures.SnapTap | KeyboardDriverFeatures.FunctionRow)]
-    public void WorkerForegroundPauseSurvivesStoreForSupervisorRearm(KeyboardDriverFeatures features)
+    [InlineData(KeyboardDriverFeatures.FunctionRow, false)]
+    [InlineData(KeyboardDriverFeatures.SnapTap, false)]
+    [InlineData(KeyboardDriverFeatures.SnapTap | KeyboardDriverFeatures.FunctionRow, false)]
+    [InlineData(KeyboardDriverFeatures.FunctionRow, true)]
+    [InlineData(KeyboardDriverFeatures.SnapTap, true)]
+    [InlineData(KeyboardDriverFeatures.SnapTap | KeyboardDriverFeatures.FunctionRow, true)]
+    public void WorkerCleanPauseSurvivesStoreForSupervisorRearm(KeyboardDriverFeatures features, bool deferred)
     {
         // The worker publishes this exact status before exit 8. The supervisor reads it
         // back from disk, so an in-memory status cannot prove the rearm path.
@@ -44,12 +47,13 @@ public sealed class KeyboardDriverStatusStoreTests
         {
             DateTimeOffset startedAt = DateTimeOffset.UtcNow;
             var paused = new SnapTapRuntimeStatus(SnapTapRuntimeState.Paused, DateTimeOffset.UtcNow, 123,
-                Failure: SnapTapDriverLoop.ForegroundUnavailableFailure(false, false, true));
+                Failure: deferred ? SnapTapDriverLoop.SubscriptionDeferredFailure()
+                    : SnapTapDriverLoop.ForegroundUnavailableFailure(false, false, true));
             KeyboardDriverStatusStore.Write(paused, features, joint, snap, fn);
             SnapTapRuntimeStatus? read = KeyboardDriverStatusStore.Read(joint);
             Assert.Equal(paused.Failure, read?.Failure);
-            Assert.True(SnapTapDriverSupervisor.IsCleanForegroundPause(
-                SnapTapDriverLoop.ForegroundPauseExitCode, read, 123, startedAt));
+            Assert.True(SnapTapDriverSupervisor.IsCleanPause(
+                SnapTapDriverLoop.CleanPauseExitCode, read, 123, startedAt));
             if (features.HasFlag(KeyboardDriverFeatures.FunctionRow))
             {
                 Assert.Equal(SnapTapRuntimeState.Paused, FunctionRowBackendStatusStore.Read(fn)?.State);

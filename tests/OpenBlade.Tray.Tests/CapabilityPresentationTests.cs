@@ -1330,6 +1330,20 @@ public sealed class CapabilityPresentationTests
         Assert.Equal(
             "OnExpandedSelectorSizeChanged",
             Attribute(expanded, "SizeChanged"));
+        // The Function key behavior selector sits in an Expander header button.
+        // An unhandled press reaches that button, which toggles the card and
+        // swallows the item's click.
+        Assert.Equal(
+            "OnExpandedSelectorPointerPressed",
+            Attribute(expanded, "PointerPressed"));
+        Assert.Matches(
+            @"void OnExpandedSelectorPointerPressed\(object sender, PointerRoutedEventArgs args\) =>\s+args\.Handled = true;",
+            selectorSource);
+        Assert.Contains(
+            mainWindow.Descendants().Where(element => element.Name.LocalName == "Expander"),
+            expander => expander.Descendants().Any(element =>
+                element.Name.LocalName == "Expander.Header"
+                && element.Descendants().Any(child => child.Name.LocalName == "ResponsiveChoiceSelector")));
         Assert.Equal(
             "OnCompactSelectionChanged",
             Attribute(compact, "SelectionChanged"));
