@@ -26,9 +26,13 @@ pub enum Signal {
     /// PBT_APMRESUMESUSPEND, PBT_APMRESUMEAUTOMATIC or a relayed resume:
     /// `TryApply(false, t, newResume: true)`.
     Resume,
-    /// GUID_CONSOLE_DISPLAY_STATE on or dimmed: `TryApply(false, t)`. It
-    /// clears the latch, recovering a missed resume, but never re-enters it.
-    /// Display-off is not a gate signal (`WindowsServiceLifecycleEventSource.cs:354-368`).
+    /// A GUID_CONSOLE_DISPLAY_STATE transition from off to on or dimmed:
+    /// `TryApply(false, t)`. Managed raises it only for that transition
+    /// (`ClassifyConsoleDisplayTransition`,
+    /// `WindowsServiceLifecycleEventSource.cs:539-547`), never for dimmed to
+    /// on or a repeated on. It clears the latch, recovering a missed resume,
+    /// but never re-enters it. Display-off is not a gate signal
+    /// (`WindowsServiceLifecycleEventSource.cs:354-368`).
     DisplayOn,
 }
 
@@ -55,13 +59,16 @@ pub struct Accepted {
     pub changed: bool,
 }
 
-/// What a write is, as the low-power clause of managed
+/// What a thermal write is, as the low-power clause of managed
 /// `ScopedThermalWriteBlockReason` (`ServiceControlRuntime.cs:15410-15421`)
-/// reads it.
+/// reads it. Only that scoped thermal clause is ported. Managed runs other
+/// cleanup with the gate set under its own admission, such as the fan-stop
+/// release (`ServiceControlRuntime.FanStop.cs:319-339`) and the keyboard
+/// Driver-mode release; neither is a `WriteScope`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum WriteScope {
-    /// Every request, reconciliation and shutdown write: refused while the
-    /// latch is set.
+    /// Every scoped thermal request, reconciliation and shutdown write:
+    /// refused while the latch is set.
     Ordinary,
     /// The low-power preparation's handback to firmware Automatic fans, and
     /// nothing else (managed `PriorAuthorityCleanup` over `[Fans]` with
@@ -74,7 +81,7 @@ pub enum WriteScope {
     LowPowerFanAutomatic { generation: u64 },
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LowPowerGate {
     frequency: NonZeroU64,
     latest: i64,
@@ -327,6 +334,13 @@ mod tests {
         gate.state = u64::MAX;
         applied(&mut gate, Signal::Resume, 1);
         assert_eq!(gate.generation(), 0);
+        assert!(!gate.is_active());
+        // A new resume wraps as well.
+        gate.state = u64::MAX - 1;
+        assert_eq!(
+            applied(&mut gate, Signal::Resume, 2 * SECOND + 2),
+            (0, true)
+        );
         assert!(!gate.is_active());
     }
 }
