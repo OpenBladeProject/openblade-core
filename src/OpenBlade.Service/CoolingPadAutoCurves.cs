@@ -8,6 +8,9 @@ namespace OpenBlade.Service;
 /// docs/cooling-pad.md): module 74967 evaluates these default tables on each system-monitor
 /// sample and sends floor(rpm / 50) with 0D/01 while the firmware-owned record runs the
 /// profile's Smart preset (setThermalFanCoolingMode(smart.active, 0, 0), i.e. 0D/10 [0, preset, 0]).
+/// OpenBlade interpolates between the table points like a manual pad curve. Synapse's step
+/// lookup gives one speed across normal laptop temperatures (Balanced CPU is 2200 RPM from
+/// 40 to 89 C), so the pad did not visibly follow the temperature.
 /// </summary>
 internal static class CoolingPadAutoCurves
 {
@@ -53,18 +56,12 @@ internal static class CoolingPadAutoCurves
     };
 
     /// <summary>
-    /// Synapse's step evaluation: the speed of the point with the smallest temperature strictly
-    /// above <paramref name="temperature"/>; no interpolation. Synapse yields no point (and so 0)
-    /// at or above the last point; this uses the last point's speed instead.
+    /// Linear interpolation between the table points in 50-RPM steps, shared with the manual
+    /// pad curve: the first point's speed below it and the last point's speed above it, where
+    /// Synapse yields no point and sends 0.
     /// </summary>
-    internal static int Evaluate(IReadOnlyList<CoolingPadCurvePoint> table, int temperature)
-    {
-        foreach (CoolingPadCurvePoint point in table)
-        {
-            if (point.TemperatureCelsius > temperature) { return point.Rpm; }
-        }
-        return table[^1].Rpm;
-    }
+    internal static int Evaluate(IReadOnlyList<CoolingPadCurvePoint> table, int temperature) =>
+        CoolingPadControlRuntime.Evaluate(table, temperature);
 
     /// <summary>
     /// Cpu and Gpu use their own table; Both takes the higher of the two results. A null

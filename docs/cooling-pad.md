@@ -165,14 +165,15 @@ firmware revisions and display-off behavior have not been newly validated.
 
 ## Automatic mode
 
-Automatic reproduces Synapse's Smart scheduler from the pinned shared bundle
+Automatic follows Synapse's Smart scheduler from the pinned shared bundle
 (module 74967, product task runner in `main.js`):
 
 - Entering Smart writes `setThermalFanCoolingMode(smart.active, 0, 0)`: `0D/10`
   with the firmware owner and preset Quiet `3`, Balanced `4` or Performance `5`.
 - Each system-monitor sample evaluates a step table: the speed of the point with
   the smallest temperature strictly above the reading, without interpolation.
-  `cpu` uses the CPU table with the package temperature, `gpu` the GPU table,
+  With so few points, that is one speed across normal laptop temperatures:
+  Balanced CPU is 2200 RPM from 40 to 89 °C. `cpu` uses the CPU table with the package temperature, `gpu` the GPU table,
   and `cpu_gpu` the higher of both results.
 - The demand `floor(rpm/50)` is sent with `0D/01` only when it changes.
 - Synapse's default profile is Fixed with `smart.active` Balanced and source
@@ -184,8 +185,12 @@ Automatic reproduces Synapse's Smart scheduler from the pinned shared bundle
 | Balanced | 40:1000, 90:2200, 100:2200 | 30:1000, 80:2200, 90:2200 |
 | Performance | 40:1000, 55:2000, 80:2700, 100:2700 | 30:1000, 45:2000, 70:2700, 90:2700 |
 
-OpenBlade differs in four ways. The profile and temperature source are
-selectable. Tables are evaluated on smoothed temperatures. Above the last point,
+OpenBlade differs in five ways. The profile and temperature source are
+selectable. Tables are evaluated on smoothed temperatures. OpenBlade
+interpolates between the table points in 50-RPM steps, like a manual pad curve,
+so the speed follows the temperature: Balanced CPU gives about 1500 RPM at
+60 °C and 1850 RPM at 75 °C. Below the first point it uses the first point's
+speed. Above the last point,
 Synapse yields no speed and sends 0; OpenBlade keeps the last point's speed. The
 preset write is skipped only when this session already confirmed that exact
 preset. Automatic is source-backed and software-tested; it has not been
