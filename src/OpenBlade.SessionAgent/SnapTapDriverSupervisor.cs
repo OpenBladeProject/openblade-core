@@ -196,9 +196,9 @@ internal static class SnapTapDriverSupervisor
                     }
                     SnapTapRuntimeStatus? finalStatus = KeyboardDriverStatusStore.Read();
                     observedWorkerFailure ??= MatchingTerminalFailure(finalStatus, worker.Id, workerStartedAt);
-                    bool foregroundPause = IsCleanForegroundPause(worker.ExitCode, finalStatus, worker.Id, workerStartedAt)
+                    bool cleanPause = IsCleanPause(worker.ExitCode, finalStatus, worker.Id, workerStartedAt)
                         && observedWorkerFailure is null;
-                    if (worker.ExitCode != 0 && !foregroundPause && observedWorkerFailure is null)
+                    if (worker.ExitCode != 0 && !cleanPause && observedWorkerFailure is null)
                     {
                         observedWorkerFailure = SnapTapDiagnosticFailure.Create(
                             SnapTapDiagnosticFailure.Supervisor, "SuperviseWorker",
@@ -214,10 +214,10 @@ internal static class SnapTapDriverSupervisor
                             SnapTapDiagnosticFailure.Create(SnapTapDiagnosticFailure.Supervisor,
                                 "ReconcileHooks", stage, cleanupReason!, true, observedWorkerFailure), 1);
                     }
-                    clean = worker.ExitCode is 0 or 3 || foregroundPause;
-                    if (foregroundPause)
+                    clean = worker.ExitCode is 0 or 3 || cleanPause;
+                    if (cleanPause)
                     {
-                        Trace.TraceInformation("SnapTap foreground pause reconciled; waiting to rearm: {0}", finalStatus?.Failure);
+                        Trace.TraceInformation("SnapTap clean pause reconciled; waiting to rearm: {0}", finalStatus?.Failure);
                         if (interrupted || shouldStop())
                         {
                             return 0;
@@ -280,21 +280,23 @@ internal static class SnapTapDriverSupervisor
         }
     }
 
-    internal static bool IsCleanForegroundPause(
+    // Two worker pauses are clean: a focus loss in the input loop, and a subscription
+    // enable refused before submission during hook setup. Neither submitted output.
+    internal static bool IsCleanPause(
         int exitCode, SnapTapRuntimeStatus? status, int processId, DateTimeOffset startedAt) =>
-        exitCode == SnapTapDriverLoop.ForegroundPauseExitCode
+        exitCode == SnapTapDriverLoop.CleanPauseExitCode
         && status is { State: SnapTapRuntimeState.Paused, Failure: { } failure }
         && status.ProcessId == processId && status.UpdatedAt >= startedAt
         && failure is
         {
             Component: SnapTapDiagnosticFailure.Worker,
             Operation: "Run",
-            Stage: "InputLoop",
-            Reason: "ForegroundUnavailable",
             MayHaveSubmitted: false,
             Cause: null,
             Related: null,
-        };
+        }
+        && failure is { Stage: "InputLoop", Reason: "ForegroundUnavailable" }
+            or { Stage: "HookSetup", Reason: "SubscriptionDeferred" };
 
     internal static bool TryReconcileHooks(
         IRazerSnapTapHookTransport guardian,

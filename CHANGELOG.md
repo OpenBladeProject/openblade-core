@@ -34,6 +34,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Make the cooling pad's fan and lighting controls apply when Razer's device drivers are installed. The extra input-only pad interfaces and the Razer Experience Service no longer block control, and the pad's fan and lighting replies are now read the way its firmware reports them, so a fixed fan speed no longer pauses control. ([#983](https://github.com/OpenBladeProject/openblade-core/pull/983))
 - Apply the new power profile's performance and fan settings when you plug in or unplug after the power adapter briefly couldn't be identified. Previously those settings were skipped until the next power change. ([#997](https://github.com/OpenBladeProject/openblade-core/pull/997))
 - Keep Razer-driver function-row media keys and SnapTap working after focus briefly leaves every window, such as at the lock screen, and when a key is pressed while Windows is still starting. Previously they stopped until Windows restarted or the setting was toggled. ([#990](https://github.com/OpenBladeProject/openblade-core/pull/990))
+- Keep Razer-driver function-row media keys and SnapTap working when a key or mouse button is pressed while OpenBlade is turning them back on, for example right after switching windows. Previously the function-row setting stopped changing until Windows restarted. ([#PR](https://github.com/OpenBladeProject/openblade-core/pull/PR))
 
 ## [0.65.1-nightly.117] - 2026-11-20
 

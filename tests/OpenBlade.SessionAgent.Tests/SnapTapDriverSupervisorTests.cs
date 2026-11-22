@@ -178,9 +178,9 @@ public sealed class SnapTapDriverSupervisorTests
         var status = new SnapTapRuntimeStatus(SnapTapRuntimeState.Paused, start.AddMilliseconds(1), 123,
             Failure: SnapTapDiagnosticFailure.Create("SnapTapWorker", "Run", "InputLoop", "ForegroundUnavailable"));
         bool Eligible(int code, SnapTapRuntimeStatus? value) =>
-            SnapTapDriverSupervisor.IsCleanForegroundPause(code, value, 123, start);
+            SnapTapDriverSupervisor.IsCleanPause(code, value, 123, start);
 
-        Assert.True(Eligible(SnapTapDriverLoop.ForegroundPauseExitCode, status));
+        Assert.True(Eligible(SnapTapDriverLoop.CleanPauseExitCode, status));
         foreach (int code in new[] { 0, 1, 2, 3, 4, 5, 6, 7, 9 })
         {
             Assert.False(Eligible(code, status));
@@ -195,6 +195,26 @@ public sealed class SnapTapDriverSupervisorTests
         Assert.False(Eligible(8, status with { Failure = status.Failure! with { Operation = "HookSession" } }));
         Assert.False(Eligible(8, status with { Failure = status.Failure! with { Cause = status.Failure } }));
         Assert.False(Eligible(8, status with { Failure = status.Failure! with { Related = [status.Failure!] } }));
+    }
+
+    [Fact]
+    public void DeferredSubscriptionIsACleanPauseOnlyInHookSetup()
+    {
+        DateTimeOffset start = DateTimeOffset.UtcNow;
+        var status = new SnapTapRuntimeStatus(SnapTapRuntimeState.Paused, start.AddMilliseconds(1), 123,
+            Failure: SnapTapDriverLoop.SubscriptionDeferredFailure());
+        bool Eligible(int code, SnapTapRuntimeStatus? value) =>
+            SnapTapDriverSupervisor.IsCleanPause(code, value, 123, start);
+
+        Assert.True(Eligible(SnapTapDriverLoop.CleanPauseExitCode, status));
+        Assert.False(Eligible(1, status));
+        Assert.False(Eligible(8, status with { State = SnapTapRuntimeState.Failed }));
+        Assert.False(Eligible(8, status with { Failure = status.Failure! with { MayHaveSubmitted = true } }));
+        // Each reason is admitted only at the stage that produces it.
+        Assert.False(Eligible(8, status with { Failure = status.Failure! with { Stage = "InputLoop" } }));
+        Assert.False(Eligible(8, status with { Failure = status.Failure! with { Reason = "ForegroundUnavailable" } }));
+        Assert.False(Eligible(8, status with { Failure = status.Failure! with { Reason = "EnableFailed" } }));
+        Assert.False(Eligible(8, status with { Failure = status.Failure! with { Component = "SnapTapSupervisor" } }));
     }
 
     [Fact]
