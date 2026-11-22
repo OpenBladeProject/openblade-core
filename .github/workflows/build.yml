@@ -124,15 +124,22 @@ jobs:
           }
 
   quality-and-tests:
-    name: Quality and tests
+    name: Quality and tests (${{ matrix.shard }})
     needs: validate-request
     if: ${{ inputs.run-quality }}
     runs-on: windows-latest
     timeout-minutes: 45
+    # Full validation runs formatting, the solution build and tests, and the
+    # Capture tests (about half of all test time) on parallel runners.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(inputs.validation-mode == 'full' && '["format","solution","capture"]' || '["affected"]') }}
     env:
       DOTNET_CLI_TELEMETRY_OPTOUT: 1
       DOTNET_NOLOGO: true
       OPENBLADE_SKIP_INTERACTIVE_DESKTOP_TESTS: 0
+      OPENBLADE_CAPTURE_TESTS_PROJECT: tests\OpenBlade.Capture.Tests\OpenBlade.Capture.Tests.csproj
     steps:
       - name: Check out source
         uses: actions/checkout@v7
@@ -150,11 +157,11 @@ jobs:
         run: ./build/Prepare-NativeToolchain.ps1
 
       - name: Restore
-        if: inputs.validation-mode == 'full'
+        if: matrix.shard == 'format' || matrix.shard == 'solution'
         run: dotnet restore OpenBlade.slnx -p:NuGetAudit=false
 
       - name: Verify formatting
-        if: inputs.validation-mode == 'full'
+        if: matrix.shard == 'format'
         run: >-
           dotnet format OpenBlade.slnx
           --verify-no-changes
@@ -163,7 +170,7 @@ jobs:
           --verbosity minimal
 
       - name: Build
-        if: inputs.validation-mode == 'full'
+        if: matrix.shard == 'solution'
         run: >-
           dotnet build OpenBlade.slnx
           -p:NuGetAudit=false
@@ -171,7 +178,16 @@ jobs:
           -m:1
           --verbosity minimal
 
+      - name: Restore and build Capture tests
+        if: matrix.shard == 'capture'
+        run: |
+          dotnet restore $env:OPENBLADE_CAPTURE_TESTS_PROJECT -p:NuGetAudit=false
+          if ($LASTEXITCODE -ne 0) { throw 'Capture test restore failed.' }
+          dotnet build $env:OPENBLADE_CAPTURE_TESTS_PROJECT -p:NuGetAudit=false --no-restore -m:1 --verbosity minimal
+          if ($LASTEXITCODE -ne 0) { throw 'Capture test build failed.' }
+
       - name: Prepare test temporary storage
+        if: matrix.shard != 'format'
         shell: pwsh
         run: |
           # Guardian fixtures keep the real write-through journal. Use the
@@ -202,12 +218,14 @@ jobs:
           "TMP=$testTemp" >> $env:GITHUB_ENV
 
       - name: Run native interop tests
-        if: inputs.validation-mode == 'full'
+        if: matrix.shard == 'solution'
         shell: pwsh
         run: ./rust/Test-NativeInterop.ps1
 
+      # Every Capture test lives in the OpenBlade.Capture.Tests namespace and
+      # runs in the capture shard instead.
       - name: Test
-        if: inputs.validation-mode == 'full'
+        if: matrix.shard == 'solution'
         run: >-
           dotnet test OpenBlade.slnx
           -p:NuGetAudit=false
@@ -215,9 +233,19 @@ jobs:
           --no-restore
           -m:1
           --verbosity minimal
+          --filter "FullyQualifiedName!~OpenBlade.Capture.Tests."
+
+      - name: Test Capture
+        if: matrix.shard == 'capture'
+        run: >-
+          dotnet test $env:OPENBLADE_CAPTURE_TESTS_PROJECT
+          -p:NuGetAudit=false
+          --no-build
+          --no-restore
+          --verbosity minimal
 
       - name: Run affected quality and tests
-        if: inputs.validation-mode == 'affected'
+        if: matrix.shard == 'affected'
         shell: powershell
         env:
           OPENBLADE_VALIDATION_PLAN_JSON: ${{ inputs.validation-plan-json }}
@@ -227,15 +255,23 @@ jobs:
           -PlanJson $env:OPENBLADE_VALIDATION_PLAN_JSON
 
       - name: Verify native failure stops the production actor
+        if: matrix.shard == 'solution' || matrix.shard == 'affected'
         shell: powershell
         run: ./rust/Test-ProductionActivation.ps1
 
   build-contracts:
-    name: Build contracts
+    name: Build contracts (${{ matrix.shard }})
     needs: validate-request
     if: ${{ inputs.run-contracts }}
     runs-on: windows-latest
     timeout-minutes: 45
+    # Each translator package export renders every screenshot for about seven
+    # minutes, so full validation runs the two determinism comparisons on their
+    # own runners beside the remaining contract suites.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(inputs.validation-mode == 'full' && '["general","translator-same-process","translator-fresh-process"]' || '["affected"]') }}
     env:
       DOTNET_CLI_TELEMETRY_OPTOUT: 1
       DOTNET_NOLOGO: true
@@ -256,7 +292,7 @@ jobs:
         run: ./build/Prepare-NativeToolchain.ps1
 
       - name: Restore
-        if: inputs.validation-mode == 'full'
+        if: matrix.shard != 'affected'
         run: |
           dotnet restore OpenBlade.slnx -p:NuGetAudit=false
           if ($LASTEXITCODE -ne 0) { throw 'Solution restore failed.' }
@@ -268,17 +304,34 @@ jobs:
       # This lane intentionally does not build the solution first. Contract
       # scripts inspect source or produce their own isolated build outputs;
       # tests that consume shared bin/obj output belong in quality-and-tests.
-      - name: Validate installer and Store authoring
-        if: inputs.validation-mode == 'full'
+      - name: Run build contracts
+        if: matrix.shard == 'general'
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
+          $translator = 'LocalizationTranslatorWorkflow.Tests.ps1'
           Get-ChildItem .\tests\Build.Tests\*.Tests.ps1 |
+            Where-Object Name -ne $translator |
             Sort-Object Name |
             ForEach-Object { & $_.FullName }
+          & (Join-Path .\tests\Build.Tests $translator) -Part Workbook
+
+      - name: Run translator same-process package contract
+        if: matrix.shard == 'translator-same-process'
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & .\tests\Build.Tests\LocalizationTranslatorWorkflow.Tests.ps1 -Part SameProcessPackage
+
+      - name: Run translator fresh-process package contract
+        if: matrix.shard == 'translator-fresh-process'
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & .\tests\Build.Tests\LocalizationTranslatorWorkflow.Tests.ps1 -Part FreshProcessPackage
 
       - name: Run affected build contracts
-        if: inputs.validation-mode == 'affected'
+        if: matrix.shard == 'affected'
         shell: powershell
         env:
           OPENBLADE_VALIDATION_PLAN_JSON: ${{ inputs.validation-plan-json }}
@@ -291,7 +344,7 @@ jobs:
         if: ${{ failure() }}
         uses: actions/upload-artifact@v4
         with:
-          name: translator-archive-failures-${{ github.run_id }}-${{ github.run_attempt }}
+          name: translator-archive-failures-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.shard }}
           path: artifacts/translator-archive-failures/
           if-no-files-found: ignore
           retention-days: 14
@@ -357,10 +410,12 @@ jobs:
         shell: powershell
         run: ./build/Prepare-NativeToolchain.ps1
 
+      # CI does not upload Stable installers, so it skips the Store readiness
+      # report. Release publication and Nightly builds still produce it.
       - name: Publish and validate production installer
         if: inputs.channel == 'Stable'
         shell: powershell
-        run: .\build\Publish.ps1 -Configuration Release
+        run: .\build\Publish.ps1 -Configuration Release -SkipStoreReadiness
 
       - name: Publish and validate nightly installer
         if: inputs.channel == 'Nightly'
