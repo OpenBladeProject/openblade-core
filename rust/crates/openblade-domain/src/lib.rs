@@ -148,6 +148,7 @@ pub fn apply_display<'a>(
 pub mod application_context;
 pub mod automation;
 pub mod function_row;
+pub mod low_power_gate;
 pub mod recovery;
 
 #[cfg(feature = "thermal-history")]

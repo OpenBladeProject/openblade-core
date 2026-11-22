@@ -28,6 +28,7 @@
     <None Include="../../tools/openblade-windows-host/tests/data/profile-migration-vectors.json" Link="profile-migration-vectors.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../tools/openblade-windows-host/tests/data/profile-ordinal-ignore-case.json" Link="profile-ordinal-ignore-case.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../tools/openblade-windows-host/tests/data/profile-resolution-vectors.json" Link="profile-resolution-vectors.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../tools/openblade-windows-host/tests/data/low-power-gate-vectors.json" Link="low-power-gate-vectors.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>
