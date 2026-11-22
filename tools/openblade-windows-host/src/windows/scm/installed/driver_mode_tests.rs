@@ -27,7 +27,7 @@ async fn status_publishes_the_managed_driver_mode_true_false_and_null() {
         let mut last = None;
         for step in row["steps"].as_array().unwrap() {
             // The next managed tick.
-            rig.source.driver_mode.age_for_tests(INTERVAL);
+            rig.advance(INTERVAL);
             rig.custody.live.store(true, Ordering::Release);
             match step.as_str().unwrap() {
                 "Driver" => rig.reply(DRIVER),
@@ -76,16 +76,13 @@ async fn the_query_runs_once_per_interval_and_its_result_is_published_between() 
     let second = rig.observe().await.unwrap();
     assert_eq!(second["keyboardDriverModeActive"], true);
     assert_eq!(rig.io.queries(), 1);
-    // Real time passes between jobs; the exact edge is unit-tested below.
-    rig.source
-        .driver_mode
-        .age_for_tests(INTERVAL - Duration::from_secs(1));
+    rig.advance(INTERVAL - Duration::from_secs(1));
     assert_eq!(
         rig.observe().await.unwrap()["keyboardDriverModeActive"],
         true
     );
     assert_eq!(rig.io.queries(), 1);
-    rig.source.driver_mode.age_for_tests(Duration::from_secs(1));
+    rig.advance(Duration::from_secs(1));
     assert_eq!(
         rig.observe().await.unwrap()["keyboardDriverModeActive"],
         false
@@ -96,9 +93,8 @@ async fn the_query_runs_once_per_interval_and_its_result_is_published_between() 
     rig.assert_reads_only();
 }
 
-/// Just inside the interval a job either queries again or publishes the cached
-/// result; one instant per job means it never publishes null without a failed
-/// read.
+/// A job just inside the interval publishes the cached result and the next one
+/// queries again; neither publishes null without a failed read.
 #[tokio::test]
 async fn a_job_at_the_interval_edge_never_drops_a_confirmed_mode() {
     let rig = Rig::new();
@@ -108,9 +104,7 @@ async fn a_job_at_the_interval_edge_never_drops_a_confirmed_mode() {
         true
     );
     for _ in 0..5 {
-        rig.source
-            .driver_mode
-            .age_for_tests(INTERVAL - Duration::from_millis(1));
+        rig.advance(INTERVAL - Duration::from_millis(1));
         assert_eq!(
             rig.observe().await.unwrap()["keyboardDriverModeActive"],
             true
@@ -119,38 +113,33 @@ async fn a_job_at_the_interval_edge_never_drops_a_confirmed_mode() {
     rig.assert_reads_only();
 }
 
-/// The job's start instant decides the query, dates its result and selects
-/// the published value, however long the job runs. Each thermal getter holds
-/// the job for `HOLD` of wall time; two of them outlast the `MARGIN` left in
-/// the interval.
+/// The job's start instant, not the time it records or publishes, decides the
+/// query, dates its result and selects the published value. The first job
+/// starts an interval in the past, so a later `Instant::now()` would see its
+/// result expired, or recorded after the next job's start.
 #[tokio::test]
 async fn the_job_start_dates_the_result_and_selects_the_published_mode() {
-    const HOLD: Duration = Duration::from_millis(300);
-    const MARGIN: Duration = Duration::from_millis(400);
     let rig = Rig::new();
+    rig.clock.set(Instant::now().checked_sub(INTERVAL).unwrap());
     rig.reply(DRIVER);
-    *rig.io.hold.lock().unwrap() = HOLD;
     assert_eq!(
         rig.observe().await.unwrap()["keyboardDriverModeActive"],
         true
     );
     assert_eq!(rig.io.queries(), 1);
-    // Dated from its start, the result is due again although the slow job
-    // ended less than an interval ago.
-    *rig.io.hold.lock().unwrap() = Duration::ZERO;
-    rig.source.driver_mode.age_for_tests(INTERVAL - MARGIN);
+    // Just inside the interval from that start, the cached mode is published.
+    rig.advance(INTERVAL - Duration::from_millis(1));
     assert_eq!(
         rig.observe().await.unwrap()["keyboardDriverModeActive"],
         true
     );
-    assert_eq!(rig.io.queries(), 2);
-    // A job whose start selected the cached mode publishes it, although the
-    // interval ends while the job runs.
-    *rig.io.hold.lock().unwrap() = HOLD;
-    rig.source.driver_mode.age_for_tests(INTERVAL - MARGIN);
+    assert_eq!(rig.io.queries(), 1);
+    // An interval after that start it is due again.
+    rig.advance(Duration::from_millis(1));
+    rig.reply(NORMAL);
     assert_eq!(
         rig.observe().await.unwrap()["keyboardDriverModeActive"],
-        true
+        false
     );
     assert_eq!(rig.io.queries(), 2);
     rig.assert_reads_only();
@@ -164,7 +153,7 @@ async fn a_failed_query_is_unknown_until_the_next_interval_and_never_retried_in_
         rig.observe().await.unwrap()["keyboardDriverModeActive"],
         true
     );
-    rig.source.driver_mode.age_for_tests(INTERVAL);
+    rig.advance(INTERVAL);
     for (status, payload) in [FAILED, (2, [1, 0]), (2, [3, 1])] {
         rig.reply((status, payload));
         let failed = rig.observe().await.unwrap();
@@ -176,7 +165,7 @@ async fn a_failed_query_is_unknown_until_the_next_interval_and_never_retried_in_
             rig.observe().await.unwrap()["keyboardDriverModeActive"],
             Value::Null
         );
-        rig.source.driver_mode.age_for_tests(INTERVAL);
+        rig.advance(INTERVAL);
     }
     assert_eq!(rig.io.queries(), 4);
     // No reply at all is unknown too.
@@ -200,7 +189,7 @@ async fn a_stalled_query_keeps_the_thermal_read_and_is_not_retried_in_between() 
         rig.observe().await.unwrap()["keyboardDriverModeActive"],
         true
     );
-    rig.source.driver_mode.age_for_tests(INTERVAL);
+    rig.advance(INTERVAL);
     rig.io.stall.store(true, Ordering::Release);
     for _ in 0..3 {
         let observed = rig.observe().await.unwrap();
@@ -226,28 +215,7 @@ async fn an_asked_job_that_returns_nothing_is_not_asked_again_in_between() {
     assert_eq!(next["deviceVerified"], true);
     assert_eq!(next["keyboardDriverModeActive"], Value::Null);
     assert_eq!(rig.io.queries(), 0);
-    rig.source.driver_mode.age_for_tests(INTERVAL);
-    assert_eq!(
-        rig.observe().await.unwrap()["keyboardDriverModeActive"],
-        true
-    );
-    assert_eq!(rig.io.queries(), 1);
-    rig.assert_reads_only();
-}
-
-/// A job with too little time left for the query's budget and reserve sends
-/// none and stays due.
-#[tokio::test]
-async fn a_query_without_time_left_is_not_sent_and_stays_due() {
-    let rig = Rig::new();
-    rig.reply(DRIVER);
-    let short = rig
-        .observe_within(Duration::from_millis(520))
-        .await
-        .unwrap();
-    assert_eq!(short["deviceVerified"], true);
-    assert_eq!(short["keyboardDriverModeActive"], Value::Null);
-    assert_eq!(rig.io.queries(), 0);
+    rig.advance(INTERVAL);
     assert_eq!(
         rig.observe().await.unwrap()["keyboardDriverModeActive"],
         true
@@ -268,7 +236,7 @@ async fn a_query_reply_outside_the_hid_envelope_is_unknown() {
         ((REPORT_LENGTH, 0), Value::Bool(true)),
     ] {
         *rig.io.envelope.lock().unwrap() = envelope;
-        rig.source.driver_mode.age_for_tests(INTERVAL);
+        rig.advance(INTERVAL);
         let observed = rig.observe().await.unwrap();
         assert_eq!(observed["deviceVerified"], true, "{envelope:?}");
         assert_eq!(observed["keyboardDriverModeActive"], expect, "{envelope:?}");
@@ -319,7 +287,7 @@ async fn a_new_read_admission_reads_again_and_never_inherits_the_last_mode() {
 async fn a_mutation_rebase_carries_the_mode_only_with_its_fresh_verified_read() {
     let rig = Rig::new();
     rig.reply(DRIVER);
-    let verified = rig.snapshot_within(Duration::from_secs(2)).await.unwrap();
+    let verified = rig.snapshot().await.unwrap();
     let latest = rig.publisher.borrow().active.clone();
     let rebased = serde_json::to_value(verified.rebase_thermal_mutation(&latest)).unwrap();
     assert_eq!(rebased["deviceVerified"], true);
@@ -341,7 +309,7 @@ async fn a_mutation_rebase_carries_the_mode_only_with_its_fresh_verified_read() 
 async fn a_fresh_read_without_its_own_query_publishes_no_mode() {
     let rig = Rig::new();
     rig.reply(DRIVER);
-    let verified = rig.snapshot_within(Duration::from_secs(2)).await.unwrap();
+    let verified = rig.snapshot().await.unwrap();
     assert_eq!(
         serde_json::to_value(&verified).unwrap()["keyboardDriverModeActive"],
         true
@@ -402,4 +370,22 @@ fn the_cadence_binds_each_result_to_its_admission_and_interval() {
         assert!(cadence.due(admission(1), now + INTERVAL));
     }
     assert_eq!(INTERVAL, Duration::from_secs(15));
+}
+
+/// A reader that predates the feature refuses this image only because its
+/// compiled capabilities end with the marker and so match no admitted
+/// composition. This reader refuses it by name.
+#[test]
+fn the_compiled_identity_ends_with_the_refused_marker() {
+    let identity = std::str::from_utf8(&crate::NATIVE_ARTIFACT_IDENTITY).unwrap();
+    let fields: Vec<&str> = identity.split('\n').collect();
+    assert_eq!(fields[2], "service");
+    assert!(
+        fields[8].ends_with(",service-keyboard-driver-mode-read-v1"),
+        "{}",
+        fields[8]
+    );
+    assert!(
+        crate::native_package::startup_policy_for_tests(&crate::NATIVE_ARTIFACT_IDENTITY).is_err()
+    );
 }

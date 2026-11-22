@@ -1095,11 +1095,33 @@ impl ReadSource {
         let battery: Option<Instant> = None;
         thermal.into_iter().chain(battery).min()
     }
+    #[cfg(not(feature = "service-keyboard-driver-mode-read-v1"))]
     pub(super) fn observe(
+        &self,
+        snapshot: Snapshot,
+        deadline: Instant,
+        publisher: watch::Sender<Arc<Publication>>,
+    ) -> Observation {
+        self.observe_at(snapshot, deadline, publisher)
+    }
+    #[cfg(feature = "service-keyboard-driver-mode-read-v1")]
+    pub(super) fn observe(
+        &self,
+        snapshot: Snapshot,
+        deadline: Instant,
+        publisher: watch::Sender<Arc<Publication>>,
+    ) -> Observation {
+        self.observe_at(snapshot, deadline, publisher, Instant::now())
+    }
+    /// One read job. With the Driver-mode read, `job` is the instant the job
+    /// starts: it decides the 00/84 query, dates its result and selects the
+    /// published value.
+    pub(super) fn observe_at(
         &self,
         _: Snapshot,
         deadline: Instant,
         publisher: watch::Sender<Arc<Publication>>,
+        #[cfg(feature = "service-keyboard-driver-mode-read-v1")] job: Instant,
     ) -> Observation {
         let source = self.clone();
         if self.metadata.borrow().is_none() {
@@ -1125,10 +1147,8 @@ impl ReadSource {
             let result = worker.observe(deadline, None).await;
             // The 00/84 query rides this serialized job at the managed
             // observation cadence; it adds no HID traffic between those reads.
-            // One instant per job decides the query, records its result and
+            // The job instant decides the query, records its result and
             // selects the published value.
-            #[cfg(feature = "service-keyboard-driver-mode-read-v1")]
-            let job = Instant::now();
             #[cfg(feature = "service-keyboard-driver-mode-read-v1")]
             let asked = source
                 .lease
@@ -1140,7 +1160,11 @@ impl ReadSource {
                 // A query that was asked for and brought back no result, or a
                 // job that brought back nothing, is unknown until the next
                 // interval: it is never retried in between. One skipped for
-                // lack of job time sent nothing and stays due.
+                // lack of job time sent nothing and stays due. The worker's
+                // `Ok(None)` also covers a job it refused to start (stopped,
+                // unconfirmed, busy or out of time), which sent nothing; that
+                // too publishes null over a cached mode until the next
+                // interval. It fails closed, so the two are not told apart.
                 let read = match &result {
                     Ok(Some(reading)) if reading.admission == asked => reading.device_mode,
                     _ => crate::discovery::performance::DeviceModeRead::Unconfirmed,

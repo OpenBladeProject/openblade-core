@@ -69,16 +69,6 @@ impl Cadence {
             observed.admission == admission && now.saturating_duration_since(observed.at) < INTERVAL
         })
     }
-
-    #[cfg(test)]
-    fn age_for_tests(&self, by: Duration) {
-        if let Some(observed) = self.0.get() {
-            self.0.set(Some(Observed {
-                at: observed.at.checked_sub(by).unwrap(),
-                ..observed
-            }));
-        }
-    }
 }
 
 #[cfg(test)]

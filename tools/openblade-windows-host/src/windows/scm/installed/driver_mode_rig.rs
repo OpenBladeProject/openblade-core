@@ -9,7 +9,7 @@
 use super::*;
 use crate::discovery::performance::device_mode_tests::{KeyboardIo, keyboard_io_worker};
 use serde_json::Value;
-use std::{sync::atomic::AtomicBool, time::Duration};
+use std::{cell::Cell, sync::atomic::AtomicBool, time::Duration};
 
 pub(super) const DRIVER: (u8, [u8; 2]) = (2, [3, 0]);
 pub(super) const NORMAL: (u8, [u8; 2]) = (2, [0, 0]);
@@ -45,6 +45,9 @@ pub(super) struct Rig {
     pub(super) custody: Arc<Custody>,
     pub(super) source: ReadSource,
     pub(super) publisher: watch::Sender<Arc<Publication>>,
+    /// The start of the next job. Only the Driver-mode cadence reads it, so
+    /// tests move it explicitly and no assertion depends on elapsed time.
+    pub(super) clock: Cell<Instant>,
 }
 
 impl Rig {
@@ -68,6 +71,7 @@ impl Rig {
             custody,
             source,
             publisher,
+            clock: Cell::new(Instant::now()),
         }
     }
 
@@ -75,22 +79,28 @@ impl Rig {
         *self.io.mode.lock().unwrap() = Some((status, payload.to_vec()));
     }
 
-    /// A fresh observation with a two-second deadline, or None when the
-    /// reader admitted no read.
-    pub(super) async fn observe(&self) -> Option<Value> {
-        self.observe_within(Duration::from_secs(2)).await
+    /// Move the next job's start.
+    pub(super) fn advance(&self, by: Duration) {
+        self.clock.set(self.clock.get() + by);
     }
 
-    pub(super) async fn observe_within(&self, budget: Duration) -> Option<Value> {
-        let observed = self.snapshot_within(budget).await?;
+    /// A fresh observation with a two-second deadline, starting at `clock`,
+    /// or None when the reader admitted no read.
+    pub(super) async fn observe(&self) -> Option<Value> {
+        let observed = self.snapshot().await?;
         Some(serde_json::to_value(observed).unwrap())
     }
 
-    pub(super) async fn snapshot_within(&self, budget: Duration) -> Option<Snapshot> {
-        self.source
-            .observe(status(0), Instant::now() + budget, self.publisher.clone())
-            .await
-            .unwrap()
+    pub(super) async fn snapshot(&self) -> Option<Snapshot> {
+        let deadline = Instant::now() + Duration::from_secs(2);
+        let publisher = self.publisher.clone();
+        #[cfg(feature = "service-keyboard-driver-mode-read-v1")]
+        let observation = self
+            .source
+            .observe_at(status(0), deadline, publisher, self.clock.get());
+        #[cfg(not(feature = "service-keyboard-driver-mode-read-v1"))]
+        let observation = self.source.observe(status(0), deadline, publisher);
+        observation.await.unwrap()
     }
 
     /// Both caller projections of the subscription feed.

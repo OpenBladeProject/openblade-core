@@ -254,6 +254,23 @@ fn absent_live_readings_stay_absent() {
     assert!(snapshot.live_readings.is_none());
 }
 
+/// Only a Service built with the read-only Driver-mode feature writes the
+/// `keyboardDriverModeActive` member; every other Service status, the
+/// metadata-only one included, omits it.
+#[cfg(all(
+    feature = "installed-service-candidate",
+    not(feature = "service-keyboard-driver-mode-read-v1")
+))]
+#[test]
+fn a_service_without_the_driver_mode_read_writes_no_driver_mode_member() {
+    for access in [0, 1] {
+        let status =
+            Snapshot::observed_read_only(0, access, false, false, vec![], None, "Awaiting.".into());
+        let status = serde_json::to_value(status).unwrap();
+        assert!(status.get("keyboardDriverModeActive").is_none());
+    }
+}
+
 /// A source the Service only retained confirms no display power context, as
 /// the managed display coordinator treats it as ExternalUnknown.
 #[cfg(openblade_display_write)]
