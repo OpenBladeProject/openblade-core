@@ -117,14 +117,15 @@ impl<A: Api> Drop for Registrations<A> {
 ///
 /// Registration follows a successful SERVICE_RUNNING report, whose accepted
 /// controls include SERVICE_ACCEPT_POWEREVENT. Windows sends each setting's
-/// current value when it is registered, and SCM drops a power event the
-/// current status does not accept, so registering while START_PENDING (which
-/// accepts nothing) would lose the initial console display state. Managed's
-/// callback registration has no accept mask and receives that first value.
-/// A registration failure is returned from the RUNNING report, which
-/// `run_candidate` treats as a failed start: it retires the endpoint and
-/// reports SERVICE_STOPPED with a failure, as managed's constructor fails
-/// start.
+/// current value when it is registered. SCM is expected to drop a power
+/// event the current status does not accept (unverified; attended-only), so
+/// registering while START_PENDING (which accepts nothing) could lose the
+/// initial console display state. Managed's callback registration has no
+/// accept mask and receives that first value. A registration failure is
+/// returned from the RUNNING report, which `run_candidate` treats as a failed
+/// start: it retires the endpoint and reports SERVICE_STOPPED with a failure.
+/// SCM therefore sees RUNNING, then STOPPED (failed); managed's constructor
+/// throws before RUNNING is ever reported.
 ///
 /// Unregistration precedes the SERVICE_STOPPED report, because SCM may end
 /// the process once it reads it. Its failure never changes that report:

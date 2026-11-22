@@ -114,13 +114,16 @@ accepts power events, registers.
 
 `power_notifications::Supplier` places both against the SCM status reports.
 It registers right after `SERVICE_RUNNING` is reported. Windows sends each
-setting's current value when it is registered, and SCM drops a power event the
-current status does not accept: `SERVICE_START_PENDING` accepts none, so a
-registration during startup could lose the initial display state. After the
-RUNNING report it reaches the handler and the display state starts known, as
+setting's current value when it is registered. SCM is expected to drop a power
+event the current status does not accept, and `SERVICE_START_PENDING` accepts
+none, so a registration during startup could lose the initial display state;
+that drop is unverified and attended-only. After the RUNNING report the
+initial value reaches the handler and the display state starts known, as
 managed's does; until then it stays unknown and is never guessed. A
-registration failure unregisters what it registered and fails that report, so
-the Service stops as failed, as the managed constructor throws.
+registration failure unregisters what it registered and fails that report.
+Because native reports RUNNING before it registers, SCM then sees RUNNING
+followed by STOPPED (failed). Managed's constructor throws before RUNNING is
+ever reported, so it shows only the failed stop.
 
 The Service unregisters in managed's order (power source, then console
 display) before it reports `SERVICE_STOPPED`, because SCM may end the process
@@ -145,12 +148,19 @@ the shared handler dispatches on the GUID instead. A refused payload is still a
 power event, and the installed hook still samples the power kind.
 
 A power-setting read does not advance the lifecycle epoch. Managed fences
-nothing on those reads: AC/DC publishes `PowerChanged`, which cancels resume
-validation and handles the source change, and the display reads only toggle
-lighting suppression and HyperBoost display-off preparation
-(`ServiceLifecycleRefreshLoop.cs:97-158`). Fencing them made every display or
-AC/DC notice abandon work that was in flight; a temporary-full-charge cancel
-lost that way on battery was never retried. Suspend, resume, the other power
+nothing on a display read, which only toggles lighting suppression and
+HyperBoost display-off preparation. It does fence the AC/DC read: that
+callback is its only `PowerChanged` publisher
+(`WindowsServiceLifecycleEventSource.cs:695`), and
+`HandlePowerSourceChangedAsync` bumps `powerAdmissionEpoch` and
+`pendingPowerAdmissions` (`ServiceControlRuntime.cs:12327-12328`), which gate
+HyperBoost, drift validation, convergence, fan-curve maintenance, fan
+recovery, the cooling pad and fan-stop entry. Native's fence for that source
+change is `PBT_APMPOWERSTATUSCHANGE`, which still advances the epoch, so the
+setting read would only fence a second time. That duplicate abandoned work
+captured between the two notices; a temporary-full-charge cancel lost that way
+on battery was never retried. That Windows sends `PBT_APMPOWERSTATUSCHANGE`
+for every AC/DC switch is attended-only. Suspend, resume, the other power
 events and session changes still fence. The read still updates the display
 state and can still signal `DisplayOn`.
 `classify_console_display_transition` ports `ClassifyConsoleDisplayTransition`
@@ -171,9 +181,12 @@ What the remaining lifecycle work needs from this supplier:
 
 - C1 (automatic power-source transitions) needs no time debounce. Managed
   coalesces repeated notices into one pending `PowerChanged` bit in a bounded
-  channel and keys the transition on the Windows power generation, which
-  advances only when the power kind changes; native has `power_generation`.
-  C1 should coalesce the same way.
+  channel. `HandlePowerSourceChangedAsync` first bumps the power admission
+  epoch, then keys the transition on the resolved class change
+  (`ChangePowerSourceCore`, `ServiceControlRuntime.cs:12351-12352`), not on
+  the Windows power generation. The C1 port must keep that fence: native gets
+  it from the `PBT_APMPOWERSTATUSCHANGE` epoch advance, and C1 must not drop
+  it or move it onto the setting read.
 - C2 (display-off work) needs the off transition that
   `openblade_domain::power_setting::power_event_signal` drops
   (`power_setting.rs:130-132` maps only `DisplayTransition::On` to a signal).
@@ -192,11 +205,12 @@ power evidence that `installed/status_source.rs` includes. Its development
 metadata fixture went with it.
 
 Attended validation still needed on a live Service: both GUIDs are delivered
-to the SCM handler with this registration; the initial value of each arrives
-after the RUNNING report; a Modern Standby entry and exit produce display
-notices and no suspend, and leave the gate clear; and the gate clears after
-resume from both Modern Standby and S3, including when the resume is missed and
-display-on recovers it.
+to the SCM handler with this registration; SCM drops a power event sent while
+START_PENDING; the initial value of each arrives after the RUNNING report;
+every AC/DC switch also delivers PBT_APMPOWERSTATUSCHANGE; a Modern Standby
+entry and exit produce display notices and no suspend, and leave the gate
+clear; and the gate clears after resume from both Modern Standby and S3,
+including when the resume is missed and display-on recovers it.
 
 ## Saved intent and the bounded compatible slice
 

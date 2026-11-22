@@ -224,13 +224,18 @@ impl Lifecycle {
     }
 }
 /// Whether an SCM control advances the epoch. A power-setting read
-/// (PBT_POWERSETTINGCHANGE: console display or AC/DC) does not. Managed fences
-/// nothing on those reads: its display triggers only toggle lighting
-/// suppression and HyperBoost display-off preparation, and its PowerChanged
-/// cancels resume validation and handles the source change
-/// (ServiceLifecycleRefreshLoop.cs:97-158). Fencing them would cancel work
-/// captured across every display dim and every unplug, whose
-/// PBT_APMPOWERSTATUSCHANGE already fences. The gate signal still applies.
+/// (PBT_POWERSETTINGCHANGE: console display or AC/DC) does not; the gate
+/// signal still applies.
+///
+/// Managed fences nothing on a display read: its display triggers only toggle
+/// lighting suppression and HyperBoost display-off preparation. It does fence
+/// the AC/DC read. That callback is its only `PowerChanged` publisher
+/// (WindowsServiceLifecycleEventSource.cs:695), and
+/// `HandlePowerSourceChangedAsync` bumps `powerAdmissionEpoch` and
+/// `pendingPowerAdmissions` (ServiceControlRuntime.cs:12327-12328). Native's
+/// fence for that source change is PBT_APMPOWERSTATUSCHANGE, which still
+/// advances the epoch, so fencing the setting read as well would be a
+/// duplicate that abandons work captured between the two notices.
 fn fences(code: u32, event: u32) -> bool {
     use windows_sys::Win32::System::Services::SERVICE_CONTROL_POWEREVENT;
     !(code == SERVICE_CONTROL_POWEREVENT
