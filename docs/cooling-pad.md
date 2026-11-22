@@ -19,8 +19,8 @@ from 500 to 3200 RPM in 50-RPM steps, a manual fan curve, or Off. Automatic and
 manual curves follow the CPU, the GPU, or both; with both, the higher demand wins.
 Curve input uses the same smoothed temperatures as the laptop's manual fan
 curve, so a brief package spike does not change the fan speed. When the
-selected CPU stays at 95 °C or the GPU at 87 °C, Automatic and curves run the
-pad at full speed until the temperature drops. Fixed targets come from the selected mode configuration; Smart targets are the
+selected CPU stays at 95 °C or the GPU at 87 °C for 2 seconds, Automatic and
+curves run the pad at full speed until it drops 3 °C. Fixed targets come from the selected mode configuration; Smart targets are the
 ramping speed the firmware reports. Neither is measured fan speed. A missing or stale
 temperature reading pauses curve updates; the pad keeps its last speed and control
 continues. A GPU that Windows reports powered down is ignored: with both sources the
@@ -211,12 +211,15 @@ or a sample gap over 10 seconds starts a fresh history. Safety decisions keep
 using the raw readings: the laptop curve still forces maximum speed immediately
 for a missing CPU reading, an unconfirmed missing GPU, CPU at 95 °C or GPU at
 87 °C, and the pad's missing-reading pause checks the raw reading. The pad's
-Automatic mode and manual curve use the same emergency limits on the smoothed
-readings: a selected CPU at 95 °C or a selected, powered GPU at 87 °C sends
-3200 RPM whatever the table or curve says. A brief spike does not trip them; a
-steady 95 °C does within about 12 seconds from 90 °C. The falling deadband
-keeps full speed until the smoothed input drops 3 °C. Synapse has no such
-limit. Fixed targets read no temperature and keep their speed.
+Automatic mode and manual curve use the same emergency limits on the raw
+readings: a selected CPU at or above 95 °C, or a selected, powered GPU at or
+above 87 °C, for three consecutive one-second samples (2 seconds) sends
+3200 RPM whatever the table or curve says. A shorter spike does not trip them.
+Full speed holds until that reading drops 3 °C below its limit, so a reading at
+the limit does not switch the speed back and forth. The smoothed input is not
+used here because it approaches a steady reading gradually and would take 12
+to 20 seconds to reach the limit. Synapse has no such limit. Fixed targets read
+no temperature and keep their speed.
 
 ## Typed cooling-demand API
 

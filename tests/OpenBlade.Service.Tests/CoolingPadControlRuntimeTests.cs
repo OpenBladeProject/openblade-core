@@ -730,7 +730,7 @@ public sealed class CoolingPadControlRuntimeTests
 
     public static TheoryData<CoolingPadSettings, FanTemperatureReadings, int> EmergencyCases => new()
     {
-        // The laptop curve's raw limits: CPU 95 C and GPU 87 C run the pad at its maximum.
+        // The laptop curve limits, held 2 s: CPU 95 C and GPU 87 C run the pad at its maximum.
         { QuietAuto(CoolingPadTemperatureSource.Cpu), new(95, null), CoolingPadSettings.MaximumRpm },
         { QuietAuto(CoolingPadTemperatureSource.Cpu), new(94, null), 1600 },
         { QuietAuto(CoolingPadTemperatureSource.Gpu), new(null, 87), CoolingPadSettings.MaximumRpm },
@@ -747,14 +747,22 @@ public sealed class CoolingPadControlRuntimeTests
     public async Task EmergencyLimitsOverrideTheTableAndCurve(CoolingPadSettings settings, FanTemperatureReadings reading, int expected)
     {
         var provider = new Provider();
-        var runtime = await CreateAsync(provider, temperatures: new Temperatures { Reading = reading });
+        var clock = new Clock();
+        var runtime = new CoolingPadControlRuntime(provider, new(), new Temperatures { Reading = reading }, clock);
+        await runtime.SetUserAsync("owner", default);
         Assert.Equal(ControlOperationStatus.Applied, (await runtime.ApplyAsync(settings, () => true, default)).Status);
+        // The reading holds for the 2 s confirmation: three one-second samples.
+        for (int second = 0; second < 2; second++)
+        {
+            clock.Now = clock.Now.AddSeconds(1);
+            await runtime.MaintainAsync(() => true, default);
+        }
         Assert.Equal(expected, runtime.Status.ConfirmedTargetRpm);
         Assert.True(runtime.Status.Active);
     }
 
     [Fact]
-    public async Task EmergencyFollowsTheSmoothedReading()
+    public async Task EmergencyIgnoresTransientSpikesTripsAfterTwoSecondsAndReleasesThreeDegreesLower()
     {
         var provider = new Provider();
         var clock = new Clock();
@@ -764,28 +772,31 @@ public sealed class CoolingPadControlRuntimeTests
         await runtime.ApplyAsync(QuietAuto(CoolingPadTemperatureSource.Cpu), () => true, default);
         Assert.Equal(1600, runtime.Status.ConfirmedTargetRpm);
 
-        // A one-second 100 C spike moves the smoothed input to about 92 C, below the limit.
-        temperatures.Reading = new(100, null);
-        await TickAsync(1);
+        // A one-second spike, even far above the limit, does not trip it.
+        await TickAsync(100);
         Assert.Equal(1600, runtime.Status.ConfirmedTargetRpm);
-
-        // Sustained heat crosses the 95 C limit.
-        await TickAsync(15);
+        // A sample below the limit restarts the streak.
+        await TickAsync(90);
+        await TickAsync(95);
+        await TickAsync(95);
+        Assert.Equal(1600, runtime.Status.ConfirmedTargetRpm);
+        // The third consecutive sample, 2 s after the first, trips it.
+        await TickAsync(95);
         Assert.Equal(CoolingPadSettings.MaximumRpm, runtime.Status.ConfirmedTargetRpm);
 
-        // Once the smoothed input falls back below the limit, the table resumes.
-        temperatures.Reading = new(90, null);
-        await TickAsync(20);
+        // Full speed holds within 3 C of the limit and releases below it.
+        await TickAsync(93);
+        await TickAsync(92);
+        Assert.Equal(CoolingPadSettings.MaximumRpm, runtime.Status.ConfirmedTargetRpm);
+        await TickAsync(91);
         Assert.Equal(1600, runtime.Status.ConfirmedTargetRpm);
         Assert.True(runtime.Status.Active);
 
-        async Task TickAsync(int seconds)
+        async Task TickAsync(int cpu)
         {
-            for (int second = 0; second < seconds; second++)
-            {
-                clock.Now = clock.Now.AddSeconds(1);
-                await runtime.MaintainAsync(() => true, default);
-            }
+            temperatures.Reading = new(cpu, null);
+            clock.Now = clock.Now.AddSeconds(1);
+            await runtime.MaintainAsync(() => true, default);
         }
     }
 

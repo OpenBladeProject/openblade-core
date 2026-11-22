@@ -17,6 +17,8 @@ internal sealed class CoolingPadControlRuntime(
     private readonly TimeProvider clock = timeProvider ?? TimeProvider.System;
     // Shared with the laptop manual curve; pauses and validity checks stay on raw readings.
     private readonly FanCurveTemperatureFilter temperatureFilter = new(timeProvider ?? TimeProvider.System);
+    private readonly EmergencyLimit cpuEmergency = new(FanCurveCalculator.EmergencyCpuCelsius);
+    private readonly EmergencyLimit gpuEmergency = new(FanCurveCalculator.EmergencyGpuCelsius);
     private readonly Dictionary<Guid, DemandLease> leases = [];
     private CoolingPadStatusSnapshot status = new();
     private CoolingPadOwnershipRecord? ownership;
@@ -147,7 +149,7 @@ internal sealed class CoolingPadControlRuntime(
             { return Block("The affected cooling pad settings could not be read for restoration."); }
 
             // New settings start a new filter history from the first raw sample.
-            temperatureFilter.Reset();
+            ResetTemperatureHistory();
             int? target = IsTemperatureDriven(settings.FanMode)
                 ? await CurveTargetAsync(settings, token).ConfigureAwait(false)
                 : settings.FanMode == CoolingPadFanMode.Fixed ? settings.FixedRpm : null;
@@ -534,16 +536,17 @@ internal sealed class CoolingPadControlRuntime(
         // Availability is judged on the raw sample; only the curve input is conditioned.
         if (cpu && reading.CpuCelsius is not (>= 0 and <= 115) || gpu && !gpuOff && reading.GpuCelsius is not (>= 0 and <= 115))
         {
-            temperatureFilter.Reset();
+            ResetTemperatureHistory();
             throw new TemperatureUnavailableException();
         }
         FanTemperatureReadings filtered = temperatureFilter.Filter(reading);
         int target;
-        // The laptop curve's emergency limits apply to the selected sources' smoothed readings,
-        // so a quiet table or curve cannot hold the pad back and a brief spike does not trip
-        // them (the laptop curve checks raw readings instead). Synapse has none.
-        if (cpu && filtered.CpuCelsius >= FanCurveCalculator.EmergencyCpuCelsius
-            || gpu && !gpuOff && filtered.GpuCelsius >= FanCurveCalculator.EmergencyGpuCelsius)
+        // The laptop curve's emergency limits, held on the selected sources' raw readings, so a
+        // quiet table or curve cannot hold the pad back. Smoothing would take 12-20 s to reach
+        // a steady limit. Synapse has none. Both are updated so each keeps its own streak.
+        bool emergency = cpuEmergency.Update(cpu ? reading.CpuCelsius : null, acquired, clock)
+            | gpuEmergency.Update(gpu && !gpuOff ? reading.GpuCelsius : null, acquired, clock);
+        if (emergency)
         {
             target = CoolingPadSettings.MaximumRpm;
         }
@@ -561,6 +564,53 @@ internal sealed class CoolingPadControlRuntime(
         }
         lastTemperatureTimestamp = acquired;
         return target;
+    }
+
+    private void ResetTemperatureHistory()
+    {
+        temperatureFilter.Reset();
+        cpuEmergency.Reset();
+        gpuEmergency.Reset();
+    }
+
+    /// <summary>
+    /// Full pad speed once a raw reading has stayed at or above the limit for
+    /// <see cref="Confirmation"/>, so a transient package spike does not trip it. It holds
+    /// until the reading falls <see cref="ReleaseMarginCelsius"/> below the limit, so a
+    /// reading at the limit does not switch the speed back and forth.
+    /// </summary>
+    private sealed class EmergencyLimit(int limitCelsius)
+    {
+        internal static readonly TimeSpan Confirmation = TimeSpan.FromSeconds(2);
+        internal const int ReleaseMarginCelsius = 3;
+        private long? hotSince;
+        private bool active;
+
+        internal bool Update(int? celsius, long timestamp, TimeProvider clock)
+        {
+            if (celsius is not int value)
+            {
+                Reset();
+                return false;
+            }
+            if (value >= limitCelsius)
+            {
+                hotSince ??= timestamp;
+                if (clock.GetElapsedTime(hotSince.Value, timestamp) >= Confirmation) { active = true; }
+            }
+            else
+            {
+                hotSince = null;
+                if (value < limitCelsius - ReleaseMarginCelsius) { active = false; }
+            }
+            return active;
+        }
+
+        internal void Reset()
+        {
+            hotSince = null;
+            active = false;
+        }
     }
 
     // Auto follows Synapse's Smart tables; HostCurve follows the user's curves. Both send 0D/01
