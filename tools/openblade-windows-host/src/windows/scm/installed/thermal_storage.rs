@@ -1386,7 +1386,7 @@ fn aggregate(files: &dyn Files, same_path: fn(&str, &str) -> bool) -> io::Result
 
 /// An aggregate `aggregate` admitted, with the committed `profiles.json` bytes
 /// it was read from and their schema.
-struct Committed {
+struct CommittedAggregate {
     document: Value,
     profile: Vec<u8>,
     schema: i32,
@@ -1395,7 +1395,7 @@ struct Committed {
 fn committed_aggregate(
     files: &dyn Files,
     same_path: fn(&str, &str) -> bool,
-) -> io::Result<Option<Committed>> {
+) -> io::Result<Option<CommittedAggregate>> {
     if files.read(configuration::RECOVERY_REQUIRED)?.is_some() {
         return Err(denied());
     }
@@ -1502,7 +1502,7 @@ fn committed_aggregate(
     if schema == 26 {
         preserve_legacy_independent_intent(&mut doc["profiles"]);
     }
-    Ok(Some(Committed {
+    Ok(Some(CommittedAggregate {
         document: doc,
         profile: profile.ok_or_else(denied)?,
         schema,
@@ -1518,7 +1518,7 @@ fn committed_aggregate(
 /// needs the lighting `kind` discriminator first. A round trip would refuse
 /// every Static, Breathing or other effect with members after `kind`. The
 /// decoder refuses a member managed would not bind, and then nothing resolves.
-fn typed_profiles(committed: &Committed) -> io::Result<ProfileSet> {
+fn typed_profiles(committed: &CommittedAggregate) -> io::Result<ProfileSet> {
     use openblade_domain::profile_set::{decode, json, normalize};
     let root = json::parse(&committed.profile).map_err(|_| denied())?;
     let profiles = root.member("profiles").ok_or_else(denied)?;
