@@ -19,7 +19,8 @@ public sealed partial class ServiceControlRuntimeTests
         "Recorded from managed by ServiceControlRuntimeTests.NativeLowPowerTriggerVectors; regenerate with OPENBLADE_REGENERATE_NATIVE_PROFILE_VECTORS. "
         + "A lowPower row runs with the LowPowerGate entered. A report row whose expect has transition true ran ApplyFullTransitionAsync with the gate clear. "
         + "setters counts the device setters the request submitted. startup is ApplyFullTransitionAsync itself, as the user's profile load runs it; "
-        + "writeBlock is ScopedThermalWriteBlockReason, which every thermal write of a transition checks.";
+        + "writeBlock is ScopedThermalWriteBlockReason, which every thermal write of a transition checks. "
+        + "An explicit row is a persistent override at power, the pluggedIn rows first, then the battery rows after a source change with the gate clear.";
 
     [Fact]
     public async Task NativeLowPowerTriggerVectors_MatchManagedReplies()
@@ -182,23 +183,36 @@ public sealed partial class ServiceControlRuntimeTests
         blockArguments[3] = new[] { DeviceSubsystem.Performance, DeviceSubsystem.Fans };
         var writeBlock = new JsonObject { ["message"] = (string?)block.Invoke(runtime, blockArguments) };
 
-        var explicitRows = new JsonArray
+        var explicitRows = new JsonArray();
+        async Task Explicit(string power, PerformancePreset? performance, FanMode? fans)
         {
-            new JsonObject
+            explicitRows.Add(new JsonObject
             {
-                ["operation"] = "setPerformanceOverride",
-                ["expect"] = await Measure(() => runtime.SetPerformanceOverrideAsync(
-                    new(PerformancePreset.Silent, OverrideLifetime.Persistent),
-                    CancellationToken.None)),
-            },
-            new JsonObject
-            {
-                ["operation"] = "setFanOverride",
-                ["expect"] = await Measure(() => runtime.SetFanOverrideAsync(
-                    new(FanMode.Maximum, OverrideLifetime.Persistent),
-                    CancellationToken.None)),
-            },
-        };
+                ["power"] = power,
+                ["operation"] = performance is null ? "setFanOverride" : "setPerformanceOverride",
+                ["value"] = performance is { } preset ? (int)preset : (int)fans!.Value,
+                ["expect"] = performance is { } requested
+                    ? await Measure(() => runtime.SetPerformanceOverrideAsync(
+                        new(requested, OverrideLifetime.Persistent),
+                        CancellationToken.None))
+                    : await Measure(() => runtime.SetFanOverrideAsync(
+                        new(fans!.Value, OverrideLifetime.Persistent),
+                        CancellationToken.None)),
+            });
+        }
+
+        await Explicit("pluggedIn", PerformancePreset.Silent, null);
+        await Explicit("pluggedIn", null, FanMode.Maximum);
+
+        // The same requests on battery, which Windows alone classifies. The
+        // source changes with the gate clear, so no transition is deferred.
+        context.LowPowerGate.Exit();
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+        await runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+        context.LowPowerGate.Enter();
+        await Explicit("battery", PerformancePreset.BatterySaver, null);
+        await Explicit("battery", null, FanMode.Maximum);
+        await Explicit("battery", null, FanMode.Automatic);
         context.LowPowerGate.Exit();
 
         return new JsonObject
