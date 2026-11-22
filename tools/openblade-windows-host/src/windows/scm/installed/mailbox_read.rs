@@ -1413,6 +1413,22 @@ impl ReadSource {
             Err(io::Error::other(UnresolvedSettlement(error)))
         })
     }
+    /// Stops the reader so a mutation or its caller can own the HID exchange.
+    ///
+    /// The retained `ReaderDrain` phase is the single restart point: the next
+    /// observation or mutation reconstructs the reader in `drain_mutation`
+    /// after the stop is confirmed and integrity and read custody are freshly
+    /// admitted. A caller that then refuses or fails before submitting anything
+    /// therefore never leaves reads stopped. The phase is set before the await,
+    /// so a canceled stop is still resumed by the next read. A fenced source
+    /// stays fenced: its activation may have been published.
+    async fn stop_reader(&self) -> io::Result<()> {
+        if self.phase.get() != MutationPhase::Fenced {
+            self.phase.set(MutationPhase::ReaderDrain);
+        }
+        let reader = self.worker.borrow().clone();
+        reader.stop().await
+    }
     pub(super) async fn mutate_cleanup(
         &self,
         permit: Arc<dyn crate::discovery::performance::mutation::Permit>,
@@ -1421,8 +1437,7 @@ impl ReadSource {
         let _serial = self.operation.lock().await;
         self.lease.verify_integrity()?;
         self.drain_mutation(false).await?;
-        let worker = self.worker.borrow().clone();
-        worker.stop().await?;
+        self.stop_reader().await?;
         if !self.activated.get()
             || !permit.cleanup()
             || permit.authorize().is_none()
@@ -1446,11 +1461,12 @@ impl ReadSource {
         drained?;
         result.map(|r| r.map(|r| r.performance))
     }
+    /// Joins active mutation work and stops the reader. The next read restarts
+    /// it (`stop_reader`), so the caller may return without a mutation.
     pub(super) async fn drain_active(&self) -> io::Result<()> {
         let _serial = self.operation.lock().await;
         self.drain_mutation(false).await?;
-        let worker = self.worker.borrow().clone();
-        worker.stop().await
+        self.stop_reader().await
     }
     pub(super) async fn mutate(
         &self,
@@ -1468,11 +1484,9 @@ impl ReadSource {
         }
         self.lease.verify_integrity()?;
         self.drain_mutation(true).await?;
-        // This phase is retained before the await. Cancellation or suspend cannot
-        // lose the proof that no owner publication was attempted.
-        self.phase.set(MutationPhase::ReaderDrain);
-        let reader = self.worker.borrow().clone();
-        reader.stop().await?;
+        // `stop_reader` retains its phase before the await. Cancellation or
+        // suspend cannot lose the proof that no owner publication was attempted.
+        self.stop_reader().await?;
         if permit.authorize() != self.lease.authorize() || permit.authorize().is_none() {
             return Err(deny());
         }

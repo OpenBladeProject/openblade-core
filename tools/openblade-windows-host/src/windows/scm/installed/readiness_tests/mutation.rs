@@ -3,6 +3,8 @@
 use super::*;
 #[path = "profile_layer_lighting.rs"]
 mod profile_layer_lighting;
+#[path = "read_worker_restart.rs"]
+mod read_worker_restart;
 #[path = "temporary_charge_corrections.rs"]
 mod tfc_corrections;
 #[cfg(feature = "service-temporary-charge-v1")]
