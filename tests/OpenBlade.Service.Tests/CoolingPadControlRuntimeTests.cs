@@ -543,9 +543,9 @@ public sealed class CoolingPadControlRuntimeTests
     }
 
     [Theory]
-    [InlineData(CoolingPadAutoProfile.Quiet, CoolingPadTemperatureSource.Cpu, 65, null, 1000, CoolingPadFanPreset.Quiet)]
+    [InlineData(CoolingPadAutoProfile.Quiet, CoolingPadTemperatureSource.Cpu, 65, null, 700, CoolingPadFanPreset.Quiet)]
     [InlineData(CoolingPadAutoProfile.Balanced, CoolingPadTemperatureSource.Both, 35, 85, 2200, CoolingPadFanPreset.Balanced)]
-    [InlineData(CoolingPadAutoProfile.Performance, CoolingPadTemperatureSource.Gpu, null, 95, 2700, CoolingPadFanPreset.Performance)]
+    [InlineData(CoolingPadAutoProfile.Performance, CoolingPadTemperatureSource.Gpu, null, 86, 2700, CoolingPadFanPreset.Performance)]
     public async Task AutoSelectsTheProfilePresetAndTheSynapseTableTarget(CoolingPadAutoProfile profile,
         CoolingPadTemperatureSource source, int? cpu, int? gpu, int expected, CoolingPadFanPreset preset)
     {
@@ -609,7 +609,7 @@ public sealed class CoolingPadControlRuntimeTests
         Assert.Contains("waiting for a reading", runtime.Status.Message);
 
         // The filter restarts from the fresh reading, so sustained heat raises the target.
-        temperatures.Reading = new(95, null);
+        temperatures.Reading = new(94, null);
         clock.Now = clock.Now.AddSeconds(1);
         await runtime.MaintainAsync(() => true, default);
         Assert.True(runtime.Status.Active);
@@ -620,7 +620,8 @@ public sealed class CoolingPadControlRuntimeTests
 
     public static TheoryData<CoolingPadSettings, int> PoweredDownGpuModes => new()
     {
-        { Fixed with { FanMode = CoolingPadFanMode.Auto, AutoProfile = CoolingPadAutoProfile.Balanced, TemperatureSource = CoolingPadTemperatureSource.Both }, 2200 },
+        // Balanced CPU at 65 C, interpolated between 40:1000 and 90:2200.
+        { Fixed with { FanMode = CoolingPadFanMode.Auto, AutoProfile = CoolingPadAutoProfile.Balanced, TemperatureSource = CoolingPadTemperatureSource.Both }, 1600 },
         { Fixed with { FanMode = CoolingPadFanMode.Auto, AutoProfile = CoolingPadAutoProfile.Balanced, TemperatureSource = CoolingPadTemperatureSource.Gpu },
             CoolingPadAutoCurves.Gpu(CoolingPadAutoProfile.Balanced)[0].Rpm },
         { Fixed with { FanMode = CoolingPadFanMode.HostCurve, TemperatureSource = CoolingPadTemperatureSource.Both }, 1500 },
@@ -650,22 +651,16 @@ public sealed class CoolingPadControlRuntimeTests
         Assert.False(runtime.Status.RecoveryRequired);
     }
 
-    public static TheoryData<CoolingPadSettings> TemperatureDrivenModes => new()
+    [Fact]
+    public async Task BriefPackageSpikeDoesNotChangeTheDemandButSustainedHeatDoes()
     {
         // A plateau from 60 to 75 C: 1000 RPM; 3000 RPM above 90 C.
-        Fixed with
+        var settings = Fixed with
         {
-            FanMode = CoolingPadFanMode.HostCurve, TemperatureSource = CoolingPadTemperatureSource.Cpu,
+            FanMode = CoolingPadFanMode.HostCurve,
+            TemperatureSource = CoolingPadTemperatureSource.Cpu,
             CpuCurve = [new(40, 500), new(60, 1000), new(75, 1000), new(90, 3000)],
-        },
-        // Synapse Quiet CPU: 1000 RPM from 50 to 84 C, 1600 RPM from 85 C.
-        Fixed with { FanMode = CoolingPadFanMode.Auto, AutoProfile = CoolingPadAutoProfile.Quiet, TemperatureSource = CoolingPadTemperatureSource.Cpu },
-    };
-
-    [Theory]
-    [MemberData(nameof(TemperatureDrivenModes))]
-    public async Task BriefPackageSpikeDoesNotChangeTheDemandButSustainedHeatDoes(CoolingPadSettings settings)
-    {
+        };
         var provider = new Provider();
         var clock = new Clock();
         var temperatures = new Temperatures();
@@ -674,7 +669,7 @@ public sealed class CoolingPadControlRuntimeTests
         await runtime.ApplyAsync(settings, () => true, default);
         Assert.Equal(1000, runtime.Status.ConfirmedTargetRpm);
 
-        temperatures.Reading = new(95, null);
+        temperatures.Reading = new(94, null);
         clock.Now = clock.Now.AddSeconds(1);
         await runtime.MaintainAsync(() => true, default);
         temperatures.Reading = new(65, null);
@@ -683,7 +678,7 @@ public sealed class CoolingPadControlRuntimeTests
         Assert.Single(provider.Pad.Writes);
         Assert.True(runtime.Status.Active);
 
-        temperatures.Reading = new(95, null);
+        temperatures.Reading = new(94, null);
         for (int second = 0; second < 15; second++)
         {
             clock.Now = clock.Now.AddSeconds(1);
@@ -691,6 +686,118 @@ public sealed class CoolingPadControlRuntimeTests
         }
         Assert.True(runtime.Status.ConfirmedTargetRpm > 1000);
         Assert.True(runtime.Status.Active);
+    }
+
+    [Fact]
+    public async Task AutoFollowsSmoothedTemperatureAlongItsTable()
+    {
+        var provider = new Provider();
+        var clock = new Clock();
+        var temperatures = new Temperatures { Reading = new(65, null) };
+        var runtime = new CoolingPadControlRuntime(provider, new(), temperatures, clock);
+        await runtime.SetUserAsync("owner", default);
+        var settings = Fixed with
+        {
+            FanMode = CoolingPadFanMode.Auto,
+            AutoProfile = CoolingPadAutoProfile.Balanced,
+            TemperatureSource = CoolingPadTemperatureSource.Cpu,
+        };
+        await runtime.ApplyAsync(settings, () => true, default);
+        Assert.Equal(1600, runtime.Status.ConfirmedTargetRpm);
+
+        // A one-second 94 C spike moves the smoothed input about 5 C, not to the 2200 RPM end.
+        temperatures.Reading = new(94, null);
+        clock.Now = clock.Now.AddSeconds(1);
+        await runtime.MaintainAsync(() => true, default);
+        Assert.InRange(runtime.Status.ConfirmedTargetRpm!.Value, 1650, 1800);
+
+        // Sustained heat reaches the end of the table.
+        for (int second = 0; second < 15; second++)
+        {
+            clock.Now = clock.Now.AddSeconds(1);
+            await runtime.MaintainAsync(() => true, default);
+        }
+        Assert.Equal(2200, runtime.Status.ConfirmedTargetRpm);
+        Assert.True(runtime.Status.Active);
+    }
+
+    private static CoolingPadSettings QuietAuto(CoolingPadTemperatureSource source) => Fixed with
+    {
+        FanMode = CoolingPadFanMode.Auto,
+        AutoProfile = CoolingPadAutoProfile.Quiet,
+        TemperatureSource = source,
+    };
+
+    public static TheoryData<CoolingPadSettings, FanTemperatureReadings, int> EmergencyCases => new()
+    {
+        // The laptop curve limits, held 2 s: CPU 95 C and GPU 87 C run the pad at its maximum.
+        { QuietAuto(CoolingPadTemperatureSource.Cpu), new(95, null), CoolingPadSettings.MaximumRpm },
+        { QuietAuto(CoolingPadTemperatureSource.Cpu), new(94, null), 1600 },
+        { QuietAuto(CoolingPadTemperatureSource.Gpu), new(null, 87), CoolingPadSettings.MaximumRpm },
+        { QuietAuto(CoolingPadTemperatureSource.Gpu), new(null, 86), 1600 },
+        { Fixed with { FanMode = CoolingPadFanMode.HostCurve, TemperatureSource = CoolingPadTemperatureSource.Both }, new(65, 87),
+            CoolingPadSettings.MaximumRpm },
+        { QuietAuto(CoolingPadTemperatureSource.Both), new(95, null, GpuPoweredDown: true), CoolingPadSettings.MaximumRpm },
+        // Only the selected sources are read, so a hot GPU does not affect a CPU-only mode.
+        { QuietAuto(CoolingPadTemperatureSource.Cpu), new(65, 90), 700 },
+    };
+
+    [Theory]
+    [MemberData(nameof(EmergencyCases))]
+    public async Task EmergencyLimitsOverrideTheTableAndCurve(CoolingPadSettings settings, FanTemperatureReadings reading, int expected)
+    {
+        var provider = new Provider();
+        var clock = new Clock();
+        var runtime = new CoolingPadControlRuntime(provider, new(), new Temperatures { Reading = reading }, clock);
+        await runtime.SetUserAsync("owner", default);
+        Assert.Equal(ControlOperationStatus.Applied, (await runtime.ApplyAsync(settings, () => true, default)).Status);
+        // The reading holds for the 2 s confirmation: three one-second samples.
+        for (int second = 0; second < 2; second++)
+        {
+            clock.Now = clock.Now.AddSeconds(1);
+            await runtime.MaintainAsync(() => true, default);
+        }
+        Assert.Equal(expected, runtime.Status.ConfirmedTargetRpm);
+        Assert.True(runtime.Status.Active);
+    }
+
+    [Fact]
+    public async Task EmergencyIgnoresTransientSpikesTripsAfterTwoSecondsAndReleasesThreeDegreesLower()
+    {
+        var provider = new Provider();
+        var clock = new Clock();
+        var temperatures = new Temperatures { Reading = new(90, null) };
+        var runtime = new CoolingPadControlRuntime(provider, new(), temperatures, clock);
+        await runtime.SetUserAsync("owner", default);
+        await runtime.ApplyAsync(QuietAuto(CoolingPadTemperatureSource.Cpu), () => true, default);
+        Assert.Equal(1600, runtime.Status.ConfirmedTargetRpm);
+
+        // A one-second spike, even far above the limit, does not trip it.
+        await TickAsync(100);
+        Assert.Equal(1600, runtime.Status.ConfirmedTargetRpm);
+        // A sample below the limit restarts the streak.
+        await TickAsync(90);
+        await TickAsync(95);
+        await TickAsync(95);
+        Assert.Equal(1600, runtime.Status.ConfirmedTargetRpm);
+        // The third consecutive sample, 2 s after the first, trips it.
+        await TickAsync(95);
+        Assert.Equal(CoolingPadSettings.MaximumRpm, runtime.Status.ConfirmedTargetRpm);
+
+        // Full speed holds within 3 C of the limit and releases below it.
+        await TickAsync(93);
+        await TickAsync(92);
+        Assert.Equal(CoolingPadSettings.MaximumRpm, runtime.Status.ConfirmedTargetRpm);
+        await TickAsync(91);
+        Assert.Equal(1600, runtime.Status.ConfirmedTargetRpm);
+        Assert.True(runtime.Status.Active);
+
+        async Task TickAsync(int cpu)
+        {
+            temperatures.Reading = new(cpu, null);
+            clock.Now = clock.Now.AddSeconds(1);
+            await runtime.MaintainAsync(() => true, default);
+        }
     }
 
     private static CoolingPadSettings Fixed => new() { FanMode = CoolingPadFanMode.Fixed, FixedRpm = 1500 };
