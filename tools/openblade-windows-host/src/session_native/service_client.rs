@@ -431,9 +431,19 @@ pub(super) struct ReportChannel<'a> {
 
 /// Managed connects within two seconds and then waits for the reply without a
 /// limit. A wedged Service would hold the one in-flight report, and with it
-/// every renewal, forever, so each later step has its own two-second bound.
+/// every renewal, forever, so the connect has its own two-second bound and
+/// the reply `REPORT_REPLY_BUDGET`.
 #[cfg(feature = "agent-application-reporter-v1")]
 const REPORT_CONNECT_BUDGET: Duration = Duration::from_secs(2);
+/// A report may reconcile saved intent under the Service's
+/// `RECONCILE_BUDGET`, and the Service answers a reconciliation that has run
+/// even when it finished late, so the reply wait covers that budget and one
+/// frame more. Abandoning the wait earlier would leave a submitted result
+/// unacknowledged and the report pending.
+#[cfg(feature = "agent-application-reporter-v1")]
+const REPORT_REPLY_BUDGET: Duration = Duration::from_secs(
+    crate::service_frame::RECONCILE_BUDGET.as_secs() + crate::service_frame::FRAME_TIMEOUT.as_secs(),
+);
 
 #[cfg(feature = "agent-application-reporter-v1")]
 impl<'a> ReportChannel<'a> {
@@ -477,7 +487,7 @@ impl<'a> ReportChannel<'a> {
         connect: impl AsyncFnOnce() -> io::Result<S>,
         peer: impl Fn(&S) -> io::Result<(u32, u32)>,
     ) -> io::Result<openblade_application_reporter::ReportOutcome> {
-        use crate::service_frame::{FRAME_TIMEOUT, read_payload, write_payload};
+        use crate::service_frame::{read_payload, write_payload};
         use openblade_windows_host::reporter_pipe::{Response, encode, guid_text};
 
         let payload = encode(request)?;
@@ -492,7 +502,7 @@ impl<'a> ReportChannel<'a> {
         verify_peer(generation.as_ref(), pid, &stream, &peer)?;
         let exchanged = async {
             write_payload(&mut stream, &payload).await?;
-            timeout_at(Instant::now() + FRAME_TIMEOUT, read_payload(&mut stream)).await?
+            timeout_at(Instant::now() + REPORT_REPLY_BUDGET, read_payload(&mut stream)).await?
         }
         .await;
         let reply = match exchanged {

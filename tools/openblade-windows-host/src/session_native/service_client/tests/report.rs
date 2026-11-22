@@ -286,8 +286,9 @@ async fn a_stopped_or_restarting_service_fails_the_report_without_connecting() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn a_silent_service_fails_at_the_shared_budget() {
-    // The server end stays open and never replies.
+async fn a_silent_service_fails_after_the_reconcile_budget_and_one_frame() {
+    // The server end stays open and never replies. A report may reconcile
+    // under the Service's 11 s budget, so the Agent waits 13 s in all.
     let (client, _server) = duplex(16_384);
     let authority = Authority::live();
     let started = Instant::now();
@@ -300,7 +301,11 @@ async fn a_silent_service_fails_at_the_shared_budget() {
     .await
     .unwrap_err();
     assert_eq!(error.kind(), io::ErrorKind::TimedOut);
-    assert_eq!(started.elapsed(), STATUS_BUDGET);
+    assert_eq!(started.elapsed(), Duration::from_secs(13));
+    assert_eq!(
+        REPORT_REPLY_BUDGET,
+        crate::service_frame::RECONCILE_BUDGET + crate::service_frame::FRAME_TIMEOUT
+    );
 }
 
 #[tokio::test(start_paused = true)]

@@ -7,6 +7,18 @@ use tokio::time::timeout;
 
 const MAX_FRAME_BYTES: i32 = 65_536;
 pub(crate) const FRAME_TIMEOUT: Duration = Duration::from_secs(2);
+/// The deadline of a request that may reconcile saved intent
+/// (`reportApplicationContext`, `updateProfiles`): a performance step and a
+/// fan step after the status snapshot. The Service sizes it next to its
+/// recipe budget; the Agent's report waits for it and one frame more.
+#[cfg(any(
+    feature = "service-profile-triggers-v1",
+    feature = "agent-application-reporter-v1"
+))]
+// The wire fixture binary includes this module too and reads neither role's
+// budget.
+#[allow(dead_code)]
+pub(crate) const RECONCILE_BUDGET: Duration = Duration::from_secs(11);
 
 pub(crate) fn is_guid(id: &str) -> bool {
     id.len() == 36
