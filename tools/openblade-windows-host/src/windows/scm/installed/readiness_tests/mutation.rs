@@ -750,6 +750,13 @@ struct Rig {
     #[cfg(feature = "service-battery-policy-v1")]
     battery_clock: Rc<dyn Fn() -> Option<Instant>>,
 }
+/// Every setter applies intent saved before it: an explicit request's
+/// override, or the saved profiles a reconciliation applies.
+fn saved_intent(files: &MemoryFiles) -> bool {
+    ["manual-overrides.json", "profiles.json"]
+        .iter()
+        .any(|name| files.read(name).unwrap().is_some())
+}
 impl Rig {
     fn new(files: MemoryFiles) -> Self {
         let port = Fixture::new();
@@ -766,13 +773,13 @@ impl Rig {
             } else if entry.get("battery").is_some() {
                 assert_eq!(entry["progress"], 60);
             } else if entry.get("fan").is_some() {
-                assert!(persisted.read("manual-overrides.json").unwrap().is_some());
+                assert!(saved_intent(&persisted));
                 assert!(matches!(
                     entry["progress"].as_u64(),
                     Some(10 | 12 | 14 | 16 | 40 | 42)
                 ));
             } else {
-                assert!(persisted.read("manual-overrides.json").unwrap().is_some());
+                assert!(saved_intent(&persisted));
                 // Each setter is preceded by its own intent, which directly
                 // follows the prior step of the destination's chain.
                 let chain = openblade_domain::thermal_mutation::Progress::chain(
@@ -1001,8 +1008,7 @@ async fn installed_temporary_clear_and_application_precedence_use_saved_canonica
     assert_eq!(rig.set(1, value(2, 1)).await["result"]["status"], 1);
     assert_eq!(rig.set(2, value(1, 0)).await["result"]["status"], 1);
     assert!(rig.files.document("manual-overrides.json")["overrides"]["performance"].is_null());
-    let report=rig.request(json!({"operation":"reportApplicationContext","version":85,"requestId":"bbbbbbbb-bbbb-cccc-dddd-000000000003","instanceId":"cccccccc-bbbb-cccc-dddd-000000000003","sequence":1,"executablePath":"C:\\Games\\Game.exe"})).await;
-    assert_eq!(report["result"]["status"], 0);
+    report_game(&rig).await;
     let result = rig.set(3, Value::Null).await;
     let status = rig.get().await;
     assert_eq!(status["status"]["writesBlocked"], true);
@@ -2863,9 +2869,24 @@ fn installed_storage_reads_schema26_lighting_as_managed_normalises_it() {
         }
     }
 }
+/// Reports Game.exe and records the pair without applying it: unknown
+/// Windows power admits no reconciliation (`reconcile_classes`), so the
+/// explicit request that follows is measured alone.
 async fn report_game(rig: &Rig) {
+    // `Option::replace` stores `Some(None)`: Windows power unknown.
+    let windows = rig
+        .port
+        .state
+        .lock()
+        .unwrap()
+        .windows_on_battery
+        .replace(None);
     let result = rig.request(json!({"operation":"reportApplicationContext","version":85,"requestId":"bbbbbbbb-bbbb-cccc-dddd-000000000003","instanceId":"cccccccc-bbbb-cccc-dddd-000000000003","sequence":1,"executablePath":r"C:\Games\Game.exe"})).await;
-    assert_eq!(result["result"]["status"], 0);
+    rig.port.state.lock().unwrap().windows_on_battery = windows;
+    assert_eq!(
+        result["result"],
+        json!({"status":0,"message":"The active application profile was recorded."})
+    );
 }
 #[tokio::test]
 async fn edge_managed_fan_control_only_application_precedence_and_lease_are_composed() {
@@ -3700,7 +3721,17 @@ async fn correction_present_malformed_app_fans_refuse_committed_dispatch_without
             Storage::open(Box::new(rig.files.clone()), SID).is_err(),
             "case={case}"
         );
-        report_game(&rig).await;
+        // The report selects from the saved profiles, so a store that cannot
+        // open records the sequence but selects nothing, and says why.
+        let report = rig.request(json!({"operation":"reportApplicationContext","version":85,"requestId":"bbbbbbbb-bbbb-cccc-dddd-000000000003","instanceId":"cccccccc-bbbb-cccc-dddd-000000000003","sequence":1,"executablePath":r"C:\Games\Game.exe"})).await;
+        assert_eq!(report["result"]["status"], 2, "case={case}");
+        assert!(
+            report["result"]["message"]
+                .as_str()
+                .unwrap()
+                .starts_with("Saved configuration or the current session is unavailable: "),
+            "case={case}"
+        );
         // No paused clock advancement: the accepted report's actual 15s lease is live.
         let result = rig.set(91, value(1, 1)).await;
         assert_eq!(result["result"]["status"], 2, "case={case}");
@@ -8883,3 +8914,7 @@ async fn tfc_v1_unrepresentable_private_intent_keeps_evidence_and_both_actual_pa
 #[cfg(feature = "service-profiles-v1")]
 #[path = "profiles.rs"]
 mod profiles;
+
+#[cfg(feature = "service-profiles-v1")]
+#[path = "request_triggers.rs"]
+mod request_triggers;

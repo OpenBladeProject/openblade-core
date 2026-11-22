@@ -38,6 +38,9 @@ pub(super) struct FanPermit {
     requested: Value,
     value: Option<FanOverride>,
     settings: Option<Value>,
+    // A reconciliation of saved intent (`Runtime::apply_fan_locked`): whether
+    // the saved fan intent was manual before its trigger. It stores nothing.
+    reconcile: Option<PriorManual>,
     application: Foreground,
     proof: ReadAdmission,
     selected: Mutex<Option<(i32, Value)>>,
@@ -302,7 +305,11 @@ impl Permit for FanPermit {
         }
         // Managed `CanAdmitUnclassifiedExternalControl` needs confirmed
         // HyperBoost to be inactive; nothing is stored or written.
-        if power == UNCLASSIFIED_EXTERNAL && baseline == ObservedPerformance::HyperBoostObserved {
+        // Managed applies saved intent only on classified power, so a
+        // reconciliation that finds the adapter unclassified writes nothing.
+        if power == UNCLASSIFIED_EXTERNAL
+            && (self.reconcile.is_some() || baseline == ObservedPerformance::HyperBoostObserved)
+        {
             self.unclassified_blocked.store(true, Ordering::Release);
             return Ok(None);
         }
@@ -311,7 +318,11 @@ impl Permit for FanPermit {
             return Ok(None);
         }
         self.observe_power(power)?;
-        if let Some(message) = self.override_rejected(power)? {
+        // A reconciliation validates no override, as managed
+        // `ApplyFullTransitionAsync` does not.
+        if self.reconcile.is_none()
+            && let Some(message) = self.override_rejected(power)?
+        {
             *self.rejected.lock().map_err(|_| io::ErrorKind::Other)? = Some(message);
             return Ok(None);
         }
@@ -323,9 +334,17 @@ impl Permit for FanPermit {
         let profile = profile.as_ref();
         // Managed applies the saved preset only when fans leave saved manual
         // intent (`previousManual` in ApplyFanControlTransitionCoreOutcomeAsync).
-        let leaving_manual = self.storage.desired_manual_fans(power, profile)?;
-        self.storage
-            .save_fan(self.value.clone(), self.settings.clone(), power)?;
+        // A reconciliation's trigger has already changed that intent, so it
+        // carries the value read before the trigger, and stores nothing.
+        let leaving_manual = match self.reconcile {
+            Some(prior) => prior.at(power),
+            None => {
+                let prior = self.storage.desired_manual_fans(power, profile)?;
+                self.storage
+                    .save_fan(self.value.clone(), self.settings.clone(), power)?;
+                prior
+            }
+        };
         self.accepted.store(true, Ordering::Release);
         if power == UNCLASSIFIED_EXTERNAL && self.value.is_none() {
             // Managed `ExecuteScopedMutationAsync`: with no profile to apply, a
@@ -676,6 +695,20 @@ impl Runtime {
         mailbox: MailboxSource,
         fan: FanRequest,
     ) -> io::Result<(Outcome, Option<Snapshot>)> {
+        let _serial = self.gate.lock().await;
+        self.apply_fan_locked(mailbox, fan, None).await
+    }
+    /// One fan step under the held gate: an explicit request, or, with
+    /// `reconcile` holding whether saved fan intent was manual before the
+    /// trigger, a reconciliation of saved intent that stores nothing and keeps
+    /// every per-write admission, re-check, readback and stop-on-ambiguity
+    /// path of the request (`Runtime::reconcile_locked`).
+    pub(super) async fn apply_fan_locked(
+        &self,
+        mailbox: MailboxSource,
+        fan: FanRequest,
+        reconcile: Option<PriorManual>,
+    ) -> io::Result<(Outcome, Option<Snapshot>)> {
         let FanRequest {
             caller,
             sid,
@@ -685,7 +718,6 @@ impl Runtime {
             deadline,
             status: status_snapshot,
         } = fan;
-        let _serial = self.gate.lock().await;
         verify_retained_failure(&self.fatal)?;
         if caller.logon != Logon::Interactive
             || caller.control_session != Some(caller.session)
@@ -775,6 +807,7 @@ impl Runtime {
             requested: json!({"value":value,"settings":settings}),
             value,
             settings,
+            reconcile,
             application,
             proof,
             selected: Mutex::new(None),
@@ -887,6 +920,14 @@ impl Runtime {
             }
         } else {
             "Fan intent was not accepted; fresh admission or persistence did not complete."
+        };
+        // A reconciliation (value None) committed nothing: only its hardware
+        // result is reported, as managed `ApplyFullTransitionAsync` reports it.
+        let message = match permit.reconcile {
+            Some(_) => message
+                .strip_prefix("Fan override was cleared. Hardware result: ")
+                .unwrap_or(message),
+            None => message,
         };
         if result.as_ref().is_err_and(is_fatal_admission) {
             return result.map(|_| unreachable!());
@@ -1033,9 +1074,14 @@ impl Runtime {
                     Some(power),
                 )
                 .thermal_provenance(perf.map(|v| v.1));
+            // A reconciliation reports the override layer it applied over.
+            let fan_override = match permit.reconcile {
+                Some(_) => permit.storage.current_fan_override(power)?,
+                None => permit.value.clone(),
+            };
             Some(
                 base.fan_intent(
-                    permit.value.as_ref(),
+                    fan_override.as_ref(),
                     if settings.is_null() {
                         None
                     } else {

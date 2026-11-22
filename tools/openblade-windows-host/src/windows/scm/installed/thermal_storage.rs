@@ -2,6 +2,7 @@
 //! explicit storage first; the injected path never resolves a product root.
 use crate::configuration::{self, File as ConfigFile, Inspection, RecoveryRecord};
 use openblade_domain::{
+    application_context::Rule,
     automation::{UNCLASSIFIED_EXTERNAL, temporary_after, temporary_expired},
     profile_set::{
         ApplicationProfile, CustomPerformance, Dialect, FanControl, FanMode, PowerProfile,
@@ -9,6 +10,15 @@ use openblade_domain::{
         application::{self, ApplicationContext, Confirmed, Power, Resolution},
     },
     thermal_mutation::{CUSTOM, Destination, Preset, Progress, progress_follows, settled},
+};
+// The terms a profile save compares (`SaveIntent`).
+#[cfg(feature = "service-profiles-v1")]
+use openblade_domain::{
+    application_context,
+    automation::Provenance,
+    profile_set::{
+        BatteryPolicy, GpuClockTuning, LaptopBehavior, LightingSettings, PerformancePreset,
+    },
 };
 use serde_json::{Value, json};
 
@@ -465,6 +475,12 @@ fn profile_layer<'r, 'a>(
 ) -> Option<&'r Resolution<'a>> {
     profile.filter(|r| power_source(power).is_some_and(|source| r.desired_source() == Some(source)))
 }
+/// The saved application rules, as managed `ProfileAutomationState` reads them.
+fn rules(set: &ProfileSet) -> impl Iterator<Item = Rule<'_>> {
+    set.application_profiles
+        .iter()
+        .map(ApplicationProfile::rule)
+}
 /// A resolved fan control as stored intent is written, so it compares with
 /// the override layers' and the fan journal's settings.
 fn fan_settings(settings: &FanControl) -> Value {
@@ -477,23 +493,64 @@ fn fan_settings(settings: &FanControl) -> Value {
     let curve = &settings.manual_curve;
     json!({"mode":settings.mode.0,"fixedSpeedRpm":settings.fixed_speed_rpm,"manualCurve":{"cpu":points(&curve.cpu),"gpu":points(&curve.gpu),"useHigherTemperatureForBoth":curve.use_higher_temperature_for_both}})
 }
-/// The foreground application one interactive session reported: the path
-/// in `NormalizeExecutablePath` form and a context for the active pair
-/// managed `SetApplicationContext` keeps for it. In Stage 4b B1 the context
-/// stays empty: each read selects the reported path again in the profiles it
-/// read (`Storage::profile_layer`). B2 selects at the report and fills it.
-#[derive(Clone, Debug, Default)]
+/// The active application pair one interactive session's report selected,
+/// as managed `SetApplicationContext` keeps it: the rule id and the reported
+/// path in `NormalizeExecutablePath` form. The report selects once
+/// (`Storage::select_application`); a profile save retires the pair through
+/// `ApplicationContext::update` (`Storage::retain_application`) and never
+/// selects, so a rule that gains the path takes effect at the next report.
+#[derive(Clone, Debug, Default, PartialEq)]
 pub(super) struct Foreground {
-    reported: Option<String>,
     context: ApplicationContext,
 }
 impl Foreground {
-    pub(super) fn reported(path: Option<String>) -> Self {
-        Self {
-            reported: path,
-            context: ApplicationContext::default(),
-        }
+    pub(super) fn active_id(&self) -> Option<&str> {
+        self.context.active().map(|active| active.id)
     }
+}
+/// What a profile save compares before and after it stores, managed
+/// `activeApplicationIntentChanged` (`Storage::save_intent`): the active id,
+/// the desired state and the effective laptop behaviour at one class.
+#[cfg(feature = "service-profiles-v1")]
+#[derive(Debug, PartialEq)]
+pub(super) struct SaveIntent {
+    application_profile_id: Option<String>,
+    desired: Option<SaveDesired>,
+    laptop_behavior: Option<LaptopBehavior>,
+}
+#[cfg(feature = "service-profiles-v1")]
+impl SaveIntent {
+    /// `intent_changed` over two reads of the same class.
+    pub(super) fn changed(&self, next: &Self) -> bool {
+        fn view(
+            i: &SaveIntent,
+        ) -> application_context::Intent<'_, &Option<SaveDesired>, &Option<LaptopBehavior>>
+        {
+            application_context::Intent {
+                application_profile_id: i.application_profile_id.as_deref(),
+                desired: &i.desired,
+                laptop_behavior: &i.laptop_behavior,
+            }
+        }
+        application_context::intent_changed(&view(self), &view(next))
+    }
+}
+/// Managed `ResolveAutomationDesired` as native composes it: the profile
+/// layer's `desired_intent` with every member an explicit override decides
+/// masked, and the composed destination and fan intent those overrides
+/// select (`Storage::desired`, `Storage::desired_fan`).
+#[cfg(feature = "service-profiles-v1")]
+#[derive(Debug, PartialEq)]
+struct SaveDesired {
+    performance: Option<application::Setting<PerformancePreset>>,
+    custom_performance: Option<CustomPerformance>,
+    gpu_clock_tuning: Option<GpuClockTuning>,
+    fans: Option<(application::Setting<FanMode>, FanControl)>,
+    lighting: (Option<LightingSettings>, Provenance),
+    battery_policy: Option<BatteryPolicy>,
+    battery_protection_enabled: bool,
+    destination: Option<(Destination, i32)>,
+    fan: Option<Value>,
 }
 /// The saved profiles, typed, with a session's foreground application
 /// selected in them: one aggregate read, from which each class resolves
@@ -717,26 +774,123 @@ impl Storage {
         });
         Ok(())
     }
-    /// One read of the saved profiles with `foreground` selected in them, for
+    /// One read of the saved profiles with `foreground`'s active pair, for
     /// one request step: every class the step reads resolves from it
-    /// (`ProfileLayer::at`). The selection is managed `SetApplicationContext`
-    /// for the reported path over the profiles just read, so a profile edit
-    /// takes effect at the next read without a new report.
+    /// (`ProfileLayer::at`). The pair is the one the last report selected;
+    /// a read never selects. A pair the saved rules no longer retain applies
+    /// no override (`ApplicationContext::retained`), so a store changed by
+    /// anything but `retain_application` cannot hand the active id's
+    /// overrides to another rule.
     pub(super) fn profile_layer(&self, foreground: &Foreground) -> io::Result<ProfileLayer> {
-        let set = committed_aggregate(self.files.as_ref(), self.same_path)?
-            .map(|committed| typed_profiles(&committed))
-            .transpose()?;
-        let mut context = foreground.context.clone();
-        context.report(
-            set.iter().flat_map(|set| {
-                set.application_profiles
-                    .iter()
-                    .map(ApplicationProfile::rule)
-            }),
-            foreground.reported.as_deref(),
-            self.same_path,
-        );
+        let set = self.typed_set()?;
+        let retained = set.as_ref().is_some_and(|set| {
+            foreground
+                .context
+                .retained(rules(set), self.same_path)
+                .is_some()
+        });
+        let context = if retained {
+            foreground.context.clone()
+        } else {
+            ApplicationContext::default()
+        };
         Ok(ProfileLayer { set, context })
+    }
+    fn typed_set(&self) -> io::Result<Option<ProfileSet>> {
+        committed_aggregate(self.files.as_ref(), self.same_path)?
+            .map(|committed| typed_profiles(&committed))
+            .transpose()
+    }
+    /// Managed `SetApplicationContext` for one admitted report: the first
+    /// enabled saved rule for `reported` becomes the active pair, over the
+    /// profiles saved now. Returns the new pair and whether it changed from
+    /// `current`. No saved aggregate selects nothing.
+    pub(super) fn select_application(
+        &self,
+        current: &Foreground,
+        reported: Option<&str>,
+    ) -> io::Result<(Foreground, bool)> {
+        let set = self.typed_set()?;
+        let mut next = current.clone();
+        let changed = match &set {
+            Some(set) => next.context.report(rules(set), reported, self.same_path),
+            None => next.context.clear(),
+        };
+        Ok((next, changed))
+    }
+    /// Managed `ProfileAutomationState.UpdateProfiles` after a save: the
+    /// active pair survives only while an enabled rule with its id still
+    /// holds its path (`ApplicationContext::update`). It never selects.
+    #[cfg(feature = "service-profiles-v1")]
+    pub(super) fn retain_application(&self, current: &Foreground) -> io::Result<Foreground> {
+        let mut next = current.clone();
+        match self.typed_set()? {
+            Some(set) => {
+                next.context.update(rules(&set), self.same_path);
+            }
+            None => {
+                next.context.clear();
+            }
+        }
+        Ok(next)
+    }
+    /// The terms managed `UpdateProfilesAsync` compares around a save, read
+    /// at classified class `power` (`SaveIntent::changed`). No adapter
+    /// reading established `power`, so the read retires no temporary: the
+    /// override reads expire one kept for another class, and that state is
+    /// put back afterwards.
+    #[cfg(feature = "service-profiles-v1")]
+    pub(super) fn save_intent(
+        &self,
+        foreground: &Foreground,
+        power: i32,
+    ) -> io::Result<SaveIntent> {
+        let kept = {
+            let s = self.state.lock().map_err(|_| denied())?;
+            (s.temporary.clone(), s.temporary_fan.clone())
+        };
+        let intent = self.save_intent_at(foreground, power);
+        let mut s = self.state.lock().map_err(|_| denied())?;
+        (s.temporary, s.temporary_fan) = kept;
+        intent
+    }
+    #[cfg(feature = "service-profiles-v1")]
+    fn save_intent_at(&self, foreground: &Foreground, power: i32) -> io::Result<SaveIntent> {
+        let layer = self.profile_layer(foreground)?;
+        let profile = layer.at(power)?;
+        let desired = match profile_layer(profile.as_ref(), power) {
+            None => None,
+            Some(resolution) => {
+                let intent = application::desired_intent(
+                    resolution,
+                    openblade_domain::profile_set::Capabilities::rz09_0581()
+                        .supports_manual_fans_on_limited_power,
+                )
+                .map_err(|invalid| io::Error::new(io::ErrorKind::InvalidData, invalid.0))?;
+                // An explicit override decides its members whatever the
+                // profile says, so a profile edit under it is no change.
+                let performance_overridden = self.current_override(power)?.is_some();
+                let fans_overridden = self.current_fan_override(power)?.is_some();
+                Some(SaveDesired {
+                    performance: (!performance_overridden).then_some(intent.performance),
+                    custom_performance: intent
+                        .custom_performance
+                        .filter(|_| !performance_overridden),
+                    gpu_clock_tuning: intent.gpu_clock_tuning.filter(|_| !performance_overridden),
+                    fans: (!fans_overridden).then(|| (intent.fans, intent.fan_control.clone())),
+                    lighting: (intent.lighting.value.cloned(), intent.lighting.source),
+                    battery_policy: intent.battery_policy,
+                    battery_protection_enabled: intent.battery_protection_enabled,
+                    destination: self.desired(power, Some(resolution))?,
+                    fan: self.desired_fan(power, Some(resolution))?,
+                })
+            }
+        };
+        Ok(SaveIntent {
+            application_profile_id: layer.context.active().map(|a| a.id.to_owned()),
+            desired,
+            laptop_behavior: profile.as_ref().map(|r| r.laptop_behavior),
+        })
     }
     /// The saved destination for class `power`, with its provenance. Custom
     /// settings the model does not admit and unadmitted presets select
@@ -795,11 +949,14 @@ impl Storage {
         }
         // Managed `ApplicationProfileResolution`: an application's Custom
         // settings replace the power profile's, whichever selected Custom.
-        // The provenance names the application only for its own preset.
-        let source = if resolution
-            .application_override()
-            .is_some_and(|o| o.performance.is_some())
-        {
+        // The provenance names the application when its override sets the
+        // preset, Custom settings or GPU tuning, as managed `Resolve` does
+        // (`DesiredIntent::performance`).
+        let source = if resolution.application_override().is_some_and(|o| {
+            o.performance.is_some()
+                || o.custom_performance.is_some()
+                || o.gpu_clock_tuning.is_some()
+        }) {
             2
         } else {
             1
@@ -1234,6 +1391,26 @@ impl Storage {
     }
     pub(super) fn profiles(&self) -> io::Result<Option<Value>> {
         Ok(aggregate(self.files.as_ref(), self.same_path)?.map(|v| v["profiles"].clone()))
+    }
+    /// Whether saved fan intent is manual with `foreground`'s pair at each
+    /// classified class, indexed by class, read before a trigger changes that
+    /// pair or the saved profiles.
+    pub(super) fn manual_fans(&self, foreground: &Foreground) -> io::Result<[bool; 3]> {
+        let layer = self.profile_layer(foreground)?;
+        let mut manual = [false; 3];
+        for (class, manual) in (0..).zip(&mut manual) {
+            *manual = self.desired_manual_fans(class, layer.at(class)?.as_ref())?;
+        }
+        Ok(manual)
+    }
+    /// The request id of the latest journal row.
+    pub(super) fn last_request(&self) -> Option<String> {
+        self.state
+            .lock()
+            .ok()?
+            .last
+            .as_ref()
+            .map(|e| e.request.clone())
     }
     pub(super) fn progress(&self) -> Option<u8> {
         self.state.lock().ok()?.last.as_ref().map(|e| e.progress)

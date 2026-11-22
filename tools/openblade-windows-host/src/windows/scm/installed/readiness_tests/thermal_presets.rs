@@ -369,8 +369,7 @@ async fn the_resolved_application_preset_leaving_hyperboost_is_refused_as_no_dir
         files.commit_configuration();
         let rig = rig_at(7, 0, FULL, files);
         if reported {
-            let report = rig.request(json!({"operation":"reportApplicationContext","version":85,"requestId":"bbbbbbbb-bbbb-cccc-dddd-000000000003","instanceId":"cccccccc-bbbb-cccc-dddd-000000000003","sequence":1,"executablePath":r"C:\Games\Game.exe"})).await;
-            assert_eq!(report["result"]["status"], 0, "{report}");
+            report_game(&rig).await;
         }
         let result = rig.set(1, Value::Null).await;
         if reported {
@@ -1001,8 +1000,7 @@ async fn profile_custom_uses_the_application_levels_when_it_names_them() {
         }
         let rig = rig_at(2, 0, FULL, files);
         if app.is_some() {
-            let report = rig.request(json!({"operation":"reportApplicationContext","version":85,"requestId":"bbbbbbbb-bbbb-cccc-dddd-000000000003","instanceId":"cccccccc-bbbb-cccc-dddd-000000000003","sequence":1,"executablePath":r"C:\Games\Game.exe"})).await;
-            assert_eq!(report["result"]["status"], 0, "{report}");
+            report_game(&rig).await;
         }
         let result = rig.set(1, Value::Null).await;
         let case = format!("{app:?}: {result}");

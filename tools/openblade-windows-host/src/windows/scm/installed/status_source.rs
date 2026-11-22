@@ -619,16 +619,56 @@ impl StatusSource for GuardedStatus {
                     }
                 }
                 crate::service_status::StatusRequest::ReportApplicationContext {
+                    request_id,
                     instance_id,
                     sequence,
                     executable_path,
                     ..
-                } => Ok((
-                    runtime.application(caller, sid, instance_id, sequence, executable_path),
-                    None,
-                )),
+                } => {
+                    let status = publisher.borrow().active.clone();
+                    let (outcome, status) = runtime
+                        .application(
+                            mailbox.clone(),
+                            caller,
+                            sid,
+                            request_id,
+                            instance_id,
+                            sequence,
+                            executable_path,
+                            deadline,
+                            status,
+                        )
+                        .await?;
+                    // Only a reconciliation the report triggered returns a
+                    // status, published as a performance request's is.
+                    let Some(status) = status else {
+                        return Ok((outcome, None));
+                    };
+                    let mut status = status.rebase_thermal_mutation(&publisher.borrow().active);
+                    if let super::mailbox_read::MailboxSource::Reader(reader) = &mailbox {
+                        status = reader.current_policy(status)?;
+                        reader.retain_mutation(&status);
+                    }
+                    status.set_observation_revision(
+                        publisher
+                            .borrow()
+                            .active
+                            .revision()
+                            .checked_add(1)
+                            .ok_or_else(|| invalid("status revision exhausted"))?,
+                    );
+                    publisher.send_replace(Arc::new(Publication {
+                        inactive: status.inactive_mutation(),
+                        active: status.clone(),
+                    }));
+                    Ok((outcome, Some(status)))
+                }
                 #[cfg(feature = "service-profiles-v1")]
-                crate::service_status::StatusRequest::UpdateProfiles { profiles, .. } => {
+                crate::service_status::StatusRequest::UpdateProfiles {
+                    request_id,
+                    profiles,
+                    ..
+                } => {
                     let Some(profiles) = profiles.profiles().cloned() else {
                         return Ok((
                             super::thermal_mutation::Outcome::blocked(
@@ -637,15 +677,28 @@ impl StatusSource for GuardedStatus {
                             None,
                         ));
                     };
-                    let (outcome, stored) = runtime
-                        .update_profiles(mailbox.clone(), caller, sid, &profiles)
+                    let status = publisher.borrow().active.clone();
+                    let (outcome, stored, reconciled) = runtime
+                        .update_profiles(
+                            mailbox.clone(),
+                            caller,
+                            sid,
+                            request_id,
+                            &profiles,
+                            deadline,
+                            status,
+                        )
                         .await?;
                     if !stored {
                         return Ok((outcome, None));
                     }
                     // Managed publishes the saved set with its Stored reply.
-                    // Start from the latest status and project this user again.
-                    let mut status = publisher.borrow().active.clone();
+                    // Start from the latest status, rebased with any
+                    // reconciliation result, and project this user again.
+                    let mut status = match reconciled {
+                        Some(status) => status.rebase_thermal_mutation(&publisher.borrow().active),
+                        None => publisher.borrow().active.clone(),
+                    };
                     if let super::mailbox_read::MailboxSource::Reader(reader) = &mailbox {
                         status = reader.current_policy(status)?;
                         reader.retain_mutation(&status);

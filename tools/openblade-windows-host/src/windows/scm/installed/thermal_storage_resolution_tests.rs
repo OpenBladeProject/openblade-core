@@ -247,3 +247,46 @@ fn resolved_legacy_fan_control_is_the_stored_legacy_default() {
         assert_eq!(fan_settings(&resolved), legacy_fan(mode), "{mode}");
     }
 }
+
+#[test]
+fn an_application_that_sets_only_custom_levels_or_gpu_tuning_is_the_source() {
+    // Managed `DesiredDeviceState.Performance` names the application when its
+    // override sets the preset, the Custom levels or the GPU tuning.
+    let custom = openblade_domain::profile_set::CustomPerformance {
+        cpu: openblade_domain::profile_set::CustomPerformanceLevel::LOW,
+        gpu: openblade_domain::profile_set::CustomPerformanceLevel::MEDIUM,
+        ..openblade_domain::profile_set::CustomPerformance::DEFAULT
+    };
+    for game in [
+        ApplicationOverride {
+            custom_performance: Some(custom),
+            ..ApplicationOverride::default()
+        },
+        ApplicationOverride {
+            gpu_clock_tuning: Some(GpuClockTuning {
+                enabled: false,
+                offsets: None,
+            }),
+            ..ApplicationOverride::default()
+        },
+    ] {
+        let mut set = profiles(game);
+        set.plugged_in.performance = PerformancePreset::CUSTOM;
+        let storage = storage();
+        let active = context(&set, Some(GAME));
+        let with_game = resolve(&active, &set, Some(PowerSource::PluggedIn));
+        assert_eq!(
+            storage
+                .desired(0, Some(&with_game))
+                .unwrap()
+                .map(|(_, s)| s),
+            Some(2)
+        );
+        let idle = context(&set, None);
+        let without = resolve(&idle, &set, Some(PowerSource::PluggedIn));
+        assert_eq!(
+            storage.desired(0, Some(&without)).unwrap().map(|(_, s)| s),
+            Some(1)
+        );
+    }
+}
