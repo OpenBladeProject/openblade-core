@@ -1145,3 +1145,82 @@ async fn a_reconciliation_waiting_on_a_transfer_answers_at_its_bound() {
         let _ = rig.source.lock().await.drain().await;
     }
 }
+
+/// A debt a refused save left at its own class survives a later save whose
+/// reading finds another class: that reconciliation applied nothing of the
+/// earlier class's intent. The next report at the earlier class applies it.
+#[tokio::test]
+async fn a_save_keeps_an_earlier_debt_at_a_class_its_reading_did_not_find() {
+    let rig = rig_at(files_with_game(json!({"pluggedIn":{"performance":2}})), 0);
+    assert_eq!(
+        report(&rig, 1, Some(r"C:\Games\Game.exe")).await["result"]["status"],
+        1
+    );
+    // The full adapter's class changes while the adapter is unclassified:
+    // refused transiently, so that class stays owed.
+    rig.port.state.lock().unwrap().actual = 0x10;
+    let refused = rig
+        .request(update(2, &with_game_performance(&rig.files, 0)))
+        .await;
+    assert_eq!(
+        refused["result"],
+        json!({"status":0,"message":format!("Profiles were stored. {UNCLASSIFIED_BLOCKED}")})
+    );
+    // The limited adapter's class changes and its reading finds that class.
+    rig.port.state.lock().unwrap().actual = 10;
+    let mut profiles = rig.files.document("profiles.json")["profiles"].clone();
+    profiles["applicationProfiles"][0]["overrides"]["usbC"] = json!({"performance":2});
+    let limited = rig.request(update(3, &profiles)).await;
+    assert_eq!(
+        limited["result"],
+        json!({"status":1,"message":format!("Profiles were stored. {CONFIRMED} {AUTOMATIC}")})
+    );
+    rig.port.state.lock().unwrap().actual = 15;
+    let full = report(&rig, 2, Some(r"C:\Games\Game.exe")).await;
+    assert_eq!(
+        full["result"],
+        json!({"status":1,"message":format!("{RECORDED} {CONFIRMED} {AUTOMATIC}")})
+    );
+    assert_eq!(
+        rig.get().await["status"]["confirmedState"]["performance"],
+        0
+    );
+    rig.stop().await;
+}
+
+/// A debt owed at fewer classes than Windows power admits runs no
+/// saved-intent check before its steps (`refused_by_saved_intent`); the
+/// steps' own checks still find an override document changed outside the
+/// Service and fence the store before any write.
+#[tokio::test]
+async fn a_step_of_a_partial_debt_checks_the_override_document_before_any_write() {
+    let rig = rig_at(files_with_game(json!({"pluggedIn":{"performance":1}})), 0);
+    assert_eq!(
+        report(&rig, 1, Some(r"C:\Games\Game.exe")).await["result"]["status"],
+        1
+    );
+    // Refused transiently, so the full adapter's class alone stays owed.
+    rig.port.state.lock().unwrap().actual = 0x10;
+    let saved = rig
+        .request(update(2, &with_game_performance(&rig.files, 2)))
+        .await;
+    assert_eq!(
+        saved["result"],
+        json!({"status":0,"message":format!("Profiles were stored. {UNCLASSIFIED_BLOCKED}")})
+    );
+    rig.port.state.lock().unwrap().actual = 15;
+    let before = writes(&rig);
+    rig.files.put(
+        "manual-overrides.json",
+        json!({"schemaVersion":10,"overrides":{"performance":null,"fans":null,"lighting":null,"customPerformance":null,"fanControl":null,"gpuClockTuning":null}}),
+    );
+    let refused = report(&rig, 2, Some(r"C:\Games\Game.exe")).await;
+    assert_eq!(
+        refused["result"],
+        json!({"status":2,"message":format!("{RENEWED} {CHANGED}")})
+    );
+    assert_eq!(writes(&rig), before);
+    assert!(rig.storage.pending());
+    rig.origin.stop();
+    let _ = rig.source.lock().await.drain().await;
+}
