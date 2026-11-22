@@ -26,8 +26,9 @@
 //! while the gate is set. The gate (`Runtime::gate`) is read before each
 //! step, which stops that step itself, and after a trigger's or a step's
 //! refusal, to give managed's reply and keep the debt owed without spending
-//! a retry. A step is a deferral when the gate set at any time during it,
-//! even if it cleared again. The next report after the gate clears
+//! a retry. A refused step is a deferral when the gate generation moved
+//! during it, even if the gate cleared again. The next report after the
+//! gate clears
 //! reconciles the debt.
 use super::fan::FanRequest;
 use super::profiles::Updated;
@@ -71,9 +72,13 @@ pub(in super::super) const LOW_POWER_STEP: &str =
 /// One reading of the low-power gate (`Runtime::gate`).
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Gate {
-    /// Clear at this gate generation. Every boundary advances the
-    /// generation, so a later reading that differs found the gate set at
-    /// some time in between, even if it has cleared again.
+    /// Clear at this gate generation. Every accepted boundary advances the
+    /// generation, so a later reading that differs proves only that a
+    /// boundary arrived in between: usually a suspend, possibly cleared
+    /// again, but a new resume (`NEW_RESUME_TICKS` after the last boundary)
+    /// moves it by two without setting the gate. Treating a step refused
+    /// across that resume as a deferral is benign: nothing of it was
+    /// submitted, and the debt stays owed for the next report.
     Clear(u64),
     /// Set, or the lifecycle is unreadable or exhausted.
     Low,
@@ -242,7 +247,8 @@ struct Reconciled {
     deferred: bool,
     // The classes the readings of the steps that needed a change found.
     read: Classes,
-    // A step had not finished at the bound (`RECONCILE_MARGIN`).
+    // A step had not finished at the bound (`RECONCILE_MARGIN`) and was not
+    // a deferral: its worker may still submit.
     unfinished: bool,
     message: String,
     snapshot: Option<Snapshot>,
@@ -790,14 +796,15 @@ impl Runtime {
                     steps.push((stepped, possible));
                 }
                 Err(_) => {
-                    unfinished = true;
                     // A step the gate interrupted that cannot have submitted
                     // anything is a deferral, as a refused one is: it spends
-                    // no retry.
+                    // no retry, and it replies as the pre-step deferral does,
+                    // not as an unfinished step that may still submit.
                     if !possible && !storage.pending() && self.gate() != before {
                         deferred = true;
                         break;
                     }
+                    unfinished = true;
                     let stepped = if possible {
                         let reason = if storage.pending() {
                             storage.pending_reason()?

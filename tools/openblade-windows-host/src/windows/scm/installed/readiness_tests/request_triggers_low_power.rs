@@ -849,3 +849,159 @@ async fn a_suspend_and_resume_during_an_unfinished_step_is_a_deferral() {
     rig.origin.stop();
     let _ = rig.source.lock().await.drain().await;
 }
+
+/// Runs `first` at the first mutation worker's retirement and then holds that
+/// worker there until the returned flag is set: the step's chain has run, but
+/// the worker has not handed its result back at the bound.
+fn hold_first_retirement(rig: &Rig, first: impl Fn() + Send + Sync + 'static) -> Arc<AtomicBool> {
+    let release = Arc::new(AtomicBool::new(false));
+    let released = release.clone();
+    let once = Arc::new(AtomicBool::new(false));
+    rig.port.state.lock().unwrap().on_mutation_retired = Some(Arc::new(move || {
+        if !once.swap(true, Ordering::AcqRel) {
+            first();
+            while !released.load(Ordering::Acquire) {
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+        }
+    }));
+    release
+}
+
+/// The performance step's chain reached its Confirmed row, the gate set, and
+/// the worker had not handed back at the bound: that step may have submitted,
+/// so the unfinished arm keeps its own result and the debt settles. This pins
+/// the arm's `!possible`.
+#[tokio::test]
+async fn a_possibly_submitted_step_unfinished_at_the_bound_is_not_a_deferral() {
+    let rule: Value = serde_json::from_str(PRESET_AND_FIXED).unwrap();
+    let rig = rig_at(files_with_game(rule), 0);
+    gated(&rig);
+    let custody = rig.custody.clone();
+    let release = hold_first_retirement(&rig, move || {
+        custody.lifecycle.ingress(POWER, SUSPEND);
+    });
+    let reply = report(&rig, 1, Some(r"C:\Games\Game.exe")).await;
+    let owed_after = owed(&rig);
+    let writes_after = writes(&rig);
+    release.store(true, Ordering::Release);
+    rig.port.state.lock().unwrap().on_mutation_retired = None;
+    assert_eq!(
+        reply["result"],
+        json!({"status":3,"message":format!("{RECORDED} {UNFINISHED}")})
+    );
+    assert_eq!(writes_after, 2);
+    assert_eq!(owed_after, None);
+    rig.origin.stop();
+    let _ = rig.source.lock().await.drain().await;
+}
+
+/// The step fenced the store with a changed override document and submitted
+/// nothing, the gate set, and the worker had not handed back at the bound:
+/// the storage reconciliation decides what happens next, so the unfinished
+/// arm keeps its own result and the debt settles. This pins the arm's
+/// `!storage.pending()`.
+#[tokio::test]
+async fn a_fenced_step_unfinished_at_the_bound_is_not_a_deferral() {
+    let rig = rig_at(files_with_game(json!({"pluggedIn":{"performance":2}})), 0);
+    gated(&rig);
+    let files = rig.files.clone();
+    rig.port.state.lock().unwrap().on_power = Some(Arc::new(move |read| {
+        if read == 1 {
+            files.put(
+                "manual-overrides.json",
+                json!({"schemaVersion":10,"overrides":{"performance":null,"fans":null,"lighting":null,"customPerformance":null,"fanControl":null,"gpuClockTuning":null}}),
+            );
+        }
+    }));
+    let custody = rig.custody.clone();
+    let release = hold_first_retirement(&rig, move || {
+        custody.lifecycle.ingress(POWER, SUSPEND);
+    });
+    let reply = report(&rig, 1, Some(r"C:\Games\Game.exe")).await;
+    let owed_after = owed(&rig);
+    let pending = rig.storage.pending();
+    release.store(true, Ordering::Release);
+    {
+        let mut s = rig.port.state.lock().unwrap();
+        s.on_mutation_retired = None;
+        s.on_power = None;
+    }
+    assert_eq!(
+        reply["result"],
+        json!({"status":2,"message":format!("{RECORDED} The reconciliation did not finish within its budget; no thermal setter was submitted.")})
+    );
+    assert!(pending);
+    assert_eq!(writes(&rig), 0);
+    assert_eq!(owed_after, None);
+    rig.origin.stop();
+    let _ = rig.source.lock().await.drain().await;
+}
+
+/// A save whose performance step is confirmed and whose fan step is deferred
+/// replies the same whether the gate stopped the fan step at its check or set
+/// while that step's read was held past the bound: a deferred step is not an
+/// unfinished one that may still submit (`Reconciled::into_outcome`).
+#[tokio::test]
+async fn a_save_deferred_at_the_bound_replies_as_one_deferred_at_its_check() {
+    async fn save(rig: &Rig) -> Value {
+        let mut profiles = rig.files.document("profiles.json")["profiles"].clone();
+        profiles["applicationProfiles"][0]["overrides"] =
+            serde_json::from_str(PRESET_AND_FIXED).unwrap();
+        rig.request(update(2, &profiles)).await
+    }
+    let expected =
+        json!({"status":0,"message":format!("Profiles were stored. {CONFIRMED} {LOW_POWER_STEP}")});
+    // The gate set after the performance step; the fan step's check stops it.
+    let at_check = rig_at(files_with_game(json!({"pluggedIn":{"performance":1}})), 0);
+    assert_eq!(
+        report(&at_check, 1, Some(r"C:\Games\Game.exe")).await["result"]["status"],
+        1
+    );
+    let calls = gate_set_at_check(&at_check, 2);
+    assert_eq!(save(&at_check).await["result"], expected);
+    assert_eq!(calls.get(), 2);
+    assert_eq!(owed(&at_check), Some(0));
+    at_check.stop().await;
+    // The gate set while the fan step's read was held past the bound.
+    let rig = rig_at(files_with_game(json!({"pluggedIn":{"performance":1}})), 0);
+    gated(&rig);
+    assert_eq!(
+        report(&rig, 1, Some(r"C:\Games\Game.exe")).await["result"]["status"],
+        1
+    );
+    let release = Arc::new(AtomicBool::new(false));
+    let holding = rig.port.state.lock().unwrap().holding.clone();
+    let state = rig.port.state.clone();
+    let held = release.clone();
+    let once = Arc::new(AtomicBool::new(false));
+    rig.port.state.lock().unwrap().on_mutation_retired = Some(Arc::new(move || {
+        if !once.swap(true, Ordering::AcqRel) {
+            state.lock().unwrap().held_read = Some(held.clone());
+        }
+    }));
+    let custody = rig.custody.clone();
+    let suspend_when_held = async {
+        holding.notified().await;
+        custody.lifecycle.ingress(POWER, SUSPEND);
+    };
+    let (saved, ()) = tokio::join!(save(&rig), suspend_when_held);
+    release.store(true, Ordering::Release);
+    {
+        let mut s = rig.port.state.lock().unwrap();
+        s.held_read = None;
+        s.on_mutation_retired = None;
+    }
+    assert_eq!(saved["result"], expected);
+    assert_eq!(rig.port.state.lock().unwrap().fans, [0; 2]);
+    assert_eq!(owed(&rig), Some(0));
+    resume(&rig);
+    let applied = report(&rig, 2, Some(r"C:\Games\Game.exe")).await;
+    assert_eq!(
+        applied["result"],
+        json!({"status":1,"message":format!("{RECORDED} {CONFIRMED} {FIXED}")})
+    );
+    assert_eq!(owed(&rig), None);
+    rig.origin.stop();
+    let _ = rig.source.lock().await.drain().await;
+}
