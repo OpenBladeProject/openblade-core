@@ -24,9 +24,9 @@ that SID/session/authentication LUID against the current Windows session token.
 It checks the loaded committed origin, competing-controller absence and known
 coarse power. Actual opened-port validation checks the reviewed exact RZ09-0581
 host/HID identity. Per-command 07/8C readback classifies adapter sufficiency.
-SCM power/session ingress advances a separate lifecycle epoch and fences old
-operations while preserving loaded-origin custody. Only STOP/SHUTDOWN or actual
-trust loss is terminal. Suspend sets the low-power gate, which blocks mutation
+SCM power/session ingress other than a power-setting read advances a separate
+lifecycle epoch and fences old operations while preserving loaded-origin
+custody. Only STOP/SHUTDOWN or actual trust loss is terminal. Suspend sets the low-power gate, which blocks mutation
 until a resume clears it; session events cannot establish resume. Fresh exact
 WTSInfoEx active/unlocked session admission is required for mutation. The gate
 starts clear, as managed does; display-off alone is not confirmed low power.
@@ -67,8 +67,9 @@ PBT_APMSUSPEND to `Signal::Suspend`, PBT_APMRESUMESUSPEND or
 PBT_APMRESUMEAUTOMATIC to `Signal::Resume`, and a console display read from
 off to on or dimmed to `Signal::DisplayOn` (see Power-setting notifications).
 A session notice never signals, whatever its event number. Every power and
-session notice still advances the epoch, a stale signal included. Display-off,
-other display changes and AC/DC notices carry no signal and only fence. The
+session notice but a power-setting read advances the epoch, a stale signal
+included. Display-off, other display changes and AC/DC notices carry no signal
+and do not fence (see Power-setting notifications). The
 5 s duplicate-resume window decides managed dispatch, not gate state; it
 belongs with the refresh dispatch in C3.
 
@@ -89,7 +90,7 @@ generation it captured is current (`IsActiveForGeneration`), so the next
 resume, DisplayOn or suspend ends it. Nothing captures that scope yet. Owned
 Stop and shutdown handback stay Ordinary, because managed blocks them in low
 power too. D1 decision: `epoch_for(WriteScope::LowPowerFanAutomatic)` also pins
-the epoch, so a later AC or session notice fences the cleanup. Managed admits
+the epoch, so a later power-status or session notice fences the cleanup. Managed admits
 it on the generation and ownership only. D1 must either keep that stricter
 fence or recapture after such a notice, and record which. `low_power()` returns
 the current transition for timers that ask outside a write, and `None`
@@ -111,15 +112,29 @@ them. Managed's HID interface registration is a device trigger, not a power
 notice, and is not part of this supplier. Only the thermal composition, which
 accepts power events, registers.
 
-Registration runs after `RegisterServiceCtrlHandlerExW` and before startup. A
-failure unregisters what it registered and stops the Service as failed, as the
-managed constructor throws. The Service unregisters in managed's order (power
-source, then console display) when it reports `SERVICE_STOPPED`, before that
-report, because SCM may end the process once it reads it. Both are attempted
-even if one fails, the first outcome is kept, and a failure turns the terminal
-status into `ERROR_GEN_FAILURE`. `Drop` covers an exit that never reached the
-report. The registration calls sit behind an injected `Api`; tests never call
-the real one.
+`power_notifications::Supplier` places both against the SCM status reports.
+It registers right after `SERVICE_RUNNING` is reported. Windows sends each
+setting's current value when it is registered, and SCM drops a power event the
+current status does not accept: `SERVICE_START_PENDING` accepts none, so a
+registration during startup could lose the initial display state. After the
+RUNNING report it reaches the handler and the display state starts known, as
+managed's does; until then it stays unknown and is never guessed. A
+registration failure unregisters what it registered and fails that report, so
+the Service stops as failed, as the managed constructor throws.
+
+The Service unregisters in managed's order (power source, then console
+display) before it reports `SERVICE_STOPPED`, because SCM may end the process
+once it reads it. Both are attempted even if one fails, and the first outcome
+is kept. An unregistration failure does not change the stop's own status:
+managed's `WindowsServiceLifecycleEventSource.Dispose` rethrows it only at host
+disposal, after `WindowsServiceLifetime` has reported STOPPED, so SCM sees the
+stop's outcome. A failure exit there would make the restart actions setup
+configures (`WindowsSetupPlatform.cs:461-465`, failure flag 1) restart an
+intentional stop. The Service has no native diagnostics sink yet, so the
+failure is kept for the caller and then dropped; the process exit releases the
+registration. `Drop` covers an exit that never reached the report. The
+registration calls sit behind an injected `Api`; tests never call the real
+one.
 
 `scm_host::control` forwards `event_data` only for a power-setting change. It
 copies the header and at most one DWORD of the payload `DataLength` declares,
@@ -127,7 +142,17 @@ byte by byte, then `openblade_domain::power_setting::decode` ports
 `TryReadPowerSettingDword`: a registered GUID, `DataLength` of at least four
 and a DWORD of 0, 1 or 2, otherwise nothing. Managed has one callback per GUID;
 the shared handler dispatches on the GUID instead. A refused payload is still a
-power event: it fences, and the installed hook still samples the power kind.
+power event, and the installed hook still samples the power kind.
+
+A power-setting read does not advance the lifecycle epoch. Managed fences
+nothing on those reads: AC/DC publishes `PowerChanged`, which cancels resume
+validation and handles the source change, and the display reads only toggle
+lighting suppression and HyperBoost display-off preparation
+(`ServiceLifecycleRefreshLoop.cs:97-158`). Fencing them made every display or
+AC/DC notice abandon work that was in flight; a temporary-full-charge cancel
+lost that way on battery was never retried. Suspend, resume, the other power
+events and session changes still fence. The read still updates the display
+state and can still signal `DisplayOn`.
 `classify_console_display_transition` ports `ClassifyConsoleDisplayTransition`
 exactly. The display state lives under the lifecycle lock, starts unknown and
 changes only on a valid read, as managed's `consoleDisplayState` does. AC/DC
@@ -139,8 +164,25 @@ and the notice-to-signal mapping), which the domain test
 `power_setting_vectors` and the host's SCM payload test replay.
 
 A Modern Standby display-off sends no `PBT_APMSUSPEND`, so the gate stays
-clear and the notice only fences, as in managed. A later off-to-on read clears
-a suspend whose resume was missed.
+clear and nothing is fenced, as in managed. A later off-to-on read clears a
+suspend whose resume was missed.
+
+What the remaining lifecycle work needs from this supplier:
+
+- C1 (automatic power-source transitions) needs no time debounce. Managed
+  coalesces repeated notices into one pending `PowerChanged` bit in a bounded
+  channel and keys the transition on the Windows power generation, which
+  advances only when the power kind changes; native has `power_generation`.
+  C1 should coalesce the same way.
+- C2 (display-off work) needs the off transition that
+  `openblade_domain::power_setting::power_event_signal` drops
+  (`power_setting.rs:130-132` maps only `DisplayTransition::On` to a signal).
+  Managed uses `DisplayOff` for lighting suppression and HyperBoost display-off
+  preparation; it must not become a gate signal.
+- C3 (resume recovery) needs managed's resume dispatch on `DisplayOn`: when
+  the gate was set, `Publish` queues the same deduplicated resume path as a
+  missed `PBT_APMRESUMEAUTOMATIC` (`WindowsServiceLifecycleEventSource.cs:363-368`).
+  Native clears the gate but dispatches nothing yet.
 
 The unwired lifecycle worker in `windows/scm/lifecycle.rs` was retired rather
 than wired. It kept its own `Activity`, display state and resume window, and
@@ -150,10 +192,11 @@ power evidence that `installed/status_source.rs` includes. Its development
 metadata fixture went with it.
 
 Attended validation still needed on a live Service: both GUIDs are delivered
-to the SCM handler with this registration; a Modern Standby entry and exit
-produce display notices and no suspend, and leave the gate clear; and the gate
-clears after resume from both Modern Standby and S3, including when the resume
-is missed and display-on recovers it.
+to the SCM handler with this registration; the initial value of each arrives
+after the RUNNING report; a Modern Standby entry and exit produce display
+notices and no suspend, and leave the gate clear; and the gate clears after
+resume from both Modern Standby and S3, including when the resume is missed and
+display-on recovers it.
 
 ## Saved intent and the bounded compatible slice
 
