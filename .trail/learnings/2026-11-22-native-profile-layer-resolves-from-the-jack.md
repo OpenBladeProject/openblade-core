@@ -1,8 +1,10 @@
 ---
-title: Native profile layer decodes the committed profile bytes
+title: Native profile layer resolves from the ordered committed bytes
 author: Jack
-date: 2026-11-21
+date: 2026-11-22
 branch: feat/native-profile-reconcile-core
+touches:
+  - docs/windows-native-thermal-mutation.md
 ---
 
 ## Decided
@@ -20,5 +22,7 @@ branch: feat/native-profile-reconcile-core
 ## Watch out
 - `Option<&Resolution>` accepts the `None` that old `Option<&str>` application calls passed. `storage.desired(0, None)` compiles and silently drops the profile layer. Use the `saved_desired` and `saved_fan` helpers in readiness_tests/mutation.rs.
 - Test fixtures that write a non-off lighting through `MemoryFiles::put` (a `Value`) store `kind` after `color`. Managed and the decoder refuse that. Use `put_plugged_in_lighting` in readiness_tests/profile_layer_lighting.rs, which writes the lighting text in order.
-- A thermal pair resolves again only on a class change between setters (`Power::admits` -> `destination_holds`). The fan permit re-resolves before every fan setter.
+- A thermal pair resolves again only on a class change between setters (`PowerFence::admits` -> `destination_holds`), and so does a fan operation's `destination_holds`. The fan per-setter re-check is `FanPermit::authorize`: it resolves again on its first check and whenever the policy digest changed.
 - 18 vectors that native's `aggregate()` admits are recorded as refused by managed; the corpus test skips them. The profiles lane resolves 93 aggregates and the other lanes 16.
+- The domain decoder binds numbers written as JSON strings, as managed does. A saved profile fan control with `"fixedSpeedRpm": "03700"` now resolves to 3700; the pre-B1 reader refused it in `validate_settings`. This is pinned by `a_profile_fixed_speed_saved_as_a_string_resolves_to_its_number`.
+- The thermal_storage aggregate struct is `CommittedAggregate`. profile_storage has its own `Committed`, and its module glob-imports thermal_storage.

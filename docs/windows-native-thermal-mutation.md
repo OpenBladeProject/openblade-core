@@ -1023,11 +1023,13 @@ The layer is resolved again only where the step re-checks saved policy:
   document the domain decoder refuses then stores nothing, as on the fan
   path.
 - A thermal pair resolves again only when the power class changes between
-  its setters (`destination_holds`, through `Power::admits`). A profile edit
-  during a pair on one class does not stop it, as before.
-- The fan permit resolves again in `destination_holds` before each fan
-  setter, and in `authorize` when its policy digest changed. A profile edit
-  during a fan request therefore stops it.
+  its setters (`destination_holds`, through `PowerFence::admits`). A profile
+  edit during a pair on one class does not stop it, as before.
+- A fan operation re-checks saved policy before each setter in
+  `FanPermit::authorize`. It resolves again on the first check and whenever
+  the policy digest changed, so a profile edit during a fan request stops it.
+  Its `destination_holds` also runs only on a class change between setters,
+  as for a thermal pair.
 
 The profiles are decoded from the committed `profiles.json` bytes with the
 domain's ordered reader (`typed_profiles`), never through a `Value`. This
@@ -1038,7 +1040,10 @@ other effect with members after `kind`. Schema 26 gets the same
 `PreserveLegacyIndependentProfileIntent` on the typed set that `aggregate`
 applies to its `Value`. The domain decoder also refuses what managed
 `ProfileStore` would not bind, such as an unknown member, so such an
-aggregate resolves nothing and every profile read fails closed.
+aggregate resolves nothing and every profile read fails closed. The decoder
+also binds a number written as a JSON string, as managed does: a saved fan
+control with `"fixedSpeedRpm": "03700"` resolves to 3700, where the earlier
+reader passed the stored member to `validate_settings`, which refused it.
 
 Native applies no profile on unclassified external or unknown power, where
 `Resolve` takes `CreateObservedFallbackProfile`: there only explicit overrides
