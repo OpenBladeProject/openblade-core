@@ -66,7 +66,9 @@ internal sealed class SourceBackedCoolingPadDevice(
         CoolingPadProtocol.TryDecodeEffect(activeEffect.Span, 0, out var activeLight);
         var appMode = fan.Preset == CoolingPadFanPreset.Off ? CoolingPadFanMode.Off
             : fan.Ownership == CoolingPadFanOwnership.Synapse ? CoolingPadFanMode.Fixed : (CoolingPadFanMode?)null;
-        var lightMode = DecodeLight(light!.Effect);
+        // Profile 1 is the stored effect and profile 0 the unsaved one; the strip shows the last
+        // one written. Two different effects cannot say which is showing, so neither is confirmed.
+        var lightMode = light!.Effect == activeLight!.Effect ? DecodeLight(light.Effect) : null;
         // Low/Medium/High report their configured speed; Smart presets only the ramping speed from 0D/81.
         int configuredTarget = fan.Preset is CoolingPadFanPreset.Low or CoolingPadFanPreset.Medium or CoolingPadFanPreset.High
             ? fan.ConfiguredRpm

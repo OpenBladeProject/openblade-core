@@ -279,6 +279,18 @@ public sealed class CoolingPadSourceProtocolTests
     }
 
     [Fact]
+    public async Task LightingModeIsConfirmedOnlyWhenBothProfilesHoldTheSameEffect()
+    {
+        // Restoring a baseline whose saved effect is Off but whose unsaved effect is
+        // Spectrum lit the pad. Profile 1 alone must not report that as Off.
+        var wire = new Wire { Effect = new(1, 0, 0, 0, 0, []), ActiveEffect = new(0, 0, 3, 0, 0, []) };
+        await using var device = Create(wire);
+        Assert.Null((await device.ReadSnapshotAsync(default)).LightingMode);
+        wire.ActiveEffect = new(0, 0, 0, 0, 0, []);
+        Assert.Equal(CoolingPadLightingMode.Off, (await device.ReadSnapshotAsync(default)).LightingMode);
+    }
+
+    [Fact]
     public async Task ExistingCustomPixelsAreNeverReplacedWithAnUnrestorableMirror()
     {
         var wire = new Wire { ActiveEffect = new(0, 0, 8, 0, 0, []) }; await using var device = Create(wire);

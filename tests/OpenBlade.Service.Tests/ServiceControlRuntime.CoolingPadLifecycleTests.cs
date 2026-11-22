@@ -161,14 +161,46 @@ public sealed partial class ServiceControlRuntimeTests
         Assert.Equal(2, pad.FanWrites);
     }
 
+    [Fact]
+    public async Task CoolingPadResumesSavedSettingsAfterWakeButNotAfterShutdownHandback()
+    {
+        var time = new ManualTimeProvider();
+        var gate = new LowPowerGate();
+        var pad = new LifecyclePad();
+        var (context, _) = await CreateActiveLifecyclePadContextAsync(pad, gate, timeProvider: time);
+        gate.Enter();
+        _ = await context.Runtime.PrepareForLowPowerAsync(gate.Generation, () => true, default);
+        Assert.Equal(1, pad.RestoreCalls);
+
+        // Asleep: the handback stands.
+        await context.Runtime.MaintainCoolingPadAsync(default);
+        Assert.Equal(1, pad.FanWrites);
+        Assert.False(context.Runtime.GetStatus().CoolingPad.Active);
+
+        // Awake: the saved settings are applied again, as an Apply would.
+        gate.Exit();
+        time.Advance(CoolingPadControlRuntime.ResumeAdmissionInterval);
+        await context.Runtime.MaintainCoolingPadAsync(default);
+        Assert.True(context.Runtime.GetStatus().CoolingPad.Active);
+        Assert.Equal(2, pad.FanWrites);
+
+        // Shutdown hands it back for good; the next service resumes it instead.
+        _ = await context.Runtime.PrepareForShutdownAsync(default);
+        Assert.Equal(2, pad.RestoreCalls);
+        time.Advance(CoolingPadControlRuntime.ResumeRetryInterval);
+        await context.Runtime.MaintainCoolingPadAsync(default);
+        Assert.False(context.Runtime.GetStatus().CoolingPad.Active);
+        Assert.Equal(2, pad.FanWrites);
+    }
+
     private async Task<(TestContext Context, SecurityIdentifier User)> CreateActiveLifecyclePadContextAsync(
-        LifecyclePad pad, LowPowerGate? gate = null, bool laptopAvailable = true)
+        LifecyclePad pad, LowPowerGate? gate = null, bool laptopAvailable = true, TimeProvider? timeProvider = null)
     {
         var user = new SecurityIdentifier("S-1-5-21-1-2-3-1001");
         var repository = new RecordingUserConfigurationRepository(
             new Dictionary<string, ProfileSet> { [user.Value] = ProfileDefaults.CreateSafeDefaults() }, directory);
         TestContext context = CreateWritableContext(
-            userConfigurationRepository: repository, lowPowerGate: gate,
+            userConfigurationRepository: repository, lowPowerGate: gate, timeProvider: timeProvider,
             coolingPadDeviceProvider: new LifecyclePadProvider(pad));
         context.Provider.Available = laptopAvailable;
         await context.Runtime.ObserveAsync(default);
