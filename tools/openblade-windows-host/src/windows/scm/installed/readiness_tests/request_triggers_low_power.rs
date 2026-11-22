@@ -1344,3 +1344,137 @@ async fn a_fan_request_in_low_power_with_an_owed_handback_stores_nothing() {
     rig.origin.stop();
     let _ = rig.source.lock().await.drain().await;
 }
+
+/// A gate probe that, once `armed`, reads clear at its next check and sets
+/// the gate right after it, as a suspend arriving between a step's pre-step
+/// check and its own write admission. Otherwise it reads the rig's lifecycle.
+fn suspend_after_next_check(rig: &Rig, armed: Rc<Cell<bool>>) {
+    let custody = rig.custody.clone();
+    rig.runtime.read_low_power(move || {
+        if armed.replace(false) {
+            custody.lifecycle.ingress(POWER, SUSPEND);
+            return Some(Transition {
+                generation: 0,
+                timestamp: 0,
+            });
+        }
+        custody.lifecycle.low_power()
+    });
+}
+
+/// A reconciliation step whose own write admission refuses in low power is
+/// deferred and stores nothing: only an explicit request stores intent. The
+/// step carries no override, so storing it would clear the saved one.
+#[tokio::test]
+async fn a_step_refused_at_its_own_admission_in_low_power_stores_nothing() {
+    let armed = Rc::new(Cell::new(false));
+    let rig = battery_rig(|rig| suspend_after_next_check(rig, armed.clone())).await;
+    let applied = rig.set(2, value(4, 1)).await;
+    assert_eq!(applied["result"]["status"], 1, "{applied}");
+    let document = rig.files.read("manual-overrides.json").unwrap();
+    let before = writes(&rig);
+    armed.set(true);
+    let deferred = report(&rig, 3, Some(r"C:\Games\Game.exe")).await;
+    // The deferred step adds managed's per-write refusal.
+    assert_eq!(
+        deferred["result"],
+        json!({"status":2,"message":format!("{RECORDED} {LOW_POWER_STEP}")})
+    );
+    assert!(!armed.get());
+    assert_eq!(rig.files.read("manual-overrides.json").unwrap(), document);
+    assert_eq!(overrides(&rig)["performance"], 4);
+    assert_eq!(writes(&rig), before);
+    assert_eq!(owed(&rig), Some(0));
+    rig.origin.stop();
+    let _ = rig.source.lock().await.drain().await;
+}
+
+/// A fan request alone owes the reconciliation too: the first report after
+/// the gate clears applies it once.
+#[tokio::test]
+async fn a_fan_request_alone_in_low_power_is_applied_once_after_the_gate_clears() {
+    let rig = battery_rig(gated).await;
+    rig.custody.scoped_fresh.store(true, Ordering::Release);
+    suspend(&rig);
+    let before = sent(&rig);
+    let fans = rig.request(fan_request(2, Some(3), 3700)).await;
+    assert_eq!(
+        fans["result"],
+        json!({"status":2,"message":format!("Fan override intent was stored. Hardware result: {LOW_POWER_STEP}")})
+    );
+    assert_eq!(overrides(&rig)["fans"], 3);
+    assert_eq!(owed(&rig), Some(0));
+    assert_eq!(sent(&rig), before);
+    rig.custody.scoped_fresh.store(false, Ordering::Release);
+    resume(&rig);
+    let applied = report(&rig, 3, Some(r"C:\Tools\Other.exe")).await;
+    assert!(sent(&rig) > before, "{applied}");
+    assert_eq!(owed(&rig), None, "{applied}");
+    let after = sent(&rig);
+    report(&rig, 4, Some(r"C:\Tools\Other.exe")).await;
+    assert_eq!(sent(&rig), after);
+    rig.stop().await;
+}
+
+/// A committed saved set whose active application rule the domain decoder
+/// refuses stores no explicit intent in low power, though the power
+/// profile alone would validate the combination.
+#[tokio::test]
+async fn an_invalid_active_rule_stores_no_intent_in_low_power() {
+    let rig = battery_rig(gated).await;
+    let game = report(&rig, 2, Some(r"C:\Games\Game.exe")).await;
+    assert_eq!(game["result"]["status"], 1, "{game}");
+    let mut document = rig.files.document("profiles.json");
+    document["profiles"]["applicationProfiles"][0]["overrides"]["battery"] =
+        json!({"performance":99});
+    rig.files.put("profiles.json", document);
+    rig.files.commit_configuration();
+    rig.custody.scoped_fresh.store(true, Ordering::Release);
+    let stored = rig.files.read("manual-overrides.json").unwrap();
+    let before = writes(&rig);
+    suspend(&rig);
+    let performance = rig.set(3, value(4, 1)).await;
+    let fans = rig.request(fan_request(4, Some(3), 3700)).await;
+    assert_eq!(
+        performance["result"],
+        json!({"status":2,"message":"Performance intent was not accepted; admission or protected persistence failed."})
+    );
+    assert_eq!(
+        fans["result"],
+        json!({"status":2,"message":"Fan intent was not accepted; fresh admission or persistence did not complete."})
+    );
+    assert_eq!(rig.files.read("manual-overrides.json").unwrap(), stored);
+    assert_eq!(writes(&rig), before);
+    rig.origin.stop();
+    let _ = rig.source.lock().await.drain().await;
+}
+
+/// The same with the fan step first: firmware reports manual fans the rule
+/// returns to Automatic. The fan step's refused admission stores nothing,
+/// and the saved Automatic fan override is kept.
+#[tokio::test]
+async fn a_fan_step_refused_at_its_own_admission_in_low_power_stores_nothing() {
+    let armed = Rc::new(Cell::new(false));
+    let rig = battery_rig(|rig| suspend_after_next_check(rig, armed.clone())).await;
+    let automatic = rig.request(fan_request(2, Some(0), 3700)).await;
+    assert_eq!(automatic["result"]["status"], 1, "{automatic}");
+    assert_eq!(overrides(&rig)["fans"], 0);
+    rig.port.state.lock().unwrap().fans = [1; 2];
+    assert_manual_fans_observed(&rig).await;
+    assert!(!rig.storage.outstanding_fan());
+    let document = rig.files.read("manual-overrides.json").unwrap();
+    let before = writes(&rig);
+    armed.set(true);
+    let deferred = report(&rig, 3, Some(r"C:\Games\Game.exe")).await;
+    assert_eq!(
+        deferred["result"],
+        json!({"status":2,"message":format!("{RECORDED} {LOW_POWER_STEP}")})
+    );
+    assert!(!armed.get());
+    assert_eq!(rig.files.read("manual-overrides.json").unwrap(), document);
+    assert_eq!(writes(&rig), before);
+    assert_eq!(owed(&rig), Some(0));
+    rig.port.state.lock().unwrap().fans = [0; 2];
+    rig.origin.stop();
+    let _ = rig.source.lock().await.drain().await;
+}
