@@ -516,6 +516,20 @@ impl ReadCustody for Custody {
             Ok(())
         }
     }
+    // `authorize` without the lifecycle epoch, as `ReadLease` models it.
+    #[cfg(feature = "service-profile-triggers-v1")]
+    fn authorize_storage(&self) -> Option<[u8; 32]> {
+        let generation = [self.generation.load(Ordering::Acquire); 32];
+        if let Some(origin) = &*self.origin_for_fan.lock().unwrap() {
+            return crate::installed::readiness::mailbox_read::authorize_original(
+                &self.authority_for_fan,
+                origin.verify().map(|_| true),
+                || origin.verify(),
+                generation,
+            );
+        }
+        self.live.load(Ordering::Acquire).then_some(generation)
+    }
     fn authorize(&self) -> Option<ReadAdmission> {
         if let Some(origin) = &*self.origin_for_fan.lock().unwrap() {
             let proof = ReadAdmission {
@@ -641,6 +655,14 @@ impl Fresh for Custody {
             return None;
         }
         ReadCustody::authorize(self)
+    }
+    // `authorize` without the lifecycle epoch: `fresh_refuse` stands for
+    // every refused Windows supplier, a competing controller included.
+    #[cfg(feature = "service-profile-triggers-v1")]
+    fn authorize_storage(&self) -> bool {
+        !self.fresh_refuse.load(Ordering::Acquire)
+            && !self.fatal_health.load(Ordering::Acquire)
+            && ReadCustody::authorize_storage(self).is_some()
     }
     fn capture_settle(
         &self,
@@ -859,7 +881,7 @@ impl Rig {
         let mailbox = MailboxSource::Reader(reader.clone());
         let factory_calls = Arc::new(AtomicUsize::new(0));
         let calls = factory_calls.clone();
-        let runtime = Runtime::injected(&mailbox, move |sid, session, _| {
+        let runtime = Runtime::injected(&mailbox, move |sid, session, _, admission| {
             calls.fetch_add(1, Ordering::AcqRel);
             if capture.load(Ordering::Acquire) {
                 return Err(
@@ -871,6 +893,14 @@ impl Rig {
             if sid != SID || session as usize != fresh.current_session.load(Ordering::Acquire) {
                 return Err(io::ErrorKind::PermissionDenied.into());
             }
+            // Production's storage capture pins no epoch; its model is the
+            // same in either mode, as only a refused write capture takes it.
+            #[cfg(feature = "service-profile-triggers-v1")]
+            if admission == crate::installed::readiness::thermal_mutation::Capture::Storage {
+                let proof = tfc_corrections::CapturedStorage::new(fresh.clone(), session)?;
+                return Ok((storage.clone(), Arc::new(proof)));
+            }
+            let _ = admission;
             let proof: Arc<dyn Fresh> = if fresh.scoped_fresh.load(Ordering::Acquire) {
                 if !fresh.current_console.load(Ordering::Acquire) {
                     return Err(io::ErrorKind::PermissionDenied.into());

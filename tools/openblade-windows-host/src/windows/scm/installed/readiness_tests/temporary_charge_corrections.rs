@@ -33,6 +33,63 @@ impl Fresh for CapturedFresh {
             && Fresh::authorize(self.custody.as_ref()) == Some(self.proof))
         .then_some(self.proof)
     }
+    #[cfg(feature = "service-profile-triggers-v1")]
+    fn authorize_storage(&self) -> bool {
+        identity_holds(&self.custody, self.session, self.authentication)
+            && Fresh::authorize_storage(self.custody.as_ref())
+    }
+}
+/// The captured session is still the console's and its logon is unchanged.
+#[cfg(feature = "service-profile-triggers-v1")]
+fn identity_holds(custody: &Custody, session: u32, authentication: (u32, i32)) -> bool {
+    custody.current_session.load(Ordering::Acquire) == session as usize
+        && custody.current_console.load(Ordering::Acquire)
+        && Fresh::authentication(custody) == Some(authentication)
+}
+/// Test model of `WindowsGuard::capture_storage`: the session, console and
+/// logon at capture, then the custody's storage admission, without the
+/// lifecycle epoch. It authorizes no read or write.
+#[cfg(feature = "service-profile-triggers-v1")]
+pub(super) struct CapturedStorage {
+    custody: Arc<Custody>,
+    session: u32,
+    authentication: (u32, i32),
+}
+#[cfg(feature = "service-profile-triggers-v1")]
+impl CapturedStorage {
+    pub(super) fn new(custody: Arc<Custody>, session: u32) -> io::Result<Self> {
+        let captured = Self {
+            session,
+            authentication: Fresh::authentication(custody.as_ref()).unwrap(),
+            custody,
+        };
+        if !captured.authorize_storage() {
+            return Err(io::ErrorKind::PermissionDenied.into());
+        }
+        Ok(captured)
+    }
+}
+#[cfg(feature = "service-profile-triggers-v1")]
+impl Fresh for CapturedStorage {
+    fn on_battery(&self) -> Option<bool> {
+        self.custody.on_battery()
+    }
+    fn power_generation(&self) -> Option<u64> {
+        Fresh::power_generation(self.custody.as_ref())
+    }
+    fn authentication(&self) -> Option<(u32, i32)> {
+        Some(self.authentication)
+    }
+    fn verify_health(&self) -> io::Result<()> {
+        Fresh::verify_health(self.custody.as_ref())
+    }
+    fn authorize(&self) -> Option<ReadAdmission> {
+        None
+    }
+    fn authorize_storage(&self) -> bool {
+        identity_holds(&self.custody, self.session, self.authentication)
+            && Fresh::authorize_storage(self.custody.as_ref())
+    }
 }
 #[cfg(feature = "service-temporary-charge-v1")]
 mod cases {

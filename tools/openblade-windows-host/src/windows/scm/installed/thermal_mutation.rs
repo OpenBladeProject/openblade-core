@@ -1,4 +1,6 @@
 //! One installed request composition. No fake or scenario transport is imported.
+#[cfg(feature = "service-profile-triggers-v1")]
+use super::thermal_native::StorageGuard;
 #[cfg(not(test))]
 use super::thermal_native::{CustodialFiles, ProtectedFiles};
 use super::{
@@ -86,8 +88,8 @@ mod profiles;
 mod triggers;
 #[cfg(all(test, feature = "service-profile-triggers-v1"))]
 pub(super) use triggers::{
-    APPLICATION_SESSION_REQUIRED, LOW_POWER_DEFERRED, LOW_POWER_STEP, fans_first, is_step_request,
-    operation_status,
+    APPLICATION_SESSION_REQUIRED, LOW_POWER_DEFERRED, LOW_POWER_PERFORMANCE, LOW_POWER_STEP,
+    fans_first, is_step_request, operation_status,
 };
 pub(super) trait Fresh: Send + Sync {
     /// The fresh Windows power kind: `Some(false)` is AC (ACLineStatus
@@ -113,6 +115,14 @@ pub(super) trait Fresh: Send + Sync {
         Ok(())
     }
     fn authorize(&self) -> Option<ReadAdmission>;
+    /// Whether storing request intent is admitted now: every check of
+    /// `authorize` except the lifecycle epoch, so the low-power gate does not
+    /// refuse it (`WindowsGuard::authorize_storage`). It admits no read or
+    /// write; only `authorize` does.
+    #[cfg(feature = "service-profile-triggers-v1")]
+    fn authorize_storage(&self) -> bool {
+        false
+    }
     /// Settle-only Stop admission for this owner's exact identity at the
     /// current lifecycle epoch (`WindowsGuard::capture_settle`). The result
     /// authorizes owned-stop reads only; its `authorize` is always None.
@@ -167,9 +177,47 @@ impl Fresh for WindowsGuard {
     fn authorize(&self) -> Option<ReadAdmission> {
         self.authorize()
     }
+    #[cfg(feature = "service-profile-triggers-v1")]
+    fn authorize_storage(&self) -> bool {
+        self.authorize_storage()
+    }
+}
+#[cfg(feature = "service-profile-triggers-v1")]
+impl Fresh for StorageGuard {
+    fn on_battery(&self) -> Option<bool> {
+        self.on_battery()
+    }
+    fn power_generation(&self) -> Option<u64> {
+        self.power_generation()
+    }
+    fn authentication(&self) -> Option<(u32, i32)> {
+        Some(self.authentication())
+    }
+    fn verify_health(&self) -> io::Result<()> {
+        self.verify_health()
+    }
+    // Never a read or write: a storage capture pins no lifecycle epoch.
+    fn authorize(&self) -> Option<ReadAdmission> {
+        None
+    }
+    fn authorize_storage(&self) -> bool {
+        self.authorize_storage()
+    }
+}
+/// What one request capture admits (`Runtime::capture_scoped`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Capture {
+    /// Reads and writes at the lifecycle epoch it pins
+    /// (`WindowsGuard::capture`).
+    Write,
+    /// Storing request intent only, in any lifecycle state
+    /// (`WindowsGuard::capture_storage`): its `Fresh` never authorizes a
+    /// read or write.
+    #[cfg(feature = "service-profile-triggers-v1")]
+    Storage,
 }
 type Factory =
-    dyn Fn(&str, u32, Arc<dyn ReadCustody>) -> io::Result<(Arc<Storage>, Arc<dyn Fresh>)>;
+    dyn Fn(&str, u32, Arc<dyn ReadCustody>, Capture) -> io::Result<(Arc<Storage>, Arc<dyn Fresh>)>;
 type ReleaseNotice = (
     Arc<battery::BatteryPermit>,
     Option<super::thermal_storage::ReleasePause>,
@@ -324,6 +372,10 @@ pub(super) fn after_write_unreadable(storage: &Storage) -> io::Result<Outcome> {
 /// measured so far (`Refusal::Deadline`): the Prepared row is settled as
 /// known not submitted and no setter was submitted.
 pub(super) const DEADLINE: &str = "The remaining request time cannot cover this recipe at the measured device pace; no thermal setter was submitted.";
+/// A performance step whose fresh admission refused before anything was
+/// accepted, read or submitted.
+const CURRENT_ADMISSION_UNAVAILABLE: &str =
+    "Current thermal admission is unavailable; no intent or command was submitted.";
 /// Managed `ValidateUnclassifiedPerformanceOverride`, as `RecordRejectedIntent`
 /// reports it (Failed).
 const UNCLASSIFIED_REJECTED: &str = "The requested intent was rejected: This request needs classified power or includes native overclocking; ordinary external presence does not admit it.";
@@ -361,7 +413,12 @@ impl Runtime {
     #[cfg(test)]
     pub(super) fn injected(
         mailbox: &MailboxSource,
-        factory: impl Fn(&str, u32, Arc<dyn ReadCustody>) -> io::Result<(Arc<Storage>, Arc<dyn Fresh>)>
+        factory: impl Fn(
+            &str,
+            u32,
+            Arc<dyn ReadCustody>,
+            Capture,
+        ) -> io::Result<(Arc<Storage>, Arc<dyn Fresh>)>
         + 'static,
     ) -> Self {
         Self {
@@ -408,13 +465,22 @@ impl Runtime {
             Box::new(move || origin.lifecycle.low_power())
         };
         Self {
-            factory: Rc::new(move |sid, session, custody| {
-                let guard = WindowsGuard::capture(
-                    origin.clone(),
-                    custody.clone(),
-                    sid.to_owned(),
-                    session,
-                )?;
+            factory: Rc::new(move |sid, session, custody, capture| {
+                let guard: Arc<dyn Fresh> = match capture {
+                    Capture::Write => WindowsGuard::capture(
+                        origin.clone(),
+                        custody.clone(),
+                        sid.to_owned(),
+                        session,
+                    )?,
+                    #[cfg(feature = "service-profile-triggers-v1")]
+                    Capture::Storage => WindowsGuard::capture_storage(
+                        origin.clone(),
+                        custody.clone(),
+                        sid.to_owned(),
+                        session,
+                    )?,
+                };
                 let mut stores = stores.borrow_mut();
                 if stores.as_ref().is_none_or(|(current, _)| current != sid) {
                     // Trusted peer/session inputs are selected before resolving any
@@ -647,7 +713,13 @@ impl Runtime {
             ));
         };
         reader.custody().verify_integrity()?;
-        let (storage, fresh) = match self.capture(&sid, caller.session, reader.custody()) {
+        // A reconciliation step writes, so it never takes a storage capture.
+        let captured = if reconcile.is_some() {
+            self.capture(&sid, caller.session, reader.custody())
+        } else {
+            self.capture_intent(&sid, caller.session, reader.custody())
+        };
+        let (storage, fresh) = match captured {
             Ok(v) => v,
             Err(e) if is_fatal_admission(&e) => {
                 return Err(e);
@@ -669,10 +741,29 @@ impl Runtime {
         let proof = fresh.authorize();
         fresh.verify_health()?;
         let Some(proof) = proof else {
+            // An explicit request while the low-power gate is set stores its
+            // intent without any read or write, as managed stores it before
+            // its write admission refuses (`store_performance_deferred`).
+            #[cfg(feature = "service-profile-triggers-v1")]
+            if reconcile.is_none() && self.in_low_power() {
+                reader.retain_policy(self.thermal_policy(
+                    sid.clone(),
+                    caller.session,
+                    reader.custody(),
+                ));
+                let application = self.foreground(&sid, caller.session);
+                return self
+                    .store_performance_deferred(
+                        &storage,
+                        fresh.as_ref(),
+                        &application,
+                        (&sid, caller.session),
+                        value,
+                    )
+                    .map(|outcome| Stepped::new(outcome, None));
+            }
             return Ok(Stepped::new(
-                Outcome::blocked(
-                    "Current thermal admission is unavailable; no intent or command was submitted.",
-                ),
+                Outcome::blocked(CURRENT_ADMISSION_UNAVAILABLE),
                 None,
             ));
         };
@@ -1083,28 +1174,97 @@ pub(super) fn managed_power_source(power: i32, fresh: &dyn Fresh) -> Option<i32>
         _ => None,
     }
 }
-impl RequestPermit {
-    /// Managed `ValidateThermalOverrideCombination` on classified power, run
-    /// before the override is stored: the requested preset (or the active
-    /// power profile's, for a clear) with the saved fan override (or the
-    /// profile's fans) must pass `ProfileSetValidator
-    /// .ValidatePerformanceFanCombination` for that source, managed's
-    /// power source (`managed_power_source`): Battery under Windows battery,
-    /// whatever the adapter reads.
-    fn combination_rejected(&self, power: i32) -> io::Result<Option<String>> {
-        let Some(power) = managed_power_source(power, self.fresh.as_ref()) else {
-            return Ok(None);
+#[cfg(feature = "service-profile-triggers-v1")]
+impl Runtime {
+    /// Managed `ExecuteScopedMutationAsync` for an explicit performance
+    /// request while the low-power gate is set: the override is validated
+    /// and stored as `RequestPermit::resolve` stores it at a battery reading,
+    /// and nothing is read or submitted. The reply is managed's committed
+    /// message with its per-write refusal (`LOW_POWER_PERFORMANCE`), and the
+    /// pair owes a reconciliation for the first report after the gate clears
+    /// (`Runtime::owe_stored_intent`). Only Windows battery classifies power
+    /// without an adapter reading (`triggers::deferred_store_refusal`).
+    fn store_performance_deferred(
+        &self,
+        storage: &Storage,
+        fresh: &dyn Fresh,
+        application: &Foreground,
+        pair: (&str, u32),
+        value: Option<Override>,
+    ) -> io::Result<Outcome> {
+        use triggers::{BATTERY, DeferredRefusal, LOW_POWER_PERFORMANCE};
+        match triggers::deferred_store_refusal(fresh) {
+            Some(DeferredRefusal::Admission) => {
+                return Ok(Outcome::blocked(CURRENT_ADMISSION_UNAVAILABLE));
+            }
+            Some(DeferredRefusal::Unclassified) => {
+                return Ok(Outcome::blocked(UNCLASSIFIED_BLOCKED));
+            }
+            None => {}
+        }
+        let committed = if value.is_none() {
+            "Performance override was cleared."
+        } else {
+            "Performance override intent was stored."
         };
-        let Some((profile_performance, profile_fans)) = self.storage.profile_thermal(power)? else {
-            return Ok(None);
-        };
-        let performance = self.value.as_ref().map_or(profile_performance, |v| v.value);
-        let fans = self
-            .storage
-            .current_fan_override(power)?
-            .map_or(profile_fans, |f| i32::from(f.value));
-        Ok(thermal_combination(performance, fans, power).err())
+        let stored = (|| {
+            let generation = fresh
+                .power_generation()
+                .ok_or(io::ErrorKind::PermissionDenied)?;
+            storage.observe_power(BATTERY, generation)?;
+            if let Some(message) = combination_rejected(storage, fresh, value.as_ref(), BATTERY)? {
+                return Ok(Some(message));
+            }
+            // A saved document the domain decoder refuses stores nothing.
+            storage.profile_layer(application)?.at(BATTERY)?;
+            storage.save(value, BATTERY)?;
+            Ok(None)
+        })();
+        Ok(match stored {
+            Err(error) if is_fatal_admission(&error) => return Err(error),
+            Err(_) if storage.configuration_failed() => Outcome::blocked(
+                "Saved configuration replacement failed. Intent was not accepted; no thermal command was submitted. Storage reconciliation is required.",
+            ),
+            Err(_) => Outcome::blocked(
+                "Performance intent was not accepted; admission or protected persistence failed.",
+            ),
+            Ok(Some(message)) => Outcome {
+                status: 3,
+                message: Cause::Rejected(message).message(),
+            },
+            Ok(None) => {
+                self.owe_stored_intent(pair);
+                Outcome::blocked(format!(
+                    "{committed} Hardware result: {LOW_POWER_PERFORMANCE}"
+                ))
+            }
+        })
     }
+}
+/// Managed `ValidateThermalOverrideCombination` on classified power, run
+/// before the performance override `value` is stored: the requested preset
+/// (or the active power profile's, for a clear) with the saved fan override
+/// (or the profile's fans) must pass `ProfileSetValidator
+/// .ValidatePerformanceFanCombination` for that source, managed's power
+/// source (`managed_power_source`): Battery under Windows battery, whatever
+/// the adapter reads.
+fn combination_rejected(
+    storage: &Storage,
+    fresh: &dyn Fresh,
+    value: Option<&Override>,
+    power: i32,
+) -> io::Result<Option<String>> {
+    let Some(power) = managed_power_source(power, fresh) else {
+        return Ok(None);
+    };
+    let Some((profile_performance, profile_fans)) = storage.profile_thermal(power)? else {
+        return Ok(None);
+    };
+    let performance = value.map_or(profile_performance, |v| v.value);
+    let fans = storage
+        .current_fan_override(power)?
+        .map_or(profile_fans, |f| i32::from(f.value));
+    Ok(thermal_combination(performance, fans, power).err())
 }
 /// Managed `ProfileSetValidator.ValidatePerformanceFanCombination` with the
 /// exact RZ09-0581 policy that profile saves use
@@ -1247,7 +1407,12 @@ impl Permit for RequestPermit {
             // A reconciliation applies intent already saved: managed
             // `ApplyFullTransitionAsync` validates no override and stores nothing.
             if self.reconcile.is_none()
-                && let Some(message) = self.combination_rejected(power)?
+                && let Some(message) = combination_rejected(
+                    &self.storage,
+                    self.fresh.as_ref(),
+                    self.value.as_ref(),
+                    power,
+                )?
             {
                 self.set_cause(Cause::Rejected(message));
                 return Ok(None);

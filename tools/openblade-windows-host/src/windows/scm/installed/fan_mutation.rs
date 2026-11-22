@@ -144,30 +144,147 @@ impl FanPermit {
             .ok_or(io::ErrorKind::PermissionDenied)?;
         self.storage.observe_power(power, generation)
     }
-    /// Managed's checks in `SetFanOverrideCoreAsync`, run on classified
-    /// power before the override is stored, against managed's power source
-    /// (`managed_power_source`): an external reading under Windows battery is
-    /// checked as Battery. Unclassified power keeps its own admission
-    /// (`CanAdmitUnclassifiedExternalControl`).
     fn override_rejected(&self, power: i32) -> io::Result<Option<String>> {
-        let Some(power) = managed_power_source(power, self.fresh.as_ref()) else {
-            return Ok(None);
-        };
-        let Some((profile_performance, profile_fans)) = self.storage.profile_thermal(power)? else {
-            return Ok(None);
-        };
-        let performance = self
-            .storage
-            .current_performance_override(power)?
-            .unwrap_or(profile_performance);
-        Ok(fan_override_rejected(
-            self.value.as_ref().map(|v| i32::from(v.value)),
-            performance,
-            profile_fans,
+        override_rejected(
+            &self.storage,
+            self.fresh.as_ref(),
+            self.value.as_ref(),
             power,
-        ))
+        )
     }
 }
+/// Managed's checks in `SetFanOverrideCoreAsync`, run on classified power
+/// before the fan override `value` is stored, against managed's power source
+/// (`managed_power_source`): an external reading under Windows battery is
+/// checked as Battery. Unclassified power keeps its own admission
+/// (`CanAdmitUnclassifiedExternalControl`).
+fn override_rejected(
+    storage: &Storage,
+    fresh: &dyn Fresh,
+    value: Option<&FanOverride>,
+    power: i32,
+) -> io::Result<Option<String>> {
+    let Some(power) = managed_power_source(power, fresh) else {
+        return Ok(None);
+    };
+    let Some((profile_performance, profile_fans)) = storage.profile_thermal(power)? else {
+        return Ok(None);
+    };
+    let performance = storage
+        .current_performance_override(power)?
+        .unwrap_or(profile_performance);
+    Ok(fan_override_rejected(
+        value.map(|v| i32::from(v.value)),
+        performance,
+        profile_fans,
+        power,
+    ))
+}
+/// A fan request whose fresh admission refused before anything was accepted.
+const FAN_ADMISSION_UNAVAILABLE: &str = "Current fan admission is unavailable.";
+#[cfg(feature = "service-profile-triggers-v1")]
+impl Runtime {
+    /// Managed `ExecuteScopedMutationAsync` for an explicit fan request while
+    /// the low-power gate is set: the override is validated and stored as
+    /// `FanPermit::resolve_fan` stores it at a battery reading, and nothing is
+    /// read or submitted. The reply is managed's committed message with its
+    /// per-write refusal (`LOW_POWER_STEP`), and the pair owes a
+    /// reconciliation for the first report after the gate clears
+    /// (`Runtime::owe_stored_intent`). Only Windows battery classifies power
+    /// without an adapter reading (`triggers::deferred_store_refusal`).
+    ///
+    /// An owned fan change not yet handed back stores nothing: its
+    /// continuity is proved by a write admission, which the gate refuses, and
+    /// the handback it owes needs a write.
+    fn store_fan_deferred(
+        &self,
+        storage: &Storage,
+        fresh: &dyn Fresh,
+        application: &Foreground,
+        pair: (&str, u32),
+        (value, settings): (Option<FanOverride>, Option<Value>),
+    ) -> io::Result<Outcome> {
+        use super::triggers::{BATTERY, DeferredRefusal, LOW_POWER_STEP};
+        match super::triggers::deferred_store_refusal(fresh) {
+            Some(DeferredRefusal::Admission) => {
+                return Ok(Outcome::blocked(FAN_ADMISSION_UNAVAILABLE));
+            }
+            Some(DeferredRefusal::Unclassified) => {
+                return Ok(Outcome::blocked(UNCLASSIFIED_BLOCKED));
+            }
+            None => {}
+        }
+        if storage.outstanding_fan() {
+            return Ok(Outcome::blocked(FAN_HANDBACK_OWED));
+        }
+        let committed = if value.is_none() {
+            "Fan override was cleared."
+        } else {
+            "Fan override intent was stored."
+        };
+        let stored = (|| {
+            let generation = fresh
+                .power_generation()
+                .ok_or(io::ErrorKind::PermissionDenied)?;
+            storage.observe_power(BATTERY, generation)?;
+            if let Some(message) = override_rejected(storage, fresh, value.as_ref(), BATTERY)? {
+                return Ok(Err(message));
+            }
+            // A saved document the domain decoder refuses stores nothing.
+            let layer = storage.profile_layer(application)?;
+            let profile = layer.at(BATTERY)?;
+            let profile = profile.as_ref();
+            let leaving_manual = storage.desired_manual_fans(BATTERY, profile)?;
+            storage.save_fan(value, settings, BATTERY)?;
+            // Managed's return to Automatic from saved manual intent
+            // (`ApplyDirectAutomaticFanTransitionOutcomeAsync`) applies the
+            // saved preset first, and its gate refuses that step: the reply
+            // names the preset, as `FanPermit::resolve_fan` carries it.
+            let returning = leaving_manual
+                && storage.desired_fan(BATTERY, profile)?.is_some_and(|s| {
+                    FanIntent::checked(
+                        s["mode"].as_u64().unwrap_or(255) as u8,
+                        s["fixedSpeedRpm"].as_u64().unwrap_or(0) as u16,
+                    )
+                    .is_some_and(|i| !i.manual())
+                });
+            if !returning {
+                return Ok(Ok(None));
+            }
+            Ok(Ok(match storage.desired(BATTERY, profile)? {
+                Some((destination, _)) => Some(destination.name()),
+                None if storage.custom_unsupported(BATTERY, profile)? => Some("Custom"),
+                None => None,
+            }))
+        })();
+        Ok(match stored {
+            Err(error) if is_fatal_admission(&error) => return Err(error),
+            Err(_) => Outcome::blocked(FAN_NOT_ACCEPTED),
+            Ok(Err(message)) => Outcome {
+                status: 3,
+                message: format!("The requested intent was rejected: {message}"),
+            },
+            Ok(Ok(returning)) => {
+                self.owe_stored_intent(pair);
+                let returning = returning.map_or(String::new(), |name| {
+                    format!(
+                        "Fans could not return to Automatic with the saved {name} performance intent. "
+                    )
+                });
+                Outcome::blocked(format!(
+                    "{committed} Hardware result: {returning}{LOW_POWER_STEP}"
+                ))
+            }
+        })
+    }
+}
+/// A fan request that stored nothing: admission or persistence failed.
+const FAN_NOT_ACCEPTED: &str =
+    "Fan intent was not accepted; fresh admission or persistence did not complete.";
+/// A fan request in low power while an owned fan change still owes its
+/// handback to firmware Automatic (`Runtime::store_fan_deferred`).
+#[cfg(feature = "service-profile-triggers-v1")]
+const FAN_HANDBACK_OWED: &str = "Fan intent was not stored: OpenBlade still owns a fan change that has not been handed back to firmware Automatic, and the laptop is in a low-power transition.";
 impl Permit for FanPermit {
     fn refused(&self, cause: Refusal) {
         match cause {
@@ -663,7 +780,31 @@ impl Runtime {
         session: u32,
         custody: Arc<dyn ReadCustody>,
     ) -> io::Result<(Arc<Storage>, Arc<dyn Fresh>)> {
-        self.capture_scoped(sid, session, custody, false)
+        self.capture_scoped(sid, session, custody, false, Capture::Write)
+    }
+    /// The capture of an explicit request, report or save that stores
+    /// intent. While the low-power gate is set or the lifecycle is unknown,
+    /// a refused write capture falls back to the storage-only one
+    /// (`Capture::Storage`), which keeps every other check, including the
+    /// cross-user fan and temporary fences below. Its `Fresh` authorizes no
+    /// read or write, so the request stores its intent and takes the
+    /// low-power deferral; a reconciliation step always takes `capture`.
+    pub(super) fn capture_intent(
+        &self,
+        sid: &str,
+        session: u32,
+        custody: Arc<dyn ReadCustody>,
+    ) -> io::Result<(Arc<Storage>, Arc<dyn Fresh>)> {
+        let captured = self.capture(sid, session, custody.clone());
+        #[cfg(feature = "service-profile-triggers-v1")]
+        if captured
+            .as_ref()
+            .is_err_and(|error| !is_fatal_admission(error))
+            && self.in_low_power()
+        {
+            return self.capture_scoped(sid, session, custody, false, Capture::Storage);
+        }
+        captured
     }
     // Only explicit typed TFC false can select fresh same-SID recovery. This
     // never renews the old automatic proof or bypasses the shared fan fence.
@@ -673,7 +814,7 @@ impl Runtime {
         session: u32,
         custody: Arc<dyn ReadCustody>,
     ) -> io::Result<(Arc<Storage>, Arc<dyn Fresh>)> {
-        self.capture_scoped(sid, session, custody, true)
+        self.capture_scoped(sid, session, custody, true, Capture::Write)
     }
     fn capture_scoped(
         &self,
@@ -681,6 +822,7 @@ impl Runtime {
         session: u32,
         custody: Arc<dyn ReadCustody>,
         explicit_cancel: bool,
+        capture: Capture,
     ) -> io::Result<(Arc<Storage>, Arc<dyn Fresh>)> {
         self.reconcile_temporary_owner()?;
         let pending = self.fan_pending.borrow().clone();
@@ -699,7 +841,7 @@ impl Runtime {
         if self.temporary_cross_user(sid, session) && recovery.is_none() {
             return Err(io::ErrorKind::PermissionDenied.into());
         }
-        let captured = (self.factory)(sid, session, custody)?;
+        let captured = (self.factory)(sid, session, custody, capture)?;
         if recovery
             .as_ref()
             .is_some_and(|storage| !Arc::ptr_eq(storage, &captured.0))
@@ -765,7 +907,13 @@ impl Runtime {
             *self.fan_owner.borrow_mut() = Some(p.clone());
         }
         reader.custody().verify_integrity()?;
-        let (storage, fresh) = match self.capture(&sid, caller.session, reader.custody()) {
+        // A reconciliation step writes, so it never takes a storage capture.
+        let captured = if reconcile.is_some() {
+            self.capture(&sid, caller.session, reader.custody())
+        } else {
+            self.capture_intent(&sid, caller.session, reader.custody())
+        };
+        let (storage, fresh) = match captured {
             Ok(v) => v,
             Err(e) if is_fatal_admission(&e) => return Err(e),
             // Nothing was read from firmware or submitted.
@@ -783,8 +931,28 @@ impl Runtime {
         }
         fresh.verify_health()?;
         let Some(proof) = fresh.authorize() else {
+            // An explicit request while the low-power gate is set stores its
+            // intent without any read or write, as managed stores it before
+            // its write admission refuses (`store_fan_deferred`).
+            #[cfg(feature = "service-profile-triggers-v1")]
+            if reconcile.is_none() && self.in_low_power() {
+                reader.retain_policy(self.thermal_policy(
+                    sid.clone(),
+                    caller.session,
+                    reader.custody(),
+                ));
+                return self
+                    .store_fan_deferred(
+                        &storage,
+                        fresh.as_ref(),
+                        &self.foreground(&sid, caller.session),
+                        (&sid, caller.session),
+                        (value, settings),
+                    )
+                    .map(|outcome| Stepped::new(outcome, None));
+            }
             return Ok(Stepped::new(
-                Outcome::blocked("Current fan admission is unavailable."),
+                Outcome::blocked(FAN_ADMISSION_UNAVAILABLE),
                 None,
             ));
         };
@@ -959,7 +1127,7 @@ impl Runtime {
                 "Fan override intent was stored. Hardware result: This source or observed mode needs a native recipe that is not yet implemented, or admission/transaction capacity did not complete. No applied target is claimed."
             }
         } else {
-            "Fan intent was not accepted; fresh admission or persistence did not complete."
+            FAN_NOT_ACCEPTED
         };
         // A reconciliation (value None) committed nothing: only its hardware
         // result is reported, as managed `ApplyFullTransitionAsync` reports it.

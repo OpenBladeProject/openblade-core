@@ -71,6 +71,14 @@ pub(super) trait ReadCustody: Send + Sync {
     fn authorize_owned_stop(&self) -> Option<ReadAdmission> {
         None
     }
+    /// The custody generation while this custody admits everything
+    /// `authorize` checks but the lifecycle epoch, or `None`. It admits
+    /// storing request intent only (`WindowsGuard::capture_storage`), never a
+    /// read or a write, so the low-power gate does not refuse it.
+    #[cfg(feature = "service-profile-triggers-v1")]
+    fn authorize_storage(&self) -> Option<[u8; 32]> {
+        None
+    }
     fn journal_replace_cleanup(&self, _expected: Option<&[u8]>, _bytes: &[u8]) -> io::Result<()> {
         Err(deny())
     }
@@ -128,6 +136,11 @@ impl ReadCustody for GuardedReadCustody {
     fn authorize(&self) -> Option<ReadAdmission> {
         self.verify_integrity().ok()?;
         self.original.authorize()
+    }
+    #[cfg(feature = "service-profile-triggers-v1")]
+    fn authorize_storage(&self) -> Option<[u8; 32]> {
+        self.verify_integrity().ok()?;
+        self.original.authorize_storage()
     }
     fn authorize_owned_stop(&self) -> Option<ReadAdmission> {
         self.verify_integrity().ok()?;
@@ -289,12 +302,12 @@ fn deny() -> io::Error {
         "original managed mailbox handoff/read custody is unavailable",
     )
 }
-pub(super) fn authorize_original(
+pub(super) fn authorize_original<P>(
     state: &AtomicU8,
     committed: io::Result<bool>,
     mapping: impl FnOnce() -> io::Result<()>,
-    proof: ReadAdmission,
-) -> Option<ReadAdmission> {
+    proof: P,
+) -> Option<P> {
     if state.load(Ordering::Acquire) != 0 {
         return None;
     }
@@ -565,6 +578,19 @@ impl ReadLease {
             },
         )
     }
+    // `authorize` without the lifecycle epoch.
+    #[cfg(feature = "service-profile-triggers-v1")]
+    fn authorize_storage(&self) -> Option<[u8; 32]> {
+        if self.state.load(Ordering::Acquire) != 0 {
+            return None;
+        }
+        authorize_original(
+            &self.state,
+            self.origin.committed(),
+            || self.origin.mailbox_mapping().map(drop),
+            self.proof.generation,
+        )
+    }
     fn revoke(&self) {
         let _ = self
             .state
@@ -728,6 +754,10 @@ impl ReadCustody for ReadLease {
     }
     fn authorize(&self) -> Option<ReadAdmission> {
         ReadLease::authorize(self)
+    }
+    #[cfg(feature = "service-profile-triggers-v1")]
+    fn authorize_storage(&self) -> Option<[u8; 32]> {
+        ReadLease::authorize_storage(self)
     }
     fn revoke(&self) {
         ReadLease::revoke(self);

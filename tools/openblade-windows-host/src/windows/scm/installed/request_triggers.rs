@@ -68,6 +68,39 @@ pub(in super::super) const LOW_POWER_DEFERRED: &str =
 /// step whose write admission refused it while the gate was set.
 pub(in super::super) const LOW_POWER_STEP: &str =
     "The laptop entered a low-power transition before the thermal command was submitted.";
+/// Managed `ScopedPerformanceWriteBlockReason`'s low-power clause (`:15375`):
+/// the hardware result of an explicit performance request whose intent was
+/// stored while the gate was set.
+pub(in super::super) const LOW_POWER_PERFORMANCE: &str =
+    "The laptop entered a low-power transition before the performance command was submitted.";
+/// The battery class, the one class Windows alone establishes.
+pub(super) const BATTERY: i32 = 1;
+
+/// Why an explicit request stores no intent while the low-power gate is set
+/// (`deferred_store_refusal`).
+pub(super) enum DeferredRefusal {
+    /// The storage admission refused: nothing is accepted.
+    Admission,
+    /// Windows reports AC or an unknown source. No admission reads the
+    /// adapter while the gate is set, so the external class is unknown, and
+    /// managed admits no unclassified external control in low power
+    /// (`FreshUnclassifiedExternalControlIsAdmitted`): nothing is stored.
+    Unclassified,
+}
+/// Whether an explicit request may store its intent while the low-power gate
+/// is set, at the battery class: its fresh storage admission
+/// (`Fresh::authorize_storage`) passes and Windows reports battery. Managed
+/// `ResolveCurrentPowerSourceAsync` returns Battery from Windows alone,
+/// without reading the adapter.
+pub(super) fn deferred_store_refusal(fresh: &dyn Fresh) -> Option<DeferredRefusal> {
+    if !fresh.authorize_storage() {
+        Some(DeferredRefusal::Admission)
+    } else if fresh.on_battery() != Some(true) {
+        Some(DeferredRefusal::Unclassified)
+    } else {
+        None
+    }
+}
 
 /// One reading of the low-power gate (`Runtime::gate`).
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -399,7 +432,9 @@ impl Runtime {
             ));
         };
         reader.custody().verify_integrity()?;
-        let captured = self.capture(&sid, caller.session, reader.custody());
+        // In low power a storage capture records the pair; its refused write
+        // admission below then takes the deferral.
+        let captured = self.capture_intent(&sid, caller.session, reader.custody());
         let selected = captured.and_then(|(storage, fresh)| {
             let (next, changed) = storage.select_application(&prior, path.as_deref())?;
             Ok((storage, fresh, next, changed))
@@ -885,6 +920,23 @@ impl Runtime {
             }
             Some(_) => Gate::Low,
         }
+    }
+
+    /// Whether the gate reads set, unreadable or exhausted now
+    /// (`Runtime::gate`). A request that stores intent then takes a storage
+    /// capture (`Runtime::capture_intent`); nothing is admitted to write.
+    pub(super) fn in_low_power(&self) -> bool {
+        self.gate() == Gate::Low
+    }
+
+    /// An explicit request stored new intent while the gate was set: the
+    /// pair owes a reconciliation at every class with no attempt spent, as
+    /// after a save's change, and the first report after the gate clears
+    /// runs it. A persistent override or a clear changes every class.
+    pub(super) fn owe_stored_intent(&self, (sid, session): (&str, u32)) {
+        self.debts
+            .borrow_mut()
+            .insert((sid.to_owned(), session), Debt::owed(Classes::ALL));
     }
 
     /// The retries the pair has spent while it owes a reconciliation, or

@@ -45,8 +45,9 @@ impl Runtime {
         };
         reader.custody().verify_integrity()?;
         // The per-user store. Storing consults no device, power or controller
-        // admission, as managed stores profiles without any.
-        let (storage, fresh) = match self.capture(&sid, caller.session, reader.custody()) {
+        // admission, as managed stores profiles without any. With triggers, a
+        // save in low power takes the storage capture and its deferral.
+        let (storage, fresh) = match self.capture_intent(&sid, caller.session, reader.custody()) {
             Ok(captured) => captured,
             Err(error) if is_fatal_admission(&error) => return Err(error),
             Err(error) => {
