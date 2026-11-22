@@ -759,6 +759,9 @@ impl Runtime {
         {
             let permit = Arc::new(BatteryPermit {
                 tfc: Mutex::new(None),
+                // The only permit that carries reserved IDs. The fenced
+                // rollback trusts `Transactions::unsent` on these pinned IDs,
+                // so no other path may send them.
                 reserved_ids: record.cancel_ids,
                 origin: Some(openblade_domain::temporary_charge_history::Origin {
                     request: original.request.clone(),
