@@ -1376,7 +1376,15 @@ in the middle of a trigger:
   relabelled as the deferral. A relabelled step's own refusal is not
   reported for that reconciliation; the deferred step runs again once the
   gate clears. A step that may have submitted keeps its own result and is
-  never relabelled.
+  never relabelled. A moved generation proves only that a gate boundary
+  arrived during the step: usually a suspend, possibly cleared again, but
+  a new resume (more than 2 s after the last boundary, `NEW_RESUME_TICKS`)
+  moves it by two without setting the gate. Treating a step refused
+  across that resume as a deferral is benign: nothing of it was
+  submitted, and the debt stays owed for the next report. A step relabelled
+  at the bound is not counted as unfinished, so its reply matches a
+  deferral at the step's check; a save, for example, stays Stored rather
+  than Failed.
 - after the entry `fresh.authorize()` of a report or save refuses, when the
   gate sets between capture and that check. A changed pair on classified
   power replies Blocked "The active application profile was recorded.
@@ -1391,7 +1399,28 @@ steps that ran, and does not count as a step that ran. A deferral keeps the
 debt owed with its attempts unchanged (`Reconciled::deferred`,
 `Reconciled::spent`), even after an earlier step that may not be retried, so
 renewals every 5 s in low power read no firmware, reserve no pair and never
-exhaust `RETRIES`.
+exhaust `RETRIES`. After an earlier step that may have submitted, the retry
+runs that step's class again once the gate clears. It reads firmware
+first: while firmware still holds the target, the step confirms without a
+setter and journals nothing; if firmware lost it, for example to a reset
+in standby, the step applies it again under a new journal id. That is a
+fresh application after a fresh read, not a replay of the earlier
+submission.
+
+Two debt drops remain, each unchanged by this slice:
+
+- A step that may have submitted and has not handed back by the bound
+  ends the reconciliation, as every unfinished step does, so the debt
+  settles and a later class is not applied after resume. This is the
+  unfinished form of the deferral after a possibly submitted step above.
+- A fencing notice that does not move the gate generation, such as a
+  repeated resume or a power-status change inside the first step after
+  the gate cleared, refuses that step's write admission as lost
+  admission rather than a deferral, and the debt settles.
+
+Both are follow-ups for C3's resume and DisplayOn reconcile of owed pairs.
+A debt already dropped is recovered only by C3's lease-expiry or
+power-change triggers, or by the next changed report.
 
 Explicit `setPerformanceOverride` and `setFanOverride` are refused by the
 same capture admission (`thermal_native.rs` `WindowsGuard::capture`):
