@@ -1647,7 +1647,18 @@ impl Storage {
                 "Thermal journal capacity exhausted; no further progress was recorded.",
             ));
         }
-        if let Err(error) = self.files.replace(JOURNAL, s.journal.as_deref(), &bytes) {
+        // Settling a Prepared-only row as KnownNotSubmitted is the retirement
+        // custody admits without a live lifecycle epoch, as the fan journal
+        // does: the low-power gate or a stop that ends the request must not
+        // strand its own Prepared row. Every other append keeps the ordinary
+        // per-write authorization.
+        let result = if progress == Progress::KnownNotSubmitted {
+            self.files
+                .replace_retired(JOURNAL, s.journal.as_deref(), &bytes)
+        } else {
+            self.files.replace(JOURNAL, s.journal.as_deref(), &bytes)
+        };
+        if let Err(error) = result {
             s.quarantined = true;
             // Only a new Prepared append establishes this local failure cause.
             // Staging or publication may already have left durable bytes.
