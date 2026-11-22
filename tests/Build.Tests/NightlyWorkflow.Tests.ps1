@@ -84,6 +84,53 @@ Assert-True (-not $contractJob.Contains('submodules: recursive')) `
     'The build-contract lane must not depend on a recursive submodule checkout.'
 Assert-True (-not $contractJob.Contains('.\build\Publish.ps1')) `
     'The build-contract lane must not serialize installer publication.'
+
+# Full validation shards the slowest suites. Together the shards must still run
+# every contract suite, every translator part, and every solution test.
+Assert-True ($contractJob.Contains(
+        "'[`"general`",`"translator-same-process`",`"translator-fresh-process`"]'")) `
+    'Full contract validation must run the general and both translator package shards.'
+Assert-True ($contractJob.Contains('Where-Object Name -ne $translator')) `
+    'The general contract shard must leave only the translator suite to its parts.'
+foreach ($translatorPart in @('Workbook', 'SameProcessPackage', 'FreshProcessPackage')) {
+    Assert-True ($contractJob.Contains("-Part $translatorPart")) `
+        "The contract shards must run the translator '$translatorPart' part."
+}
+Assert-True ($qualityJob.Contains("'[`"format`",`"solution`",`"capture`"]'")) `
+    'Full quality validation must run the format, solution, and Capture shards.'
+Assert-True ($qualityJob.Contains('--filter "FullyQualifiedName!~OpenBlade.Capture.Tests."')) `
+    'The solution test shard must leave only Capture tests to the Capture shard.'
+Assert-True ($qualityJob.Contains(
+        'OPENBLADE_CAPTURE_TESTS_PROJECT: tests\OpenBlade.Capture.Tests\OpenBlade.Capture.Tests.csproj')) `
+    'The Capture shard must test the Capture test project.'
+$captureNamespacePattern = '(?m)^\s*namespace\s+OpenBlade\.Capture\.Tests(?:\.[A-Za-z0-9_.]+)?\s*[;{]?\s*$'
+foreach ($testSource in @(Get-ChildItem -LiteralPath (Join-Path $repository 'tests') `
+        -Recurse -File -Filter '*.cs')) {
+    $relative = $testSource.FullName.Substring($repository.Length + 1)
+    if ($relative -match '\\(?:bin|obj)\\') {
+        continue
+    }
+    $source = [IO.File]::ReadAllText($testSource.FullName)
+    $declaresNamespace = [Regex]::IsMatch($source, '(?m)^\s*namespace\s')
+    $inCaptureNamespace = [Regex]::IsMatch($source, $captureNamespacePattern)
+    if ($relative.StartsWith('tests\OpenBlade.Capture.Tests\', [StringComparison]::OrdinalIgnoreCase)) {
+        Assert-True ((-not $declaresNamespace) -or $inCaptureNamespace) `
+            "Capture test source '$relative' must use the OpenBlade.Capture.Tests namespace the CI filter routes."
+    }
+    else {
+        Assert-True (-not $inCaptureNamespace) `
+            "Test source '$relative' must not use the OpenBlade.Capture.Tests namespace the solution shard filters out."
+    }
+}
+Assert-True ($installerJob.Contains('run: .\build\Publish.ps1 -Configuration Release -SkipStoreReadiness')) `
+    'Pull-request CI must skip Store readiness authoring for its unpublished Stable installer.'
+$nightlyPublishStart = $installerJob.IndexOf('- name: Publish and validate nightly installer', [StringComparison]::Ordinal)
+$nightlyPublishEnd = $installerJob.IndexOf('- name: Upload nightly installer', [StringComparison]::Ordinal)
+Assert-True ($nightlyPublishStart -ge 0 -and $nightlyPublishEnd -gt $nightlyPublishStart) `
+    'The installer lane must publish and then upload the Nightly installer.'
+Assert-True (-not $installerJob.Substring(
+        $nightlyPublishStart, $nightlyPublishEnd - $nightlyPublishStart).Contains('-SkipStoreReadiness')) `
+    'Nightly publication must keep Store readiness authoring.'
 Assert-True ($componentJob.Contains('.\build\Run-AffectedCi.ps1')) `
     'The component-publish lane must use the validated affected runner.'
 Assert-True ($componentJob.Contains('-Lane Publish')) `

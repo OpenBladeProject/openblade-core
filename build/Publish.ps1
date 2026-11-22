@@ -11,6 +11,9 @@ param(
     [string]$MakeAppx,
     [string]$TimestampUrl = 'http://timestamp.digicert.com',
     [switch]$VerifyPrivacyPolicy,
+    # Pull-request CI skips Microsoft Store readiness authoring; release and
+    # local publication keep producing OpenBlade-Store-Readiness.json.
+    [switch]$SkipStoreReadiness,
     [ValidateSet('Stable', 'Nightly', 'LocalDev')]
     [string]$BuildChannel = 'Stable',
     [ValidateRange(0, 65535)]
@@ -114,6 +117,10 @@ $buildIdentity = Resolve-OpenBladeBuildIdentity `
     -BuildRevision $BuildRevision `
     -LocalDevVersion $LocalDevVersion `
     -SourceRevision $SourceRevision
+
+if ($SkipStoreReadiness -and $VerifyPrivacyPolicy) {
+    throw 'Privacy-policy verification is part of Store readiness and cannot be skipped with it.'
+}
 
 if ($ThermalExternalDriftValidation -and $buildIdentity.Channel -ne 'LocalDev') {
     throw 'Thermal external-drift validation installers are restricted to the LocalDev channel.'
@@ -429,13 +436,15 @@ try {
         -ValidationRoot (Join-Path $stagingRoot 'upgrade-probe-validation') `
         -PermittedRoot $artifacts
 
-    Write-OpenBladeStoreReadinessReport `
-        -Bundle $stagingBundle `
-        -Installer $stagingInstaller `
-        -ReportPath $stagingStoreReadiness `
-        -RequireSignatures:$signingEnabled `
-        -OfflineInstaller:$OfflineInstaller `
-        -VerifyPrivacyPolicy:$VerifyPrivacyPolicy | Out-Null
+    if (-not $SkipStoreReadiness) {
+        Write-OpenBladeStoreReadinessReport `
+            -Bundle $stagingBundle `
+            -Installer $stagingInstaller `
+            -ReportPath $stagingStoreReadiness `
+            -RequireSignatures:$signingEnabled `
+            -OfflineInstaller:$OfflineInstaller `
+            -VerifyPrivacyPolicy:$VerifyPrivacyPolicy | Out-Null
+    }
 
     if ($buildIdentity.Channel -eq 'Nightly') {
         Write-OpenBladeNightlyArtifactMetadata `
@@ -462,10 +471,13 @@ try {
     }
     Move-Item -LiteralPath $stagingInstaller -Destination $installer
 
+    # Always remove the previous report so a skipped run cannot leave a stale one.
     if (Test-Path -LiteralPath $storeReadiness) {
         Remove-ValidatedPublishPath -Path $storeReadiness -PermittedRoot $artifacts
     }
-    Move-Item -LiteralPath $stagingStoreReadiness -Destination $storeReadiness
+    if (-not $SkipStoreReadiness) {
+        Move-Item -LiteralPath $stagingStoreReadiness -Destination $storeReadiness
+    }
 
     foreach ($nightlyArtifact in @($nightlyMetadata, $nightlyChecksum)) {
         if (Test-Path -LiteralPath $nightlyArtifact) {
@@ -485,7 +497,12 @@ finally {
 
 Write-Host "Production bundle created at $bundle"
 Write-Host "Graphical production installer created at $installer"
-Write-Host "Microsoft Store readiness report created at $storeReadiness"
+if ($SkipStoreReadiness) {
+    Write-Host 'Microsoft Store readiness authoring was skipped.'
+}
+else {
+    Write-Host "Microsoft Store readiness report created at $storeReadiness"
+}
 Write-Host "Self-contained developer tools created at $developerTools"
 if ($buildIdentity.Channel -eq 'Nightly') {
     Write-Host "Nightly build metadata created at $nightlyMetadata"
