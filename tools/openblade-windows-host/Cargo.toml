@@ -56,6 +56,10 @@ gpu-close-fixture = ["openblade-platform-windows/scripted-gpu-close"]
 vm-scm-fixture = []
 startup-custody-v1 = []
 service-metadata-only-v1 = ["installed-service-candidate"]
+# Automatic reconciliation of saved intent on reportApplicationContext,
+# updateProfiles and a session's first admitted report. No packaged
+# composition implies it, and both package readers refuse it by name.
+service-profile-triggers-v1 = ["service-profiles-v1"]
 # updateProfiles: the typed managed ProfileSet, validated for exact RZ09-0581
 # and committed as the managed aggregate. Saving profiles applies no hardware.
 service-profiles-v1 = ["service-temporary-charge-v1", "openblade-domain/profile-set"]

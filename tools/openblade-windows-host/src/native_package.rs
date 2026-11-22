@@ -701,6 +701,18 @@ fn capabilities(schema: u8, role: &str, features: &str, value: &str) -> io::Resu
     let agent_color = has("agent-display-color-write-v1");
     let agent_profile = has("agent-display-profile-apply-v1");
     let agent_gpu = has("agent-gpu-v1");
+    // Automatic reconciliation of saved intent is not admitted for packaging:
+    // refuse its feature and its capability marker by name, whatever else the
+    // record claims, until a packaging stage admits it (with the low-power
+    // gate and transaction-pool reclamation it still lacks).
+    const PROFILE_TRIGGERS: &str = "service-profile-triggers-v1";
+    if has(PROFILE_TRIGGERS)
+        || value
+            .split(',')
+            .any(|capability| capability == PROFILE_TRIGGERS)
+    {
+        return Err(deny());
+    }
     // No packaging stage has admitted a Service that serves updateProfiles.
     // Refuse the feature and the capability by name, whatever else the
     // record claims, rather than rely on the expected string below.

@@ -311,6 +311,8 @@ jobs:
               # Installed updateProfiles: the store transaction and the managed
               # vector corpus through the framed dispatcher.
               @('openblade-windows-service-candidate', 'service-profiles-v1', 'profiles::'),
+              # Automatic reconciliation of saved intent: the request triggers.
+              @('openblade-windows-service-candidate', 'service-profile-triggers-v1', 'request_triggers'),
               @('openblade-windows-service-candidate', 'service-fan-mutation-v2', 'unserved'),
               @('openblade-windows-service-candidate', 'service-thermal-mutation-v1', 'unserved'),
               @('openblade-windows-service-candidate', 'service-metadata-only-v1', 'unserved'),
@@ -386,6 +388,7 @@ jobs:
               # The read-only observation lane alone carries older unused-code
               # warnings, so the Driver-mode read is linted beside every write.
               @('openblade-windows-service-candidate', 'service-keyboard-driver-mode-read-v1,service-profiles-v1'),
+              @('openblade-windows-service-candidate', 'service-profile-triggers-v1'),
               @('openblade-windows-agent-candidate', 'agent-display-brightness-write-v1'),
               @('openblade-windows-agent-candidate', 'agent-display-profile-apply-v1'),
               @('openblade-windows-agent-candidate', 'agent-battery-report-v1'),
