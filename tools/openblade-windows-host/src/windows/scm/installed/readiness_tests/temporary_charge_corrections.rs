@@ -20,6 +20,11 @@ impl Fresh for CapturedFresh {
     fn on_battery(&self) -> Option<bool> {
         self.custody.on_battery()
     }
+    // As `WindowsGuard::power_generation`, so a test that keeps this capture
+    // through a resume observes the class a reconciliation reads.
+    fn power_generation(&self) -> Option<u64> {
+        Fresh::power_generation(self.custody.as_ref())
+    }
     fn authentication(&self) -> Option<(u32, i32)> {
         Some(self.authentication)
     }
@@ -27,9 +32,7 @@ impl Fresh for CapturedFresh {
         Fresh::verify_health(self.custody.as_ref())
     }
     fn authorize(&self) -> Option<ReadAdmission> {
-        (self.custody.current_session.load(Ordering::Acquire) == self.session as usize
-            && self.custody.current_console.load(Ordering::Acquire)
-            && Fresh::authentication(self.custody.as_ref()) == Some(self.authentication)
+        (identity_holds(&self.custody, self.session, self.authentication)
             && Fresh::authorize(self.custody.as_ref()) == Some(self.proof))
         .then_some(self.proof)
     }
@@ -40,7 +43,6 @@ impl Fresh for CapturedFresh {
     }
 }
 /// The captured session is still the console's and its logon is unchanged.
-#[cfg(feature = "service-profile-triggers-v1")]
 fn identity_holds(custody: &Custody, session: u32, authentication: (u32, i32)) -> bool {
     custody.current_session.load(Ordering::Acquire) == session as usize
         && custody.current_console.load(Ordering::Acquire)

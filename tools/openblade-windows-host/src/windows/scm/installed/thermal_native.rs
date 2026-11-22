@@ -34,43 +34,25 @@ fn deny() -> io::Error {
     )
 }
 
+/// The exact primary SID, session and logon one request capture starts from,
+/// with every Windows supplier check of its admissions (`Identity::admits`).
+/// It pins no lifecycle epoch, so it never authorizes a read or write: only a
+/// `WindowsGuard`, which always pins one, does.
 #[cfg_attr(test, allow(dead_code))] // Test composition injects its own Fresh; only the native factory builds the guard.
-pub(super) struct WindowsGuard {
+struct Identity {
     origin: Arc<Origin>,
     custody: Arc<dyn ReadCustody>,
     sid: String,
     session: u32,
     authentication: (u32, i32),
-    // The ordinary epoch every read and write of this capture pins. A storage
-    // capture (`capture_storage`) pins none, so it authorizes neither.
-    lifecycle: Option<u64>,
     controllers:
         Mutex<openblade_platform_windows::controller_presence::admission::ReadOnlyAdmission>,
 }
 #[cfg_attr(test, allow(dead_code))] // Test composition injects its own Fresh; only the native factory builds the guard.
-impl WindowsGuard {
-    /// Samples the Windows power kind into the loaded origin's lifecycle
-    /// and returns its power generation.
-    pub(super) fn power_generation(&self) -> Option<u64> {
-        self.origin
-            .lifecycle
-            .observe_power_kind(crate::origin_lifetime::sample_power_kind())
-    }
-    pub(super) fn on_battery(&self) -> Option<bool> {
-        let mut status = SYSTEM_POWER_STATUS::default();
-        // Same documented Windows ACLineStatus mapping as lifecycle Observation.
-        if unsafe { GetSystemPowerStatus(&mut status) } == 0 {
-            return None;
-        }
-        match status.ACLineStatus {
-            0 => Some(true),
-            1 => Some(false),
-            _ => None,
-        }
-    }
-    /// The exact primary SID and logon of `session`, before any epoch is
-    /// pinned. Every request capture starts here.
-    fn identified(
+impl Identity {
+    /// The exact primary SID and logon of `session`. Every request capture
+    /// starts here.
+    fn new(
         origin: Arc<Origin>,
         custody: Arc<dyn ReadCustody>,
         sid: String,
@@ -88,7 +70,6 @@ impl WindowsGuard {
             super::thermal_mutation::fatal_admission("lifecycle state lock poisoned")
         })?;
         Ok(Self {
-            lifecycle: None,
             origin,
             custody,
             sid,
@@ -102,45 +83,39 @@ impl WindowsGuard {
             ),
         })
     }
-    pub(super) fn capture(
-        origin: Arc<Origin>,
-        custody: Arc<dyn ReadCustody>,
-        sid: String,
-        session: u32,
-    ) -> io::Result<Arc<Self>> {
-        let mut guard = Self::identified(origin, custody, sid, session)?;
-        guard.lifecycle = Some(guard.origin.lifecycle.active().ok_or_else(deny)?);
-        let guard = Arc::new(guard);
-        let proof = guard.authorize();
-        guard.verify_health()?;
-        proof.ok_or_else(deny)?;
-        Ok(guard)
-    }
-    /// A capture that admits storing request intent and nothing else: every
-    /// check of `capture` but the lifecycle epoch (`authorize_storage`), so
-    /// it succeeds while the low-power gate is set or the lifecycle is
-    /// exhausted. It pins no epoch, and its guard authorizes no read or
-    /// write: a write needs its own `capture` with the lifecycle active, and
-    /// each write's `authorize` compares that epoch again.
-    #[cfg(feature = "service-profile-triggers-v1")]
-    pub(super) fn capture_storage(
-        origin: Arc<Origin>,
-        custody: Arc<dyn ReadCustody>,
-        sid: String,
-        session: u32,
-    ) -> io::Result<Arc<StorageGuard>> {
-        let guard = Self::identified(origin, custody, sid, session)?;
-        let admitted = guard.authorize_storage();
-        guard.verify_health()?;
-        if !admitted {
-            return Err(deny());
+    /// The same identity with a fresh competing-controller admission.
+    fn renewed(&self) -> Self {
+        Self {
+            origin: self.origin.clone(),
+            custody: self.custody.clone(),
+            sid: self.sid.clone(),
+            session: self.session,
+            authentication: self.authentication,
+            controllers: Mutex::new(
+                openblade_platform_windows::controller_presence::admission::ReadOnlyAdmission::native(),
+            ),
         }
-        Ok(Arc::new(StorageGuard(guard)))
     }
-    pub(super) fn authentication(&self) -> (u32, i32) {
-        self.authentication
+    /// Samples the Windows power kind into the loaded origin's lifecycle
+    /// and returns its power generation.
+    fn power_generation(&self) -> Option<u64> {
+        self.origin
+            .lifecycle
+            .observe_power_kind(crate::origin_lifetime::sample_power_kind())
     }
-    pub(super) fn verify_health(&self) -> io::Result<()> {
+    fn on_battery(&self) -> Option<bool> {
+        let mut status = SYSTEM_POWER_STATUS::default();
+        // Same documented Windows ACLineStatus mapping as lifecycle Observation.
+        if unsafe { GetSystemPowerStatus(&mut status) } == 0 {
+            return None;
+        }
+        match status.ACLineStatus {
+            0 => Some(true),
+            1 => Some(false),
+            _ => None,
+        }
+    }
+    fn verify_health(&self) -> io::Result<()> {
         self.custody.verify_integrity()?;
         self.origin.lifecycle.verify_health().map_err(|_| {
             super::thermal_mutation::fatal_admission("lifecycle state lock poisoned")
@@ -149,74 +124,17 @@ impl WindowsGuard {
             super::thermal_mutation::fatal_admission("controller admission lock poisoned")
         })
     }
-    pub(super) fn authorize(&self) -> Option<ReadAdmission> {
-        self.authorize_for(false)
-    }
-    pub(super) fn authorize_owned_stop(&self) -> Option<ReadAdmission> {
-        self.authorize_for(true)
-    }
     /// Whether storing request intent is admitted now: every check of
-    /// `authorize` (origin and package trust, the exact mailbox custody and
-    /// generation, the same console session unlocked, the same primary SID
-    /// and logon LUID, a known AC line status and fresh competing-controller
-    /// absence) except the lifecycle epoch. It admits no read or write.
+    /// `WindowsGuard::authorize` (origin and package trust, the exact mailbox
+    /// custody and generation, the same console session unlocked, the same
+    /// primary SID and logon LUID, a known AC line status and fresh
+    /// competing-controller absence) except the lifecycle epoch. It admits no
+    /// read or write. It names no device: the HID identity belongs to the
+    /// mailbox custody, admitted when the Service opened it, and only a
+    /// write's own `authorize` is checked against that custody's reader.
     #[cfg(feature = "service-profile-triggers-v1")]
-    pub(super) fn authorize_storage(&self) -> bool {
-        self.admits(false, || true).is_some() && self.custody.authorize_storage().is_some()
-    }
-    /// A fresh Stop-scoped capture of this owner's exact identity at the
-    /// current lifecycle epoch, for the settle-only fan close. Every
-    /// SERVICE_CONTROL_POWEREVENT and SESSIONCHANGE advances the epoch, so the
-    /// owner's own capture cannot authorize Stop after an unplug, a lock or a
-    /// resume. This one pins the new epoch and keeps every other check of
-    /// `authorize_for(true)`: owned-stop origin and package trust, the exact
-    /// mailbox custody and generation, the same console session unlocked, the
-    /// same primary SID and logon LUID, a known AC line status and fresh
-    /// competing-controller absence. The low-power gate admits no ordinary epoch,
-    /// so nothing is captured while it is set.
-    pub(super) fn capture_settle(
-        &self,
-        sid: &str,
-        session: u32,
-        authentication: Option<(u32, i32)>,
-    ) -> io::Result<Arc<SettleGuard>> {
-        if sid != self.sid || session != self.session || authentication != Some(self.authentication)
-        {
-            return Err(deny());
-        }
-        self.verify_health()?;
-        self.origin.verify_owned_stop()?;
-        let lifecycle = self.origin.lifecycle.active().ok_or_else(deny)?;
-        let guard = SettleGuard(Self {
-            origin: self.origin.clone(),
-            custody: self.custody.clone(),
-            sid: self.sid.clone(),
-            session: self.session,
-            authentication: self.authentication,
-            lifecycle: Some(lifecycle),
-            controllers: Mutex::new(
-                openblade_platform_windows::controller_presence::admission::ReadOnlyAdmission::native(),
-            ),
-        });
-        let proof = guard.authorize_owned_stop();
-        guard.verify_health()?;
-        proof.ok_or_else(deny)?;
-        Ok(Arc::new(guard))
-    }
-    fn authorize_for(&self, stop: bool) -> Option<ReadAdmission> {
-        // A storage capture pinned no epoch, so it authorizes nothing.
-        let pinned = self.lifecycle?;
-        // The low-power gate refuses every request and owned-Stop write here.
-        // Only the low-power preparation's Automatic fan handback may pin
-        // `WriteScope::LowPowerFanAutomatic`, and nothing captures it yet.
-        self.admits(stop, || {
-            self.origin.lifecycle.epoch_for(WriteScope::Ordinary) == Some(pinned)
-        })?;
-        if stop {
-            self.custody.authorize_owned_stop()
-        } else {
-            self.custody.authorize()
-        }
+    fn authorize_storage(&self) -> bool {
+        self.admits(false, || true).is_some() && self.custody.authorize_storage()
     }
     /// The Windows supplier checks of one admission. `epoch` is its
     /// lifecycle check, run before and after the suppliers: a write compares
@@ -270,6 +188,128 @@ impl WindowsGuard {
         epoch().then_some(())
     }
 }
+/// A request's read and write admission: its identity at the ordinary
+/// lifecycle epoch it pins. Every `authorize` compares that epoch again, so
+/// the low-power gate, which admits no ordinary epoch, refuses it. A guard
+/// without an epoch cannot be built; storage takes a `StorageGuard`.
+#[cfg_attr(test, allow(dead_code))] // Test composition injects its own Fresh; only the native factory builds the guard.
+pub(super) struct WindowsGuard {
+    identity: Identity,
+    lifecycle: u64,
+}
+#[cfg_attr(test, allow(dead_code))] // Test composition injects its own Fresh; only the native factory builds the guard.
+impl WindowsGuard {
+    pub(super) fn power_generation(&self) -> Option<u64> {
+        self.identity.power_generation()
+    }
+    pub(super) fn on_battery(&self) -> Option<bool> {
+        self.identity.on_battery()
+    }
+    pub(super) fn capture(
+        origin: Arc<Origin>,
+        custody: Arc<dyn ReadCustody>,
+        sid: String,
+        session: u32,
+    ) -> io::Result<Arc<Self>> {
+        let identity = Identity::new(origin, custody, sid, session)?;
+        let lifecycle = identity.origin.lifecycle.active().ok_or_else(deny)?;
+        let guard = Arc::new(Self {
+            identity,
+            lifecycle,
+        });
+        let proof = guard.authorize();
+        guard.verify_health()?;
+        proof.ok_or_else(deny)?;
+        Ok(guard)
+    }
+    /// A capture that admits storing request intent and nothing else: every
+    /// check of `capture` but the lifecycle epoch
+    /// (`Identity::authorize_storage`), so it succeeds while the low-power
+    /// gate is set or the lifecycle is exhausted. Its guard holds no epoch
+    /// and authorizes no read or write: a write needs its own `capture` with
+    /// the lifecycle active, and each write's `authorize` compares that
+    /// epoch again.
+    #[cfg(feature = "service-profile-triggers-v1")]
+    pub(super) fn capture_storage(
+        origin: Arc<Origin>,
+        custody: Arc<dyn ReadCustody>,
+        sid: String,
+        session: u32,
+    ) -> io::Result<Arc<StorageGuard>> {
+        let identity = Identity::new(origin, custody, sid, session)?;
+        let admitted = identity.authorize_storage();
+        identity.verify_health()?;
+        if !admitted {
+            return Err(deny());
+        }
+        Ok(Arc::new(StorageGuard(identity)))
+    }
+    pub(super) fn authentication(&self) -> (u32, i32) {
+        self.identity.authentication
+    }
+    pub(super) fn verify_health(&self) -> io::Result<()> {
+        self.identity.verify_health()
+    }
+    pub(super) fn authorize(&self) -> Option<ReadAdmission> {
+        self.authorize_for(false)
+    }
+    pub(super) fn authorize_owned_stop(&self) -> Option<ReadAdmission> {
+        self.authorize_for(true)
+    }
+    #[cfg(feature = "service-profile-triggers-v1")]
+    pub(super) fn authorize_storage(&self) -> bool {
+        self.identity.authorize_storage()
+    }
+    /// A fresh Stop-scoped capture of this owner's exact identity at the
+    /// current lifecycle epoch, for the settle-only fan close. Every
+    /// SERVICE_CONTROL_POWEREVENT and SESSIONCHANGE advances the epoch, so the
+    /// owner's own capture cannot authorize Stop after an unplug, a lock or a
+    /// resume. This one pins the new epoch and keeps every other check of
+    /// `authorize_for(true)`: owned-stop origin and package trust, the exact
+    /// mailbox custody and generation, the same console session unlocked, the
+    /// same primary SID and logon LUID, a known AC line status and fresh
+    /// competing-controller absence. The low-power gate admits no ordinary epoch,
+    /// so nothing is captured while it is set.
+    pub(super) fn capture_settle(
+        &self,
+        sid: &str,
+        session: u32,
+        authentication: Option<(u32, i32)>,
+    ) -> io::Result<Arc<SettleGuard>> {
+        let identity = &self.identity;
+        if sid != identity.sid
+            || session != identity.session
+            || authentication != Some(identity.authentication)
+        {
+            return Err(deny());
+        }
+        self.verify_health()?;
+        identity.origin.verify_owned_stop()?;
+        let lifecycle = identity.origin.lifecycle.active().ok_or_else(deny)?;
+        let guard = SettleGuard(Self {
+            identity: identity.renewed(),
+            lifecycle,
+        });
+        let proof = guard.authorize_owned_stop();
+        guard.verify_health()?;
+        proof.ok_or_else(deny)?;
+        Ok(Arc::new(guard))
+    }
+    fn authorize_for(&self, stop: bool) -> Option<ReadAdmission> {
+        // The low-power gate refuses every request and owned-Stop write here.
+        // Only the low-power preparation's Automatic fan handback may pin
+        // `WriteScope::LowPowerFanAutomatic`, and nothing captures it yet.
+        let identity = &self.identity;
+        identity.admits(stop, || {
+            identity.origin.lifecycle.epoch_for(WriteScope::Ordinary) == Some(self.lifecycle)
+        })?;
+        if stop {
+            identity.custody.authorize_owned_stop()
+        } else {
+            identity.custody.authorize()
+        }
+    }
+}
 /// Stop-only admission captured by `WindowsGuard::capture_settle`. It exposes
 /// only the owned-stop proof, never request admission. Test composition
 /// injects its own `Fresh`, so only the native factory constructs it.
@@ -278,7 +318,7 @@ pub(super) struct SettleGuard(WindowsGuard);
 #[cfg_attr(test, allow(dead_code))] // Test composition injects its own Fresh; only the native factory builds the guard.
 impl SettleGuard {
     pub(super) fn authentication(&self) -> (u32, i32) {
-        self.0.authentication
+        self.0.authentication()
     }
     pub(super) fn verify_health(&self) -> io::Result<()> {
         self.0.verify_health()
@@ -287,13 +327,14 @@ impl SettleGuard {
         self.0.authorize_for(true)
     }
 }
-/// Storage-only admission captured by `WindowsGuard::capture_storage`. It
-/// exposes the storage admission and the Windows power reads, never a read
-/// or write proof. Test composition injects its own `Fresh`, so only the
-/// native factory constructs it.
+/// Storage-only admission captured by `WindowsGuard::capture_storage`: an
+/// identity with no lifecycle epoch. It exposes the storage admission and the
+/// Windows power reads, and it cannot hold a read or write proof. Test
+/// composition injects its own `Fresh`, so only the native factory
+/// constructs it.
 #[cfg(feature = "service-profile-triggers-v1")]
 #[cfg_attr(test, allow(dead_code))] // Test composition injects its own Fresh; only the native factory builds the guard.
-pub(super) struct StorageGuard(WindowsGuard);
+pub(super) struct StorageGuard(Identity);
 #[cfg(feature = "service-profile-triggers-v1")]
 #[cfg_attr(test, allow(dead_code))] // Test composition injects its own Fresh; only the native factory builds the guard.
 impl StorageGuard {

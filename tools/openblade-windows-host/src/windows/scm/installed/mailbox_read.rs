@@ -71,13 +71,13 @@ pub(super) trait ReadCustody: Send + Sync {
     fn authorize_owned_stop(&self) -> Option<ReadAdmission> {
         None
     }
-    /// The custody generation while this custody admits everything
-    /// `authorize` checks but the lifecycle epoch, or `None`. It admits
-    /// storing request intent only (`WindowsGuard::capture_storage`), never a
-    /// read or a write, so the low-power gate does not refuse it.
+    /// Whether this custody admits everything `authorize` checks but the
+    /// lifecycle epoch. It admits storing request intent only
+    /// (`WindowsGuard::capture_storage`), never a read or a write, so the
+    /// low-power gate does not refuse it.
     #[cfg(feature = "service-profile-triggers-v1")]
-    fn authorize_storage(&self) -> Option<[u8; 32]> {
-        None
+    fn authorize_storage(&self) -> bool {
+        false
     }
     fn journal_replace_cleanup(&self, _expected: Option<&[u8]>, _bytes: &[u8]) -> io::Result<()> {
         Err(deny())
@@ -138,9 +138,8 @@ impl ReadCustody for GuardedReadCustody {
         self.original.authorize()
     }
     #[cfg(feature = "service-profile-triggers-v1")]
-    fn authorize_storage(&self) -> Option<[u8; 32]> {
-        self.verify_integrity().ok()?;
-        self.original.authorize_storage()
+    fn authorize_storage(&self) -> bool {
+        self.verify_integrity().is_ok() && self.original.authorize_storage()
     }
     fn authorize_owned_stop(&self) -> Option<ReadAdmission> {
         self.verify_integrity().ok()?;
@@ -302,12 +301,12 @@ fn deny() -> io::Error {
         "original managed mailbox handoff/read custody is unavailable",
     )
 }
-pub(super) fn authorize_original<P>(
+pub(super) fn authorize_original(
     state: &AtomicU8,
     committed: io::Result<bool>,
     mapping: impl FnOnce() -> io::Result<()>,
-    proof: P,
-) -> Option<P> {
+    proof: ReadAdmission,
+) -> Option<ReadAdmission> {
     if state.load(Ordering::Acquire) != 0 {
         return None;
     }
@@ -580,16 +579,14 @@ impl ReadLease {
     }
     // `authorize` without the lifecycle epoch.
     #[cfg(feature = "service-profile-triggers-v1")]
-    fn authorize_storage(&self) -> Option<[u8; 32]> {
-        if self.state.load(Ordering::Acquire) != 0 {
-            return None;
-        }
+    fn authorize_storage(&self) -> bool {
         authorize_original(
             &self.state,
             self.origin.committed(),
             || self.origin.mailbox_mapping().map(drop),
-            self.proof.generation,
+            self.proof,
         )
+        .is_some()
     }
     fn revoke(&self) {
         let _ = self
@@ -756,7 +753,7 @@ impl ReadCustody for ReadLease {
         ReadLease::authorize(self)
     }
     #[cfg(feature = "service-profile-triggers-v1")]
-    fn authorize_storage(&self) -> Option<[u8; 32]> {
+    fn authorize_storage(&self) -> bool {
         ReadLease::authorize_storage(self)
     }
     fn revoke(&self) {

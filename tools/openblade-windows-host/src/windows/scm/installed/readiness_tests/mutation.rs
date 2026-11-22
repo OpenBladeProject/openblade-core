@@ -518,17 +518,21 @@ impl ReadCustody for Custody {
     }
     // `authorize` without the lifecycle epoch, as `ReadLease` models it.
     #[cfg(feature = "service-profile-triggers-v1")]
-    fn authorize_storage(&self) -> Option<[u8; 32]> {
+    fn authorize_storage(&self) -> bool {
         let generation = [self.generation.load(Ordering::Acquire); 32];
         if let Some(origin) = &*self.origin_for_fan.lock().unwrap() {
             return crate::installed::readiness::mailbox_read::authorize_original(
                 &self.authority_for_fan,
                 origin.verify().map(|_| true),
                 || origin.verify(),
-                generation,
-            );
+                ReadAdmission {
+                    generation,
+                    lifecycle: 0,
+                },
+            )
+            .is_some();
         }
-        self.live.load(Ordering::Acquire).then_some(generation)
+        self.live.load(Ordering::Acquire)
     }
     fn authorize(&self) -> Option<ReadAdmission> {
         if let Some(origin) = &*self.origin_for_fan.lock().unwrap() {
@@ -657,12 +661,14 @@ impl Fresh for Custody {
         ReadCustody::authorize(self)
     }
     // `authorize` without the lifecycle epoch: `fresh_refuse` stands for
-    // every refused Windows supplier, a competing controller included.
+    // every refused Windows supplier, a competing controller included, and
+    // an unknown Windows AC line status refuses as `Identity::admits` does.
     #[cfg(feature = "service-profile-triggers-v1")]
     fn authorize_storage(&self) -> bool {
         !self.fresh_refuse.load(Ordering::Acquire)
             && !self.fatal_health.load(Ordering::Acquire)
-            && ReadCustody::authorize_storage(self).is_some()
+            && Fresh::on_battery(self).is_some()
+            && ReadCustody::authorize_storage(self)
     }
     fn capture_settle(
         &self,
