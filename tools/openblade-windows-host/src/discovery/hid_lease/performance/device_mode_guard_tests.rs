@@ -1,17 +1,19 @@
 //! The reviewed 00/04 keyboard device-mode setters exist only in the protocol
-//! crate's tests. `RazerReport::create` is a public encoder, so no type can
-//! stop other code building 00/04; this guard instead fails when non-test
-//! source in the native Service's crates names the setter or adds a report
-//! construction, so each new one is reviewed against the admitted commands.
+//! crate's tests. `RazerReport::create` and `encode_report` are public
+//! encoders, so no type stops other code building 00/04. This guard is a
+//! textual allowlist: it fails when non-test source in the native Service's
+//! crates names the setter, renames an encoder on import, or adds a call to
+//! either encoder, so each new one is reviewed against the admitted commands.
+//! It does not see an encoder reached through a glob import or a macro.
 use std::{
     collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
 };
 
-/// Every non-test file of the host and the Rust crates it links that calls
-/// `RazerReport::create`, with its call count. `openblade-ffi` is managed's
-/// encoder and is not linked into the native Service.
+/// Every non-test file of the host and the Rust crates it links that names
+/// `RazerReport::create(` or `encode_report(`, with its count. `openblade-ffi`
+/// is managed's encoder and is not linked into the native Service.
 const CONSTRUCTIONS: &[(&str, usize)] = &[
     ("rust/crates/openblade-protocol/src/battery.rs", 4),
     (
@@ -21,6 +23,8 @@ const CONSTRUCTIONS: &[(&str, usize)] = &[
     // The 00/84 query alone.
     ("rust/crates/openblade-protocol/src/device_mode.rs", 1),
     ("rust/crates/openblade-protocol/src/fan.rs", 1),
+    // The definition of `encode_report`.
+    ("rust/crates/openblade-protocol/src/lib.rs", 1),
     ("rust/crates/openblade-protocol/src/thermal_preset.rs", 1),
     ("tools/openblade-windows-host/src/battery_runtime.rs", 1),
     (
@@ -35,6 +39,11 @@ const CONSTRUCTIONS: &[(&str, usize)] = &[
         "tools/openblade-windows-host/src/discovery/hid_lease/performance/mutation.rs",
         1,
     ),
+    // The scripted reply encoder of the test-only mutation fixture.
+    (
+        "tools/openblade-windows-host/src/discovery/hid_lease/performance/mutation_fixture.rs",
+        1,
+    ),
     ("tools/openblade-windows-host/src/fan_runtime/device.rs", 2),
     (
         "tools/openblade-windows-host/src/performance_runtime/device.rs",
@@ -46,15 +55,17 @@ fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
+/// Test modules by this repository's naming: `tests.rs`, `*_tests.rs` and
+/// anything under a `tests` or `*_tests` directory. A fixture name alone is
+/// not a test module; production fixtures exist.
 fn is_test(path: &Path) -> bool {
     let name = path.file_name().unwrap().to_str().unwrap();
     name == "tests.rs"
         || name.ends_with("_tests.rs")
-        || name.contains("fixture")
         || path.components().any(|part| {
-            part.as_os_str().to_str().is_some_and(|part| {
-                matches!(part, "tests" | "fixtures") || part.ends_with("_tests")
-            })
+            part.as_os_str()
+                .to_str()
+                .is_some_and(|part| part == "tests" || part.ends_with("_tests"))
         })
 }
 
@@ -70,7 +81,7 @@ fn sources(dir: &Path, found: &mut Vec<PathBuf>) {
 }
 
 #[test]
-fn no_non_test_source_names_the_setter_or_adds_a_report_construction() {
+fn no_non_test_source_names_the_setter_or_adds_an_encoder_call() {
     let root = root();
     let mut files = Vec::new();
     sources(&root.join("tools/openblade-windows-host/src"), &mut files);
@@ -90,7 +101,11 @@ fn no_non_test_source_names_the_setter_or_adds_a_report_construction() {
             .unwrap()
             .replace('\\', "/");
         assert!(!text.contains("DeviceModeSet"), "{name} names the setter");
-        let count = text.matches("RazerReport::create(").count();
+        for encoder in ["RazerReport as ", "encode_report as "] {
+            assert!(!text.contains(encoder), "{name} renames an encoder");
+        }
+        let count =
+            text.matches("RazerReport::create(").count() + text.matches("encode_report(").count();
         if count > 0 {
             constructions.insert(name, count);
         }
