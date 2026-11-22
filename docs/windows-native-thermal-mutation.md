@@ -1351,7 +1351,10 @@ admits reads no firmware and reserves no transaction pair
 (`refused_by_saved_intent`): a performance policy with a GPU clock effect or
 no eligible destination, and fan intent with no native plan (ManualCurve, or
 manual fans on battery). It replies the refusal the step would reach after
-its reading.
+its reading. Each class is read in its own `Storage::unexpired` scope, as a
+save's comparison is: a read at one class expires a temporary override kept
+for another, so a temporary saved on the limited adapter is still selected
+at that class after the full adapter's class was read.
 A step whose own adapter reading finds unclassified power writes nothing
 (Blocked, `UNCLASSIFIED_BLOCKED`); a step whose reading finds a classified
 class the trigger did not change writes nothing either (`Classes`,
@@ -1407,6 +1410,11 @@ Differences from managed:
 - Native has no low-power gate of its own here; each write's fresh admission
   is the boundary. Lease expiry and power changes trigger no reconciliation
   yet.
+- The margin bounds a step, not the wait for the mutation gate. A trigger
+  queued behind owned fan cleanup (`stop_fans`) or a battery power-source
+  event (`battery_source_event`) waits for that work, as every mutation
+  does, and refuses before it records or stores once its deadline has passed.
+  Its reply can then arrive after the Agent has stopped waiting.
 
 ## Submission, ambiguity and finite transport lifetime
 
@@ -1490,6 +1498,10 @@ reconciliation reason, after a save too ("Profiles were stored. ..."): the
 profiles are stored and a command may have been submitted, so the caller must
 not read Stored as a settled hardware result. When the step had journaled
 nothing that could be submitted, it is a transient Blocked refusal instead.
+A step whose newest row is Prepared, with no setter intent yet, counts as
+possibly submitted at the bound: the reply is Failed and the debt is settled.
+That is conservative, since the worker may still be running and the journal
+alone tells which.
 The native Agent's report waits for the budget and one frame more (13 s,
 `REPORT_REPLY_BUDGET`), which covers the margin. The managed tray's
 `ServiceClient` bounds only its 2 s connect and waits for the reply without a
