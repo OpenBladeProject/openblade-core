@@ -542,6 +542,12 @@ async fn explicit_requests_on_battery_in_low_power_store_and_apply_once() {
     let applied = report(&rig, 13, Some(r"C:\Tools\Other.exe")).await;
     assert!(sent(&rig) > before, "{applied}");
     assert_eq!(owed(&rig), None, "{applied}");
+    // The stored preset and Automatic fans, confirmed once by paired readback.
+    assert_eq!(applied["result"]["status"], 1, "{applied}");
+    {
+        let s = rig.port.state.lock().unwrap();
+        assert_eq!((s.selectors, s.fans), ([3; 2], [0; 2]), "{applied}");
+    }
     let after = sent(&rig);
     let renewed = report(&rig, 14, Some(r"C:\Tools\Other.exe")).await;
     assert_eq!(renewed["result"], json!({"status":0,"message":INACTIVE}));
@@ -549,10 +555,13 @@ async fn explicit_requests_on_battery_in_low_power_store_and_apply_once() {
     rig.stop().await;
 }
 
-/// Managed's explicit rows on AC: managed classifies the adapter it last
-/// read and stores the override. Native classifies AC only from a fresh
-/// adapter reading, which the gate refuses, so it stores nothing and replies
-/// as unclassified power, with the same status and no setter.
+/// Managed's explicit rows on AC. Production Windows reports AC to managed
+/// only as `ExternalUnknown`, so managed samples the adapter from firmware
+/// while its gate is set and stores only when that reading classifies; these
+/// rows were recorded against a test double that classifies it. Native
+/// declines any firmware read in low power, so it stores nothing and replies
+/// as unclassified power, as managed does when its reading does not
+/// classify, with the same status and no setter.
 #[tokio::test]
 async fn explicit_requests_on_ac_in_low_power_store_nothing() {
     let vectors: Value = serde_json::from_str(LOW_POWER_VECTORS).unwrap();
@@ -767,6 +776,12 @@ async fn the_gate_clearing_after_storage_applies_the_intent_once() {
     let applied = report(&rig, 3, Some(r"C:\Tools\Other.exe")).await;
     assert!(sent(&rig) > before, "{applied}");
     assert_eq!(owed(&rig), None, "{applied}");
+    assert_eq!(applied["result"]["status"], 1, "{applied}");
+    assert_eq!(
+        rig.port.state.lock().unwrap().selectors,
+        [6; 2],
+        "{applied}"
+    );
     let after = sent(&rig);
     report(&rig, 4, Some(r"C:\Tools\Other.exe")).await;
     assert_eq!(sent(&rig), after);
@@ -1410,6 +1425,16 @@ async fn a_fan_request_alone_in_low_power_is_applied_once_after_the_gate_clears(
     let applied = report(&rig, 3, Some(r"C:\Tools\Other.exe")).await;
     assert!(sent(&rig) > before, "{applied}");
     assert_eq!(owed(&rig), None, "{applied}");
+    // Maximum fans on battery have no native recipe: the reconciliation reads
+    // firmware, applies nothing and says so.
+    assert!(
+        applied["result"]["message"]
+            .as_str()
+            .is_some_and(|m| m.contains("needs a native recipe")),
+        "{applied}"
+    );
+    assert_eq!(writes(&rig), 0, "{applied}");
+    assert_eq!(rig.port.state.lock().unwrap().fans, [0; 2], "{applied}");
     let after = sent(&rig);
     report(&rig, 4, Some(r"C:\Tools\Other.exe")).await;
     assert_eq!(sent(&rig), after);
@@ -1477,4 +1502,439 @@ async fn a_fan_step_refused_at_its_own_admission_in_low_power_stores_nothing() {
     rig.port.state.lock().unwrap().fans = [0; 2];
     rig.origin.stop();
     let _ = rig.source.lock().await.drain().await;
+}
+
+/// The reply of an explicit performance request stored in low power.
+fn stored_performance() -> Value {
+    json!({"status":2,"message":format!("Performance override intent was stored. Hardware result: {LOW_POWER_PERFORMANCE}")})
+}
+/// The reply of an explicit fan request stored in low power.
+fn stored_fans() -> Value {
+    json!({"status":2,"message":format!("Fan override intent was stored. Hardware result: {LOW_POWER_STEP}")})
+}
+/// Suspends the rig at the `at`-th adapter reading from now.
+fn suspend_at_power_read(rig: &Rig, at: usize) {
+    let custody = rig.custody.clone();
+    let target = rig.port.state.lock().unwrap().power_reads + at;
+    rig.port.state.lock().unwrap().on_power = Some(Arc::new(move |read| {
+        if read == target {
+            custody.lifecycle.ingress(POWER, SUSPEND);
+        }
+    }));
+}
+
+/// An explicit request that the gate overtakes after its own authorization,
+/// during its first setter's adapter reading, has stored its intent and
+/// submitted nothing: it replies, owes and is applied after the gate clears
+/// exactly as the same request does when the gate was already set.
+#[tokio::test]
+async fn an_explicit_request_the_gate_overtakes_before_submission_is_a_deferral() {
+    for overtaken in [false, true] {
+        let rig = battery_rig(gated).await;
+        rig.custody.scoped_fresh.store(true, Ordering::Release);
+        if overtaken {
+            suspend_at_power_read(&rig, 2);
+        } else {
+            suspend(&rig);
+        }
+        let reply = rig.set(2, value(4, 1)).await;
+        rig.port.state.lock().unwrap().on_power = None;
+        assert_eq!(reply["result"], stored_performance(), "{overtaken}");
+        assert_eq!(overrides(&rig)["performance"], 4, "{overtaken}");
+        assert_eq!(owed(&rig), Some(0), "{overtaken}");
+        assert_eq!(writes(&rig), 0, "{overtaken}");
+        resume(&rig);
+        let applied = report(&rig, 3, Some(r"C:\Tools\Other.exe")).await;
+        assert_eq!(applied["result"]["status"], 1, "{overtaken} {applied}");
+        assert_eq!(owed(&rig), None, "{overtaken} {applied}");
+        assert_eq!(rig.port.state.lock().unwrap().selectors, [6; 2]);
+        rig.stop().await;
+    }
+}
+
+/// The same for a fan request, which on battery has no native recipe and so
+/// is never confirmed: a gate that set and cleared again while it ran,
+/// after its store and with nothing submitted, makes it the deferral a store
+/// at the set gate is, owing the same reconciliation.
+#[tokio::test]
+async fn a_fan_request_the_gate_overtakes_before_submission_is_a_deferral() {
+    for overtaken in [false, true] {
+        let mut calls = None;
+        let rig = battery_rig(|rig| {
+            if overtaken {
+                // Check 1 is the request's own after its write admission.
+                calls = Some(gate_set_at_check(rig, 2));
+            } else {
+                gated(rig);
+            }
+        })
+        .await;
+        rig.custody.scoped_fresh.store(true, Ordering::Release);
+        if !overtaken {
+            suspend(&rig);
+        }
+        let reply = rig.request(fan_request(2, Some(3), 3700)).await;
+        assert_eq!(calls.map(|c| c.get()), overtaken.then_some(2));
+        assert_eq!(reply["result"], stored_fans(), "{overtaken}");
+        assert_eq!(overrides(&rig)["fans"], 3, "{overtaken}");
+        assert_eq!(owed(&rig), Some(0), "{overtaken}");
+        assert_eq!(writes(&rig), 0, "{overtaken}");
+        rig.origin.stop();
+        let _ = rig.source.lock().await.drain().await;
+    }
+}
+
+/// A request the gate overtakes after a setter may have been submitted keeps
+/// its own result: it is never relabelled a deferral and owes nothing new.
+#[tokio::test]
+async fn a_possibly_submitted_request_the_gate_overtakes_keeps_its_result() {
+    let rig = battery_rig(gated).await;
+    rig.custody.scoped_fresh.store(true, Ordering::Release);
+    // The reading after the first setter, at its readback.
+    suspend_at_power_read(&rig, 3);
+    let reply = rig.set(2, value(4, 1)).await;
+    rig.port.state.lock().unwrap().on_power = None;
+    assert!(writes(&rig) > 0, "{reply}");
+    assert_ne!(reply["result"], stored_performance(), "{reply}");
+    assert_eq!(owed(&rig), None, "{reply}");
+    rig.origin.stop();
+    let _ = rig.source.lock().await.drain().await;
+}
+
+/// A fan clear whose resulting profile fan settings the domain decoder
+/// refuses (a fixed speed above the 5400 RPM bound) stores nothing and owes
+/// nothing, in low power and awake: everything the save leaves is read before
+/// it commits (`Storage::plan_fan_save`).
+#[tokio::test]
+async fn a_fan_clear_to_refused_profile_settings_stores_nothing() {
+    const NOT_ACCEPTED: &str =
+        "Fan intent was not accepted; fresh admission or persistence did not complete.";
+    for low_power in [true, false] {
+        let rig = battery_rig(gated).await;
+        let mut document = rig.files.document("profiles.json");
+        let mut control = crate::installed::readiness::thermal_storage::legacy_fan(0);
+        control["fixedSpeedRpm"] = json!(5500);
+        document["profiles"]["battery"]["fanControl"] = control;
+        rig.files.put("profiles.json", document);
+        rig.files.commit_configuration();
+        rig.storage
+            .save_fan(
+                Some(crate::service_status::FanOverride {
+                    value: 3,
+                    lifetime: 1,
+                }),
+                None,
+                1,
+            )
+            .unwrap();
+        let document = rig.files.read("manual-overrides.json").unwrap();
+        rig.custody.scoped_fresh.store(true, Ordering::Release);
+        if low_power {
+            suspend(&rig);
+        }
+        let cleared = rig.request(fan_request(2, None, 3700)).await;
+        assert_eq!(
+            cleared["result"],
+            json!({"status":2,"message":NOT_ACCEPTED}),
+            "{low_power}"
+        );
+        assert_eq!(
+            rig.files.read("manual-overrides.json").unwrap(),
+            document,
+            "{low_power}"
+        );
+        assert_eq!(owed(&rig), None, "{low_power}");
+        assert_eq!(writes(&rig), 0, "{low_power}");
+        rig.origin.stop();
+        let _ = rig.source.lock().await.drain().await;
+    }
+}
+
+/// A Reader that cannot activate a mutation owner (activation known
+/// unpublished, or uncertain and fenced) stores nothing awake, while the
+/// storage capture stores in low power, where no activation is attempted.
+/// After the gate clears the reconciliation it owes is refused at the same
+/// activation, writes nothing and settles the debt.
+#[tokio::test]
+async fn an_unactivated_reader_stores_only_in_low_power_and_writes_nothing() {
+    for refusal in [1u8, 2] {
+        // No report has activated the Reader's owner yet.
+        let files = MemoryFiles::default();
+        files.profiles(2);
+        let rig = rig_at(files, 3);
+        rig.port.state.lock().unwrap().actual = 0;
+        rig.metadata.store(1, Ordering::Release);
+        gated(&rig);
+        rig.custody
+            .activation_refusal
+            .store(refusal, Ordering::Release);
+        let awake = rig.set(2, value(4, 1)).await;
+        assert_eq!(
+            awake["result"],
+            json!({"status":2,"message":"Performance intent was not accepted; admission or protected persistence failed."}),
+            "{refusal}"
+        );
+        assert!(
+            rig.files.read("manual-overrides.json").unwrap().is_none(),
+            "{refusal}"
+        );
+        rig.custody.scoped_fresh.store(true, Ordering::Release);
+        suspend(&rig);
+        let asleep = rig.set(3, value(4, 1)).await;
+        assert_eq!(asleep["result"], stored_performance(), "{refusal}");
+        assert_eq!(owed(&rig), Some(0), "{refusal}");
+        rig.custody.scoped_fresh.store(false, Ordering::Release);
+        resume(&rig);
+        let after = report(&rig, 4, Some(r"C:\Tools\Other.exe")).await;
+        assert_eq!(after["result"]["status"], 2, "{refusal} {after}");
+        assert_eq!(owed(&rig), None, "{refusal} {after}");
+        assert_eq!(writes(&rig), 0, "{refusal}");
+        assert_eq!(rig.custody.activations.load(Ordering::Acquire), 0);
+        rig.origin.stop();
+        let _ = rig.source.lock().await.drain().await;
+    }
+}
+
+/// A storage capture never authorizes a read or write, even when the gate
+/// clears between the capture and the request's own authorization: the
+/// request then neither stores nor submits.
+#[tokio::test]
+async fn a_storage_capture_never_authorizes_after_the_gate_clears() {
+    let calls = Rc::new(Cell::new(0u32));
+    let counted = calls.clone();
+    let rig = battery_rig(|rig| {
+        let custody = rig.custody.clone();
+        rig.runtime.read_low_power(move || {
+            counted.set(counted.get() + 1);
+            let read = custody.lifecycle.low_power();
+            if counted.get() == 1 && read.is_some_and(|t| t.suspending()) {
+                custody.lifecycle.ingress(POWER, RESUME);
+            }
+            read
+        });
+    })
+    .await;
+    rig.custody.scoped_fresh.store(true, Ordering::Release);
+    let document = rig.files.read("manual-overrides.json").unwrap();
+    suspend(&rig);
+    let frames = sent(&rig);
+    let reply = rig.set(2, value(4, 1)).await;
+    assert_eq!(
+        reply["result"],
+        json!({"status":2,"message":"Current thermal admission is unavailable; no intent or command was submitted."})
+    );
+    assert_eq!(calls.get(), 2);
+    assert_eq!(writes(&rig), 0);
+    assert_eq!(sent(&rig), frames);
+    assert_eq!(rig.files.read("manual-overrides.json").unwrap(), document);
+    assert_eq!(owed(&rig), None);
+    rig.origin.stop();
+    let _ = rig.source.lock().await.drain().await;
+}
+
+/// Unknown Windows power classifies nothing in low power: no request stores.
+#[tokio::test]
+async fn unknown_windows_power_in_low_power_stores_nothing() {
+    for scoped in [true, false] {
+        let rig = battery_rig(gated).await;
+        rig.custody.scoped_fresh.store(scoped, Ordering::Release);
+        suspend(&rig);
+        rig.port.state.lock().unwrap().windows_on_battery = Some(None);
+        let document = rig.files.read("manual-overrides.json").unwrap();
+        let performance = rig.set(2, value(4, 1)).await;
+        let fans = rig.request(fan_request(3, Some(3), 3700)).await;
+        for reply in [&performance, &fans] {
+            assert_eq!(reply["result"]["status"], 2, "{scoped} {reply}");
+        }
+        assert_eq!(rig.files.read("manual-overrides.json").unwrap(), document);
+        assert_eq!(owed(&rig), None);
+        rig.origin.stop();
+        let _ = rig.source.lock().await.drain().await;
+    }
+}
+
+/// Intent stored on battery in low power owes every class: the laptop that
+/// resumes on AC applies it.
+#[tokio::test]
+async fn a_battery_store_in_low_power_is_reconciled_on_ac_after_resume() {
+    let rig = battery_rig(gated).await;
+    rig.custody.scoped_fresh.store(true, Ordering::Release);
+    suspend(&rig);
+    let fans = rig.request(fan_request(2, Some(3), 3700)).await;
+    assert_eq!(fans["result"], stored_fans());
+    assert_eq!(owed(&rig), Some(0));
+    rig.custody.scoped_fresh.store(false, Ordering::Release);
+    {
+        let mut s = rig.port.state.lock().unwrap();
+        s.windows_on_battery = None;
+        s.actual = s.recommended;
+    }
+    rig.metadata.store(0, Ordering::Release);
+    resume(&rig);
+    let frames = sent(&rig);
+    let applied = report(&rig, 3, Some(r"C:\Tools\Other.exe")).await;
+    assert!(sent(&rig) > frames, "{applied}");
+    assert_eq!(owed(&rig), None, "{applied}");
+    assert_eq!(rig.port.state.lock().unwrap().fans, [1; 2], "{applied}");
+    rig.port.state.lock().unwrap().fans = [0; 2];
+    rig.port.state.lock().unwrap().selectors = [0; 2];
+    rig.origin.stop();
+    let _ = rig.source.lock().await.drain().await;
+}
+
+/// Managed's own validation rejects before storing in low power as awake:
+/// Failed, nothing stored, nothing owed.
+#[tokio::test]
+async fn rejected_requests_store_nothing_in_low_power() {
+    let rig = battery_rig(gated).await;
+    rig.custody.scoped_fresh.store(true, Ordering::Release);
+    suspend(&rig);
+    let document = rig.files.read("manual-overrides.json").unwrap();
+    // Balanced is not a battery preset (`PerformancePowerSourcePolicy.IsAllowed`).
+    let performance = rig.set(2, value(1, 1)).await;
+    assert_eq!(performance["result"]["status"], 3, "{performance}");
+    // A manual curve needs full external power on this backend.
+    let fans = rig.request(fan_request(3, Some(2), 3700)).await;
+    assert_eq!(fans["result"]["status"], 3, "{fans}");
+    assert_eq!(rig.files.read("manual-overrides.json").unwrap(), document);
+    assert_eq!(owed(&rig), None);
+    rig.origin.stop();
+    let _ = rig.source.lock().await.drain().await;
+}
+
+/// A temporary override stored in low power on battery is saved at the
+/// battery class, so the first report after the gate clears applies it.
+#[tokio::test]
+async fn a_temporary_override_stored_in_low_power_is_applied() {
+    let rig = battery_rig(gated).await;
+    rig.custody.scoped_fresh.store(true, Ordering::Release);
+    suspend(&rig);
+    let stored = rig.set(2, value(4, 0)).await;
+    assert_eq!(stored["result"], stored_performance());
+    rig.custody.scoped_fresh.store(false, Ordering::Release);
+    resume(&rig);
+    let before = writes(&rig);
+    let applied = report(&rig, 3, Some(r"C:\Tools\Other.exe")).await;
+    assert_eq!(applied["result"]["status"], 1, "{applied}");
+    assert!(writes(&rig) > before, "{applied}");
+    assert_eq!(rig.port.state.lock().unwrap().selectors, [6; 2]);
+    assert_eq!(owed(&rig), None);
+    rig.stop().await;
+}
+
+/// A report and a save in low power keep their storage admission: a lost
+/// console or a refused supplier refuses both before anything is recorded.
+#[tokio::test]
+async fn reports_and_saves_in_low_power_keep_their_storage_admission() {
+    const UNAVAILABLE: &str =
+        "Saved configuration or the current session is unavailable: permission denied";
+    for case in ["console", "supplier"] {
+        let rig = rig_at(files_with_game(json!({"pluggedIn":{"performance":2}})), 0);
+        gated(&rig);
+        rig.custody.scoped_fresh.store(true, Ordering::Release);
+        suspend(&rig);
+        match case {
+            "console" => rig.custody.current_console.store(false, Ordering::Release),
+            _ => rig.custody.fresh_refuse.store(true, Ordering::Release),
+        }
+        let reported = report(&rig, 1, Some(r"C:\Games\Game.exe")).await;
+        assert_eq!(
+            reported["result"]["message"], UNAVAILABLE,
+            "{case} {reported}"
+        );
+        let before = rig.files.read("profiles.json").unwrap();
+        let saved = rig
+            .request(update(2, &with_game_performance(&rig.files, 1)))
+            .await;
+        assert_eq!(saved["result"]["message"], UNAVAILABLE, "{case} {saved}");
+        assert_eq!(rig.files.read("profiles.json").unwrap(), before, "{case}");
+        assert_eq!(sent(&rig), 0, "{case}");
+        rig.origin.stop();
+        let _ = rig.source.lock().await.drain().await;
+    }
+}
+
+/// Only a request that stored its intent is relabelled. A performance
+/// request refused at its own authorization before its store, or one that
+/// fenced the store, keeps its own result; so does a fan request its own
+/// checks reject, and a fan request that confirmed while the gate moved.
+#[tokio::test]
+async fn only_a_stored_unconfirmed_request_is_a_deferral() {
+    // Refused before the store: the suspend lands at the request's own
+    // adapter reading, ahead of its authorization and save.
+    let rig = battery_rig(gated).await;
+    rig.custody.scoped_fresh.store(true, Ordering::Release);
+    suspend_at_power_read(&rig, 1);
+    let refused = rig.set(2, value(4, 1)).await;
+    rig.port.state.lock().unwrap().on_power = None;
+    assert_ne!(refused["result"], stored_performance(), "{refused}");
+    assert!(
+        rig.files.read("manual-overrides.json").unwrap().is_none(),
+        "{refused}"
+    );
+    assert_eq!(owed(&rig), None, "{refused}");
+    rig.origin.stop();
+    let _ = rig.source.lock().await.drain().await;
+
+    // Stored, then the store fenced with nothing submitted: the fence's
+    // storage reconciliation decides what happens next.
+    let rig = battery_rig(gated).await;
+    rig.custody.scoped_fresh.store(true, Ordering::Release);
+    let custody = rig.custody.clone();
+    let storage = rig.storage.clone();
+    let target = rig.port.state.lock().unwrap().power_reads + 2;
+    rig.port.state.lock().unwrap().on_power = Some(Arc::new(move |read| {
+        if read == target {
+            storage.quarantine_settlement().unwrap();
+            custody.lifecycle.ingress(POWER, SUSPEND);
+        }
+    }));
+    let fenced = rig.set(2, value(4, 1)).await;
+    rig.port.state.lock().unwrap().on_power = None;
+    assert!(rig.storage.pending());
+    assert_eq!(writes(&rig), 0, "{fenced}");
+    assert_ne!(fenced["result"], stored_performance(), "{fenced}");
+    assert_eq!(owed(&rig), None, "{fenced}");
+    rig.origin.stop();
+    let _ = rig.source.lock().await.drain().await;
+
+    // A fan request its own checks reject, while the gate moves.
+    let mut calls = None;
+    let rig = battery_rig(|rig| calls = Some(gate_set_at_check(rig, 2))).await;
+    rig.custody.scoped_fresh.store(true, Ordering::Release);
+    let rejected = rig.request(fan_request(2, Some(2), 3700)).await;
+    assert_eq!(rejected["result"]["status"], 3, "{rejected}");
+    assert_eq!(owed(&rig), None, "{rejected}");
+    rig.origin.stop();
+    let _ = rig.source.lock().await.drain().await;
+
+    // A fan request that confirms firmware already at its target, with no
+    // setter and so no journal row, while the gate generation moves without
+    // setting the gate (a new resume moves it by two).
+    let generation = Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let probe = generation.clone();
+    let rig = battery_rig(|rig| {
+        rig.runtime.read_low_power(move || {
+            Some(Transition {
+                generation: probe.load(Ordering::Acquire),
+                timestamp: 0,
+            })
+        })
+    })
+    .await;
+    rig.custody.scoped_fresh.store(true, Ordering::Release);
+    let target = rig.port.state.lock().unwrap().power_reads + 1;
+    let moved = generation.clone();
+    rig.port.state.lock().unwrap().on_power = Some(Arc::new(move |read| {
+        if read == target {
+            moved.fetch_add(2, Ordering::AcqRel);
+        }
+    }));
+    let confirmed = rig.request(fan_request(2, Some(0), 3700)).await;
+    rig.port.state.lock().unwrap().on_power = None;
+    assert_eq!(generation.load(Ordering::Acquire), 2);
+    assert_eq!(confirmed["result"]["status"], 1, "{confirmed}");
+    assert_eq!(writes(&rig), 0, "{confirmed}");
+    assert_eq!(owed(&rig), None, "{confirmed}");
+    rig.stop().await;
 }
