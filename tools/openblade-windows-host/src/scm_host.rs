@@ -323,7 +323,8 @@ pub(crate) fn installed_ingress(lifecycle: &Lifecycle, code: u32, event: u32, st
 }
 
 /// The installed entry callback and injected outer service use this same action.
-/// Only terminal controls revoke loaded-build custody; routine events fence work.
+/// Only terminal controls revoke loaded-build custody; routine events reach the
+/// lifecycle, which decides what they fence.
 pub(crate) fn installed_notice(
     lifecycle: &Lifecycle,
     code: u32,
@@ -445,7 +446,16 @@ mod power_setting_tests {
 
     #[test]
     fn the_copy_takes_the_declared_payload_up_to_one_dword() {
-        for (declared, copied) in [(0, 0), (1, 1), (3, 3), (4, 4), (8, 4), (u32::MAX, 4)] {
+        // 0x0100_0000 pins the top byte: a three-byte length would read 0.
+        for (declared, copied) in [
+            (0, 0),
+            (1, 1),
+            (3, 3),
+            (4, 4),
+            (8, 4),
+            (0x0100_0000, 4),
+            (u32::MAX, 4),
+        ] {
             let mut header = [0; openblade_domain::power_setting::MAX_LEN];
             header[16..20].copy_from_slice(&u32::to_le_bytes(declared));
             assert_eq!(super::payload_len(&header), copied, "{declared}");
@@ -453,8 +463,7 @@ mod power_setting_tests {
     }
 
     #[test]
-    fn a_short_declared_payload_is_copied_no_further_than_declared() {
-        // A one-byte payload: the read takes the header and that byte only.
+    fn a_payload_shorter_than_one_dword_is_refused() {
         let mut short = CONSOLE_DISPLAY_STATE.to_vec();
         short.extend_from_slice(&1u32.to_le_bytes());
         short.push(1);
@@ -462,6 +471,162 @@ mod power_setting_tests {
         let mut empty = ACDC_POWER_SOURCE.to_vec();
         empty.extend_from_slice(&0u32.to_le_bytes());
         assert_eq!(read(&empty), None);
+    }
+
+    /// Two pages, the second `PAGE_NOACCESS`: a buffer placed to end at the
+    /// boundary faults the test process on any read past what it declares.
+    struct GuardPage {
+        base: *mut u8,
+        page: usize,
+    }
+
+    impl GuardPage {
+        fn new() -> Self {
+            use windows_sys::Win32::System::{
+                Memory::{
+                    MEM_COMMIT, MEM_RESERVE, PAGE_NOACCESS, PAGE_READWRITE, VirtualAlloc,
+                    VirtualProtect,
+                },
+                SystemInformation::{GetSystemInfo, SYSTEM_INFO},
+            };
+            // SAFETY: plain out-parameter.
+            let page = unsafe {
+                let mut info: SYSTEM_INFO = std::mem::zeroed();
+                GetSystemInfo(&mut info);
+                info.dwPageSize as usize
+            };
+            // SAFETY: a fresh private allocation this guard owns and frees.
+            let base = unsafe {
+                VirtualAlloc(
+                    std::ptr::null(),
+                    2 * page,
+                    MEM_RESERVE | MEM_COMMIT,
+                    PAGE_READWRITE,
+                )
+            }
+            .cast::<u8>();
+            assert!(!base.is_null(), "VirtualAlloc");
+            let mut old = 0;
+            // SAFETY: the second page of the allocation above.
+            let protected = unsafe {
+                VirtualProtect(
+                    base.add(page).cast::<c_void>(),
+                    page,
+                    PAGE_NOACCESS,
+                    &mut old,
+                )
+            };
+            assert_ne!(protected, 0, "VirtualProtect");
+            Self { base, page }
+        }
+
+        /// Copies `bytes` so the last one is the last readable byte.
+        fn read_ending_at_boundary(&self, bytes: &[u8]) -> Option<PowerSetting> {
+            assert!(bytes.len() <= self.page);
+            // SAFETY: the destination lies within the readable first page.
+            let start = unsafe { self.base.add(self.page - bytes.len()) };
+            unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), start, bytes.len()) };
+            // SAFETY: the buffer is the header and the payload it declares.
+            unsafe {
+                power_setting_of(
+                    SERVICE_CONTROL_POWEREVENT,
+                    PBT_POWERSETTINGCHANGE,
+                    start.cast::<c_void>(),
+                )
+            }
+        }
+    }
+
+    impl Drop for GuardPage {
+        fn drop(&mut self) {
+            use windows_sys::Win32::System::Memory::{MEM_RELEASE, VirtualFree};
+            // SAFETY: the allocation this guard owns.
+            unsafe { VirtualFree(self.base.cast::<c_void>(), 0, MEM_RELEASE) };
+        }
+    }
+
+    #[test]
+    fn the_read_stops_at_the_declared_payload_before_a_guard_page() {
+        let guard = GuardPage::new();
+        let with = |guid: [u8; 16], declared: u32, payload: &[u8]| {
+            let mut bytes = guid.to_vec();
+            bytes.extend_from_slice(&declared.to_le_bytes());
+            bytes.extend_from_slice(payload);
+            bytes
+        };
+        // Header only, then three of a DWORD: either read faults if it copies
+        // further than DataLength.
+        assert_eq!(
+            guard.read_ending_at_boundary(&with(ACDC_POWER_SOURCE, 0, &[])),
+            None
+        );
+        assert_eq!(
+            guard.read_ending_at_boundary(&with(CONSOLE_DISPLAY_STATE, 3, &[1, 0, 0])),
+            None
+        );
+        // A full DWORD that ends at the boundary still decodes.
+        assert_eq!(
+            guard.read_ending_at_boundary(&with(CONSOLE_DISPLAY_STATE, 4, &1u32.to_le_bytes())),
+            Some(PowerSetting::ConsoleDisplay(1))
+        );
+    }
+}
+
+/// `control` forwards each SCM control, with its decoded payload, to the
+/// bound ingress. The ingress binds once per process, and only this test in
+/// each test binary binds it.
+#[cfg(test)]
+mod control_tests {
+    use std::{ffi::c_void, sync::Mutex};
+
+    use openblade_domain::power_setting::{
+        CONSOLE_DISPLAY_STATE, PBT_POWERSETTINGCHANGE, PowerSetting,
+    };
+    use windows_sys::Win32::System::Services::SERVICE_CONTROL_POWEREVENT;
+
+    use super::{control, set_ingress};
+
+    type Seen = (u32, u32, Option<PowerSetting>);
+    static SEEN: Mutex<Vec<Seen>> = Mutex::new(Vec::new());
+
+    fn record(code: u32, event: u32, setting: Option<PowerSetting>) {
+        SEEN.lock().unwrap().push((code, event, setting));
+    }
+
+    #[test]
+    fn control_forwards_the_code_event_and_decoded_setting_to_the_ingress() {
+        set_ingress(record).unwrap();
+        assert!(set_ingress(record).is_err(), "the ingress binds once");
+        let mut on = CONSOLE_DISPLAY_STATE.to_vec();
+        on.extend_from_slice(&4u32.to_le_bytes());
+        on.extend_from_slice(&1u32.to_le_bytes());
+        // SAFETY: the buffer is a complete POWERBROADCAST_SETTING; the
+        // suspend control carries no data.
+        unsafe {
+            control(
+                SERVICE_CONTROL_POWEREVENT,
+                PBT_POWERSETTINGCHANGE,
+                on.as_mut_ptr().cast::<c_void>(),
+                std::ptr::null_mut(),
+            );
+            control(
+                SERVICE_CONTROL_POWEREVENT,
+                4,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            );
+        }
+        assert_eq!(
+            *SEEN.lock().unwrap(),
+            [
+                (
+                    SERVICE_CONTROL_POWEREVENT,
+                    PBT_POWERSETTINGCHANGE,
+                    Some(PowerSetting::ConsoleDisplay(1))
+                ),
+                (SERVICE_CONTROL_POWEREVENT, 4, None),
+            ]
+        );
     }
 }
 
