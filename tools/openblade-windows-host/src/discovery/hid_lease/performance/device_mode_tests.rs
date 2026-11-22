@@ -14,8 +14,9 @@ use std::sync::{
 /// no reply and `stall` never completes the query's GET. Verification fails
 /// at the 1-based `fail_verify` call (0 never). Every submitted report is
 /// recorded as (class, ID, payload), each query's transaction ID in
-/// `query_ids` and the time from its send to its GET in `settles`. Each
-/// thermal getter holds the worker thread for `hold` of wall time.
+/// `query_ids` and the time from its send to its GET in `settles`.
+/// Retirement completes `retirement` after it starts, on the job clock, and
+/// then sets `retired`.
 pub(crate) struct KeyboardIo {
     transactions: Transactions,
     pub(crate) mode: Mutex<Option<(u8, Vec<u8>)>>,
@@ -26,7 +27,8 @@ pub(crate) struct KeyboardIo {
     pub(crate) sent: Mutex<Vec<(u8, u8, Vec<u8>)>>,
     pub(crate) query_ids: Mutex<Vec<u8>>,
     pub(crate) settles: Mutex<Vec<Duration>>,
-    pub(crate) hold: Mutex<Duration>,
+    pub(crate) retirement: Mutex<Duration>,
+    pub(crate) retired: AtomicBool,
 }
 impl KeyboardIo {
     pub(crate) fn new(mode: Option<(u8, Vec<u8>)>) -> Arc<Self> {
@@ -40,7 +42,8 @@ impl KeyboardIo {
             sent: Mutex::default(),
             query_ids: Mutex::default(),
             settles: Mutex::default(),
-            hold: Mutex::default(),
+            retirement: Mutex::default(),
+            retired: AtomicBool::new(false),
         })
     }
     pub(crate) fn queries(&self) -> usize {
@@ -48,19 +51,21 @@ impl KeyboardIo {
         sent.iter().filter(|(class, ..)| *class == 0).count()
     }
 }
-struct KeyboardPort {
+pub(super) struct KeyboardPort {
     io: Arc<KeyboardIo>,
     reply: Option<(usize, Frame)>,
     pending: Option<io::Result<(usize, Frame)>>,
     query_sent: Option<Instant>,
+    retiring: Option<Instant>,
 }
 impl KeyboardPort {
-    fn new(io: Arc<KeyboardIo>) -> Self {
+    pub(super) fn new(io: Arc<KeyboardIo>) -> Self {
         Self {
             io,
             reply: None,
             pending: None,
             query_sent: None,
+            retiring: None,
         }
     }
 }
@@ -90,14 +95,10 @@ impl Port for KeyboardPort {
                     .push((class, id, payload.clone()));
                 self.query_sent = None;
                 self.reply = match (class, id) {
-                    (CLASS, GET_THERMAL) => {
-                        let hold = *self.io.hold.lock().unwrap();
-                        std::thread::sleep(hold);
-                        Some((
-                            FRAME_LENGTH,
-                            super::tests::reply(transaction, &[1, payload[1], 0, 0]),
-                        ))
-                    }
+                    (CLASS, GET_THERMAL) => Some((
+                        FRAME_LENGTH,
+                        super::tests::reply(transaction, &[1, payload[1], 0, 0]),
+                    )),
                     (0, 0x84) => {
                         self.io.query_ids.lock().unwrap().push(transaction);
                         self.query_sent = Some(Instant::now());
@@ -140,7 +141,12 @@ impl Port for KeyboardPort {
     }
     fn cancel(&mut self) {}
     fn poll_retirement(&mut self) -> io::Result<bool> {
+        let started = *self.retiring.get_or_insert_with(Instant::now);
+        if Instant::now() < started + *self.io.retirement.lock().unwrap() {
+            return Ok(false);
+        }
         self.pending.take();
+        self.io.retired.store(true, Ordering::Release);
         Ok(true)
     }
 }
@@ -168,7 +174,7 @@ pub(crate) fn keyboard_io_worker(
     )
 }
 
-const ADMISSION: ReadAdmission = ReadAdmission {
+pub(super) const ADMISSION: ReadAdmission = ReadAdmission {
     lifecycle: 1,
     generation: [7; 32],
 };
@@ -189,6 +195,10 @@ struct Outcome {
 /// One `observe_job` on a fresh Reader with a two-second limit, then a second
 /// thermal observation on that Reader.
 fn reader_job(io: &Arc<KeyboardIo>, device_mode: bool) -> Outcome {
+    reader_job_within(io, device_mode, Duration::from_secs(2))
+}
+
+fn reader_job_within(io: &Arc<KeyboardIo>, device_mode: bool, budget: Duration) -> Outcome {
     let cancelled = AtomicBool::new(false);
     let mut reader = Reader::new(KeyboardPort::new(io.clone()), ADMISSION);
     tokio::runtime::Builder::new_current_thread()
@@ -198,7 +208,7 @@ fn reader_job(io: &Arc<KeyboardIo>, device_mode: bool) -> Outcome {
         .unwrap()
         .block_on(async {
             let limit = Limit {
-                deadline: Instant::now() + Duration::from_secs(2),
+                deadline: Instant::now() + budget,
                 cancelled: &cancelled,
             };
             let result = reader
@@ -309,4 +319,31 @@ fn a_job_that_is_not_asked_sends_no_query() {
     assert_eq!(mode(&job), Some(DeviceModeRead::NotRequested));
     assert_eq!(io.queries(), 0);
     assert_eq!(io.sent.lock().unwrap().len(), 4);
+}
+
+/// With time beyond it, a stalled query waits exactly its own one-second
+/// budget after the thermal read, not the rest of the job.
+#[test]
+fn a_stalled_query_waits_exactly_its_one_second_budget() {
+    let limit = Duration::from_secs(5);
+    let thermal = reader_job_within(&keyboard(DRIVER), false, limit);
+    let io = keyboard(DRIVER);
+    io.stall.store(true, Ordering::Release);
+    let stalled = reader_job_within(&io, true, limit);
+    assert_eq!(mode(&stalled), Some(DeviceModeRead::Unconfirmed));
+    let spent = thermal.left - stalled.left;
+    assert!(spent >= Duration::from_secs(1), "{spent:?}");
+    assert!(spent < Duration::from_secs(1) + 2 * POLL, "{spent:?}");
+}
+
+/// A job with no more than the query's reserve left after its thermal read
+/// keeps that read and sends no query, so the mode stays not requested and
+/// the cadence keeps it due.
+#[test]
+fn a_job_without_time_for_the_query_sends_none() {
+    let io = keyboard(DRIVER);
+    let job = reader_job_within(&io, true, Duration::from_millis(500));
+    assert!(job.result.is_some());
+    assert_eq!(mode(&job), Some(DeviceModeRead::NotRequested));
+    assert_eq!(io.queries(), 0);
 }

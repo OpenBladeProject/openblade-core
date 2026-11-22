@@ -53,6 +53,18 @@ impl Job {
             cancelled: &self.cancelled,
         }
     }
+
+    /// A job that asks for the thermal read alone.
+    #[cfg(test)]
+    pub(super) fn for_tests(deadline: Instant) -> Self {
+        Self {
+            deadline,
+            cancelled: Arc::default(),
+            session: None,
+            #[cfg(feature = "service-keyboard-driver-mode-read-v1")]
+            device_mode: false,
+        }
+    }
 }
 
 type Run<A> = dyn Fn(Job) -> io::Result<Option<Reading<A>>> + Send + Sync;

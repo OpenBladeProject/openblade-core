@@ -334,10 +334,15 @@ jobs:
               ($functionRow + 'feature_lifetime'),
               ($driverMode + 'driver_mode::tests'),
               ($driverMode + 'device_mode'),
+              # The shared job body of every composition: bind, retirement and
+              # the freshness filter.
+              ($driverMode + 'job_tests'),
               ($driverMode + 'native_package'),
               ($driverModeProfiles + 'driver_mode::tests'),
               @('openblade-windows-service-candidate', 'service-mailbox-observation-v1', 'driver_mode_absent'),
               @('openblade-windows-service-candidate', 'service-profiles-v1', 'driver_mode_absent'),
+              @('openblade-windows-service-candidate', 'service-temporary-charge-v1', 'job_tests'),
+              @('openblade-windows-service-candidate', 'service-metadata-only-v1', 'service_status::object_tests'),
               @('openblade-windows-service-candidate', 'service-profiles-v1', 'device_mode'))) {
             # Capture the exit code instead of throwing, so the output is printed first.
             $PSNativeCommandUseErrorActionPreference = $false

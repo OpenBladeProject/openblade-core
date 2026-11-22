@@ -34,6 +34,8 @@ mod device_mode_guard_tests;
 pub(crate) mod device_mode_tests;
 #[cfg(feature = "service-thermal-mutation-v1")]
 mod fan;
+#[cfg(test)]
+mod job_tests;
 #[cfg(feature = "service-thermal-mutation-v1")]
 pub(crate) mod mutation;
 #[cfg(feature = "service-thermal-mutation-v1")]
@@ -295,6 +297,8 @@ impl<P: Port, A: ObservationProof> Reader<P, A> {
         };
         // Caller timeout revokes delivery, but the worker owns the native
         // resources until terminal I/O and callback drain are both confirmed.
+        // Retirement therefore has no deadline of its own, and a reading whose
+        // retirement ends past the job deadline is discarded below.
         self.retire(None).await?;
         Ok(reading.filter(|_| {
             limit.check().is_ok()
