@@ -545,7 +545,7 @@ public sealed class CoolingPadControlRuntimeTests
     [Theory]
     [InlineData(CoolingPadAutoProfile.Quiet, CoolingPadTemperatureSource.Cpu, 65, null, 700, CoolingPadFanPreset.Quiet)]
     [InlineData(CoolingPadAutoProfile.Balanced, CoolingPadTemperatureSource.Both, 35, 85, 2200, CoolingPadFanPreset.Balanced)]
-    [InlineData(CoolingPadAutoProfile.Performance, CoolingPadTemperatureSource.Gpu, null, 95, 2700, CoolingPadFanPreset.Performance)]
+    [InlineData(CoolingPadAutoProfile.Performance, CoolingPadTemperatureSource.Gpu, null, 86, 2700, CoolingPadFanPreset.Performance)]
     public async Task AutoSelectsTheProfilePresetAndTheSynapseTableTarget(CoolingPadAutoProfile profile,
         CoolingPadTemperatureSource source, int? cpu, int? gpu, int expected, CoolingPadFanPreset preset)
     {
@@ -609,7 +609,7 @@ public sealed class CoolingPadControlRuntimeTests
         Assert.Contains("waiting for a reading", runtime.Status.Message);
 
         // The filter restarts from the fresh reading, so sustained heat raises the target.
-        temperatures.Reading = new(95, null);
+        temperatures.Reading = new(94, null);
         clock.Now = clock.Now.AddSeconds(1);
         await runtime.MaintainAsync(() => true, default);
         Assert.True(runtime.Status.Active);
@@ -669,7 +669,7 @@ public sealed class CoolingPadControlRuntimeTests
         await runtime.ApplyAsync(settings, () => true, default);
         Assert.Equal(1000, runtime.Status.ConfirmedTargetRpm);
 
-        temperatures.Reading = new(95, null);
+        temperatures.Reading = new(94, null);
         clock.Now = clock.Now.AddSeconds(1);
         await runtime.MaintainAsync(() => true, default);
         temperatures.Reading = new(65, null);
@@ -678,7 +678,7 @@ public sealed class CoolingPadControlRuntimeTests
         Assert.Single(provider.Pad.Writes);
         Assert.True(runtime.Status.Active);
 
-        temperatures.Reading = new(95, null);
+        temperatures.Reading = new(94, null);
         for (int second = 0; second < 15; second++)
         {
             clock.Now = clock.Now.AddSeconds(1);
@@ -705,8 +705,8 @@ public sealed class CoolingPadControlRuntimeTests
         await runtime.ApplyAsync(settings, () => true, default);
         Assert.Equal(1600, runtime.Status.ConfirmedTargetRpm);
 
-        // A one-second 95 C spike moves the smoothed input about 5 C, not to the 2200 RPM end.
-        temperatures.Reading = new(95, null);
+        // A one-second 94 C spike moves the smoothed input about 5 C, not to the 2200 RPM end.
+        temperatures.Reading = new(94, null);
         clock.Now = clock.Now.AddSeconds(1);
         await runtime.MaintainAsync(() => true, default);
         Assert.InRange(runtime.Status.ConfirmedTargetRpm!.Value, 1650, 1800);
@@ -718,6 +718,63 @@ public sealed class CoolingPadControlRuntimeTests
             await runtime.MaintainAsync(() => true, default);
         }
         Assert.Equal(2200, runtime.Status.ConfirmedTargetRpm);
+        Assert.True(runtime.Status.Active);
+    }
+
+    private static CoolingPadSettings QuietAuto(CoolingPadTemperatureSource source) => Fixed with
+    {
+        FanMode = CoolingPadFanMode.Auto,
+        AutoProfile = CoolingPadAutoProfile.Quiet,
+        TemperatureSource = source,
+    };
+
+    public static TheoryData<CoolingPadSettings, FanTemperatureReadings, int> EmergencyCases => new()
+    {
+        // The laptop curve's raw limits: CPU 95 C and GPU 87 C run the pad at its maximum.
+        { QuietAuto(CoolingPadTemperatureSource.Cpu), new(95, null), CoolingPadSettings.MaximumRpm },
+        { QuietAuto(CoolingPadTemperatureSource.Cpu), new(94, null), 1600 },
+        { QuietAuto(CoolingPadTemperatureSource.Gpu), new(null, 87), CoolingPadSettings.MaximumRpm },
+        { QuietAuto(CoolingPadTemperatureSource.Gpu), new(null, 86), 1600 },
+        { Fixed with { FanMode = CoolingPadFanMode.HostCurve, TemperatureSource = CoolingPadTemperatureSource.Both }, new(65, 87),
+            CoolingPadSettings.MaximumRpm },
+        { QuietAuto(CoolingPadTemperatureSource.Both), new(95, null, GpuPoweredDown: true), CoolingPadSettings.MaximumRpm },
+        // Only the selected sources are read, so a hot GPU does not affect a CPU-only mode.
+        { QuietAuto(CoolingPadTemperatureSource.Cpu), new(65, 90), 700 },
+    };
+
+    [Theory]
+    [MemberData(nameof(EmergencyCases))]
+    public async Task EmergencyLimitsOverrideTheTableAndCurve(CoolingPadSettings settings, FanTemperatureReadings reading, int expected)
+    {
+        var provider = new Provider();
+        var runtime = await CreateAsync(provider, temperatures: new Temperatures { Reading = reading });
+        Assert.Equal(ControlOperationStatus.Applied, (await runtime.ApplyAsync(settings, () => true, default)).Status);
+        Assert.Equal(expected, runtime.Status.ConfirmedTargetRpm);
+        Assert.True(runtime.Status.Active);
+    }
+
+    [Fact]
+    public async Task EmergencyUsesTheRawReadingRatherThanTheSmoothedOne()
+    {
+        var provider = new Provider();
+        var clock = new Clock();
+        var temperatures = new Temperatures { Reading = new(65, null) };
+        var runtime = new CoolingPadControlRuntime(provider, new(), temperatures, clock);
+        await runtime.SetUserAsync("owner", default);
+        await runtime.ApplyAsync(QuietAuto(CoolingPadTemperatureSource.Cpu), () => true, default);
+        Assert.Equal(700, runtime.Status.ConfirmedTargetRpm);
+
+        // Smoothing would move the input only about 5 C; the raw reading crosses the limit.
+        temperatures.Reading = new(95, null);
+        clock.Now = clock.Now.AddSeconds(1);
+        await runtime.MaintainAsync(() => true, default);
+        Assert.Equal(CoolingPadSettings.MaximumRpm, runtime.Status.ConfirmedTargetRpm);
+
+        // Below the limit the table resumes from the smoothed temperature.
+        temperatures.Reading = new(65, null);
+        clock.Now = clock.Now.AddSeconds(1);
+        await runtime.MaintainAsync(() => true, default);
+        Assert.InRange(runtime.Status.ConfirmedTargetRpm!.Value, 700, 1000);
         Assert.True(runtime.Status.Active);
     }
 

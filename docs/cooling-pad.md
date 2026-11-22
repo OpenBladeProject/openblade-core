@@ -18,7 +18,9 @@ Choose Automatic with a Quiet, Balanced or Performance profile, a fixed target
 from 500 to 3200 RPM in 50-RPM steps, a manual fan curve, or Off. Automatic and
 manual curves follow the CPU, the GPU, or both; with both, the higher demand wins.
 Curve input uses the same smoothed temperatures as the laptop's manual fan
-curve, so a brief package spike does not change the fan speed. Fixed targets come from the selected mode configuration; Smart targets are the
+curve, so a brief package spike does not change the fan speed. When the
+selected CPU reaches 95 °C or the GPU 87 °C, Automatic and curves run the pad
+at full speed until the temperature drops. Fixed targets come from the selected mode configuration; Smart targets are the
 ramping speed the firmware reports. Neither is measured fan speed. A missing or stale
 temperature reading pauses curve updates; the pad keeps its last speed and control
 continues. A GPU that Windows reports powered down is ignored: with both sources the
@@ -208,7 +210,11 @@ before the input follows it. There is no timed cooldown hold. A missing sensor
 or a sample gap over 10 seconds starts a fresh history. Safety decisions keep
 using the raw readings: the laptop curve still forces maximum speed immediately
 for a missing CPU reading, an unconfirmed missing GPU, CPU at 95 °C or GPU at
-87 °C, and the pad's missing-reading pause checks the raw reading.
+87 °C, and the pad's missing-reading pause checks the raw reading. The pad's
+Automatic mode and manual curve use the same raw emergency limits: a selected
+CPU at 95 °C or a selected, powered GPU at 87 °C sends 3200 RPM whatever the
+table or curve says. Synapse has no such limit. Fixed targets read no
+temperature and keep their speed.
 
 ## Typed cooling-demand API
 

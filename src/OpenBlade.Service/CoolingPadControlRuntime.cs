@@ -539,7 +539,14 @@ internal sealed class CoolingPadControlRuntime(
         }
         FanTemperatureReadings filtered = temperatureFilter.Filter(reading);
         int target;
-        if (settings.FanMode == CoolingPadFanMode.Auto)
+        // The laptop curve's emergency limits apply to the selected sources' raw readings, so
+        // neither a quiet table or curve nor smoothing can hold the pad back. Synapse has none.
+        if (cpu && reading.CpuCelsius >= FanCurveCalculator.EmergencyCpuCelsius
+            || gpu && !gpuOff && reading.GpuCelsius >= FanCurveCalculator.EmergencyGpuCelsius)
+        {
+            target = CoolingPadSettings.MaximumRpm;
+        }
+        else if (settings.FanMode == CoolingPadFanMode.Auto)
         {
             target = CoolingPadAutoCurves.Target(settings.AutoProfile, settings.TemperatureSource,
                 filtered.CpuCelsius, gpuOff ? null : filtered.GpuCelsius);
