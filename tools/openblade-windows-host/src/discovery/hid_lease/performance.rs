@@ -244,8 +244,8 @@ impl<P: Port, A: ObservationProof> Reader<P, A> {
     }
 
     /// Two IDs that a durable record may name. They stay pinned until this
-    /// Reader retires, and for the process lifetime once `retain` reports the
-    /// record: it may carry them to a later Reader, and the journal requires
+    /// Reader retires, and for the process lifetime once `retain` is called:
+    /// the record may carry them to a later Reader, and the journal requires
     /// a live fan owner's IDs to stay distinct from later battery IDs.
     #[cfg(feature = "service-thermal-mutation-v1")]
     fn reserve_retained_pair(&mut self) -> Option<[u8; 2]> {
@@ -257,7 +257,9 @@ impl<P: Port, A: ObservationProof> Reader<P, A> {
         Some(pair)
     }
 
-    /// A record now names every ID from `reserve_retained_pair`.
+    /// Pins every ID from `reserve_retained_pair` for the process. Call it
+    /// once a record names them, before its first setter could be submitted;
+    /// until then, retirement unpins them.
     #[cfg(feature = "service-thermal-mutation-v1")]
     fn retain(&mut self) {
         self.provisional.clear();

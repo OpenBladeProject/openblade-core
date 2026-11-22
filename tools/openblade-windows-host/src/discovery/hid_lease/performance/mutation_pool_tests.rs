@@ -1,7 +1,7 @@
 //! The transaction-ID pool through the mutation paths of the Reader, on the
-//! in-memory port: recipes and fan no-ops free their IDs; an uncertain
-//! setter's ID, a temporary-charge cancellation's IDs and a prepared fan
-//! record's IDs are never issued again; and an exhausted pool is named.
+//! in-memory port: recipes, fan no-ops and refused fan requests free their
+//! IDs; an uncertain setter's ID, and the IDs a record names once a setter
+//! may be sent, are never issued again; and an exhausted pool is named.
 use super::super::mutation::{Permit, Refusal};
 use super::*;
 use openblade_domain::{
@@ -306,27 +306,75 @@ async fn repeated_fan_no_ops_free_their_unrecorded_preflight_ids() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn a_prepared_fan_record_pins_its_ids_for_the_process() {
+async fn pace_refused_fan_requests_return_their_ids() {
     let fixture = balanced();
+    // At this device pace the recipe cannot fit the request time, so the
+    // pace check before the first setter refuses it after Prepared.
+    fixture.state.lock().unwrap().latency = Some(Duration::from_millis(100));
+    let mut free = Vec::new();
+    for _ in 0..30 {
+        let request = Request {
+            fan: FanIntent::checked(1, 3700),
+            ..Request::default()
+        };
+        let budget = Duration::from_millis(3260);
+        assert_eq!(apply_within(&fixture, &request, budget).await, None);
+        assert_eq!(*request.refusals.lock().unwrap(), [Refusal::Deadline]);
+        assert_eq!(*request.fan_rows.lock().unwrap(), [0]);
+        free.push(fixture.transactions.free());
+    }
+    assert_eq!(fixture.state.lock().unwrap().writes, 0);
+    // Only the preflight replies still readable are kept, and each refusal
+    // replaces the last one's.
+    assert!(free[0] >= 250, "{free:?}");
+    assert!(free.iter().all(|n| *n == free[0]), "{free:?}");
+    // A request with the time it needs is then served.
+    fixture.state.lock().unwrap().latency = None;
     let fixed = Request {
         fan: FanIntent::checked(1, 3700),
         ..Request::default()
     };
     assert!(apply(&fixture, &fixed).await.is_some());
-    assert_eq!(fixture.state.lock().unwrap().writes, 4);
-    let recorded = sent_ids(&fixture);
-    let free = fixture.transactions.free();
-    // The record's two preflight pairs, five recipe pairs and five cleanup
-    // pairs stay pinned.
-    assert_eq!(free, 254 - 24);
-    for _ in 0..300 {
-        assert!(read(&fixture).await.is_some());
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_fan_record_pins_its_ids_once_a_setter_may_have_been_sent() {
+    // The recipe completes, or its first setter's submission fails after the
+    // setter reached the device.
+    for fail in [None, Some(1)] {
+        let fixture = balanced();
+        fixture.state.lock().unwrap().fail_write = fail;
+        let fixed = Request {
+            fan: FanIntent::checked(1, 3700),
+            ..Request::default()
+        };
+        assert_eq!(apply(&fixture, &fixed).await.is_some(), fail.is_none());
+        assert_eq!(
+            fixture.state.lock().unwrap().writes,
+            if fail.is_none() { 4 } else { 1 }
+        );
+        {
+            // Undo the failed setter's half-applied fan state so reads agree.
+            let mut s = fixture.state.lock().unwrap();
+            s.fail_write = None;
+            if fail.is_some() {
+                s.fans = [0, 0];
+            }
+        }
+        let recorded = sent_ids(&fixture);
+        let free = fixture.transactions.free();
+        // The record's two preflight pairs, five recipe pairs and five
+        // cleanup pairs stay pinned, sent or not.
+        assert_eq!(free, 254 - 24, "{fail:?}");
+        for _ in 0..300 {
+            assert!(read(&fixture).await.is_some());
+        }
+        let reads = &sent_ids(&fixture)[recorded.len()..];
+        assert!(reads.len() > 2 * 254);
+        assert!(reads.iter().all(|id| !recorded.contains(id)), "{fail:?}");
+        // The reads keep only their last reply's ID.
+        assert_eq!(fixture.transactions.free(), free - 1, "{fail:?}");
     }
-    let reads = &sent_ids(&fixture)[recorded.len()..];
-    assert!(reads.len() > 2 * 254);
-    assert!(reads.iter().all(|id| !recorded.contains(id)));
-    // The reads keep only their last reply's ID.
-    assert_eq!(fixture.transactions.free(), free - 1);
 }
 
 #[tokio::test(start_paused = true)]

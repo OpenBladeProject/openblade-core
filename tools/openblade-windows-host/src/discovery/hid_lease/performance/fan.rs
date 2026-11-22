@@ -48,7 +48,8 @@ impl<P: Port> Reader<P, ReadAdmission> {
             a.completed = true;
             (b, p, r.preflight)
         } else {
-            // The record names these preflight IDs, so they are retained.
+            // The record names these preflight IDs, so they are pinned with
+            // the recipe's.
             let modes = self.reserve_retained_pair()?;
             let power = self.reserve_retained_pair()?;
             let mut a = Attempt {
@@ -151,7 +152,6 @@ impl<P: Port> Reader<P, ReadAdmission> {
                 .map(|levels| [levels.cpu as u8, levels.gpu as u8]);
             record.validate().ok()?;
             permit.prepare_fan(record.clone()).ok()?;
-            self.retain();
             (plan, ids, performance, Some((remaining, fixed)))
         };
         // Managed keeps an observed AC selector only in the class it first read
@@ -238,8 +238,7 @@ impl<P: Port> Reader<P, ReadAdmission> {
                 // Paced once, before the first intent row (`mutation::Pace`);
                 // owned Stop cleanup is not paced. A refusal here submitted
                 // nothing: retirement records it as known not submitted (row
-                // 6). Its reserved IDs are not reused, as for every operation
-                // that reserves them.
+                // 6) and returns the record's IDs to the pool.
                 if step == 0
                     && let Some((remaining, fixed)) = budget
                     && !pace.covers(
@@ -254,6 +253,11 @@ impl<P: Port> Reader<P, ReadAdmission> {
                     permit.refused(Refusal::Deadline);
                     return None;
                 }
+                // From here a setter may reach the device, and a later Reader
+                // or the journal's cross-family checks may rely on the
+                // record's IDs, so they stay pinned for the process. Owned
+                // Stop cleanup reserved none of its own.
+                a.reader.retain();
                 a.checkpoint(&mut authorize, admission, limit).ok()?;
                 permit
                     .record_fan(if cleanup { 40 } else { 10 } + step as u8 * 2)
