@@ -19,6 +19,13 @@
 //! step is replayed: a fenced store stops the reconciliation. A step still
 //! waiting on a transfer `RECONCILE_MARGIN` past the deadline is dropped as
 //! an explicit request is at its own deadline, and the trigger answers.
+//!
+//! The low-power gate defers a reconciliation as managed
+//! `ApplyFullTransitionAsync` does. Each write's own admission
+//! (`WindowsGuard::authorize_for`, the gate's `epoch_for`) refuses it; the
+//! gate (`Runtime::in_low_power`) is read only after that refusal, to give
+//! managed's reply and to keep the debt owed without spending a retry. The
+//! next report after the gate clears reconciles it.
 use super::fan::FanRequest;
 use super::profiles::Updated;
 use super::*;
@@ -48,6 +55,15 @@ const UNFINISHED_UNSUBMITTED: &str =
 /// so an unbounded debt would read firmware, and draw transaction pairs, on
 /// each one.
 const RETRIES: u8 = 2;
+/// Managed `DeferLightingIntentForLowPower` (`ServiceControlRuntime.cs:19471`):
+/// the message `ApplyFullTransitionAsync` is interrupted with, before any
+/// device access, while the low-power gate is set (`:16360`).
+pub(in super::super) const LOW_POWER_DEFERRED: &str =
+    "Lighting intent was stored and will be applied after standby.";
+/// Managed `ScopedThermalWriteBlockReason`'s low-power clause (`:15421`): a
+/// step whose write admission refused it while the gate was set.
+pub(in super::super) const LOW_POWER_STEP: &str =
+    "The laptop entered a low-power transition before the thermal command was submitted.";
 
 /// The classified classes fresh Windows power admits before any adapter
 /// reading: battery, or on AC the two classified external classes, which
@@ -203,6 +219,10 @@ struct Reconciled {
     // journaled as possibly submitted, and the store is not fenced: running
     // the steps again replays no submission.
     retry: bool,
+    // A step was refused by its write admission while the low-power gate was
+    // set, before anything of it was possibly submitted, and no later step
+    // ran. Such a refusal is transient but spends no retry.
+    deferred: bool,
     // The classes the readings of the steps that needed a change found.
     read: Classes,
     // A step had not finished at the bound (`RECONCILE_MARGIN`).
@@ -213,9 +233,12 @@ struct Reconciled {
 impl Reconciled {
     /// The debt a report's reconciliation of `classes` leaves after
     /// `attempts` earlier transient refusals: settled, unless it may be
-    /// retried and `RETRIES` allows another.
+    /// retried and `RETRIES` allows another. A low-power deferral keeps the
+    /// count, so renewals while the laptop sleeps never exhaust it.
     fn after(&self, classes: Classes, attempts: u8) -> Debt {
-        if self.retry && attempts < RETRIES {
+        if self.retry && self.deferred {
+            Debt::Owed { classes, attempts }
+        } else if self.retry && attempts < RETRIES {
             Debt::Owed {
                 classes,
                 attempts: attempts + 1,
@@ -223,6 +246,11 @@ impl Reconciled {
         } else {
             Debt::Settled
         }
+    }
+    /// The attempts a save's retryable reconciliation spent: the save itself,
+    /// unless the low-power gate deferred it.
+    fn spent(&self) -> u8 {
+        u8::from(!self.deferred)
     }
     /// Managed `ToOperationResult(intentStored)`, with the trigger's prefix.
     /// Managed waits for every step; native answers at its bound while a step
@@ -401,6 +429,16 @@ impl Runtime {
         let admitted = !classes.is_empty() && fresh.authorize().is_some();
         fresh.verify_health()?;
         if !admitted {
+            // Managed checks the gate inside `ApplyFullTransitionAsync`, which
+            // only a changed pair on classified power reaches; it defers
+            // before any device access and replies Blocked. The debt is kept
+            // as it was for the next report after the gate clears.
+            if changed && !classes.is_empty() && self.in_low_power() {
+                return Ok((
+                    Outcome::blocked(format!("{RECORDED} {LOW_POWER_DEFERRED}")),
+                    None,
+                ));
+            }
             return stored(unapplied);
         }
         let reconciled = self
@@ -535,9 +573,22 @@ impl Runtime {
         // write still passes its own admission. A refusal here reads no
         // firmware and leaves the change owed to the next report.
         fresh.verify_health()?;
-        let admitted = !storage.pending() && fresh.authorize().is_some();
+        let pending = storage.pending();
+        let admitted = !pending && fresh.authorize().is_some();
         fresh.verify_health()?;
         if !admitted {
+            // Managed `ApplyFullTransitionAsync` defers in low power after its
+            // pending-reconciliation check; the save is Stored either way.
+            if !pending && self.in_low_power() {
+                return Ok((
+                    Outcome {
+                        status: 0,
+                        message: format!("Profiles were stored. {LOW_POWER_DEFERRED}"),
+                    },
+                    true,
+                    None,
+                ));
+            }
             return stored();
         }
         let reconciled = self
@@ -560,10 +611,11 @@ impl Runtime {
             // before the save is left as it was.
             prior
         } else if reconciled.retry {
-            // The save was the first attempt; later reports retry.
+            // The save was the first attempt, unless the gate deferred it;
+            // later reports retry.
             Debt::Owed {
                 classes: combined,
-                attempts: 1,
+                attempts: reconciled.spent(),
             }
         } else {
             match prior {
@@ -630,8 +682,16 @@ impl Runtime {
         // Each step, and whether it may have submitted.
         let mut steps: Vec<(Stepped, bool)> = Vec::with_capacity(order.len());
         let mut unfinished = false;
+        let mut deferred = false;
         for kind in order {
             if storage.pending() {
+                break;
+            }
+            // Before the step's capture, firmware read or transaction pair,
+            // as managed reads the gate before a transition touches the
+            // device: a suspend after the previous step stops this one.
+            if self.in_low_power() {
+                deferred = true;
                 break;
             }
             let id = step_request(&request, kind);
@@ -686,7 +746,25 @@ impl Runtime {
                 || (storage.last_request().as_deref() == Some(id.as_str())
                     && storage.progress() != Some(Progress::KnownNotSubmitted as u8));
             match stepped {
-                Ok(stepped) => steps.push((stepped?, possible)),
+                Ok(stepped) => {
+                    let stepped = stepped?;
+                    // A refusal by the step's own admission: its capture, its
+                    // authorization before any firmware read or pair, or a
+                    // write's authorization at submission (`epoch_for`).
+                    // While the gate is set that refusal is the deferral. A
+                    // step that may have submitted is not deferred, since
+                    // nothing of it is replayed.
+                    if stepped.outcome.status == 2
+                        && !stepped.unchanged
+                        && !possible
+                        && !storage.pending()
+                        && self.in_low_power()
+                    {
+                        deferred = true;
+                        break;
+                    }
+                    steps.push((stepped, possible));
+                }
                 Err(_) => {
                     unfinished = true;
                     let stepped = if possible {
@@ -709,6 +787,11 @@ impl Runtime {
                     break;
                 }
             }
+        }
+        // The deferred step submitted nothing and may run once the gate
+        // clears; it reports managed's per-write low-power refusal.
+        if deferred {
+            steps.push((Stepped::transient(Outcome::blocked(LOW_POWER_STEP)), false));
         }
         let submitted = steps.iter().any(|(_, possible)| *possible);
         let ran = !unfinished && steps.len() == order.len();
@@ -742,11 +825,29 @@ impl Runtime {
             submitted,
             unchanged,
             retry,
+            deferred,
             read,
             unfinished,
             message,
             snapshot: steps.into_iter().rev().find_map(|(s, _)| s.snapshot),
         })
+    }
+
+    /// Whether the lifecycle's low-power gate is set or unknown now
+    /// (`Runtime::low_power`). It only classifies a refusal that a write's
+    /// own admission already made.
+    fn in_low_power(&self) -> bool {
+        self.low_power.get().is_some_and(|gate| gate())
+    }
+
+    /// The retries the pair has spent while it owes a reconciliation, or
+    /// `None` once it is settled.
+    #[cfg(test)]
+    pub(in super::super) fn owed_attempts(&self, sid: &str, session: u32) -> Option<u8> {
+        match self.debt(&(sid.to_owned(), session)) {
+            Debt::Owed { attempts, .. } => Some(attempts),
+            Debt::Settled => None,
+        }
     }
 
     /// What the pair `key` owes; startup is owed until it is settled.

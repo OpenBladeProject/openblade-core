@@ -1348,3 +1348,6 @@ async fn an_override_document_changed_during_the_baseline_reading_fences_before_
     rig.origin.stop();
     let _ = rig.source.lock().await.drain().await;
 }
+
+#[path = "request_triggers_low_power.rs"]
+mod low_power;

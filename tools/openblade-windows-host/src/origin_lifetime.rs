@@ -143,6 +143,14 @@ impl Lifecycle {
     pub(crate) fn record(&self, code: u32, signal: Option<Signal>, timestamp: i64) {
         self.apply(code, timestamp, true, |_| signal);
     }
+    /// Exhausts the epoch, as `u64::MAX` fencing notices would: the gate then
+    /// reads unknown (`low_power() == None`) and nothing is admitted again.
+    #[cfg(all(test, feature = "service-profile-triggers-v1"))]
+    pub(crate) fn exhaust(&self) {
+        if let Ok(mut state) = self.0.lock() {
+            state.epoch = 0;
+        }
+    }
     fn apply(
         &self,
         code: u32,
@@ -193,7 +201,10 @@ impl Lifecycle {
     /// generation and later test it (`IsActiveForGeneration`). `None` when
     /// the lifecycle is unreadable or exhausted: treat it as low power. Per-write
     /// admission stays authoritative.
-    #[cfg_attr(not(test), allow(dead_code))] // Stage 4b timers and D1 cleanup read it.
+    #[cfg_attr(
+        not(any(test, feature = "service-profile-triggers-v1")),
+        allow(dead_code)
+    )] // Request triggers read it; Stage 4b timers and D1 cleanup will.
     pub(crate) fn low_power(&self) -> Option<Transition> {
         let state = self.0.lock().ok()?;
         (state.epoch != 0).then(|| state.gate.transition())
@@ -201,7 +212,10 @@ impl Lifecycle {
     /// Whether a timer must not arm or must stop now: the gate is set, or
     /// the lifecycle is unreadable or exhausted. This is the fail-closed
     /// form of `low_power()` for callers that need only the answer.
-    #[cfg_attr(not(test), allow(dead_code))] // Stage 4b timers read it.
+    #[cfg_attr(
+        not(any(test, feature = "service-profile-triggers-v1")),
+        allow(dead_code)
+    )] // Request triggers read it; Stage 4b timers will.
     pub(crate) fn low_power_or_unknown(&self) -> bool {
         self.low_power()
             .is_none_or(|transition| transition.suspending())

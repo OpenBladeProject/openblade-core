@@ -86,7 +86,8 @@ mod profiles;
 mod triggers;
 #[cfg(all(test, feature = "service-profile-triggers-v1"))]
 pub(super) use triggers::{
-    APPLICATION_SESSION_REQUIRED, fans_first, is_step_request, operation_status,
+    APPLICATION_SESSION_REQUIRED, LOW_POWER_DEFERRED, LOW_POWER_STEP, fans_first, is_step_request,
+    operation_status,
 };
 pub(super) trait Fresh: Send + Sync {
     /// The fresh Windows power kind: `Some(false)` is AC (ACLineStatus
@@ -183,6 +184,13 @@ pub(super) struct Runtime {
     // intent (`triggers::Debt`); a pair without an entry owes its startup one.
     #[cfg(feature = "service-profile-triggers-v1")]
     debts: Rc<RefCell<std::collections::HashMap<(String, u32), triggers::Debt>>>,
+    // The lifecycle's low-power gate, set or unknown
+    // (`Lifecycle::low_power_or_unknown`). A reconciliation reads it only to
+    // classify a refusal (`triggers`); every write is still refused by its
+    // own admission (`WindowsGuard::authorize_for`). The native composition
+    // sets it; only test composition leaves it unset, which reads clear.
+    #[cfg(feature = "service-profile-triggers-v1")]
+    low_power: Rc<std::cell::OnceCell<Box<dyn Fn() -> bool>>>,
     fan_owner: Rc<RefCell<Option<Arc<fan::FanPermit>>>>,
     temporary_owner: Rc<RefCell<Option<Arc<battery::BatteryPermit>>>>,
     temporary_pending: Rc<RefCell<Option<Arc<battery::BatteryPermit>>>>,
@@ -357,6 +365,8 @@ impl Runtime {
             application: Rc::default(),
             #[cfg(feature = "service-profile-triggers-v1")]
             debts: Rc::default(),
+            #[cfg(feature = "service-profile-triggers-v1")]
+            low_power: Rc::default(),
             fan_owner: Rc::default(),
             temporary_owner: Rc::default(),
             temporary_pending: Rc::default(),
@@ -376,9 +386,20 @@ impl Runtime {
             entered: Rc::default(),
         }
     }
+    /// Reads the low-power gate from `probe` (`Runtime::low_power`). Test
+    /// composition wires its rig's lifecycle here; it may be set once.
+    #[cfg(all(test, feature = "service-profile-triggers-v1"))]
+    pub(super) fn read_low_power(&self, probe: impl Fn() -> bool + 'static) {
+        assert!(self.low_power.set(Box::new(probe)).is_ok());
+    }
     #[cfg(not(test))]
     pub(super) fn native(origin: Arc<Origin>, mailbox: &MailboxSource) -> Self {
         let stores = RefCell::new(None::<(String, Arc<Storage>)>);
+        #[cfg(feature = "service-profile-triggers-v1")]
+        let low_power: Box<dyn Fn() -> bool> = {
+            let origin = origin.clone();
+            Box::new(move || origin.lifecycle.low_power_or_unknown())
+        };
         Self {
             factory: Rc::new(move |sid, session, custody| {
                 let guard = WindowsGuard::capture(
@@ -422,6 +443,8 @@ impl Runtime {
             application: Rc::default(),
             #[cfg(feature = "service-profile-triggers-v1")]
             debts: Rc::default(),
+            #[cfg(feature = "service-profile-triggers-v1")]
+            low_power: Rc::new(low_power.into()),
             fan_owner: Rc::default(),
             temporary_owner: Rc::default(),
             temporary_pending: Rc::default(),
