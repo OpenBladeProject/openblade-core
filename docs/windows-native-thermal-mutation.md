@@ -413,8 +413,9 @@ carries its levels: the document reader and the request codec refuse one
 without them.
 
 `select` in the installed thermal runtime resolves the saved destination for a
-fresh class without storing anything; a later automatic reconciliation of saved
-profile intent can reuse it.
+fresh class without storing anything, which lets the
+[request-driven reconciliation](#request-driven-reconciliation) of saved
+profile intent reuse it.
 
 Performance rows journal the destination's wire value, 0 to 5. The Rust
 grammar and the managed `WindowsNativeThermalHistory` and `WindowsNativeHandback`
@@ -568,8 +569,9 @@ Resolution uses eligible manual intent, then the current application report's
 performance override, then the matching power profile. Application instances have
 monotonic sequence numbers and a 15-second lease, use full canonical executable
 paths and production Windows ordinal comparison, and cannot supply caller SID or
-hardware authority. Reports only select intent; this slice has no automatic
-profile reconciliation. It can use the existing managed reporter wire operation;
+hardware authority. A report that changes the active pair applies the saved
+intent (see [Request-driven reconciliation](#request-driven-reconciliation)).
+It can use the existing managed reporter wire operation;
 complete native Session Agent producer parity is separate work. Private profile
 and accepted override projection carries a local authenticated SID binding. Final
 GetStatus, ObserveState and subscription projection rechecks the live peer;
@@ -840,10 +842,11 @@ those tests.
 
 Differences from managed:
 
-- No hardware application. Managed restores lighting it had suppressed and,
-  when an edit changes the active application profile's intent, runs a full
-  transition. Native has no automatic application or reconciliation yet, so a
-  stored set is always answered as stored.
+- Managed restores lighting it had suppressed after a save; native does not.
+  An edit that changes the active application profile's intent applies the
+  saved performance and fan intent, as described in
+  [Request-driven reconciliation](#request-driven-reconciliation); battery
+  and lighting are not applied.
 - Member names are matched exactly. Managed's IPC reader ignores letter case;
   the Tray writes camelCase.
 - Duplicate application executable paths and THX rule names are found by
@@ -1112,10 +1115,12 @@ extends or as anything else. Tests on both sides pin the refusal. Admitting it b
 
 ### Active application profile
 
-Resolution of the active application profile is ported and write-free. The
-installed Service resolves every request's profile layer through it (see
-below); later slices wire it to saves, foreground reports, lease expiry and
-power changes, none of which trigger a reconciliation yet.
+Resolution of the active application profile is ported. The installed Service
+resolves every request's profile layer through it (see below). A changed
+foreground report, the first admitted report of a session and a save that
+changes the active application's intent apply the saved intent
+([Request-driven reconciliation](#request-driven-reconciliation)); lease expiry
+and power changes do not trigger one yet.
 `openblade_domain::application_context` holds managed `ProfileAutomationState`'s
 selection rules over borrowed rules: the first enabled rule whose path matches
 a report (`SetApplicationContext`, `ProfileAutomationState.cs:216-236`), the
@@ -1171,16 +1176,21 @@ caller that changes rules without `Lease::update` gets no overrides.
 
 The installed Service composes over the same resolution.
 `thermal_mutation::Runtime` keeps the latest admitted report with its lease as
-a `thermal_storage::Foreground`: the reported path and an `ApplicationContext`.
-Each request step reads the aggregate once into a typed `ProfileSet`
-(`Storage::profile_layer`), selects the reported path in it with
-`ApplicationContext::report`, and resolves the step's power class with
+a `thermal_storage::Foreground`, the active pair the report selected
+(`Storage::select_application`, `ApplicationContext::report`, under the
+mutation gate). A save retires the pair through `ApplicationContext::update`
+(`Storage::retain_application`) and never selects. Each request step reads the
+aggregate once into a typed `ProfileSet` (`Storage::profile_layer`), uses the
+pair only while the saved rules still retain it
+(`ApplicationContext::retained`), and resolves the step's power class with
 `application::resolve` (`ProfileLayer::at`). `Storage::desired`,
 `gpu_incomplete`, `custom_unsupported`, `desired_fan` and
 `desired_manual_fans` take that one `Resolution` and layer the overrides over
 it: a persistent performance override (source 4), then a temporary one (3),
-then the resolved profile, sourced from the application (2) only when its
-override sets the preset and from the power profile (1) otherwise. Fan intent
+then the resolved profile, sourced from the application (2) when its override
+sets the preset, the Custom levels or the GPU tuning, as managed's
+`DesiredDeviceState.Performance` does, and from the power profile (1)
+otherwise. Fan intent
 is an unexpired temporary fan override, then a persistent one, then the
 resolved profile's fan control, or the legacy default for its mode.
 
@@ -1221,14 +1231,8 @@ for a battery preset needs the HyperBoost restore sequence, which this build
 does not submit; no thermal setter was submitted."), whichever layer selected
 it.
 
-Until the report itself reads the profiles under the request gate, each step
-selects the reported path against the profiles it has just read. That keeps the
-matching the four inline matchers did: after a save that gives the active
-rule's path to a new id, managed keeps no profile until the next report, while
-native selects the new rule at the next read. The application's provenance
-also stays native's: managed's `DesiredIntent::performance` names the
-application when its override sets only Custom settings or GPU tuning, where
-native reports the power profile (1).
+As in managed, a save that gives the active rule's path to a new id leaves no
+application profile active until the next report selects the new rule.
 
 The active pair keeps the reported spelling of the path, not the rule's. That
 is visible only in the state: path comparison ignores case, so no resolved
@@ -1265,6 +1269,81 @@ Differences from managed:
   vectors record its return value, which the reader checks.
 - The replay matches paths with the Windows ordinal comparison, as noted
   above; the typed binding uses managed's table.
+
+### Request-driven reconciliation
+
+Three requests apply saved intent, as managed `ApplyFullTransitionAsync` does,
+for performance and fans only (`Runtime::reconcile_locked`):
+
+- A foreground report (`Runtime::application`, managed
+  `ReportApplicationContextAsync`) that changes the active pair. The reply is
+  "The active application profile was recorded. " followed by the hardware
+  result. A stale sequence of the same reporter replies Stored "A stale
+  application context was ignored."; a report that changes nothing replies
+  Stored "The active application profile lease was renewed." or "No
+  application profile is active." and applies nothing. A reporter outside the
+  active local session is Blocked "Application context requires the active
+  local Windows session."
+- The first admitted report of a `(sid, session)` since the Service started,
+  even when it changes nothing. It runs once, marked before it runs, so a
+  failure is not retried by a later report. A report that is not admitted
+  does not consume it. A fresh Service holds no temporary override, so none is
+  replayed.
+- A profile save (`Runtime::update_profiles`, managed `UpdateProfilesAsync`)
+  while an application profile is active, when the save changes the active
+  id, the desired state or the effective laptop behaviour
+  (`SaveIntent::changed`, managed `activeApplicationIntentChanged`). The reply
+  is "Profiles were stored. " followed by the hardware result. A member an
+  explicit override decides is masked, so an edit under that override is no
+  change.
+
+Each trigger takes the mutation gate first and then the mailbox. It applies
+only when fresh Windows power is known, nothing is pending and fresh admission
+holds (managed's classified `ActivePowerSource`, `DeviceVerified` and
+`!WritesBlocked`); otherwise the reply is the stored one. The steps are the
+explicit request's permits in reconcile mode: they store nothing and validate
+no override, and they keep every per-write admission, `destination_holds`
+re-check, independent readback, journal record and stop on ambiguity. A step
+whose own adapter reading finds unclassified power writes nothing (Blocked,
+`UNCLASSIFIED_BLOCKED`). A failed step is recorded by its permit and never
+replayed or retried.
+
+Fans go first when every class Windows power admits returns them from manual
+to Automatic (`fans_first`, managed `DeviceSubsystemOrder.ForTransition`).
+That fan step carries the saved preset in the same pair, as an explicit return
+to Automatic does. Otherwise the performance step runs, and the fan step
+follows unless the performance step left an unresolved submission. The reply
+status is managed's `ToOperationResult(intentStored)` (`operation_status`):
+Applied when every step was confirmed, else Stored for a save, else Failed when
+a journal row of the request was not known unsubmitted or remains pending,
+else Blocked. The step messages are joined.
+
+`request-trigger-vectors.json` pins the parity. `NativeRequestTriggerVectors`
+records managed's `ToOperationResult` over every combination of its inputs,
+`ForTransition` over every confirmed and desired fan mode, and the reply
+sequence of one reporter through a change, a stale report, a renewal, leaving
+the rule, a report with no application and a caller outside the session.
+`request_triggers.rs` replays them against the native runtime.
+
+Differences from managed:
+
+- Battery and lighting are not applied, and the lighting restore after a save
+  is not composed.
+- Native reads firmware only inside a step, so the fan order reads the saved
+  manual intent before the trigger, or an owned fan change, where managed
+  reads the confirmed fans.
+- The status base reports 3 for any power but battery, and only a step's own
+  adapter reading tells the two classified external classes apart. On AC a
+  save is compared at both (`reconcile_classes`), so an edit of either
+  external profile applies; a step at the unchanged class finds its
+  destination already confirmed and writes nothing. These comparisons put back
+  any temporary override a read at the other class would retire.
+- A report that cannot read the saved profiles keeps its sequence and the
+  pair already selected and replies Blocked with the reason. Managed holds its
+  profiles in memory and has no such case.
+- Native has no low-power gate of its own here; each write's fresh admission
+  is the boundary. Lease expiry and power changes trigger no reconciliation
+  yet.
 
 ## Submission, ambiguity and finite transport lifetime
 
