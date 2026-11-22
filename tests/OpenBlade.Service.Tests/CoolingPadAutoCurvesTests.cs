@@ -34,27 +34,35 @@ public sealed class CoolingPadAutoCurvesTests
     }
 
     [Theory]
-    // The speed of the smallest point strictly above the temperature; no interpolation.
+    // Interpolated between points in 50-RPM steps, so the speed follows the temperature.
     [InlineData(0, 500)]
-    [InlineData(39, 500)]
     [InlineData(40, 500)]
-    [InlineData(49, 500)]
-    [InlineData(50, 1000)]
-    [InlineData(84, 1000)]
-    [InlineData(85, 1600)]
-    [InlineData(99, 1600)]
+    [InlineData(50, 500)]
+    [InlineData(60, 650)]
+    [InlineData(85, 1000)]
+    [InlineData(87, 1250)]
+    [InlineData(90, 1600)]
     // Synapse finds no point here and sends 0; OpenBlade keeps the last point's speed.
     [InlineData(100, 1600)]
     [InlineData(115, 1600)]
-    public void EvaluationIsSynapsesStepFunction(int temperature, int expected) =>
+    public void EvaluationInterpolatesBetweenTablePoints(int temperature, int expected) =>
         Assert.Equal(expected, CoolingPadAutoCurves.Evaluate(CoolingPadAutoCurves.Cpu(CoolingPadAutoProfile.Quiet), temperature));
+
+    [Theory]
+    // Synapse's step lookup held Balanced at 2200 RPM across this whole range.
+    [InlineData(40, 1000)]
+    [InlineData(60, 1500)]
+    [InlineData(75, 1850)]
+    [InlineData(90, 2200)]
+    public void BalancedFollowsTheCpuAcrossNormalTemperatures(int temperature, int expected) =>
+        Assert.Equal(expected, CoolingPadAutoCurves.Target(CoolingPadAutoProfile.Balanced, CoolingPadTemperatureSource.Cpu, temperature, null));
 
     [Fact]
     public void SourcesSelectTheirTableAndBothTakesTheHigherResult()
     {
-        Assert.Equal(2000, CoolingPadAutoCurves.Target(CoolingPadAutoProfile.Performance, CoolingPadTemperatureSource.Cpu, 50, null));
-        Assert.Equal(2700, CoolingPadAutoCurves.Target(CoolingPadAutoProfile.Performance, CoolingPadTemperatureSource.Gpu, null, 50));
-        Assert.Equal(2700, CoolingPadAutoCurves.Target(CoolingPadAutoProfile.Performance, CoolingPadTemperatureSource.Both, 50, 50));
+        Assert.Equal(1650, CoolingPadAutoCurves.Target(CoolingPadAutoProfile.Performance, CoolingPadTemperatureSource.Cpu, 50, null));
+        Assert.Equal(2150, CoolingPadAutoCurves.Target(CoolingPadAutoProfile.Performance, CoolingPadTemperatureSource.Gpu, null, 50));
+        Assert.Equal(2150, CoolingPadAutoCurves.Target(CoolingPadAutoProfile.Performance, CoolingPadTemperatureSource.Both, 50, 50));
         Assert.Equal(2200, CoolingPadAutoCurves.Target(CoolingPadAutoProfile.Balanced, CoolingPadTemperatureSource.Both, 95, 20));
         Assert.Throws<InvalidOperationException>(() =>
             CoolingPadAutoCurves.Target(CoolingPadAutoProfile.Balanced, CoolingPadTemperatureSource.Cpu, null, 60));
@@ -63,7 +71,7 @@ public sealed class CoolingPadAutoCurvesTests
     [Fact]
     public void PoweredDownGpuLeavesBothOnTheCpuAndGpuOnlyAtItsCoolestPoint()
     {
-        Assert.Equal(2200, CoolingPadAutoCurves.Target(CoolingPadAutoProfile.Balanced, CoolingPadTemperatureSource.Both, 60, null));
+        Assert.Equal(1500, CoolingPadAutoCurves.Target(CoolingPadAutoProfile.Balanced, CoolingPadTemperatureSource.Both, 60, null));
         Assert.Equal(CoolingPadAutoCurves.Gpu(CoolingPadAutoProfile.Performance)[0].Rpm,
             CoolingPadAutoCurves.Target(CoolingPadAutoProfile.Performance, CoolingPadTemperatureSource.Gpu, null, null));
     }

@@ -41,6 +41,12 @@ internal static class ManualFanCurveCapabilityPolicy
 
 public static class FanCurveCalculator
 {
+    /// <summary>Raw CPU temperature at which every host fan curve runs its fans at maximum.</summary>
+    public const int EmergencyCpuCelsius = 95;
+
+    /// <summary>Raw GPU temperature at which every host fan curve runs its fans at maximum.</summary>
+    public const int EmergencyGpuCelsius = 87;
+
     public static FanTargetSpeeds Calculate(
         ManualFanCurve curve,
         FanTemperatureReadings temperatures,
@@ -98,7 +104,7 @@ public static class FanCurveCalculator
 
         // These limits are independent of the user curve. They ensure a bad
         // or overly quiet curve cannot suppress emergency cooling.
-        if (cpu >= 95 || gpu >= 87)
+        if (cpu >= EmergencyCpuCelsius || gpu >= EmergencyGpuCelsius)
         {
             return new FanTargetSpeeds(
                 maximumRpm,
