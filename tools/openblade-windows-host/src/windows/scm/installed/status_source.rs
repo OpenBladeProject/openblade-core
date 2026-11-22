@@ -618,6 +618,17 @@ impl StatusSource for GuardedStatus {
                         Ok((outcome, None))
                     }
                 }
+                #[cfg(not(feature = "service-profile-triggers-v1"))]
+                crate::service_status::StatusRequest::ReportApplicationContext {
+                    instance_id,
+                    sequence,
+                    executable_path,
+                    ..
+                } => Ok((
+                    runtime.application(caller, sid, instance_id, sequence, executable_path),
+                    None,
+                )),
+                #[cfg(feature = "service-profile-triggers-v1")]
                 crate::service_status::StatusRequest::ReportApplicationContext {
                     request_id,
                     instance_id,

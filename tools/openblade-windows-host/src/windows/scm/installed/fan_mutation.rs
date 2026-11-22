@@ -38,9 +38,12 @@ pub(super) struct FanPermit {
     requested: Value,
     value: Option<FanOverride>,
     settings: Option<Value>,
-    // A reconciliation of saved intent (`Runtime::apply_fan_locked`): whether
-    // the saved fan intent was manual before its trigger. It stores nothing.
-    reconcile: Option<PriorManual>,
+    // A reconciliation of saved intent (`Runtime::apply_fan_locked`): the
+    // classes it applies at (`Classes`). It stores nothing.
+    reconcile: Option<Classes>,
+    // A reconciliation's own adapter reading found a classified class
+    // outside its classes: nothing was accepted or written.
+    unchanged: AtomicBool,
     application: Foreground,
     proof: ReadAdmission,
     selected: Mutex<Option<(i32, Value)>>,
@@ -318,6 +321,11 @@ impl Permit for FanPermit {
             return Ok(None);
         }
         self.observe_power(power)?;
+        // A reconciliation applies only at the classes its trigger changed.
+        if self.reconcile.is_some_and(|classes| !classes.contains(power)) {
+            self.unchanged.store(true, Ordering::Release);
+            return Ok(None);
+        }
         // A reconciliation validates no override, as managed
         // `ApplyFullTransitionAsync` does not.
         if self.reconcile.is_none()
@@ -335,9 +343,14 @@ impl Permit for FanPermit {
         // Managed applies the saved preset only when fans leave saved manual
         // intent (`previousManual` in ApplyFanControlTransitionCoreOutcomeAsync).
         // A reconciliation's trigger has already changed that intent, so it
-        // carries the value read before the trigger, and stores nothing.
+        // reads the fans firmware reports instead, as its order does
+        // (`DeviceSubsystemOrder.ForTransition`). It stores nothing, so the
+        // override document is checked as a save would check it.
         let leaving_manual = match self.reconcile {
-            Some(prior) => prior.at(power),
+            Some(_) => {
+                self.storage.verify_overrides()?;
+                baseline.projection().1 != 0
+            }
             None => {
                 let prior = self.storage.desired_manual_fans(power, profile)?;
                 self.storage
@@ -696,19 +709,21 @@ impl Runtime {
         fan: FanRequest,
     ) -> io::Result<(Outcome, Option<Snapshot>)> {
         let _serial = self.gate.lock().await;
-        self.apply_fan_locked(mailbox, fan, None).await
+        self.apply_fan_locked(mailbox, fan, None)
+            .await
+            .map(Stepped::reply)
     }
     /// One fan step under the held gate: an explicit request, or, with
-    /// `reconcile` holding whether saved fan intent was manual before the
-    /// trigger, a reconciliation of saved intent that stores nothing and keeps
-    /// every per-write admission, re-check, readback and stop-on-ambiguity
-    /// path of the request (`Runtime::reconcile_locked`).
+    /// `reconcile` holding the classes it applies at, a reconciliation of
+    /// saved intent that stores nothing and keeps every per-write admission,
+    /// re-check, readback and stop-on-ambiguity path of the request
+    /// (`Runtime::reconcile_locked`).
     pub(super) async fn apply_fan_locked(
         &self,
         mailbox: MailboxSource,
         fan: FanRequest,
-        reconcile: Option<PriorManual>,
-    ) -> io::Result<(Outcome, Option<Snapshot>)> {
+        reconcile: Option<Classes>,
+    ) -> io::Result<Stepped> {
         let FanRequest {
             caller,
             sid,
@@ -723,13 +738,13 @@ impl Runtime {
             || caller.control_session != Some(caller.session)
             || caller.pid.is_none()
         {
-            return Ok((
+            return Ok(Stepped::new(
                 Outcome::blocked("The active interactive Windows user is required."),
                 None,
             ));
         }
         let MailboxSource::Reader(reader) = mailbox else {
-            return Ok((
+            return Ok(Stepped::new(
                 Outcome::blocked("Authenticated fan custody is unavailable."),
                 None,
             ));
@@ -748,18 +763,18 @@ impl Runtime {
             Ok(v) => v,
             Err(e) if is_fatal_admission(&e) => return Err(e),
             Err(e) => {
-                return Ok((
+                return Ok(Stepped::new(
                     Outcome::blocked(format!("Fan configuration admission failed: {e}")),
                     None,
                 ));
             }
         };
         if storage.pending() {
-            return Ok((Outcome::blocked(storage.pending_reason()?), None));
+            return Ok(Stepped::new(Outcome::blocked(storage.pending_reason()?), None));
         }
         fresh.verify_health()?;
         let Some(proof) = fresh.authorize() else {
-            return Ok((
+            return Ok(Stepped::new(
                 Outcome::blocked("Current fan admission is unavailable."),
                 None,
             ));
@@ -782,7 +797,7 @@ impl Runtime {
                     || p.authentication != fresh.authentication()
             })
         {
-            return Ok((
+            return Ok(Stepped::new(
                 Outcome::blocked(
                     "Fan ownership belongs to an earlier or invalid continuity; read-only reconciliation is required.",
                 ),
@@ -808,6 +823,7 @@ impl Runtime {
             value,
             settings,
             reconcile,
+            unchanged: AtomicBool::new(false),
             application,
             proof,
             selected: Mutex::new(None),
@@ -896,7 +912,14 @@ impl Runtime {
         let message = if status == 1 {
             "Fan setters completed and independent mode was confirmed. Target RPM and rotation are not readable on this backend."
         } else if permit.storage.pending() {
-            "Fan submission or owned release remains unresolved; further writes are fenced."
+            // A reconciliation names why the store is fenced, as its
+            // performance step does: its trigger submitted nothing else.
+            match permit.reconcile {
+                Some(_) => permit.storage.pending_reason()?,
+                None => {
+                    "Fan submission or owned release remains unresolved; further writes are fenced."
+                }
+            }
         } else if permit.accepted.load(Ordering::Acquire)
             && permit.custom_unsupported.load(Ordering::Acquire)
         {
@@ -931,6 +954,14 @@ impl Runtime {
         };
         if result.as_ref().is_err_and(is_fatal_admission) {
             return result.map(|_| unreachable!());
+        }
+        if permit.unchanged.load(Ordering::Acquire) {
+            // Nothing was accepted or written; the reconciliation replies.
+            return Ok(Stepped {
+                outcome: Outcome::blocked(UNCHANGED_CLASS),
+                snapshot: None,
+                unchanged: true,
+            });
         }
         // A return to Automatic that carried the saved destination reports it as
         // managed does, with managed's PerformancePreset names.
@@ -974,10 +1005,11 @@ impl Runtime {
             message.push_str(
                 " The saved performance intent was not applied: GPU clock handling is incomplete.",
             );
-        } else if status == 1 && matched.is_none() {
+        } else if status == 1 && matched.is_none() && permit.reconcile.is_none() {
             // Managed's trigger is request-level (`previousManual`), so a retry after
             // a refused return, or fans already Automatic, carries no preset. Say so
-            // when the confirmed selector is not the saved native preset.
+            // when the confirmed selector is not the saved native preset. A
+            // reconciliation runs its own performance step, which reports it.
             let selected = permit
                 .selected
                 .lock()
@@ -1039,7 +1071,10 @@ impl Runtime {
         } else {
             Outcome { status, message }
         };
-        let snapshot = if permit.accepted.load(Ordering::Acquire) {
+        let project = || -> io::Result<Option<Snapshot>> {
+            if !permit.accepted.load(Ordering::Acquire) {
+                return Ok(None);
+            }
             let (power, settings) = permit
                 .selected
                 .lock()
@@ -1047,6 +1082,7 @@ impl Runtime {
                 .clone()
                 .unwrap_or((3, Value::Null));
             let mut base = status_snapshot
+                .clone()
                 .without_private_policy()
                 .without_thermal_observation();
             let observed = result
@@ -1079,7 +1115,7 @@ impl Runtime {
                 Some(_) => permit.storage.current_fan_override(power)?,
                 None => permit.value.clone(),
             };
-            Some(
+            Ok(Some(
                 base.fan_intent(
                     fan_override.as_ref(),
                     if settings.is_null() {
@@ -1091,11 +1127,15 @@ impl Runtime {
                     &outcome.message,
                 )
                 .bind_private_user(&sid),
-            )
-        } else {
-            None
+            ))
         };
-        Ok((outcome, snapshot))
+        match project() {
+            Ok(snapshot) => Ok(Stepped::new(outcome, snapshot)),
+            Err(error) if permit.reconcile.is_none() || is_fatal_admission(&error) => Err(error),
+            // A reconciliation may already have written: its reply must reach
+            // the trigger's caller (`after_write_unreadable`).
+            Err(_) => Ok(Stepped::new(after_write_unreadable(&permit.storage)?, None)),
+        }
     }
     pub(in super::super) fn refuse_stop_fans(&self) -> io::Result<()> {
         if self

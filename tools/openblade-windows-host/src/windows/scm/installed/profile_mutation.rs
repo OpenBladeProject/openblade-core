@@ -1,15 +1,18 @@
 //! Installed `updateProfiles`: managed `UpdateProfilesAsync`.
 //!
-//! Storing profiles needs no device admission. When an application profile
-//! was active before the save and the save changes the active id, the
-//! desired state or the effective laptop behaviour
-//! (`SaveIntent::changed`), the saved intent is applied as managed's full
-//! transition applies it (`Runtime::reconcile_locked`), with every per-write
-//! admission. Managed's restore of lighting it had suppressed is not
-//! composed here.
+//! Storing profiles needs no device admission. Without
+//! `service-profile-triggers-v1` saving applies no hardware and always
+//! answers for the stored intent alone, as managed does on its default path.
+//! With it, a save that changes the active application's thermal intent
+//! applies that intent as managed's full transition does
+//! (`Runtime::save_profiles_locked`), with every per-write admission.
+//! Managed's restore of lighting it had suppressed is not composed here.
 use super::*;
+#[cfg(not(feature = "service-profile-triggers-v1"))]
 use crate::installed::readiness::thermal_storage::ProfileSave;
-use openblade_domain::profile_set::{ProfileSet, update::STORED_MESSAGE};
+use openblade_domain::profile_set::ProfileSet;
+#[cfg(not(feature = "service-profile-triggers-v1"))]
+use openblade_domain::profile_set::update::STORED_MESSAGE;
 
 /// The reply, whether the saved set changed, and the status a
 /// reconciliation the save triggered returned.
@@ -58,99 +61,37 @@ impl Runtime {
         // The same projection a thermal mutation retains, so the saved set
         // shows in this user's status even before any thermal request.
         reader.retain_policy(self.thermal_policy(sid.clone(), caller.session, reader.custody()));
-        // The terms managed compares at its active power source. Native learns
-        // the external class only from the step's own adapter reading, so
-        // each class fresh Windows power admits is compared
-        // (`reconcile_classes`): a change at either external class applies,
-        // and a step at an unchanged class finds its destination already
-        // confirmed. Managed applies only on classified power, so unknown
-        // power compares nothing. A store that cannot be read now applies
-        // nothing after the save.
-        let classes = reconcile_classes(fresh.as_ref());
-        let foreground = self.foreground(&sid, caller.session);
-        let intents = |foreground: &Foreground| {
-            classes
-                .iter()
-                .map(|&class| storage.save_intent(foreground, class))
-                .collect::<io::Result<Vec<_>>>()
-        };
-        let prior = if !classes.is_empty() && foreground.active_id().is_some() {
-            match intents(&foreground)
-                .and_then(|intents| Ok((intents, storage.manual_fans(&foreground)?)))
-            {
-                Ok(prior) => Some(prior),
-                Err(error) if is_fatal_admission(&error) => return Err(error),
-                Err(_) => None,
-            }
-        } else {
-            None
-        };
-        match storage.save_profiles(profiles)? {
-            ProfileSave::Stored => {}
-            // Managed `Failed`.
-            ProfileSave::Rejected(message) => {
-                return Ok((Outcome { status: 3, message }, false, None));
-            }
-            ProfileSave::Blocked(message) => return Ok((Outcome::blocked(message), false, None)),
-        }
-        let stored = Outcome {
-            status: 0,
-            message: STORED_MESSAGE.into(),
-        };
-        // Managed `ProfileAutomationState.UpdateProfiles`: the active pair
-        // survives only while its rule still holds its path. The save
-        // committed, so a read that fails now leaves the stored reply.
-        let next = match storage.retain_application(&foreground) {
-            Ok(next) => next,
-            Err(error) if is_fatal_admission(&error) => return Err(error),
-            Err(_) => return Ok((stored, true, None)),
-        };
-        if let Some(application) = self
-            .application
-            .borrow_mut()
-            .as_mut()
-            .filter(|a| a.sid == sid && a.session == caller.session)
+        #[cfg(feature = "service-profile-triggers-v1")]
+        return self
+            .save_profiles_locked(super::triggers::Saving {
+                mailbox: &mailbox,
+                caller,
+                sid,
+                request,
+                storage: &storage,
+                fresh,
+                profiles,
+                deadline,
+                status,
+            })
+            .await;
+        #[cfg(not(feature = "service-profile-triggers-v1"))]
         {
-            application.foreground = next.clone();
+            // Only a reconciliation reads these, and none is composed.
+            let _ = (request, fresh, deadline, status);
+            Ok(match storage.save_profiles(profiles)? {
+                ProfileSave::Stored => (
+                    Outcome {
+                        status: 0,
+                        message: STORED_MESSAGE.into(),
+                    },
+                    true,
+                    None,
+                ),
+                // Managed `Failed`.
+                ProfileSave::Rejected(message) => (Outcome { status: 3, message }, false, None),
+                ProfileSave::Blocked(message) => (Outcome::blocked(message), false, None),
+            })
         }
-        let Some((prior, prior_manual)) = prior else {
-            return Ok((stored, true, None));
-        };
-        let changed = match intents(&next) {
-            Ok(next) => prior
-                .iter()
-                .zip(&next)
-                .any(|(prior, next)| prior.changed(next)),
-            Err(error) if is_fatal_admission(&error) => return Err(error),
-            Err(_) => false,
-        };
-        if !changed {
-            return Ok((stored, true, None));
-        }
-        // Managed also needs a verified device with writes not blocked; every
-        // write still passes its own admission.
-        fresh.verify_health()?;
-        let admitted = !storage.pending() && fresh.authorize().is_some();
-        fresh.verify_health()?;
-        if !admitted {
-            return Ok((stored, true, None));
-        }
-        let (outcome, snapshot) = self
-            .reconcile_locked(
-                &mailbox,
-                Reconcile {
-                    caller,
-                    sid,
-                    request,
-                    storage: &storage,
-                    classes,
-                    prior_manual: PriorManual(prior_manual),
-                    deadline,
-                    status,
-                },
-            )
-            .await?
-            .into_outcome(true, "Profiles were stored. ");
-        Ok((outcome, true, snapshot))
     }
 }

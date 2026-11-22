@@ -81,6 +81,11 @@ pub(super) use fan::FanRequest;
 #[cfg(feature = "service-profiles-v1")]
 #[path = "profile_mutation.rs"]
 mod profiles;
+#[cfg(feature = "service-profile-triggers-v1")]
+#[path = "request_triggers.rs"]
+mod triggers;
+#[cfg(all(test, feature = "service-profile-triggers-v1"))]
+pub(super) use triggers::{APPLICATION_SESSION_REQUIRED, fans_first, is_step_request, operation_status};
 pub(super) trait Fresh: Send + Sync {
     /// The fresh Windows power kind: `Some(false)` is AC (ACLineStatus
     /// online), `Some(true)` battery and `None` unknown. It is never wattage
@@ -172,8 +177,10 @@ type ReleaseHook = Rc<dyn Fn()>;
 pub(super) struct Runtime {
     factory: Rc<Factory>,
     application: Rc<RefCell<Option<Application>>>,
-    // The `(sid, session)` pairs whose startup reconciliation ran.
-    started: Rc<RefCell<std::collections::HashSet<(String, u32)>>>,
+    // The `(sid, session)` pairs whose saved intent was reconciled since the
+    // service started or their intent last changed (`triggers`).
+    #[cfg(feature = "service-profile-triggers-v1")]
+    reconciled: Rc<RefCell<std::collections::HashSet<(String, u32)>>>,
     fan_owner: Rc<RefCell<Option<Arc<fan::FanPermit>>>>,
     temporary_owner: Rc<RefCell<Option<Arc<battery::BatteryPermit>>>>,
     temporary_pending: Rc<RefCell<Option<Arc<battery::BatteryPermit>>>>,
@@ -212,104 +219,65 @@ struct ThermalStep {
     sid: String,
     request: String,
     value: Option<Override>,
-    reconcile: bool,
+    // `Some` for a reconciliation of saved intent: the classes it applies at.
+    reconcile: Option<Classes>,
     deadline: Instant,
     status: Snapshot,
 }
-/// One reconciliation of saved intent (`Runtime::reconcile_locked`): the
-/// trigger's request, the user's store, the classes fresh Windows power
-/// admits (`reconcile_classes`), and whether the saved fan intent was manual
-/// before the trigger.
-pub(super) struct Reconcile<'a> {
-    caller: Caller,
-    sid: String,
-    request: String,
-    storage: &'a Storage,
-    classes: &'static [i32],
-    prior_manual: PriorManual,
-    deadline: Instant,
-    status: Snapshot,
-}
-/// Whether saved fan intent was manual before a trigger, for each classified
-/// class (`Storage::manual_fans`): the step's own power reading picks one.
-#[derive(Clone, Copy, Debug)]
-pub(super) struct PriorManual(pub(super) [bool; 3]);
-impl PriorManual {
-    pub(super) fn at(self, class: i32) -> bool {
-        usize::try_from(class)
-            .ok()
-            .and_then(|i| self.0.get(i))
-            .copied()
-            .unwrap_or(false)
+/// The classified classes a reconciliation applies at. A step whose own
+/// adapter reading finds a classified class outside them writes nothing and
+/// reports it (`Stepped::unchanged`): only that reading tells the two
+/// external classes apart.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct Classes(u8);
+impl Classes {
+    pub(super) fn contains(self, class: i32) -> bool {
+        (0..=2).contains(&class) && self.0 & (1 << class) != 0
     }
 }
-/// The classified classes fresh Windows power admits before any adapter
-/// reading: battery, or on AC the two classified external classes, which
-/// only the step's own adapter reading tells apart. Unknown power admits
-/// none, as managed applies nothing on an unknown source. The status base
-/// cannot tell them apart either: it reports 3 for any power but battery.
-pub(super) fn reconcile_classes(fresh: &dyn Fresh) -> &'static [i32] {
-    match fresh.on_battery() {
-        Some(true) => &[1],
-        Some(false) => &[0, 2],
-        None => &[],
+/// One step's reply and status projection, and whether a reconciliation's
+/// step found its class outside `Classes` and so wrote nothing.
+pub(super) struct Stepped {
+    pub(super) outcome: Outcome,
+    pub(super) snapshot: Option<Snapshot>,
+    // Only a reconciliation (`triggers`) reads it.
+    #[cfg_attr(not(feature = "service-profile-triggers-v1"), allow(dead_code))]
+    pub(super) unchanged: bool,
+}
+impl Stepped {
+    fn new(outcome: Outcome, snapshot: Option<Snapshot>) -> Self {
+        Self {
+            outcome,
+            snapshot,
+            unchanged: false,
+        }
+    }
+    fn reply(self) -> (Outcome, Option<Snapshot>) {
+        (self.outcome, self.snapshot)
     }
 }
-/// What one reconciliation did, managed `ServiceTransitionApplicationOutcome`.
-pub(super) struct Reconciled {
-    // Every step ran and was confirmed (`FullyApplied`).
-    applied: bool,
-    // A setter may have been submitted (`SubmissionPossible`,
-    // `AnyConfirmedWrites`, `AnyWritesAttempted`).
-    submitted: bool,
-    message: String,
-    snapshot: Option<Snapshot>,
-}
-/// Managed `DeviceSubsystemOrder.ForTransition`: fans go first when they
-/// leave manual for Automatic. Managed reads the confirmed fans; native,
-/// which reads firmware only inside a step, reads saved manual intent or an
-/// owned fan change instead (`Runtime::reconcile_locked`).
-pub(super) fn fans_first(leaving_manual: bool, next_manual: bool) -> bool {
-    leaving_manual && !next_manual
-}
-impl Reconciled {
-    /// Managed `ToOperationResult(intentStored)`, with the trigger's prefix.
-    pub(super) fn into_outcome(
-        self,
-        intent_stored: bool,
-        prefix: &str,
-    ) -> (Outcome, Option<Snapshot>) {
-        (
-            Outcome {
-                status: operation_status(self.applied, intent_stored, self.submitted),
-                message: format!("{prefix}{}", self.message),
-            },
-            self.snapshot,
-        )
-    }
-}
-/// Managed `ServiceTransitionApplicationOutcome.ToOperationResult`: Applied
-/// (1) when fully applied, else Stored (0) when the trigger stored intent,
-/// else Failed (3) when a setter may have been submitted, else Blocked (2).
-pub(super) fn operation_status(fully_applied: bool, intent_stored: bool, submitted: bool) -> u8 {
-    if fully_applied {
-        1
-    } else if intent_stored {
-        0
-    } else if submitted {
-        3
-    } else {
-        2
-    }
-}
-/// Managed `ReportApplicationContextAsync` (Blocked) for a reporter that no
-/// longer controls the active local session.
-pub(super) const APPLICATION_SESSION_REQUIRED: &str =
-    "Application context requires the active local Windows session.";
 /// Managed `ExecuteScopedMutationAsync` reply for a cleared explicit override
 /// on unclassified external power, which selects no power profile.
 pub(super) const UNCLASSIFIED_CLEARED: &str =
     "Override cleared. Power-profile application waits for adapter classification.";
+/// A reconciliation step whose own adapter reading found a classified class
+/// the trigger did not change (`Classes`): nothing was accepted or written.
+pub(super) const UNCHANGED_CLASS: &str =
+    "Saved intent did not change at the current power source; nothing was written.";
+/// A reconciliation step whose status projection failed after its hardware
+/// result, without fencing the store (`after_write_unreadable`).
+const AFTER_WRITE_UNREADABLE: &str = "Saved configuration could not be read after the hardware result, so no applied state is claimed.";
+/// The reply of a reconciliation step whose status projection failed after
+/// its hardware result: the store's own reconciliation reason when the read
+/// fenced it, and otherwise the unreadable configuration. The hardware result
+/// itself is not claimed.
+pub(super) fn after_write_unreadable(storage: &Storage) -> io::Result<Outcome> {
+    Ok(if storage.pending() {
+        Outcome::blocked(storage.pending_reason()?)
+    } else {
+        Outcome::blocked(AFTER_WRITE_UNREADABLE)
+    })
+}
 /// The request's remaining time cannot cover the recipe at the device pace
 /// measured so far (`Refusal::Deadline`): the Prepared row is settled as
 /// known not submitted and no setter was submitted.
@@ -357,7 +325,8 @@ impl Runtime {
         Self {
             factory: Rc::new(factory),
             application: Rc::default(),
-            started: Rc::default(),
+            #[cfg(feature = "service-profile-triggers-v1")]
+            reconciled: Rc::default(),
             fan_owner: Rc::default(),
             temporary_owner: Rc::default(),
             temporary_pending: Rc::default(),
@@ -421,7 +390,8 @@ impl Runtime {
                 Ok((stores.as_ref().unwrap().1.clone(), guard))
             }),
             application: Rc::default(),
-            started: Rc::default(),
+            #[cfg(feature = "service-profile-triggers-v1")]
+            reconciled: Rc::default(),
             fan_owner: Rc::default(),
             temporary_owner: Rc::default(),
             temporary_pending: Rc::default(),
@@ -441,257 +411,51 @@ impl Runtime {
             entered: Rc::default(),
         }
     }
-    /// Managed `ReportApplicationContextAsync` for one admitted report, under
-    /// the mutation gate. The report selects the active application pair once
-    /// (`Storage::select_application`). A changed pair, or the first admitted
-    /// report of a `(sid, session)` since the service started, applies the
-    /// saved intent (`reconcile_locked`); a renewal applies nothing.
-    // Every caller, including the shared mutation tests, passes the admitted request fields individually.
-    #[allow(clippy::too_many_arguments)]
-    pub(super) async fn application(
+    #[cfg(not(feature = "service-profile-triggers-v1"))]
+    pub(super) fn application(
         &self,
-        mailbox: MailboxSource,
         caller: Caller,
         sid: String,
-        request: String,
         instance: String,
         sequence: i64,
         path: Option<String>,
-        deadline: Instant,
-        status: Snapshot,
-    ) -> io::Result<(Outcome, Option<Snapshot>)> {
-        let stored = |message: &str| {
-            Ok((
-                Outcome {
-                    status: 0,
-                    message: message.into(),
-                },
-                None,
-            ))
-        };
-        if caller.logon != Logon::Interactive || caller.control_session != Some(caller.session) {
-            return Ok((Outcome::blocked(APPLICATION_SESSION_REQUIRED), None));
-        }
-        let Some(pid) = caller.pid else {
-            return Ok((Outcome::blocked("Application context was rejected."), None));
-        };
-        if sequence <= 0
+    ) -> Outcome {
+        if caller.logon != Logon::Interactive
+            || caller.control_session != Some(caller.session)
+            || caller.pid.is_none()
+            || sequence <= 0
             || !crate::service_frame::is_guid(&instance)
             || path
                 .as_ref()
                 .is_some_and(|p| !super::thermal_storage::valid_application_path(p))
         {
-            return Ok((Outcome::blocked("Application context was rejected."), None));
+            return Outcome::blocked("Application context was rejected.");
         }
-        #[cfg(test)]
-        self.entered.set(self.entered.get() + 1);
-        // One mutation at a time, as managed's operation gate allows.
-        let _serial = self.gate.lock().await;
-        verify_retained_failure(&self.fatal)?;
-        if let Some(old) = self.application.borrow().as_ref().filter(|old| {
+        let mut current = self.application.borrow_mut();
+        if current.as_ref().is_some_and(|old| {
             old.sid == sid
                 && old.session == caller.session
                 && old.instance.eq_ignore_ascii_case(&instance)
+                && (old.pid != caller.pid.unwrap() || sequence <= old.sequence)
         }) {
-            if old.pid != pid {
-                return Ok((
-                    Outcome::blocked("Application context belongs to another reporter."),
-                    None,
-                ));
-            }
-            if sequence <= old.sequence {
-                return stored("A stale application context was ignored.");
-            }
+            return Outcome::blocked(
+                "Application context is stale or belongs to another reporter.",
+            );
         }
-        // The lease bounds the pair: an expired one is no longer active.
-        let prior = self.foreground(&sid, caller.session);
-        // The sequence is accepted before the profiles are read, as managed
-        // accepts it before `SetApplicationContext`; a read that fails keeps
-        // the pair already selected.
-        let record = |foreground: Foreground| {
-            *self.application.borrow_mut() = Some(Application {
-                sid: sid.clone(),
-                session: caller.session,
-                pid,
-                instance: instance.clone(),
-                sequence,
-                foreground,
-                expires: Instant::now() + std::time::Duration::from_secs(15),
-            });
-        };
-        let MailboxSource::Reader(reader) = &mailbox else {
-            record(prior);
-            return Ok((
-                Outcome::blocked("Authenticated thermal custody is unavailable."),
-                None,
-            ));
-        };
-        reader.custody().verify_integrity()?;
-        let captured = self.capture(&sid, caller.session, reader.custody());
-        let selected = captured.and_then(|(storage, fresh)| {
-            let (next, changed) = storage.select_application(&prior, path.as_deref())?;
-            Ok((storage, fresh, next, changed))
-        });
-        let (storage, fresh, next, changed) = match selected {
-            Ok(value) => value,
-            Err(error) if is_fatal_admission(&error) => return Err(error),
-            Err(error) => {
-                record(prior);
-                return Ok((
-                    Outcome::blocked(format!(
-                        "Saved configuration or the current session is unavailable: {error}"
-                    )),
-                    None,
-                ));
-            }
-        };
-        let active = next.active_id().is_some();
-        record(next);
-        let classes = reconcile_classes(fresh.as_ref());
-        let first = !self
-            .started
-            .borrow()
-            .contains(&(sid.clone(), caller.session));
-        if !changed && !first {
-            return stored(if active {
-                "The active application profile lease was renewed."
-            } else {
-                "No application profile is active."
-            });
-        }
-        // Managed applies only on classified power with a verified device and
-        // writes not blocked (`ActivePowerSource`, `DeviceVerified`,
-        // `WritesBlocked`); every write still passes its own admission, and
-        // each step refuses an adapter its own reading finds unclassified.
-        fresh.verify_health()?;
-        let admitted = !classes.is_empty() && !storage.pending() && fresh.authorize().is_some();
-        fresh.verify_health()?;
-        if !admitted {
-            return stored(if changed {
-                "The active application profile was recorded."
-            } else if active {
-                "The active application profile lease was renewed."
-            } else {
-                "No application profile is active."
-            });
-        }
-        // Startup runs once, marked before it runs so a failure is never
-        // retried by a later report.
-        self.started
-            .borrow_mut()
-            .insert((sid.clone(), caller.session));
-        let prior_manual = PriorManual(storage.manual_fans(&prior)?);
-        let reconciled = self
-            .reconcile_locked(
-                &mailbox,
-                Reconcile {
-                    caller,
-                    sid,
-                    request,
-                    storage: &storage,
-                    classes,
-                    prior_manual,
-                    deadline,
-                    status,
-                },
-            )
-            .await?;
-        Ok(reconciled.into_outcome(false, "The active application profile was recorded. "))
-    }
-    /// Managed `ApplyFullTransitionAsync` for performance and fans, under the
-    /// held gate: the saved intent of `step.sid` is applied without storing
-    /// any. Fans go first when they return from saved manual intent to
-    /// Automatic (`DeviceSubsystemOrder.ForTransition`): that return carries
-    /// the saved preset in the same pair (`FanPermit`). Otherwise the
-    /// performance step runs, and the fan step follows unless the performance
-    /// step left an unresolved submission. A failed step is recorded by its
-    /// own permit and never replayed.
-    async fn reconcile_locked(
-        &self,
-        mailbox: &MailboxSource,
-        step: Reconcile<'_>,
-    ) -> io::Result<Reconciled> {
-        let Reconcile {
-            caller,
+        *current = Some(Application {
             sid,
-            request,
-            storage,
-            classes,
-            prior_manual,
-            deadline,
-            status,
-        } = step;
-        let fans = cfg!(feature = "service-fan-mutation-v2");
-        // The order is chosen before any reading, so fans go first only when
-        // every class Windows power admits returns them to Automatic; the
-        // fan step itself reads `prior_manual` at the class it observes.
-        let layer = storage.profile_layer(&self.foreground(&sid, caller.session))?;
-        let mut fans_go_first = fans && !classes.is_empty();
-        for &class in classes {
-            let next_manual = storage.desired_manual_fans(class, layer.at(class)?.as_ref())?;
-            fans_go_first &= fans_first(
-                prior_manual.at(class) || storage.outstanding_fan(),
-                next_manual,
-            );
+            session: caller.session,
+            pid: caller.pid.unwrap(),
+            instance,
+            sequence,
+            foreground: Foreground::reported(path),
+            expires: Instant::now() + std::time::Duration::from_secs(15),
+        });
+        Outcome {
+            status: 0,
+            message: "Application context stored; automatic native reconciliation is not enabled."
+                .into(),
         }
-        drop(layer);
-        // Managed `AnyWritesAttempted` or `SubmissionPossible`, read after each
-        // step: a journal row of this request that is not known unsubmitted,
-        // or an unresolved one.
-        let attempted = || {
-            storage.pending()
-                || (storage.last_request().as_deref() == Some(request.as_str())
-                    && storage.progress() != Some(Progress::KnownNotSubmitted as u8))
-        };
-        let mut steps = Vec::new();
-        let mut submitted = false;
-        if !fans_go_first {
-            steps.push(
-                self.apply_locked(
-                    mailbox.clone(),
-                    ThermalStep {
-                        caller,
-                        sid: sid.clone(),
-                        request: request.clone(),
-                        value: None,
-                        reconcile: true,
-                        deadline,
-                        status: status.clone(),
-                    },
-                )
-                .await?,
-            );
-            submitted |= attempted();
-        }
-        if fans && !storage.pending() {
-            steps.push(
-                self.apply_fan_locked(
-                    mailbox.clone(),
-                    FanRequest {
-                        caller,
-                        sid,
-                        request: request.clone(),
-                        value: None,
-                        settings: None,
-                        deadline,
-                        status,
-                    },
-                    Some(prior_manual),
-                )
-                .await?,
-            );
-            submitted |= attempted();
-        }
-        Ok(Reconciled {
-            applied: !steps.is_empty() && steps.iter().all(|(o, _)| o.status == 1),
-            submitted,
-            message: steps
-                .iter()
-                .map(|(o, _)| o.message.as_str())
-                .collect::<Vec<_>>()
-                .join(" "),
-            snapshot: steps.into_iter().rev().find_map(|(_, s)| s),
-        })
     }
     /// The foreground application `sid` reported in `session` while its
     /// lease holds, and none otherwise.
@@ -782,12 +546,13 @@ impl Runtime {
                 sid,
                 request,
                 value,
-                reconcile: false,
+                reconcile: None,
                 deadline,
                 status,
             },
         )
         .await
+        .map(Stepped::reply)
     }
     /// One performance step under the held gate: an explicit request, or a
     /// reconciliation of saved intent (`ThermalStep::reconcile`), which
@@ -797,7 +562,7 @@ impl Runtime {
         &self,
         mailbox: MailboxSource,
         step: ThermalStep,
-    ) -> io::Result<(Outcome, Option<Snapshot>)> {
+    ) -> io::Result<Stepped> {
         let ThermalStep {
             caller,
             sid,
@@ -814,13 +579,13 @@ impl Runtime {
             .without_private_policy()
             .without_thermal_observation();
         if caller.logon != Logon::Interactive || caller.control_session != Some(caller.session) {
-            return Ok((
+            return Ok(Stepped::new(
                 Outcome::blocked("The active interactive Windows user is required."),
                 None,
             ));
         }
         let MailboxSource::Reader(reader) = mailbox else {
-            return Ok((
+            return Ok(Stepped::new(
                 Outcome::blocked("Authenticated thermal custody is unavailable."),
                 None,
             ));
@@ -832,7 +597,7 @@ impl Runtime {
                 return Err(e);
             }
             Err(e) => {
-                return Ok((
+                return Ok(Stepped::new(
                     Outcome::blocked(format!(
                         "Saved thermal configuration or fresh admission is unavailable: {e}"
                     )),
@@ -842,12 +607,12 @@ impl Runtime {
         };
         fresh.verify_health()?;
         if storage.pending() {
-            return Ok((Outcome::blocked(storage.pending_reason()?), None));
+            return Ok(Stepped::new(Outcome::blocked(storage.pending_reason()?), None));
         }
         let proof = fresh.authorize();
         fresh.verify_health()?;
         let Some(proof) = proof else {
-            return Ok((
+            return Ok(Stepped::new(
                 Outcome::blocked(
                     "Current thermal admission is unavailable; no intent or command was submitted.",
                 ),
@@ -889,7 +654,7 @@ impl Runtime {
         };
         permit.fresh.verify_health()?;
         if final_proof != Some(proof) {
-            return Ok((
+            return Ok(Stepped::new(
                 Outcome::blocked(
                     "Thermal result lost caller or owner admission; submission evidence is retained.",
                 ),
@@ -952,7 +717,7 @@ impl Runtime {
                 };
                 // A reconciliation committed nothing, so only its hardware
                 // result is reported (managed `ApplyFullTransitionAsync`).
-                if reconcile {
+                if reconcile.is_some() {
                     Outcome::blocked(reason)
                 } else {
                     Outcome::blocked(format!("{committed} Hardware result: {reason}"))
@@ -971,43 +736,63 @@ impl Runtime {
             Cause::UnclassifiedBlocked
         ) {
             Outcome::blocked(UNCLASSIFIED_BLOCKED)
+        } else if matches!(
+            *permit.cause.lock().map_err(|_| io::ErrorKind::Other)?,
+            Cause::Unchanged
+        ) {
+            // Nothing was accepted or written; the reconciliation replies.
+            return Ok(Stepped {
+                outcome: Outcome::blocked(UNCHANGED_CLASS),
+                snapshot: None,
+                unchanged: true,
+            });
         } else {
             Outcome::blocked(
                 "Performance intent was not accepted; admission or protected persistence failed.",
             )
         };
         let power = *permit.power.lock().map_err(|_| io::ErrorKind::Other)?;
-        // A reconciliation reports the override layer it applied over.
-        let intent_value = match power.filter(|_| reconcile) {
-            Some(power) => permit.storage.current_override(power)?,
-            None => permit.value.clone(),
-        };
         let selected_source = *permit
             .selected_source
             .lock()
             .map_err(|_| io::ErrorKind::Other)?;
-        let status = if let Some(observed) = observed {
-            let fresh = permit.fresh.clone();
-            status.with_mailbox_read(
-                observed,
-                ReadConfirmation::new(deadline, move || fresh.authorize() == Some(proof)),
-            )
-        } else {
-            status
+        let project = |status: Snapshot| -> io::Result<Option<Snapshot>> {
+            // A reconciliation reports the override layer it applied over.
+            let intent_value = match power.filter(|_| reconcile.is_some()) {
+                Some(power) => permit.storage.current_override(power)?,
+                None => permit.value.clone(),
+            };
+            let status = if let Some(observed) = observed {
+                let fresh = permit.fresh.clone();
+                status.with_mailbox_read(
+                    observed,
+                    ReadConfirmation::new(deadline, move || fresh.authorize() == Some(proof)),
+                )
+            } else {
+                status
+            };
+            let status = if accepted {
+                status.thermal_profiles(permit.storage.profiles()?)?
+            } else {
+                status
+            };
+            Ok(accepted.then(|| {
+                status
+                    .thermal_intent(intent_value.as_ref(), destination, &outcome.message, power)
+                    .bind_private_user(&sid)
+                    .thermal_provenance(selected_source)
+                    .thermal_write_admission(outcome.status == 1)
+            }))
         };
-        let status = if accepted {
-            status.thermal_profiles(permit.storage.profiles()?)?
-        } else {
-            status
-        };
-        let snapshot = accepted.then(|| {
-            status
-                .thermal_intent(intent_value.as_ref(), destination, &outcome.message, power)
-                .bind_private_user(&sid)
-                .thermal_provenance(selected_source)
-                .thermal_write_admission(outcome.status == 1)
-        });
-        Ok((outcome, snapshot))
+        match project(status) {
+            Ok(snapshot) => Ok(Stepped::new(outcome, snapshot)),
+            Err(error) if reconcile.is_none() || is_fatal_admission(&error) => Err(error),
+            // A reconciliation may already have written: its reply must reach
+            // the trigger's caller, so a store that changed or cannot be read
+            // after the hardware result fences writes and is reported, never
+            // ending the Service.
+            Err(_) => Ok(Stepped::new(after_write_unreadable(&permit.storage)?, None)),
+        }
     }
 }
 /// The saved policy's destination for one fresh class, and why it may not be
@@ -1063,9 +848,9 @@ struct RequestPermit {
     owner: String,
     intent: String,
     value: Option<Override>,
-    // Applies saved intent without storing any (`Runtime::reconcile_locked`);
-    // `value` is then None.
-    reconcile: bool,
+    // `Some` applies saved intent at those classes without storing any
+    // (`Runtime::reconcile_locked`); `value` is then None.
+    reconcile: Option<Classes>,
     application: Foreground,
     accepted: AtomicBool,
     destination: Mutex<Option<Destination>>,
@@ -1092,6 +877,8 @@ enum Cause {
     UnclassifiedBlocked,
     UnclassifiedRejected,
     UnclassifiedCustomRejected,
+    /// A reconciliation step found a class its trigger did not change.
+    Unchanged,
     /// Managed `ValidateThermalOverrideCombination` on classified power, as
     /// `RecordRejectedIntent` reports it (Failed); nothing is stored.
     Rejected(String),
@@ -1117,6 +904,7 @@ impl Cause {
             Self::UnclassifiedBlocked => UNCLASSIFIED_BLOCKED.into(),
             Self::UnclassifiedRejected => UNCLASSIFIED_REJECTED.into(),
             Self::UnclassifiedCustomRejected => UNCLASSIFIED_CUSTOM_REJECTED.into(),
+            Self::Unchanged => UNCHANGED_CLASS.into(),
             Self::Rejected(message) => format!("The requested intent was rejected: {message}"),
         }
     }
@@ -1282,7 +1070,7 @@ impl Permit for RequestPermit {
             // intent only on classified power, so a reconciliation that finds
             // the adapter unclassified writes nothing either.
             if unclassified
-                && (self.reconcile || baseline == ObservedPerformance::HyperBoostObserved)
+                && (self.reconcile.is_some() || baseline == ObservedPerformance::HyperBoostObserved)
             {
                 self.set_cause(Cause::UnclassifiedBlocked);
                 return Ok(None);
@@ -1316,9 +1104,15 @@ impl Permit for RequestPermit {
                 return Ok(None);
             }
             self.observe_power(power)?;
+            // A reconciliation applies only at the classes its trigger changed;
+            // only this reading tells the external classes apart.
+            if self.reconcile.is_some_and(|classes| !classes.contains(power)) {
+                self.set_cause(Cause::Unchanged);
+                return Ok(None);
+            }
             // A reconciliation applies intent already saved: managed
             // `ApplyFullTransitionAsync` validates no override and stores nothing.
-            if !self.reconcile
+            if self.reconcile.is_none()
                 && let Some(message) = self.combination_rejected(power)?
             {
                 self.set_cause(Cause::Rejected(message));
@@ -1330,7 +1124,15 @@ impl Permit for RequestPermit {
             // override changes no profile, so the resolution stays current.
             let layer = self.storage.profile_layer(&self.application)?;
             let profile = layer.at(power)?;
-            if !self.reconcile {
+            if self.reconcile.is_some() {
+                // Nothing is stored, so the override document the saved intent
+                // resolves over is checked as `save`'s replacement would check
+                // it: a document changed outside the Service fences writes
+                // before any submission.
+                self.storage
+                    .verify_overrides()
+                    .inspect_err(|e| self.set_cause(Cause::Storage(e.to_string())))?;
+            } else {
                 self.storage
                     .save(self.value.clone(), power)
                     .inspect_err(|e| self.set_cause(Cause::Storage(e.to_string())))?;

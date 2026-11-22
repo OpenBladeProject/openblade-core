@@ -5,7 +5,7 @@
 //! pipe or operating-system supplier is reached.
 use super::*;
 use crate::installed::readiness::thermal_mutation::{
-    APPLICATION_SESSION_REQUIRED, operation_status,
+    APPLICATION_SESSION_REQUIRED, UNCLASSIFIED_BLOCKED, is_step_request, operation_status,
 };
 
 const RECORDED: &str = "The active application profile was recorded.";
@@ -126,20 +126,326 @@ async fn fans_returning_to_automatic_go_first_and_carry_the_saved_preset() {
     }
     let manual = report(&rig, 1, Some(r"C:\Games\Game.exe")).await;
     assert_eq!(manual["result"]["status"], 1, "{manual}");
-    assert_ne!(rig.get().await["status"]["confirmedState"]["fans"], 0);
+    // The order reads the confirmed fans, which firmware reports manual.
+    assert_eq!(rig.port.state.lock().unwrap().fans, [1; 2]);
+    assert_manual_fans_observed(&rig).await;
     let sent = rig.port.state.lock().unwrap().sent.len();
     let left = report(&rig, 2, Some(r"C:\Tools\Other.exe")).await;
-    // One fan step: the performance step would have been refused while the
-    // fan change was still owned (`FanHandbackPending`).
+    // The fan step goes first and carries the saved Balanced; the performance
+    // step that follows finds it confirmed and writes nothing. Performance
+    // first would have been refused while the fan change was still owned
+    // (`FanHandbackPending`).
     assert_eq!(
         left["result"],
-        json!({"status":1,"message":format!("{RECORDED} Fans returned to Automatic with Balanced performance, confirmed by independent paired readback.")})
+        json!({"status":1,"message":format!("{RECORDED} Fans returned to Automatic with Balanced performance, confirmed by independent paired readback. {CONFIRMED}")})
     );
     let pair = mode_setters(&rig, sent);
     assert_eq!(pair.len(), 2, "{pair:?}");
     assert!(pair.iter().all(|setter| setter[3] == 0), "{pair:?}");
     assert_eq!(rig.get().await["status"]["confirmedState"]["fans"], 0);
     rig.stop().await;
+}
+
+/// The Game rule's overrides replaced in the fixture profiles.
+fn files_with_game(overrides: Value) -> MemoryFiles {
+    let files = MemoryFiles::default();
+    files.profiles(1);
+    let mut document = files.document("profiles.json");
+    document["profiles"]["applicationProfiles"][0]["overrides"] = overrides;
+    files.put("profiles.json", document);
+    files.commit_configuration();
+    files
+}
+/// A rig whose fan steps reach the fixture, at `selector` with Automatic fans.
+fn rig_at(files: MemoryFiles, selector: u8) -> Rig {
+    let rig = Rig::new(files);
+    *rig.custody.origin_for_fan.lock().unwrap() = Some(rig.origin.clone());
+    let mut s = rig.port.state.lock().unwrap();
+    s.selectors = [selector; 2];
+    s.fans = [0; 2];
+    drop(s);
+    rig
+}
+/// The journal's request ids in order, each once.
+fn journal_ids(rig: &Rig) -> Vec<String> {
+    let mut ids: Vec<String> = Vec::new();
+    for line in rig
+        .files
+        .read("thermal-mutation.journal")
+        .unwrap()
+        .unwrap_or_default()
+        .split(|b| *b == b'\n')
+        .filter(|line| !line.is_empty())
+    {
+        let row: Value = serde_json::from_slice(line).unwrap();
+        let id = row["request"].as_str().unwrap().to_owned();
+        if !ids.contains(&id) {
+            ids.push(id);
+        }
+    }
+    ids
+}
+const FIXED: &str = "Fan setters completed and independent mode was confirmed. Target RPM and rotation are not readable on this backend.";
+const CHANGED: &str = "Saved configuration changed unexpectedly; storage reconciliation is required. No thermal submission is established by this change.";
+const PRESET_AND_FIXED: &str = r#"{"pluggedIn":{"performance":2,"fans":1}}"#;
+
+/// Both subsystems of a rule that sets a preset and Fixed fans apply, each
+/// step under its own journal id, through a changed report, a save and the
+/// session's first report. The journal refuses a second row chain under one
+/// id, so a shared id applied only the preset.
+#[tokio::test]
+async fn a_preset_and_fixed_fan_rule_applies_both_steps_under_distinct_journal_ids() {
+    let rule: Value = serde_json::from_str(PRESET_AND_FIXED).unwrap();
+    let applied = format!("{CONFIRMED} {FIXED}");
+    let check = |rig: &Rig, reply: &Value, prefix: &str, trigger: &str| {
+        assert_eq!(
+            reply["result"],
+            json!({"status":1,"message":format!("{prefix} {applied}")}),
+        );
+        let s = rig.port.state.lock().unwrap();
+        assert_eq!((s.selectors, s.fans), ([2; 2], [1; 2]));
+        drop(s);
+        let ids = journal_ids(rig);
+        assert_eq!(ids.len(), 2, "{ids:?}");
+        assert!(ids.iter().all(|id| is_step_request(id) && id != trigger), "{ids:?}");
+        assert!(!rig.storage.pending());
+    };
+    // A changed report.
+    let rig = rig_at(files_with_game(rule.clone()), 0);
+    let reply = report(&rig, 1, Some(r"C:\Games\Game.exe")).await;
+    check(&rig, &reply, RECORDED, "bbbbbbbb-bbbb-cccc-dddd-000000000001");
+    rig.stop().await;
+    // A save that changes the active rule.
+    let rig = rig_at(files_with_game(json!({"pluggedIn":{"performance":1}})), 0);
+    report_game(&rig).await;
+    let mut profiles = rig.files.document("profiles.json")["profiles"].clone();
+    profiles["applicationProfiles"][0]["overrides"] = rule;
+    let reply = rig.request(update(3, &profiles)).await;
+    check(&rig, &reply, "Profiles were stored.", "aaaaaaaa-bbbb-cccc-dddd-000000000003");
+    rig.stop().await;
+    // The session's first report, with no rule active: the power profile.
+    let files = MemoryFiles::default();
+    files.profiles(2);
+    let mut document = files.document("profiles.json");
+    document["profiles"]["pluggedIn"]["fans"] = json!(1);
+    files.put("profiles.json", document);
+    files.commit_configuration();
+    let rig = rig_at(files, 0);
+    let reply = report(&rig, 1, Some(r"C:\Tools\Other.exe")).await;
+    check(&rig, &reply, RECORDED, "bbbbbbbb-bbbb-cccc-dddd-000000000001");
+    // Step ids are fixed per trigger and step, and differ from client ids.
+    assert!(!is_step_request("bbbbbbbb-bbbb-4ccc-8ddd-000000000001"));
+    rig.stop().await;
+}
+
+/// A reconciliation runs under the 11 s reconciliation budget, so both rule
+/// shapes finish at a device pace that a 2 s frame could not cover. A pace
+/// refusal submits nothing, so the session's startup stays owed.
+#[tokio::test]
+async fn reconciliations_finish_at_device_pace_and_a_pace_refusal_leaves_startup_owed() {
+    for ms in [100, 150] {
+        for (rule, message) in [
+            (json!({"pluggedIn":{"performance":2}}), AUTOMATIC),
+            (serde_json::from_str(PRESET_AND_FIXED).unwrap(), FIXED),
+        ] {
+            let rig = rig_at(files_with_game(rule.clone()), 0);
+            rig.port.state.lock().unwrap().latency = Some(std::time::Duration::from_millis(ms));
+            let reply = report(&rig, 1, Some(r"C:\Games\Game.exe")).await;
+            rig.port.state.lock().unwrap().latency = None;
+            assert_eq!(
+                reply["result"],
+                json!({"status":1,"message":format!("{RECORDED} {CONFIRMED} {message}")}),
+                "{ms} ms {rule}"
+            );
+            rig.stop().await;
+        }
+    }
+    // Startup at a pace the performance step cannot cover: refused before
+    // any setter.
+    let files = MemoryFiles::default();
+    files.profiles(2);
+    let rig = rig_at(files, 0);
+    rig.port.state.lock().unwrap().latency = Some(std::time::Duration::from_millis(900));
+    let refused = report(&rig, 1, Some(r"C:\Tools\Other.exe")).await;
+    rig.port.state.lock().unwrap().latency = None;
+    assert_eq!(refused["result"]["status"], 2, "{refused}");
+    // The performance step refuses before accepting at this pace; the fan
+    // step finds firmware Automatic already. Nothing is journaled.
+    assert!(journal_ids(&rig).is_empty(), "{refused}");
+    assert_eq!(writes(&rig), 0);
+    assert!(!rig.storage.pending());
+    // Nothing was submitted, so the next report still reconciles startup.
+    let startup = report(&rig, 2, Some(r"C:\Tools\Other.exe")).await;
+    assert_eq!(
+        startup["result"],
+        json!({"status":1,"message":format!("{RECORDED} {CONFIRMED} {AUTOMATIC}")})
+    );
+    assert_eq!(rig.port.state.lock().unwrap().selectors, [2; 2]);
+    let renewed = report(&rig, 3, Some(r"C:\Tools\Other.exe")).await;
+    assert_eq!(
+        renewed["result"],
+        json!({"status":0,"message":"No application profile is active."})
+    );
+    rig.stop().await;
+}
+
+/// Managed orders by the confirmed fans: with firmware fans already
+/// Automatic, saved manual intent before the trigger does not put fans
+/// first, and the rule's preset applies.
+#[tokio::test]
+async fn saved_manual_fans_with_automatic_firmware_fans_apply_the_rule_preset() {
+    // (power profile edits, rule overrides, selector, adapter level, expected)
+    for (power, overrides, selector, actual, expected) in [
+        (
+            json!({"battery":{"performance":3,"fans":1}}),
+            json!({"battery":{"performance":4,"fans":0}}),
+            3,
+            0,
+            6,
+        ),
+        (
+            json!({"pluggedIn":{"performance":0,"fans":1},"usbC":{"performance":0,"fans":1}}),
+            json!({"pluggedIn":{"performance":2,"fans":0},"usbC":{"performance":2,"fans":0}}),
+            5,
+            15,
+            2,
+        ),
+    ] {
+        let files = files_with_game(overrides);
+        let mut document = files.document("profiles.json");
+        for (key, edit) in power.as_object().unwrap() {
+            for (member, value) in edit.as_object().unwrap() {
+                document["profiles"][key][member] = value.clone();
+            }
+        }
+        files.put("profiles.json", document);
+        files.commit_configuration();
+        let rig = rig_at(files, selector);
+        rig.port.state.lock().unwrap().actual = actual;
+        if actual == 0 {
+            rig.metadata.store(1, Ordering::Release);
+        }
+        let reply = report(&rig, 1, Some(r"C:\Games\Game.exe")).await;
+        assert_eq!(
+            reply["result"],
+            json!({"status":1,"message":format!("{RECORDED} {CONFIRMED} {AUTOMATIC}")}),
+            "{power}"
+        );
+        let written = {
+            let s = rig.port.state.lock().unwrap();
+            (s.selectors, s.fans)
+        };
+        assert_eq!(written, ([expected; 2], [0; 2]), "{power}");
+        rig.stop().await;
+    }
+}
+
+/// An override document changed outside the Service fences writes before
+/// any submission: Blocked with the storage reason, nothing written, and the
+/// Service keeps serving. With fans going first the fan step reports it.
+#[tokio::test]
+async fn an_override_document_changed_outside_the_service_blocks_before_any_write() {
+    let empty = json!({"schemaVersion":10,"overrides":{"performance":null,"fans":null,"lighting":null,"customPerformance":null,"fanControl":null,"gpuClockTuning":null}});
+    // Performance first.
+    let rig = rig_at(files_with_game(json!({"pluggedIn":{"performance":2}})), 0);
+    rig.files.put("manual-overrides.json", empty.clone());
+    let reply = report(&rig, 1, Some(r"C:\Games\Game.exe")).await;
+    assert_eq!(
+        reply["result"],
+        json!({"status":2,"message":format!("{RECORDED} {CHANGED}")})
+    );
+    assert_eq!(writes(&rig), 0);
+    assert!(journal_ids(&rig).is_empty());
+    assert!(rig.storage.pending());
+    assert_eq!(rig.get().await["success"], true);
+    rig.stop().await;
+    // Fans first: the rule's Fixed fans are owned, and leaving the rule
+    // returns them to Automatic.
+    let rig = rig_at(files_with_game(json!({"pluggedIn":{"fans":1}})), 0);
+    assert_eq!(
+        report(&rig, 1, Some(r"C:\Games\Game.exe")).await["result"]["status"],
+        1
+    );
+    let before = writes(&rig);
+    rig.files.put("manual-overrides.json", empty);
+    let reply = report(&rig, 2, Some(r"C:\Tools\Other.exe")).await;
+    assert_eq!(
+        reply["result"],
+        json!({"status":2,"message":format!("{RECORDED} {CHANGED}")})
+    );
+    assert_eq!(writes(&rig), before);
+    assert_eq!(rig.get().await["success"], true);
+    // The owned fan change stays fenced with the store: Stop cannot hand it
+    // back without storage reconciliation.
+    rig.origin.stop();
+    assert!(rig.source.lock().await.drain().await.is_err());
+}
+
+/// An adapter the step's own reading leaves unclassified blocks the
+/// reconciliation, said once although both steps refuse, and submits
+/// nothing, so a resend after classification still reconciles.
+#[tokio::test]
+async fn an_unclassified_adapter_blocks_once_and_leaves_the_reconciliation_owed() {
+    for (rule, message) in [
+        (json!({"pluggedIn":{"performance":2}}), AUTOMATIC),
+        (json!({"pluggedIn":{"fans":1}}), FIXED),
+    ] {
+        let rig = rig_at(files_with_game(rule.clone()), 0);
+        {
+            // 0x10 is an unmapped level: a completed reading that classifies
+            // nothing.
+            let mut s = rig.port.state.lock().unwrap();
+            s.actual = 0x10;
+            s.recommended = 15;
+        }
+        let blocked = report(&rig, 1, Some(r"C:\Games\Game.exe")).await;
+        assert_eq!(
+            blocked["result"],
+            json!({"status":2,"message":format!("{RECORDED} {UNCLASSIFIED_BLOCKED}")}),
+            "{rule}"
+        );
+        assert_eq!(writes(&rig), 0);
+        {
+            let mut s = rig.port.state.lock().unwrap();
+            s.actual = 15;
+            s.recommended = 15;
+        }
+        let applied = report(&rig, 2, Some(r"C:\Games\Game.exe")).await;
+        assert_eq!(
+            applied["result"],
+            json!({"status":1,"message":format!("{RECORDED} {CONFIRMED} {message}")}),
+            "{rule}"
+        );
+        rig.stop().await;
+    }
+}
+
+/// A save that changes nothing a reconciliation applies is Stored: only the
+/// other external class's override, or only battery protection.
+#[tokio::test]
+async fn a_save_that_changes_no_applied_thermal_intent_is_stored() {
+    for edit in ["usbC", "battery"] {
+        let rig = rig_at(files_with_game(json!({"pluggedIn":{"performance":2}})), 0);
+        assert_eq!(
+            report(&rig, 1, Some(r"C:\Games\Game.exe")).await["result"]["status"],
+            1
+        );
+        let before = writes(&rig);
+        let mut profiles = rig.files.document("profiles.json")["profiles"].clone();
+        if edit == "usbC" {
+            // The full adapter is connected; the limited one's override changes.
+            profiles["applicationProfiles"][0]["overrides"]["usbC"] = json!({"performance":0});
+        } else {
+            profiles["pluggedIn"]["batteryProtectionEnabled"] = json!(false);
+        }
+        let saved = rig.request(update(2, &profiles)).await;
+        assert_eq!(saved["result"], json!({"status":0,"message":STORED}), "{edit}");
+        assert_eq!(writes(&rig), before, "{edit}");
+        // Nothing is left owed: the same path again renews the lease.
+        let again = report(&rig, 3, Some(r"C:\Games\Game.exe")).await;
+        assert_eq!(again["result"], json!({"status":0,"message":RENEWED}), "{edit}");
+        rig.stop().await;
+    }
 }
 
 #[tokio::test]
@@ -290,4 +596,187 @@ async fn comparing_a_save_at_either_external_class_retires_no_temporary() {
         temporary
     );
     rig.stop().await;
+}
+
+const RENEWED: &str = "The active application profile lease was renewed.";
+const INACTIVE: &str = "No application profile is active.";
+
+/// Managed orders by the fans firmware reports, not by who set them: Fixed
+/// fans no OpenBlade write established still go first when the rule keeps
+/// Automatic fans, and the fan step carries the rule's preset.
+#[tokio::test]
+async fn firmware_manual_fans_the_service_does_not_own_go_first() {
+    let rig = rig_at(files_with_game(json!({"pluggedIn":{"performance":2}})), 0);
+    rig.port.state.lock().unwrap().fans = [1; 2];
+    assert_manual_fans_observed(&rig).await;
+    assert!(!rig.storage.outstanding_fan());
+    let sent = rig.port.state.lock().unwrap().sent.len();
+    let reply = report(&rig, 1, Some(r"C:\Games\Game.exe")).await;
+    assert_eq!(
+        reply["result"],
+        json!({"status":1,"message":format!("{RECORDED} Fans returned to Automatic with Performance performance, confirmed by independent paired readback. {CONFIRMED}")})
+    );
+    let pair = mode_setters(&rig, sent);
+    assert!(pair.iter().all(|setter| setter[3] == 0), "{pair:?}");
+    rig.stop().await;
+}
+
+/// On AC the limited adapter's class reconciles from its own reading: the
+/// rule's USB-C preset applies.
+#[tokio::test]
+async fn a_limited_adapter_reconciles_the_rules_usb_c_intent() {
+    let rig = rig_at(files_with_game(json!({"usbC":{"performance":0}})), 2);
+    rig.port.state.lock().unwrap().actual = 10;
+    let reply = report(&rig, 1, Some(r"C:\Games\Game.exe")).await;
+    assert_eq!(
+        reply["result"],
+        json!({"status":1,"message":format!("{RECORDED} {CONFIRMED} {AUTOMATIC}")})
+    );
+    assert_eq!(
+        rig.get().await["status"]["confirmedState"]["performance"],
+        0
+    );
+    rig.stop().await;
+}
+
+/// A step that submitted and then failed its readback is Failed, stops the
+/// reconciliation before the fan step, and settles the trigger: the next
+/// report renews the lease and never replays the submission.
+#[tokio::test]
+async fn a_submitted_step_that_fails_readback_is_failed_and_not_replayed() {
+    let rig = rig_at(files_with_game(serde_json::from_str(PRESET_AND_FIXED).unwrap()), 0);
+    rig.port.state.lock().unwrap().mismatch = true;
+    let failed = report(&rig, 1, Some(r"C:\Games\Game.exe")).await;
+    assert_eq!(
+        failed["result"],
+        json!({"status":3,"message":format!("{RECORDED} A thermal command may have been submitted. Read-only reconciliation is required and no mutation will be replayed.")})
+    );
+    let after = writes(&rig);
+    assert!(after > 0);
+    rig.port.state.lock().unwrap().mismatch = false;
+    let again = report(&rig, 2, Some(r"C:\Games\Game.exe")).await;
+    assert_eq!(again["result"], json!({"status":0,"message":RENEWED}));
+    assert_eq!(writes(&rig), after);
+    rig.origin.stop();
+    let _ = rig.source.lock().await.drain().await;
+}
+
+/// A save whose reconciliation is refused before any submission is Stored
+/// with the refusal, and leaves the reconciliation owed to the next report.
+#[tokio::test]
+async fn a_save_refused_before_submission_is_stored_and_stays_owed() {
+    let rig = rig_at(files_with_game(json!({"pluggedIn":{"performance":2}})), 0);
+    assert_eq!(
+        report(&rig, 1, Some(r"C:\Games\Game.exe")).await["result"]["status"],
+        1
+    );
+    let before = writes(&rig);
+    {
+        let mut s = rig.port.state.lock().unwrap();
+        s.actual = 0x10;
+        s.recommended = 15;
+    }
+    let saved = rig
+        .request(update(2, &with_game_performance(&rig.files, 0)))
+        .await;
+    assert_eq!(
+        saved["result"],
+        json!({"status":0,"message":format!("Profiles were stored. {UNCLASSIFIED_BLOCKED}")})
+    );
+    assert_eq!(writes(&rig), before);
+    rig.port.state.lock().unwrap().actual = 15;
+    let applied = report(&rig, 2, Some(r"C:\Games\Game.exe")).await;
+    assert_eq!(
+        applied["result"],
+        json!({"status":1,"message":format!("{RECORDED} {CONFIRMED} {AUTOMATIC}")})
+    );
+    assert_eq!(
+        rig.get().await["status"]["confirmedState"]["performance"],
+        0
+    );
+    rig.stop().await;
+}
+
+/// A save that moves the active rule off the reported path ends the active
+/// pair (`ProfileAutomationState.UpdateProfiles`): the same path reported
+/// again is no change.
+#[tokio::test]
+async fn a_save_that_ends_the_active_rule_updates_the_reported_pair() {
+    let rig = rig_at(files_with_game(json!({"pluggedIn":{"performance":2}})), 0);
+    assert_eq!(
+        report(&rig, 1, Some(r"C:\Games\Game.exe")).await["result"]["status"],
+        1
+    );
+    let mut profiles = rig.files.document("profiles.json")["profiles"].clone();
+    profiles["applicationProfiles"][0]["executablePath"] = json!(r"C:\Games\Other.exe");
+    let saved = rig.request(update(2, &profiles)).await;
+    assert_eq!(saved["result"]["status"], 1, "{saved}");
+    let after = writes(&rig);
+    let again = report(&rig, 2, Some(r"C:\Games\Game.exe")).await;
+    assert_eq!(again["result"], json!({"status":0,"message":INACTIVE}));
+    assert_eq!(writes(&rig), after);
+    rig.stop().await;
+}
+
+/// A reconciliation under a persistent performance override publishes the
+/// override it applied over, as the status reports it.
+#[tokio::test]
+async fn a_reconciliation_under_an_override_reports_that_override() {
+    let rig = rig_at(files_with_game(json!({"pluggedIn":{"performance":2}})), 2);
+    assert_eq!(rig.set(1, value(0, 1)).await["result"]["status"], 1);
+    // Firmware changed outside OpenBlade, so the reconciliation writes.
+    rig.port.state.lock().unwrap().selectors = [2; 2];
+    let reply = report(&rig, 1, Some(r"C:\Games\Game.exe")).await;
+    assert_eq!(reply["result"]["status"], 1, "{reply}");
+    assert_eq!(
+        rig.get().await["status"]["confirmedState"]["performance"],
+        0
+    );
+    let status = rig.get().await;
+    assert_eq!(status["status"]["performanceOverride"]["value"], 0, "{status}");
+    assert_eq!(status["status"]["desiredState"]["performance"]["source"], 4);
+    rig.stop().await;
+}
+
+/// A thermal observation (`observeState`), after the readiness probe
+/// production performs first, that confirms manual fans.
+async fn assert_manual_fans_observed(rig: &Rig) {
+    assert_eq!(rig.get().await["success"], true);
+    let observed = rig
+        .request(json!({"operation":"observeState","version":85,"requestId":"dddddddd-bbbb-cccc-dddd-000000000077","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0}))
+        .await;
+    let fans = &observed["status"]["confirmedState"]["fans"];
+    assert!(fans.as_i64().is_some_and(|fans| fans != 0), "{observed}");
+}
+
+/// A reconciliation validates no saved combination, as managed
+/// `ApplyFullTransitionAsync` does not: a profile save that pairs a new
+/// plugged-in preset with the saved ManualCurve fan override is applied
+/// through the step's own gates instead of being rejected.
+#[tokio::test]
+async fn a_reconciliation_does_not_reject_a_saved_combination() {
+    let files = MemoryFiles::default();
+    files.profiles(2);
+    let rig = rig_at(files, 0);
+    let curve = rig.request(fan_request(1, Some(2), 3700)).await;
+    // Stored; this backend has no native ManualCurve recipe to apply it.
+    assert_eq!(curve["result"]["status"], 2, "{curve}");
+    assert_eq!(
+        rig.files.document("manual-overrides.json")["overrides"]["fans"],
+        2
+    );
+    let mut profiles = rig.files.document("profiles.json")["profiles"].clone();
+    profiles["pluggedIn"]["performance"] = json!(3);
+    let saved = rig.request(update(2, &profiles)).await;
+    assert_eq!(saved["result"], json!({"status":0,"message":STORED}));
+    let reply = report(&rig, 1, Some(r"C:\Tools\Other.exe")).await;
+    // The preset applies; the fan step finds no ManualCurve recipe, after a
+    // submission, so the trigger is Failed.
+    assert_eq!(
+        reply["result"],
+        json!({"status":3,"message":format!("{RECORDED} {CONFIRMED} This source or observed mode needs a native recipe that is not yet implemented, or admission/transaction capacity did not complete. No applied target is claimed.")})
+    );
+    assert!(writes(&rig) > 0);
+    rig.origin.stop();
+    let _ = rig.source.lock().await.drain().await;
 }

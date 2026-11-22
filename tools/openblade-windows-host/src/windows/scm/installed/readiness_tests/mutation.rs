@@ -751,11 +751,24 @@ struct Rig {
     battery_clock: Rc<dyn Fn() -> Option<Instant>>,
 }
 /// Every setter applies intent saved before it: an explicit request's
-/// override, or the saved profiles a reconciliation applies.
-fn saved_intent(files: &MemoryFiles) -> bool {
-    ["manual-overrides.json", "profiles.json"]
-        .iter()
-        .any(|name| files.read(name).unwrap().is_some())
+/// override, or, for a reconciliation step's journal id (`is_step_request`),
+/// the saved profiles it applies.
+fn saved_intent(files: &MemoryFiles, entry: &Value) -> bool {
+    #[cfg(feature = "service-profile-triggers-v1")]
+    let reconciled = entry["request"]
+        .as_str()
+        .is_some_and(crate::installed::readiness::thermal_mutation::is_step_request);
+    #[cfg(not(feature = "service-profile-triggers-v1"))]
+    let reconciled = {
+        let _ = entry;
+        false
+    };
+    let saved = if reconciled {
+        "profiles.json"
+    } else {
+        "manual-overrides.json"
+    };
+    files.read(saved).unwrap().is_some()
 }
 impl Rig {
     fn new(files: MemoryFiles) -> Self {
@@ -773,13 +786,13 @@ impl Rig {
             } else if entry.get("battery").is_some() {
                 assert_eq!(entry["progress"], 60);
             } else if entry.get("fan").is_some() {
-                assert!(saved_intent(&persisted));
+                assert!(saved_intent(&persisted, &entry), "{entry}");
                 assert!(matches!(
                     entry["progress"].as_u64(),
                     Some(10 | 12 | 14 | 16 | 40 | 42)
                 ));
             } else {
-                assert!(saved_intent(&persisted));
+                assert!(saved_intent(&persisted, &entry), "{entry}");
                 // Each setter is preceded by its own intent, which directly
                 // follows the prior step of the destination's chain.
                 let chain = openblade_domain::thermal_mutation::Progress::chain(
@@ -2871,7 +2884,8 @@ fn installed_storage_reads_schema26_lighting_as_managed_normalises_it() {
 }
 /// Reports Game.exe and records the pair without applying it: unknown
 /// Windows power admits no reconciliation (`reconcile_classes`), so the
-/// explicit request that follows is measured alone.
+/// explicit request that follows is measured alone. Without
+/// `service-profile-triggers-v1` a report only stores its context.
 async fn report_game(rig: &Rig) {
     // `Option::replace` stores `Some(None)`: Windows power unknown.
     let windows = rig
@@ -2883,10 +2897,12 @@ async fn report_game(rig: &Rig) {
         .replace(None);
     let result = rig.request(json!({"operation":"reportApplicationContext","version":85,"requestId":"bbbbbbbb-bbbb-cccc-dddd-000000000003","instanceId":"cccccccc-bbbb-cccc-dddd-000000000003","sequence":1,"executablePath":r"C:\Games\Game.exe"})).await;
     rig.port.state.lock().unwrap().windows_on_battery = windows;
-    assert_eq!(
-        result["result"],
-        json!({"status":0,"message":"The active application profile was recorded."})
-    );
+    let expected = if cfg!(feature = "service-profile-triggers-v1") {
+        "The active application profile was recorded."
+    } else {
+        "Application context stored; automatic native reconciliation is not enabled."
+    };
+    assert_eq!(result["result"], json!({"status":0,"message":expected}));
 }
 #[tokio::test]
 async fn edge_managed_fan_control_only_application_precedence_and_lease_are_composed() {
@@ -3721,17 +3737,21 @@ async fn correction_present_malformed_app_fans_refuse_committed_dispatch_without
             Storage::open(Box::new(rig.files.clone()), SID).is_err(),
             "case={case}"
         );
-        // The report selects from the saved profiles, so a store that cannot
-        // open records the sequence but selects nothing, and says why.
-        let report = rig.request(json!({"operation":"reportApplicationContext","version":85,"requestId":"bbbbbbbb-bbbb-cccc-dddd-000000000003","instanceId":"cccccccc-bbbb-cccc-dddd-000000000003","sequence":1,"executablePath":r"C:\Games\Game.exe"})).await;
-        assert_eq!(report["result"]["status"], 2, "case={case}");
-        assert!(
-            report["result"]["message"]
-                .as_str()
-                .unwrap()
-                .starts_with("Saved configuration or the current session is unavailable: "),
-            "case={case}"
-        );
+        if cfg!(feature = "service-profile-triggers-v1") {
+            // The report selects from the saved profiles, so a store that
+            // cannot open records the sequence but selects nothing, and says why.
+            let report = rig.request(json!({"operation":"reportApplicationContext","version":85,"requestId":"bbbbbbbb-bbbb-cccc-dddd-000000000003","instanceId":"cccccccc-bbbb-cccc-dddd-000000000003","sequence":1,"executablePath":r"C:\Games\Game.exe"})).await;
+            assert_eq!(report["result"]["status"], 2, "case={case}");
+            assert!(
+                report["result"]["message"]
+                    .as_str()
+                    .unwrap()
+                    .starts_with("Saved configuration or the current session is unavailable: "),
+                "case={case}"
+            );
+        } else {
+            report_game(&rig).await;
+        }
         // No paused clock advancement: the accepted report's actual 15s lease is live.
         let result = rig.set(91, value(1, 1)).await;
         assert_eq!(result["result"]["status"], 2, "case={case}");
@@ -8915,6 +8935,6 @@ async fn tfc_v1_unrepresentable_private_intent_keeps_evidence_and_both_actual_pa
 #[path = "profiles.rs"]
 mod profiles;
 
-#[cfg(feature = "service-profiles-v1")]
+#[cfg(feature = "service-profile-triggers-v1")]
 #[path = "request_triggers.rs"]
 mod request_triggers;

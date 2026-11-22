@@ -766,6 +766,12 @@ pub(super) enum MailboxSource {
     },
 }
 impl MailboxSource {
+    /// Whether the last thermal observation confirmed manual fans
+    /// (`ReadSource::confirmed_manual_fans`); without a reader, none did.
+    #[cfg(feature = "service-profile-triggers-v1")]
+    pub(super) fn confirmed_manual_fans(&self) -> bool {
+        matches!(self, Self::Reader(reader) if reader.confirmed_manual_fans())
+    }
     #[cfg(feature = "service-thermal-mutation-v1")]
     pub(super) fn fatal_evidence(&self) -> Arc<Mutex<Option<&'static str>>> {
         match self {
@@ -1067,6 +1073,18 @@ impl ReadSource {
     #[cfg(all(test, feature = "service-thermal-mutation-v1"))]
     pub(super) fn idle_for_tests(&self) -> bool {
         self.phase.get() == MutationPhase::Idle
+    }
+    /// Whether the last thermal observation confirmed manual fans, the
+    /// confirmed fans managed `DeviceSubsystemOrder.ForTransition` orders by.
+    /// Managed retains its confirmed state between observations, so an
+    /// observation past the retention window still counts. It chooses a
+    /// reconciliation's order only: each step reads firmware again.
+    #[cfg(feature = "service-profile-triggers-v1")]
+    pub(super) fn confirmed_manual_fans(&self) -> bool {
+        self.last
+            .borrow()
+            .as_ref()
+            .is_some_and(|(thermal, _)| thermal.confirmed_manual_fans())
     }
     #[cfg(test)]
     pub(super) fn last_completed_for_tests(&self) -> Option<Instant> {

@@ -661,7 +661,16 @@ fn this_composition_declares_profile_serving_in_its_compiled_identity() {
             .split(',')
             .any(|feature| feature == "service-profiles-v1")
     );
-    let expected = "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1,service-fan-mutation-v2,service-battery-policy-v1,service-temporary-charge-v1,service-profiles-v1";
+    // Automatic reconciliation adds its own marker, which both readers
+    // refuse by name as well.
+    let triggers = if cfg!(feature = "service-profile-triggers-v1") {
+        ",service-profile-triggers-v1"
+    } else {
+        ""
+    };
+    let expected = format!(
+        "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1,service-fan-mutation-v2,service-battery-policy-v1,service-temporary-charge-v1,service-profiles-v1{triggers}"
+    );
     // The read-only Driver-mode build appends its own refused marker.
     #[cfg(feature = "service-keyboard-driver-mode-read-v1")]
     let expected = format!("{expected},service-keyboard-driver-mode-read-v1");

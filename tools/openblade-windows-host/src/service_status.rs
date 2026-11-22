@@ -979,6 +979,19 @@ impl Snapshot {
             .as_ref()
             .is_some_and(ReadConfirmation::valid)
     }
+    /// The confirmed fans managed `DeviceSubsystemOrder.ForTransition` reads:
+    /// the last confirmed fan mode, which managed retains between
+    /// observations as this status does. Only a confirmed manual wire value
+    /// is manual; an unavailable or unknown mode is not, so the default order
+    /// applies. It chooses an order only: each step reads firmware again.
+    #[cfg(feature = "service-profile-triggers-v1")]
+    pub(crate) fn confirmed_manual_fans(&self) -> bool {
+        self.confirmed_state
+            .as_ref()
+            .and_then(|state| state.get("fans"))
+            .and_then(Value::as_i64)
+            .is_some_and(|fans| fans != 0)
+    }
     #[cfg(feature = "installed-service-candidate")]
     pub(crate) fn retained_mailbox(&self, thermal: &Self, revision: i64) -> Self {
         let mut retained = self.clone();

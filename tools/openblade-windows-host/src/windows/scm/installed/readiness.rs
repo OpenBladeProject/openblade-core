@@ -726,10 +726,29 @@ const _: () = assert!(
     RECIPE_BUDGET.as_nanos()
         >= RECIPE_WAITS.as_nanos() + 2 * FRAME_EXCHANGE.as_nanos() * RECIPE_EXCHANGES as u128
 );
+/// Exchanges in the longest reconciliation of saved intent: the request's 21,
+/// then a fan step of up to 17 under the same deadline. A preset and a
+/// manual fan entry each fit the longest recipe, so both steps together are
+/// 38 exchanges and the fixed spacing of one fan recipe.
+#[cfg(feature = "service-profile-triggers-v1")]
+const RECONCILE_EXCHANGES: u32 = RECIPE_EXCHANGES + 17;
+/// The 11 s reconciliation budget (`RECONCILE_BUDGET`) gives those 38
+/// exchanges the time per exchange a performance request has: 2 x 133.3 ms
+/// x 38 + 275 ms is about 10.41 s. Each step still refuses before its first
+/// setter when its measured pace cannot finish before the shared deadline.
+#[cfg(feature = "service-profile-triggers-v1")]
+const _: () = assert!(
+    crate::service_frame::RECONCILE_BUDGET.as_nanos()
+        >= RECIPE_WAITS.as_nanos() + 2 * FRAME_EXCHANGE.as_nanos() * RECONCILE_EXCHANGES as u128
+);
 
 /// The deadline a mutation request runs under, from its arrival.
 #[cfg(feature = "service-thermal-mutation-v1")]
 fn mutation_budget(request: &StatusRequest) -> Duration {
+    #[cfg(feature = "service-profile-triggers-v1")]
+    if reconciles(request) {
+        return crate::service_frame::RECONCILE_BUDGET;
+    }
     if request.battery_request().is_some()
         || matches!(
             request,
@@ -740,6 +759,20 @@ fn mutation_budget(request: &StatusRequest) -> Duration {
     } else {
         FRAME_TIMEOUT
     }
+}
+
+/// A request that may reconcile saved intent after it has committed
+/// (`service-profile-triggers-v1`). Its runtime bounds itself instead of the
+/// outer wait: it refuses before committing once the deadline has passed,
+/// and after committing each step refuses at its measured pace, so a late
+/// result is still answered rather than dropped with the connection.
+#[cfg(feature = "service-thermal-mutation-v1")]
+fn reconciles(request: &StatusRequest) -> bool {
+    cfg!(feature = "service-profile-triggers-v1")
+        && matches!(
+            request,
+            StatusRequest::ReportApplicationContext { .. } | StatusRequest::UpdateProfiles { .. }
+        )
 }
 
 #[cfg(feature = "service-thermal-mutation-v1")]
@@ -762,11 +795,20 @@ async fn serve_mutation(
             .map_err(Runtime)?;
         source.mutate(caller, sid.clone(), request.clone(), deadline)
     };
+    // A request that may reconcile after committing is never canceled at its
+    // deadline: its runtime bounds itself (`reconciles`).
+    let bounded = async {
+        if reconciles(request) {
+            Ok(future.await)
+        } else {
+            timeout_at(deadline, future).await
+        }
+    };
     let mut probe = [0];
     let (outcome, status) = tokio::select! {
         biased;
         disconnected=stream.read(&mut probe)=>{disconnected.map_err(Client)?;return Err(Client(io::ErrorKind::BrokenPipe.into()));}
-        result=timeout_at(deadline,future)=>result.map_err(|e|Client(e.into()))?.map_err(Runtime)?,
+        result=bounded=>result.map_err(|e|Client(e.into()))?.map_err(Runtime)?,
     };
     // The deadline bounds the wait above and each runtime's own admission.
     // A mutation that has returned is answered even when it finished late:

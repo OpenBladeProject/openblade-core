@@ -2,7 +2,6 @@
 //! explicit storage first; the injected path never resolves a product root.
 use crate::configuration::{self, File as ConfigFile, Inspection, RecoveryRecord};
 use openblade_domain::{
-    application_context::Rule,
     automation::{UNCLASSIFIED_EXTERNAL, temporary_after, temporary_expired},
     profile_set::{
         ApplicationProfile, CustomPerformance, Dialect, FanControl, FanMode, PowerProfile,
@@ -11,10 +10,11 @@ use openblade_domain::{
     },
     thermal_mutation::{CUSTOM, Destination, Preset, Progress, progress_follows, settled},
 };
-// The terms a profile save compares (`SaveIntent`).
-#[cfg(feature = "service-profiles-v1")]
+// The selection a report makes and the terms a profile save compares
+// (`SaveIntent`) belong to automatic reconciliation.
+#[cfg(feature = "service-profile-triggers-v1")]
 use openblade_domain::{
-    application_context,
+    application_context::{self, Rule},
     automation::Provenance,
     profile_set::{
         BatteryPolicy, GpuClockTuning, LaptopBehavior, LightingSettings, PerformancePreset,
@@ -476,6 +476,7 @@ fn profile_layer<'r, 'a>(
     profile.filter(|r| power_source(power).is_some_and(|source| r.desired_source() == Some(source)))
 }
 /// The saved application rules, as managed `ProfileAutomationState` reads them.
+#[cfg(feature = "service-profile-triggers-v1")]
 fn rules(set: &ProfileSet) -> impl Iterator<Item = Rule<'_>> {
     set.application_profiles
         .iter()
@@ -493,16 +494,38 @@ fn fan_settings(settings: &FanControl) -> Value {
     let curve = &settings.manual_curve;
     json!({"mode":settings.mode.0,"fixedSpeedRpm":settings.fixed_speed_rpm,"manualCurve":{"cpu":points(&curve.cpu),"gpu":points(&curve.gpu),"useHigherTemperatureForBoth":curve.use_higher_temperature_for_both}})
 }
+/// The foreground application one interactive session reported: the path
+/// in `NormalizeExecutablePath` form and a context for the active pair
+/// managed `SetApplicationContext` keeps for it. Without automatic
+/// reconciliation the context stays empty: each read selects the reported
+/// path again in the profiles it read (`Storage::profile_layer`).
+#[cfg(not(feature = "service-profile-triggers-v1"))]
+#[derive(Clone, Debug, Default)]
+pub(super) struct Foreground {
+    reported: Option<String>,
+    context: ApplicationContext,
+}
+#[cfg(not(feature = "service-profile-triggers-v1"))]
+impl Foreground {
+    pub(super) fn reported(path: Option<String>) -> Self {
+        Self {
+            reported: path,
+            context: ApplicationContext::default(),
+        }
+    }
+}
 /// The active application pair one interactive session's report selected,
 /// as managed `SetApplicationContext` keeps it: the rule id and the reported
 /// path in `NormalizeExecutablePath` form. The report selects once
 /// (`Storage::select_application`); a profile save retires the pair through
 /// `ApplicationContext::update` (`Storage::retain_application`) and never
 /// selects, so a rule that gains the path takes effect at the next report.
+#[cfg(feature = "service-profile-triggers-v1")]
 #[derive(Clone, Debug, Default, PartialEq)]
 pub(super) struct Foreground {
     context: ApplicationContext,
 }
+#[cfg(feature = "service-profile-triggers-v1")]
 impl Foreground {
     pub(super) fn active_id(&self) -> Option<&str> {
         self.context.active().map(|active| active.id)
@@ -511,14 +534,14 @@ impl Foreground {
 /// What a profile save compares before and after it stores, managed
 /// `activeApplicationIntentChanged` (`Storage::save_intent`): the active id,
 /// the desired state and the effective laptop behaviour at one class.
-#[cfg(feature = "service-profiles-v1")]
+#[cfg(feature = "service-profile-triggers-v1")]
 #[derive(Debug, PartialEq)]
 pub(super) struct SaveIntent {
     application_profile_id: Option<String>,
     desired: Option<SaveDesired>,
     laptop_behavior: Option<LaptopBehavior>,
 }
-#[cfg(feature = "service-profiles-v1")]
+#[cfg(feature = "service-profile-triggers-v1")]
 impl SaveIntent {
     /// `intent_changed` over two reads of the same class.
     pub(super) fn changed(&self, next: &Self) -> bool {
@@ -534,12 +557,34 @@ impl SaveIntent {
         }
         application_context::intent_changed(&view(self), &view(next))
     }
+    /// Whether the change reaches what a reconciliation applies: the active
+    /// id, or the performance or fan members. Native composes only those
+    /// subsystems, so a save that changes only lighting, battery policy or
+    /// laptop behaviour has nothing to apply and replies Stored.
+    pub(super) fn thermal_changed(&self, next: &Self) -> bool {
+        self.changed(next) && self.thermal() != next.thermal()
+    }
+    fn thermal(&self) -> impl PartialEq + '_ {
+        (
+            self.application_profile_id.as_deref(),
+            self.desired.as_ref().map(|d| {
+                (
+                    &d.performance,
+                    &d.custom_performance,
+                    &d.gpu_clock_tuning,
+                    &d.fans,
+                    &d.destination,
+                    &d.fan,
+                )
+            }),
+        )
+    }
 }
 /// Managed `ResolveAutomationDesired` as native composes it: the profile
 /// layer's `desired_intent` with every member an explicit override decides
 /// masked, and the composed destination and fan intent those overrides
 /// select (`Storage::desired`, `Storage::desired_fan`).
-#[cfg(feature = "service-profiles-v1")]
+#[cfg(feature = "service-profile-triggers-v1")]
 #[derive(Debug, PartialEq)]
 struct SaveDesired {
     performance: Option<application::Setting<PerformancePreset>>,
@@ -722,6 +767,20 @@ impl Storage {
             s.quarantined || s.last.as_ref().is_some_and(|e| !settled(e.progress))
         })
     }
+    /// Whether a fence may hide a submitted setter (managed
+    /// `SubmissionPossible`): an unsettled row past its intent, or an intent
+    /// row whose publication was not confirmed. A changed or failed
+    /// configuration, a failed preparation and a Prepared-only row reached no
+    /// submission (`pending_reason_locked`).
+    #[cfg(feature = "service-profile-triggers-v1")]
+    pub(super) fn submission_possible(&self) -> bool {
+        self.state.lock().map_or(true, |s| {
+            s.intent_append_failed
+                || s.last
+                    .as_ref()
+                    .is_some_and(|e| e.progress >= 1 && !settled(e.progress))
+        })
+    }
     pub(super) fn save(&self, value: Option<Override>, power: i32) -> io::Result<()> {
         if let Some(v) = &value {
             v.validate()?;
@@ -774,6 +833,28 @@ impl Storage {
         });
         Ok(())
     }
+    /// One read of the saved profiles with `foreground` selected in them, for
+    /// one request step: every class the step reads resolves from it
+    /// (`ProfileLayer::at`). The selection is managed `SetApplicationContext`
+    /// for the reported path over the profiles just read, so a profile edit
+    /// takes effect at the next read without a new report.
+    #[cfg(not(feature = "service-profile-triggers-v1"))]
+    pub(super) fn profile_layer(&self, foreground: &Foreground) -> io::Result<ProfileLayer> {
+        let set = committed_aggregate(self.files.as_ref(), self.same_path)?
+            .map(|committed| typed_profiles(&committed))
+            .transpose()?;
+        let mut context = foreground.context.clone();
+        context.report(
+            set.iter().flat_map(|set| {
+                set.application_profiles
+                    .iter()
+                    .map(ApplicationProfile::rule)
+            }),
+            foreground.reported.as_deref(),
+            self.same_path,
+        );
+        Ok(ProfileLayer { set, context })
+    }
     /// One read of the saved profiles with `foreground`'s active pair, for
     /// one request step: every class the step reads resolves from it
     /// (`ProfileLayer::at`). The pair is the one the last report selected;
@@ -781,6 +862,7 @@ impl Storage {
     /// no override (`ApplicationContext::retained`), so a store changed by
     /// anything but `retain_application` cannot hand the active id's
     /// overrides to another rule.
+    #[cfg(feature = "service-profile-triggers-v1")]
     pub(super) fn profile_layer(&self, foreground: &Foreground) -> io::Result<ProfileLayer> {
         let set = self.typed_set()?;
         let retained = set.as_ref().is_some_and(|set| {
@@ -796,6 +878,7 @@ impl Storage {
         };
         Ok(ProfileLayer { set, context })
     }
+    #[cfg(feature = "service-profile-triggers-v1")]
     fn typed_set(&self) -> io::Result<Option<ProfileSet>> {
         committed_aggregate(self.files.as_ref(), self.same_path)?
             .map(|committed| typed_profiles(&committed))
@@ -805,6 +888,7 @@ impl Storage {
     /// enabled saved rule for `reported` becomes the active pair, over the
     /// profiles saved now. Returns the new pair and whether it changed from
     /// `current`. No saved aggregate selects nothing.
+    #[cfg(feature = "service-profile-triggers-v1")]
     pub(super) fn select_application(
         &self,
         current: &Foreground,
@@ -821,7 +905,7 @@ impl Storage {
     /// Managed `ProfileAutomationState.UpdateProfiles` after a save: the
     /// active pair survives only while an enabled rule with its id still
     /// holds its path (`ApplicationContext::update`). It never selects.
-    #[cfg(feature = "service-profiles-v1")]
+    #[cfg(feature = "service-profile-triggers-v1")]
     pub(super) fn retain_application(&self, current: &Foreground) -> io::Result<Foreground> {
         let mut next = current.clone();
         match self.typed_set()? {
@@ -839,7 +923,7 @@ impl Storage {
     /// reading established `power`, so the read retires no temporary: the
     /// override reads expire one kept for another class, and that state is
     /// put back afterwards.
-    #[cfg(feature = "service-profiles-v1")]
+    #[cfg(feature = "service-profile-triggers-v1")]
     pub(super) fn save_intent(
         &self,
         foreground: &Foreground,
@@ -854,7 +938,7 @@ impl Storage {
         (s.temporary, s.temporary_fan) = kept;
         intent
     }
-    #[cfg(feature = "service-profiles-v1")]
+    #[cfg(feature = "service-profile-triggers-v1")]
     fn save_intent_at(&self, foreground: &Foreground, power: i32) -> io::Result<SaveIntent> {
         let layer = self.profile_layer(foreground)?;
         let profile = layer.at(power)?;
@@ -1149,6 +1233,21 @@ impl Storage {
             }
         }))
     }
+    /// The check `save` makes before it replaces the override document, for
+    /// a reconciliation that stores nothing: a document changed outside the
+    /// Service fences writes (`configuration_changed`) before any submission.
+    pub(super) fn verify_overrides(&self) -> io::Result<()> {
+        let mut s = self.state.lock().map_err(|_| denied())?;
+        if s.quarantined || s.last.as_ref().is_some_and(|e| !settled(e.progress)) {
+            return Err(denied());
+        }
+        if self.files.read(OVERRIDES)? != s.bytes {
+            s.quarantined = true;
+            s.configuration_changed = true;
+            return Err(denied());
+        }
+        Ok(())
+    }
     // Integrity remains mandatory for release; mutable policy equality is not.
     pub(super) fn verify_fan_configuration(&self) -> io::Result<()> {
         aggregate(self.files.as_ref(), self.same_path)?;
@@ -1392,18 +1491,8 @@ impl Storage {
     pub(super) fn profiles(&self) -> io::Result<Option<Value>> {
         Ok(aggregate(self.files.as_ref(), self.same_path)?.map(|v| v["profiles"].clone()))
     }
-    /// Whether saved fan intent is manual with `foreground`'s pair at each
-    /// classified class, indexed by class, read before a trigger changes that
-    /// pair or the saved profiles.
-    pub(super) fn manual_fans(&self, foreground: &Foreground) -> io::Result<[bool; 3]> {
-        let layer = self.profile_layer(foreground)?;
-        let mut manual = [false; 3];
-        for (class, manual) in (0..).zip(&mut manual) {
-            *manual = self.desired_manual_fans(class, layer.at(class)?.as_ref())?;
-        }
-        Ok(manual)
-    }
     /// The request id of the latest journal row.
+    #[cfg(feature = "service-profile-triggers-v1")]
     pub(super) fn last_request(&self) -> Option<String> {
         self.state
             .lock()
