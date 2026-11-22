@@ -5,11 +5,7 @@ use openblade_protocol::{
     REPORT_LENGTH, RazerReport,
     custom_performance::{CustomPerformanceComponent, CustomPerformanceQuery},
 };
-use std::{
-    io,
-    sync::atomic::{AtomicBool, AtomicU8, Ordering},
-    time::Duration,
-};
+use std::{io, sync::atomic::AtomicBool, time::Duration};
 use tokio::time::{Instant, sleep_until};
 
 use super::{Descriptor, Selection, blocked, check_cancelled};

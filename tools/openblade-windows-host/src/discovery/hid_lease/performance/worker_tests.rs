@@ -5,7 +5,7 @@ use super::{
 };
 use std::sync::{
     Arc, Mutex,
-    atomic::{AtomicUsize, Ordering},
+    atomic::{AtomicU8, AtomicUsize, Ordering},
     mpsc,
 };
 use tokio::{sync::oneshot, time::timeout};

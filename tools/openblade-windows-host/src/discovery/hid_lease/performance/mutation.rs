@@ -5,7 +5,7 @@ use openblade_domain::{
     thermal_mutation::{Destination, Plan, Progress, admits_class, confirms, pins_class},
 };
 use openblade_protocol::{custom_performance::CustomLevelPair, thermal_preset::PresetPair};
-use std::sync::Arc;
+use std::sync::{Arc, atomic::Ordering};
 
 /// Internal host evidence. Clients cannot construct a permit or journal progress.
 /// The implementation retains the actual owner, original request, loaded epoch,

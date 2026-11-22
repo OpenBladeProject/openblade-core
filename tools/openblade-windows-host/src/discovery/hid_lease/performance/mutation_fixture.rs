@@ -2,7 +2,7 @@
 use super::mutation::Permit;
 use super::worker::Reading;
 use super::*;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, atomic::Ordering};
 /// Edits one raw 07/8C reply frame in place.
 pub(crate) type PowerEdit = Arc<dyn Fn(&mut [u8; FRAME_LENGTH]) + Send + Sync>;
 #[derive(Default)]

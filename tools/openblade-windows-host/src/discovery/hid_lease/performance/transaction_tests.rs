@@ -5,7 +5,7 @@ use super::*;
 use openblade_protocol::device_mode::DeviceMode;
 use std::{
     collections::VecDeque,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, atomic::Ordering},
 };
 
 const PROOF: ReadAdmission = ReadAdmission {
@@ -33,6 +33,8 @@ struct Device {
     plan: Mutex<VecDeque<Firmware>>,
     sent: Mutex<Vec<Frame>>,
     selector: u8,
+    // Retirement is never confirmed.
+    unretired: AtomicBool,
 }
 
 impl Device {
@@ -43,6 +45,7 @@ impl Device {
             plan: Mutex::default(),
             sent: Mutex::default(),
             selector,
+            unretired: AtomicBool::new(false),
         })
     }
 
@@ -147,7 +150,7 @@ impl Port for MailboxPort {
     fn cancel(&mut self) {}
     fn poll_retirement(&mut self) -> io::Result<bool> {
         self.pending = None;
-        Ok(true)
+        Ok(!self.device.unretired.load(Ordering::Acquire))
     }
 }
 
@@ -218,6 +221,32 @@ async fn unbounded_custom_reads_and_device_mode_jobs_never_exhaust_the_pool() {
     // replies are the only ones still readable.
     assert_eq!(device.sent.lock().unwrap().len(), 6_000);
     assert_eq!(device.transactions.free(), 252);
+}
+
+#[tokio::test(start_paused = true)]
+async fn an_unconfirmed_retirement_keeps_even_its_unsent_ids() {
+    async fn job(device: &Arc<Device>) -> io::Result<()> {
+        let cancelled = AtomicBool::new(false);
+        let mut reader = Reader::new(device.port(), PROOF);
+        let observed = reader
+            .observe_job(&mut || Some(PROOF), limit(&cancelled), true)
+            .await;
+        assert!(observed.is_some());
+        reader
+            .retire(Some(Instant::now() + Duration::from_secs(1)))
+            .await
+    }
+    let device = Device::new(0);
+    job(&device).await.unwrap();
+    let free = device.transactions.free();
+    device.unretired.store(true, Ordering::Release);
+    assert_eq!(
+        job(&device).await.unwrap_err().kind(),
+        io::ErrorKind::TimedOut
+    );
+    // Its replies replaced the first job's, which frees those, but the query's
+    // unsent second ID could still be sent until retirement is confirmed.
+    assert_eq!(device.transactions.free(), free - 1);
 }
 
 #[tokio::test(start_paused = true)]
@@ -407,6 +436,7 @@ fn quarantined_ids_exhaust_the_pool() {
         plan: Mutex::default(),
         sent: Mutex::default(),
         selector: 0,
+        unretired: AtomicBool::new(false),
     });
     assert_eq!(reader.reserve_pair(), None);
     assert!(reader.exhausted);
