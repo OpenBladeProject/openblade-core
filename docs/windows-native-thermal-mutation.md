@@ -96,8 +96,10 @@ fence or recapture after such a notice, and record which. `low_power()` returns
 the current transition for timers that ask outside a write, and `None`
 (unreadable or exhausted) means low power. Timers that need only the answer
 use `low_power_or_unknown()`, which is true for `None`. Request-driven
-reconciliation reads it to classify a refusal its write admission already
-made (see Low-power deferral under Request-driven reconciliation).
+reconciliation reads it before each step, where that check is the refusal,
+and compares its generation across a step to classify a refusal the step's
+write admission made (see Low-power deferral under Request-driven
+reconciliation).
 
 ### Power-setting notifications
 
@@ -1286,8 +1288,8 @@ Differences from managed:
 The Cargo feature `service-profile-triggers-v1` composes it. No packaged
 composition implies it, and both package readers (`native_package` and
 `WindowsNativePackage`) refuse it by feature name and by its `build.rs`
-capability marker: it has no resume or lease-expiry trigger (C3) and no
-transaction-pool reclamation yet. Without it, `updateProfiles` stores profiles only and
+capability marker: it has no resume or lease-expiry trigger (C3) yet.
+Without it, `updateProfiles` stores profiles only and
 `reportApplicationContext` records the report only, as before the feature
 existed.
 
@@ -1347,53 +1349,73 @@ Managed `ApplyFullTransitionAsync` checks the `LowPowerGate` before any device
 access and returns Blocked "Lighting intent was stored and will be applied
 after standby." (`DeferLightingIntentForLowPower`), and each thermal write
 checks it again (`ScopedThermalWriteBlockReason`). Native refuses the same
-writes through the admission it already has: the trigger's `fresh.authorize()`
-before any firmware read or transaction pair, each step's capture and
-authorization, and each write's `WindowsGuard::authorize_for`, which compare
-the pinned epoch with `epoch_for(WriteScope::Ordinary)`, `None` while the
-gate is set. `Runtime::in_low_power` (`Lifecycle::low_power_or_unknown`, wired
-by `Runtime::native`) only classifies such a refusal; it never admits a
-write. It is read:
+writes through the admission it already has: the trigger's capture
+(`WindowsGuard::capture`, which requires an active lifecycle) and
+`fresh.authorize()` before any firmware read or transaction pair, each
+step's capture and authorization, and each write's
+`WindowsGuard::authorize_for`, which compare the pinned epoch with
+`epoch_for(WriteScope::Ordinary)`, `None` while the gate is set.
+`Runtime::gate` reads `Lifecycle::low_power` (wired by `Runtime::native`);
+an exhausted or unreadable lifecycle counts as low power, which managed's
+gate has no state for. It never admits a write.
 
-- after a report's entry admission is refused, for a changed pair on
-  classified power, where managed reaches its gate. The reply is Blocked
-  "The active application profile was recorded. Lighting intent was stored
-  and will be applied after standby." A renewal and a report with no
-  application reply as they do without the gate, as managed's do.
-- after a save's entry admission is refused while the store is not fenced.
-  The save is stored and replies Stored "Profiles were stored. Lighting
-  intent was stored and will be applied after standby."
-- before each step. A suspend after the first step stops the second before
-  its capture, reading or pair.
-- after a step refused before anything of it was possibly submitted, when
-  it changed nothing and the store is not fenced: the refusal of a suspend
-  that arrived inside the step is the deferral.
+In production, a trigger that arrives while the gate is set is refused at
+its capture: Blocked "Saved configuration or the current session is
+unavailable: fresh installed mutation admission is unavailable". Nothing is
+read, the report keeps the pair already selected and its debt, and the save
+is not stored. The gate does real work only when it sets after that capture,
+in the middle of a trigger:
+
+- before each step (`request_triggers.rs`, the check ahead of the step's
+  request id). That check is the refusal: a suspend after the first step
+  stops the second before its capture, reading or pair.
+- after a step, when the gate's generation moved during it, so a suspend
+  that has already cleared again still counts. A step that was refused
+  (Blocked) or did not finish by the bound, with nothing of it possibly
+  submitted, no class found unchanged and the store not fenced, is
+  relabelled as the deferral. A relabelled step's own refusal is not
+  reported for that reconciliation; the deferred step runs again once the
+  gate clears. A step that may have submitted keeps its own result and is
+  never relabelled.
+- after the entry `fresh.authorize()` of a report or save refuses, when the
+  gate sets between capture and that check. A changed pair on classified
+  power replies Blocked "The active application profile was recorded.
+  Lighting intent was stored and will be applied after standby."; a save
+  replies Stored "Profiles were stored. Lighting intent was stored and will
+  be applied after standby." A renewal and a report with no application
+  reply as they do without the gate, as managed's do.
 
 A deferred step adds managed's per-write reply, Blocked "The laptop entered a
 low-power transition before the thermal command was submitted.", to the
-steps that ran. A deferral keeps the debt owed with its attempts unchanged
-(`Reconciled::deferred`, `Reconciled::spent`), so renewals every 5 s in low
-power read no firmware, reserve no pair and never exhaust `RETRIES`. An
-exhausted or unreadable lifecycle counts as low power; managed's gate has no
-unknown state.
+steps that ran, and does not count as a step that ran. A deferral keeps the
+debt owed with its attempts unchanged (`Reconciled::deferred`,
+`Reconciled::spent`), even after an earlier step that may not be retried, so
+renewals every 5 s in low power read no firmware, reserve no pair and never
+exhaust `RETRIES`.
 
-The production capture (`WindowsGuard::capture`) already requires an active
-lifecycle, so a report or save that arrives with the gate set is refused
-there before the gate check: Blocked "Saved configuration or the current
-session is unavailable: ...", the report keeps the pair already selected and
-the save is not stored. The deferral replies above are reached when the gate
-sets after that capture. Explicit `setPerformanceOverride` and
-`setFanOverride` are refused by the same capture admission
-(`thermal_native.rs` `WindowsGuard::capture`): nothing is submitted, as in
-managed, but the override is not stored and the reply is the admission
-refusal, where managed stores the override and replies Blocked
-"... intent was stored. Hardware result: The laptop entered a low-power
-transition before the ... command was submitted."
+Explicit `setPerformanceOverride` and `setFanOverride` are refused by the
+same capture admission (`thermal_native.rs` `WindowsGuard::capture`):
+nothing is submitted, as in managed, but the override is not stored and the
+reply is the admission refusal, where managed stores the override and
+replies Blocked "... intent was stored. Hardware result: The laptop entered
+a low-power transition before the ... command was submitted." Storing
+intent in low power needs a storage-only capture that keeps every
+per-write admission; that is the queued follow-up slice. Until it lands, an
+explicit override or a profile save sent while the gate is set is not
+saved, and a refused report is sent again at the Agent's next 5 s lease
+renewal.
 
-Managed retries deferred thermal intent after resume only when the power
-source changed (`HandlePowerSourceChangedAsync`). Native retries it on the
-next report after the gate clears, which is the next lease renewal at most
-5 s later. C3 can apply it on resume instead: on the gate clearing (resume or
+Under the default `ThermalControlPolicy.MaintainDesiredState`
+(`BatteryAutomationPreferences.cs:18-19`), managed reconverges thermal intent
+after resume: `ServiceSessionPowerTransitionCoordinator.cs:334` calls
+`HandlePowerSourceChangedAsync` (`ServiceControlRuntime.cs:12321`), whose
+observation reaches `EvaluateThermalConvergenceObservationAsync`
+(`ServiceControlRuntime.cs:17599`, `:19943`), and the 15 s periodic
+observation (`ServicePeriodicObservationLoop.cs:7`) repeats it. Only Strict
+waits for a power-source change, which runs `ApplyFullTransitionAsync`.
+Native has no convergence loop; the next report after the gate clears,
+at most one 5 s lease renewal later, is what reconciles a deferred debt under
+MaintainDesiredState. C3 can do it on resume: on the gate clearing (resume or
 DisplayOn), run `reconcile_locked` for each owed pair; a deferral leaves the
 attempts unchanged, so that retry spends none of the budget.
 
@@ -1402,7 +1424,10 @@ attempts unchanged, so that retry spends none of the budget.
 reporter in low power (a change, a renewal, leaving the rule, no
 application) and after the gate clears, a save, the startup transition, the
 per-write refusal and both explicit requests in low power, with the setters
-each submitted. `request_triggers_low_power.rs` replays them.
+each submitted. `request_triggers_low_power.rs` replays them over the rig's
+default `Fresh`, which does not pin the lifecycle at capture: that replay
+covers only the mid-trigger window above. The same rows under the
+production-modelled capture (`CapturedFresh`) are each refused at capture.
 
 The steps are the explicit request's permits in reconcile mode: they store
 nothing and validate no override, and they keep every per-write admission,
@@ -1473,8 +1498,10 @@ Differences from managed:
   pair already selected and replies Blocked with the reason. Managed holds its
   profiles in memory and has no such case.
 - A deferral in low power is retried by the next report after the gate
-  clears; managed retries it after resume only on a power-source change.
-  Lease expiry, resume and power changes trigger no reconciliation yet (C3).
+  clears. Managed reconverges after resume under its default
+  MaintainDesiredState policy and reapplies only on a power-source change
+  under Strict. Lease expiry, resume and power changes trigger no native
+  reconciliation yet (C3).
 - The margin bounds a step, not the wait for the mutation gate. A trigger
   queued behind owned fan cleanup (`stop_fans`) or a battery power-source
   event (`battery_source_event`) waits for that work, as every mutation
