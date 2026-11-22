@@ -19,6 +19,9 @@ internal sealed class SourceBackedCoolingPadDevice(
     private CoolingPadFanOwnership runningOwner = CoolingPadFanOwnership.Firmware;
     // Set once this session has written and independently confirmed a fan selection.
     private bool fanWriteConfirmed;
+    // The effect this session wrote last and confirmed by readback. The strip shows the last
+    // effect written, so it identifies the showing record while that record still holds it.
+    private CoolingPadLightingConfiguration? lastConfirmedEffect;
     public string Identity { get; } = identity;
 
     public void BindLightingBaseline(CoolingPadDeviceSnapshot baseline)
@@ -67,8 +70,12 @@ internal sealed class SourceBackedCoolingPadDevice(
         var appMode = fan.Preset == CoolingPadFanPreset.Off ? CoolingPadFanMode.Off
             : fan.Ownership == CoolingPadFanOwnership.Synapse ? CoolingPadFanMode.Fixed : (CoolingPadFanMode?)null;
         // Profile 1 is the stored effect and profile 0 the unsaved one; the strip shows the last
-        // one written. Two different effects cannot say which is showing, so neither is confirmed.
-        var lightMode = light!.Effect == activeLight!.Effect ? DecodeLight(light.Effect) : null;
+        // one written. Two different effects say which is showing only when this session wrote
+        // the last one and its record still holds it; otherwise neither is confirmed.
+        var lightMode = light!.Effect == activeLight!.Effect ? DecodeLight(light.Effect)
+            : lastConfirmedEffect is { } last && CoolingPadProtocol.ConfirmsEffect(last, last.Profile == 1 ? light : activeLight)
+                ? DecodeLight(last.Effect)
+                : null;
         // Low/Medium/High report their configured speed; Smart presets only the ramping speed from 0D/81.
         int configuredTarget = fan.Preset is CoolingPadFanPreset.Low or CoolingPadFanPreset.Medium or CoolingPadFanPreset.High
             ? fan.ConfiguredRpm
@@ -188,6 +195,7 @@ internal sealed class SourceBackedCoolingPadDevice(
                 }
             }
             var effect = CoolingPadProtocol.EffectFor(settings);
+            lastConfirmedEffect = null;
             // Built-in effects persist in profile 1. Custom activation uses the reviewed volatile profile 0.
             await Execute(CoolingPadProtocol.EffectSet(effect), true, submissionAllowed, cancellationToken).ConfigureAwait(false);
             await WriteBrightness(CoolingPadProtocol.PercentToRaw(settings.BrightnessPercent), submissionAllowed, cancellationToken).ConfigureAwait(false);
@@ -198,12 +206,14 @@ internal sealed class SourceBackedCoolingPadDevice(
                 CoolingPadProtocol.TryDecodeEffect(active.Span, 0, out var activeConfiguration);
                 if (!CoolingPadProtocol.ConfirmsEffect(effect, activeConfiguration!)) { FailReadback("Cooling-pad custom activation was not confirmed."); }
                 customBufferOwned = true;
+                lastConfirmedEffect = effect;
             }
             if (!mirrorActive)
             {
                 var actual = await Execute(CoolingPadProtocol.EffectQuery(), false, null, cancellationToken).ConfigureAwait(false);
                 CoolingPadProtocol.TryDecodeEffect(actual.Span, 1, out var confirmed);
                 if (!CoolingPadProtocol.ConfirmsEffect(effect, confirmed!)) { FailReadback("Cooling-pad effect readback differs from the request."); }
+                lastConfirmedEffect = effect;
                 if (originalMirrorMode is { } saved)
                 {
                     await WriteMode(saved, submissionAllowed, cancellationToken).ConfigureAwait(false);
@@ -261,6 +271,7 @@ internal sealed class SourceBackedCoolingPadDevice(
             if (restoreLighting)
             {
                 var light = baseline.LightingConfiguration ?? throw new CoolingPadOperationException("The original lighting effect is unavailable.", false);
+                lastConfirmedEffect = null;
                 await Execute(CoolingPadProtocol.EffectSet(light), true, submissionAllowed, cancellationToken).ConfigureAwait(false);
                 if (baseline.BrightnessRaw is not { } raw) { throw new CoolingPadOperationException("The original brightness is unavailable.", partialMutation); }
                 await WriteBrightness(raw, submissionAllowed, cancellationToken).ConfigureAwait(false);
@@ -280,6 +291,8 @@ internal sealed class SourceBackedCoolingPadDevice(
                 var actual = await Execute(CoolingPadProtocol.EffectQuery(), false, null, cancellationToken).ConfigureAwait(false);
                 CoolingPadProtocol.TryDecodeEffect(actual.Span, 1, out var confirmed);
                 if (!CoolingPadProtocol.ConfirmsEffect(light, confirmed!)) { FailReadback("Cooling-pad lighting restoration was not confirmed."); }
+                // The active record is written after the stored one when the baseline has it.
+                lastConfirmedEffect = baseline.ActiveLightingConfiguration ?? light;
                 mirrorActive = false;
                 customBufferOwned = false;
                 originalMirrorMode = null;
@@ -373,6 +386,8 @@ internal sealed class SourceBackedCoolingPadDevice(
             customBufferOwned = false;
             restorationBaseline = null;
             mirrorActive = false;
+            // Another controller may have written since; the last confirmed write is unknown.
+            lastConfirmedEffect = null;
         }
         if (knownNotSubmitted && !partialMutation) { token.ThrowIfCancellationRequested(); }
         uncertain |= partialMutation || write && !knownNotSubmitted;

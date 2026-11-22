@@ -291,6 +291,21 @@ public sealed class CoolingPadSourceProtocolTests
     }
 
     [Fact]
+    public async Task OwnConfirmedLightingWriteIdentifiesTheShowingRecordUntilItChanges()
+    {
+        // A saved effect leaves the unsaved record as it was; the strip shows the saved write.
+        var wire = new Wire { Effect = new(1, 0, 0, 0, 0, []), ActiveEffect = new(0, 0, 3, 0, 0, []) };
+        await using var device = Create(wire);
+        await device.SetLightingAsync(new() { LightingMode = CoolingPadLightingMode.Off }, () => true, default);
+        Assert.Equal(CoolingPadLightingMode.Off, (await device.ReadSnapshotAsync(default)).LightingMode);
+        wire.Effect = new(1, 0, 2, 0, 0, []);
+        Assert.Null((await device.ReadSnapshotAsync(default)).LightingMode);
+        await using var restarted = Create(wire);
+        wire.Effect = new(1, 0, 0, 0, 0, []);
+        Assert.Null((await restarted.ReadSnapshotAsync(default)).LightingMode);
+    }
+
+    [Fact]
     public async Task ExistingCustomPixelsAreNeverReplacedWithAnUnrestorableMirror()
     {
         var wire = new Wire { ActiveEffect = new(0, 0, 8, 0, 0, []) }; await using var device = Create(wire);
