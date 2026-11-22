@@ -569,8 +569,9 @@ Resolution uses eligible manual intent, then the current application report's
 performance override, then the matching power profile. Application instances have
 monotonic sequence numbers and a 15-second lease, use full canonical executable
 paths and production Windows ordinal comparison, and cannot supply caller SID or
-hardware authority. A report that changes the active pair applies the saved
-intent (see [Request-driven reconciliation](#request-driven-reconciliation)).
+hardware authority. With `service-profile-triggers-v1`, a report that changes
+the active pair applies the saved intent (see
+[Request-driven reconciliation](#request-driven-reconciliation)).
 It can use the existing managed reporter wire operation;
 complete native Session Agent producer parity is separate work. Private profile
 and accepted override projection carries a local authenticated SID binding. Final
@@ -843,8 +844,9 @@ those tests.
 Differences from managed:
 
 - Managed restores lighting it had suppressed after a save; native does not.
-  An edit that changes the active application profile's intent applies the
-  saved performance and fan intent, as described in
+  With `service-profile-triggers-v1`, an edit that changes the active
+  application profile's thermal intent applies the saved performance and fan
+  intent, as described in
   [Request-driven reconciliation](#request-driven-reconciliation); battery
   and lighting are not applied.
 - Member names are matched exactly. Managed's IPC reader ignores letter case;
@@ -1116,9 +1118,10 @@ extends or as anything else. Tests on both sides pin the refusal. Admitting it b
 ### Active application profile
 
 Resolution of the active application profile is ported. The installed Service
-resolves every request's profile layer through it (see below). A changed
-foreground report, the first admitted report of a session and a save that
-changes the active application's intent apply the saved intent
+resolves every request's profile layer through it (see below). With
+`service-profile-triggers-v1`, a changed foreground report, a report while the
+session owes a reconciliation and a save that changes the active
+application's thermal intent apply the saved intent
 ([Request-driven reconciliation](#request-driven-reconciliation)); lease expiry
 and power changes do not trigger one yet.
 `openblade_domain::application_context` holds managed `ProfileAutomationState`'s
@@ -1272,51 +1275,89 @@ Differences from managed:
 
 ### Request-driven reconciliation
 
-Three requests apply saved intent, as managed `ApplyFullTransitionAsync` does,
-for performance and fans only (`Runtime::reconcile_locked`):
+The Cargo feature `service-profile-triggers-v1` composes it. No packaged
+composition implies it, and both package readers (`native_package` and
+`WindowsNativePackage`) refuse it by feature name and by its `build.rs`
+capability marker: it has no low-power gate and no transaction-pool
+reclamation yet. Without it, `updateProfiles` stores profiles only and
+`reportApplicationContext` records the report only, as before the feature
+existed.
+
+With it, three requests apply saved intent, as managed
+`ApplyFullTransitionAsync` does, for performance and fans only
+(`Runtime::reconcile_locked` in `request_triggers.rs`):
 
 - A foreground report (`Runtime::application`, managed
   `ReportApplicationContextAsync`) that changes the active pair. The reply is
-  "The active application profile was recorded. " followed by the hardware
+  "The active application profile was recorded." followed by the hardware
   result. A stale sequence of the same reporter replies Stored "A stale
-  application context was ignored."; a report that changes nothing replies
+  application context was ignored."; a renewal of a reconciled pair replies
   Stored "The active application profile lease was renewed." or "No
   application profile is active." and applies nothing. A reporter outside the
   active local session is Blocked "Application context requires the active
   local Windows session."
-- The first admitted report of a `(sid, session)` since the Service started,
-  even when it changes nothing. It runs once, marked before it runs, so a
-  failure is not retried by a later report. A report that is not admitted
-  does not consume it. A fresh Service holds no temporary override, so none is
-  replayed.
-- A profile save (`Runtime::update_profiles`, managed `UpdateProfilesAsync`)
-  while an application profile is active, when the save changes the active
-  id, the desired state or the effective laptop behaviour
-  (`SaveIntent::changed`, managed `activeApplicationIntentChanged`). The reply
-  is "Profiles were stored. " followed by the hardware result. A member an
-  explicit override decides is masked, so an edit under that override is no
-  change.
+- A report while the pair still owes a reconciliation. A `(sid, session)`
+  owes one from Service start and after each change of its active pair or
+  saved thermal intent (`Runtime::reconciled`). Only an outcome that may have
+  submitted, which is never replayed, or that confirmed there is nothing to
+  apply settles it (`Reconciled::settles`). A refusal that provably submitted
+  nothing (unknown Windows power, a refused admission, an unreadable store, a
+  pace refusal or an unclassified adapter) leaves it owed, so the next report
+  reconciles. A fresh Service holds no temporary override, so none is replayed.
+- A profile save (`Runtime::save_profiles_locked`, managed
+  `UpdateProfilesAsync`) while an application profile is active, when the save
+  changes the active id or the performance or fan members at a class fresh
+  Windows power admits (`SaveIntent::thermal_changed`, over managed
+  `activeApplicationIntentChanged`). The reply is "Profiles were stored."
+  followed by the hardware result. A member an explicit override decides is
+  masked, so an edit under that override is no change. A save that changes
+  only lighting, battery policy or laptop behaviour has nothing native applies
+  and replies Stored "Profiles stored without automatic hardware application."
 
-Each trigger takes the mutation gate first and then the mailbox. It applies
-only when fresh Windows power is known, nothing is pending and fresh admission
-holds (managed's classified `ActivePowerSource`, `DeviceVerified` and
-`!WritesBlocked`); otherwise the reply is the stored one. The steps are the
-explicit request's permits in reconcile mode: they store nothing and validate
-no override, and they keep every per-write admission, `destination_holds`
-re-check, independent readback, journal record and stop on ambiguity. A step
-whose own adapter reading finds unclassified power writes nothing (Blocked,
-`UNCLASSIFIED_BLOCKED`). A failed step is recorded by its permit and never
-replayed or retried.
+Each trigger takes the mutation gate first and refuses (Blocked, nothing
+recorded or stored) when its deadline passed while it waited. It applies only
+when fresh Windows power is known and fresh admission holds (managed's
+classified `ActivePowerSource`, `DeviceVerified` and `!WritesBlocked`);
+otherwise the reply is the stored one. A report to a fenced store replies
+Blocked with the store's reconciliation reason.
 
-Fans go first when every class Windows power admits returns them from manual
-to Automatic (`fans_first`, managed `DeviceSubsystemOrder.ForTransition`).
-That fan step carries the saved preset in the same pair, as an explicit return
-to Automatic does. Otherwise the performance step runs, and the fan step
-follows unless the performance step left an unresolved submission. The reply
-status is managed's `ToOperationResult(intentStored)` (`operation_status`):
-Applied when every step was confirmed, else Stored for a save, else Failed when
-a journal row of the request was not known unsubmitted or remains pending,
-else Blocked. The step messages are joined.
+The steps are the explicit request's permits in reconcile mode: they store
+nothing and validate no override, and they keep every per-write admission,
+`destination_holds` re-check, independent readback, journal record and stop on
+ambiguity. Before accepting, a step checks the override document as a save
+would (`Storage::verify_overrides`): a document changed outside the Service
+fences the store and the step replies Blocked "Saved configuration changed
+unexpectedly; storage reconciliation is required. ..." before any submission.
+A step whose own adapter reading finds unclassified power writes nothing
+(Blocked, `UNCLASSIFIED_BLOCKED`); a step whose reading finds a classified
+class the trigger did not change writes nothing either (`Classes`,
+`Stepped::unchanged`). A failed step is recorded by its permit and never
+replayed or retried. After a hardware result, a store that cannot be read for
+the status projection fences writes and is reported (`after_write_unreadable`)
+rather than ending the Service before the reply.
+
+Each step journals under its own id (`step_request`): the first 16 bytes of
+SHA-256 over `OpenBlade.ReconcileStep.v1`, the lowercased trigger id and the
+step name, written as a version 8 GUID. The journal keeps one row chain per id
+and refuses a second chain with another fan record, so the two steps of one
+trigger cannot share the trigger's id. Version 8 keeps the ids distinct from
+the version 4 ids managed clients send.
+
+Fans go first only when the confirmed fans are manual (the last thermal
+observation's fan mode, retained between observations as managed retains its
+confirmed state, or an owned fan change not yet handed back) and every
+class the trigger applies at returns them to Automatic (`fans_first`, managed
+`DeviceSubsystemOrder.ForTransition`). That fan step reads firmware's manual
+fans and carries the saved preset in the same pair, as an explicit return to
+Automatic does; the performance step that follows finds it confirmed.
+Otherwise performance goes first. Both steps run unless the store becomes
+fenced. The reply status is managed's `ToOperationResult(intentStored)`
+(`operation_status`): Applied when every step ran and each one that needed a
+change was confirmed, else Stored for a save, else Failed when a step's
+journal row was not known unsubmitted or the fence may hide a submission
+(`Storage::submission_possible`), else Blocked. A performance step deferred
+under manual fans is not counted as applied. The step messages are joined and
+a message both steps return is said once.
 
 `request-trigger-vectors.json` pins the parity. `NativeRequestTriggerVectors`
 records managed's `ToOperationResult` over every combination of its inputs,
@@ -1329,15 +1370,13 @@ Differences from managed:
 
 - Battery and lighting are not applied, and the lighting restore after a save
   is not composed.
-- Native reads firmware only inside a step, so the fan order reads the saved
-  manual intent before the trigger, or an owned fan change, where managed
-  reads the confirmed fans.
 - The status base reports 3 for any power but battery, and only a step's own
   adapter reading tells the two classified external classes apart. On AC a
-  save is compared at both (`reconcile_classes`), so an edit of either
-  external profile applies; a step at the unchanged class finds its
-  destination already confirmed and writes nothing. These comparisons put back
-  any temporary override a read at the other class would retire.
+  save is compared at both and reconciles at the classes it changed; a step
+  whose reading finds the other class writes nothing, and the save replies
+  Stored as managed does when its active class is unchanged. These
+  comparisons put back any temporary override a read at the other class would
+  retire.
 - A report that cannot read the saved profiles keeps its sequence and the
   pair already selected and replies Blocked with the reason. Managed holds its
   profiles in memory and has no such case.
@@ -1402,6 +1441,22 @@ submitted." (no fan setter, for a fan request). Owned Stop cleanup is not
 paced. The refused recipe's transaction IDs are not reused: the pool is never
 reclaimed within a process, and a refusal consumes no more of it than running
 the recipe would have.
+
+With `service-profile-triggers-v1`, `reportApplicationContext` and
+`updateProfiles` run for an 11 s reconciliation budget
+(`service_frame::RECONCILE_BUDGET`): the status snapshot and the longest
+performance step are the 21 exchanges above, and the fan step that follows
+under the same deadline adds up to 17 more. 38 exchanges at twice the 133.3 ms
+frame exchange plus the 275 ms of fan spacing take about 10.41 s, which a
+compile-time assertion next to `RECIPE_BUDGET` checks. Each step still refuses
+at its own measured pace. These two requests are not canceled at their
+deadline (`readiness::reconciles`): the runtime refuses before it records or
+stores once the deadline has passed, and after that each step bounds itself,
+so a result that finished late is still answered instead of closing the
+connection after a commit. The native Agent's report waits for the budget and
+one frame more (13 s, `REPORT_REPLY_BUDGET`). The managed tray's
+`ServiceClient` bounds only its 2 s connect and waits for the reply without a
+limit.
 
 A fan operation's checkpoints reread saved policy, so that a change between
 setters stops it. They resolve it again only when a digest of its inputs
