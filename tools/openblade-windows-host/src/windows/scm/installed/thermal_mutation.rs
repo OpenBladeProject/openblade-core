@@ -860,24 +860,29 @@ fn refused_by_saved_intent(
     let refusal = (|| {
         storage.verify_overrides()?;
         let layer = storage.profile_layer(application)?;
-        storage.unexpired(|| {
-            let mut causes = Vec::new();
-            for class in classes.iter() {
+        let mut causes = Vec::new();
+        for class in classes.iter() {
+            // Each class is read in its own scope: a read at one class
+            // expires a temporary kept for another (`Storage::unexpired`).
+            let cause = storage.unexpired(|| {
                 let profile = layer.at(class)?;
-                let cause = if storage.gpu_incomplete(class, profile.as_ref())? {
-                    Cause::Gpu
+                Ok(if storage.gpu_incomplete(class, profile.as_ref())? {
+                    Some(Cause::Gpu)
                 } else if storage.desired(class, profile.as_ref())?.is_none() {
-                    Cause::NoEligiblePolicy
+                    Some(Cause::NoEligiblePolicy)
                 } else {
-                    return Ok(None);
-                };
-                let message = cause.message();
-                if !causes.contains(&message) {
-                    causes.push(message);
-                }
+                    None
+                })
+            })?;
+            let Some(cause) = cause else {
+                return Ok(None);
+            };
+            let message = cause.message();
+            if !causes.contains(&message) {
+                causes.push(message);
             }
-            Ok(Some(causes.join(" ")))
-        })
+        }
+        Ok(Some(causes.join(" ")))
     })();
     match refusal {
         Ok(refused) => Ok(refused.map(|message| Stepped::new(Outcome::blocked(message), None))),

@@ -1224,3 +1224,65 @@ async fn a_step_of_a_partial_debt_checks_the_override_document_before_any_write(
     rig.origin.stop();
     let _ = rig.source.lock().await.drain().await;
 }
+
+/// A limited adapter at a classified reading with a fixture recommendation.
+fn limited_adapter(rig: &Rig) {
+    let mut s = rig.port.state.lock().unwrap();
+    s.actual = 10;
+    s.recommended = 15;
+}
+
+/// The performance pre-check reads each class in its own
+/// `Storage::unexpired` scope. A temporary Balanced saved on the limited
+/// adapter is still selected there after the full adapter's class, read
+/// first, would have expired it. Both external profiles select no
+/// destination, so a shared scope refused the step as having none.
+#[tokio::test]
+async fn a_temporary_preset_on_the_limited_adapter_survives_the_performance_pre_check() {
+    let files = MemoryFiles::default();
+    files.profiles_with(6, Some(6));
+    let rig = rig_at(files, 2);
+    limited_adapter(&rig);
+    let set = rig.set(1, value(1, 0)).await;
+    assert_eq!(set["result"]["status"], 1, "{set}");
+    // Firmware moved outside OpenBlade, so the reconciliation has work.
+    rig.port.state.lock().unwrap().selectors = [2; 2];
+    let reply = report(&rig, 1, Some(r"C:\Tools\Other.exe")).await;
+    assert_eq!(
+        reply["result"],
+        json!({"status":1,"message":format!("{RECORDED} {CONFIRMED} {AUTOMATIC}")})
+    );
+    assert_eq!(rig.port.state.lock().unwrap().selectors, [0; 2]);
+    rig.stop().await;
+}
+
+/// The fan pre-check reads each class in its own scope too: a temporary
+/// Fixed override saved on the limited adapter over ManualCurve fans in both
+/// external profiles is the desired fan intent there, not a mode with no
+/// recipe.
+#[tokio::test]
+async fn a_temporary_fan_override_on_the_limited_adapter_survives_the_fan_pre_check() {
+    let files = files_with_game(json!({"pluggedIn":{"performance":2}}));
+    let mut document = files.document("profiles.json");
+    document["profiles"]["usbC"]["fans"] = json!(2);
+    document["profiles"]["pluggedIn"]["fans"] = json!(2);
+    files.put("profiles.json", document);
+    files.commit_configuration();
+    let rig = rig_at(files, 0);
+    limited_adapter(&rig);
+    let mut temporary = fan_request(2, Some(1), 3700);
+    temporary["value"]["lifetime"] = json!(0);
+    let fixed = rig.request(temporary).await;
+    assert_eq!(fixed["result"]["status"], 1, "{fixed}");
+    let reply = report(&rig, 1, Some(r"C:\Tools\Other.exe")).await;
+    // The fan step applies the temporary Fixed fans; the preset waits for
+    // Automatic fans, so the reply is Failed for the fan submission.
+    assert_eq!(
+        reply["result"],
+        json!({"status":3,"message":format!("{RECORDED} Performance intent was stored and will be applied when fans return to Automatic. {FIXED}")})
+    );
+    assert_eq!(rig.port.state.lock().unwrap().fans, [1; 2]);
+    rig.origin.stop();
+    let _ = rig.source.lock().await.drain().await;
+}
+

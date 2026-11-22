@@ -931,7 +931,9 @@ impl Storage {
     }
     /// Runs `read` over saved intent at classes no adapter reading
     /// established, so it retires no temporary: the override reads expire one
-    /// kept for another class, and that state is put back afterwards.
+    /// kept for another class, and that state is put back afterwards. Give
+    /// each class its own scope, as `save_intent` does: a read at one class
+    /// expires the temporary another class in the same scope would select.
     #[cfg(feature = "service-profile-triggers-v1")]
     pub(super) fn unexpired<T>(&self, read: impl FnOnce() -> io::Result<T>) -> io::Result<T> {
         let kept = {

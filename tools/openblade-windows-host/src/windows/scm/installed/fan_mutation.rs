@@ -1284,21 +1284,23 @@ fn refused_by_saved_intent(
     let refused = (|| {
         storage.verify_overrides()?;
         let layer = storage.profile_layer(application)?;
-        storage.unexpired(|| {
-            for class in classes.iter() {
+        for class in classes.iter() {
+            // Each class is read in its own scope: a read at one class
+            // expires a temporary kept for another (`Storage::unexpired`).
+            let intent = storage.unexpired(|| {
                 let profile = layer.at(class)?;
-                let intent = storage.desired_fan(class, profile.as_ref())?.and_then(|s| {
+                Ok(storage.desired_fan(class, profile.as_ref())?.and_then(|s| {
                     FanIntent::checked(
                         s["mode"].as_u64().unwrap_or(255) as u8,
                         s["fixedSpeedRpm"].as_u64().unwrap_or(0) as u16,
                     )
-                });
-                if intent.is_some_and(|intent| !intent.manual() || class != 1) {
-                    return Ok(false);
-                }
+                }))
+            })?;
+            if intent.is_some_and(|intent| !intent.manual() || class != 1) {
+                return Ok(false);
             }
-            Ok(true)
-        })
+        }
+        Ok(true)
     })();
     match refused {
         Ok(refused) => Ok(refused.then(|| Stepped::new(Outcome::blocked(NO_RECIPE), None))),
