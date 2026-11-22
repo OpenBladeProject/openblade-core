@@ -6,6 +6,7 @@ use crate::{
     loaded_origin::Origin,
     windows_protected_path::{self as paths, Policy},
 };
+use openblade_domain::low_power_gate::WriteScope;
 use std::{
     ffi::OsStr,
     fs::File,
@@ -115,8 +116,8 @@ impl WindowsGuard {
     /// `authorize_for(true)`: owned-stop origin and package trust, the exact
     /// mailbox custody and generation, the same console session unlocked, the
     /// same primary SID and logon LUID, a known AC line status and fresh
-    /// competing-controller absence. A suspended lifecycle has no active epoch,
-    /// so nothing is captured while Windows reports low power.
+    /// competing-controller absence. The low-power gate admits no ordinary epoch,
+    /// so nothing is captured while it is set.
     pub(super) fn capture_settle(
         &self,
         sid: &str,
@@ -155,7 +156,10 @@ impl WindowsGuard {
             }
         };
         verify().ok()?;
-        if self.origin.lifecycle.active() != Some(self.lifecycle) {
+        // The low-power gate refuses every request and owned-Stop write here.
+        // Only the low-power preparation's Automatic fan handback may pin
+        // `WriteScope::LowPowerFanAutomatic`, and nothing captures it yet.
+        if self.origin.lifecycle.epoch_for(WriteScope::Ordinary) != Some(self.lifecycle) {
             return None;
         }
         if !if stop {
@@ -192,7 +196,7 @@ impl WindowsGuard {
         // Mutable callback fencing cannot revive an earlier operation. A new
         // request captures a fresh epoch and rechecks every Windows supplier.
         verify().ok()?;
-        if self.origin.lifecycle.active() != Some(self.lifecycle) {
+        if self.origin.lifecycle.epoch_for(WriteScope::Ordinary) != Some(self.lifecycle) {
             return None;
         }
         if stop {

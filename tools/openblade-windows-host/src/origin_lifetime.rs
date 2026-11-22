@@ -1,4 +1,5 @@
 //! Sticky loaded-origin outcome shared by ingress and publication checks.
+use openblade_domain::low_power_gate::{LowPowerGate, Signal, Transition, WriteScope};
 use std::{
     io,
     sync::{
@@ -76,26 +77,31 @@ mod tests {
     }
 }
 
-/// Callback-established active boundary. Unknown events fence old operations but
-/// never establish resume; fresh device/session/controller proof is still required.
+/// Callback-established activity: one lifecycle epoch and the one low-power
+/// gate. Every power and session notice advances the epoch, which fences
+/// operations captured before it. The gate (managed `LowPowerGate`, ported in
+/// `openblade_domain::low_power_gate`) is the only low-power latch: every
+/// write admission, capture and timer reads it here, under the same lock as
+/// the epoch. Unknown events fence old operations but never establish
+/// resume; fresh device/session/controller proof is still required.
 #[derive(Default)]
 pub(crate) struct Lifecycle(Mutex<LifecycleState>);
 struct LifecycleState {
     epoch: u64,
-    awake: bool,
+    gate: LowPowerGate,
     // The last sampled Windows ACLineStatus kind (1 battery, 2 AC)
     // and how many times a sample has changed it.
     power_kind: Option<u8>,
     power_generation: u64,
 }
 impl Default for LifecycleState {
-    // Match managed LowPowerGate's initial clear low-power latch. This is not
-    // an independent awake measurement: only a confirmed suspend enters low power.
-    // Display-off is not sleep (ServiceLifecycleRefreshLoop.cs:134-138).
+    // Managed LowPowerGate starts clear. This is not an independent awake
+    // measurement: only a confirmed suspend enters low power. Display-off is
+    // not sleep (ServiceLifecycleRefreshLoop.cs:134-138).
     fn default() -> Self {
         Self {
             epoch: 1,
-            awake: true,
+            gate: LowPowerGate::new(qpc::frequency()),
             power_kind: None,
             power_generation: 0,
         }
@@ -108,7 +114,32 @@ impl Lifecycle {
             .map(|_| ())
             .map_err(|_| io::Error::other("lifecycle state lock poisoned"))
     }
+    /// The SCM control callback: PBT_APMSUSPEND sets the gate and either
+    /// resume clears it, at the callback's QPC time, as managed
+    /// `WindowsServiceLifecycleEventSource.Publish` applies them.
     pub(crate) fn ingress(&self, code: u32, event: u32) {
+        use windows_sys::Win32::{
+            System::Services::SERVICE_CONTROL_POWEREVENT,
+            UI::WindowsAndMessaging::{
+                PBT_APMRESUMEAUTOMATIC, PBT_APMRESUMESUSPEND, PBT_APMSUSPEND,
+            },
+        };
+        let signal = match (code, event) {
+            (SERVICE_CONTROL_POWEREVENT, PBT_APMSUSPEND) => Some(Signal::Suspend),
+            (SERVICE_CONTROL_POWEREVENT, PBT_APMRESUMESUSPEND | PBT_APMRESUMEAUTOMATIC) => {
+                Some(Signal::Resume)
+            }
+            // Session notices fence old work; their payload never authorizes a user.
+            // Fresh exact WTSInfoEx state is checked by the mutation supplier.
+            _ => None,
+        };
+        self.record(code, signal, qpc::now());
+    }
+    /// One power or session notice: advance the epoch, then apply its gate
+    /// signal, if any, at `timestamp`. A power-setting supplier decodes its
+    /// payload first and passes `Signal::DisplayOn` for a display on or dim
+    /// notice; display-off and AC/DC notices carry no signal and only fence.
+    fn record(&self, code: u32, signal: Option<Signal>, timestamp: i64) {
         use windows_sys::Win32::System::Services::{
             SERVICE_CONTROL_POWEREVENT, SERVICE_CONTROL_SESSIONCHANGE,
         };
@@ -125,17 +156,35 @@ impl Lifecycle {
             return;
         } // Exhaustion is sticky; never revive epoch one.
         state.epoch = state.epoch.checked_add(1).unwrap_or(0);
-        match (code, event) {
-            (SERVICE_CONTROL_POWEREVENT, 4) => state.awake = false, // PBT_APMSUSPEND
-            (SERVICE_CONTROL_POWEREVENT, 7 | 18) => state.awake = true, // resume suspend/automatic
-            // Session notices fence old work; their payload never authorizes a user.
-            // Fresh exact WTSInfoEx state is checked by the mutation supplier.
-            _ => {}
+        if let Some(signal) = signal {
+            // A stale signal changes nothing but has still fenced. Nothing
+            // subscribes to transitions yet; a subscriber is notified after
+            // this lock is released, as managed raises TransitionChanged.
+            let _ = state.gate.apply(signal, timestamp);
         }
     }
-    pub(crate) fn active(&self) -> Option<u64> {
+    /// The epoch a write of this scope pins now, or `None` while the gate
+    /// refuses that scope. A capture pins it and every per-write
+    /// authorization compares it again, so a write is refused once any
+    /// later notice fenced it or the gate set (managed
+    /// `ScopedThermalWriteBlockReason`'s low-power clause).
+    pub(crate) fn epoch_for(&self, write: WriteScope) -> Option<u64> {
         let state = self.0.lock().ok()?;
-        (state.epoch != 0 && state.awake).then_some(state.epoch)
+        (state.epoch != 0 && state.gate.admits(write)).then_some(state.epoch)
+    }
+    /// The epoch an ordinary operation pins, or `None` in low power.
+    pub(crate) fn active(&self) -> Option<u64> {
+        self.epoch_for(WriteScope::Ordinary)
+    }
+    /// The current gate transition, for timers that ask whether low power is
+    /// active outside a write (managed `IsActive`), or capture a suspend
+    /// generation and later test it (`IsActiveForGeneration`). `None` when
+    /// the lifecycle is unreadable or exhausted: treat it as low power. Per-write
+    /// admission stays authoritative.
+    #[cfg_attr(not(test), allow(dead_code))] // Stage 4b timers and D1 cleanup read it.
+    pub(crate) fn low_power(&self) -> Option<Transition> {
+        let state = self.0.lock().ok()?;
+        (state.epoch != 0).then(|| state.gate.transition())
     }
     /// Records a sampled Windows power kind and returns the power generation,
     /// which advances only when a sample changes the kind (managed
@@ -179,6 +228,47 @@ pub(crate) fn power_kind(ac_line_status: u8) -> Option<u8> {
         0 => Some(1),
         1 => Some(2),
         _ => None,
+    }
+}
+
+/// The machine QPC clock that managed `TimeProvider.System` reads and every
+/// gate supplier stamps with, so their signals order against each other.
+/// Tests use a strictly increasing counter at 10 MHz: back-to-back test
+/// notices never share a timestamp, and none reaches the two-second
+/// new-resume window unless it passes its own timestamps to `record`.
+mod qpc {
+    use std::num::NonZeroU64;
+    #[cfg(not(test))]
+    #[allow(unsafe_code)]
+    pub(super) fn now() -> i64 {
+        let mut count = 0;
+        // SAFETY: writable output. It cannot fail on Windows XP and later.
+        unsafe { windows_sys::Win32::System::Performance::QueryPerformanceCounter(&mut count) };
+        count
+    }
+    #[cfg(not(test))]
+    #[allow(unsafe_code)]
+    pub(super) fn frequency() -> NonZeroU64 {
+        let mut frequency = 0;
+        // SAFETY: writable output. It cannot fail on Windows XP and later,
+        // and the frequency is fixed at boot. A zero would only disable the
+        // gate's new-resume window, never its latch or ordering.
+        unsafe {
+            windows_sys::Win32::System::Performance::QueryPerformanceFrequency(&mut frequency)
+        };
+        u64::try_from(frequency)
+            .ok()
+            .and_then(NonZeroU64::new)
+            .unwrap_or(NonZeroU64::MAX)
+    }
+    #[cfg(test)]
+    pub(super) fn now() -> i64 {
+        static NEXT: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(0);
+        NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1
+    }
+    #[cfg(test)]
+    pub(super) const fn frequency() -> NonZeroU64 {
+        NonZeroU64::new(10_000_000).unwrap()
     }
 }
 
@@ -231,5 +321,96 @@ mod lifecycle_tests {
             [Some(1), Some(2), None, None],
             "ACLineStatus offline, online, out of range and unknown"
         );
+    }
+    const POWER: u32 = windows_sys::Win32::System::Services::SERVICE_CONTROL_POWEREVENT;
+    const SECOND: i64 = 10_000_000;
+    fn generation(lifecycle: &Lifecycle) -> u64 {
+        lifecycle.low_power().unwrap().generation
+    }
+    #[test]
+    fn scm_suspend_and_resume_drive_the_one_gate_and_other_notices_only_fence() {
+        use windows_sys::Win32::System::Services::SERVICE_CONTROL_SESSIONCHANGE;
+        let lifecycle = Lifecycle::default();
+        assert_eq!(lifecycle.low_power().map(|t| t.suspending()), Some(false));
+        for (code, event, expected, epoch) in [
+            (POWER, 4, 1, None),
+            (SERVICE_CONTROL_SESSIONCHANGE, 7, 1, None),
+            (POWER, 10, 1, None),
+            (POWER, 32787, 1, None),
+            (POWER, 7, 2, Some(6)),
+            (POWER, 4, 3, None),
+            (POWER, 18, 4, Some(8)),
+            (SERVICE_CONTROL_SESSIONCHANGE, 8, 4, Some(9)),
+            // A code outside power and session neither fences nor signals.
+            (1, 4, 4, Some(9)),
+        ] {
+            lifecycle.ingress(code, event);
+            assert_eq!(generation(&lifecycle), expected, "{code}/{event}");
+            assert_eq!(lifecycle.active(), epoch, "{code}/{event}");
+        }
+    }
+    #[test]
+    fn a_stale_suspend_cannot_set_the_gate_but_still_fences() {
+        let lifecycle = Lifecycle::default();
+        lifecycle.record(POWER, Some(Signal::Suspend), 100);
+        lifecycle.record(POWER, Some(Signal::Resume), 300);
+        let epoch = lifecycle.active().unwrap();
+        // Delivered late, then at the resume's own timestamp.
+        lifecycle.record(POWER, Some(Signal::Suspend), 200);
+        lifecycle.record(POWER, Some(Signal::Suspend), 300);
+        assert_eq!(lifecycle.active(), Some(epoch + 2));
+        assert_eq!(generation(&lifecycle), 2);
+        // An older resume cannot clear a newer suspend either.
+        lifecycle.record(POWER, Some(Signal::Suspend), 400);
+        lifecycle.record(POWER, Some(Signal::Resume), 350);
+        assert_eq!(lifecycle.active(), None);
+        assert_eq!(generation(&lifecycle), 3);
+    }
+    #[test]
+    fn a_later_resume_without_a_suspend_re_enters_the_resume_generation() {
+        let lifecycle = Lifecycle::default();
+        lifecycle.record(POWER, Some(Signal::Suspend), SECOND);
+        lifecycle.record(POWER, Some(Signal::Resume), 2 * SECOND);
+        // A duplicate resume within two seconds keeps the generation.
+        lifecycle.record(POWER, Some(Signal::Resume), 4 * SECOND);
+        assert_eq!(generation(&lifecycle), 2);
+        lifecycle.record(POWER, Some(Signal::Resume), 4 * SECOND + 1);
+        assert_eq!(generation(&lifecycle), 4);
+        // DisplayOn recovers a missed resume but never re-enters.
+        lifecycle.record(POWER, Some(Signal::Suspend), 5 * SECOND);
+        lifecycle.record(POWER, Some(Signal::DisplayOn), 6 * SECOND);
+        lifecycle.record(POWER, Some(Signal::DisplayOn), 9 * SECOND);
+        assert_eq!(generation(&lifecycle), 6);
+        assert!(lifecycle.active().is_some());
+    }
+    #[test]
+    fn the_gate_refuses_every_write_but_the_captured_automatic_fan_cleanup() {
+        let lifecycle = Lifecycle::default();
+        let request = lifecycle.active().unwrap();
+        // Per-write authorization compares the pinned epoch with the gate's
+        // admission, so the gate alone refuses even an unfenced epoch.
+        lifecycle.0.lock().unwrap().gate.apply(Signal::Suspend, 1);
+        assert_eq!(lifecycle.epoch_for(WriteScope::Ordinary), None);
+        assert_eq!(lifecycle.active(), None);
+        let cleanup = WriteScope::LowPowerFanAutomatic {
+            generation: lifecycle.low_power().unwrap().generation,
+        };
+        assert_eq!(lifecycle.epoch_for(cleanup), Some(request));
+        assert_eq!(
+            lifecycle.epoch_for(WriteScope::LowPowerFanAutomatic { generation: 3 }),
+            None
+        );
+        // The resume ends the cleanup scope and fences the request's epoch.
+        lifecycle.record(POWER, Some(Signal::Resume), 2);
+        assert_eq!(lifecycle.epoch_for(cleanup), None);
+        assert_eq!(lifecycle.active(), Some(request + 1));
+        // A later suspend has a new generation; the old cleanup stays closed.
+        lifecycle.record(POWER, Some(Signal::Suspend), 3);
+        assert_eq!(lifecycle.epoch_for(cleanup), None);
+        // Exhaustion closes every scope and the timer view.
+        lifecycle.0.lock().unwrap().epoch = 0;
+        let current = WriteScope::LowPowerFanAutomatic { generation: 3 };
+        assert_eq!(lifecycle.epoch_for(current), None);
+        assert_eq!(lifecycle.low_power(), None);
     }
 }

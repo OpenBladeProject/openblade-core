@@ -26,10 +26,10 @@ coarse power. Actual opened-port validation checks the reviewed exact RZ09-0581
 host/HID identity. Per-command 07/8C readback classifies adapter sufficiency.
 SCM power/session ingress advances a separate lifecycle epoch and fences old
 operations while preserving loaded-origin custody. Only STOP/SHUTDOWN or actual
-trust loss is terminal. Suspend blocks mutation until an explicit resume; session
-events cannot establish resume. Fresh exact WTSInfoEx active/unlocked session
-admission is required for mutation. The initial clear suspend latch follows the
-managed lifecycle contract; display-off alone is not confirmed low power.
+trust loss is terminal. Suspend sets the low-power gate, which blocks mutation
+until a resume clears it; session events cannot establish resume. Fresh exact
+WTSInfoEx active/unlocked session admission is required for mutation. The gate
+starts clear, as managed does; display-off alone is not confirmed low power.
 
 The existing ReadLease owns the managed handoff exclusion and the single durable
 owner Store. It drains its actual native reader before publishing the genuine
@@ -44,6 +44,50 @@ custody after acquiring the original exclusion and owner writer handles. Its
 separate recovery acquisition/retirement records do not certify the original
 process's retirement and cannot activate a writer. Valid unresolved owner history
 remains readable and prevents a new mutation reservation.
+
+### Low-power gate
+
+`openblade_domain::low_power_gate` ports managed `LowPowerGate`
+(`LowPowerGate.cs:3-133`) as pure state over injected QPC timestamps. The
+generation's low bit is the latch and each boundary adds one. A signal older
+than the latest accepted one is stale, and a suspend at the latest timestamp
+cannot undo a clear. A resume more than two seconds after the last boundary
+adds two, unless a resume recovery retains that generation. DisplayOn clears
+the latch but never re-enters it. `LowPowerGateNativeVectorsTests` records
+`low-power-gate-vectors.json`, and the domain test `low_power_gate_vectors`
+replays it. The two-second window is computed exactly. Managed scales by a
+`double`, which can differ only within one tick of the edge, and only on a
+clock whose frequency does not divide ten million.
+
+The shipping epoch `Lifecycle` (`origin_lifetime.rs`) holds the gate under the
+lock that guards the epoch. The gate replaced the former `awake` flag and is the
+only low-power state. `ingress` stamps each SCM callback with
+`QueryPerformanceCounter`. It maps PBT_APMSUSPEND to `Signal::Suspend`, and
+PBT_APMRESUMESUSPEND or PBT_APMRESUMEAUTOMATIC to `Signal::Resume`. Every power
+and session notice still advances the epoch, a stale signal included.
+A power-setting supplier calls `record(code, signal, timestamp)`. It passes
+`Signal::DisplayOn` for a decoded display on or dim notice, and no signal for
+display-off or AC/DC, which only fence. The 5 s duplicate-resume window and the
+display recovery in the unwired lifecycle worker (`windows/scm/lifecycle.rs`)
+decide dispatch, not gate state. That worker's `Activity` sequences evidence
+only. Before the worker is wired, it must read activity from this gate rather
+than keep its own.
+
+`epoch_for(WriteScope)` is the low-power clause of managed
+`ScopedThermalWriteBlockReason` (`ServiceControlRuntime.cs:15410-15421`). The
+gate refuses `WriteScope::Ordinary` while it is set. `active()` is
+`epoch_for(WriteScope::Ordinary)`. Every capture reads it, as do
+`capture_settle`, mailbox custody and status, so nothing is captured in low
+power. `WindowsGuard::authorize_for` compares the pinned epoch with
+`epoch_for(WriteScope::Ordinary)` before and after its Windows checks, so
+per-write admission stays authoritative. `WriteScope::LowPowerFanAutomatic` is
+managed's `PriorAuthorityCleanup` exception for the low-power preparation's
+firmware Automatic fan handback. The gate admits it only while the exact suspend
+generation it captured is current (`IsActiveForGeneration`), so the next
+resume, DisplayOn or suspend ends it. Nothing captures that scope yet. Owned
+Stop and shutdown handback stay Ordinary, because managed blocks them in low
+power too. `low_power()` returns the current transition for timers that ask
+outside a write. A `None` result (unreadable or exhausted) means low power.
 
 ## Saved intent and the bounded compatible slice
 
