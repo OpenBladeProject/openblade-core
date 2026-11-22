@@ -30,6 +30,8 @@ use std::{
 #[path = "battery_storage.rs"]
 mod battery;
 pub(super) use battery::TemporaryRelease;
+#[cfg(feature = "service-temporary-charge-v1")]
+pub(super) use battery::TemporaryTaken;
 #[cfg(feature = "service-profiles-v1")]
 #[path = "profile_storage.rs"]
 mod profiles;

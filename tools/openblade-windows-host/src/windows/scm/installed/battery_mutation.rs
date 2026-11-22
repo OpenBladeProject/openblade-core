@@ -59,6 +59,54 @@ enum SourceCancel {
     Superseded,
 }
 
+/// What an automatic source cancel's claim took: the owner, which it marks
+/// abandoned, and its intent, with the journal reservation it left in place.
+/// The claim stands unless `roll_back` puts all of it back at once.
+#[cfg(feature = "service-temporary-charge-v1")]
+struct TemporaryClaim {
+    owner: Arc<BatteryPermit>,
+    taken: Option<super::super::thermal_storage::TemporaryTaken>,
+}
+#[cfg(feature = "service-temporary-charge-v1")]
+impl TemporaryClaim {
+    /// Takes `peeked` from the owner slot. `None`, with nothing taken, when
+    /// the slot holds anything else.
+    fn take(
+        slot: &RefCell<Option<Arc<BatteryPermit>>>,
+        peeked: &Arc<BatteryPermit>,
+    ) -> Option<Self> {
+        let owner = slot.borrow_mut().take();
+        let owner = match owner {
+            Some(owner) if Arc::ptr_eq(&owner, peeked) => owner,
+            other => {
+                *slot.borrow_mut() = other;
+                return None;
+            }
+        };
+        let taken = owner.storage.take_temporary_claim();
+        owner.abandoned.store(true, Ordering::Release);
+        Some(Self { owner, taken })
+    }
+    /// Puts back exactly what `take` took, or nothing. A newer owner, or a
+    /// read since the claim that found the charge off, keeps the claim.
+    fn roll_back(self, runtime: &Runtime) -> bool {
+        if runtime.temporary_owner.borrow().is_some()
+            || runtime.read_off_since_positive(&self.owner)
+        {
+            return false;
+        }
+        let Some(taken) = self.taken else {
+            return false;
+        };
+        if !self.owner.storage.restore_temporary_claim(taken) {
+            return false;
+        }
+        self.owner.abandoned.store(false, Ordering::Release);
+        *runtime.temporary_owner.borrow_mut() = Some(self.owner);
+        true
+    }
+}
+
 pub(super) struct BatteryPermit {
     tfc: Mutex<Option<openblade_domain::temporary_charge_history::TemporaryChargeRecord>>,
     reserved_ids: Option<[u8; 8]>,
@@ -81,6 +129,9 @@ pub(super) struct BatteryPermit {
     confirmed: AtomicBool,
     joined: AtomicBool,
     registered: AtomicBool,
+    // Whether every ID of this attempt is still unsent: until the worker
+    // begins the steps that send them, then as the pool reports once they stop.
+    unsent: AtomicBool,
     abandoned: AtomicBool,
     positive_at: Mutex<Option<Instant>>,
     source: Arc<std::sync::atomic::AtomicU8>,
@@ -136,21 +187,23 @@ impl BatteryPermit {
             *v = s.into();
         }
     }
-    /// Whether this attempt ended proven unsubmitted: its worker joined
-    /// unconfirmed, and the settled journal holds no row of it or only its
-    /// Prepared-only retirement (progress 6). Either way no submission intent
-    /// (progress 70) was written, so no setter was sent.
+    /// Whether this attempt is proven to have sent nothing: its worker
+    /// joined, and either never began the steps that send its IDs or left
+    /// every one of them held in the transaction pool. A retry resends these
+    /// IDs, so one already sent could be answered by its older reply. No
+    /// journal row or confirmation can exist without a request having been
+    /// sent.
     #[cfg(feature = "service-temporary-charge-v1")]
     fn known_unsubmitted(&self) -> bool {
-        self.joined.load(Ordering::Acquire)
-            && !self.confirmed.load(Ordering::Acquire)
-            && !self.storage.pending()
-            && (!self.prepared.load(Ordering::Acquire) || self.storage.progress() == Some(6))
+        self.joined.load(Ordering::Acquire) && self.unsent.load(Ordering::Acquire)
     }
 }
 impl Permit for BatteryPermit {
     fn mutation_registered(&self) {
         self.registered.store(true, Ordering::Release);
+    }
+    fn observe_temporary_unsent(&self, unsent: bool) {
+        self.unsent.store(unsent, Ordering::Release);
     }
     fn temporary_target(&self) -> Option<bool> {
         if !cfg!(feature = "service-temporary-charge-v1") {
@@ -446,13 +499,7 @@ impl Runtime {
         // A newer independent false ends the positive obligation. A consumed
         // automatic attempt may retain release-only bookkeeping after I/O error.
         let ended = self.temporary_owner.borrow().as_ref().is_some_and(|p| {
-            let at = p.positive_at.lock().ok().and_then(|at| *at);
-            p.abandoned.load(Ordering::Acquire)
-                || self.battery_observation.lock().is_ok_and(|o| {
-                    o.temporary.is_some_and(|(value, observed)| {
-                        !value && at.is_some_and(|at| observed >= at)
-                    })
-                })
+            p.abandoned.load(Ordering::Acquire) || self.read_off_since_positive(p)
         });
         if ended {
             let old = self.temporary_owner.borrow_mut().take();
@@ -474,6 +521,15 @@ impl Runtime {
             }
         }
         Ok(())
+    }
+    /// Whether an independent read found the charge off at or after the
+    /// owner's confirmed positive.
+    fn read_off_since_positive(&self, p: &BatteryPermit) -> bool {
+        let at = p.positive_at.lock().ok().and_then(|at| *at);
+        self.battery_observation.lock().is_ok_and(|o| {
+            o.temporary
+                .is_some_and(|(value, observed)| !value && at.is_some_and(|at| observed >= at))
+        })
     }
     fn release_temporary_reservation(
         &self,
@@ -577,6 +633,14 @@ impl Runtime {
     pub(in super::super) fn release_hook_for_tests(&self, hook: Rc<dyn Fn()>) {
         *self.release_hook.borrow_mut() = Some(hook);
     }
+    /// Whether an owner holds the charge and no claim has taken it.
+    #[cfg(all(test, feature = "service-temporary-charge-v1"))]
+    pub(in super::super) fn temporary_owned_for_tests(&self) -> bool {
+        self.temporary_owner
+            .borrow()
+            .as_ref()
+            .is_some_and(|p| !p.abandoned.load(Ordering::Acquire))
+    }
     #[cfg(all(test, feature = "service-temporary-charge-v1"))]
     pub(in super::super) fn release_only_for_tests(&self) -> bool {
         self.temporary_owner
@@ -668,24 +732,22 @@ impl Runtime {
             // makes the next tick read the source again and retry the cancel.
             return Ok(None);
         }
-        if unresolved.is_none() {
+        // Genuine current Battery evidence always ends desired intent, even if
+        // configuration admission fails. The obligation is claimed once, and
+        // stays claimed even if later bookkeeping fails; only an attempt
+        // proven to have sent nothing gives it back for the next tick.
+        let mut claim = if unresolved.is_none() {
             // The gate has been held and the Reader drained since the peek, so
             // the capture's own reconcile saw the same owner. Fail closed if
-            // it did not: put back what was taken and write nothing.
-            let claimed = self.temporary_owner.borrow_mut().take();
-            if !claimed.as_ref().is_some_and(|c| Arc::ptr_eq(c, &original)) {
-                *self.temporary_owner.borrow_mut() = claimed;
+            // it did not: take nothing and write nothing.
+            let Some(claim) = TemporaryClaim::take(&self.temporary_owner, &original) else {
                 return Ok(None);
-            }
-        }
-        // Genuine current Battery evidence always ends desired intent, even if
-        // configuration admission fails. The obligation is claimed once.
-        let intent = original.storage.take_battery_temporary();
-        if unresolved.is_none() {
-            // Consumed once even if later bookkeeping fails. Retaining this
-            // identity may retry only settled capacity release, never a setter.
-            original.abandoned.store(true, Ordering::Release);
-        }
+            };
+            Some(claim)
+        } else {
+            original.storage.clear_battery_temporary();
+            None
+        };
         let mut message = "Temporary charge intent cleared on Battery; cancellation is paused because original authority or independent confirmation is unavailable.".to_owned();
         let mut attempted = None;
         if let SourceCancel::Admitted {
@@ -719,6 +781,7 @@ impl Runtime {
                 confirmed: AtomicBool::new(false),
                 joined: AtomicBool::new(false),
                 registered: AtomicBool::new(false),
+                unsent: AtomicBool::new(true),
                 abandoned: AtomicBool::new(false),
                 positive_at: Mutex::new(None),
                 source: self.battery_source.clone(),
@@ -741,7 +804,10 @@ impl Runtime {
             {
                 return Err(e);
             }
-            if fenced() && self.restore_fenced_claim(&original, &permit, intent) {
+            if fenced()
+                && permit.known_unsubmitted()
+                && claim.take().is_some_and(|claim| claim.roll_back(self))
+            {
                 // Managed writes this cancel in the same transition; here the
                 // newer epoch makes the next tick read the source and retry.
                 return Ok(None);
@@ -836,29 +902,6 @@ impl Runtime {
             proof,
         })
     }
-    /// Puts back an automatic cancel claimed at this tick's epoch whose
-    /// attempt a later notice fenced before any submission, so the next tick
-    /// retries it. Only an attempt proven unsubmitted qualifies; a possibly
-    /// submitted cancel is never retried.
-    #[cfg(feature = "service-temporary-charge-v1")]
-    fn restore_fenced_claim(
-        &self,
-        original: &Arc<BatteryPermit>,
-        attempt: &BatteryPermit,
-        intent: Option<bool>,
-    ) -> bool {
-        // The held gate keeps any newer owner out; never overwrite one.
-        if !attempt.known_unsubmitted() || self.temporary_owner.borrow().is_some() {
-            return false;
-        }
-        // If this attempt read the charge off, the retry confirms that read
-        // without a setter (progress 73).
-        original.storage.restore_battery_temporary(intent);
-        original.abandoned.store(false, Ordering::Release);
-        *self.temporary_owner.borrow_mut() = Some(original.clone());
-        true
-    }
-
     pub(in super::super) async fn apply_battery(
         &self,
         mailbox: MailboxSource,
@@ -947,6 +990,7 @@ impl Runtime {
             confirmed: AtomicBool::new(false),
             joined: AtomicBool::new(false),
             registered: AtomicBool::new(false),
+            unsent: AtomicBool::new(true),
             abandoned: AtomicBool::new(false),
             positive_at: Mutex::new(None),
             source: self.battery_source.clone(),

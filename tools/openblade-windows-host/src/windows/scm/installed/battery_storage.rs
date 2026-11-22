@@ -3,6 +3,14 @@
 //! a temporary override into restart-persistent profiles or manual overrides.
 use super::*;
 use openblade_domain::battery_history::Desired;
+/// What an automatic source cancel's claim took from storage, its intent,
+/// and the reservation it left in place.
+#[cfg(feature = "service-temporary-charge-v1")]
+pub(in super::super) struct TemporaryTaken {
+    intent: Option<bool>,
+    capacity: usize,
+    origin: Option<openblade_domain::temporary_charge_history::Origin>,
+}
 #[derive(Debug)]
 pub(in super::super) enum TemporaryRelease {
     Released,
@@ -99,24 +107,39 @@ impl Storage {
             state.battery_temporary = None;
         }
     }
-    /// Clears the temporary-charge intent at an automatic source cancel's
-    /// claim and returns what it held, for `restore_battery_temporary`.
+    /// Clears the intent at an automatic source cancel's claim, and records
+    /// it with the cancellation reservation the claim leaves in place, for
+    /// `restore_temporary_claim`. `None`, with nothing cleared, when the
+    /// state is poisoned.
     #[cfg(feature = "service-temporary-charge-v1")]
-    pub(in super::super) fn take_battery_temporary(&self) -> Option<bool> {
-        self.state
-            .lock()
-            .ok()
-            .and_then(|mut state| state.battery_temporary.take())
+    pub(in super::super) fn take_temporary_claim(&self) -> Option<TemporaryTaken> {
+        let mut s = self.state.lock().ok()?;
+        Some(TemporaryTaken {
+            intent: s.battery_temporary.take(),
+            capacity: s.temporary_capacity,
+            origin: s.temporary_capacity_origin.clone(),
+        })
     }
-    /// Puts back the intent of a claim proven unsubmitted, unless something
-    /// set a new one since.
+    /// Puts back exactly what `take_temporary_claim` took, or nothing. The
+    /// intent goes back only into an empty slot, never over a newer one, and
+    /// only while the reservation is still the one the claim held: a row that
+    /// spent or replaced it means the attempt got further than its claim.
     #[cfg(feature = "service-temporary-charge-v1")]
-    pub(in super::super) fn restore_battery_temporary(&self, intent: Option<bool>) {
-        if let Ok(mut state) = self.state.lock()
-            && state.battery_temporary.is_none()
+    pub(in super::super) fn restore_temporary_claim(&self, taken: TemporaryTaken) -> bool {
+        let Ok(mut s) = self.state.lock() else {
+            return false;
+        };
+        if s.quarantined
+            || s.last.as_ref().is_some_and(|e| !settled(e.progress))
+            || s.battery_temporary.is_some()
         {
-            state.battery_temporary = intent;
+            return false;
         }
+        if s.temporary_capacity != taken.capacity || s.temporary_capacity_origin != taken.origin {
+            return false;
+        }
+        s.battery_temporary = taken.intent;
+        true
     }
     pub(in super::super) fn desired_battery(&self, source: u8) -> io::Result<Desired> {
         let doc = aggregate(self.files.as_ref(), self.same_path)?;

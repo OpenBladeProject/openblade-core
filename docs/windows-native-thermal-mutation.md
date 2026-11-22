@@ -186,19 +186,31 @@ moves, so `battery_source_event` rereads the epoch after a refused capture or
 authorization. A refusal while a later notice holds the epoch, or while low
 power holds none, claims nothing, and the newer epoch makes the next tick read
 the source again; a suspend is retried after resume. After the claim, the
-worker's own per-write admission can fail the same way. When that attempt
-ends proven unsubmitted (its worker joined unconfirmed and the settled
-journal holds no row of it or only its Prepared-only retirement), the owner
-and its intent are put back for the next tick. Each retry needs a newer
-epoch, and only an SCM notice advances one, so retries never outnumber
-notices. A refusal at the tick's own epoch still claims the cancel once and
-pauses it. A cancel whose submission intent (progress 70) was journaled is
-never retried, even when the setter's pre-send checkpoint refused: only the
-worker can tell that the setter was not sent. A retry reuses the enable's
-reserved cancel IDs, because the journal binds an automatic cancel to them,
-and an unsubmitted attempt can have spent only getter IDs. Managed writes
-this cancel in the same transition, since its Battery step has no
-write-block callback (`ControlCoordinator.cs:1731-1738`).
+worker's own per-write admission can fail the same way. The claim
+(`TemporaryClaim`) takes the owner, which it marks abandoned, and its intent,
+and records the cancellation reservation it leaves in place. It is rolled back
+for the next tick only when the fenced attempt is proven to have sent nothing:
+its worker joined, and either never began the steps that send the cancel's IDs
+or left every one of them held in the transaction pool
+(`Transactions::unsent`). The rollback puts back exactly what the claim took,
+or nothing: not over a newer owner or intent, not after an independent read
+found the charge off since its confirmed positive, not over quarantined or
+unsettled storage, and not once the reservation the claim saw was spent or
+replaced. Each retry needs a newer epoch, and only an SCM notice advances one,
+so retries never outnumber notices. A retry reuses the enable's reserved
+cancel IDs, because the journal binds an automatic cancel to them, and the
+pool never issues an ID again once it was sent without a correlated reply: a
+retry after that could accept the first attempt's late reply. So of the 40
+authorizations in each window map, the 7 before the first request (the 07/8C
+power read) are retried and the 21 after it pause. The 2 after the submission
+intent (progress 70) was journaled also pause, even when the setter's pre-send
+checkpoint refused, and the 10 after the setter was sent are never replayed.
+A refusal at the tick's own epoch still claims the cancel once and pauses it.
+Retrying a fenced attempt with fresh pool IDs would need the journal to accept
+them, a journal-contract change across the domain crate and the managed
+reader; it is queued for that review. Managed writes this cancel in the same
+transition, since its Battery step has no write-block callback
+(`ControlCoordinator.cs:1731-1738`).
 
 What the remaining lifecycle work needs from this supplier:
 

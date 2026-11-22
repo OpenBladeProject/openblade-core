@@ -183,6 +183,14 @@ impl Transactions {
         }
     }
 
+    /// Whether every one of `ids` is still held: reserved and never sent. A
+    /// freed ID may have been answered, so it does not count. `false` when
+    /// the pool cannot tell.
+    pub(super) fn unsent(&self, ids: &[u8]) -> bool {
+        self.pool()
+            .is_some_and(|mut pool| ids.iter().all(|id| pool.id(*id).state == State::Held))
+    }
+
     /// Frees `id` if it was never sent and is not pinned.
     pub(super) fn release(&self, id: u8) {
         if let Some(mut pool) = self.pool() {

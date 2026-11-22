@@ -357,6 +357,28 @@ fn an_answer_frees_the_older_answered_id_of_its_command() {
 }
 
 #[test]
+fn only_held_ids_count_as_unsent() {
+    let transactions = Transactions::new();
+    let [a, b] = transactions.reserve_pair().unwrap();
+    assert!(transactions.unsent(&[a, b]));
+    assert!(transactions.sent(a));
+    assert!(!transactions.unsent(&[a, b]));
+    assert!(transactions.unsent(&[b]));
+    // Answered, then freed by a newer answer: it was still sent.
+    transactions.answered(a, CLASS, GET_THERMAL);
+    assert!(transactions.sent(b));
+    transactions.answered(b, CLASS, GET_THERMAL);
+    assert!(!transactions.unsent(&[a]));
+    // A released ID is free, not held.
+    let [c, d] = transactions.reserve_pair().unwrap();
+    transactions.release(c);
+    assert!(!transactions.unsent(&[c]));
+    assert!(transactions.unsent(&[d]));
+    transactions.poison();
+    assert!(!transactions.unsent(&[d]));
+}
+
+#[test]
 fn freed_ids_return_only_after_every_other_free_id() {
     let transactions = Transactions::new();
     let first = transactions.reserve_pair().unwrap();

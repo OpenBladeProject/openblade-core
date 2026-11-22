@@ -6,6 +6,14 @@ use super::{
 use openblade_domain::temporary_charge_history::EXCHANGES;
 use openblade_protocol::battery as codec;
 
+fn reserve(mut pair: impl FnMut() -> Option<[u8; 2]>) -> Option<[u8; EXCHANGES]> {
+    let mut ids = [0; EXCHANGES];
+    for chunk in ids.as_chunks_mut::<2>().0 {
+        chunk.copy_from_slice(&pair()?);
+    }
+    Some(ids)
+}
+
 impl<P: Port> Reader<P, ReadAdmission> {
     pub(super) async fn apply_temporary_charge(
         &mut self,
@@ -13,13 +21,6 @@ impl<P: Port> Reader<P, ReadAdmission> {
         enabled: bool,
         limit: Limit<'_>,
     ) -> Option<()> {
-        fn reserve(mut pair: impl FnMut() -> Option<[u8; 2]>) -> Option<[u8; EXCHANGES]> {
-            let mut ids = [0; EXCHANGES];
-            for chunk in ids.as_chunks_mut::<2>().0 {
-                chunk.copy_from_slice(&pair()?);
-            }
-            Some(ids)
-        }
         // Enable reserves both its own operation and one process-scoped source
         // cancellation before any GET/Prepared. The record carries the
         // cancellation IDs to a later Reader, so they are retained; no fan ID
@@ -28,6 +29,22 @@ impl<P: Port> Reader<P, ReadAdmission> {
             Some(v) => v,
             None => reserve(|| self.reserve_pair())?,
         };
+        // Only these steps send the IDs. The pool marks an ID sent before its
+        // request is submitted, so once they stop it alone tells whether any
+        // of them left.
+        permit.observe_temporary_unsent(false);
+        let applied = self.temporary_charge(permit, enabled, ids, limit).await;
+        permit.observe_temporary_unsent(self.port.transactions().unsent(&ids));
+        applied
+    }
+
+    async fn temporary_charge(
+        &mut self,
+        permit: &dyn Permit,
+        enabled: bool,
+        ids: [u8; EXCHANGES],
+        limit: Limit<'_>,
+    ) -> Option<()> {
         let cancel_ids = if enabled {
             Some(reserve(|| self.reserve_retained_pair())?)
         } else {

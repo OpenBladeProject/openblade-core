@@ -51,6 +51,10 @@ pub(crate) trait Permit: Send + Sync {
     }
     fn observe_battery_policy(&self, _raw: u8) {}
     fn observe_battery_temporary(&self, _temporary: bool) {}
+    /// Called with `false` before a temporary-charge operation may send its
+    /// IDs, and again once it stops, with whether the transaction pool proves
+    /// that none was sent.
+    fn observe_temporary_unsent(&self, _unsent: bool) {}
     fn is_fan(&self) -> bool {
         false
     }
