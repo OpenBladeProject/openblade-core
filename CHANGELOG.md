@@ -7,40 +7,40 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
-- Add GPU core and memory clock offsets on Blade 18 (2025, RZ09-0529) and Blade 14 (2025, RZ09-0530) on confirmed external power, including limited adapters, when exactly one NVIDIA laptop GPU is present. The control is hidden and refused on battery. Support is source-reviewed; physical validation is pending. ([#991](https://github.com/OpenBladeProject/openblade-core/pull/991))
-- Add experimental temporary full charge on Blade 14 (2025, RZ09-0530) and Blade 18 (2025, RZ09-0529), using the same checks as Blade 18 (2023): an active charge limit, other Power Mode Control options off, and readback of both the setting and the charge limit. If Synapse is running and Windows HDR is on, turn off Windows HDR and close Synapse before you turn it on. On all three laptops, temporary full charge can be turned on whenever Windows reports the charger connected, and the charge limit stays available when the temporary full charge state can't be read, unless OpenBlade last saw it on. ([#987](https://github.com/OpenBladeProject/openblade-core/pull/987))
-- Use the keyboard's own firmware edition on Blade 14 (2025, RZ09-0530) to select its regional key map, so Reactive, Ripple and Keyboard .chroma imports include regional Enter, Alt, ISO and Japanese keys. Space has no RGB address and is not part of these effects. If the edition cannot be read, only keys shared by every regional map respond. ([#984](https://github.com/OpenBladeProject/openblade-core/pull/984))
-- Turn local dimming off on Blade 16 (2024, RZ09-0510) and Blade 18 (2024, RZ09-0509) with mini-LED displays. Turning it back on stays in Synapse. Diagnostics now list the Synapse CPU power limits, firmware Gaming-mode GPU overclock and HDR-linked local dimming on the models that have them; OpenBlade has no controls for these. ([#994](https://github.com/OSSBlade/openblade-core/pull/994))
-- Show a notice on the Lighting page when Windows Dynamic Lighting is on and can override OpenBlade keyboard lighting on Blade 16 (2025, RZ09-0528), Blade 18 (2025, RZ09-0529), Blade 18 (2024, RZ09-0509), Blade 16 (2024, RZ09-0510) and Blade 14 (2025, RZ09-0530). On Blade 18 (2025) it also names the Vapor chamber. Lighting controls stay available; the notice explains where to turn Dynamic Lighting off. ([#992](https://github.com/OpenBladeProject/openblade-core/pull/992))
-- Add the Custom Maximum Fans switch on Blade 14 (2023, RZ09-0482), following its own Synapse source. Starting HyperBoost from Custom turns Maximum Fans off, and ending HyperBoost turns it back on. Maximum Fans can't change while CPU Boost or another option set in Synapse is on; turn it off there first. ([#986](https://github.com/OpenBladeProject/openblade-core/pull/986))
-- Add HyperBoost on Blade 16 (2024, RZ09-0510) on full-power AC, with or without the Razer cooling pad, following its own Synapse source. It starts from Silent, Balanced, Turbo or Custom and returns to that mode when it ends; on battery it ends in Balanced. It needs MCU firmware 1.3.0.0 or later. Like Synapse, OpenBlade doesn't start HyperBoost on Blade 16 (2023 and 2024) configurations whose system SKU Synapse excludes, so existing Blade 16 (2023, RZ09-0483) laptops with those SKUs lose HyperBoost entry, as in Synapse. The app explains why, and HyperBoost can still be turned off. Update the service and app together. ([#993](https://github.com/OpenBladeProject/openblade-core/pull/993))
-- Add Fire, Wheel, Starlight, Tidal, Ambient Awareness and Audio Meter keyboard lighting on Blade 15 Advanced (Mid 2019, RZ09-0301), Blade 15 (2022, RZ09-0421), Blade 17 (2022, RZ09-0423) and Blade 14 (2022, RZ09-0427). Start them from Off, Breathing, Wave or, where available, Static so OpenBlade can put that effect back afterwards. If another app changes the keyboard effect, OpenBlade stops drawing until you choose an effect. These effects are based on firmware review and have not been tested on these laptops yet. ([#988](https://github.com/OpenBladeProject/openblade-core/pull/988))
-- Light the Vapor Chamber on Blade 18 (2025, RZ09-0529) with the keyboard's Spectrum, Fire, Wheel, Starlight, Tidal, Ripple, Ambient Awareness and Audio Meter effects when its current effect is Off, Static, Breathing or Wave, so OpenBlade can put it back afterwards. With any other Vapor Chamber effect, these effects stay on the keyboard. ([#985](https://github.com/OpenBladeProject/openblade-core/pull/985))
-- Add an Automatic fan mode for the cooling pad with Quiet, Balanced and Performance profiles, following the CPU, the GPU or both from Razer Synapse's speed tables. The speed now changes smoothly with temperature between the table points, where Synapse holds one speed across normal temperatures. ([#983](https://github.com/OpenBladeProject/openblade-core/pull/983), [#999](https://github.com/OpenBladeProject/openblade-core/pull/999))
-- Run the cooling pad at full speed in Automatic and curve modes when the CPU stays at 95 °C or the GPU at 87 °C for 2 seconds, the same limits as the laptop's manual fan curve. Brief spikes don't trigger it, and the pad returns to its normal speed once the temperature drops 3 °C. ([#999](https://github.com/OpenBladeProject/openblade-core/pull/999))
+- Add GPU core and memory clock offsets on Blade 18 (2025, RZ09-0529) and Blade 14 (2025, RZ09-0530). They need external power and exactly one NVIDIA laptop GPU, and are hidden on battery. Physical validation is pending. ([#991](https://github.com/OpenBladeProject/openblade-core/pull/991))
+- Add experimental temporary full charge on Blade 14 (2025, RZ09-0530) and Blade 18 (2025, RZ09-0529). It needs a charge limit set and the charger connected. If Synapse is running with Windows HDR on, turn off HDR and close Synapse first. ([#987](https://github.com/OpenBladeProject/openblade-core/pull/987))
+- Use the keyboard's own firmware edition on Blade 14 (2025, RZ09-0530) to pick its regional key map, so Reactive, Ripple and Keyboard .chroma imports include regional Enter, Alt, ISO and Japanese keys. If the edition can't be read, only keys shared by every regional map respond. ([#984](https://github.com/OpenBladeProject/openblade-core/pull/984))
+- Turn local dimming off on Blade 16 (2024, RZ09-0510) and Blade 18 (2024, RZ09-0509) with mini-LED displays. Turning it back on stays in Synapse. Diagnostics now list the Synapse CPU power limits, firmware Gaming-mode GPU overclock and HDR-linked local dimming on the models that have them. ([#994](https://github.com/OSSBlade/openblade-core/pull/994))
+- Show a notice on the Lighting page when Windows Dynamic Lighting is on and can override OpenBlade keyboard lighting on Blade 16 (2025, RZ09-0528), Blade 18 (2025, RZ09-0529), Blade 18 (2024, RZ09-0509), Blade 16 (2024, RZ09-0510) and Blade 14 (2025, RZ09-0530). On Blade 18 (2025) it also names the Vapor chamber. The notice explains where to turn Dynamic Lighting off. ([#992](https://github.com/OpenBladeProject/openblade-core/pull/992))
+- Add the Custom Maximum Fans switch on Blade 14 (2023, RZ09-0482). Starting HyperBoost from Custom turns Maximum Fans off, and ending HyperBoost turns it back on. If CPU Boost or another option set in Synapse is on, turn it off there first. ([#986](https://github.com/OpenBladeProject/openblade-core/pull/986))
+- Add HyperBoost on Blade 16 (2024, RZ09-0510) on full-power AC, with or without the Razer cooling pad. It starts from Silent, Balanced, Turbo or Custom and returns to that mode when it ends, or to Balanced on battery. It needs MCU firmware 1.3.0.0 or later. As in Synapse, HyperBoost can't start on Blade 16 (2023 and 2024) configurations with a system SKU Synapse excludes, including some Blade 16 (2023, RZ09-0483) laptops; the app explains why, and HyperBoost can still be turned off. Update the service and app together. ([#993](https://github.com/OpenBladeProject/openblade-core/pull/993))
+- Add Fire, Wheel, Starlight, Tidal, Ambient Awareness and Audio Meter keyboard lighting on Blade 15 Advanced (Mid 2019, RZ09-0301), Blade 15 (2022, RZ09-0421), Blade 17 (2022, RZ09-0423) and Blade 14 (2022, RZ09-0427). Start them from Off, Breathing, Wave or, where available, Static. If another app changes the keyboard effect, OpenBlade stops drawing until you choose an effect. These effects haven't been tested on these laptops yet. ([#988](https://github.com/OpenBladeProject/openblade-core/pull/988))
+- Light the Vapor Chamber on Blade 18 (2025, RZ09-0529) with the keyboard's Spectrum, Fire, Wheel, Starlight, Tidal, Ripple, Ambient Awareness and Audio Meter effects when its current effect is Off, Static, Breathing or Wave. With any other Vapor Chamber effect, these effects stay on the keyboard. ([#985](https://github.com/OpenBladeProject/openblade-core/pull/985))
+- Add an Automatic fan mode for the cooling pad with Quiet, Balanced and Performance profiles, following the CPU, the GPU or both from Razer Synapse's speed tables. The speed changes smoothly with temperature between table points. ([#983](https://github.com/OpenBladeProject/openblade-core/pull/983), [#999](https://github.com/OpenBladeProject/openblade-core/pull/999))
+- Run the cooling pad at full speed in Automatic and curve modes when the CPU stays at 95 °C or the GPU at 87 °C for 2 seconds, the same limits as the laptop's manual fan curve. It returns to normal speed once the temperature drops 3 °C. ([#999](https://github.com/OpenBladeProject/openblade-core/pull/999))
 
 ### Changed
 
-- Redesign the cooling-pad page with separate Fan and Lighting sections, a status card, sliders for fan speed and brightness, and color pickers in place of hex codes. Changes now apply as you make them, the status refreshes on its own, and the fan curves use the same editor as the laptop. ([#983](https://github.com/OpenBladeProject/openblade-core/pull/983))
-- Smooth the temperatures that drive manual fan curves, on the laptop and the cooling pad, so brief CPU spikes no longer change the fan speed. Missing readings and overheating still raise the laptop fans immediately. On the pad, a GPU that powers down no longer stops curve or Automatic control, and a missing reading keeps the last speed until it returns. ([#983](https://github.com/OpenBladeProject/openblade-core/pull/983))
+- Redesign the cooling-pad page with separate Fan and Lighting sections, a status card, sliders for fan speed and brightness, and color pickers in place of hex codes. Changes apply as you make them, and the fan curves use the same editor as the laptop. ([#983](https://github.com/OpenBladeProject/openblade-core/pull/983))
+- Smooth the temperatures that drive manual fan curves, on the laptop and the cooling pad, so brief CPU spikes no longer change the fan speed. Missing readings and overheating still raise the laptop fans immediately. ([#983](https://github.com/OpenBladeProject/openblade-core/pull/983))
 - Credit the Blade 18 (2025, RZ09-0529) keyboard lighting effects and per-key color editing in 0.65.1-nightly.117 to their contributor. Thanks to [@TheChrisTech](https://github.com/TheChrisTech). ([#977](https://github.com/OpenBladeProject/openblade-core/pull/977))
 
 ### Fixed
 
-- Return fans from a fixed speed or fan curve to Automatic on source-reviewed models without stopping the OpenBlade service. A performance mode chosen while the fans were manual, including on battery, is applied once when they return to Automatic, unless the mode changed outside OpenBlade after that choice or a profile or power change replaced the choice. Clear manual overrides now clears performance before fans, so it no longer reapplies the cleared mode first. Fan curves keep following temperature while the choice waits. ([#989](https://github.com/OpenBladeProject/openblade-core/pull/989))
-- On laptops with GPU clock offsets, a performance or GPU change whose offsets were never changed, or whose confirmation was lost, no longer keeps fan and performance controls blocked or experimental controls paused after **Resume laptop controls**; OpenBlade sends the offsets again with the next change. An interrupted GPU write that may have changed the offsets keeps controls blocked until OpenBlade can read the NVIDIA driver when the GPU is next in use, or until the power source changes, and is then checked against the offsets the driver reports. A power-source change reads the driver before it releases or writes the offsets. If the driver cannot be read, OpenBlade writes no offsets and keeps managing them until a later read, and the change is no longer shown as unconfirmed. A power-source change applies its remaining fan, lighting and battery settings after an unconfirmed or refused GPU step, sending the offsets again at most once. Resume and OpenBlade's own GPU re-send are no longer reported as outside changes, unless the driver then reports offsets other than the ones OpenBlade sent. ([#991](https://github.com/OpenBladeProject/openblade-core/pull/991))
-- After a power-source change, OpenBlade applies the new profile's performance setting when an earlier unconfirmed change had in fact been applied, including one whose only unconfirmed part was GPU clock tuning. Previously that step was refused. If the laptop reports another setting or none, automatic performance changes pause as they do after an outside change, and after a failed laptop read the step waits for the next change. ([#991](https://github.com/OpenBladeProject/openblade-core/pull/991))
-- On Blade 14 and Blade 16 (2023, RZ09-0482 and RZ09-0483), HyperBoost now ends in Balanced when you unplug, turn it off on battery, or the laptop sleeps or shuts down on battery, whatever mode it started from. Your plugged-in mode, Custom included, returns when you plug in again after running on battery, and your saved battery mode is kept. Before, HyperBoost stayed on after unplugging. OpenBlade can now also end HyperBoost that Synapse left running with manual fans, at any fan speed Synapse sets. ([#993](https://github.com/OpenBladeProject/openblade-core/pull/993))
-- Turning only Custom Maximum Fans on or off now reaches the laptop on Blade 16 (2023, RZ09-0483), Blade 18 (2023, RZ09-0484) and Blade 14, 16 and 18 (2024, RZ09-0508, RZ09-0510 and RZ09-0509), and ending HyperBoost on the Blade 16 turns it back on. Before, OpenBlade reported the change as applied without writing it. At the next start, a saved Custom profile now sets Maximum Fans to match: fans run at maximum if the profile has it on, and a Maximum Fans setting made in Synapse is turned off if the profile has it off. ([#986](https://github.com/OpenBladeProject/openblade-core/pull/986))
-- Make the cooling pad's fan and lighting controls apply when Razer's device drivers are installed. The extra input-only pad interfaces and the Razer Experience Service no longer block control, and the pad's fan and lighting replies are now read the way its firmware reports them, so a fixed fan speed no longer pauses control. ([#983](https://github.com/OpenBladeProject/openblade-core/pull/983))
-- Apply the new power profile's performance and fan settings when you plug in or unplug after the power adapter briefly couldn't be identified. Previously those settings were skipped until the next power change. ([#997](https://github.com/OpenBladeProject/openblade-core/pull/997))
-- Keep Razer-driver function-row media keys and SnapTap working after focus briefly leaves every window, such as at the lock screen, and when a key is pressed while Windows is still starting. Previously they stopped until Windows restarted or the setting was toggled. ([#990](https://github.com/OpenBladeProject/openblade-core/pull/990))
+- Return fans from a fixed speed or fan curve to Automatic without stopping the OpenBlade service. A performance mode chosen while the fans were manual is applied once when they return to Automatic. Clear manual overrides no longer reapplies the cleared mode first. ([#989](https://github.com/OpenBladeProject/openblade-core/pull/989))
+- Fix fan and performance controls staying blocked on laptops with GPU clock offsets after a performance or GPU change whose offsets were never changed or whose confirmation was lost. **Resume laptop controls** now clears it, and OpenBlade sends the offsets again with the next change. After a power-source change, the remaining fan, lighting and battery settings still apply if the GPU step fails. ([#991](https://github.com/OpenBladeProject/openblade-core/pull/991))
+- Fix the new profile's performance setting being refused after a power-source change when an earlier unconfirmed change had in fact been applied. ([#991](https://github.com/OpenBladeProject/openblade-core/pull/991))
+- On Blade 14 and Blade 16 (2023, RZ09-0482 and RZ09-0483), HyperBoost now ends in Balanced when you unplug, turn it off on battery, or the laptop sleeps or shuts down on battery. Your plugged-in mode, Custom included, returns when you plug in again, and your saved battery mode is kept. OpenBlade can also end HyperBoost that Synapse left running with manual fans. ([#993](https://github.com/OpenBladeProject/openblade-core/pull/993))
+- Fix Custom Maximum Fans on Blade 16 (2023, RZ09-0483), Blade 18 (2023, RZ09-0484) and Blade 14, 16 and 18 (2024, RZ09-0508, RZ09-0510 and RZ09-0509), where turning only that switch on or off was reported as applied but never reached the laptop. Ending HyperBoost on the Blade 16 turns it back on, and a saved Custom profile now also sets Maximum Fans at startup. ([#986](https://github.com/OpenBladeProject/openblade-core/pull/986))
+- Make the cooling pad's fan and lighting controls work when Razer's device drivers are installed, and fix a fixed fan speed pausing control. ([#983](https://github.com/OpenBladeProject/openblade-core/pull/983))
+- Apply the new power profile's performance and fan settings when you plug in or unplug after the power adapter briefly couldn't be identified. ([#997](https://github.com/OpenBladeProject/openblade-core/pull/997))
+- Keep Razer-driver function-row media keys and SnapTap working after focus briefly leaves every window, such as at the lock screen, and when a key is pressed while Windows is still starting. ([#990](https://github.com/OpenBladeProject/openblade-core/pull/990))
 
 ## [0.65.1-nightly.117] - 2026-11-20
 
 ### Added
 
-- Add keyboard-only host-rendered lighting effects and per-key color editing on Blade 18 (2025, RZ09-0529). Keep Vapor Chamber RGB unavailable until its prior state can be restored; no touchpad RGB zone is claimed. ([#977](https://github.com/OpenBladeProject/openblade-core/pull/977))
+- Add keyboard-only lighting effects and per-key color editing on Blade 18 (2025, RZ09-0529). Vapor Chamber RGB stays unavailable. ([#977](https://github.com/OpenBladeProject/openblade-core/pull/977))
 
 ### Fixed
 
@@ -50,54 +50,54 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
-- Add source-reviewed CPU Voltage Optimizer support for Blade 14 (2024, 8945HS) and Blade 14 (2023, 7940HS), with complete per-core readback and restoration. Share live voltage planning and recovery with Blade 16 (2025). ([#973](https://github.com/OpenBladeProject/openblade-core/pull/973))
+- Add CPU Voltage Optimizer support for Blade 14 (2024, 8945HS) and Blade 14 (2023, 7940HS), with per-core readback and restoration. ([#973](https://github.com/OpenBladeProject/openblade-core/pull/973))
 
 ### Fixed
 
-- Avoid rejecting a valid PawnIO CPU temperature driver because Windows reports its path differently. Include the registered path and package checks in installer logs. ([#975](https://github.com/OSSBlade/openblade-core/pull/975))
-- Wait for the installed service process to exit before replacing or removing OpenBlade files, including broker installs, and retain actionable recovery paths if shutdown or restoration cannot be confirmed. ([#974](https://github.com/OpenBladeProject/openblade-core/pull/974))
+- Fix a valid PawnIO CPU temperature driver being rejected because Windows reports its path differently. Installer logs now include the registered path and package checks. ([#975](https://github.com/OSSBlade/openblade-core/pull/975))
+- Wait for the installed service process to exit before replacing or removing OpenBlade files, including broker installs. ([#974](https://github.com/OpenBladeProject/openblade-core/pull/974))
 
 ## [0.63.2-nightly.115] - 2026-11-14
 
 ### Added
 
-- Offer all model-supported performance modes, including Custom and HyperBoost, on sufficient and limited external adapters. Preserve separate profiles, firmware power management and battery-drain notifications. ([#964](https://github.com/OSSBlade/openblade-core/pull/964))
-- Expand source-reviewed fixed fan speeds and host curves with per-preset firmware limits, add full-power AC host curves in the existing fixed-fan presets on RZ09-0482/RZ09-0483, add Creator on RZ09-0328 and Maximum Power on RZ09-0530, and preserve saved fan settings when live limits change. ([#968](https://github.com/OpenBladeProject/openblade-core/pull/968))
+- Offer all model-supported performance modes, including Custom and HyperBoost, on sufficient and limited external adapters. ([#964](https://github.com/OSSBlade/openblade-core/pull/964))
+- Expand fixed fan speeds and host curves with per-preset firmware limits, add full-power AC host curves in the existing fixed-fan presets on RZ09-0482/RZ09-0483, and add Creator on RZ09-0328 and Maximum Power on RZ09-0530. Saved fan settings are kept when live limits change. ([#968](https://github.com/OpenBladeProject/openblade-core/pull/968))
 
 ### Fixed
 
-- Finish local broker installations by recognizing supported input helpers and waiting for startup inventory to settle before opening OpenBlade. ([#966](https://github.com/OSSBlade/openblade-core/pull/966))
-- Keep HyperBoost recovery bound to the confirmed power source after an upgrade, and prevent shared native build caches from reusing stale code or release metadata. ([#964](https://github.com/OSSBlade/openblade-core/pull/964))
-- Accept a valid PawnIO CPU temperature driver when uninstall/reinstall leaves disconnected device registrations. Report the present-device count when the binding remains missing or ambiguous. ([#970](https://github.com/OSSBlade/openblade-core/pull/970))
-- Keep source-supported ordinary controls available when Windows confirms external power but adapter wattage cannot be read, without guessing charger type or changing the reported power classification. ([#967](https://github.com/OpenBladeProject/openblade-core/issues/967))
-- Avoid rejecting supported battery-setting replies and allow a short confirmation window on source-reviewed Blade models. ([#965](https://github.com/OSSBlade/openblade-core/pull/965))
+- Finish local broker installations by recognizing supported input helpers and waiting for startup to settle before opening OpenBlade. ([#966](https://github.com/OSSBlade/openblade-core/pull/966))
+- Keep HyperBoost recovery tied to the confirmed power source after an upgrade, and stop shared native build caches from reusing stale code or release metadata. ([#964](https://github.com/OSSBlade/openblade-core/pull/964))
+- Accept a valid PawnIO CPU temperature driver when uninstall and reinstall leaves disconnected device registrations. ([#970](https://github.com/OSSBlade/openblade-core/pull/970))
+- Keep ordinary controls available when Windows confirms external power but the adapter wattage can't be read. ([#967](https://github.com/OpenBladeProject/openblade-core/issues/967))
+- Fix supported battery-setting replies being rejected, and allow a short confirmation window on source-reviewed Blade models. ([#965](https://github.com/OSSBlade/openblade-core/pull/965))
 
 ## [0.61.1-nightly.114] - 2026-11-13
 
 ### Added
 
-- Expand source-reviewed lighting with independent brightness and available logo controls on 15 Blade profiles, MCU-backed keyboard effects on seven models, and software Fire on Blade 16 RZ09-0581. Existing field-only profiles keep their behavior. ([#960](https://github.com/OSSBlade/openblade-core/pull/960))
+- Expand lighting with independent brightness and available logo controls on 15 Blade profiles, MCU-backed keyboard effects on seven models, and software Fire on Blade 16 RZ09-0581. ([#960](https://github.com/OSSBlade/openblade-core/pull/960))
 
 ### Fixed
 
-- Open the matching settings page and scroll to its card when selecting a profile summary, including cards hidden in Customize. Show the active profile first in the compact view. ([#961](https://github.com/OSSBlade/openblade-core/pull/961))
-- Show the failing installer step and underlying error, including separate cleanup or recovery failures, instead of only a generic error code. Include Setup diagnostics in the main installer log so a single shared log contains the failure details. ([#952](https://github.com/OSSBlade/openblade-core/pull/952))
+- Open the matching settings page and scroll to its card when you select a profile summary, including cards hidden in Customize. Show the active profile first in the compact view. ([#961](https://github.com/OSSBlade/openblade-core/pull/961))
+- Show the failing installer step and underlying error instead of a generic error code. The main installer log now includes Setup diagnostics. ([#952](https://github.com/OSSBlade/openblade-core/pull/952))
 - Fix unlit ISO and Japanese keys in keyboard lighting on Blade 16 RZ09-0581 and RZ09-0528. ([#958](https://github.com/OSSBlade/openblade-core/pull/958))
-- Explain unavailable startup and lighting controls when another Razer app is running or cannot be checked. ([#954](https://github.com/OSSBlade/openblade-core/pull/954))
+- Explain unavailable startup and lighting controls when another Razer app is running or can't be checked. ([#954](https://github.com/OSSBlade/openblade-core/pull/954))
 
 ## [0.60.0-nightly.113] - 2026-11-12
 
 ### Added
 
 - Add Static, Ambient Awareness, Audio Meter, and software lighting effects on Blade 14 (2023/2025) and Blade 16 (2023). ([#953](https://github.com/OSSBlade/openblade-core/pull/953))
-- Add Reactive, Ripple, and Keyboard `.chroma` imports on Blade 14 (2025) using its firmware-derived key map. ([#953](https://github.com/OSSBlade/openblade-core/pull/953))
-- Support Blade 15 Advanced (Mid 2021) RZ09-0409 and both 2019 Blade Pro 17 variants, RZ09-0287 and RZ09-0314, with source-reviewed Balanced/Custom performance and Automatic fan handback. Physical validation remains pending. ([#951](https://github.com/OSSBlade/openblade-core/pull/951))
+- Add Reactive, Ripple, and Keyboard `.chroma` imports on Blade 14 (2025). ([#953](https://github.com/OSSBlade/openblade-core/pull/953))
+- Support Blade 15 Advanced (Mid 2021) RZ09-0409 and both 2019 Blade Pro 17 variants, RZ09-0287 and RZ09-0314, with Balanced/Custom performance and Automatic fan handback. Physical validation is pending. ([#951](https://github.com/OSSBlade/openblade-core/pull/951))
 
 ## [0.58.7-nightly.112] - 2026-11-12
 
 ### Fixed
 
-- Fix keyboard and logo controls blocked by Wave readback, and prevent unnecessary lighting retries on source-reviewed models. ([#947](https://github.com/OpenBladeProject/openblade-core/pull/947))
+- Fix keyboard and logo controls blocked by Wave readback, and avoid unnecessary lighting retries. ([#947](https://github.com/OpenBladeProject/openblade-core/pull/947))
 - Keep laptop and cooling-pad fan curves responsive to hot, idle GPUs while skipping temperature reads for GPUs reported powered down. Require GPU cooling evidence before Battery Saver fan stop. ([#946](https://github.com/OpenBladeProject/openblade-core/pull/946))
 
 ## [0.58.5-nightly.111] - 2026-11-10
@@ -105,7 +105,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 ### Fixed
 
 - Fix internal display brightness errors when Windows omits the change status. ([#942](https://github.com/OSSBlade/openblade-core/pull/942))
-- Allow Setup to recover from a dropped service connection during startup. ([#942](https://github.com/OSSBlade/openblade-core/pull/942))
+- Let Setup recover from a dropped service connection during startup. ([#942](https://github.com/OSSBlade/openblade-core/pull/942))
 
 ## [0.58.4] - 2026-11-09
 
@@ -128,7 +128,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
-- Preserve Silent, Performance, and Custom when changing between Automatic and manual fans on full adapter power on Blade 16 RZ09-0581 and RZ09-0528. Apply admitted AC performance presets directly when leaving HyperBoost. ([#907](https://github.com/OSSBlade/openblade-core/pull/907))
+- Keep Silent, Performance, and Custom when changing between Automatic and manual fans on full adapter power on Blade 16 RZ09-0581 and RZ09-0528. Apply AC performance presets directly when leaving HyperBoost. ([#907](https://github.com/OSSBlade/openblade-core/pull/907))
 
 ## [0.57.1-nightly.109] - 2026-11-08
 
@@ -137,36 +137,36 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Add experimental Stop/Auto fan controls for the Blade 16 RZ09-0581 in USB-C Balanced, with rolling average temperature limits, immediate cutoffs and automatic stopping below 50°C. ([#879](https://github.com/OpenBladeProject/openblade-core/pull/879))
 - Bundle CPU temperature monitoring through LibreHardwareMonitor and PawnIO. ([#879](https://github.com/OpenBladeProject/openblade-core/pull/879))
 - Add an offline firmware CLI, register explorer and developer diagnostics. ([#879](https://github.com/OpenBladeProject/openblade-core/pull/879))
-- Control Razer Laptop Cooling Pad fan targets, temperature curves, lighting and keyboard lighting sync from its own page, shown when connected. Support is experimental and based on reviewed vendor definitions. ([#889](https://github.com/OpenBladeProject/openblade-core/pull/889))
+- Control Razer Laptop Cooling Pad fan targets, temperature curves, lighting and keyboard lighting sync from its own page, shown when connected. Support is experimental. ([#889](https://github.com/OpenBladeProject/openblade-core/pull/889))
 - Support Blade 15 Advanced (Mid 2019) RZ09-0301 with Balanced/Custom performance, Balanced fixed fans and host curves on full-power AC, independent keyboard brightness and logo controls. ([#890](https://github.com/OpenBladeProject/openblade-core/pull/890))
 - Search OpenBlade pages and settings from the title bar. Press Ctrl+K to open search and jump to a result. ([#883](https://github.com/OpenBladeProject/openblade-core/pull/883))
-- Adjust the running CPU's all-core Voltage Optimizer on Blade 16 (2025, RZ09-0528) with the supported AMD driver already running. Off preserves the remembered offset. ([#887](https://github.com/OpenBladeProject/openblade-core/pull/887))
-- Support Blade 15 Base (2019) RZ09-0300, Blade 15 Advanced (Early 2020) RZ09-0330 and Blade 15 Base (Late 2020) RZ09-0351 with reviewed preset controls and Automatic fans. Advanced Custom CPU/GPU levels are bounded to Low/Medium/High; physical validation remains pending. ([#888](https://github.com/OSSBlade/openblade-core/pull/888))
-- Support Blade 14 (2024) RZ09-0508, Blade 16 (2024) RZ09-0510, Blade 18 (2024) RZ09-0509 and Blade 18 (2025) RZ09-0529 with reviewed model-specific controls. ([#888](https://github.com/OSSBlade/openblade-core/pull/888))
-- Support Blade 14 (2021) RZ09-0370, Blade 14 (2022) RZ09-0427, Blade 15 (2022) RZ09-0421 and Blade 17 (2022) RZ09-0423 with reviewed performance controls and model-specific charge limits. Physical validation is tracked separately. ([#888](https://github.com/OSSBlade/openblade-core/pull/888))
+- Adjust the running CPU's all-core Voltage Optimizer on Blade 16 (2025, RZ09-0528) with the supported AMD driver already running. Off keeps the remembered offset. ([#887](https://github.com/OpenBladeProject/openblade-core/pull/887))
+- Support Blade 15 Base (2019) RZ09-0300, Blade 15 Advanced (Early 2020) RZ09-0330 and Blade 15 Base (Late 2020) RZ09-0351 with preset controls and Automatic fans. Advanced Custom CPU/GPU levels are limited to Low/Medium/High. Physical validation is pending. ([#888](https://github.com/OSSBlade/openblade-core/pull/888))
+- Support Blade 14 (2024) RZ09-0508, Blade 16 (2024) RZ09-0510, Blade 18 (2024) RZ09-0509 and Blade 18 (2025) RZ09-0529 with model-specific controls. ([#888](https://github.com/OSSBlade/openblade-core/pull/888))
+- Support Blade 14 (2021) RZ09-0370, Blade 14 (2022) RZ09-0427, Blade 15 (2022) RZ09-0421 and Blade 17 (2022) RZ09-0423 with performance controls and model-specific charge limits. ([#888](https://github.com/OSSBlade/openblade-core/pull/888))
 - Add model-specific Turbo, Maximum Power, Gaming and Creator presets, each with separate Windows power-mode preferences. ([#888](https://github.com/OSSBlade/openblade-core/pull/888))
 
 ### Changed
 
-- Use a source-verified Rust component for reports and selected profile merges. The Windows UI and service remain C#. ([#895](https://github.com/OpenBladeProject/openblade-core/pull/895), [#897](https://github.com/OpenBladeProject/openblade-core/pull/897))
+- Use a Rust component for reports and selected profile merges. The Windows UI and service remain C#. ([#895](https://github.com/OpenBladeProject/openblade-core/pull/895), [#897](https://github.com/OpenBladeProject/openblade-core/pull/897))
 - Shorten the README support section in English, Chinese and Russian, with model details in the support guide. ([#890](https://github.com/OpenBladeProject/openblade-core/pull/890))
 - Document exact BIOS/EC source findings for Blade 16 RZ09-0581 and RZ09-0528. ([#890](https://github.com/OpenBladeProject/openblade-core/pull/890))
 - Open Labs from the sidebar to learn about experimental features and jump to their controls. A beaker marks experimental controls on the Lighting page. ([#885](https://github.com/OpenBladeProject/openblade-core/pull/885))
-- List source-reviewed laptops as officially supported and track physical validation separately. ([#888](https://github.com/OSSBlade/openblade-core/pull/888))
+- List reviewed laptops as officially supported and track physical validation separately. ([#888](https://github.com/OSSBlade/openblade-core/pull/888))
 
 ### Fixed
 
 - Fix CPU temperatures stuck at 45°C. ([#879](https://github.com/OpenBladeProject/openblade-core/pull/879), [#890](https://github.com/OpenBladeProject/openblade-core/pull/890))
 - Use Custom temperature cutoffs for Stop entry and improve fan-state diagnostics and recovery. ([#879](https://github.com/OpenBladeProject/openblade-core/pull/879))
-- Change directly between Fixed fans and host curves in an admitted preset on source-reviewed backends. ([#890](https://github.com/OpenBladeProject/openblade-core/pull/890))
-- Stop treating constant ACPI values as CPU temperature, so custom fan curves use the existing maximum-speed fallback when no CPU sensor is available. ([#890](https://github.com/OpenBladeProject/openblade-core/pull/890))
-- Preserve cancellation when a queued service request resumes. ([#887](https://github.com/OpenBladeProject/openblade-core/pull/887))
-- Preserve the original diagnostic stage when a CPU read times out. ([#887](https://github.com/OpenBladeProject/openblade-core/pull/887))
-- Keep older app clients in a readable, read-only upgrade view when the service exposes newer presets and settings. ([#888](https://github.com/OSSBlade/openblade-core/pull/888))
-- Recover thermal controls when unrelated charge-limit readings are unavailable, while retaining strict confirmation for pending battery operations. ([#888](https://github.com/OSSBlade/openblade-core/pull/888))
+- Change directly between Fixed fans and host curves in an admitted preset. ([#890](https://github.com/OpenBladeProject/openblade-core/pull/890))
+- Stop treating constant ACPI values as CPU temperature, so custom fan curves use the maximum-speed fallback when no CPU sensor is available. ([#890](https://github.com/OpenBladeProject/openblade-core/pull/890))
+- Fix cancellation being lost when a queued service request resumes. ([#887](https://github.com/OpenBladeProject/openblade-core/pull/887))
+- Keep the original diagnostic stage when a CPU read times out. ([#887](https://github.com/OpenBladeProject/openblade-core/pull/887))
+- Keep older app versions in a readable, read-only upgrade view when the service has newer presets and settings. ([#888](https://github.com/OSSBlade/openblade-core/pull/888))
+- Recover thermal controls when unrelated charge-limit readings are unavailable. ([#888](https://github.com/OSSBlade/openblade-core/pull/888))
 - Clear Maximum Fans before applying Battery Balanced on Blade 14, 16 and 18 (2024), including after disconnecting AC power. ([#888](https://github.com/OSSBlade/openblade-core/pull/888))
-- Allow paused charge-limit controls to resume after successful recovery on source-reviewed models. ([#888](https://github.com/OSSBlade/openblade-core/pull/888))
-- Preserve saved Windows power modes, app rules and brightness when migrating profiles. ([#888](https://github.com/OSSBlade/openblade-core/pull/888))
+- Allow paused charge-limit controls to resume after successful recovery. ([#888](https://github.com/OSSBlade/openblade-core/pull/888))
+- Keep saved Windows power modes, app rules and brightness when migrating profiles. ([#888](https://github.com/OSSBlade/openblade-core/pull/888))
 - Apply and verify the internal display's active signal rate when selecting a fixed refresh rate. ([#886](https://github.com/OpenBladeProject/openblade-core/pull/886))
 - Keep Dynamic Refresh Rate available after choosing a low fixed rate when the panel and driver support a higher timing. ([#886](https://github.com/OpenBladeProject/openblade-core/pull/886))
 - Apply an app profile's refresh rate only when OpenBlade can restore the previous rate. ([#886](https://github.com/OpenBladeProject/openblade-core/pull/886))
@@ -180,34 +180,34 @@ All notable changes to OpenBlade are documented in this file. The project follow
 ### Fixed
 
 - Keep confirmed fixed-fan settings when reapplying the current performance preset. ([#880](https://github.com/OpenBladeProject/openblade-core/pull/880))
-- Preserve saved function-key and Gaming Mode preferences when saving or discarding other laptop edits. ([#880](https://github.com/OpenBladeProject/openblade-core/pull/880))
-- Show Blade 18's default Fn shortcuts without a paused warning and keep status checks from interrupting Razer-driver remapping. ([#880](https://github.com/OpenBladeProject/openblade-core/pull/880))
+- Keep saved function-key and Gaming Mode preferences when saving or discarding other laptop edits. ([#880](https://github.com/OpenBladeProject/openblade-core/pull/880))
+- Show Blade 18's default Fn shortcuts without a paused warning, and stop status checks from interrupting Razer-driver remapping. ([#880](https://github.com/OpenBladeProject/openblade-core/pull/880))
 - Reduce memory growth when changing app language by sharing localized resource lookups across the main window and quick controls. ([#874](https://github.com/OpenBladeProject/openblade-core/pull/874))
-- Avoid native event-argument memory growth when closing main and quick-controls windows to the tray. ([#874](https://github.com/OpenBladeProject/openblade-core/pull/874))
-- Preserve window size limits while reducing memory growth during language changes. ([#874](https://github.com/OpenBladeProject/openblade-core/pull/874))
+- Reduce memory growth when closing the main and quick-controls windows to the tray. ([#874](https://github.com/OpenBladeProject/openblade-core/pull/874))
+- Keep window size limits while reducing memory growth during language changes. ([#874](https://github.com/OpenBladeProject/openblade-core/pull/874))
 - Reuse native windows, backdrops and icons when changing language, and release retired views and their event subscriptions. ([#874](https://github.com/OpenBladeProject/openblade-core/pull/874))
-- Release generated XAML bindings and native title-bar resources when closing main and quick-controls windows, and complete cleanup after failed window initialization. ([#874](https://github.com/OpenBladeProject/openblade-core/pull/874))
+- Release XAML bindings and title-bar resources when closing the main and quick-controls windows, including after a failed window start. ([#874](https://github.com/OpenBladeProject/openblade-core/pull/874))
 - Keep display edits and refresh messages in order and use current brightness levels. ([#874](https://github.com/OpenBladeProject/openblade-core/pull/874))
-- Preserve brightness-failure diagnostics and allow display automation to recover after a canceled manual change. ([#874](https://github.com/OpenBladeProject/openblade-core/pull/874))
-- Avoid refreshing unrelated controls when THX audio settings have not changed. ([#874](https://github.com/OpenBladeProject/openblade-core/pull/874))
-- Preserve overlapping profile edits, refresh service state before later saves, and retain drafts when a save is rejected or its result is uncertain. ([#874](https://github.com/OpenBladeProject/openblade-core/pull/874))
-- Honor the latest telemetry replay selection and keep intermittent readings visible without drawing chart lines across missing readings. ([#874](https://github.com/OpenBladeProject/openblade-core/pull/874))
-- Remove failed driver-download attempt files before installation begins, while retaining packages after any installation intent or uncertain result. ([#877](https://github.com/OpenBladeProject/openblade-core/pull/877))
-- Keep driver installation recovery required for malformed journals or missing THX packages, preserve extraction files after uncertain termination, and distinguish timeouts from cancellation. ([#877](https://github.com/OpenBladeProject/openblade-core/pull/877))
-- Preserve invalid configuration and the original files when a save and its rollback both fail. ([#876](https://github.com/OpenBladeProject/openblade-core/pull/876))
+- Keep brightness-failure diagnostics and let display automation recover after a canceled manual change. ([#874](https://github.com/OpenBladeProject/openblade-core/pull/874))
+- Avoid refreshing unrelated controls when THX audio settings haven't changed. ([#874](https://github.com/OpenBladeProject/openblade-core/pull/874))
+- Keep overlapping profile edits, refresh service state before later saves, and keep drafts when a save is rejected or its result is uncertain. ([#874](https://github.com/OpenBladeProject/openblade-core/pull/874))
+- Follow the latest telemetry replay selection and keep intermittent readings visible without drawing chart lines across gaps. ([#874](https://github.com/OpenBladeProject/openblade-core/pull/874))
+- Remove failed driver-download files before installation begins. Packages are kept after any installation attempt or uncertain result. ([#877](https://github.com/OpenBladeProject/openblade-core/pull/877))
+- Keep driver installation recovery required for malformed journals or missing THX packages, keep extraction files after uncertain termination, and tell timeouts from cancellation. ([#877](https://github.com/OpenBladeProject/openblade-core/pull/877))
+- Keep invalid configuration and the original files when a save and its rollback both fail. ([#876](https://github.com/OpenBladeProject/openblade-core/pull/876))
 - Keep settings tied to the correct Windows user across interrupted activation and overlapping requests. ([#876](https://github.com/OpenBladeProject/openblade-core/pull/876))
-- Report incomplete profile application accurately and retain uncertain laptop-control writes across restarts without replaying them automatically. ([#876](https://github.com/OpenBladeProject/openblade-core/pull/876))
-- Keep lighting recovery admission consistent across supported backends. ([#876](https://github.com/OpenBladeProject/openblade-core/pull/876))
-- Retain keyboard-hook ownership when replacement cleanup fails and stop replacements until cleanup is confirmed. ([#876](https://github.com/OpenBladeProject/openblade-core/pull/876))
-- Follow playback-device changes in Audio Meter lighting and preserve configured THX profile values through saving and loading. ([#876](https://github.com/OpenBladeProject/openblade-core/pull/876))
-- Preserve display-automation pauses after partially submitted changes and retain the latest activated app profile. ([#876](https://github.com/OpenBladeProject/openblade-core/pull/876))
-- Stop developer firmware-validation writes after unconfirmed changes or restoration failures, bound CPU probe callback buffering, and report matching native failures without waiting. ([#878](https://github.com/OpenBladeProject/openblade-core/pull/878))
+- Report incomplete profile application accurately, and keep uncertain laptop-control writes across restarts without replaying them. ([#876](https://github.com/OpenBladeProject/openblade-core/pull/876))
+- Keep lighting recovery consistent across supported laptops. ([#876](https://github.com/OpenBladeProject/openblade-core/pull/876))
+- Keep keyboard-hook ownership when replacement cleanup fails, and stop replacements until cleanup is confirmed. ([#876](https://github.com/OpenBladeProject/openblade-core/pull/876))
+- Follow playback-device changes in Audio Meter lighting and keep configured THX profile values through saving and loading. ([#876](https://github.com/OpenBladeProject/openblade-core/pull/876))
+- Keep display-automation pauses after partially submitted changes and keep the latest activated app profile. ([#876](https://github.com/OpenBladeProject/openblade-core/pull/876))
+- Stop developer firmware-validation writes after unconfirmed changes or restoration failures, limit CPU probe callback buffering, and report native failures without waiting. ([#878](https://github.com/OpenBladeProject/openblade-core/pull/878))
 
 ### Changed
 
-- Reduce telemetry chart allocations and redraw each accepted live sample once, while keeping freshness labels and missing-sample time progression current. ([#874](https://github.com/OpenBladeProject/openblade-core/pull/874))
+- Reduce telemetry chart allocations and redraw each live sample once, while keeping freshness labels and missing-sample time current. ([#874](https://github.com/OpenBladeProject/openblade-core/pull/874))
 - Release worker threads between GPU activity samples and cancel pending sample waits promptly. ([#876](https://github.com/OpenBladeProject/openblade-core/pull/876))
-- Reduce service and battery IPC decoding overhead with shared streaming validation. ([#876](https://github.com/OpenBladeProject/openblade-core/pull/876))
+- Reduce service and battery IPC decoding overhead. ([#876](https://github.com/OpenBladeProject/openblade-core/pull/876))
 
 ## [0.50.3] - 2026-11-01
 
@@ -230,159 +230,159 @@ All notable changes to OpenBlade are documented in this file. The project follow
 ### Fixed
 
 - Fix a dashboard loading crash during application language changes. ([#867](https://github.com/OSSBlade/openblade-core/pull/867))
-- Make tray power sources and performance modes easier to distinguish, with clearer monochrome icons and a dedicated HyperBoost symbol. ([#858](https://github.com/OpenBladeProject/openblade-core/pull/858))
-- Preserve local-development installer logs after rollback and recognize Session Agent helpers during deployment and relaunch. ([#858](https://github.com/OpenBladeProject/openblade-core/pull/858))
+- Make tray power sources and performance modes easier to tell apart, with clearer monochrome icons and a dedicated HyperBoost symbol. ([#858](https://github.com/OpenBladeProject/openblade-core/pull/858))
+- Keep local-development installer logs after rollback and recognize Session Agent helpers during deployment and relaunch. ([#858](https://github.com/OpenBladeProject/openblade-core/pull/858))
 
 ## [0.44.1-nightly.105] - 2026-10-28
 
 ### Fixed
 
-- Let SnapTap recover automatically from a brief loss of foreground focus while idle, after verified hook cleanup and a fresh key-release check. Preserve safety stops for held keys and uncertain input. ([#854](https://github.com/OpenBladeProject/openblade-core/pull/854))
+- Let SnapTap recover automatically from a brief loss of foreground focus while idle. It still stops for held keys and uncertain input. ([#854](https://github.com/OpenBladeProject/openblade-core/pull/854))
 
 ## [0.44.0-nightly.104] - 2026-10-26
 
 ### Added
 
-- Install SnapTap drivers through Windows Update first on all reviewed Blade models, with pinned-package fallback when the initial scan finds no matching offer. ([#855](https://github.com/OpenBladeProject/openblade-core/pull/855))
+- Install SnapTap drivers through Windows Update first on all reviewed Blade models, with a pinned-package fallback when the first scan finds no matching offer. ([#855](https://github.com/OpenBladeProject/openblade-core/pull/855))
 
 ### Fixed
 
-- Keep keyboard driver setup visible for incomplete stacks and retain exact blocked checks and Windows Update results in diagnostics. ([#855](https://github.com/OpenBladeProject/openblade-core/pull/855))
-- Wait for SnapTap driver devices to appear after installation, keep canceled pre-install checks retryable, and distinguish refused driver offers from Windows Update availability problems. ([#855](https://github.com/OpenBladeProject/openblade-core/pull/855))
+- Keep keyboard driver setup visible for incomplete stacks, and keep blocked checks and Windows Update results in diagnostics. ([#855](https://github.com/OpenBladeProject/openblade-core/pull/855))
+- Wait for SnapTap driver devices to appear after installation, keep canceled pre-install checks retryable, and tell refused driver offers apart from Windows Update availability problems. ([#855](https://github.com/OpenBladeProject/openblade-core/pull/855))
 
 ## [0.43.0-nightly.103] - 2026-10-25
 
 ### Added
 
-- Offer **Install driver** for all seven reviewed SnapTap models, including eligible partial stacks. Verify each model's complete signed driver inputs, retain detailed setup failures, and preserve unrelated drivers. ([#852](https://github.com/OpenBladeProject/openblade-core/pull/852))
+- Offer **Install driver** for all seven reviewed SnapTap models, including eligible partial stacks. Setup keeps detailed failure reports and unrelated drivers. ([#852](https://github.com/OpenBladeProject/openblade-core/pull/852))
 
 ## [0.42.2-nightly.102] - 2026-10-24
 
 ### Fixed
 
-- Retain redacted exception messages, stack locations, native results and complete ordinary cause chains across runtime diagnostics. Preserve driver and controller discovery context, log-writer health and export omissions, and deliver larger diagnostic archives without widening control requests. ([#850](https://github.com/OpenBladeProject/openblade-core/pull/850))
+- Keep error messages, stack locations and cause chains in diagnostics, along with driver and controller discovery details and log-writer health. Larger diagnostic archives now download fully. ([#850](https://github.com/OpenBladeProject/openblade-core/pull/850))
 
 ## [0.42.1-nightly.101] - 2026-10-24
 
 ### Fixed
 
-- Preserve failure stages and native error details in SnapTap, Windows battery reports, Session Agent dispatch and THX diagnostics. Include SnapTap runtime failures and collection results in support exports, and keep healthy logs when another log is unreadable. ([#847](https://github.com/OpenBladeProject/openblade-core/pull/847))
+- Keep failure stages and native error details in SnapTap, Windows battery report, Session Agent and THX diagnostics. Support exports now include SnapTap runtime failures, and one unreadable log no longer hides the others. ([#847](https://github.com/OpenBladeProject/openblade-core/pull/847))
 
 ## [0.42.0-nightly.100] - 2026-10-23
 
 ### Added
 
-- Compare telemetry sensors in separate temperature, power and fan-speed lanes with a shared time axis and an analysis table. Choose visible metrics and custom colors, drag the time window or edit precise bounds, and inspect exact raw-sample values and range statistics. Pinned moments stay fixed as live readings arrive. ([#841](https://github.com/OpenBladeProject/openblade-core/pull/841))
+- Compare telemetry sensors in separate temperature, power and fan-speed lanes with a shared time axis and an analysis table. Choose visible metrics and custom colors, drag the time window or edit exact bounds, and inspect raw-sample values and range statistics. Pinned moments stay fixed as live readings arrive. ([#841](https://github.com/OpenBladeProject/openblade-core/pull/841))
 
 ### Changed
 
-- Keep telemetry off by default with a saved Enable telemetry switch. Turning it off stops history collection and finishes an active CSV recording. ([#841](https://github.com/OpenBladeProject/openblade-core/pull/841))
-- Show timestamped sensor values beside the telemetry crosshair while hovering. Use flat desktop toolbar controls, grouped sample navigation and a live-follow toggle, with an inline Full range action beside the timeline label. ([#841](https://github.com/OpenBladeProject/openblade-core/pull/841))
-- Standardize app typography around the native WinUI type scale and shared command sizing. Telemetry table headers use strong text while body cells use regular text with tabular numerals. ([#841](https://github.com/OpenBladeProject/openblade-core/pull/841))
+- Telemetry is off by default. A saved Enable telemetry switch turns it on; turning it off stops history collection and ends any active CSV recording. ([#841](https://github.com/OpenBladeProject/openblade-core/pull/841))
+- Show timestamped sensor values beside the telemetry crosshair on hover. Use flat toolbar controls, grouped sample navigation, a live-follow toggle and an inline Full range action beside the timeline label. ([#841](https://github.com/OpenBladeProject/openblade-core/pull/841))
+- Standardize app typography on the native WinUI type scale and shared command sizing. Telemetry table headers use strong text and body cells use regular text with tabular numerals. ([#841](https://github.com/OpenBladeProject/openblade-core/pull/841))
 
 ### Fixed
 
-- Align telemetry status text with CSV actions and center shared toolbar content at native display scaling. ([#841](https://github.com/OpenBladeProject/openblade-core/pull/841))
-- Hide graph readouts, crosshairs and sample markers when the pointer leaves, without clearing pinned table values. Keep hover inspection available after telemetry range edits and preserve selection when recording starts or stops. Explain expired readings and adjusted time bounds, and retain unrelated preferences when a saved sensor is unknown. ([#841](https://github.com/OpenBladeProject/openblade-core/pull/841))
+- Align telemetry status text with the CSV actions and center toolbar content at native display scaling. ([#841](https://github.com/OpenBladeProject/openblade-core/pull/841))
+- Hide graph readouts, crosshairs and sample markers when the pointer leaves, while pinned table values stay. Hover inspection keeps working after range edits, and selection survives starting or stopping a recording. Expired readings and adjusted time bounds are now explained, and an unknown saved sensor no longer discards other preferences. ([#841](https://github.com/OpenBladeProject/openblade-core/pull/841))
 - Keep application and display automation current after cancellation or rapid app switches, and let telemetry recording stop cleanly after a disk error. ([#845](https://github.com/OSSBlade/openblade-core/pull/845))
-- Avoid unnecessary control pauses when performance, fan or battery changes are canceled or blocked before they are sent. Keep shutdown cleanup bounded. ([#845](https://github.com/OSSBlade/openblade-core/pull/845))
-- Prevent stale keyboard colors from flashing before the selected effect when activity wakes idle lighting, across all supported Blade models. ([#844](https://github.com/OSSBlade/openblade-core/pull/844))
+- Avoid unnecessary control pauses when a performance, fan or battery change is canceled or blocked before it is sent. Keep shutdown cleanup bounded. ([#845](https://github.com/OSSBlade/openblade-core/pull/845))
+- Fix stale keyboard colors flashing before the selected effect when activity wakes idle lighting, on all supported Blade models. ([#844](https://github.com/OSSBlade/openblade-core/pull/844))
 - Keep the minimize, maximize and close buttons in sync with the window theme, including when following Windows. ([#843](https://github.com/OSSBlade/openblade-core/pull/843))
 
 ## [0.41.1-nightly.99] - 2026-10-22
 
 ### Changed
 
-- Use sliders with percentage readouts for display brightness and application brightness overrides. Show Unavailable for the live display control when its brightness reading is unknown. ([#837](https://github.com/OSSBlade/openblade-core/pull/837))
-- Move application profile editing and installed-game discovery into full-width pages with Back and Save actions, searchable game groups, executable icons and fewer duplicate suggestions. Keep actual game executables available alongside distinct launchers or bootstrappers. ([#837](https://github.com/OSSBlade/openblade-core/pull/837))
+- Use sliders with percentage readouts for display brightness and application brightness overrides. Show Unavailable for the live display control when its brightness is unknown. ([#837](https://github.com/OSSBlade/openblade-core/pull/837))
+- Move application profile editing and installed-game discovery to full-width pages with Back and Save actions, searchable game groups, executable icons and fewer duplicate suggestions. Game executables stay available next to launchers and bootstrappers. ([#837](https://github.com/OSSBlade/openblade-core/pull/837))
 - Add timestamp and value axes, a vertical crosshair, same-sample readings and keyboard inspection controls to telemetry charts. Show the selected time window and missing data without interpolation. ([#837](https://github.com/OSSBlade/openblade-core/pull/837))
 
 ### Fixed
 
-- Avoid rebuilding hidden telemetry charts while recording continues in the background. ([#837](https://github.com/OSSBlade/openblade-core/pull/837))
+- Stop rebuilding hidden telemetry charts while recording continues in the background. ([#837](https://github.com/OSSBlade/openblade-core/pull/837))
 
 ## [0.41.0-nightly.98] - 2026-10-21
 
 ### Added
 
-- Add application profiles for exact game and app executables, with foreground or activated-process lifetime rules, separate power-source overrides, HDR and brightness settings, installed-game discovery, and profile import/export. Manual controls keep priority while automation continues in the Session Agent. ([#835](https://github.com/OSSBlade/openblade-core/pull/835))
-- Add telemetry charts with raw-sample statistics, missing-reading gaps, power/profile events, source and freshness labels, and explicit bounded local CSV recording and replay. ([#835](https://github.com/OSSBlade/openblade-core/pull/835))
+- Add application profiles for specific game and app executables, with foreground or activated-process lifetime rules, separate power-source overrides, HDR and brightness settings, installed-game discovery, and profile import and export. Manual controls take priority, and automation keeps running in the Session Agent. ([#835](https://github.com/OSSBlade/openblade-core/pull/835))
+- Add telemetry charts with raw-sample statistics, gaps for missing readings, power and profile events, source and freshness labels, and local CSV recording and replay. ([#835](https://github.com/OSSBlade/openblade-core/pull/835))
 - Add per-source display brightness, Windows battery history with capacity and activity details, and a previewable Long battery life preset. ([#835](https://github.com/OSSBlade/openblade-core/pull/835))
 
 ### Fixed
 
-- Preserve display ownership and uncertainty across application changes, manual controls, cancellation and restart. Require acknowledged recovery checkpoints and complete readback before resuming uncertain automation, and stop guessed refresh-rate rollback. ([#835](https://github.com/OSSBlade/openblade-core/pull/835))
+- Keep display automation correct across application changes, manual controls, cancellation and restart, and resume after an uncertain state only once it is confirmed. Stop guessing at refresh-rate rollback. ([#835](https://github.com/OSSBlade/openblade-core/pull/835))
 
 ## [0.40.0] - 2026-10-21
 
 ### Added
 
-- Add a Touchpad switch on the Laptop page to turn the Windows Precision Touchpad on or off, with confirmed state and English, Russian and Chinese text. Remove redundant On/Off text beside the Gaming mode switch. ([#830](https://github.com/OSSBlade/openblade-core/pull/830))
+- Add a Touchpad switch on the Laptop page to turn the Windows Precision Touchpad on or off, with English, Russian and Chinese text. Remove the redundant On/Off text beside the Gaming mode switch. ([#830](https://github.com/OSSBlade/openblade-core/pull/830))
 
 ## [0.39.0-nightly.97] - 2026-10-20
 
 ### Added
 
-- Add experimental spatial-audio control through the installed legacy THX COM service on Blade 14 RZ09-0482, Blade 16 RZ09-0483 and Blade 18 RZ09-0484. Review every supported model in the driver catalog; record the exact Realtek OEM codec tuning and keep legacy installation blocked until the endpoint effects binding and installation sequence are verified, and identify RZ09-0328 as Dolby Atmos. Add a developer-only read-only collector for the original legacy binding evidence. ([#819](https://github.com/OpenBladeProject/openblade-core/pull/819), [catalog #27](https://github.com/OpenBladeProject/blade-driver-catalog/pull/27))
-- Install the matching THX driver and configuration without Synapse on RZ09-0581, RZ09-0528 and RZ09-0530, using verified original installers from Razer or the driver catalog. Verify and extract the signed inner installer into protected staging before execution. Experimental fresh setup also verifies and provisions the reviewed Realtek or Intel base audio prerequisites, preserves unrecognized installed builds, and checks Windows inbox SDCA on RZ09-0581. RZ09-0581 uses the separately pinned cached THX build; clean installation remains physically unvalidated. ([#819](https://github.com/OpenBladeProject/openblade-core/pull/819), [catalog #27](https://github.com/OpenBladeProject/blade-driver-catalog/pull/27))
-- Extend driver-backed SnapTap to all seven supported Blade models through one shared backend with exact driver profiles. Newly added models show experimental status and use their own Razer driver setup; diagnostics identify failed admission checks. ([#828](https://github.com/OSSBlade/openblade-core/pull/828))
+- Add experimental spatial-audio control through the installed legacy THX COM service on Blade 14 RZ09-0482, Blade 16 RZ09-0483 and Blade 18 RZ09-0484. Legacy installation stays blocked until its setup sequence is verified. Identify RZ09-0328 as Dolby Atmos. Add a developer-only read-only collector for the original legacy binding evidence. ([#819](https://github.com/OpenBladeProject/openblade-core/pull/819), [catalog #27](https://github.com/OpenBladeProject/blade-driver-catalog/pull/27))
+- Install the matching THX driver and configuration without Synapse on RZ09-0581, RZ09-0528 and RZ09-0530, using verified original installers from Razer or the driver catalog. Experimental fresh setup also installs the required Realtek or Intel base audio driver and keeps unrecognized installed builds. Clean installation on RZ09-0581 has not been physically tested. ([#819](https://github.com/OpenBladeProject/openblade-core/pull/819), [catalog #27](https://github.com/OpenBladeProject/blade-driver-catalog/pull/27))
+- Extend driver-backed SnapTap to all seven supported Blade models. The newly added models show experimental status and use their own Razer driver setup, and diagnostics name any failed check. ([#828](https://github.com/OSSBlade/openblade-core/pull/828))
 
 ### Changed
 
-- Accept compatible installed THX, SnapTap and native-brightness driver updates through their existing APIs without a driver-build hash allowlist. Verify actual package bindings, Windows catalog trust and typed contracts, invalidate stale runtime admission, and preserve download and installer hash checks. Record this compatibility policy in the agent guide. ([#819](https://github.com/OpenBladeProject/openblade-core/pull/819))
+- Accept compatible installed THX, SnapTap and native-brightness driver updates without a release, instead of matching exact driver builds. Downloads and installers keep their hash checks. Record this policy in the agent guide. ([#819](https://github.com/OpenBladeProject/openblade-core/pull/819))
 
 ### Fixed
 
-- Accept the vendor-backed performance, fan and Maximum Fans acknowledgement replies on experimental Blade 18 (2023) and Blade 16 (2023), retaining independent readback and write-pause recovery. ([#826](https://github.com/OpenBladeProject/openblade-core/pull/826))
-- Stop startup-animation and other firmware controls from loading indefinitely after an unconfirmed read, and report the specific shared admission check blocking experimental writes. ([#826](https://github.com/OSSBlade/openblade-core/pull/826))
-- Include Blade 18 Fn shortcut input and execution checkpoints in exported diagnostics, preserving the existing input safety checks. ([#826](https://github.com/OSSBlade/openblade-core/pull/826))
+- Accept the vendor performance, fan and Maximum Fans replies on experimental Blade 18 (2023) and Blade 16 (2023). ([#826](https://github.com/OpenBladeProject/openblade-core/pull/826))
+- Stop startup-animation and other firmware controls from loading forever after an unconfirmed read, and name the check that blocks experimental writes. ([#826](https://github.com/OSSBlade/openblade-core/pull/826))
+- Include Blade 18 Fn shortcut input and execution checkpoints in exported diagnostics. ([#826](https://github.com/OSSBlade/openblade-core/pull/826))
 
 ## [0.37.3-nightly.96] - 2026-10-19
 
 ### Changed
 
-- Simplify the SnapTap information popup in English, Russian, and Simplified Chinese, and fix its localization review snapshots. ([#818](https://github.com/OSSBlade/openblade-core/pull/818))
+- Simplify the SnapTap information popup in English, Russian and Simplified Chinese, and fix its localization review snapshots. ([#818](https://github.com/OSSBlade/openblade-core/pull/818))
 
 ### Fixed
 
-- Isolate failed battery and thermal state queries so unrelated controls stay available across Blade models. Keep optional GPU and sign-in checks from blocking state updates or Tray startup. ([#824](https://github.com/OpenBladeProject/openblade-core/pull/824))
+- Keep unrelated controls available on all Blade models when a battery or thermal state query fails. Optional GPU and sign-in checks no longer block state updates or Tray startup. ([#824](https://github.com/OpenBladeProject/openblade-core/pull/824))
 
 ## [0.37.1-nightly.95] - 2026-10-19
 
 ### Fixed
 
-- Restore Blade 18 controls when an optional startup-lighting or keyboard-layout read fails during initialization. Preserve the actual failed query in diagnostics and include optional query failures in exported firmware diagnostics. ([#820](https://github.com/OpenBladeProject/openblade-core/pull/820))
+- Restore Blade 18 controls when an optional startup-lighting or keyboard-layout read fails during startup. Diagnostics now show the failed query, including in exported firmware diagnostics. ([#820](https://github.com/OpenBladeProject/openblade-core/pull/820))
 
 ## [0.37.0-nightly.94] - 2026-10-19
 
 ### Added
 
-- Download the missing THX client directly from Razer with hash and signature verification, while preserving the matching audio driver requirements. Improve Chinese and Russian THX wording. ([#816](https://github.com/OpenBladeProject/openblade-core/pull/816))
+- Download the missing THX client directly from Razer, with hash and signature verification. The matching audio driver is still required. Improve Chinese and Russian THX wording. ([#816](https://github.com/OpenBladeProject/openblade-core/pull/816))
 
 ### Changed
 
-- Store the sanitized protocol evidence required by OpenBlade directly in the core repository, so public clones, builds, and tests no longer depend on the private legacy capture repository. Use Synapse Observer for new evidence collection. ([#815](https://github.com/OpenBladeProject/openblade-core/pull/815))
+- Store the sanitized protocol evidence OpenBlade needs in the core repository, so public clones, builds and tests no longer need the private legacy capture repository. Use Synapse Observer for new evidence. ([#815](https://github.com/OpenBladeProject/openblade-core/pull/815))
 
 ## [0.36.0-nightly.93] - 2026-10-18
 
 ### Added
 
-- Add experimental Blade 18 per-key color imports and sequence playback, single- and dual-color Breathing, leftward Wave, host Gaming Mode key blocking, startup animation and temporary full charge after valid state readback, independent curve target registers in Balanced and linked fixed fans in Silent. Custom entry returns fans to Automatic while retaining the saved fan setting. ([#786](https://github.com/OpenBladeProject/openblade-core/pull/786))
-- Add experimental Reactive, Ripple, Tidal, Fire, Wheel, Starlight, whole-keyboard Ambient Awareness and Audio Meter lighting for Blade 18 (2023), using its admitted 6×16 frame transport and Synapse regional keyboard definitions. Add its default Synapse Fn shortcuts for performance, refresh rate, touchpad, F1–F12, arrows and Delete. ([#786](https://github.com/OpenBladeProject/openblade-core/pull/786))
-- Add all Custom CPU/GPU level combinations, including CPU Boost with GPU Medium and High/High, and a shared 2200–3800 RPM fixed-fan control in Balanced on Blade 18 (2023). Keep richer Synapse lighting effects visible in diagnostics. ([#786](https://github.com/OSSBlade/openblade-core/pull/786))
-- Install the supported SnapTap keyboard driver from the catalog with one button, package verification, and clear setup results. ([#811](https://github.com/OpenBladeProject/openblade-core/pull/811))
+- Add experimental Blade 18 per-key color imports and sequence playback, single- and dual-color Breathing, leftward Wave, host Gaming Mode key blocking, startup animation and temporary full charge, independent curve targets in Balanced and linked fixed fans in Silent. Entering Custom returns fans to Automatic and keeps the saved fan setting. ([#786](https://github.com/OpenBladeProject/openblade-core/pull/786))
+- Add experimental Reactive, Ripple, Tidal, Fire, Wheel, Starlight, whole-keyboard Ambient Awareness and Audio Meter lighting for Blade 18 (2023). Add its default Synapse Fn shortcuts for performance, refresh rate, touchpad, F1–F12, arrows and Delete. ([#786](https://github.com/OpenBladeProject/openblade-core/pull/786))
+- Add all Custom CPU/GPU level combinations, including CPU Boost with GPU Medium and High/High, and a shared 2200–3800 RPM fixed-fan control in Balanced on Blade 18 (2023). Show richer Synapse lighting effects in diagnostics. ([#786](https://github.com/OSSBlade/openblade-core/pull/786))
+- Install the supported SnapTap keyboard driver from the catalog with one button, with package verification and clear setup results. ([#811](https://github.com/OpenBladeProject/openblade-core/pull/811))
 
 ### Changed
 
-- Clarify Blade 18 temperature-source limits and name decoded temporary-full-charge, CPU Boost and local-dimming bit flags in existing experimental Power Mode Control diagnostics. ([#786](https://github.com/OpenBladeProject/openblade-core/pull/786))
-- Run SnapTap through the supported Razer laptop keyboard driver on RZ09-0581, with keyboard-specific admission, supervised recovery, and a short information popup. ([#809](https://github.com/OSSBlade/openblade-core/pull/809))
+- Clarify Blade 18 temperature-source limits, and name the temporary full charge, CPU Boost and local dimming flags in experimental Power Mode Control diagnostics. ([#786](https://github.com/OpenBladeProject/openblade-core/pull/786))
+- Run SnapTap through the supported Razer laptop keyboard driver on RZ09-0581, with a short information popup. ([#809](https://github.com/OSSBlade/openblade-core/pull/809))
 
 ### Fixed
 
-- Preserve read-only status for older clients when new keyboard layouts are present, and leave external keyboard input untouched by Blade 18 Fn handling. ([#786](https://github.com/OpenBladeProject/openblade-core/pull/786))
-- Recheck controller admission for every lighting frame row and pause after partial frame batches, including cancellation between rows. This also protects the existing validated-model frame transports. ([#786](https://github.com/OpenBladeProject/openblade-core/pull/786))
-- Use the observed logo-lighting selector on Blade 18 (2023) for state queries, changes, and restoration. ([#786](https://github.com/OSSBlade/openblade-core/pull/786))
-- Fix Custom-state reads on Blade 16 (2023) and Blade 18 (2023) by supplying the bounded validator required by the Maximum Fans query, and use the vendor Custom query profile on Blade 18. ([#786](https://github.com/OSSBlade/openblade-core/pull/786))
+- Keep older clients read-only when new keyboard layouts are present, and leave external keyboard input alone in Blade 18 Fn handling. ([#786](https://github.com/OpenBladeProject/openblade-core/pull/786))
+- Pause lighting after a partial frame batch, including after cancellation between rows, and recheck the controller for each row. This also covers the already validated models. ([#786](https://github.com/OpenBladeProject/openblade-core/pull/786))
+- Use the observed logo-lighting selector on Blade 18 (2023) for reading, changing and restoring logo lighting. ([#786](https://github.com/OSSBlade/openblade-core/pull/786))
+- Fix Custom-state reads on Blade 16 (2023) and Blade 18 (2023), and use the vendor Custom query on Blade 18. ([#786](https://github.com/OSSBlade/openblade-core/pull/786))
 - Show the specific THX detection failure and include a fresh THX detection report in exported diagnostics. ([#805](https://github.com/OSSBlade/openblade-core/pull/805))
 
 ## [0.33.1-nightly.92] - 2026-10-17
@@ -390,21 +390,21 @@ All notable changes to OpenBlade are documented in this file. The project follow
 ### Changed
 
 - Cache the verified Windows Desktop Runtime installer across full builds and worktrees. ([#800](https://github.com/OpenBladeProject/openblade-core/pull/800))
-- Simplify app helper text and confirmation dialogs in English, Simplified Chinese, and Russian. ([#797](https://github.com/OpenBladeProject/openblade-core/pull/797))
+- Simplify app helper text and confirmation dialogs in English, Simplified Chinese and Russian. ([#797](https://github.com/OpenBladeProject/openblade-core/pull/797))
 
 ### Added
 
-- Add an opt-in experimental A/D SnapTap feature with last-pressed-key priority across keyboards. ([#794](https://github.com/OpenBladeProject/openblade-core/pull/794))
-- Add experimental, opt-in controls on a dedicated THX Audio page for Blade 16 RZ09-0581 and RZ09-0528 and Blade 14 RZ09-0530, including custom EQ and audio enhancements, using each model's supported THX components already installed. All three models support saved application routing. Settings load automatically on the THX page, with a recovery-only read button, stable inline loading, grouped EQ actions, and native settings cells, native operations reuse a connection and use faster fresh device and service checks, and a warning explains when Windows audio enhancements bypass THX. The user confirmed audible spatial changes on RZ09-0581 speakers with Windows enhancements enabled; other outputs and models still need audible validation. ([#790](https://github.com/OSSBlade/openblade-core/pull/790))
-- Add experimental HyperBoost with or without the cooling pad for Blade 14 (2023), RZ09-0482, and Blade 16 (2023), RZ09-0483, using each model's reviewed Synapse command path. Padless behavior awaits community hardware testing. ([#791](https://github.com/OSSBlade/openblade-core/pull/791))
+- Add an opt-in experimental A/D SnapTap feature that gives priority to the last-pressed key across keyboards. ([#794](https://github.com/OpenBladeProject/openblade-core/pull/794))
+- Add experimental, opt-in controls on a dedicated THX Audio page for Blade 16 RZ09-0581 and RZ09-0528 and Blade 14 RZ09-0530, including custom EQ and audio enhancements. They use the THX components already installed, and all three models support saved application routing. Settings load automatically, with a read button for recovery. A warning explains when Windows audio enhancements bypass THX. Spatial changes were confirmed audibly on RZ09-0581 speakers with Windows enhancements on; other outputs and models still need testing. ([#790](https://github.com/OSSBlade/openblade-core/pull/790))
+- Add experimental HyperBoost with or without the cooling pad for Blade 14 (2023), RZ09-0482, and Blade 16 (2023), RZ09-0483. Use without the pad awaits community hardware testing. ([#791](https://github.com/OSSBlade/openblade-core/pull/791))
 
 ### Fixed
 
 - Resume text auto-repeat for restored SnapTap holds, and group SnapTap with the Keyboard controls without redundant normal-state labels. ([#803](https://github.com/OpenBladeProject/openblade-core/pull/803))
 - Avoid a Session Agent shutdown error when playback or microphone mute subscriptions finish after cancellation. ([#802](https://github.com/OpenBladeProject/openblade-core/pull/802))
-- Remove duplicate padding inside nested settings, match THX subcell spacing and hover states to Custom performance, hide empty application-rule spacing, and bound saved rules so service status stays available. ([#790](https://github.com/OpenBladeProject/openblade-core/pull/790))
-- Keep Blade 14 (2023) and Blade 16 (2023) battery fan changes in DC Balanced and reject power-source changes before submission. ([#791](https://github.com/OSSBlade/openblade-core/pull/791))
-- Allow read-only experimental recovery before an explicit saved HyperBoost restore, and match saved Custom levels during journal recovery. ([#791](https://github.com/OSSBlade/openblade-core/pull/791))
+- Remove duplicate padding inside nested settings, match THX subcell spacing and hover states to Custom performance, hide empty application-rule spacing, and keep service status available when many rules are saved. ([#790](https://github.com/OpenBladeProject/openblade-core/pull/790))
+- Keep Blade 14 (2023) and Blade 16 (2023) battery fan changes in DC Balanced, and reject power-source changes before they are sent. ([#791](https://github.com/OSSBlade/openblade-core/pull/791))
+- Allow read-only experimental recovery before an explicit saved HyperBoost restore, and match saved Custom levels during recovery. ([#791](https://github.com/OSSBlade/openblade-core/pull/791))
 
 ## [0.30.0] - 2026-10-16
 
@@ -414,68 +414,68 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
-- Allow fixed fan speed on battery and fixed speed or manual curves on low-power adapters for Blade 16 RZ09-0528 and RZ09-0581. Experimental RZ09-0483 and RZ09-0482 also gain battery fixed speed; their low-power fan controls remain Automatic-only. ([#784](https://github.com/OSSBlade/openblade-core/pull/784))
+- Allow fixed fan speed on battery and fixed speed or manual curves on low-power adapters for Blade 16 RZ09-0528 and RZ09-0581. Experimental RZ09-0483 and RZ09-0482 also gain battery fixed speed; their low-power fan controls stay Automatic-only. ([#784](https://github.com/OSSBlade/openblade-core/pull/784))
 - Add Simplified Chinese and Russian versions of the README and user guides, with language navigation and stable section links. ([#769](https://github.com/OpenBladeProject/openblade-core/pull/769))
 
 ### Fixed
 
-- Apply Blade 16 (2025) manual fan changes directly, and let both the 2025 and 2026 models enter HyperBoost from manual fans on either admitted cooling-pad path without resetting to Automatic first. ([#785](https://github.com/OpenBladeProject/openblade-core/pull/785))
+- Apply Blade 16 (2025) manual fan changes directly. The 2025 and 2026 models can enter HyperBoost from manual fans on either admitted cooling-pad path without resetting to Automatic first. ([#785](https://github.com/OpenBladeProject/openblade-core/pull/785))
 
 ## [0.29.0-nightly.91] - 2026-10-15
 
 ### Added
 
-- Use Synapse's shared adapter wattage classification on all seven admitted Blade models, including the five experimental profiles. Compare actual and recommended power before thermal changes; limited supplies allow Balanced and Automatic fan handback. ([#779](https://github.com/OpenBladeProject/openblade-core/pull/779))
+- Use Synapse's adapter wattage classification on all seven admitted Blade models, including the five experimental ones. OpenBlade compares actual and recommended power before thermal changes, and limited supplies allow Balanced and Automatic fans. ([#779](https://github.com/OpenBladeProject/openblade-core/pull/779))
 
 ## [0.28.1-nightly.90] - 2026-10-15
 
 ### Added
 
-- Expand experimental Blade controls with model-specific Custom levels, fixed and Maximum Fans, keyboard and logo lighting, and 50–100% charge limits. Blade 16 (2023) gains whole-keyboard Static, Ambient Awareness, and Audio Meter; Blade 15 Base (2020) gains single-zone RGB. Diagnostics distinguish tested upstream features from extrapolations. ([#770](https://github.com/OpenBladeProject/openblade-core/pull/770))
+- Expand experimental Blade controls with model-specific Custom levels, fixed and Maximum Fans, keyboard and logo lighting, and 50–100% charge limits. Blade 16 (2023) gains whole-keyboard Static, Ambient Awareness and Audio Meter; Blade 15 Base (2020) gains single-zone RGB. Diagnostics separate tested upstream features from extrapolations. ([#770](https://github.com/OpenBladeProject/openblade-core/pull/770))
 
 ### Fixed
 
-- Recognize all Synapse-defined adapter wattages, including 200 W, on Blade 16 (2025 and 2026). Compare connected and recommended wattage, and label insufficient supplies as low-power adapters without assuming a connector. ([#776](https://github.com/OpenBladeProject/openblade-core/pull/776))
+- Recognize all Synapse-defined adapter wattages, including 200 W, on Blade 16 (2025 and 2026). Compare connected and recommended wattage, and label insufficient supplies as low-power adapters. ([#776](https://github.com/OpenBladeProject/openblade-core/pull/776))
 
 ## [0.27.5-nightly.89] - 2026-10-15
 
 ### Changed
 
-- Point Synapse Blade Blocker compatibility guidance to its repository instead of limiting it to Blade 16 (2025 and 2026), and clarify its use with experimental models. ([#768](https://github.com/OpenBladeProject/openblade-core/pull/768))
+- Point Synapse Blade Blocker guidance to its repository for all models, not only Blade 16 (2025 and 2026), and clarify its use with experimental models. ([#768](https://github.com/OpenBladeProject/openblade-core/pull/768))
 - Open Synapse Observer from **Help add support** and explain how to collect and submit evidence for an unsupported laptop. The support form accepts Observer ZIPs and OpenBlade identity reports. ([#765](https://github.com/OpenBladeProject/openblade-core/pull/765))
-- Simplify experimental-support wording in the README and guides, keeping model features and testing instructions in the linked guide. ([#764](https://github.com/OpenBladeProject/openblade-core/pull/764))
-- Document all five experimental Blade models, automatic controls, model-specific limits, recovery, and tester reports across the README and guides, with laptop lists ordered newest first. ([#759](https://github.com/OpenBladeProject/openblade-core/pull/759))
+- Simplify experimental-support wording in the README and guides, and keep model features and testing instructions in the linked guide. ([#764](https://github.com/OpenBladeProject/openblade-core/pull/764))
+- Document all five experimental Blade models, automatic controls, model limits, recovery and tester reports across the README and guides, with laptop lists ordered newest first. ([#759](https://github.com/OpenBladeProject/openblade-core/pull/759))
 
 ### Added
 
-- Add automatic experimental Balanced/Silent controls for the Blade 16 (2023), Blade 14 (2023 and 2025), Blade 15 Base (2020), and Blade 18 (2023), with 80% battery protection on the supported experimental models. ([#744](https://github.com/OpenBladeProject/openblade-core/pull/744))
-- Add experimental Blade 18 (2023) charge limits from 50–100% in 1% steps, with 100% turning protection off, decoded baselines, and independent exact-limit readback. ([#744](https://github.com/OpenBladeProject/openblade-core/pull/744))
-- Add experimental Blade 18 (2023) Performance and bounded Custom CPU/GPU controls, keyboard brightness, Off/Spectrum/random Breathing/Wave effects, and Off/Static/Breathing logo lighting. ([#744](https://github.com/OpenBladeProject/openblade-core/pull/744))
+- Add automatic experimental Balanced/Silent controls for the Blade 16 (2023), Blade 14 (2023 and 2025), Blade 15 Base (2020) and Blade 18 (2023), with 80% battery protection on the supported experimental models. ([#744](https://github.com/OpenBladeProject/openblade-core/pull/744))
+- Add experimental Blade 18 (2023) charge limits from 50–100% in 1% steps. 100% turns protection off. ([#744](https://github.com/OpenBladeProject/openblade-core/pull/744))
+- Add experimental Blade 18 (2023) Performance and Custom CPU/GPU controls, keyboard brightness, Off/Spectrum/random Breathing/Wave effects, and Off/Static/Breathing logo lighting. ([#744](https://github.com/OpenBladeProject/openblade-core/pull/744))
 - Let users resume paused experimental controls after a fresh read-only check, then send a new request. ([#744](https://github.com/OpenBladeProject/openblade-core/pull/744))
-- Include bounded experimental command results, source provenance, write-pause state, and cached telemetry in local diagnostic exports for pre-release tester reports. ([#744](https://github.com/OpenBladeProject/openblade-core/pull/744))
+- Include experimental command results, source details, pause state and cached telemetry in local diagnostic exports for pre-release tester reports. ([#744](https://github.com/OpenBladeProject/openblade-core/pull/744))
 
 ### Fixed
 
-- Prevent RPM and lighting commands from overlapping on RZ09-0528. Share cancellation handling across model backends, distinguish requests that were never sent, and let controls recover after cleanup errors once pending I/O has finished. ([#762](https://github.com/OpenBladeProject/openblade-core/pull/762))
-- Keep firmware query replies in exported diagnostics after an unrecognized reading or failed model check, including adapter classification failures. Retain failure evidence after recovery for the current service run, without requiring developer tools. ([#773](https://github.com/OSSBlade/openblade-core/pull/773))
-- On RZ09-0581 with AC power, apply manual fan, performance and padless HyperBoost changes without first resetting to Balanced or Automatic, and allow those AC profile combinations. Remove the obsolete Balanced instruction. Battery Protection can be turned off without resetting the current supported charge limit first. ([#756](https://github.com/OpenBladeProject/openblade-core/pull/756))
-- Prevent animated keyboard lighting from overlapping fan and battery command exchanges on RZ09-0581. Exported diagnostics now retain the query or command and native I/O error details when an operation fails. ([#753](https://github.com/OpenBladeProject/openblade-core/pull/753))
-- Preserve the selected performance mode on experimental laptops when a saved profile contains unavailable manual-fan settings, without switching to Balanced or writing fans. ([#744](https://github.com/OpenBladeProject/openblade-core/pull/744))
-- Keep independent experimental controls available after unrecognized readings, allow unrelated profile edits with unavailable saved settings, and accept fresh lighting intent after resuming paused controls. ([#744](https://github.com/OpenBladeProject/openblade-core/pull/744))
-- Read temporary full charge correctly on supported Blade laptops when other settings that share it, such as local dimming, are on, instead of reporting an unrecognized battery value and keeping battery controls unavailable. On the Blade 16 (2026), Synapse turns local dimming on when Windows HDR turns on. While local dimming, CPU boost, or maximum fan speed is on, OpenBlade leaves temporary full charge unchanged and explains why, rather than risk switching those settings off. ([#755](https://github.com/OpenBladeProject/openblade-core/pull/755))
-- OpenBlade no longer restarts or re-requests a one-time full charge after the laptop or another app ends it, and no longer reports that as a change made outside OpenBlade. ([#755](https://github.com/OpenBladeProject/openblade-core/pull/755))
+- Prevent RPM and lighting commands from overlapping on RZ09-0528. Share cancellation handling across model backends, tell apart requests that were never sent, and let controls recover after cleanup errors. ([#762](https://github.com/OpenBladeProject/openblade-core/pull/762))
+- Keep firmware query replies in exported diagnostics after an unrecognized reading or failed model check, including adapter classification failures. Failure evidence now stays for the current service run without developer tools. ([#773](https://github.com/OSSBlade/openblade-core/pull/773))
+- On RZ09-0581 with AC power, apply manual fan, performance and padless HyperBoost changes directly, without first resetting to Balanced or Automatic. Remove the obsolete Balanced instruction. Battery Protection can be turned off without resetting the current charge limit first. ([#756](https://github.com/OpenBladeProject/openblade-core/pull/756))
+- Prevent animated keyboard lighting from overlapping fan and battery commands on RZ09-0581. Exported diagnostics now keep the command and native I/O error when an operation fails. ([#753](https://github.com/OpenBladeProject/openblade-core/pull/753))
+- Keep the selected performance mode on experimental laptops when a saved profile contains unavailable manual-fan settings. ([#744](https://github.com/OpenBladeProject/openblade-core/pull/744))
+- Keep independent experimental controls available after unrecognized readings, allow unrelated profile edits when a saved setting is unavailable, and accept new lighting requests after resuming paused controls. ([#744](https://github.com/OpenBladeProject/openblade-core/pull/744))
+- Read temporary full charge correctly on supported Blade laptops when other settings that share it, such as local dimming, are on. Battery controls no longer stay unavailable with an unrecognized battery value. On the Blade 16 (2026), Synapse turns local dimming on when Windows HDR turns on. While local dimming, CPU boost or maximum fan speed is on, OpenBlade leaves temporary full charge unchanged and explains why. ([#755](https://github.com/OpenBladeProject/openblade-core/pull/755))
+- Stop restarting or re-requesting a one-time full charge after the laptop or another app ends it, and stop reporting that as a change made outside OpenBlade. ([#755](https://github.com/OpenBladeProject/openblade-core/pull/755))
 
 ## [0.26.2-nightly.87] - 2026-10-14
 
 ### Added
 
-- Show “This laptop isn’t supported yet” on laptops OpenBlade doesn’t support. **Help add support** saves a short identity report and opens a support request form to attach it to. ([#745](https://github.com/OSSBlade/openblade-core/pull/745))
+- Show “This laptop isn’t supported yet” on unsupported laptops. **Help add support** saves a short identity report and opens a support request form to attach it to. ([#745](https://github.com/OSSBlade/openblade-core/pull/745))
 
 ### Fixed
 
-- Recognize a supported laptop when Windows reports no BIOS version or two different ones. The BIOS version is checked only where a model explicitly requires it. ([#745](https://github.com/OSSBlade/openblade-core/pull/745))
-- Show the actual failed identity check in exported diagnostics, instead of a product-name mismatch against another supported model. ([#745](https://github.com/OSSBlade/openblade-core/pull/745))
-- Keep the other controls working when the laptop reports a battery, performance or fan value OpenBlade doesn’t recognize. Only the affected controls stay unavailable, and HyperBoost shows as unknown instead of off until a later reading confirms it. The MCU firmware version is still read, and the status and exported diagnostics show the unrecognized value, including for keyboard and logo lighting. ([#752](https://github.com/OpenBladeProject/openblade-core/pull/752))
+- Recognize a supported laptop when Windows reports no BIOS version or two different ones. The BIOS version is checked only where a model requires it. ([#745](https://github.com/OSSBlade/openblade-core/pull/745))
+- Show the actual failed identity check in exported diagnostics, instead of a product-name mismatch against another model. ([#745](https://github.com/OSSBlade/openblade-core/pull/745))
+- Keep the other controls working when the laptop reports a battery, performance or fan value OpenBlade doesn’t recognize. Only the affected controls stay unavailable, and HyperBoost shows as unknown until a later reading confirms it. The MCU firmware version is still read, and the status and exported diagnostics show the unrecognized value, including for keyboard and logo lighting. ([#752](https://github.com/OpenBladeProject/openblade-core/pull/752))
 
 ### Changed
 
@@ -486,19 +486,19 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
-- Explain why laptop controls or manual fan modes are unavailable and offer a current-state check when controls are blocked. ([#737](https://github.com/OSSBlade/openblade-core/pull/737))
+- Explain why laptop controls or manual fan modes are unavailable, and offer a current-state check when controls are blocked. ([#737](https://github.com/OSSBlade/openblade-core/pull/737))
 
 ## [0.25.1-nightly.83] - 2026-10-13
 
 ### Fixed
 
-- Identify the exact battery or thermal query that blocks device controls in exported diagnostics. ([#735](https://github.com/OSSBlade/openblade-core/pull/735))
+- Name the battery or thermal query that blocks device controls in exported diagnostics. ([#735](https://github.com/OSSBlade/openblade-core/pull/735))
 
 ## [0.25.0] - 2026-10-13
 
 ### Added
 
-- Admit supported Razer Blade products across SKU variants using their exact product name and HID identity. ([#732](https://github.com/OSSBlade/openblade-core/pull/732))
+- Recognize supported Razer Blade products across SKU variants by their exact product name and HID identity. ([#732](https://github.com/OSSBlade/openblade-core/pull/732))
 
 ### Fixed
 
@@ -515,52 +515,52 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 - Give HyperBoost its own README feature bullet and remove the model-specific callout for standard power modes. ([#727](https://github.com/OpenBladeProject/openblade-core/pull/727))
 
-- Refresh documentation for 0.24.3 model support, HyperBoost, native brightness, and Synapse coexistence. ([#724](https://github.com/OpenBladeProject/openblade-core/pull/724))
+- Refresh documentation for 0.24.3 model support, HyperBoost, native brightness and Synapse coexistence. ([#724](https://github.com/OpenBladeProject/openblade-core/pull/724))
 
 ## [0.24.3] - 2026-10-12
 
 ### Added
 
-- Start HyperBoost directly from Silent, Performance or Custom on the supported Blade 16 (2026) RZ09-0581, with or without the cooling pad, and restore the starting mode and Custom CPU/GPU levels afterward. ([#717](https://github.com/OSSBlade/openblade-core/pull/717))
+- Start HyperBoost directly from Silent, Performance or Custom on the Blade 16 (2026) RZ09-0581, with or without the cooling pad, and restore the starting mode and Custom CPU/GPU levels afterward. ([#717](https://github.com/OSSBlade/openblade-core/pull/717))
 
-- Enable HyperBoost on the supported Blade 16 (2025) RZ09-0528 with the supported cooling pad and full-power adapter, using verified Performance-mode entry and restoration. ([#596](https://github.com/OpenBladeProject/openblade-core/pull/596))
-- Enable NVIDIA GPU clock tuning on the supported Blade 16 (2025) RZ09-0528, with model and driver limits and confirmed offset restoration. ([#596](https://github.com/OpenBladeProject/openblade-core/pull/596))
-- Enable HyperBoost without the cooling pad on the supported Blade 16 (2025) RZ09-0528 on the full-power adapter, keep GPU clock tuning available, and start HyperBoost directly from Silent, Balanced or Performance with or without the pad. ([#596](https://github.com/OpenBladeProject/openblade-core/pull/596))
-- Start HyperBoost directly from Custom on the supported Blade 16 (2025) RZ09-0528, with or without the cooling pad, and return to the same Custom CPU/GPU levels afterward. ([#610](https://github.com/OpenBladeProject/openblade-core/pull/610))
-- Choose Battery Saver or Battery Balanced on battery power on the supported Blade 16 (2025) RZ09-0528. ([#614](https://github.com/OpenBladeProject/openblade-core/pull/614))
-- Assign M1 (Fn+Page Up) and M2 (Fn+Page Down) on the supported Blade 16 (2025) RZ09-0528, like M3–M5. ([#616](https://github.com/OpenBladeProject/openblade-core/pull/616))
-- Show Windows' own brightness flyout on the supported Blade 16 (2025) RZ09-0528 when its Razer driver is installed, like the RZ09-0581. ([#618](https://github.com/OpenBladeProject/openblade-core/pull/618))
+- Enable HyperBoost on the Blade 16 (2025) RZ09-0528 with the supported cooling pad and full-power adapter. ([#596](https://github.com/OpenBladeProject/openblade-core/pull/596))
+- Enable NVIDIA GPU clock tuning on the Blade 16 (2025) RZ09-0528, with model and driver limits, and restore offsets with confirmation. ([#596](https://github.com/OpenBladeProject/openblade-core/pull/596))
+- Enable HyperBoost without the cooling pad on the Blade 16 (2025) RZ09-0528 on the full-power adapter, keep GPU clock tuning available, and start HyperBoost directly from Silent, Balanced or Performance with or without the pad. ([#596](https://github.com/OpenBladeProject/openblade-core/pull/596))
+- Start HyperBoost directly from Custom on the Blade 16 (2025) RZ09-0528, with or without the cooling pad, and return to the same Custom CPU/GPU levels afterward. ([#610](https://github.com/OpenBladeProject/openblade-core/pull/610))
+- Choose Battery Saver or Battery Balanced on battery power on the Blade 16 (2025) RZ09-0528. ([#614](https://github.com/OpenBladeProject/openblade-core/pull/614))
+- Assign M1 (Fn+Page Up) and M2 (Fn+Page Down) on the Blade 16 (2025) RZ09-0528, like M3–M5. ([#616](https://github.com/OpenBladeProject/openblade-core/pull/616))
+- Show Windows' own brightness flyout on the Blade 16 (2025) RZ09-0528 when its Razer driver is installed, like the RZ09-0581. ([#618](https://github.com/OpenBladeProject/openblade-core/pull/618))
 
 ### Fixed
 
 - Fix selecting a color profile on the built-in display when Windows has no active profile, and restore the previous profile settings if the change fails. ([#720](https://github.com/OSSBlade/openblade-core/pull/720))
 - Hide the apps using the NVIDIA GPU card when a successful activity scan confirms the GPU is inactive. ([#718](https://github.com/OSSBlade/openblade-core/pull/718))
-- Read published firmware versions with or without a v prefix, keeping each version tied to its updater row. ([#716](https://github.com/OpenBladeProject/openblade-core/pull/716))
+- Read published firmware versions with or without a v prefix, and keep each version tied to its updater row. ([#716](https://github.com/OpenBladeProject/openblade-core/pull/716))
 - Translate the cooling-pad status messages shown when HyperBoost needs the pad. ([#717](https://github.com/OpenBladeProject/openblade-core/pull/717))
 
 - Keep the tray and Session Agent running during complete shutdown until the service is confirmed stopped. ([#663](https://github.com/OpenBladeProject/openblade-core/pull/663))
 - Clear a power mode warning after unplugging during sleep when a fresh read confirms the battery profile. ([#587](https://github.com/OpenBladeProject/openblade-core/pull/587))
-- Show one-shot keyboard lighting as unconfirmed on the supported Blade 16 (2025) RZ09-0528 when firmware leaves Driver mode, and redraw automatically only with the lighting override setting enabled. ([#620](https://github.com/OpenBladeProject/openblade-core/pull/620))
-- Record the reason in the installer's package log when a quiet install fails, instead of only an exit code. ([#612](https://github.com/OpenBladeProject/openblade-core/pull/612))
-- Stop showing the HyperBoost unavailable warning while a performance mode change is still in progress. ([#596](https://github.com/OpenBladeProject/openblade-core/pull/596))
-- Prevent fan-editor synchronization from creating a temporary fan override without a changed selection. ([#596](https://github.com/OpenBladeProject/openblade-core/pull/596))
-- Keep the restored performance and fan settings after OpenBlade recovers HyperBoost from an unexpected service stop on full-power AC, instead of reporting them as external changes. ([#596](https://github.com/OpenBladeProject/openblade-core/pull/596))
+- Show one-shot keyboard lighting as unconfirmed on the Blade 16 (2025) RZ09-0528 when firmware leaves Driver mode. It redraws automatically only with the lighting override setting on. ([#620](https://github.com/OpenBladeProject/openblade-core/pull/620))
+- Record the reason in the installer's package log when a quiet install fails, not only an exit code. ([#612](https://github.com/OpenBladeProject/openblade-core/pull/612))
+- Stop showing the HyperBoost unavailable warning while a performance mode change is in progress. ([#596](https://github.com/OpenBladeProject/openblade-core/pull/596))
+- Stop the fan editor from creating a temporary fan override when the selection has not changed. ([#596](https://github.com/OpenBladeProject/openblade-core/pull/596))
+- Keep the restored performance and fan settings after OpenBlade recovers HyperBoost from an unexpected service stop on full-power AC, and stop reporting them as external changes. ([#596](https://github.com/OpenBladeProject/openblade-core/pull/596))
 - Recognize the supported cooling pad when its auxiliary input interfaces report a different revision. ([#596](https://github.com/OpenBladeProject/openblade-core/pull/596))
-- Recognize Fn+P on the supported Blade 16 (2025) RZ09-0528 and clear held-key state across connection, session, and power changes. ([#596](https://github.com/OpenBladeProject/openblade-core/pull/596))
-- Restore GPU offsets when a driver call changes a value before returning an error, and report uncertainty if restoration cannot be confirmed. ([#588](https://github.com/OpenBladeProject/openblade-core/pull/588))
-- Hide the HyperBoost unavailable warning on battery and USB-C power; show it again when full-power AC returns. ([#589](https://github.com/OSSBlade/openblade-core/pull/589))
+- Recognize Fn+P on the Blade 16 (2025) RZ09-0528, and clear held-key state across connection, session and power changes. ([#596](https://github.com/OpenBladeProject/openblade-core/pull/596))
+- Restore GPU offsets when a driver call changes a value before returning an error, and report uncertainty if restoration can't be confirmed. ([#588](https://github.com/OpenBladeProject/openblade-core/pull/588))
+- Hide the HyperBoost unavailable warning on battery and USB-C power, and show it again when full-power AC returns. ([#589](https://github.com/OSSBlade/openblade-core/pull/589))
 
 ## [0.22.0] - 2026-09-25
 
 ### Added
 
-- Keep NVIDIA GPU tuning available while HyperBoost runs on the supported RZ09-0581, and retain confirmed offsets after HyperBoost exits or recovers. ([#579](https://github.com/OpenBladeProject/openblade-core/pull/579))
+- Keep NVIDIA GPU tuning available while HyperBoost runs on the RZ09-0581, and keep confirmed offsets after HyperBoost exits or recovers. ([#579](https://github.com/OpenBladeProject/openblade-core/pull/579))
 
 ## [0.21.10] - 2026-09-24
 
 ### Fixed
 
-- Allow HyperBoost with verified Synapse Blade Blocker evidence despite known Synapse service aliases, and while the RGS updater service or verified Windows lighting helper is running; retain diagnostics and other controller checks. ([#573](https://github.com/OSSBlade/openblade-core/pull/573))
+- Allow HyperBoost when Synapse Blade Blocker evidence is present despite known Synapse service aliases, and while the RGS updater service or the Windows lighting helper is running. ([#573](https://github.com/OSSBlade/openblade-core/pull/573))
 
 ## [0.21.9] - 2026-09-23
 
@@ -576,1912 +576,735 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 - Keep the requested lighting effect visible when an apply completes before the final service status arrives. ([#549](https://github.com/OSSBlade/openblade-core/pull/549))
 - Keep intentional black primary colors when switching Breathing or Starlight between Single and Dual color modes. ([#541](https://github.com/OSSBlade/openblade-core/pull/541))
-- Preserve stored Tidal colors when disabling random colors, seed visible colors when leaving effects without an editable color, and retain intentional black between colored effects. ([#539](https://github.com/OSSBlade/openblade-core/pull/539))
-- Refresh HyperBoost eligibility when cooling-pad detection changes, even when all other laptop status remains unchanged. ([#531](https://github.com/OSSBlade/openblade-core/pull/531))
-- Preserve connection, control, and power observation state when diagnostic messages change, and clear transient state after confirmed recovery. ([#525](https://github.com/OSSBlade/openblade-core/pull/525))
-- Try once to start the OpenBlade service when the tray launches and Windows confirms it is stopped, without repeated elevation prompts or racing manual starts and complete shutdown. ([#519](https://github.com/OSSBlade/openblade-core/pull/519))
+- Keep stored Tidal colors when disabling random colors, show visible colors when leaving effects without an editable color, and keep intentional black between colored effects. ([#539](https://github.com/OSSBlade/openblade-core/pull/539))
+- Refresh HyperBoost eligibility when cooling-pad detection changes, even when all other laptop status stays the same. ([#531](https://github.com/OSSBlade/openblade-core/pull/531))
+- Keep connection, control and power state steady when diagnostic messages change, and clear transient state after confirmed recovery. ([#525](https://github.com/OSSBlade/openblade-core/pull/525))
+- Try once to start the OpenBlade service when the tray launches and Windows confirms it is stopped. ([#519](https://github.com/OSSBlade/openblade-core/pull/519))
 
 ## [0.21.0] - 2026-09-19
 
 ### Added
 
-- Allow Synapse to keep serving peripherals when its running AppEngine instances have a verified Synapse Blade Blocker patch, including its verified Windows lighting helper when a fresh device check finds no Blade lighting interface, while retaining checks for independent controllers, reevaluating patch timestamps after clock corrections, and falling back after updates or invalid patch evidence. ([#506](https://github.com/OSSBlade/openblade-core/pull/506))
+- Allow Synapse to keep serving peripherals when its running AppEngine instances have a verified Synapse Blade Blocker patch. OpenBlade falls back to its normal checks after updates or invalid patch evidence. ([#506](https://github.com/OSSBlade/openblade-core/pull/506))
 
 ### Fixed
 
-- Explain HyperBoost restrictions beside the performance controls and allow Chroma lighting services without relaxing checks for Synapse, updater, unknown, or unverified controllers. ([#503](https://github.com/OSSBlade/openblade-core/pull/503))
+- Explain HyperBoost restrictions beside the performance controls, and allow Chroma lighting services. ([#503](https://github.com/OSSBlade/openblade-core/pull/503))
 
 ## [0.20.23] - 2026-09-15
 
 ### Fixed
 
-- Turn off OpenBlade-controlled keyboard lighting on Windows suspend while preserving the separate display-off preference and eligible lighting settings for resume. ([#498](https://github.com/OSSBlade/openblade-core/pull/498))
-- Avoid classifying OpenBlade control writes as external changes during delayed resume validation, including writes that await confirmation, while continuing to compare unaffected settings. ([#498](https://github.com/OSSBlade/openblade-core/pull/498))
-- Match the Laptop performance row to other compact dashboard settings when its guidance is hidden, while retaining comfortable spacing for visible guidance and wrapped titles. ([#497](https://github.com/OSSBlade/openblade-core/pull/497))
-- Preserve resume comparison baselines through unclassified power readings and retain GPU invalidation evidence across repeated resume events, avoiding incorrect transition or retained-state diagnostics. ([#490](https://github.com/OSSBlade/openblade-core/pull/490))
-- Keep dormant legacy GPU offsets inactive outside plugged-in Custom intent, avoiding an incorrect tuning label and idle profile-restore opportunity while retaining the offsets for editing. ([#489](https://github.com/OSSBlade/openblade-core/pull/489))
-- Seed notification observation from the first complete service snapshot, silently adopt the first classified power source, and retain known power sources through unclassified samples so startup and temporary classification gaps do not produce notifications for unchanged state. ([#488](https://github.com/OSSBlade/openblade-core/pull/488))
+- Turn off OpenBlade-controlled keyboard lighting when Windows suspends, and restore it on resume. The separate display-off preference is kept. ([#498](https://github.com/OSSBlade/openblade-core/pull/498))
+- Stop OpenBlade's own control writes from being reported as external changes during resume checks. ([#498](https://github.com/OSSBlade/openblade-core/pull/498))
+- Match the Laptop performance row to other compact dashboard settings when its guidance is hidden. ([#497](https://github.com/OSSBlade/openblade-core/pull/497))
+- Fix incorrect transition or retained-state diagnostics after resume events. ([#490](https://github.com/OSSBlade/openblade-core/pull/490))
+- Keep dormant legacy GPU offsets inactive outside plugged-in Custom intent, which fixes an incorrect tuning label. The offsets stay available for editing. ([#489](https://github.com/OSSBlade/openblade-core/pull/489))
+- Stop showing notifications for unchanged state at startup or when the power source is briefly unknown. ([#488](https://github.com/OSSBlade/openblade-core/pull/488))
 
 ## [0.20.18] - 2026-09-13
 
 ### Fixed
 
-- Keep monitoring an already-running installer when durable PID binding fails, bound persisted broker state reads before allocation, and wait for a strictly verified final process inventory after relaunch without repeating installation or launches. ([#468](https://github.com/OSSBlade/openblade-core/pull/468))
+- Keep monitoring an already-running installer when its process ID can't be saved, and wait for the final process list after relaunch without repeating the installation. ([#468](https://github.com/OSSBlade/openblade-core/pull/468))
 - Avoid redundant capability and fan-editor notifications after service updates. ([#469](https://github.com/OSSBlade/openblade-core/pull/469))
-- Bound preference reads, preserve future dashboard data, and recover saving from oversized files while retaining the original in an atomic backup and recording sanitized recovery diagnostics. ([#469](https://github.com/OSSBlade/openblade-core/pull/469))
-- Retain sanitized display failure diagnostics with bounded reporting of distinct failures, even across intermittent recovery, clock changes, and failed logging attempts. ([#469](https://github.com/OSSBlade/openblade-core/pull/469))
+- Recover from oversized preference files by saving a backup of the original, and keep dashboard data from newer versions. ([#469](https://github.com/OSSBlade/openblade-core/pull/469))
+- Keep display failure diagnostics, with limited reporting of repeated failures. ([#469](https://github.com/OSSBlade/openblade-core/pull/469))
 - Recognize BIOS 4.01 as an admitted firmware version for RZ09-0581. ([#475](https://github.com/OSSBlade/openblade-core/pull/475))
 
-- Bound pipe-establishment retries and lifecycle event backlogs, retain idle GPU cleanup during CPU-only sampling, and keep committed lighting preferences consistent through delegation and renderer recovery. ([#467](https://github.com/OSSBlade/openblade-core/pull/467))
-- Release partially acquired audio resources immediately when Audio Meter sampler creation or mute-notification initialization fails. ([#466](https://github.com/OSSBlade/openblade-core/pull/466))
+- Limit pipe-connection retries and lifecycle event backlogs, keep idle GPU cleanup working during CPU-only sampling, and keep saved lighting preferences consistent after renderer recovery. ([#467](https://github.com/OSSBlade/openblade-core/pull/467))
+- Release audio resources immediately when Audio Meter setup fails. ([#466](https://github.com/OSSBlade/openblade-core/pull/466))
 - Refresh the notification-area icon when the Windows theme changes, and use a darker green profile line and source badge on light taskbars. ([#454](https://github.com/OSSBlade/openblade-core/pull/454))
 
 ## [0.20.12-nightly.49] - 2026-09-10
 
 ### Changed
 
-- Nightly releases remain drafts until their generated changelog is merged
-  into `main` and the shared publication gate verifies the release assets,
-  changelog snapshot, and comparison link.
-  ([#446](https://github.com/OSSBlade/openblade-core/pull/446))
+- Nightly releases stay drafts until their generated changelog is merged into `main` and the publication check passes. ([#446](https://github.com/OSSBlade/openblade-core/pull/446))
 
 ### Fixed
 
-- Fixed false external-change warnings after uncertain battery command responses
-  and missing battery or custom-performance reads. Charge limits, protection
-  toggles, and temporary full charge now retain pending confirmation until fresh
-  readback resolves the exact requested state, without replaying the command.
-  Delayed confirmation preserves the original battery intent, and an unknown
-  adapter defers external-change attribution while control writes remain blocked.
-  Power-source transitions retain steps that were never submitted after an
-  uncertain write, allowing fresh confirmed recovery to finish battery,
-  fan, and lighting changes without replaying earlier commands.
-  ([#444](https://github.com/OSSBlade/openblade-core/pull/444))
+- Fix false external-change warnings after uncertain battery command responses and missing battery or custom-performance reads. Charge limits, protection toggles, and temporary full charge now wait for fresh readback to confirm the requested state. Power-source transitions that stop after an uncertain write now finish their remaining battery, fan, and lighting changes once the state is confirmed. ([#444](https://github.com/OSSBlade/openblade-core/pull/444))
 
 ## [0.20.11-nightly.47] - 2026-09-09
 
 ### Changed
 
-- Keyboard lighting is now reported as changed outside OpenBlade only on
-  positive evidence: a confirmed readback of a different, non-Off effect, or
-  Razer Synapse-type software detected as a potential competing controller. A
-  keyboard that reads firmware Off, or a renderer that stops owning the
-  keyboard, with no such software present is treated as a fault: the failure
-  is still reported, an existing external latch is left as it was, and the
-  effect that was being applied is retried once by the renderer recovery on a
-  later observation. A newer successful lighting choice, including Off,
-  cancels that retry so a stale effect cannot overwrite it. This applies to
-  profile transitions, explicit lighting
-  changes, periodic observation, and unconfirmed lighting writes abandoned at
-  a power-source change. Every supported laptop reports brightness but never a
-  full effect readback, so in practice the evidence is a detected controller or
-  a logo mismatch; a firmware Off was the only remaining way the flag could
-  latch without another controller present.
-  ([#424](https://github.com/OSSBlade/openblade-core/pull/424))
-- Isolated profile import and fan-restoration policies from their callers, and
-  made fan reconciliation depend on typed outcomes instead of diagnostic text.
-  ([#436](https://github.com/OSSBlade/openblade-core/pull/436))
+- Report keyboard lighting as changed outside OpenBlade only when a different, non-Off effect is confirmed or Razer Synapse-type software is detected. A keyboard that reads Off with no such software is treated as a fault and retried once, and a newer lighting choice cancels the retry. ([#424](https://github.com/OSSBlade/openblade-core/pull/424))
+- Separate profile import and fan-restoration policies from their callers, and base fan reconciliation on typed outcomes instead of diagnostic text. ([#436](https://github.com/OSSBlade/openblade-core/pull/436))
 
 ### Fixed
 
-- Kept service status subscriptions ordered during concurrent updates so a
-  newer pending snapshot cannot be replaced by an older one.
-  ([#436](https://github.com/OSSBlade/openblade-core/pull/436))
-- Released superseded tray observation waits and bounded profile-file imports
-  while keeping file parsing off the UI thread.
-  ([#436](https://github.com/OSSBlade/openblade-core/pull/436))
-- Retried temporary special-key preference read failures without requiring
-  another save, and synchronized ambient screen samples with GDI drawing.
-  ([#436](https://github.com/OSSBlade/openblade-core/pull/436))
-- Preserved special-key watcher failures during startup and coalesced events,
-  and backed off persistent preference-read failures without repeated warnings.
-  ([#436](https://github.com/OSSBlade/openblade-core/pull/436))
-- Prevented canceled display preparations from submitting changes and retained
-  ownership through readback and recovery after a native change starts.
-  ([#436](https://github.com/OSSBlade/openblade-core/pull/436))
-- Bounded Windows Service Control subprocess execution and cleanup during
-  installation, repair, and removal.
-  ([#436](https://github.com/OSSBlade/openblade-core/pull/436))
-- Stopped a keyboard left dark by a closed lid or Modern Standby from being
-  reported as a lighting change made outside OpenBlade. The display-off report
-  was discarded whenever the active profile did not enable "turn off keyboard
-  lighting when the display turns off", so a power-source change made with the
-  lid shut compared the firmware Off reading against the profile effect,
-  latched "Changed outside OpenBlade: Lighting", and released the keyboard
-  renderer until the next lighting action. The service now records the console
-  display state from the Windows lifecycle source regardless of the policy,
-  treats an Off reading taken while the display is off as expected (before and
-  after the transition write), keeps any change that was already confirmed
-  external, adopts the destination profile's display-off policy on the
-  transition instead of relighting the keyboard under a closed lid, and defers
-  renderer-fault recovery until the display is back on. A transition whose
-  renderer stops under the closed lid retains the destination effect for one
-  display-on recovery attempt; a newer successful lighting action cancels it.
-  ([#423](https://github.com/OSSBlade/openblade-core/pull/423))
+- Keep service status updates in order so a newer snapshot is never replaced by an older one. ([#436](https://github.com/OSSBlade/openblade-core/pull/436))
+- Release stale tray waits, limit profile-file imports, and keep file parsing off the UI thread. ([#436](https://github.com/OSSBlade/openblade-core/pull/436))
+- Retry temporary special-key preference read failures without another save, and synchronize ambient screen samples with GDI drawing. ([#436](https://github.com/OSSBlade/openblade-core/pull/436))
+- Keep special-key watcher failures during startup, and back off repeated preference-read failures without repeated warnings. ([#436](https://github.com/OSSBlade/openblade-core/pull/436))
+- Stop canceled display preparations from submitting changes. ([#436](https://github.com/OSSBlade/openblade-core/pull/436))
+- Limit how long Windows Service Control commands can run during installation, repair, and removal. ([#436](https://github.com/OSSBlade/openblade-core/pull/436))
+- Stop a keyboard left dark by a closed lid or Modern Standby from being reported as "Changed outside OpenBlade: Lighting". A power-source change with the lid shut no longer relights the keyboard, and lighting recovery waits until the display is back on. ([#423](https://github.com/OSSBlade/openblade-core/pull/423))
 
 ## [0.20.8-nightly.44] - 2026-09-06
 
 ### Changed
 
-- Recorded the admission scope for HyperBoost without the Razer cooling pad as
-  model-scoped. The reviewed admission manifest listed BIOS 4.00 as part of the
-  host identity, which read as a firmware-scoped admission even though the
-  running gate admits every BIOS on the exact model and SKU. The manifest now
-  records model-scoped admission and keeps 4.00 as the capture provenance it
-  always was. ([#414](https://github.com/OSSBlade/openblade-core/pull/414))
-- Read-only Windows LampArray observation on the Razer Blade 16 RZ09-0528 no
-  longer requires the exact tested BIOS, EC, and MCU tuple. It now follows the
-  same model-scoped admission as every other capability, and the captured
-  85-lamp geometry fingerprint remains the exact-device check. ([#414](https://github.com/OSSBlade/openblade-core/pull/414))
+- Record HyperBoost without the Razer cooling pad as admitted by model, not by BIOS. BIOS 4.00 stays as capture provenance only. ([#414](https://github.com/OSSBlade/openblade-core/pull/414))
+- Read-only Windows LampArray observation on the Razer Blade 16 RZ09-0528 no longer requires a specific BIOS, EC, and MCU combination. ([#414](https://github.com/OSSBlade/openblade-core/pull/414))
 
 ### Fixed
 
-- Stopped a failed device read from being reported as a keyboard lighting
-  change made outside OpenBlade. When a profile transition wrote a keyboard
-  effect and the aggregate readback that followed failed on another port, the
-  transition marked the lighting write indeterminate but left it outside the
-  set of writes awaiting confirmation, so the service latched "Changed outside
-  OpenBlade: Lighting", released the keyboard renderer, and kept yielding until
-  the user touched lighting. Effects that this laptop cannot read back are now
-  reported as applied without readback after such a failure, the same way a
-  single lighting apply already was. The same correction applies to Fixed and
-  manual-curve fan writes, which accept setter completion the same way.
-  ([#419](https://github.com/OSSBlade/openblade-core/pull/419))
+- Stop a failed device read from being reported as a keyboard lighting change made outside OpenBlade. After such a failure during a profile transition, effects the laptop can't read back are now reported as applied without readback. The same fix covers Fixed and manual-curve fan writes. ([#419](https://github.com/OSSBlade/openblade-core/pull/419))
 
 ## [0.20.7-nightly.41] - 2026-09-03
 
 ### Changed
 
-- Reduced the CPU the tray spends reacting to service updates. Each property
-  change on the main view model was delivered to about 135 native XAML
-  `{Binding}` subscribers, and every service update re-announced roughly a
-  hundred settings whose values had not changed, so a hidden tray spent
-  minutes of CPU per day repainting nothing. The tray now announces a computed
-  setting only when its value differs from the last one announced, skips the
-  profile-difference replay when a refresh changes nothing, keeps the fan-curve
-  editor and dashboard readings lists stable while their contents are equal,
-  and binds 101 of the main and quick-controls window controls through
-  compiled bindings that stay in managed code. Measured per service update on
-  an unchanged snapshot: 11 or 12 announcements became 0 or 1; a single
-  changed status field went from 137 announcements to 1. ([#408](https://github.com/OSSBlade/openblade-core/pull/408))
+- Reduce the CPU the tray uses reacting to service updates. The tray now announces a setting only when its value changes, so an unchanged update triggers 0 or 1 announcements instead of 11 or 12. ([#408](https://github.com/OSSBlade/openblade-core/pull/408))
 
 ### Fixed
 
-- Stopped the tray's memory from growing for as long as it runs. The .NET 10
-  runtime records every managed object handed to native XAML in a debugger
-  list that is never trimmed, and each property change delivered to a XAML
-  `{Binding}` added another entry for the main view model; after a few hours
-  of use the hidden tray held a live 512 MB array. The tray now disables that
-  debugger-only bookkeeping, which returns a hidden tray to its normal
-  footprint. ([#406](https://github.com/OSSBlade/openblade-core/pull/406))
+- Stop the tray's memory from growing while it runs. After a few hours the hidden tray held a 512 MB array of debugger bookkeeping, which is now disabled. ([#406](https://github.com/OSSBlade/openblade-core/pull/406))
 
 ## [0.20.5-nightly.40] - 2026-09-02
 
 ### Added
 
-- Added automatic restoration of performance and fan settings changed outside
-  OpenBlade, and made it the default. The service reconciles confirmed
-  performance and fan-topology drift through one bounded, journaled transition
-  authority. The setting offers Restore them, or Notify me, which reports
-  the change and leaves it in place. It also states that fan speed and curve
-  changes cannot be detected, because firmware reports only generic manual
-  control. Upgraded profiles require an in-app disclosure acknowledgement
-  before background restoration starts; legacy IPC clients remain read-only
-  until updated. The thermal state row appears only when it has something to
-  report, and its messages describe what OpenBlade is doing rather than using
-  internal terms such as reconciliation, readback, and drift. ([#402](https://github.com/OSSBlade/openblade-core/pull/402))
+- Add automatic restoration of performance and fan settings changed outside OpenBlade, on by default. Choose Restore them, or Notify me to report the change and leave it in place. Fan speed and curve changes can't be detected. After upgrading, a profile asks you to acknowledge a disclosure before background restoration starts. Older IPC clients stay read-only until updated. The thermal state row appears only when it has something to report. ([#402](https://github.com/OSSBlade/openblade-core/pull/402))
 
 ### Changed
 
-- Compiled the Tray developer smoke and localization-snapshot harnesses only
-  into harness builds. The shipped Tray no longer contains them or reacts to
-  their launch arguments and environment variables. ([#401](https://github.com/OSSBlade/openblade-core/pull/401))
-- Kept the service thermal sensors open between samples. The Razer EC
-  thermal-zone counter stays open instead of being re-created on every read,
-  the NVIDIA NVML session is held only while consecutive samples report the
-  discrete GPU active and is released on the first inactive or unknown
-  sample or after five idle seconds, and the GPU activity gate no longer
-  blocks a thread for its 150 ms sample window. Manual fan curves and Tray
-  live readings no longer re-initialize NVML every second under a GPU load. ([#396](https://github.com/OSSBlade/openblade-core/pull/396))
-- Reloaded Session Agent special-key bindings from a file-change notification
-  on the tray preferences file instead of polling it every second, removing a
-  permanent one-second wake-up. Bounded polling remains only while the
-  preferences directory does not exist yet or a watcher cannot be armed. ([#395](https://github.com/OSSBlade/openblade-core/pull/395))
+- Compile the Tray developer smoke and localization-snapshot harnesses only into harness builds, not the shipped Tray. ([#401](https://github.com/OSSBlade/openblade-core/pull/401))
+- Keep the service thermal sensors open between samples, and stop blocking a thread during the GPU activity check. Manual fan curves and Tray live readings no longer re-initialize NVML every second under a GPU load. ([#396](https://github.com/OSSBlade/openblade-core/pull/396))
+- Reload Session Agent special-key bindings when the tray preferences file changes instead of polling every second. ([#395](https://github.com/OSSBlade/openblade-core/pull/395))
 
 ### Fixed
 
-- Quarantined a persistent override document whose JSON root is not an object
-  instead of failing service startup. A `manual-overrides.json` file containing
-  an array, `null`, a string, or a number now loads as safe defaults with
-  thermal writes disabled, and saves report the quarantine, matching every other
-  malformed override document. ([#394](https://github.com/OSSBlade/openblade-core/pull/394))
-- Stopped counting Windows System-process video-memory paging as NVIDIA GPU
-  activity in the service. Fan-curve and clock-offset decisions no longer
-  initialize NVML when the discrete GPU only paged during one of its own power
-  transitions, so the GPU temperature no longer flickers into Tray telemetry on
-  an idle desktop. ([#388](https://github.com/OSSBlade/openblade-core/pull/388))
-- Normalized adjacent-palette ties at rounded localization-snapshot corners so
-  translator-package archives remain byte-identical across fresh processes
-  without smoothing meaningful single-pixel details. ([#385](https://github.com/OSSBlade/openblade-core/pull/385))
-- Stabilized disconnected translator-package screenshots on slower renderers by
-  requiring two consecutive canonical frames before archiving each Tray and
-  installer surface, preserving byte-identical package exports across fresh
-  processes. ([#377](https://github.com/OSSBlade/openblade-core/pull/377))
-- Waited for each previous Tray window to finish closing before rebuilding the
-  next localized shell, preventing rapid in-process language changes from
-  overlapping native WinUI teardown. ([#381](https://github.com/OSSBlade/openblade-core/pull/381))
-- Reworked the Simplified Chinese Tray, runtime status, installer, and Setup
-  text to use natural Windows-style wording while preserving exact hardware,
-  firmware, service-state, rollback, and recovery semantics. ([#364](https://github.com/OSSBlade/openblade-core/pull/364))
-- Detected stable idle NVIDIA GPU context holders in the GPU-app cleanup action,
-  including overlays that currently report zero utilization. Cleanup now
-  refreshes Windows GPU enumeration, appears on both Home and Laptop, requires
-  explicit per-app selection, waits for graceful shutdown, and confirms each
-  force-close separately against a freshly validated process identity. Force
-  close now tries the selected app's process tree before falling back to only
-  that exact process when Windows denies the broader operation, while ambient
-  NVIDIA Overlay and Windows Explorer processes stay out of the cleanup list. ([#355](https://github.com/OSSBlade/openblade-core/pull/355))
-- Refreshed Windows NVIDIA GPU activity counters before service thermal and
-  clock-offset decisions so processes that start after service launch are not
-  missed. Failed refreshes and unavailable samples now remain unknown so fan
-  control fails safe without probing NVIDIA APIs. ([#375](https://github.com/OSSBlade/openblade-core/pull/375))
-- Removed English-style spaces around embedded Latin product and power-source
-  names in Simplified Chinese profile-change notifications. ([#346](https://github.com/OSSBlade/openblade-core/pull/346))
-- Registered the Tray and Session Agent for Windows Application Restart so
-  Windows can relaunch them after supported crash and update shutdowns, while
-  preserving intentional user exits and single-instance ownership. ([#382](https://github.com/OSSBlade/openblade-core/pull/382))
+- Load a `manual-overrides.json` whose root is not an object as safe defaults with thermal writes disabled, instead of failing service startup. ([#394](https://github.com/OSSBlade/openblade-core/pull/394))
+- Stop counting Windows System-process video-memory paging as NVIDIA GPU activity, which made GPU temperature flicker in Tray telemetry on an idle desktop. ([#388](https://github.com/OSSBlade/openblade-core/pull/388))
+- Make translator-package archives byte-identical across fresh processes by normalizing adjacent-palette ties at rounded corners in localization snapshots. ([#385](https://github.com/OSSBlade/openblade-core/pull/385))
+- Stabilize disconnected translator-package screenshots on slower renderers by requiring two consecutive canonical frames before archiving. ([#377](https://github.com/OSSBlade/openblade-core/pull/377))
+- Wait for each Tray window to finish closing before rebuilding the next localized shell, so rapid language changes don't overlap. ([#381](https://github.com/OSSBlade/openblade-core/pull/381))
+- Rework the Simplified Chinese Tray, runtime status, installer, and Setup text to use natural Windows-style wording. ([#364](https://github.com/OSSBlade/openblade-core/pull/364))
+- Detect idle NVIDIA GPU context holders, including overlays reporting zero utilization, in the GPU-app cleanup action. Cleanup appears on both Home and Laptop, needs you to select each app, and confirms each force-close separately. NVIDIA Overlay and Windows Explorer stay out of the list. ([#355](https://github.com/OSSBlade/openblade-core/pull/355))
+- Refresh Windows NVIDIA GPU activity counters before thermal and clock-offset decisions so processes started after service launch are not missed. Failed refreshes stay unknown, and fan control fails safe. ([#375](https://github.com/OSSBlade/openblade-core/pull/375))
+- Remove English-style spaces around embedded Latin product and power-source names in Simplified Chinese profile-change notifications. ([#346](https://github.com/OSSBlade/openblade-core/pull/346))
+- Register the Tray and Session Agent for Windows Application Restart so Windows can relaunch them after supported crash and update shutdowns. Intentional exits are respected. ([#382](https://github.com/OSSBlade/openblade-core/pull/382))
 
 ## [0.19.37-nightly.39] - 2026-09-01
 
 ### Added
 
-- Added an explicitly enrolled, TPM-authorized local-development deployment
-  broker for quiet OpenBlade build installation without repeated UAC prompts,
-  with a protected Burn environment, exact first-install rollback recovery,
-  bounded broker-shutdown cleanup, LocalSystem-safe shortcut resolution,
-  normal-session process shutdown and rollback relaunch, normal-user legacy
-  startup cleanup, and normal-token ACL verification plus bounded client
-  failure diagnostics. ([#297](https://github.com/OSSBlade/openblade-core/pull/297))
+- Add a local-development deployment broker that installs OpenBlade builds quietly without repeated UAC prompts. It must be enrolled and TPM-authorized first. ([#297](https://github.com/OSSBlade/openblade-core/pull/297))
 
 ### Fixed
 
-- Removed the dormant Session Agent Dynamic Lighting sparse-package
-  self-registration and relaunch path. OpenBlade continues delegating keyboard
-  lighting to Windows without registering a competing background provider.
-  New Setup payloads reject the retired identity artifacts while exact legacy
-  cleanup and rollback restoration remain available for older installations. ([#360](https://github.com/OSSBlade/openblade-core/pull/360))
-- Bound every HyperBoost lifecycle submission and ownership-journal mutation to
-  the exact durable journal identity. Concurrent journal changes now block
-  before another hardware write, preserve newer recovery state, and keep
-  lifecycle validation available for safe crash and resume testing. ([#348](https://github.com/OSSBlade/openblade-core/pull/348))
-- Blocked older OpenBlade installers from replacing a newer installed version.
-  Interactive setup now leaves the installation and saved settings unchanged
-  and directs the user to the installed or a newer installer; quiet and
-  related-bundle runs retain the same fail-closed version conflict. ([#342](https://github.com/OSSBlade/openblade-core/pull/342))
-- Preserved incomplete, invalid, hash-mismatched, mixed-schema, and future
-  profile aggregates and manual overrides in a non-mutating quarantine instead
-  of replacing them with safe defaults. Quarantined thermal settings remain
-  read-only while the service continues read-only observation and unrelated
-  controls; only exact journaled HyperBoost restoration and current-epoch fan
-  handback retain their existing cleanup authority. ([#340](https://github.com/OSSBlade/openblade-core/pull/340))
-- Fixed the exact-device read-only performance and fan query factory so an
-  empty write-command catalog bounds HyperBoost and base-mode capabilities to
-  read-only access instead of failing before the HID session opens. ([#334](https://github.com/OSSBlade/openblade-core/pull/334))
-- Routed explicit Strict fan reapply and shutdown handback through the shared
-  thermal executor. Reapply receives at most one freshly admitted retry only
-  after a proven pre-submission failure; bounded shutdown cleanup never waits
-  for that retry, rechecks ownership and competing controllers immediately
-  before submission, and reconciles possible submissions read-only without
-  replaying the fan command. ([#332](https://github.com/OSSBlade/openblade-core/pull/332))
-- Routed firmware-pre-exited and deferred automatic HyperBoost destination
-  restoration through the shared Strict thermal executor. Durable journal
-  claims and retirement are now conditional, queued power or active-user
-  changes invalidate in-flight authority, only proven pre-submission failures
-  receive a fresh verified-session retry, and the wider power transition never
-  resumes through a superseded device session. ([#330](https://github.com/OSSBlade/openblade-core/pull/330))
-- Bound unexpected-exit fan recovery to the typed Strict thermal executor and
-  a current authority epoch. Safety-floor, handback, and deferred fan-intent
-  writes now receive at most one freshly admitted pre-submission retry,
-  unresolved manual completion cannot establish ownership, and resume,
-  controller arrival, device loss, external drift, or user changes cannot
-  revive stale handback authority. ([#328](https://github.com/OSSBlade/openblade-core/pull/328))
-- Required confirmed generic-manual readback before a successful OpenBlade fan
-  write can establish exact Fixed, Maximum, or manual-curve ownership. Fan
-  commands acknowledged without readback now remain unresolved, generic manual
-  observations are tracked as topology-only, and confirmed Automatic results
-  retire stale ownership without authorizing background fan-target writes.
-  Freshly confirmed target-only manual-entry continuations retain their
-  current-epoch ownership so manual curves can leave the safe entry target. ([#326](https://github.com/OSSBlade/openblade-core/pull/326))
-- Kept Strict fan-transition retry ownership inside the shared thermal executor.
-  Transient aggregate performance/fan reads that fail before submission now use
-  the existing single freshly admitted retry without replaying confirmed bridge
-  steps, while semantic mismatches still fail closed. FirmwareSmoke no longer
-  starts a second whole transition from a failure-message heuristic and instead
-  restores the original state immediately. ([#324](https://github.com/OSSBlade/openblade-core/pull/324))
-- Scoped explicit HyperBoost restore recovery to the shared Strict thermal
-  executor's single freshly admitted retry lease. The final durable restore
-  journal, power destination, controller state, and exact device are rechecked
-  before each command; possible submissions are never replayed, and a journal
-  changed during or after restoration is preserved instead of overwritten or
-  retired. ([#322](https://github.com/OSSBlade/openblade-core/pull/322))
-- Unified HyperBoost entry, exit, compensation, and attached lifecycle
-  restoration under one typed Strict thermal transition. Automatic and
-  Balanced bridges, the composite HyperBoost command, and prior-intent restore
-  now share at most one freshly re-admitted pre-submission retry; possible
-  submissions are reconciled read-only and never replayed. Repeatable periodic
-  power classification now coalesces instead of queuing behind an admitted
-  thermal transition, while explicit Windows power events retain authority;
-  queued Driver-mode and lighting maintenance rechecks low-power admission
-  before reacquiring hardware. ([#330](https://github.com/OSSBlade/openblade-core/pull/330))
-- Bound automatic manual-fan curve maintenance to the exact active-user,
-  device-session, controller, power-destination, and desired-intent epoch that
-  performed the successful OpenBlade fan write. Curve targets now use the
-  shared Strict thermal executor's single recovery lease, reconcile possible
-  submissions read-only, and never inherit ownership from generic manual
-  readback, reconnect, resume, profile edits, or controller disappearance. ([#320](https://github.com/OSSBlade/openblade-core/pull/320))
-- Routed full power-profile performance and fan changes through the typed
-  Strict thermal executor, so aggregate preflight, performance, fan, and
-  target-only manual-fan continuation share one freshly admitted recovery
-  lease. A failed step no longer replays an earlier write, and any possible
-  thermal submission stops later profile writes until read-only reconciliation. ([#319](https://github.com/OSSBlade/openblade-core/pull/319))
-- Routed explicit fan transitions through the typed Strict thermal executor,
-  sharing one freshly admitted recovery lease across Automatic and Balanced
-  bridges, the requested fan write, target-only manual-entry continuation, and
-  performance restoration. Earlier confirmed steps are never replayed, and
-  active-session, power, low-power, pending-write, intent, and exact-device
-  authority are rechecked before another thermal command. First- or
-  second-channel manual-entry ambiguity can continue only after fresh paired
-  readback confirms both channels are already manual, without replaying either
-  entry command. ([#320](https://github.com/OSSBlade/openblade-core/pull/320))
-- Verified bundle registration, installer ownership, service registration, and
-  installed files before reporting uninstall success. Superseded installer
-  entries now report registration-only cleanup accurately, while skipped or
-  incomplete removal returns a failure instead of claiming OpenBlade was removed. ([#318](https://github.com/OSSBlade/openblade-core/pull/318))
-- Centralized scoped performance transitions under one typed Strict executor,
-  preserving the bounded EC settling delay while allowing only one freshly
-  admitted retry after a proven pre-submission failure. Possible submissions
-  are reconciled read-only, and session, power, low-power, pending thermal, and
-  exact-device authority are rechecked before any retry. ([#313](https://github.com/OSSBlade/openblade-core/pull/313))
-- Let the exact cached Stable-plus-LocalDev compatibility pair pass the
-  LocalDev-only bootstrapper gate, resolve Common Startup when Burn runs those
-  predecessors as LocalSystem, and record the reserved LocalDev bundle version
-  for package detection, so consecutive brokered upgrades no longer leave
-  duplicate installer registrations or roll back. ([#312](https://github.com/OSSBlade/openblade-core/pull/312))
-- Classified exact-device identity rejection before a requested firmware
-  command as definitively not applied while preserving uncertain outcomes once
-  command submission may have begun. ([#310](https://github.com/OSSBlade/openblade-core/pull/310))
-- Blocked control writes when an explicit HyperBoost recovery first encounters
-  a late-invalid ownership journal, while preserving the journal unchanged for
-  manual inspection. ([#309](https://github.com/OSSBlade/openblade-core/pull/309))
-- Stopped automatic manual-fan curve maintenance after a target write has an
-  indeterminate outcome, and while low-power preparation is active. Exact fan
-  ownership now returns only after a successful explicit fan action, preventing
-  background replay and uncertain shutdown handback. ([#305](https://github.com/OSSBlade/openblade-core/pull/305))
-- Preserved confirmed battery-protection and lighting state across performance
-  and fan readback so thermal-only observations no longer appear as external
-  battery-protection changes. ([#303](https://github.com/OSSBlade/openblade-core/pull/303))
+- Remove the unused Dynamic Lighting sparse-package registration from the Session Agent. Keyboard lighting is still delegated to Windows, and older installations are still cleaned up and rolled back correctly. ([#360](https://github.com/OSSBlade/openblade-core/pull/360))
+- Fix concurrent changes to the HyperBoost ownership journal. They now block before another hardware write and keep the newer recovery state. ([#348](https://github.com/OSSBlade/openblade-core/pull/348))
+- Block older OpenBlade installers from replacing a newer installed version. Interactive setup leaves the installation and settings unchanged and points to the installed or a newer installer. ([#342](https://github.com/OSSBlade/openblade-core/pull/342))
+- Keep incomplete, invalid, mismatched and future-version profile data in quarantine instead of replacing it with safe defaults. Thermal settings stay read-only while the rest of the app keeps working. ([#340](https://github.com/OSSBlade/openblade-core/pull/340))
+- Fix read-only performance and fan queries failing before the HID session opens when no write commands are available. HyperBoost and base-mode capabilities are now read-only in that case. ([#334](https://github.com/OSSBlade/openblade-core/pull/334))
+- Route explicit Strict fan reapply and shutdown handback through the shared thermal executor. Reapply gets at most one fresh retry after a failure that happened before the command was sent, and shutdown cleanup does not wait for it. ([#332](https://github.com/OSSBlade/openblade-core/pull/332))
+- Route automatic HyperBoost destination restoration through the shared Strict thermal executor. A power or user change during restoration now cancels it, and only a failure before the command was sent gets one retry. ([#330](https://github.com/OSSBlade/openblade-core/pull/330))
+- Fix unexpected-exit fan recovery so safety-floor, handback and deferred fan writes get at most one fresh retry. Resume, controller arrival, device loss, external changes or user changes can no longer revive stale handback authority. ([#328](https://github.com/OSSBlade/openblade-core/pull/328))
+- Require confirmed readback before a successful fan write counts as OpenBlade controlling the fans. Fan commands without readback stay unresolved, and a confirmed Automatic result clears stale ownership. ([#326](https://github.com/OSSBlade/openblade-core/pull/326))
+- Keep Strict fan-transition retries inside the shared thermal executor. A transient read failure before submission gets one fresh retry, and FirmwareSmoke now restores the original state immediately instead of starting a second transition. ([#324](https://github.com/OSSBlade/openblade-core/pull/324))
+- Fix explicit HyperBoost restore recovery so it uses the shared Strict thermal executor's single retry. A restore journal that changes during restoration is kept instead of overwritten. ([#322](https://github.com/OSSBlade/openblade-core/pull/322))
+- Unify HyperBoost entry, exit, compensation and restoration under one Strict thermal transition with at most one fresh retry. Periodic power classification no longer queues behind a running thermal transition, and queued Driver-mode and lighting maintenance rechecks low-power state first. ([#330](https://github.com/OSSBlade/openblade-core/pull/330))
+- Tie automatic manual-fan curve maintenance to the exact session and device state that performed the successful OpenBlade fan write. Reconnect, resume, profile edits and generic manual readback no longer grant ownership. ([#320](https://github.com/OSSBlade/openblade-core/pull/320))
+- Route full power-profile performance and fan changes through the Strict thermal executor. A failed step no longer replays an earlier write, and a possible thermal write stops later profile writes until the state is read back. ([#319](https://github.com/OSSBlade/openblade-core/pull/319))
+- Route explicit fan transitions through the Strict thermal executor, sharing one retry across the Automatic and Balanced bridges, the fan write and performance restoration. Earlier confirmed steps are never replayed. ([#320](https://github.com/OSSBlade/openblade-core/pull/320))
+- Verify bundle registration, installer ownership, service registration and installed files before reporting uninstall success. A skipped or incomplete removal now reports a failure. ([#318](https://github.com/OSSBlade/openblade-core/pull/318))
+- Centralize scoped performance transitions under one Strict executor. It keeps the EC settling delay and allows one retry after a failure that happened before the command was sent. ([#313](https://github.com/OSSBlade/openblade-core/pull/313))
+- Fix consecutive brokered upgrades leaving duplicate installer registrations or rolling back. The cached Stable-plus-LocalDev pair now passes the LocalDev-only bootstrapper gate. ([#312](https://github.com/OSSBlade/openblade-core/pull/312))
+- Treat an exact-device identity rejection before a firmware command as not applied. Outcomes stay uncertain once a command may have been sent. ([#310](https://github.com/OSSBlade/openblade-core/pull/310))
+- Block control writes when HyperBoost recovery finds an invalid ownership journal, and keep the journal unchanged for manual inspection. ([#309](https://github.com/OSSBlade/openblade-core/pull/309))
+- Stop automatic manual-fan curve maintenance after a target write has an unknown outcome and while low-power preparation is active. Fan ownership returns only after a successful explicit fan action. ([#305](https://github.com/OSSBlade/openblade-core/pull/305))
+- Fix thermal-only readings showing up as external battery-protection changes. Confirmed battery-protection and lighting state is now preserved across performance and fan readback. ([#303](https://github.com/OSSBlade/openblade-core/pull/303))
 
 ## [0.19.15-nightly.34] - 2026-08-27
 
 ### Fixed
 
-- Released the quick-controls WinUI surface when it is dismissed instead of
-  keeping it rendered off-screen, so the tray does not retain a discrete-GPU
-  context after a game exits. ([#294](https://github.com/OSSBlade/openblade-core/pull/294))
-- Stabilized disconnected translator screenshots across active and inactive
-  window states so repeated localization package exports remain byte-identical. ([#306](https://github.com/OSSBlade/openblade-core/pull/306))
-- Made HyperBoost a transient Laptop performance choice available from every
-  admitted full-power profile and fan mode. Its guidance now appears only while
-  HyperBoost is selected, and every exit restores exact prior intent without
-  duplicate manual-fan writes. ([#282](https://github.com/OSSBlade/openblade-core/pull/282))
-- Preserved definitive pre-submission failures through the production device
-  provider and added one delayed fresh-session retry for failed thermal or
-  adjustable-fan pre-write reads, plus one delayed read-only confirmation for
-  indeterminate manual-fan restoration, without retrying submitted writes. ([#282](https://github.com/OSSBlade/openblade-core/pull/282))
-- Recovered an indeterminate second-channel manual fan entry through paired
-  fresh readback and target-only continuation, without replaying a submitted
-  mode command or exposing raw payloads. ([#282](https://github.com/OSSBlade/openblade-core/pull/282))
-- Let the lifecycle validator verify the protected HyperBoost journal through
-  read-only service diagnostics, refuse mismatched tool builds before writes,
-  and require exact prior intent after a failed arm. ([#282](https://github.com/OSSBlade/openblade-core/pull/282))
-- Deferred a HyperBoost power-boundary restore only after a proven pre-submission
-  failure, then rechecked safety once, preserved exact-prior versus current-
-  power-destination targeting, and published the result immediately. ([#282](https://github.com/OSSBlade/openblade-core/pull/282))
-- Resynchronized the playback-mute key light after a healthy service-status
-  subscription reconnects, so an unmuted F1 does not remain red. ([#292](https://github.com/OSSBlade/openblade-core/pull/292))
-- Kept translator imports fail-closed for unadmitted locales, malformed UTF-8,
-  invisible or bidirectional format controls, injected protected identifiers, and
-  stale installer mnemonic groups, with precise blank-cell feedback; every package
-  now requires context screenshots, and CI restores both disconnected renderers. ([#281](https://github.com/OSSBlade/openblade-core/pull/281))
-- Prevented a missed function-row keyboard hook from executing both the media
-  action and its underlying F-key while the Session Agent restores the hook. ([#290](https://github.com/OSSBlade/openblade-core/pull/290))
-- Kept the Session Agent and media-key handling alive when a client closes a
-  named-pipe connection before Windows completes the server-side accept. ([#284](https://github.com/OSSBlade/openblade-core/pull/284))
-- Localized every M1-M5 shortcut action, row label, validation message, and
-  accessibility name immediately when the app language changes. ([#278](https://github.com/OSSBlade/openblade-core/pull/278))
-- Moved VBIOS inventory into the Firmware section and now show `None` only
-  after Razer's page authoritatively has no exact-GPU publication. Website,
-  parser, and installed GPU readback failures remain unavailable and never
-  populate installed firmware state. Repeated display-head aliases under one
-  Windows video-adapter key now collapse to that adapter's installed VBIOS,
-  while zero or multiple NVIDIA adapters still fail closed. ([#279](https://github.com/OSSBlade/openblade-core/pull/279))
-- Placed the Profiles page Import and Export actions beside the title when
-  space permits, while preserving accessible ordering and responsive wrapping
-  for narrow or long-localized layouts. ([#280](https://github.com/OSSBlade/openblade-core/pull/280))
-- Kept the App theme and App language pickers compact on desktop while allowing
-  them to grow for longer localized choices. ([#277](https://github.com/OSSBlade/openblade-core/pull/277))
-- Awaited every supervised Session Agent loop during coordinated shutdown so
-  microphone mute indication cannot overlap teardown or lose a late failure. ([#268](https://github.com/OSSBlade/openblade-core/pull/268))
-- Kept completed manual fan selections stable while their authoritative service
-  readback catches up, preventing an older in-flight status from briefly
-  reverting the fan-mode selector. ([#267](https://github.com/OSSBlade/openblade-core/pull/267))
-- Refreshed the fan-mode selector immediately when HyperBoost activates or
-  exits so its enabled state stays synchronized with the authoritative control
-  gate. ([#247](https://github.com/OSSBlade/openblade-core/pull/247))
-- Localized the HyperBoost performance choice and cooling-pad guidance in
-  Simplified Chinese and Russian instead of falling back to English. ([#282](https://github.com/OSSBlade/openblade-core/pull/282))
-- Wired the HyperBoost ownership journal into the production Service composition
-  so a confirmed activation is durably recorded before lifecycle recovery is
-  armed. ([#245](https://github.com/OSSBlade/openblade-core/pull/245))
-- Prevented coordinated Session Agent cancellation from becoming a fatal
-  named-pipe error that stops function-row and other per-user features. ([#308](https://github.com/OSSBlade/openblade-core/pull/308))
-- Fixed the validation-marked FirmwareSmoke lifecycle bootstrap so it could
-  exercise padless HyperBoost while the low-power and unexpected-exit
-  production evidence gates were still closed. ([#308](https://github.com/OSSBlade/openblade-core/pull/308))
-- Reworked Simplified Chinese and Russian wording to use natural,
-  context-aware terminology throughout the tray, installer, and setup. ([#308](https://github.com/OSSBlade/openblade-core/pull/308))
-- Prevented localized profile-draft captions from overlapping adjacent
-  columns at narrow window widths. ([#308](https://github.com/OSSBlade/openblade-core/pull/308))
-- Kept keyboard-lighting effect choices in the same order across supported
-  display languages. ([#308](https://github.com/OSSBlade/openblade-core/pull/308))
-- Fixed live language changes mixing strings from the previous language into
-  the rebuilt tray when background work retained an older UI culture. ([#308](https://github.com/OSSBlade/openblade-core/pull/308))
-- Prevented nonzero HID firmware metadata from blocking exact RZ09-0581 device
-  admission, and corrected the platform warning shown while controls are
-  unavailable. ([#308](https://github.com/OSSBlade/openblade-core/pull/308))
-- Preserved responsive selector bindings after Dashboard edits so switching
-  between AC and battery cannot leave the laptop-performance dropdown blank or
-  prevent it from expanding into horizontal choices when space is available. ([#308](https://github.com/OSSBlade/openblade-core/pull/308))
-- Kept malformed current-schema profile files on the safe recovery and import
-  error paths, and cleared stray legacy Windows power modes before publishing
-  migrated schema 1 profiles. ([#308](https://github.com/OSSBlade/openblade-core/pull/308))
-- Removed the redundant **Double-click** hint from the tray context menu while
-  preserving double-click activation of the main window. ([#308](https://github.com/OSSBlade/openblade-core/pull/308))
-- Removed redundant troubleshooting status dots, clarified the service-start
-  action, and removed its idle leading gap. ([#308](https://github.com/OSSBlade/openblade-core/pull/308))
-- Added typed decoding for the capture-backed RZ09-0528 `0011` no-adapter
-  response while keeping Windows Offline authoritative for battery power and
-  excluding that response from other Blade models. ([#308](https://github.com/OSSBlade/openblade-core/pull/308))
-- Retried transient MCU firmware-version read failures during later verified
-  observations, while keeping the query bounded and stopping after a confirmed
-  version is available. ([#308](https://github.com/OSSBlade/openblade-core/pull/308))
-- Clarified unclassified external power consistently across control access,
-  active profile, tray hover, and troubleshooting instead of presenting a
-  completed bounded classification attempt as still checking. ([#308](https://github.com/OSSBlade/openblade-core/pull/308))
-- Kept conditional profile Save and **Use profile settings** actions beside
-  Customize when they fit, while moving the complete action group below the
-  title or stacking long localized actions before they can overlap or clip. ([#308](https://github.com/OSSBlade/openblade-core/pull/308))
-- Kept page customization buttons aligned with their titles while allowing
-  longer localized and profile actions to use a separate row. ([#308](https://github.com/OSSBlade/openblade-core/pull/308))
-- Fixed the **Random colors** switch track alignment and made compact switch
-  alignment explicit across the main window and quick controls. ([#308](https://github.com/OSSBlade/openblade-core/pull/308))
-- Expanded the graphical installer's progress details pane to use the available
-  window height instead of remaining limited to a few log lines. ([#308](https://github.com/OSSBlade/openblade-core/pull/308))
-- Offered **Repair** and **Uninstall** when an interactive installer finds one
-  cached OpenBlade bundle with the same version. Repair overwrites the installed
-  files, records instance-specific ownership, and retires the old registration
-  without letting it remove the repaired payload. Uninstall keeps saved profiles
-  and removes through the cached installed bundle without registering the incoming
-  one, with guidance to use its Windows Installed apps entry when profile removal
-  is also wanted. ([#308](https://github.com/OSSBlade/openblade-core/pull/308))
-- Advanced the combined service IPC contract to version 46 so peers without
-  the expanded firmware inventory are no longer accepted as wire-compatible. ([#308](https://github.com/OSSBlade/openblade-core/pull/308))
-- Rejected imported lighting sequences for a different keyboard layout before
-  opening the lighting device or changing its state. ([#308](https://github.com/OSSBlade/openblade-core/pull/308))
-- Kept the Lab features row aligned with neighboring Settings rows when showing
-  its information button. ([#308](https://github.com/OSSBlade/openblade-core/pull/308))
-- Validated imported lighting timelines without rebuilding their decoded frame
-  graph during each IPC status check. ([#308](https://github.com/OSSBlade/openblade-core/pull/308))
-- Labeled imported animations consistently in profile details and summaries
-  instead of showing `Sequence` and `#000000`. ([#308](https://github.com/OSSBlade/openblade-core/pull/308))
-- Preserved configured Windows power modes when migrating schema 12 profiles
-  to the keyboard-animation profile schema. ([#308](https://github.com/OSSBlade/openblade-core/pull/308))
-- Kept a completed non-looping RZ09-0528 lighting sequence on its final frame
-  without faulting or surrendering the service-owned renderer. ([#308](https://github.com/OSSBlade/openblade-core/pull/308))
-- Prevented brief firmware lighting-off readings during AC and battery
-  transitions from being mistaken for external changes. OpenBlade now confirms
-  a zero reading at the point where it would release the owned renderer, while
-  preserving a stable external lighting change without overwriting it. If that
-  confirmation is unavailable, only lighting is skipped; the remaining profile
-  controls still apply. ([#308](https://github.com/OSSBlade/openblade-core/pull/308))
+- Release the quick-controls surface when it is dismissed, so the tray no longer holds a discrete-GPU context after a game exits. ([#294](https://github.com/OSSBlade/openblade-core/pull/294))
+- Make disconnected translator screenshots identical across active and inactive window states, so repeated localization package exports stay byte-identical. ([#306](https://github.com/OSSBlade/openblade-core/pull/306))
+- Make HyperBoost a temporary Laptop performance choice available from every admitted full-power profile and fan mode. Its guidance appears only while HyperBoost is selected, and every exit restores the prior settings. ([#282](https://github.com/OSSBlade/openblade-core/pull/282))
+- Retry failed thermal or adjustable-fan reads once in a fresh session, and confirm indeterminate manual-fan restoration once with a read. Submitted writes are not retried. ([#282](https://github.com/OSSBlade/openblade-core/pull/282))
+- Recover an indeterminate second-channel manual fan entry by reading both channels back and continuing with the target only. ([#282](https://github.com/OSSBlade/openblade-core/pull/282))
+- Let the lifecycle validator check the HyperBoost journal through read-only service diagnostics, refuse mismatched tool builds before writes, and require the exact prior state after a failed arm. ([#282](https://github.com/OSSBlade/openblade-core/pull/282))
+- Defer a HyperBoost restore at a power boundary only after a failure before the command was sent, then recheck safety once and publish the result immediately. ([#282](https://github.com/OSSBlade/openblade-core/pull/282))
+- Fix the playback-mute key light staying red on an unmuted F1 after the service-status subscription reconnects. ([#292](https://github.com/OSSBlade/openblade-core/pull/292))
+- Reject translator imports with unadmitted locales, malformed UTF-8, hidden or bidirectional format characters, altered protected identifiers and stale installer mnemonic groups, with clear blank-cell feedback. Every package now needs context screenshots, and CI restores both disconnected renderers. ([#281](https://github.com/OSSBlade/openblade-core/pull/281))
+- Fix a missed function-row keyboard hook running both the media action and the underlying F-key while the Session Agent restores the hook. ([#290](https://github.com/OSSBlade/openblade-core/pull/290))
+- Keep the Session Agent and media keys working when a client closes a named-pipe connection before Windows completes the accept. ([#284](https://github.com/OSSBlade/openblade-core/pull/284))
+- Update every M1-M5 shortcut action, row label, validation message and accessibility name immediately when the app language changes. ([#278](https://github.com/OSSBlade/openblade-core/pull/278))
+- Move VBIOS inventory into the Firmware section and show `None` only when Razer's page lists no VBIOS for the exact GPU. Failed website, parser or GPU readbacks stay unavailable, and repeated display-head aliases of one adapter collapse to a single installed VBIOS. Zero or multiple NVIDIA adapters are still not compared. ([#279](https://github.com/OSSBlade/openblade-core/pull/279))
+- Place the Profiles page Import and Export actions beside the title when there is room, and wrap them cleanly in narrow or long-localized layouts. ([#280](https://github.com/OSSBlade/openblade-core/pull/280))
+- Keep the App theme and App language pickers compact on desktop, and let them grow for longer localized choices. ([#277](https://github.com/OSSBlade/openblade-core/pull/277))
+- Wait for every Session Agent loop to finish during coordinated shutdown, so microphone mute indication cannot overlap teardown or lose a late failure. ([#268](https://github.com/OSSBlade/openblade-core/pull/268))
+- Fix the fan-mode selector briefly reverting while an older in-flight status arrives after a manual fan selection. ([#267](https://github.com/OSSBlade/openblade-core/pull/267))
+- Refresh the fan-mode selector immediately when HyperBoost activates or exits, so its enabled state stays correct. ([#247](https://github.com/OSSBlade/openblade-core/pull/247))
+- Localize the HyperBoost performance choice and cooling-pad guidance in Simplified Chinese and Russian instead of showing English. ([#282](https://github.com/OSSBlade/openblade-core/pull/282))
+- Record a confirmed HyperBoost activation in the ownership journal before lifecycle recovery is armed. ([#245](https://github.com/OSSBlade/openblade-core/pull/245))
+- Fix coordinated Session Agent cancellation turning into a named-pipe error that stops function-row and other per-user features. ([#308](https://github.com/OSSBlade/openblade-core/pull/308))
+- Fix the FirmwareSmoke lifecycle bootstrap so it can exercise padless HyperBoost while the low-power and unexpected-exit evidence gates are still closed. ([#308](https://github.com/OSSBlade/openblade-core/pull/308))
+- Rework the Simplified Chinese and Russian wording to use natural terminology across the tray, installer and setup. ([#308](https://github.com/OSSBlade/openblade-core/pull/308))
+- Fix localized profile-draft captions overlapping adjacent columns at narrow window widths. ([#308](https://github.com/OSSBlade/openblade-core/pull/308))
+- Keep keyboard-lighting effect choices in the same order in every supported display language. ([#308](https://github.com/OSSBlade/openblade-core/pull/308))
+- Fix live language changes mixing strings from the previous language into the rebuilt tray when background work held an older UI culture. ([#308](https://github.com/OSSBlade/openblade-core/pull/308))
+- Fix nonzero HID firmware metadata blocking device admission on RZ09-0581, and correct the platform warning shown while controls are unavailable. ([#308](https://github.com/OSSBlade/openblade-core/pull/308))
+- Fix the laptop-performance dropdown going blank or failing to expand into horizontal choices after Dashboard edits when switching between AC and battery. ([#308](https://github.com/OSSBlade/openblade-core/pull/308))
+- Fix malformed current-schema profile files, which now go through safe recovery and import errors. Stray legacy Windows power modes are cleared when migrating schema 1 profiles. ([#308](https://github.com/OSSBlade/openblade-core/pull/308))
+- Remove the redundant **Double-click** hint from the tray context menu. Double-click still opens the main window. ([#308](https://github.com/OSSBlade/openblade-core/pull/308))
+- Remove redundant troubleshooting status dots, clarify the service-start action and remove its idle leading gap. ([#308](https://github.com/OSSBlade/openblade-core/pull/308))
+- Decode the RZ09-0528 `0011` no-adapter response. Windows Offline still decides battery power, and other Blade models are unaffected. ([#308](https://github.com/OSSBlade/openblade-core/pull/308))
+- Retry transient MCU firmware-version read failures on later observations, and stop once a version is confirmed. ([#308](https://github.com/OSSBlade/openblade-core/pull/308))
+- Show unclassified external power consistently in control access, active profile, tray hover and troubleshooting, instead of showing a finished classification attempt as still checking. ([#308](https://github.com/OSSBlade/openblade-core/pull/308))
+- Keep the conditional profile Save and **Use profile settings** actions beside Customize when they fit. Otherwise the action group moves below the title, and long localized actions stack instead of overlapping or clipping. ([#308](https://github.com/OSSBlade/openblade-core/pull/308))
+- Keep page customization buttons aligned with their titles, and let longer localized and profile actions use a separate row. ([#308](https://github.com/OSSBlade/openblade-core/pull/308))
+- Fix the **Random colors** switch track alignment, and align compact switches consistently across the main window and quick controls. ([#308](https://github.com/OSSBlade/openblade-core/pull/308))
+- Expand the graphical installer's progress details pane to use the available window height instead of a few log lines. ([#308](https://github.com/OSSBlade/openblade-core/pull/308))
+- Offer **Repair** and **Uninstall** when the interactive installer finds one cached OpenBlade bundle of the same version. Repair overwrites the installed files. Uninstall keeps saved profiles; to remove profiles too, use the Windows Installed apps entry. ([#308](https://github.com/OSSBlade/openblade-core/pull/308))
+- Advance the service IPC contract to version 46, so peers without the expanded firmware inventory are no longer accepted. ([#308](https://github.com/OSSBlade/openblade-core/pull/308))
+- Reject imported lighting sequences for a different keyboard layout before touching the lighting device. ([#308](https://github.com/OSSBlade/openblade-core/pull/308))
+- Keep the Lab features row aligned with neighboring Settings rows when it shows its information button. ([#308](https://github.com/OSSBlade/openblade-core/pull/308))
+- Validate imported lighting timelines without rebuilding their decoded frames on every status check. ([#308](https://github.com/OSSBlade/openblade-core/pull/308))
+- Label imported animations consistently in profile details and summaries instead of showing `Sequence` and `#000000`. ([#308](https://github.com/OSSBlade/openblade-core/pull/308))
+- Keep configured Windows power modes when migrating schema 12 profiles to the keyboard-animation profile schema. ([#308](https://github.com/OSSBlade/openblade-core/pull/308))
+- Fix a finished non-looping RZ09-0528 lighting sequence faulting or giving up the renderer. It now stays on its final frame. ([#308](https://github.com/OSSBlade/openblade-core/pull/308))
+- Fix brief firmware lighting-off readings during AC and battery transitions being mistaken for external changes. A zero reading is now confirmed first, and a stable external lighting change is kept. If confirmation is unavailable, only lighting is skipped and the rest of the profile still applies. ([#308](https://github.com/OSSBlade/openblade-core/pull/308))
 
 ### Added
 
-- Added an Excel-compatible translator package workflow for all four localization
-  surfaces, with sanitized context screenshots, deterministic source and target
-  catalog hashes, locked source and target transactions, synchronized source keysets,
-  complete composite-format, shortcut, and mnemonic validation, build-metadata-free
-  context renders, and a plain-language contributor guide. ([#281](https://github.com/OSSBlade/openblade-core/pull/281))
-- Added a fail-closed padless HyperBoost admission path on RZ09-0581. The
-  reviewed Balanced-and-Automatic protocol, load, adapter, restoration,
-  low-power, and unexpected-exit evidence now admits production use without
-  the cooling pad. Safety boundaries never retry an indeterminate write. ([#245](https://github.com/OSSBlade/openblade-core/pull/245))
-- Presented padless HyperBoost as a transient Laptop performance choice on the
-  main dashboard and in Quick Controls, while keeping saved profiles unchanged.
-  The choice is available only when the service reports reviewed write access
-  and confirms the required full-power, cooling-pad-absent state. ([#282](https://github.com/OSSBlade/openblade-core/pull/282))
-- Added complete Simplified Chinese and Russian translations for the tray,
-  graphical installer, and native setup and uninstall experiences. Settings
-  now lets the tray follow the Windows UI language or use either translation,
-  with safe English fallback. ([#234](https://github.com/OSSBlade/openblade-core/pull/234))
-- Added GPU-specific VBIOS update comparison for exact supported Blade models.
-  OpenBlade now carries the installed NVIDIA adapter identity through service
-  status and diagnostics, selects only the matching official Razer VBIOS
-  release, and declines comparison when either side cannot be identified. ([#225](https://github.com/OSSBlade/openblade-core/pull/225))
-- Added model-scoped RZ09-0581 Thunderbolt 5 and touchpad firmware comparison.
-  The service reads the exact Windows USB4 root-router property and PixArt
-  Precision Touchpad HID descriptor, fails closed on other models or ambiguous
-  identities, and reports updates only from trustworthy installed versions. ([#241](https://github.com/OSSBlade/openblade-core/pull/241))
-- Added exact-RZ09-0581 BIOS 3.01 read-only diagnostics for the captured Synapse
-  SKU hardware-configuration byte, Mini-LED panel-resolution byte, and thermal
-  fan ID list. The raw values remain in the service's diagnostic cache and
-  exports and do not enable firmware writes. ([#224](https://github.com/OSSBlade/openblade-core/pull/224))
-- Added an opt-in **60 Hz lighting** Lab mode for the admitted RZ09-0581
-  keyboard transport. The service keeps 30 Hz as the default, persists the
-  selection after the tray exits, and applies it to supported built-in,
-  Ambient Awareness, and Audio Meter animation while RZ09-0528 remains at
-  30 Hz. ([#206](https://github.com/OSSBlade/openblade-core/pull/206))
-- Added en-US resource catalogs and qps-ploc validation for the tray and
-  graphical installer, including safe installer fallback and required-key,
-  placeholder, accessibility-name, and critical-page startup checks. ([#207](https://github.com/OSSBlade/openblade-core/pull/207))
-- Added an importable example of a cyan sweep that moves from left to right
-  with a dim blue wake. ([#181](https://github.com/OSSBlade/openblade-core/pull/181))
-- Added a versioned, data-only `.oblight` keyboard lighting preset format and
-  a Lighting-page importer available when Lab features are enabled in Settings.
-  Its bounded Razer `.chroma` version 1 adapter
-  converts uniform Keyboard and KeyboardExtended files losslessly, and plays
-  classic Keyboard per-key animations through separate verified RZ09-0581 and
-  RZ09-0528 logical-key projections. Imported animations persist with the power
-  profile and keep running when the tray exits. Colored source cells without an
-  admitted binding are reported, while per-key KeyboardExtended files are
-  rejected instead of cropped. Imported effects remain limited to capabilities
-  already admitted for the exact connected Blade. ([#181](https://github.com/OSSBlade/openblade-core/pull/181))
+- Add an Excel-compatible translator package workflow for all four localization surfaces, with sanitized context screenshots, source and target catalog hashes, shortcut and mnemonic validation, and a plain-language contributor guide. ([#281](https://github.com/OSSBlade/openblade-core/pull/281))
+- Add padless HyperBoost on RZ09-0581, so it works without the cooling pad. ([#245](https://github.com/OSSBlade/openblade-core/pull/245))
+- Show padless HyperBoost as a temporary Laptop performance choice on the main dashboard and in Quick Controls. It is offered only at full power with no cooling pad, when the service reports reviewed write access. Saved profiles are unchanged. ([#282](https://github.com/OSSBlade/openblade-core/pull/282))
+- Add complete Simplified Chinese and Russian translations for the tray, graphical installer, and native setup and uninstall. Settings lets the tray follow the Windows UI language or use either translation, with English as the fallback. ([#234](https://github.com/OSSBlade/openblade-core/pull/234))
+- Add GPU-specific VBIOS update comparison for supported Blade models. OpenBlade compares only against the matching official Razer VBIOS release and skips the comparison when either side can't be identified. ([#225](https://github.com/OSSBlade/openblade-core/pull/225))
+- Add RZ09-0581 Thunderbolt 5 and touchpad firmware comparison. Updates are reported only from trustworthy installed versions, and other models are not compared. ([#241](https://github.com/OSSBlade/openblade-core/pull/241))
+- Add read-only diagnostics on RZ09-0581 with BIOS 3.01 for the SKU hardware-configuration byte, the Mini-LED panel-resolution byte and the thermal fan ID list. Raw values appear in diagnostics and exports. ([#224](https://github.com/OSSBlade/openblade-core/pull/224))
+- Add an opt-in **60 Hz lighting** Lab mode for the RZ09-0581 keyboard. It applies to built-in, Ambient Awareness and Audio Meter animation, and persists after the tray exits. 30 Hz stays the default, and RZ09-0528 stays at 30 Hz. ([#206](https://github.com/OSSBlade/openblade-core/pull/206))
+- Add en-US resource catalogs and qps-ploc validation for the tray and graphical installer, with installer fallback and startup checks. ([#207](https://github.com/OSSBlade/openblade-core/pull/207))
+- Add an importable example of a cyan sweep that moves from left to right with a dim blue wake. ([#181](https://github.com/OSSBlade/openblade-core/pull/181))
+- Add a versioned `.oblight` keyboard lighting preset format and a Lighting-page importer, available when Lab features are enabled in Settings. It converts Razer `.chroma` version 1 files: uniform Keyboard and KeyboardExtended files, and classic Keyboard per-key animations on RZ09-0581 and RZ09-0528. Imported animations persist with the power profile and keep running when the tray exits. Colored source cells with no matching key are reported, and per-key KeyboardExtended files are rejected. Imported effects are limited to what your laptop already supports. ([#181](https://github.com/OSSBlade/openblade-core/pull/181))
 
 ### Changed
 
-- Replaced the About-page affiliation disclaimer with the translated community
-  tagline “For gamers. By the community.” ([#276](https://github.com/OSSBlade/openblade-core/pull/276))
-- Applied tray language changes immediately without restarting OpenBlade and
-  aligned the language picker with the other Appearance controls. ([#252](https://github.com/OSSBlade/openblade-core/pull/252))
-- Made production admission model-scoped by default for the exact supported
-  laptop and SKU. Validated BIOS versions remain provenance, while explicit
-  firmware-specific capability gates can still require exact versions. On the
-  RZ09-0581 this intentionally makes the already-admitted 45 W, 60 W, 65 W,
-  80 W, 90 W, OEM 280 W, and manifest-backed SlimQ 330 W adapter classes
-  available across same-model firmware; their captured BIOS versions remain
-  evidence provenance rather than runtime restrictions. ([#227](https://github.com/OSSBlade/openblade-core/pull/227))
-- Advanced service IPC from 47 to 48 for the model-scoped firmware
-  compatibility state. ([#227](https://github.com/OSSBlade/openblade-core/pull/227))
-- The firmware comparison table now omits items whose installed version is
-  unavailable instead of showing non-actionable rows and a disclaimer. ([#241](https://github.com/OSSBlade/openblade-core/pull/241))
-- The firmware versions table now stays hidden when none of its installed
-  values are readable, while update controls and the official support link
-  remain available. ([#249](https://github.com/OSSBlade/openblade-core/pull/249))
-- Device Information now omits BIOS, EC, MCU, and VBIOS rows when the same
-  installed version is already visible in the firmware comparison table. ([#241](https://github.com/OSSBlade/openblade-core/pull/241))
-- Tied each optional Windows power mode to a laptop performance preset instead
-  of an AC, USB-C, or battery profile. Dashboard changes, saved-profile
-  transitions, and Fn+P now update Windows only after the laptop preset is
-  confirmed. Profile schema 15, export schema 10, and service IPC 47 migrate
-  unambiguous existing associations and leave conflicts unchanged. Because
-  AC and USB-C commonly shared one laptop preset but different Windows-mode
-  choices, existing associations may need to be set again after upgrading. The
-  Dashboard selector stays synchronized when the laptop preset changes. ([#237](https://github.com/OSSBlade/openblade-core/pull/237))
-- Advanced the firmware-smoke snapshot schema from 7 to 8 for observed-only
-  Thunderbolt and touchpad inventory metadata. ([#225](https://github.com/OSSBlade/openblade-core/pull/225))
-- Expanded the RZ09-0581 BIOS 4.00 USB-C profile to exact 45 W, 60 W, 65 W,
-  80 W, 90 W, and 100 W adapter classes. These classes share the same USB-C
-  profile; bounded transient HID failures still require two agreeing replies
-  before controls are enabled. ([#215](https://github.com/OSSBlade/openblade-core/pull/215))
-- Moved the Lab keyboard preset importer into the Keyboard section and replaced
-  the long Lab features description with an on-demand list of current features. ([#204](https://github.com/OSSBlade/openblade-core/pull/204))
-- Advanced the profile/configuration schema from 13 to 14 for the persisted
-  lighting refresh-rate preference. Migrated configurations default to 30 Hz. ([#206](https://github.com/OSSBlade/openblade-core/pull/206))
+- Replace the About-page affiliation disclaimer with the translated community tagline "For gamers. By the community." ([#276](https://github.com/OSSBlade/openblade-core/pull/276))
+- Apply tray language changes immediately without restarting OpenBlade, and align the language picker with the other Appearance controls. ([#252](https://github.com/OSSBlade/openblade-core/pull/252))
+- Admit supported laptops by exact model and SKU by default. Validated BIOS versions are provenance only, unless a firmware-specific capability gate requires one. On RZ09-0581 this makes the 45 W, 60 W, 65 W, 80 W, 90 W, OEM 280 W and SlimQ 330 W adapter classes available across firmware versions. ([#227](https://github.com/OSSBlade/openblade-core/pull/227))
+- Advance service IPC from 47 to 48 for the model-scoped firmware compatibility state. ([#227](https://github.com/OSSBlade/openblade-core/pull/227))
+- Omit firmware comparison rows whose installed version is unavailable, along with the disclaimer. ([#241](https://github.com/OSSBlade/openblade-core/pull/241))
+- Hide the firmware versions table when none of its installed values are readable. Update controls and the official support link stay available. ([#249](https://github.com/OSSBlade/openblade-core/pull/249))
+- Omit BIOS, EC, MCU and VBIOS rows from Device Information when the same installed version already shows in the firmware comparison table. ([#241](https://github.com/OSSBlade/openblade-core/pull/241))
+- Tie each optional Windows power mode to a laptop performance preset instead of an AC, USB-C or battery profile. Dashboard changes, saved-profile transitions and Fn+P update Windows only after the laptop preset is confirmed. Profile schema 15, export schema 10 and service IPC 47 migrate unambiguous associations. AC and USB-C often shared one preset with different Windows-mode choices, so you may need to set those associations again after upgrading. ([#237](https://github.com/OSSBlade/openblade-core/pull/237))
+- Advance the firmware-smoke snapshot schema from 7 to 8 for Thunderbolt and touchpad inventory metadata. ([#225](https://github.com/OSSBlade/openblade-core/pull/225))
+- Expand the RZ09-0581 BIOS 4.00 USB-C profile to 45 W, 60 W, 65 W, 80 W, 90 W and 100 W adapter classes. After a brief HID failure, controls are enabled only once two replies agree. ([#215](https://github.com/OSSBlade/openblade-core/pull/215))
+- Move the Lab keyboard preset importer into the Keyboard section, and replace the long Lab features description with an on-demand list of current features. ([#204](https://github.com/OSSBlade/openblade-core/pull/204))
+- Advance the profile/configuration schema from 13 to 14 for the saved lighting refresh-rate preference. Migrated configurations default to 30 Hz. ([#206](https://github.com/OSSBlade/openblade-core/pull/206))
 
 ## [0.8.4-nightly.20] - 2026-08-15
 
 ### Added
 
-- Added Windows-native display-brightness handling and flyout presentation for
-  the reconstructed function row, using the exact admitted Razer virtual
-  Consumer Control path already present on the RZ09-0581. The existing WMI
-  brightness path and OpenBlade flyout remain available when that path is
-  unavailable. About shows which brightness path is currently available. ([#163](https://github.com/OSSBlade/openblade-core/pull/163))
-- Added an optional Windows power mode to each AC, USB-C, and battery profile.
-  The current-user Session Agent applies Best power efficiency, Balanced, or
-  Best performance when the active power profile changes. ([#170](https://github.com/OSSBlade/openblade-core/pull/170))
-- Added a **Close GPU apps** action to Power mode. It finds current-user apps
-  actively using NVIDIA WDDM engines without waking an idle GPU, shows the exact
-  targets, asks them to close, and offers an explicit force-close step for
-  survivors while protecting Windows, OpenBlade, and other sessions. The action
-  stays hidden when no active NVIDIA GPU users are detected. ([#166](https://github.com/OSSBlade/openblade-core/pull/166))
-- Added an administrator-approved Troubleshooting action that stops the exact known
-  Synapse and Chroma controller-service allowlist, then reports fresh Windows
-  service readback without disabling startup or retrying uncertain requests. ([#167](https://github.com/OSSBlade/openblade-core/pull/167))
+- Add Windows-native display-brightness handling and flyout for the function row on the RZ09-0581. The WMI brightness path and OpenBlade flyout remain available when it is unavailable. About shows which brightness path is in use. ([#163](https://github.com/OSSBlade/openblade-core/pull/163))
+- Add an optional Windows power mode (Best power efficiency, Balanced or Best performance) to each AC, USB-C and battery profile. It applies when the active power profile changes. ([#170](https://github.com/OSSBlade/openblade-core/pull/170))
+- Add a **Close GPU apps** action to Power mode. It lists your apps that are actively using the NVIDIA GPU, asks them to close, and offers a force-close for any that stay open. It is hidden when no apps are using the GPU. ([#166](https://github.com/OSSBlade/openblade-core/pull/166))
+- Add an administrator-approved Troubleshooting action that stops the known Synapse and Chroma controller services and reports their current state. ([#167](https://github.com/OSSBlade/openblade-core/pull/167))
 
 ### Changed
 
-- Replaced common dropdown-only settings with responsive Windows selectors.
-  Performance, fan, function-row, lighting, display, and app settings use
-  horizontal choices when their options fit on one line without squeezing
-  adjacent labels, and retain a compact dropdown when the window or settings
-  row is too narrow. ([#182](https://github.com/OSSBlade/openblade-core/pull/182))
-- Replaced the tray-dashboard customization dialog with a dedicated Settings
-  page that shows only active controls and adjustments, keeps inactive choices
-  in **Add** menus, exposes the two-adjustment limit, and updates the pinned tray
-  popup live while items are reordered, added, removed, or reset. ([#95](https://github.com/OSSBlade/openblade-core/pull/95))
-- Expanded tray-dashboard quick controls with battery protection, function-row
-  mode, gaming mode and its key-blocking options, plus an optional GPU-tuning
-  toggle. ([#95](https://github.com/OSSBlade/openblade-core/pull/95))
-- Renamed the tray-dashboard lighting adjustment to **Keyboard brightness** so
-  its target is explicit in Settings and accessibility presentation. ([#95](https://github.com/OSSBlade/openblade-core/pull/95))
-- Matched the tray dashboard to the Windows Quick Settings 360 by 388 DIP
-  footprint, added configurable power-source and fan-speed status items, and
-  standardized its primary icon scale. ([#95](https://github.com/OSSBlade/openblade-core/pull/95))
+- Replace dropdown-only settings with horizontal choices in performance, fan, function-row, lighting, display and app settings. A compact dropdown is used when the window or row is too narrow. ([#182](https://github.com/OSSBlade/openblade-core/pull/182))
+- Replace the tray-dashboard customization dialog with a Settings page that shows active controls and adjustments, keeps inactive choices in **Add** menus, and limits adjustments to two. The pinned tray popup updates live as you reorder, add, remove or reset items. ([#95](https://github.com/OSSBlade/openblade-core/pull/95))
+- Add battery protection, function-row mode, gaming mode with its key-blocking options, and an optional GPU-tuning toggle to the tray-dashboard quick controls. ([#95](https://github.com/OSSBlade/openblade-core/pull/95))
+- Rename the tray-dashboard lighting adjustment to **Keyboard brightness**. ([#95](https://github.com/OSSBlade/openblade-core/pull/95))
+- Match the tray dashboard to the Windows Quick Settings size (360 by 388 DIP), add power-source and fan-speed status items, and standardize its primary icon size. ([#95](https://github.com/OSSBlade/openblade-core/pull/95))
 
 ### Fixed
 
-- Reduced excess vertical space in single-line Dashboard rows while preserving
-  the original spacing for descriptions, editors, and titles that wrap at
-  narrow widths without disrupting conditional-row animations. ([#193](https://github.com/OSSBlade/openblade-core/pull/193))
-- Kept HDR toggles made during a background display refresh from being dropped,
-  and restored the toggle from confirmed display state after the queued change. ([#191](https://github.com/OSSBlade/openblade-core/pull/191))
-- Stopped the Fixed speed and Manual fan curve detail cards from appearing
-  highlighted while idle or when editing, and split shared nested-card styling
-  into explicit hover-free editor, neutral hover, and emphasized variants so
-  future editors cannot inherit an unintended full-card highlight. ([#189](https://github.com/OSSBlade/openblade-core/pull/189))
-- Made the main window and tray dashboard available before the initial display
-  query finishes, while coalescing display refreshes so a slow Session Agent
-  response cannot queue redundant follow-up queries. Profile capture still waits
-  for a display read that began after the save request. ([#179](https://github.com/OSSBlade/openblade-core/pull/179))
-- Limited the tray-dashboard status row to three configurable readings so its
-  icons and labels remain distinct instead of clipping in the fixed-width popup. ([#95](https://github.com/OSSBlade/openblade-core/pull/95))
-- Reduced tray-dashboard background work by sharing one visible-surface
-  telemetry loop, reading only the sensors selected for the popup, replacing
-  steady foreground polling with bounded deactivation checks, suppressing
-  telemetry binding updates for the parked popup, keeping popup animations out
-  of EcoQoS, and preventing overlapping animation workers or deferred GPU
-  commits during teardown. A bounded UI fallback now also completes dismissals
-  if native animation-frame delivery stops early. ([#95](https://github.com/OSSBlade/openblade-core/pull/95))
-- Added a real compiled-XAML startup check for the main window and every tray
-  dashboard control, protected newer dashboard preference schemas from being
-  overwritten by older builds, and kept GPU slider commits from applying after
-  their capabilities or editability change. ([#95](https://github.com/OSSBlade/openblade-core/pull/95))
-- Moved tray-dashboard animation pacing off the shared thread pool, bounded its
-  compositor-failure fallback to one frame, and limited tray-click reopen
-  suppression to dismissals caused by an actual Windows taskbar. ([#95](https://github.com/OSSBlade/openblade-core/pull/95))
-- Prevented the tray from crashing during startup when loading dashboard status
-  icon columns from a numeric XAML sizing resource. ([#95](https://github.com/OSSBlade/openblade-core/pull/95))
-- Replaced the keyboard-brightness adjustment's generic sun icon with the
-  Windows keyboard-brightness glyph. ([#95](https://github.com/OSSBlade/openblade-core/pull/95))
-- Kept selected GPU clock adjustments visible in the tray dashboard when GPU
-  tuning is temporarily unavailable, showing their disabled state instead of
-  silently removing them. ([#95](https://github.com/OSSBlade/openblade-core/pull/95))
-- Kept the pinned tray-dashboard preview above a maximized OpenBlade window
-  during Settings customization without making it system-wide always-on-top. ([#95](https://github.com/OSSBlade/openblade-core/pull/95))
-- Kept profile pending-change dots immediately beside their value text instead
-  of stretching them to the far edge of the table cell. ([#159](https://github.com/OSSBlade/openblade-core/pull/159))
-- Cleared the red playback-mute key after a rejected unmute frame by restoring
-  OpenBlade's owned lighting renderer as soon as the unmuted state is retried. ([#157](https://github.com/OSSBlade/openblade-core/pull/157))
-- Replaced `Not set` laptop-behavior profile cells with the currently confirmed
-  firmware value while leaving unconfigured profiles non-destructive. ([#155](https://github.com/OSSBlade/openblade-core/pull/155))
-- Repeated the global charge limit across the AC, USB-C, and Battery profile
-  columns so the latter two cells no longer appear empty. ([#155](https://github.com/OSSBlade/openblade-core/pull/155))
-- Disabled the fan-mode dropdown when Automatic is the only available option,
-  including on battery and USB-C power, while keeping mismatched selections
-  recoverable. ([#155](https://github.com/OSSBlade/openblade-core/pull/155))
+- Reduce extra vertical space in single-line Dashboard rows. Descriptions, editors and wrapped titles keep their spacing. ([#193](https://github.com/OSSBlade/openblade-core/pull/193))
+- Fix HDR toggles made during a background display refresh being dropped. ([#191](https://github.com/OSSBlade/openblade-core/pull/191))
+- Fix the Fixed speed and Manual fan curve cards looking highlighted while idle or being edited. ([#189](https://github.com/OSSBlade/openblade-core/pull/189))
+- Open the main window and tray dashboard before the first display query finishes, and avoid redundant display refreshes when the Session Agent responds slowly. ([#179](https://github.com/OSSBlade/openblade-core/pull/179))
+- Limit the tray-dashboard status row to three readings so icons and labels no longer clip. ([#95](https://github.com/OSSBlade/openblade-core/pull/95))
+- Reduce tray-dashboard background work by sharing one telemetry loop, reading only the sensors selected for the popup, and pausing updates while the popup is hidden. Popup dismissal now completes even if animation stops early. ([#95](https://github.com/OSSBlade/openblade-core/pull/95))
+- Add a startup check for the main window and every tray dashboard control, keep older builds from overwriting newer dashboard preferences, and stop GPU slider changes from applying after GPU tuning becomes unavailable or read-only. ([#95](https://github.com/OSSBlade/openblade-core/pull/95))
+- Smooth tray-dashboard animation timing and limit tray-click reopen suppression to dismissals caused by the Windows taskbar. ([#95](https://github.com/OSSBlade/openblade-core/pull/95))
+- Fix a tray crash at startup when loading dashboard status icon columns. ([#95](https://github.com/OSSBlade/openblade-core/pull/95))
+- Use the Windows keyboard-brightness icon for the keyboard-brightness adjustment. ([#95](https://github.com/OSSBlade/openblade-core/pull/95))
+- Keep selected GPU clock adjustments visible, but disabled, in the tray dashboard when GPU tuning is temporarily unavailable. ([#95](https://github.com/OSSBlade/openblade-core/pull/95))
+- Keep the pinned tray-dashboard preview above a maximized OpenBlade window during Settings customization. ([#95](https://github.com/OSSBlade/openblade-core/pull/95))
+- Keep profile pending-change dots next to their value text. ([#159](https://github.com/OSSBlade/openblade-core/pull/159))
+- Fix the playback-mute key staying red after a rejected unmute. ([#157](https://github.com/OSSBlade/openblade-core/pull/157))
+- Show the confirmed firmware value instead of `Not set` in laptop-behavior profile cells. Unconfigured profiles are left unchanged. ([#155](https://github.com/OSSBlade/openblade-core/pull/155))
+- Show the global charge limit in the AC, USB-C and Battery profile columns so none appear empty. ([#155](https://github.com/OSSBlade/openblade-core/pull/155))
+- Disable the fan-mode dropdown when Automatic is the only option, including on battery and USB-C power. ([#155](https://github.com/OSSBlade/openblade-core/pull/155))
 
 ## [0.5.1-nightly.16] - 2026-08-13
 
 ### Added
 
-- Added a compact quick-controls dashboard that opens with one click on the
-  tray icon. Its tile controls, slider controls, order, visibility, and status
-  row can be customized from Settings while the actual popup updates live.
-  Open the main window with a tray-icon double-click or the tray icon's
-  right-click **Open** command. ([#95](https://github.com/OSSBlade/openblade-core/pull/95))
-- Added production recognition for the SlimQ 330 W adapter on the exact
-  Razer Blade 16 RZ09-0581 with BIOS 3.01 or 4.00. The admission is bound to
-  ten identical typed adapter reads and four matching Windows online-power
-  observations captured on BIOS 4.00; other models and responses remain
-  unchanged. The adapter now selects the normal AC profile, including its
-  performance mode, fan behavior, and configured GPU clock offsets. ([#138](https://github.com/OSSBlade/openblade-core/pull/138))
-- Added per-power-profile battery protection, including migration from the
-  former global setting and pending-value indicators for AC, USB-C, and battery. ([#118](https://github.com/OSSBlade/openblade-core/pull/118))
-- Added the global charge limit to Profiles pending-change presentation. ([#118](https://github.com/OSSBlade/openblade-core/pull/118))
-- Added a dot beside each saved Profiles value that has a pending change.
-  The value cell exposes the new value through its tooltip and accessible name. ([#110](https://github.com/OSSBlade/openblade-core/pull/110))
+- Add a compact quick-controls dashboard that opens with one click on the tray icon. Customize its tiles, sliders, order, visibility and status row from Settings. Open the main window with a tray-icon double-click or the right-click **Open** command. ([#95](https://github.com/OSSBlade/openblade-core/pull/95))
+- Recognize the SlimQ 330 W adapter on the Razer Blade 16 RZ09-0581 with BIOS 3.01 or 4.00. It now selects the normal AC profile, including its performance mode, fan behavior and GPU clock offsets. ([#138](https://github.com/OSSBlade/openblade-core/pull/138))
+- Add per-power-profile battery protection, with pending-value indicators for AC, USB-C and battery. The former global setting migrates automatically. ([#118](https://github.com/OSSBlade/openblade-core/pull/118))
+- Show the global charge limit in Profiles pending-change indicators. ([#118](https://github.com/OSSBlade/openblade-core/pull/118))
+- Show a dot beside each saved Profiles value that has a pending change. Its tooltip gives the new value. ([#110](https://github.com/OSSBlade/openblade-core/pull/110))
 
 ### Changed
 
-- Refined the dashboard into a Windows Quick Settings-style panel with a
-  uniform three-column tile grid, quick actions that cycle through available
-  options, chevrons that open focused choice screens, scrolling beyond six
-  controls, and a fixed quick-adjustment section for up to two charge-limit,
-  lighting-brightness, or GPU-clock sliders. Unused slider space expands the
-  tile viewport without changing the popup's overall height. The popup now
-  matches Windows' tile, corner, type, and panel proportions; single-choice
-  fan controls omit the details chevron, and quick-adjustment rows use larger,
-  consistently aligned icons, Windows-sized thumbs and tracks, and no trailing
-  labels. Performance and fan controls now use purpose-specific symbols, the
-  telemetry footer distributes visible items evenly, and opening the popup no
-  longer leaves a focus border on its first tile. Legacy wide-tile and
-  expanded-control preferences now migrate to the fixed grid instead of being
-  retained as inactive settings. ([#95](https://github.com/OSSBlade/openblade-core/pull/95))
-- Reduced repeated status-publication allocations by reusing immutable drift
-  snapshots and validating small sorted IPC collections without LINQ buffers. ([#147](https://github.com/OSSBlade/openblade-core/pull/147))
-- Battery protection and charge-limit changes now remain temporary until saved
-  to a profile. Battery protection also follows the destination power profile
-  when the power source changes. ([#118](https://github.com/OSSBlade/openblade-core/pull/118))
-- Advanced the product version from the stale 0.1.x baseline to 0.2.0 for the
-  backward-compatible capabilities added since the initial non-nightly release
-  and required each future product-changing pull request to apply its SemVer bump
-  directly, with pull-request fields and CI validation rejecting missing, stale,
-  or incorrect increments while keeping description-only rechecks separate from
-  the full build workflow. ([#114](https://github.com/OSSBlade/openblade-core/pull/114))
+- Refine the dashboard into a Windows Quick Settings-style panel with a three-column tile grid. Quick actions cycle through options, chevrons open choice screens, and up to two charge-limit, lighting-brightness or GPU-clock sliders sit in a fixed adjustment section. Performance and fan controls get their own icons, and old wide-tile preferences migrate to the grid. ([#95](https://github.com/OSSBlade/openblade-core/pull/95))
+- Reduce memory use in status updates. ([#147](https://github.com/OSSBlade/openblade-core/pull/147))
+- Keep battery protection and charge-limit changes temporary until saved to a profile. Battery protection also follows the destination power profile when the power source changes. ([#118](https://github.com/OSSBlade/openblade-core/pull/118))
+- Move the product version from the stale 0.1.x baseline to 0.2.0. Each future product-changing pull request must apply its own version bump, and CI rejects missing, stale or incorrect bumps. ([#114](https://github.com/OSSBlade/openblade-core/pull/114))
 
 ### Fixed
 
-- Fixed the quick-controls popup's blank black opening frame, raw lighting
-  option text, missing fan icon, clipped controls, and truncated status labels.
-  The popup now keeps its composed surface prewarmed outside the virtual
-  desktop and uses
-  matching 200 ms reveal and dismissal motion paced by the desktop compositor
-  with the brightness overlay's easing, stays outside the taskbar's topmost
-  band, reliably dismisses after an outside click, refreshes its telemetry
-  while open, and constrains its tiles to the live viewport at every display
-  scale. ([#95](https://github.com/OSSBlade/openblade-core/pull/95))
-- Restored the last confirmed charge limit when a debounced tray edit cannot be
-  applied, while preserving a newer edit made during an in-flight request. ([#147](https://github.com/OSSBlade/openblade-core/pull/147))
-- Preserved configured special-key bindings through transient preference-file
-  locks and retried the unchanged file after access recovered. ([#147](https://github.com/OSSBlade/openblade-core/pull/147))
-- Reconnected status and lighting streams after temporary capacity rejection,
-  kept Ambient Awareness and Audio Meter on one shared frame connection, and
-  reserved four named-pipe listeners for ordinary control requests even when
-  all supported persistent streams are connected. ([#147](https://github.com/OSSBlade/openblade-core/pull/147))
-- Bounded Core Audio shutdown waits without releasing COM resources still in use,
-  and prevented cleared or trimmed input queues from accumulating empty worker
-  wakeups. ([#147](https://github.com/OSSBlade/openblade-core/pull/147))
-- Synchronized the microphone-mute key indicator with Windows at Session Agent
-  startup and after later mute or default capture-endpoint changes. Playback-mute
-  indicator updates now pause while hardware writes are blocked and resume after
-  fresh service status. ([#134](https://github.com/OSSBlade/openblade-core/pull/134))
-- Indeterminate hardware writes are now shown as unconfirmed instead of as
-  external changes. OpenBlade blocks retries until a read-only current-state
-  check confirms the result or identifies a real mismatch. ([#128](https://github.com/OSSBlade/openblade-core/pull/128))
-- Stopped OpenBlade's keyboard renderer from fighting Razer Synapse when
-  **Override external lighting changes** is off. OpenBlade now stops its frame
-  stream without closing the lighting port or changing keyboard Driver mode,
-  keeps a fresh manual lighting action active, preserves recovery state when
-  controller detection is temporarily incomplete, and reflects the active
-  user's saved toggle after sign-in without attributing warning-only unavailable
-  lighting to Synapse. ([#126](https://github.com/OSSBlade/openblade-core/pull/126))
-- Prompted for administrator approval when **Shut down completely** is chosen
-  from the normal tray, while keeping the tray and Session Agent unelevated,
-  and added a troubleshooting action that starts the stopped service again. ([#122](https://github.com/OSSBlade/openblade-core/pull/122))
-- Prevented the first nightly after a product-version change from replaying
-  entries already published under the preceding version when its generated
-  changelog pull request is still outstanding. ([#117](https://github.com/OSSBlade/openblade-core/pull/117))
-- Prevented idle NVIDIA GPUs from being woken by clock-offset status reads after
-  GPU tuning had already been applied, disabled, or left behind on another
-  power profile. Managed offsets are revalidated after resume, while a disabled
-  reset is confirmed once without turning unmanaged profile reads into NVIDIA
-  polls. Unmanaged transitions intentionally do not wake NVIDIA to reset
-  offsets, so driver-held values may remain applied while OpenBlade stops
-  reporting them, until tuning is managed again or the driver reloads. A live
-  reading outside OpenBlade's admitted range is now reported as unavailable
-  instead of being replaced by an older cached value. ([#113](https://github.com/OSSBlade/openblade-core/pull/113))
-- Showed the effective **Off** defaults for Gaming mode's Windows-key and
-  Alt+Tab blocks instead of presenting missing profile overrides as **Not set**. ([#106](https://github.com/OSSBlade/openblade-core/pull/106))
-- Fixed `IPC request body is invalid` errors and rejected profile saves after
-  editing GPU clock tuning from a legacy profile. ([#108](https://github.com/OSSBlade/openblade-core/pull/108))
-- Made dashboard Power mode subcards neutral at rest while preserving the
-  standard hover highlight for GPU tuning and Custom CPU/GPU rows. ([#108](https://github.com/OSSBlade/openblade-core/pull/108))
+- Fix the quick-controls popup's blank black opening frame, raw lighting option text, missing fan icon, clipped controls and truncated status labels. The popup also opens and closes with matching 200 ms motion, dismisses after an outside click, refreshes telemetry while open, and fits its tiles at every display scale. ([#95](https://github.com/OSSBlade/openblade-core/pull/95))
+- Restore the last confirmed charge limit when a tray edit cannot be applied, and keep any newer edit made meanwhile. ([#147](https://github.com/OSSBlade/openblade-core/pull/147))
+- Keep special-key bindings when the preference file is briefly locked, and retry once it is available. ([#147](https://github.com/OSSBlade/openblade-core/pull/147))
+- Reconnect status and lighting streams after a temporary capacity rejection, and let Ambient Awareness and Audio Meter share one frame connection. ([#147](https://github.com/OSSBlade/openblade-core/pull/147))
+- Fix Core Audio shutdown waits and empty input-queue wakeups piling up. ([#147](https://github.com/OSSBlade/openblade-core/pull/147))
+- Sync the microphone-mute key indicator with Windows at Session Agent startup and after mute or default capture-device changes. Playback-mute indicator updates pause while hardware writes are blocked and resume after fresh service status. ([#134](https://github.com/OSSBlade/openblade-core/pull/134))
+- Show hardware writes with an unknown result as unconfirmed instead of as external changes. Retries wait until a read-only check confirms the result or finds a real mismatch. ([#128](https://github.com/OSSBlade/openblade-core/pull/128))
+- Stop OpenBlade's keyboard renderer from fighting Razer Synapse when **Override external lighting changes** is off. A fresh manual lighting action stays active, and the saved toggle follows the signed-in user. ([#126](https://github.com/OSSBlade/openblade-core/pull/126))
+- Prompt for administrator approval when **Shut down completely** is chosen from the normal tray, and add a troubleshooting action that starts the stopped service again. ([#122](https://github.com/OSSBlade/openblade-core/pull/122))
+- Stop the first nightly after a product-version change from repeating entries already published under the previous version. ([#117](https://github.com/OSSBlade/openblade-core/pull/117))
+- Stop clock-offset status reads from waking an idle NVIDIA GPU once GPU tuning is applied, disabled or left on another power profile. Managed offsets are rechecked after resume. When tuning is unmanaged, driver-held offsets may stay applied without being reported until tuning is managed again or the driver reloads. A live reading outside the admitted range now shows as unavailable instead of an older cached value. ([#113](https://github.com/OSSBlade/openblade-core/pull/113))
+- Show the effective **Off** defaults for Gaming mode's Windows-key and Alt+Tab blocks instead of **Not set**. ([#106](https://github.com/OSSBlade/openblade-core/pull/106))
+- Fix `IPC request body is invalid` errors and rejected profile saves after editing GPU clock tuning from a legacy profile. ([#108](https://github.com/OSSBlade/openblade-core/pull/108))
+- Make dashboard Power mode subcards neutral at rest, with the standard hover highlight for GPU tuning and Custom CPU/GPU rows. ([#108](https://github.com/OSSBlade/openblade-core/pull/108))
 
 ## [0.1.0-nightly.11] - 2026-08-08
 
 ### Changed
 
-- Simplified the official firmware version card with a clearer **Latest**
-  column and a consistent action row for the model's Razer support page. ([#102](https://github.com/OSSBlade/openblade-core/pull/102))
+- Simplify the official firmware version card with a clearer **Latest** column and a consistent action row for the model's Razer support page. ([#102](https://github.com/OSSBlade/openblade-core/pull/102))
 
 ### Fixed
 
-- Folded GPU clock offsets under their tuning toggle, removed the persistent
-  nested-card highlight, and placed dashboard slider values beside their
-  sliders to keep the cards compact while retaining their circular thumbs. ([#57](https://github.com/OSSBlade/openblade-core/pull/57))
-- Restored the function-row keyboard-brightness controls on the Razer Blade 16
-  RZ09-0581 by advertising the already-admitted brightness command through the
-  exact-device lighting capability, and exposed that capability in diagnostic
-  archives. ([#97](https://github.com/OSSBlade/openblade-core/pull/97))
-- Kept full-power AC fan controls available in every supported performance
-  mode, preserving performance intent through the confirmed Balanced/Automatic
-  bridge required for fixed speeds, maximum fans, and manual fan curves. ([#90](https://github.com/OSSBlade/openblade-core/pull/90))
-- Distinguished intentional service stops from unexpected exits with a
-  durable run marker. SCM restarts now observe exact-device state before any
-  recovery write, retain external-change latches and persistent override
-  intent without ordinary profile writes, restore only eligible owned fan and
-  lighting producers, and start a manual fan curve at a fresh thermally safe
-  target that falls back to maximum speed when CPU telemetry is unavailable.
-  Recovery on multi-user installs now waits for the active user's saved intent
-  instead of comparing retained hardware state with the machine bootstrap, and
-  rechecks session, power, controller, and lighting state before recovery writes.
-  A signed-out restart on full AC or battery now establishes one device-admitted
-  maximum fan target when retained firmware state is manual, then safely hands
-  that owned floor back to Automatic on USB-C without an unbounded retry loop.
-  A manual state first observed on USB-C remains unchanged until ownership can
-  be established on a compatible source.
-  In-process failures still attempt bounded hardware cleanup, while markers
-  from an earlier Windows boot no longer suppress ordinary startup profiles. ([#79](https://github.com/OSSBlade/openblade-core/pull/79))
-- Stopped install and repair before Apply when another OpenBlade bundle has the
-  same four-part version, preventing cached related bundles from recursively
-  removing each other. Setup also rejects machines that already contain
-  several related bundle registrations, including mixed older and newer
-  versions, instead of launching their legacy installers into the same cycle.
-  Interactive setup reports the conflict during detection while retaining an
-  available Uninstall escape hatch. Exact development builds must use ordered
-  Nightly revisions for transactional replacement. ([#103](https://github.com/OSSBlade/openblade-core/pull/103))
+- Fold GPU clock offsets under their tuning toggle, remove the persistent nested-card highlight, and place dashboard slider values beside their sliders. ([#57](https://github.com/OSSBlade/openblade-core/pull/57))
+- Restore the function-row keyboard-brightness controls on the Razer Blade 16 RZ09-0581 and include them in diagnostic archives. ([#97](https://github.com/OSSBlade/openblade-core/pull/97))
+- Keep full-power AC fan controls available in every supported performance mode, including fixed speeds, maximum fans and manual fan curves. ([#90](https://github.com/OSSBlade/openblade-core/pull/90))
+- Tell intentional service stops from unexpected exits. After an unexpected restart, OpenBlade checks the laptop's state before writing anything, restores only the fan and lighting settings it owns, and starts a manual fan curve at a safe target (maximum speed if CPU temperature is unavailable). On multi-user installs it waits for the active user's saved settings. A signed-out restart on full AC or battery holds fans at maximum if firmware was left in manual, then returns them to Automatic on USB-C. Markers from an earlier Windows boot no longer block startup profiles. ([#79](https://github.com/OSSBlade/openblade-core/pull/79))
+- Stop install and repair before Apply when another OpenBlade bundle has the same four-part version, and reject machines that already have several related bundle registrations. Interactive setup reports the conflict and still offers Uninstall. Exact development builds must use ordered Nightly revisions. ([#103](https://github.com/OSSBlade/openblade-core/pull/103))
 
 ## [0.1.0-nightly.10] - 2026-08-07
 
 ### Added
 
-- Added per-user notification controls for performance and power-profile changes,
-  app and Razer firmware updates, controller advisories, and operation failures.
-  Repeated toasts are coalesced, update versions notify once, and opening a
-  notification routes to the relevant OpenBlade status while durable errors and
-  advisories remain available in the app. ([#78](https://github.com/OSSBlade/openblade-core/pull/78))
+- Add per-user notification controls for performance and power-profile changes, app and Razer firmware updates, controller advisories and operation failures. Repeated toasts are combined, update versions notify once, and opening a notification goes to the relevant OpenBlade status. ([#78](https://github.com/OSSBlade/openblade-core/pull/78))
 
 ### Fixed
 
-- Made function-row brightness failures identify the logical key action,
-  recorded sanitized and deduplicated exact-device session failures for every
-  lighting open path, and added the active function-key and keyboard
-  Driver-mode state to diagnostic archives. ([#92](https://github.com/OSSBlade/openblade-core/pull/92))
-- Kept newly applied Power mode and Custom CPU/GPU selections from briefly
-  reverting after the progress spinner finishes while confirmed status catches
-  up. ([#88](https://github.com/OSSBlade/openblade-core/pull/88))
-- Aligned MCU versions in the README hardware table with Razer's updater label
-  format. ([#85](https://github.com/OSSBlade/openblade-core/pull/85))
-- Dismissed the dashboard warning flyout when its underlying status clears,
-  preventing a mostly empty popup after reapplying settings or accepting an
-  incompatible firmware override. ([#81](https://github.com/OSSBlade/openblade-core/pull/81))
-- Offered **Use profile settings** when another app changes the keyboard effect
-  to a value that firmware cannot read back, allowing the saved profile to be
-  restored without guessing the active effect. ([#83](https://github.com/OSSBlade/openblade-core/pull/83))
+- Name the key action in function-row brightness failures, and add the function-key and keyboard Driver-mode state to diagnostic archives. ([#92](https://github.com/OSSBlade/openblade-core/pull/92))
+- Stop newly applied Power mode and Custom CPU/GPU selections from briefly reverting after the progress spinner finishes. ([#88](https://github.com/OSSBlade/openblade-core/pull/88))
+- Match MCU versions in the README hardware table to Razer's updater label format. ([#85](https://github.com/OSSBlade/openblade-core/pull/85))
+- Close the dashboard warning flyout when its status clears, instead of leaving a mostly empty popup. ([#81](https://github.com/OSSBlade/openblade-core/pull/81))
+- Offer **Use profile settings** when another app changes the keyboard effect to a value firmware can't read back, so the saved profile can be restored. ([#83](https://github.com/OSSBlade/openblade-core/pull/83))
 
 ## [0.1.0-nightly.9] - 2026-08-06
 
 ### Added
 
-- Added Razer Blade 16 RZ09-0581 BIOS 4.00 to the tested production firmware
-  set while retaining BIOS 3.01 support and keeping other BIOS versions behind
-  the explicit untested-firmware override. ([#71](https://github.com/OSSBlade/openblade-core/pull/71))
-- Added a graphical installer that follows the Windows app theme, keeps a fixed
-  compact progress view with expandable wrapped details for file, registry,
-  shortcut, and service activity, asks before replacing a newer local version,
-  and offers **Launch OpenBlade** after install or repair. It consistently uses
-  the installer artwork and **OpenBlade Setup** identity, labels version-removal
-  work clearly, avoids stale equal-version replacement cycles, and gives quiet
-  and embedded installs a valid native apply owner. ([#69](https://github.com/OSSBlade/openblade-core/pull/69))
+- Add Razer Blade 16 RZ09-0581 BIOS 4.00 to the tested firmware set alongside BIOS 3.01. Other BIOS versions need the untested-firmware override. ([#71](https://github.com/OSSBlade/openblade-core/pull/71))
+- Add a graphical installer that follows the Windows app theme. It shows a compact progress view with expandable details, asks before replacing a newer version, and offers **Launch OpenBlade** after install or repair. It uses the **OpenBlade Setup** name and artwork throughout, and works for quiet and embedded installs. ([#69](https://github.com/OSSBlade/openblade-core/pull/69))
 
 ### Fixed
 
-- Fixed the Tray terminating at startup when loading the new GPU tuning card's
-  description style. ([#57](https://github.com/OSSBlade/openblade-core/pull/57))
+- Fix the Tray closing at startup when loading the GPU tuning card's description style. ([#57](https://github.com/OSSBlade/openblade-core/pull/57))
 
 ## [0.1.0-nightly.8] - 2026-08-06
 
 ### Changed
 
-- Generalized the developer firmware-smoke workflow for BIOS, EC, MCU, and
-  VBIOS updates. Pre-update rehearsals now declare and verify the components
-  under test, operator confirmation uses `<MODEL>-FIRMWARE-SMOKE`, and reports
-  use `firmware.inventory.available` instead of `firmware.mcu.available`. ([#68](https://github.com/OSSBlade/openblade-core/pull/68))
-- Simplified the tray right-click menu to **Open** and **Exit**. Exiting now
-  asks whether to leave keyboard lighting, hotkeys, profiles, and automation
-  running in the background or shut down OpenBlade completely. ([#36](https://github.com/OSSBlade/openblade-core/pull/36))
-- Gave the OpenBlade installer a dedicated adaptive file and taskbar icon with
-  a Blade-green download badge, while retaining the existing installed-app
-  identity. ([#69](https://github.com/OSSBlade/openblade-core/pull/69))
+- Generalize the developer firmware-smoke workflow for BIOS, EC, MCU and VBIOS updates. Pre-update rehearsals declare the components under test, operator confirmation uses `<MODEL>-FIRMWARE-SMOKE`, and reports use `firmware.inventory.available` instead of `firmware.mcu.available`. ([#68](https://github.com/OSSBlade/openblade-core/pull/68))
+- Simplify the tray right-click menu to **Open** and **Exit**. Exit asks whether to keep keyboard lighting, hotkeys, profiles and automation running in the background or shut OpenBlade down completely. ([#36](https://github.com/OSSBlade/openblade-core/pull/36))
+- Give the OpenBlade installer its own adaptive file and taskbar icon with a Blade-green download badge. ([#69](https://github.com/OSSBlade/openblade-core/pull/69))
 
 ### Fixed
 
-- Presented the installed MCU firmware consistently in Device information and
-  the official firmware card while preserving the raw version for diagnostics
-  and compatibility checks. ([#64](https://github.com/OSSBlade/openblade-core/pull/64))
-- Made **Start at sign-in** reflect the effective all-users Tray launcher and
-  honor a per-user opt-out while keeping the Session Agent running at sign-in. ([#67](https://github.com/OSSBlade/openblade-core/pull/67))
-- Reported a recognized laptop with incompatible firmware as **Incompatible
-  firmware** instead of also showing the contradictory **Laptop not found**
-  state, using the service's exact BIOS admission result rather than unrelated
-  EC or MCU version notices. Disabling the override now also relinquishes any
-  owned reactive or ambient lighting renderer immediately, including after a
-  transient post-identity probe failure. ([#55](https://github.com/OSSBlade/openblade-core/pull/55))
-- Tightened the official firmware card into aligned header, interval, version,
-  and footer sections, and displayed decoded MCU versions in the same release
-  format used by Razer's updater labels. ([#59](https://github.com/OSSBlade/openblade-core/pull/59))
-- Fixed Custom performance controls not appearing until a mode switch when the
-  tray starts with Custom mode already active. ([#31](https://github.com/OSSBlade/openblade-core/pull/31))
-- Recorded the combined hardware-cleanup result during every graceful service
-  stop so deliberate safety skips remain diagnosable without warning noise. ([#39](https://github.com/OSSBlade/openblade-core/pull/39))
-- Restored firmware-managed Automatic fan control during a graceful service
-  stop when the current service instance owns a fixed, maximum, or
-  service-rendered fan curve, while retaining the saved fan intent for the next
-  service start and leaving first-observed or Synapse-owned fan state unchanged. ([#16](https://github.com/OSSBlade/openblade-core/pull/16))
-- Let a returning console session recover control through safe status polling
-  without allowing inactive sessions to invoke hardware observation. ([#14](https://github.com/OSSBlade/openblade-core/pull/14))
-- Kept the service IPC listener alive when a local client connects but stalls
-  before sending its first request or receiving a malformed-request response. ([#14](https://github.com/OSSBlade/openblade-core/pull/14))
-- Prevented inactive and Remote Desktop sessions from invoking write-capable
-  hardware observation while retaining redacted status and subscriptions. ([#14](https://github.com/OSSBlade/openblade-core/pull/14))
-- Repaired the all-users Tray startup shortcut during every install and repair
-  so upgrades cannot leave newly signed-in users without OpenBlade. ([#14](https://github.com/OSSBlade/openblade-core/pull/14))
-- Reapplied the newly active user's keyboard-lighting profile during Fast User
-  Switching instead of misclassifying the prior user's lighting as an external
-  change, including an A-to-B-to-A round trip. ([#14](https://github.com/OSSBlade/openblade-core/pull/14))
-- Started the visible tray for every signed-in user from the all-users Startup
-  folder while safely migrating the installing user's legacy startup link. ([#14](https://github.com/OSSBlade/openblade-core/pull/14))
-- Fixed multi-user builds failing their installer health check because Windows
-  named-pipe impersonation ran before the service read the client's request. ([#14](https://github.com/OSSBlade/openblade-core/pull/14))
-- Kept background-user trays connected during Fast User Switching with
-  user-specific status fields redacted, restored control without a tray
-  restart, authorized subscriptions before consuming a bounded lease, and
-  reduced the steady-state request path to one fail-closed console-session
-  lookup, with a second check only when committing a user switch. Remote
-  Desktop sessions are explicitly read-only. ([#14](https://github.com/OSSBlade/openblade-core/pull/14))
-- Kept the legacy per-user Session Agent startup link until its replacement is
-  created successfully, and moved first-use Dynamic Lighting identity
-  registration off the Session Agent's startup-critical path. ([#14](https://github.com/OSSBlade/openblade-core/pull/14))
-- Kept applied dashboard Power mode and Custom CPU/GPU selections stable while
-  service status catches up, restored the previous selection after real
-  failures, and disabled fixed/manual fan choices until the required Balanced
-  Automatic baseline is confirmed. ([#34](https://github.com/OSSBlade/openblade-core/pull/34))
+- Show the installed MCU firmware version the same way in Device information and the official firmware card. ([#64](https://github.com/OSSBlade/openblade-core/pull/64))
+- Make **Start at sign-in** reflect the all-users Tray launcher and honor a per-user opt-out. The Session Agent still starts at sign-in. ([#67](https://github.com/OSSBlade/openblade-core/pull/67))
+- Show **Incompatible firmware** for a recognized laptop with incompatible firmware, instead of also showing **Laptop not found**. Turning off the override now also stops any reactive or ambient lighting renderer right away. ([#55](https://github.com/OSSBlade/openblade-core/pull/55))
+- Tighten the official firmware card into aligned header, interval, version and footer sections, and show MCU versions in the format Razer's updater uses. ([#59](https://github.com/OSSBlade/openblade-core/pull/59))
+- Fix Custom performance controls not appearing until a mode switch when the tray starts in Custom mode. ([#31](https://github.com/OSSBlade/openblade-core/pull/31))
+- Record the hardware-cleanup result on every graceful service stop so skipped cleanups can be diagnosed. ([#39](https://github.com/OSSBlade/openblade-core/pull/39))
+- Return fans to firmware Automatic on a graceful service stop when the service set a fixed, maximum or curve fan mode. The saved fan setting is kept for the next start, and fan state set by Synapse is left alone. ([#16](https://github.com/OSSBlade/openblade-core/pull/16))
+- Let a returning console session regain control through safe status polling. ([#14](https://github.com/OSSBlade/openblade-core/pull/14))
+- Keep the service listener running when a local client connects but stalls or sends a malformed request. ([#14](https://github.com/OSSBlade/openblade-core/pull/14))
+- Keep inactive and Remote Desktop sessions from running write-capable hardware observation. ([#14](https://github.com/OSSBlade/openblade-core/pull/14))
+- Repair the all-users Tray startup shortcut on every install and repair, so upgrades don't leave newly signed-in users without OpenBlade. ([#14](https://github.com/OSSBlade/openblade-core/pull/14))
+- Reapply the newly active user's keyboard-lighting profile during Fast User Switching instead of treating the previous user's lighting as an external change. ([#14](https://github.com/OSSBlade/openblade-core/pull/14))
+- Start the visible tray for every signed-in user from the all-users Startup folder, and migrate the installing user's old startup link. ([#14](https://github.com/OSSBlade/openblade-core/pull/14))
+- Fix multi-user builds failing the installer health check. ([#14](https://github.com/OSSBlade/openblade-core/pull/14))
+- Keep background-user trays connected during Fast User Switching, with user-specific status hidden, and restore control without a tray restart. Remote Desktop sessions are read-only. ([#14](https://github.com/OSSBlade/openblade-core/pull/14))
+- Keep the old per-user Session Agent startup link until its replacement is created, and move first-use Dynamic Lighting identity registration off the Session Agent's startup path. ([#14](https://github.com/OSSBlade/openblade-core/pull/14))
+- Keep applied dashboard Power mode and Custom CPU/GPU selections stable while status catches up, restore the previous selection after real failures, and disable fixed and manual fan choices until Balanced Automatic is confirmed. ([#34](https://github.com/OSSBlade/openblade-core/pull/34))
 
 ### Added
 
-- Added a separate GPU tuning switch and clock-offset controls for plugged-in
-  profiles. Offsets now work with Balanced and other power modes, while
-  existing Custom-mode settings migrate automatically. Exact Razer Blade 16
-  RZ09-0581 systems use the Synapse-visible policy ranges regardless of BIOS
-  version, with NVIDIA capability and readback checks gating every write. ([#57](https://github.com/OSSBlade/openblade-core/pull/57))
-- Added exact-source changelog snapshots to nightly prereleases. After each
-  successful publication, the workflow reconstructs any unrecorded nightly
-  boundaries and opens or updates a guarded draft documentation pull request
-  while preserving changes merged after the build under `Unreleased`. A
-  malformed or temporarily inconsistent changelog no longer prevents the
-  installer and checksum from being published. ([#48](https://github.com/OSSBlade/openblade-core/pull/48))
-- Added optional Audio Meter smoothing for quieter moments and brief pauses while
-  keeping louder responses immediate. Existing profiles keep the current
-  unsmoothed behavior;
-  service IPC is now version 35, stored profiles use schema 9, and profile
-  exports use schema 5. ([#53](https://github.com/OSSBlade/openblade-core/pull/53))
-- Added an explicit per-user firmware compatibility override to the warning
-  popup and Settings. The override keeps exact laptop and USB identity checks
-  enabled while allowing an untested firmware baseline. Service IPC is now
-  version 36. ([#55](https://github.com/OSSBlade/openblade-core/pull/55))
-- Added multi-user Windows support. The LocalSystem service authenticates each
-  named-pipe client from its Windows token, permits hardware mutation only from
-  the active interactive session, keeps profiles and persistent overrides
-  isolated by user SID, migrates the legacy owner's saved configuration, and
-  starts the per-session Session Agent for every user. The agent registers its
-  Dynamic Lighting identity on first use and relaunches once under that
-  identity. Tray and Session Agent endpoints now include the Windows session
-  ID, background sessions lose control without exposing another user's
-  profiles, service shutdown requires an administrator, and service IPC is now
-  version 34. ([#45](https://github.com/OSSBlade/openblade-core/pull/45))
+- Add a separate GPU tuning switch and clock-offset controls for plugged-in profiles. Offsets work with Balanced and other power modes, and existing Custom-mode settings migrate automatically. Razer Blade 16 RZ09-0581 uses the Synapse-visible policy ranges on any BIOS version. ([#57](https://github.com/OSSBlade/openblade-core/pull/57))
+- Add changelog snapshots to nightly prereleases. After each publication, the workflow records any unrecorded nightly boundaries in a draft documentation pull request. Changes merged after the build stay under `Unreleased`, and a malformed changelog no longer blocks publishing the installer. ([#48](https://github.com/OSSBlade/openblade-core/pull/48))
+- Add optional Audio Meter smoothing for quieter moments and brief pauses. Louder responses stay immediate and existing profiles keep the current behavior. Service IPC is now version 35, stored profiles use schema 9, and profile exports use schema 5. ([#53](https://github.com/OSSBlade/openblade-core/pull/53))
+- Add a per-user firmware compatibility override to the warning popup and Settings. It allows an untested firmware baseline while laptop and USB identity checks stay on. Service IPC is now version 36. ([#55](https://github.com/OSSBlade/openblade-core/pull/55))
+- Add multi-user Windows support. Only the active interactive session can change hardware, each user keeps separate profiles and overrides, and the previous owner's saved configuration migrates. The Session Agent starts for every user, and background sessions lose control without seeing another user's profiles. Shutting down the service needs an administrator, and service IPC is now version 34. ([#45](https://github.com/OSSBlade/openblade-core/pull/45))
 
 ## [0.1.0-nightly.6] - 2026-08-04
 
 ### Added
 
-- Added a read-only firmware assistant for admitted Blade models that shows
-  installed BIOS, EC, and MCU values beside versions published on the model's
-  official Razer support page without downloading or running firmware tools,
-  with a separate user-configurable check interval. ([#45](https://github.com/OSSBlade/openblade-core/pull/45))
-- Added read-only resume validation records to diagnostic bundles. OpenBlade
-  now compares confirmed pre-suspend and post-resume control state, names any
-  changed subsystems, and does not add validation-driven recovery writes.
-  Diagnostics separately disclose the existing owned-lighting restoration and
-  whether that lifecycle action applied a control write. Pending validation is
-  discarded after one minute or an unrelated post-resume power-source change. ([#45](https://github.com/OSSBlade/openblade-core/pull/45))
+- Add a read-only firmware assistant for supported Blade models. It shows installed BIOS, EC and MCU versions beside the versions on the model's Razer support page, with its own check interval. It downloads and runs nothing. ([#45](https://github.com/OSSBlade/openblade-core/pull/45))
+- Add read-only resume validation records to diagnostic bundles. They compare control state before suspend and after resume and name any subsystems that changed. Diagnostics also report the existing owned-lighting restoration. ([#45](https://github.com/OSSBlade/openblade-core/pull/45))
 
 ## [0.1.0-nightly.5] - 2026-08-03
 
 ### Changed
 
-- Reduced idle CPU wakeups by replacing hidden live-reading polling with a
-  rate-limited on-hover refresh, retaining the last reading between hovers,
-  and applying EcoQoS plus an efficient processor selection to the hidden tray
-  UI thread when Windows reports a hybrid topology. Service and Session Agent
-  scheduling remains under Windows control so latency-sensitive hardware and
-  input work can use any processor. ([813f0820](https://github.com/OSSBlade/openblade-core/commit/813f0820))
+- Reduce idle CPU wakeups: the hidden tray now refreshes live readings only on hover and keeps the last reading between hovers, and it runs on efficient processors on hybrid CPUs. ([813f0820](https://github.com/OSSBlade/openblade-core/commit/813f0820))
 
 ### Fixed
 
-- Added a Launch action after successful graphical install or repair so a
-  normally started upgrade does not leave the Tray and Session Agent stopped
-  until the next sign-in. The launched processes inherit the installer's user
-  context. Quiet callers still relaunch the installed Tray explicitly; the
-  Partner Center-owned Store path remains tracked in issue #25. ([#24](https://github.com/OSSBlade/openblade-core/pull/24))
-- Made rapid performance-key presses replace the visible Windows notification
-  so it immediately reflects the newest selected mode instead of queuing stale
-  profile changes. ([#32](https://github.com/OSSBlade/openblade-core/pull/32))
-- Kept manual and automatic update checks nonfatal when the computer is
-  offline, with a clear connectivity status and bounded retry delay. ([#5](https://github.com/OSSBlade/openblade-core/pull/5))
-- Fixed the graphical uninstaller so it detects a same-version OpenBlade
-  payload and runs the product uninstall before removing its own registration. ([#5](https://github.com/OSSBlade/openblade-core/pull/5))
-- Fixed tray-hover telemetry from waking hidden WinUI presentation work after
-  the tooltip was refreshed. Unchanged service metadata now updates only the
-  tray label until the dashboard becomes visible again. ([9f42387f](https://github.com/OSSBlade/openblade-core/commit/9f42387f))
-- Fixed the RZ09-0581 firmware-smoke capability gate to recognize the admitted
-  Audio Meter lighting effect. ([99030c1f](https://github.com/OSSBlade/openblade-core/commit/99030c1f))
-- Fixed app accent changes in Light and Dark modes by keeping both WinUI's
-  live accent brushes and its theme resource dictionaries synchronized. ([#1](https://github.com/OSSBlade/openblade-core/pull/1))
-- Fixed Ambient Awareness so a failed screen-capture resource is disposed and
-  recreated automatically instead of remaining faulted until the Session Agent
-  restarts or the selected region changes. ([#1](https://github.com/OSSBlade/openblade-core/pull/1))
-- Fixed M1 and M2 shortcut selection so the action handler uses the binding's
-  typed key slot rather than its screen-reader label. ([#1](https://github.com/OSSBlade/openblade-core/pull/1))
-- Fixed normal M5 microphone mute handling after Session Agent startup so the
-  Windows mute toggle and the key's red indicator use a shared, collision-free
-  Core Audio enumerator activation path. ([#1](https://github.com/OSSBlade/openblade-core/pull/1))
-- Fixed RZ09-0581 M1 and M2 custom shortcuts so the low-level keyboard hook
-  dispatches each assigned action before suppressing the accompanying Page Up
-  or Page Down key, while retaining Raw Input as a hook-recovery fallback. ([#1](https://github.com/OSSBlade/openblade-core/pull/1))
+- Add a Launch action after a successful graphical install or repair, so a normally started upgrade no longer leaves the Tray and Session Agent stopped until the next sign-in. Quiet installs still relaunch the Tray explicitly. ([#24](https://github.com/OSSBlade/openblade-core/pull/24))
+- Fix rapid performance-key presses queuing stale notifications. The Windows notification now shows the newest selected mode. ([#32](https://github.com/OSSBlade/openblade-core/pull/32))
+- Fix update checks failing when the computer is offline. They now show a connectivity status and retry later. ([#5](https://github.com/OSSBlade/openblade-core/pull/5))
+- Fix the graphical uninstaller not detecting a same-version OpenBlade install. ([#5](https://github.com/OSSBlade/openblade-core/pull/5))
+- Fix tray hover waking hidden UI work after the tooltip refreshed. ([9f42387f](https://github.com/OSSBlade/openblade-core/commit/9f42387f))
+- Fix the RZ09-0581 firmware smoke test not recognizing the Audio Meter lighting effect. ([99030c1f](https://github.com/OSSBlade/openblade-core/commit/99030c1f))
+- Fix app accent changes in Light and Dark modes. ([#1](https://github.com/OSSBlade/openblade-core/pull/1))
+- Fix Ambient Awareness staying broken after a screen-capture failure until the Session Agent restarted or the region changed. It now recovers automatically. ([#1](https://github.com/OSSBlade/openblade-core/pull/1))
+- Fix M1 and M2 shortcut selection using the binding's screen-reader label. ([#1](https://github.com/OSSBlade/openblade-core/pull/1))
+- Fix M5 microphone mute handling after Session Agent startup, so the Windows mute toggle and the key's red indicator both work. ([#1](https://github.com/OSSBlade/openblade-core/pull/1))
+- Fix RZ09-0581 M1 and M2 custom shortcuts so each assigned action runs before the accompanying Page Up or Page Down key is suppressed. ([#1](https://github.com/OSSBlade/openblade-core/pull/1))
 
 ### Added
 
-- Licensed OpenBlade under the GNU General Public License version 3 or later. ([#5](https://github.com/OSSBlade/openblade-core/pull/5))
-- Added an uninstall choice to keep saved profiles and settings by default or
-  remove them explicitly from the graphical maintenance screen. ([#5](https://github.com/OSSBlade/openblade-core/pull/5))
+- License OpenBlade under the GNU General Public License version 3 or later. ([#5](https://github.com/OSSBlade/openblade-core/pull/5))
+- Add an uninstall choice to keep saved profiles and settings (the default) or remove them. ([#5](https://github.com/OSSBlade/openblade-core/pull/5))
 
-- Added a **Reapply OpenBlade settings** action for controls changed outside
-  OpenBlade. It resolves the active profile and manual overrides, writes only
-  the affected hardware subsystems, and clears each warning only after
-  confirmed recovery. When manual fan control prevents safe Power mode
-  recovery, it leaves the warning in place and explains how to proceed rather
-  than attempting an unvalidated multi-write thermal transition. Service IPC
-  is now version 33. ([bfe066ba](https://github.com/OSSBlade/openblade-core/commit/bfe066ba))
-- Added daily and manually dispatched nightly installers from committed `main`,
-  with the full CI and production-publish gates, ordered upgrade-safe build
-  versions, 14-day artifact retention, GitHub prereleases, SHA-256 metadata,
-  and optional GitHub build provenance when enabled on a supported repository.
-  The About page can check either the Stable or Nightly release channel. ([#5](https://github.com/OSSBlade/openblade-core/pull/5))
-- Added host-rendered Audio Meter keyboard lighting to the Razer Blade 16
-  (2026), `RZ09-0581`. ([#1](https://github.com/OSSBlade/openblade-core/pull/1))
-- Added exact-device keyboard-brightness support for the Razer Blade 16
-  `RZ09-0528`, USB `1532:02C6`, on BIOS `2.02`. Admission is limited to the
-  independently captured and reversibly validated device paths: AC presets and
-  Custom CPU/GPU levels, Automatic/fixed/maximum/host-rendered-curve fans,
-  battery protection and 50–80 percent limits, temporary full charge, keyboard
-  brightness and Off, logo Off/Static/Breathing, startup animation,
-  function-key primary behavior, and Gaming mode. Model-specific CPU Power
-  Limit, CPU Voltage Optimizer, and GPU-overclock policy ranges are surfaced as
-  observed-only capabilities until safe backends and exact readback are
-  validated. Exact PID `02C6` Static and Spectrum are host-rendered over the
-  independently captured six-row, 17-column `03/0B` transport and were admitted
-  only after a committed exact-build round trip acknowledged every transition,
-  independently read brightness, visually confirmed both effects, and restored
-  Static at 50 percent. Starlight, Ripple, Tidal, Wave, and Wheel remain
-  observed-only exact-model capabilities until their parameters and write paths
-  receive the same validation. Windows Dynamic Lighting also exposes
-  the exact keyboard as an 85-lamp, virtual-key-aware LampArray. OpenBlade
-  offers an ownership control that delegates keyboard lighting to Windows.
-  While delegated, every OpenBlade keyboard-lighting producer is blocked in
-  the service and the tray links to Windows lighting settings; OpenBlade does
-  not register a competing background LampArray provider. The Session Agent
-  performs bounded, read-only enumeration
-  only after the service verifies the exact tested firmware tuple, and rejects
-  any array whose 85-lamp geometry fingerprint differs from captured evidence.
-  Its observation source exposes no priority or mutation operation. The
-  model's M1–M5 shortcut surface is also retained as observed-only. Exact PID
-  `02C6` M1–M5 and Fn+P reports are captured, and a model-aware decoder is
-  staged behind the capability gate. Editable bindings stay hidden and the
-  decoder remains inactive until a live OpenBlade round trip is validated.
-  PID `02C6` M4 is explicitly isolated from PID `02E0`'s conflicting D3
-  performance-button interpretation. A bounded exact-device diagnostic also
-  records that Windows denies direct shared reads of both keyboard top-level
-  collections, preventing an unsafe direct-HID fallback from being mistaken
-  for validated special-key access.
-  A separate exact-device GPU offset validator is staged behind host, device,
-  controller-isolation, and exact-confirmation interlocks; it performs an
-  adjacent one-MHz save/set/readback/restore transaction without changing
-  production admission until a live round trip succeeds.
-  Firmware-smoke schema 4 records these observed capabilities separately so an
-  update cannot silently lose them. Diagnostics, About, tested-platform
-  assessment, and firmware smoke now derive the RZ09-0528 / PID `02C6` identity
-  from the verified model instead of displaying or validating the older
-  RZ09-0581 / PID `02E0` target. ([#1](https://github.com/OSSBlade/openblade-core/pull/1))
-- Added exact RZ09-0528 CPU-temperature support using the model-specific
-  `\_SB.PCI0.SBRG.EC0.TZRZ` Windows thermal-zone counter. OpenBlade retains the
-  earlier RZ09-0581 path as a separate explicit candidate and never substitutes
-  an unrelated thermal zone. ([#1](https://github.com/OSSBlade/openblade-core/pull/1))
-- Added GitHub release checks to About with Every startup, Daily, Weekly,
-  Monthly, and Manual only intervals. Checks run at most once during tray
-  startup when due, and available releases open in the user's browser. ([7faa39b4](https://github.com/OSSBlade/openblade-core/commit/7faa39b4))
-- Added battery health to About using Windows' read-only design and full-charge
-  capacity data. If the battery is not ready during service startup, OpenBlade
-  retries after the first successful laptop verification and on later
-  power-source changes while health remains unavailable. Native capture
-  failures are recorded in diagnostics. ([b15e14b7](https://github.com/OSSBlade/openblade-core/commit/b15e14b7))
-- Added a Synapse-style playback mute indicator for the RZ09-0581 keyboard.
-  While Windows audio is muted, OpenBlade keeps the F1 mute key red without
-  replacing the selected lighting effect. Core Audio notifications update the
-  indicator without continuous polling. ([96cfa857](https://github.com/OSSBlade/openblade-core/commit/96cfa857))
-- Added an automated MCU firmware smoke-test workflow. It captures a read-only
-  baseline and diagnostic archive, compares firmware, capabilities, readbacks,
-  telemetry, and installed components after the update, and offers an
-  exact-confirmation reversible rehearsal for performance, fans, battery,
-  lighting, startup animation, function-key behavior, and Gaming mode. ([5312a802](https://github.com/OSSBlade/openblade-core/commit/5312a802))
-- Added a tested system-version catalog for the RZ09-0581, BIOS, EC, and MCU.
-  The Dashboard now warns when detected versions are unverified and links to
-  compatibility details on About without disabling hardware controls. ([b518775f](https://github.com/OSSBlade/openblade-core/commit/b518775f))
-- Added bounded, redacted persistent logs for non-fatal Tray and Session Agent
-  failures. Diagnostic exports now include both user-mode log histories. ([c5352eaf](https://github.com/OSSBlade/openblade-core/commit/c5352eaf))
-- Added a compact, non-activating Windows-style flyout for built-in display
-  brightness changes made with the laptop function keys. ([1da4eea6](https://github.com/OSSBlade/openblade-core/commit/1da4eea6))
-- HDR changes now reconcile the native Windows result with an independent
-  display-state readback. This handles systems that return an access-denied
-  status after applying the requested HDR state, while still failing closed
-  when readback disagrees. A bounded developer validator saves, applies,
-  reads back, and restores the original HDR state. ([#1](https://github.com/OSSBlade/openblade-core/pull/1))
-- About now lists the installed app, Session Agent, and Service build
-  versions, including each component's commit hash. ([c9b444ba](https://github.com/OSSBlade/openblade-core/commit/c9b444ba))
-- Added a session-local function-row bridge for validated RZ09-0581 Driver
-  mode. It reconstructs volume, playback, Project, Print Screen, built-in
-  display brightness, and keyboard brightness behavior while preserving the
-  configured Function keys or Multimedia keys primary layer. ([07c823c7](https://github.com/OSSBlade/openblade-core/commit/07c823c7))
-- Added the confirmed keyboard Driver-mode state to Troubleshooting. ([07c823c7](https://github.com/OSSBlade/openblade-core/commit/07c823c7))
-- Added NVIDIA GPU core and memory clock offsets to Custom power mode. OpenBlade
-  reads the supported ranges from the installed NVIDIA driver, applies changes
-  through NVML, confirms readback, and saves explicit offsets in profiles,
-  overrides, imports, and exports. ([5f4d4280](https://github.com/OSSBlade/openblade-core/commit/5f4d4280))
-- Added persistent M1 through M5 Fn-layer bindings on the Laptop page. The
-  always-running Session Agent can execute keyboard shortcuts, mouse and media
-  actions, microphone mute, app or website launch, text entry, and OpenBlade
-  power, Gaming mode, or lighting actions while preserving each key's default
-  behavior until the user overrides it. ([34ca723d](https://github.com/OSSBlade/openblade-core/commit/34ca723d))
-- Added repository guidance for future contributors and AI agents, including a
-  codebase map, hardware-safety boundaries, component deployment rules,
-  Semantic Versioning, schema and IPC migration policy, and Conventional
-  Commit formatting. ([34ca723d](https://github.com/OSSBlade/openblade-core/commit/34ca723d))
-- Added local tray crash reports under `%LocalAppData%\OpenBlade\Crashes` with
-  version, runtime, process context, exception details, and stack traces. The
-  reporter retains the newest 20 files and never suppresses the original
-  failure. ([0af9cb99](https://github.com/OSSBlade/openblade-core/commit/0af9cb99))
-- Added the same retained fatal crash reports to the always-running Session
-  Agent, including failures from any of its coordinated background loops. ([18b8efc4](https://github.com/OSSBlade/openblade-core/commit/18b8efc4))
-- Added a customizable Dashboard card picker. Users can pin full interactive
-  power, fan, battery, keyboard, startup, lighting, and display cards and drag
-  them into the preferred order; the selection and order persist in UI
-  preferences. ([75389ff6](https://github.com/OSSBlade/openblade-core/commit/75389ff6))
-- Added smooth Dashboard card add, remove, and reorder transitions without
-  recreating retained controls. ([4812ebd1](https://github.com/OSSBlade/openblade-core/commit/4812ebd1))
-- Added persistent, page-specific section customization to Profiles, Display,
-  Laptop, Lighting, Settings, and About. Each page keeps its header fixed while
-  users hide or drag its content sections into a preferred order without
-  reloading the window. ([415de370](https://github.com/OSSBlade/openblade-core/commit/415de370))
-- Added persistent left-navigation ordering plus app accent choices for Razer
-  green, the live Windows accent, and a custom RGB color. ([4812ebd1](https://github.com/OSSBlade/openblade-core/commit/4812ebd1))
-- Added a branded WiX Burn installer with Install, Repair, and Uninstall
-  actions plus Windows Installed apps ownership. It delegates system changes
-  to the existing transactional setup engine, migrates earlier standalone
-  installations without duplicate uninstall entries, and preserves profiles
-  by default. The standalone setup remains available for development and
-  recovery, including explicit `uninstall --purge`. ([7faa39b4](https://github.com/OSSBlade/openblade-core/commit/7faa39b4))
-- Added Microsoft Store EXE readiness checks for silent offline installation,
-  stable Burn upgrades, supported-hardware disclosure, and Authenticode
-  inventory. Release publishing now emits a machine-readable report that
-  rejects unsigned third-party payloads while first-party signing is deferred,
-  and can verify the rendered public privacy policy before submission. ([7faa39b4](https://github.com/OSSBlade/openblade-core/commit/7faa39b4))
-- Added JSON profile import alongside export. Profile files use a versioned
-  envelope and schema-specific readers so future releases can add explicit
-  migrations without silently reinterpreting older structures. ([4f908de3](https://github.com/OSSBlade/openblade-core/commit/4f908de3))
-- Added separate function-key behavior, Gaming mode, and startup-animation
-  settings to the AC, USB-C, and Battery profiles. Saved values are restored
-  during power-source and laptop lifecycle transitions; older profiles leave
-  these controls unchanged until the user explicitly saves them. ([0506371a](https://github.com/OSSBlade/openblade-core/commit/0506371a))
-- Added per-profile Gaming mode options to block the Windows key and Alt+Tab.
-  The always-running Session Agent applies the selected policy only while
-  Gaming mode is active. ([fed7ebac](https://github.com/OSSBlade/openblade-core/commit/fed7ebac))
+- Add a **Reapply OpenBlade settings** action for controls changed outside OpenBlade. It reapplies the active profile and manual overrides to the affected controls and clears each warning once the change is confirmed. When manual fan control blocks safe Power mode recovery, the warning stays and explains how to proceed. Service IPC is now version 33. ([bfe066ba](https://github.com/OSSBlade/openblade-core/commit/bfe066ba))
+- Add daily and manual nightly installers built from `main`, published as GitHub prereleases with SHA-256 metadata. The About page can check either the Stable or Nightly release channel. ([#5](https://github.com/OSSBlade/openblade-core/pull/5))
+- Add host-rendered Audio Meter keyboard lighting to the Razer Blade 16 (2026), `RZ09-0581`. ([#1](https://github.com/OSSBlade/openblade-core/pull/1))
+- Add keyboard-brightness support for the Razer Blade 16 `RZ09-0528` (USB `1532:02C6`) on BIOS `2.02`, with AC presets, Custom CPU/GPU levels, fans (Automatic, fixed, maximum, curve), battery protection and 50-80 percent charge limits, temporary full charge, keyboard brightness and Off, logo Off/Static/Breathing, startup animation, function-key primary behavior, and Gaming mode. Static and Spectrum keyboard lighting work. Starlight, Ripple, Tidal, Wave, and Wheel are listed but read-only. CPU Power Limit, CPU Voltage Optimizer, and GPU overclock ranges are shown read-only. Windows Dynamic Lighting exposes the keyboard, and OpenBlade can hand keyboard lighting over to Windows; while handed over, OpenBlade's own lighting is off and the tray links to Windows lighting settings. M1-M5 shortcuts stay hidden for now. Firmware smoke, Diagnostics, About, and the tested-platform check now use the RZ09-0528 / PID `02C6` identity. ([#1](https://github.com/OSSBlade/openblade-core/pull/1))
+- Add CPU-temperature support for the RZ09-0528 using its own Windows thermal-zone counter. ([#1](https://github.com/OSSBlade/openblade-core/pull/1))
+- Add GitHub release checks to About with Every startup, Daily, Weekly, Monthly, and Manual only intervals. Available releases open in your browser. ([7faa39b4](https://github.com/OSSBlade/openblade-core/commit/7faa39b4))
+- Add battery health to About, read from Windows' design and full-charge capacity data. ([b15e14b7](https://github.com/OSSBlade/openblade-core/commit/b15e14b7))
+- Add a Synapse-style playback mute indicator for the RZ09-0581 keyboard. While Windows audio is muted, the F1 mute key stays red without replacing the selected lighting effect. ([96cfa857](https://github.com/OSSBlade/openblade-core/commit/96cfa857))
+- Add an automated MCU firmware smoke-test workflow. It captures a read-only baseline before an update, compares it with the state afterward, and offers a reversible rehearsal of performance, fans, battery, lighting, startup animation, function-key behavior, and Gaming mode. ([5312a802](https://github.com/OSSBlade/openblade-core/commit/5312a802))
+- Add a tested system-version catalog for the RZ09-0581, BIOS, EC, and MCU. The Dashboard warns when detected versions are unverified and links to compatibility details on About. Controls stay enabled. ([b518775f](https://github.com/OSSBlade/openblade-core/commit/b518775f))
+- Add persistent, redacted logs for non-fatal Tray and Session Agent failures, included in diagnostic exports. ([c5352eaf](https://github.com/OSSBlade/openblade-core/commit/c5352eaf))
+- Add a compact Windows-style flyout for built-in display brightness changes made with the function keys. ([1da4eea6](https://github.com/OSSBlade/openblade-core/commit/1da4eea6))
+- Fix HDR changes on systems that report access denied after applying the requested state. OpenBlade now checks the actual display state. ([#1](https://github.com/OSSBlade/openblade-core/pull/1))
+- List the installed app, Session Agent, and Service build versions and commit hashes in About. ([c9b444ba](https://github.com/OSSBlade/openblade-core/commit/c9b444ba))
+- Add a function-row bridge for RZ09-0581 Driver mode. It handles volume, playback, Project, Print Screen, display brightness, and keyboard brightness keys, and respects the configured Function keys or Multimedia keys primary layer. ([07c823c7](https://github.com/OSSBlade/openblade-core/commit/07c823c7))
+- Show the confirmed keyboard Driver-mode state in Troubleshooting. ([07c823c7](https://github.com/OSSBlade/openblade-core/commit/07c823c7))
+- Add NVIDIA GPU core and memory clock offsets to Custom power mode. Ranges come from the installed NVIDIA driver, and offsets are saved in profiles, overrides, imports, and exports. ([5f4d4280](https://github.com/OSSBlade/openblade-core/commit/5f4d4280))
+- Add persistent M1 through M5 Fn-layer bindings on the Laptop page. Keys can run keyboard shortcuts, mouse and media actions, microphone mute, app or website launch, text entry, and OpenBlade power, Gaming mode, or lighting actions. Each key keeps its default behavior until you override it. ([34ca723d](https://github.com/OSSBlade/openblade-core/commit/34ca723d))
+- Add repository guidance for contributors and AI agents: codebase map, hardware-safety boundaries, deployment rules, versioning, schema and IPC migration policy, and commit format. ([34ca723d](https://github.com/OSSBlade/openblade-core/commit/34ca723d))
+- Add local tray crash reports under `%LocalAppData%\OpenBlade\Crashes` with version, runtime, exception details, and stack traces. The newest 20 files are kept. ([0af9cb99](https://github.com/OSSBlade/openblade-core/commit/0af9cb99))
+- Add the same crash reports to the Session Agent. ([18b8efc4](https://github.com/OSSBlade/openblade-core/commit/18b8efc4))
+- Add a customizable Dashboard card picker. Pin power, fan, battery, keyboard, startup, lighting, and display cards and drag them into order. ([75389ff6](https://github.com/OSSBlade/openblade-core/commit/75389ff6))
+- Add smooth Dashboard card add, remove, and reorder transitions. ([4812ebd1](https://github.com/OSSBlade/openblade-core/commit/4812ebd1))
+- Add persistent section customization to Profiles, Display, Laptop, Lighting, Settings, and About. Hide sections or drag them into your preferred order. ([415de370](https://github.com/OSSBlade/openblade-core/commit/415de370))
+- Add persistent left-navigation ordering and app accent choices: Razer green, the Windows accent, or a custom RGB color. ([4812ebd1](https://github.com/OSSBlade/openblade-core/commit/4812ebd1))
+- Add a branded WiX Burn installer with Install, Repair, and Uninstall actions and a Windows Installed apps entry. It migrates earlier standalone installations and keeps profiles by default. The standalone setup remains for development and recovery, including `uninstall --purge`. ([7faa39b4](https://github.com/OSSBlade/openblade-core/commit/7faa39b4))
+- Add Microsoft Store readiness checks for silent offline installation, Burn upgrades, supported-hardware disclosure, and signature inventory. Release publishing now writes a report that rejects unsigned third-party payloads and can verify the public privacy policy. ([7faa39b4](https://github.com/OSSBlade/openblade-core/commit/7faa39b4))
+- Add JSON profile import alongside export. Profile files are versioned so later releases can migrate older ones. ([4f908de3](https://github.com/OSSBlade/openblade-core/commit/4f908de3))
+- Add function-key behavior, Gaming mode, and startup-animation settings to the AC, USB-C, and Battery profiles. They apply on power-source and lifecycle changes. Older profiles leave these controls unchanged until you save them. ([0506371a](https://github.com/OSSBlade/openblade-core/commit/0506371a))
+- Add per-profile Gaming mode options to block the Windows key and Alt+Tab while Gaming mode is active. ([fed7ebac](https://github.com/OSSBlade/openblade-core/commit/fed7ebac))
 
 ### Changed
 
-- Clarified the RZ09-0528 CPU Power Limit and CPU Voltage Optimizer cards with
-  the exact AMD kernel-driver boundary. The controls remain visible and
-  read-only because OpenBlade does not ship a kernel driver or depend on
-  Synapse-delivered binaries. ([#1](https://github.com/OSSBlade/openblade-core/pull/1))
-- Fixed graphical-installer upgrades to compare installed versions, pinned the
-  Burn upgrade family, added explicit orphaned-marker recovery, and restricted
-  installation to Windows 11 version 24H2 x64 to match the tray's declared
-  platform. ([145f4dd1](https://github.com/OSSBlade/openblade-core/commit/145f4dd1))
-- Added the signed Microsoft Visual C++ runtime to the offline installer chain
-  with version-aware detection that replaces stale 14.x runtimes, and wired
-  payload-before-bundle Authenticode signing hooks for public builds. ([e685ef95](https://github.com/OSSBlade/openblade-core/commit/e685ef95))
-- Added first-run consent before GitHub update checks, success-based intervals,
-  ETag caching, rate-limit backoff, cancellation-safe shutdown, and resilient
-  release parsing. ([145f4dd1](https://github.com/OSSBlade/openblade-core/commit/145f4dd1))
-- Advanced the service IPC protocol to version 24 for the battery-health status
-  field. Service, Tray, and Session Agent components must be upgraded together
-  through the coordinated installer. ([5ed12109](https://github.com/OSSBlade/openblade-core/commit/5ed12109))
-- Moved the deferred lighting, charge-limit, and GPU clock commit state out of
-  WinUI event handlers into one executable, coalescing Tray.Core policy. Rapid
-  edits now consistently keep only the latest value and queue at most one
-  follow-up while a hardware write is running. ([0d663e10](https://github.com/OSSBlade/openblade-core/commit/0d663e10))
-- Setup rollback now treats restoration of the previous installation as the
-  terminal recovery point even if cleanup of a guarded transaction directory
-  fails. The cleanup failure remains visible without risking a second move of
-  the already-restored installation. ([5dc5c295](https://github.com/OSSBlade/openblade-core/commit/5dc5c295))
-- Changed function-row interception to require a current, confirmed keyboard
-  Driver-mode state. Unknown state during service reconnects or firmware
-  readback failures now passes keys through and records a diagnostic transition
-  instead of relying on a stale Boolean. ([f8c6c08e](https://github.com/OSSBlade/openblade-core/commit/f8c6c08e))
-- Updated the light and dark tray icon set for clearer taskbar visibility and
-  added matching Custom power-mode icons. ([747db32c](https://github.com/OSSBlade/openblade-core/commit/747db32c))
-- Reduced each host-rendered Ambient Awareness IPC request from thousands of
-  bytes to one compact Base64 RGB payload inside the existing typed JSON
-  envelope. The Service and protocol codec now share one captured keyboard
-  layout mask, and feature-report encoding avoids a redundant buffer
-  allocation. ([164ebece](https://github.com/OSSBlade/openblade-core/commit/164ebece))
-- Made service disconnections observable within two seconds instead of allowing
-  a missing named pipe to leave the tray displaying stale connected state. ([10509cab](https://github.com/OSSBlade/openblade-core/commit/10509cab))
-- Closed the Tray and Session Agent's persistent service connections
-  deterministically during process shutdown. ([04b533b2](https://github.com/OSSBlade/openblade-core/commit/04b533b2))
-- Made keyboard-brightness keys match Synapse's captured firmware cadence.
-  OpenBlade now keeps the exact raw brightness level in the verified lighting
-  session and sends one validated `0x10` step per keypress instead of reading
-  full service state and reapplying the complete lighting effect each time. ([e9ac0186](https://github.com/OSSBlade/openblade-core/commit/e9ac0186))
-- Separated the non-Fn Game mode, performance mode, and microphone-mute reports
-  from the customizable Fn-layer M3, M4, and M5 reports. Their normal actions
-  now keep working in keyboard Driver mode without changing Fn-layer bindings. ([18b8efc4](https://github.com/OSSBlade/openblade-core/commit/18b8efc4))
-- Made performance-key feedback immediate. OpenBlade predicts the next admitted
-  mode from the latest authoritative service state, shows the Windows notification
-  before the firmware write finishes, and follows with a failure notification
-  if the service cannot apply the selection. ([18b8efc4](https://github.com/OSSBlade/openblade-core/commit/18b8efc4))
-- Made the tray icon follow the performance mode currently queued by the
-  performance key. If the write is rejected or fails, OpenBlade refreshes the
-  firmware state before removing the preview so the icon returns to the
-  confirmed mode. ([fed7ebac](https://github.com/OSSBlade/openblade-core/commit/fed7ebac))
-- Made About-page action rows fully clickable with a subtle Windows Settings
-  hover and pressed highlight. The Troubleshooting expander uses the same
-  full-card interaction treatment, and all trailing glyphs share the native
-  WinUI chevron size and alignment without separate button outlines. ([72fb3641](https://github.com/OSSBlade/openblade-core/commit/72fb3641))
-- Added a target-device Raw Input cross-check for the reconstructed function
-  row. If Windows silently removes the session keyboard hook while firmware
-  Driver mode remains loaded, OpenBlade completes the current media action and
-  reinstalls the missing hook without resetting laptop controls. ([72fb3641](https://github.com/OSSBlade/openblade-core/commit/72fb3641))
-- Kept function-row media translation active through transient firmware
-  readback gaps by falling back to the active profile's saved function-key
-  behavior. ([8ef7a8d7](https://github.com/OSSBlade/openblade-core/commit/8ef7a8d7))
-- Reduced foreground CPU use by letting WinUI update only the bindings whose
-  underlying values changed instead of invalidating every page binding for each
-  service update. Disabled live readings no longer poll the service, telemetry
-  changes no longer fan out to unrelated Session Agent features, read-only
-  observations reuse recent exact-device admission, and Ambient Awareness
-  reduces capture frequency only after the sampled screen remains static. ([69f5809d](https://github.com/OSSBlade/openblade-core/commit/69f5809d))
-- Stopped rebuilding the collapsed Dashboard telemetry repeater while another
-  page is open or the window is hidden. Tray-hover readings continue updating,
-  and the Dashboard refreshes once with the latest values when it becomes
-  visible. ([0c072491](https://github.com/OSSBlade/openblade-core/commit/0c072491))
-- Made Ambient Awareness smoother during motion by matching the 30 FPS matrix
-  renderer cadence, then reducing static-screen sampling to 5 FPS after roughly
-  half a second without a color change. ([6694bc63](https://github.com/OSSBlade/openblade-core/commit/6694bc63))
-- Increased Wave, Wheel, and Tidal playback to 30 FPS by interpolating per-key
-  RGB values between their captured source frames while preserving the original
-  cycle timing and direction templates. ([561ce055](https://github.com/OSSBlade/openblade-core/commit/561ce055))
-- Media-key translation now survives transient keyboard Driver-mode read
-  failures, recovers one stale HID session per failure streak, and reports an
-  unknown Driver-mode state accurately in Troubleshooting. ([c8bced82](https://github.com/OSSBlade/openblade-core/commit/c8bced82))
-- Keyboard command reports and animated-lighting matrix reports are now
-  serialized so periodic Driver-mode verification cannot collide with a frame
-  write. ([c8bced82](https://github.com/OSSBlade/openblade-core/commit/c8bced82))
-- Promoted `Use profile settings` from an overflow menu to a page-header action
-  on Dashboard, Laptop, Lighting, and Display whenever the current page differs
-  from its active profile, including settings changed outside OpenBlade. Page
-  header actions now share consistent sizing. Healthy Troubleshooting rows use
-  plain status text while warning and error indicators remain. ([0b164097](https://github.com/OSSBlade/openblade-core/commit/0b164097))
-- GPU clock-only adjustments in Custom mode now bypass redundant Blade firmware
-  writes and update only the NVIDIA clock offsets. ([b1dc999e](https://github.com/OSSBlade/openblade-core/commit/b1dc999e))
-- Removed the redundant Reset button from the app accent color setting. OpenBlade
-  green remains directly selectable from the accent picker. ([e62d5b4e](https://github.com/OSSBlade/openblade-core/commit/e62d5b4e))
-- Renamed the default accent's user-facing label from Razer green to OpenBlade
-  green. Its `#47E10C` value and serialized preference remain unchanged. ([9daeae1b](https://github.com/OSSBlade/openblade-core/commit/9daeae1b))
-- Moved Display above Laptop in the default left-navigation order and migrated
-  installations still using the former default while preserving custom orders. ([98f5e662](https://github.com/OSSBlade/openblade-core/commit/98f5e662))
-- Replaced the navigation-order popup with an inline reorderable Settings card
-  and made both navigation and taskbar-hover editors collapsed by default. ([2cfe2f65](https://github.com/OSSBlade/openblade-core/commit/2cfe2f65))
-- Moved power mode, fan controls, and battery controls to the Laptop page while
-  keeping the same live controls available as optional Dashboard cards. Profile
-  comparison cells now say `Not set` when a profile does not manage a setting. ([587e3803](https://github.com/OSSBlade/openblade-core/commit/587e3803))
-- Reduced SessionAgent background work by sharing one bounded service-status
-  feed across display and lighting features, making idle-lighting checks
-  deadline-driven, and removing per-event allocations from the Raw Input path. ([ed106d68](https://github.com/OSSBlade/openblade-core/commit/ed106d68))
-- Reduced the self-contained Windows payload by publishing only the Windows App
-  SDK components OpenBlade uses and excluding development symbols, unused
-  managed satellite assemblies, and unused AI, ML, and Widgets components. ([ed106d68](https://github.com/OSSBlade/openblade-core/commit/ed106d68))
-- Persisted the last successfully applied keyboard lighting effect and restore
-  it when the service starts. Other Razer software still wins by default; an
-  opt-in setting can make OpenBlade reapply external lighting changes. ([4f908de3](https://github.com/OSSBlade/openblade-core/commit/4f908de3))
+- Clarify that the RZ09-0528 CPU Power Limit and CPU Voltage Optimizer cards are read-only because they need an AMD kernel driver that OpenBlade does not ship. ([#1](https://github.com/OSSBlade/openblade-core/pull/1))
+- Fix graphical-installer upgrades to compare installed versions and recover from orphaned markers. The installer now requires Windows 11 version 24H2 x64. ([145f4dd1](https://github.com/OSSBlade/openblade-core/commit/145f4dd1))
+- Add the signed Microsoft Visual C++ runtime to the offline installer, replacing stale 14.x runtimes, and add signing hooks for public builds. ([e685ef95](https://github.com/OSSBlade/openblade-core/commit/e685ef95))
+- Ask for consent before the first GitHub update check. Checks now use success-based intervals, ETag caching, and rate-limit backoff. ([145f4dd1](https://github.com/OSSBlade/openblade-core/commit/145f4dd1))
+- Advance the service IPC protocol to version 24 for the battery-health field. Upgrade the Service, Tray, and Session Agent together with the coordinated installer. ([5ed12109](https://github.com/OSSBlade/openblade-core/commit/5ed12109))
+- Rapid edits to lighting, charge limit, and GPU clocks now keep only the latest value and queue at most one follow-up while a write is running. ([0d663e10](https://github.com/OSSBlade/openblade-core/commit/0d663e10))
+- Setup rollback now treats restoring the previous installation as final, even if cleanup of its transaction directory fails. ([5dc5c295](https://github.com/OSSBlade/openblade-core/commit/5dc5c295))
+- Function-row interception now needs a confirmed keyboard Driver-mode state. When the state is unknown, keys pass through. ([f8c6c08e](https://github.com/OSSBlade/openblade-core/commit/f8c6c08e))
+- Update the light and dark tray icons for clearer taskbar visibility and add matching Custom power-mode icons. ([747db32c](https://github.com/OSSBlade/openblade-core/commit/747db32c))
+- Shrink each Ambient Awareness request to one compact payload and remove a redundant buffer allocation. ([164ebece](https://github.com/OSSBlade/openblade-core/commit/164ebece))
+- Detect service disconnections within two seconds, so the tray no longer shows a stale connected state. ([10509cab](https://github.com/OSSBlade/openblade-core/commit/10509cab))
+- Close the Tray and Session Agent service connections cleanly on shutdown. ([04b533b2](https://github.com/OSSBlade/openblade-core/commit/04b533b2))
+- Make keyboard-brightness keys match Synapse's firmware cadence: each keypress sends one brightness step instead of rereading and reapplying the whole lighting effect. ([e9ac0186](https://github.com/OSSBlade/openblade-core/commit/e9ac0186))
+- Separate the Game mode, performance mode, and microphone-mute keys from the customizable Fn-layer M3, M4, and M5 keys. Their normal actions work in keyboard Driver mode without changing Fn-layer bindings. ([18b8efc4](https://github.com/OSSBlade/openblade-core/commit/18b8efc4))
+- Show performance-key feedback immediately. OpenBlade shows the Windows notification for the next mode before the write finishes, and a failure notification follows if it cannot be applied. ([18b8efc4](https://github.com/OSSBlade/openblade-core/commit/18b8efc4))
+- Make the tray icon follow the performance mode queued by the performance key, and return to the confirmed mode if the write fails. ([fed7ebac](https://github.com/OSSBlade/openblade-core/commit/fed7ebac))
+- Make About-page action rows fully clickable with a Windows Settings-style hover and pressed highlight. The Troubleshooting expander and trailing chevrons match. ([72fb3641](https://github.com/OSSBlade/openblade-core/commit/72fb3641))
+- Add a Raw Input cross-check for the function row. If Windows removes the session keyboard hook, OpenBlade finishes the current media action and reinstalls the hook. ([72fb3641](https://github.com/OSSBlade/openblade-core/commit/72fb3641))
+- Keep function-row media keys working through brief firmware readback gaps by using the active profile's saved function-key behavior. ([8ef7a8d7](https://github.com/OSSBlade/openblade-core/commit/8ef7a8d7))
+- Reduce foreground CPU use: the UI updates only changed bindings, disabled live readings no longer poll, unrelated Session Agent features ignore telemetry changes, and Ambient Awareness samples less often once the screen is static. ([69f5809d](https://github.com/OSSBlade/openblade-core/commit/69f5809d))
+- Stop rebuilding the collapsed Dashboard telemetry while another page is open or the window is hidden. The Dashboard refreshes once when it becomes visible. ([0c072491](https://github.com/OSSBlade/openblade-core/commit/0c072491))
+- Make Ambient Awareness smoother during motion with a 30 FPS renderer, dropping to 5 FPS after about half a second without a color change. ([6694bc63](https://github.com/OSSBlade/openblade-core/commit/6694bc63))
+- Raise Wave, Wheel, and Tidal playback to 30 FPS by interpolating between captured frames. ([561ce055](https://github.com/OSSBlade/openblade-core/commit/561ce055))
+- Keep media-key translation working through brief keyboard Driver-mode read failures, and report an unknown Driver-mode state accurately in Troubleshooting. ([c8bced82](https://github.com/OSSBlade/openblade-core/commit/c8bced82))
+- Prevent periodic Driver-mode checks from colliding with animated-lighting frame writes. ([c8bced82](https://github.com/OSSBlade/openblade-core/commit/c8bced82))
+- Move `Use profile settings` from an overflow menu to a page-header action on Dashboard, Laptop, Lighting, and Display whenever the page differs from its active profile, including changes made outside OpenBlade. Page header actions share one size, and healthy Troubleshooting rows show plain status text. ([0b164097](https://github.com/OSSBlade/openblade-core/commit/0b164097))
+- GPU clock-only changes in Custom mode now update only the NVIDIA clock offsets and skip redundant firmware writes. ([b1dc999e](https://github.com/OSSBlade/openblade-core/commit/b1dc999e))
+- Remove the redundant Reset button from the app accent color setting. OpenBlade green is still selectable from the picker. ([e62d5b4e](https://github.com/OSSBlade/openblade-core/commit/e62d5b4e))
+- Rename the default accent from Razer green to OpenBlade green. Its `#47E10C` value is unchanged. ([9daeae1b](https://github.com/OSSBlade/openblade-core/commit/9daeae1b))
+- Move Display above Laptop in the default left-navigation order. Custom orders are kept. ([98f5e662](https://github.com/OSSBlade/openblade-core/commit/98f5e662))
+- Replace the navigation-order popup with an inline reorderable Settings card, and collapse the navigation and taskbar-hover editors by default. ([2cfe2f65](https://github.com/OSSBlade/openblade-core/commit/2cfe2f65))
+- Move power mode, fan controls, and battery controls to the Laptop page. They remain available as optional Dashboard cards. Profile comparison cells say `Not set` when a profile does not manage a setting. ([587e3803](https://github.com/OSSBlade/openblade-core/commit/587e3803))
+- Reduce Session Agent background work by sharing one service-status feed across display and lighting features, checking idle lighting on a deadline, and trimming per-event allocations in the Raw Input path. ([ed106d68](https://github.com/OSSBlade/openblade-core/commit/ed106d68))
+- Reduce the Windows payload size by shipping only the Windows App SDK components OpenBlade uses and dropping development symbols and unused satellite assemblies, AI, ML, and Widgets components. ([ed106d68](https://github.com/OSSBlade/openblade-core/commit/ed106d68))
+- Save the last applied keyboard lighting effect and restore it when the service starts. Other Razer software wins by default; an opt-in setting lets OpenBlade reapply external lighting changes. ([4f908de3](https://github.com/OSSBlade/openblade-core/commit/4f908de3))
 
-- Moved protocol capture evidence and capture tooling to the
-  `OSSBlade/openblade-captures` repository, included as the `captures`
-  submodule. ([a3bd6478](https://github.com/OSSBlade/openblade-core/commit/a3bd6478))
-- Kept Off first in the lighting effect picker and sorted the remaining effects
-  alphabetically. ([4f908de3](https://github.com/OSSBlade/openblade-core/commit/4f908de3))
-- Updated project, documentation, issue, release-note, and branding links to
-  the OSSBlade GitHub organization. ([4f908de3](https://github.com/OSSBlade/openblade-core/commit/4f908de3))
-- Aligned the Settings header spacing with the Display and Lighting pages and
-  aligned the service and laptop status values in Troubleshooting. ([4f908de3](https://github.com/OSSBlade/openblade-core/commit/4f908de3))
-- Advanced the local configuration schema to version 7, profile export schema
-  to version 3, persistent override schema to version 4, and service IPC to
-  version 19 for GPU clock-offset settings, readback capabilities, and
-  keyboard Driver-mode status. ([5f4d4280](https://github.com/OSSBlade/openblade-core/commit/5f4d4280))
+- Move protocol capture evidence and capture tooling to the `OSSBlade/openblade-captures` repository, included as the `captures` submodule. ([a3bd6478](https://github.com/OSSBlade/openblade-core/commit/a3bd6478))
+- Keep Off first in the lighting effect picker and sort the remaining effects alphabetically. ([4f908de3](https://github.com/OSSBlade/openblade-core/commit/4f908de3))
+- Update project, documentation, issue, release-note, and branding links to the OSSBlade GitHub organization. ([4f908de3](https://github.com/OSSBlade/openblade-core/commit/4f908de3))
+- Align the Settings header spacing with the Display and Lighting pages, and align the service and laptop status values in Troubleshooting. ([4f908de3](https://github.com/OSSBlade/openblade-core/commit/4f908de3))
+- Advance the local configuration schema to version 7, profile export schema to version 3, persistent override schema to version 4, and service IPC to version 19 for GPU clock-offset settings, readback capabilities, and keyboard Driver-mode status. ([5f4d4280](https://github.com/OSSBlade/openblade-core/commit/5f4d4280))
 
 ### Fixed
 
-- Fixed shortcut action pickers that changed visually without persisting their
-  new binding. Custom RZ09-0581 M1 and M2 actions now also suppress the paired
-  native Page Up or Page Down edge for the full key press, while Default and
-  unadmitted model paths continue to pass the native key through. ([#1](https://github.com/OSSBlade/openblade-core/pull/1))
-- Hardened keyboard Driver-mode handling around genuine Windows low-power
-  transitions. The service now suppresses write-capable periodic and lifecycle
-  reconciliation while low power is active, performs the existing guarded
-  Normal-mode release before renderer invalidation, and records whether both
-  model-specific cleanup paths confirmed, skipped, or could not confirm their
-  final mode. Display lighting-policy transitions are also gated at both the
-  lifecycle and shared service-runtime boundaries, so Session Agent requests
-  can update logical suppression state without performing firmware writes.
-  Ordinary display-off notifications do not release Driver mode. ([#1](https://github.com/OSSBlade/openblade-core/pull/1))
-- Kept Audio Meter renderer shutdown serialized with disposal, constrained
-  manual fan curves to each laptop's reported RPM range, and made PID `02C6`
-  reactive-key pulses safe during concurrent input and lighting-port shutdown. ([#1](https://github.com/OSSBlade/openblade-core/pull/1))
-- Removed the redundant Windows Dynamic Lighting settings link from its
-  ownership row. ([#1](https://github.com/OSSBlade/openblade-core/pull/1))
-- Hid Gaming mode key-blocking options while Gaming mode is off. ([#1](https://github.com/OSSBlade/openblade-core/pull/1))
-- Restored the shared pointer-over highlight on settings cards without
-  interfering with their nested controls, apply it to expandable Settings
-  rows, and clear stale highlights after scrolling, pointer cancellation, or
-  pointer-capture changes. ([#1](https://github.com/OSSBlade/openblade-core/pull/1))
-- Constrained every tray page to its vertical ScrollViewer viewport so long
-  card messages no longer widen the page and disappear past the right edge at
-  compact window sizes. ([#1](https://github.com/OSSBlade/openblade-core/pull/1))
-- Kept temporary display-off lighting suppression from replacing the saved
-  lighting effect with Off. Unplugging and immediately closing the lid now
-  preserves the destination battery profile's lighting across resume or a
-  service restart. ([671563e1](https://github.com/OSSBlade/openblade-core/commit/671563e1))
-- Prevented asynchronous Settings, display-profile, customization, and accent
-  color actions from terminating the tray when an operation fails. ([86ddf8bb](https://github.com/OSSBlade/openblade-core/commit/86ddf8bb))
-- Fixed page scrollbars remaining visible after scrolling instead of
-  auto-hiding. ([1d152ac3](https://github.com/OSSBlade/openblade-core/commit/1d152ac3))
-- Bounded service shutdown while a hardware operation or lighting-port cleanup
-  is stalled. OpenBlade now rejects new operations immediately, retains native
-  cleanup without force-closing an in-use HID handle, and lets service stop
-  continue after the configured drain deadlines. ([9b54abae](https://github.com/OSSBlade/openblade-core/commit/9b54abae))
-- Coalesced superseded UI preference saves so rapid changes perform at most one
-  in-flight durable write plus one latest-value follow-up, while shutdown still
-  flushes the user's final preference state. ([03f60d48](https://github.com/OSSBlade/openblade-core/commit/03f60d48))
-- Updated the About page immediately when delayed battery-health data becomes
-  available or unavailable without another laptop status change. ([f033aaf2](https://github.com/OSSBlade/openblade-core/commit/f033aaf2))
-- Fixed playback mute indication retries so a rejected matrix write retires its
-  faulted renderer and reapplies the latest Windows mute state on a fresh port. ([2f3e78b3](https://github.com/OSSBlade/openblade-core/commit/2f3e78b3))
-- Retried transient read-only battery-state I/O and timeout failures through a
-  fresh identity-verified session before blocking controls. Writes remain
-  single-attempt, and indeterminate hardware writes are never retried. ([cdccdb83](https://github.com/OSSBlade/openblade-core/commit/cdccdb83))
-- Standardized the About page's component labels to sentence case. ([8515743e](https://github.com/OSSBlade/openblade-core/commit/8515743e))
-- Suppressed false Performance-key failure notifications when fresh hardware
-  readback confirms that the final selected mode was successfully applied. ([baa74173](https://github.com/OSSBlade/openblade-core/commit/baa74173))
-- Gaming mode's Windows-key and Alt+Tab toggles now persist immediately to the
-  active power profile, so the Session Agent applies their visible state
-  without waiting for a separate profile-save action. ([6060d9b9](https://github.com/OSSBlade/openblade-core/commit/6060d9b9))
-- Prevented losing duplicate Session Agent launches from consuming persistent
-  log entries before singleton ownership is acquired. ([a0cb0dc7](https://github.com/OSSBlade/openblade-core/commit/a0cb0dc7))
-- Coalesced rapid performance-key presses behind a 1.25-second quiet period.
-  Notifications still update immediately, but only the final selected mode is
-  sent to the firmware instead of queueing every intermediate mode. ([28726e28](https://github.com/OSSBlade/openblade-core/commit/28726e28))
-- Made the direct microphone-mute key update and verify every distinct Windows
-  default capture endpoint instead of only the Multimedia-role device. ([2e40d531](https://github.com/OSSBlade/openblade-core/commit/2e40d531))
-- Returned the keyboard firmware to Normal mode when OpenBlade shuts down.
-  The service now stops its lighting stream, releases Driver mode with
-  independent readback, and only then closes its hardware handles. ([02e259ef](https://github.com/OSSBlade/openblade-core/commit/02e259ef))
-- Made F8 and F9 move the built-in display by a visible 10 percentage points
-  while still selecting only brightness levels reported by Windows. ([c9b444ba](https://github.com/OSSBlade/openblade-core/commit/c9b444ba))
-- Kept keyboard-brightness writes independent from battery readback failures.
-  Lighting still validates its own state before and after every write. ([c9b444ba](https://github.com/OSSBlade/openblade-core/commit/c9b444ba))
-- Fixed the performance shortcut being ignored after OpenBlade detected an
-  external performance or fan change. Pressing the dedicated performance key
-  or Fn+P now explicitly selects the next mode while preserving unrelated
-  external-change warnings. ([21a295f5](https://github.com/OSSBlade/openblade-core/commit/21a295f5))
-- Restored the validated firmware Driver-mode lifecycle required by the
-  extended Fn layer, performance key, and M1 through M5. OpenBlade verifies the
-  mode when opening the device, rechecks it every 15 seconds, and writes only
-  after a confirmed fallback to Normal mode. ([3a5f7abd](https://github.com/OSSBlade/openblade-core/commit/3a5f7abd))
-- Restored media and brightness-key behavior while firmware Driver mode is
-  active. Key-down suppression is latched through key-up, continuous controls
-  repeat normally, and one-shot actions ignore keyboard auto-repeat. ([07c823c7](https://github.com/OSSBlade/openblade-core/commit/07c823c7))
-- Stopped identifying Razer Elevation Service and Razer Game Manager Service 3
-  as potential laptop controllers. Synapse and Chroma components that can
-  compete for the same controls remain visible as conflicts. ([3a5f7abd](https://github.com/OSSBlade/openblade-core/commit/3a5f7abd))
-- Fixed performance-key notifications in the self-contained Session Agent by
-  including the Microsoft-signed Windows App Runtime notification resource that
-  `AppNotificationManager` loads during registration. ([415de370](https://github.com/OSSBlade/openblade-core/commit/415de370))
-- Validated keyboard-shortcut and website values before M1 through M5 override
-  their normal behavior. Incomplete or invalid actions now show a validation
-  message and leave the physical key's default action intact. ([18ab090a](https://github.com/OSSBlade/openblade-core/commit/18ab090a))
-- Kept every option picker selection visible across initialization and status
-  refreshes with a shared selection anchor. Equivalent option collections are
-  now reused centrally, and conditional Custom-performance and lighting
-  direction lists retain stable instances instead of being rebuilt on access. ([1d5d64da](https://github.com/OSSBlade/openblade-core/commit/1d5d64da))
-- Treat known current values for `Not set` profile fields as saveable changes.
-  Display, laptop behavior, and lid-logo pages now show the unsaved prompt and
-  profile save action, while unavailable or unsupported values remain ignored. ([3ed0c0b2](https://github.com/OSSBlade/openblade-core/commit/3ed0c0b2))
-- Made Fn+P performance switching use the Windows P-key scan code observed on
-  the target laptop while continuing to track the separate firmware Fn report. ([219f36f4](https://github.com/OSSBlade/openblade-core/commit/219f36f4))
-- Kept tray hover telemetry updating while the main window is hidden, and
-  request only the sensors actually shown by the Dashboard or hover label.
-  OpenBlade now checks Windows' existing GPU-engine activity first in every
-  profile, initializes NVML only while the NVIDIA GPU is active, and omits
-  missing or powered-down GPU temperatures from the UI. ([278d68c8](https://github.com/OSSBlade/openblade-core/commit/278d68c8))
-- Bound every duplicated Dashboard control card directly to its live view
-  model, preventing Dashboard instances from retaining stale visibility,
-  availability, selection, or loading state after their original page updates. ([a2bb68e6](https://github.com/OSSBlade/openblade-core/commit/a2bb68e6))
-- Kept the Power mode, Fans, and Battery controls visible and interactive while
-  OpenBlade retains the last confirmed AC or USB-C classification during a
-  transient adapter read. Each requested change still performs a fresh adapter
-  and exact-device check before writing. Reordering the selected Settings page
-  also no longer shows Dashboard content beneath the Settings navigation item. ([7cee2e12](https://github.com/OSSBlade/openblade-core/commit/7cee2e12))
-- Kept shared Dashboard card controls and their original Laptop, Lighting, and
-  Display page instances synchronized after service initialization, preventing
-  source-page controls from remaining disabled while the same Dashboard card
-  is available. ([c99f36b9](https://github.com/OSSBlade/openblade-core/commit/c99f36b9))
-- Prevented the Dashboard customizer from crashing WinUI when the default card
-  is unchecked. Edits are staged until Done and applied in place using
-  independent instances of shared live card templates, without reparenting
-  loaded controls or restarting the tray. Selection controls also align with
-  the dialog's right content edge. ([75389ff6](https://github.com/OSSBlade/openblade-core/commit/75389ff6))
-- Restored the visibility-optimized outlined application icon so the taskbar
-  glyph remains legible against a dark Windows taskbar. ([75389ff6](https://github.com/OSSBlade/openblade-core/commit/75389ff6))
-- Made the approved Tidal and Wave/Wheel oracle fixtures check out with their
-  required CRLF byte representation so their production hash gates and semantic
-  fingerprint also pass in fresh clones. ([7a208a91](https://github.com/OSSBlade/openblade-core/commit/7a208a91))
-- Prevented closed information banners from reserving empty vertical space,
-  keeping the first section gap consistent across Dashboard, Lighting,
-  Display, and Settings. ([4db2540a](https://github.com/OSSBlade/openblade-core/commit/4db2540a))
-- Sorted the Lighting page's effect picker alphabetically by its displayed
-  effect names. ([32c1c889](https://github.com/OSSBlade/openblade-core/commit/32c1c889))
-- Collapsed the dashboard's combined fan reading to one `Unavailable` label
-  when neither fan sensor has a value. ([29d1ad6a](https://github.com/OSSBlade/openblade-core/commit/29d1ad6a))
-- Kept OpenBlade's selected lighting effect visible while a write is pending
-  instead of replacing it with the external-effect placeholder after a periodic
-  firmware observation that cannot read the matrix effect. ([7a571e88](https://github.com/OSSBlade/openblade-core/commit/7a571e88))
-- Made OpenBlade green (`#47E10C`) the default and recovery color for lighting
-  effects when no explicit or confirmed color is available. ([9daeae1b](https://github.com/OSSBlade/openblade-core/commit/9daeae1b))
-- Kept advisory detections of other Razer software from blocking Reactive and
-  Ripple key input after OpenBlade has verified the laptop and owns the renderer. ([a4785ac0](https://github.com/OSSBlade/openblade-core/commit/a4785ac0))
-- Made dashboard telemetry columns resize within the hero card instead of
-  clipping the final reading, and kept all three groups on one row at the
-  minimum window width by distributing the available space between them. ([21a64586](https://github.com/OSSBlade/openblade-core/commit/21a64586))
-- Switched the profile comparison to its compact presentation sooner and moved
-  pending-change labels below profile names so header badges cannot overlap the
-  neighboring profile column. ([caf6d065](https://github.com/OSSBlade/openblade-core/commit/caf6d065))
-- Used the same 50% visible-brightness fallback in shared profile and override
-  recovery that the Lighting page uses for unconfirmed effects, preventing
-  legacy zero-brightness visible effects from silently restoring at 100%. ([14088b2a](https://github.com/OSSBlade/openblade-core/commit/14088b2a))
-- Kept firmware-backed laptop behavior controls on their last known selection
-  while readback is loading, disabled them during the load, and removed a
-  mojibaked function-key fallback label. ([c4bd0014](https://github.com/OSSBlade/openblade-core/commit/c4bd0014))
-- Retained the last connected dashboard state during brief service reconnects
-  so short named-pipe rotations do not flash controls unavailable. ([3d29fa87](https://github.com/OSSBlade/openblade-core/commit/3d29fa87))
-- Made dashboard live readings use consistent separators, collapse fully
-  unavailable temperatures to one label, and avoid trailing or outer telemetry
-  footer margins. ([24047c05](https://github.com/OSSBlade/openblade-core/commit/24047c05))
-- Added a telemetry-only observation path between ten-second full-state audits,
-  avoiding repeated capability, firmware, and control-state reads on every
-  visible refresh while still detecting settings changed elsewhere. ([c050af28](https://github.com/OSSBlade/openblade-core/commit/c050af28))
-- Applied separate bounded deadlines to display-agent connection, query,
-  mutation, and response phases, and contained client disconnects or stalls to
-  one connection so they cannot stop the other session-agent features. ([c050af28](https://github.com/OSSBlade/openblade-core/commit/c050af28))
-- Enforced an 800 by 600 DIP minimum window size without exceeding the current
-  display's usable work area at high scaling. ([c050af28](https://github.com/OSSBlade/openblade-core/commit/c050af28))
-- Reused a very recent verified device admission across transient HID probe
-  failures so brief enumeration or open errors do not flash the laptop as
-  missing while later reads and writes still perform exact-device checks. ([4d7de125](https://github.com/OSSBlade/openblade-core/commit/4d7de125))
-- Serialized Reactive and Ripple failure-state publication with normal service
-  operations so concurrent status revisions cannot overwrite each other. ([c050af28](https://github.com/OSSBlade/openblade-core/commit/c050af28))
-- Rejected non-terminal SetupAPI enumeration failures and invalid HID detail
-  sizes instead of treating a partial device list as complete. ([c050af28](https://github.com/OSSBlade/openblade-core/commit/c050af28))
-- Reused one ordered, idle-bounded IPC connection for Reactive and Ripple key
-  bursts, discarded canceled exchanges before reuse, and kept the session Raw
-  Input listener alive through transient status-stream failures. ([bcdd29a5](https://github.com/OSSBlade/openblade-core/commit/bcdd29a5))
-- Retried accepted Reactive and Ripple key pulses across brief service-send
-  failures instead of dropping the first pulse after a transient reconnect or
-  HID stall. ([c3f5eac8](https://github.com/OSSBlade/openblade-core/commit/c3f5eac8))
-- Preserved a healthy owned lighting renderer across temporary firmware-read
-  failures so polling cannot flash the laptop unavailable or interrupt
-  key-triggered effects. ([bcdd29a5](https://github.com/OSSBlade/openblade-core/commit/bcdd29a5))
-- Increased host-rendered fade cadence to 30 frames per second without changing
-  captured effect durations, and initialized unknown visible brightness at 50%. ([bcdd29a5](https://github.com/OSSBlade/openblade-core/commit/bcdd29a5))
-- Bounded session-agent display IPC reads and contained stalled or truncated
-  frames to the individual client connection. ([df37652f](https://github.com/OSSBlade/openblade-core/commit/df37652f))
-- Retained accepted Reactive and Ripple key pulses through brief IPC and HID
-  stalls instead of canceling them after 100 ms, while keeping the queue bounded. ([24104b23](https://github.com/OSSBlade/openblade-core/commit/24104b23))
-- Preserved persistent fixed-speed and manual-curve fan details across service
-  restarts with a schema-three override migration. ([df37652f](https://github.com/OSSBlade/openblade-core/commit/df37652f))
-- Rejected semantically invalid persistent lighting overrides during recovery
-  instead of retrying unusable settings after every startup. ([df37652f](https://github.com/OSSBlade/openblade-core/commit/df37652f))
-- Refreshed the UI when only fan-control details or lighting-renderer ownership
-  changes, rather than treating those events as telemetry-only updates. ([df37652f](https://github.com/OSSBlade/openblade-core/commit/df37652f))
-- Made concurrent lighting invalidation and disposal callers await the same
-  hardware cleanup instead of returning before renderer ownership is released. ([df37652f](https://github.com/OSSBlade/openblade-core/commit/df37652f))
-- Kept failed native HID cancellation from blocking the serialized hardware
-  session indefinitely while retaining pinned resources for a late callback. ([df37652f](https://github.com/OSSBlade/openblade-core/commit/df37652f))
-- Added a two-second service request-read deadline so incomplete local IPC
-  frames cannot indefinitely occupy every named-pipe listener. ([df37652f](https://github.com/OSSBlade/openblade-core/commit/df37652f))
-- Preserved exclusive ownership of the service pipe from startup through
-  connection handoff so another local process cannot claim its fixed name. ([df37652f](https://github.com/OSSBlade/openblade-core/commit/df37652f))
-- Pinned setup service-control operations to the Windows System32 `sc.exe`
-  instead of allowing executable search-path resolution. ([df37652f](https://github.com/OSSBlade/openblade-core/commit/df37652f))
-- Applied and verified the protected machine-data ACL on existing child files
-  and directories instead of securing only the parent directory. ([df37652f](https://github.com/OSSBlade/openblade-core/commit/df37652f))
-- Prevented interactive keyboard pulses from waiting behind periodic firmware
-  observations or repeating exact-device enumeration for every key, and
-  preserved status through routine subscription rotation. ([c83fdf61](https://github.com/OSSBlade/openblade-core/commit/c83fdf61))
-- Preserved repeated key-triggered lighting pulses, kept Raw Input active across
-  brief service reconnects, and refreshed cached input-device identity after
-  device changes or transient lookup failures. ([bd598c48](https://github.com/OSSBlade/openblade-core/commit/bd598c48))
-- Kept one transient verified-device access failure from demoting every control
-  while retaining fail-closed handling after attempted or indeterminate writes. ([bd598c48](https://github.com/OSSBlade/openblade-core/commit/bd598c48))
-- Preserved last-confirmed immutable capabilities across a failed refresh and
-  reduced high-frequency controller and external-power discovery work without
-  weakening the checks performed before mutations. ([24104b23](https://github.com/OSSBlade/openblade-core/commit/24104b23))
-- Reused one ordered Ambient Awareness connection and the already-admitted
-  exact-device lighting port instead of reopening IPC and rediscovering HID for
-  every 20 Hz frame. ([24104b23](https://github.com/OSSBlade/openblade-core/commit/24104b23))
-- Made dashboard telemetry rows content-sized so unavailable temperature values
-  wrap without clipping or leaving excess card space. ([bd598c48](https://github.com/OSSBlade/openblade-core/commit/bd598c48))
-- Defaulted an unconfirmed visible lighting effect to 50% brightness in both the
-  editor and the hardware request instead of displaying 0% while firmware used
-  a different value. ([bd598c48](https://github.com/OSSBlade/openblade-core/commit/bd598c48))
-- Applied the OpenBlade application icon to every executable project. ([bd598c48](https://github.com/OSSBlade/openblade-core/commit/bd598c48))
-- Removed the glitchy long-distance navigation selection-indicator animation. ([c83fdf61](https://github.com/OSSBlade/openblade-core/commit/c83fdf61))
-- Enforced an 800 by 600 DIP minimum app-window size to protect responsive
-  layouts. ([c83fdf61](https://github.com/OSSBlade/openblade-core/commit/c83fdf61))
+- Fix shortcut action pickers that changed visually without saving the new binding. Custom RZ09-0581 M1 and M2 actions now also block the paired native Page Up or Page Down key while pressed; Default keeps the native key. ([#1](https://github.com/OSSBlade/openblade-core/pull/1))
+- Harden keyboard Driver-mode handling around Windows low-power transitions. OpenBlade stops periodic keyboard-mode writes while low power is active and returns the keyboard to Normal mode first. Display-off notifications do not release Driver mode. ([#1](https://github.com/OSSBlade/openblade-core/pull/1))
+- Fix Audio Meter shutdown, limit manual fan curves to each laptop's reported RPM range, and make PID `02C6` reactive-key pulses safe during shutdown. ([#1](https://github.com/OSSBlade/openblade-core/pull/1))
+- Remove the redundant Windows Dynamic Lighting settings link from its ownership row. ([#1](https://github.com/OSSBlade/openblade-core/pull/1))
+- Hide Gaming mode key-blocking options while Gaming mode is off. ([#1](https://github.com/OSSBlade/openblade-core/pull/1))
+- Restore the pointer-over highlight on settings cards, add it to expandable Settings rows, and clear stale highlights after scrolling or pointer changes. ([#1](https://github.com/OSSBlade/openblade-core/pull/1))
+- Fix long card messages widening tray pages and running past the right edge at compact window sizes. ([#1](https://github.com/OSSBlade/openblade-core/pull/1))
+- Fix temporary display-off lighting replacing the saved lighting effect with Off. Unplugging and immediately closing the lid now keeps the battery profile's lighting after resume or a service restart. ([671563e1](https://github.com/OSSBlade/openblade-core/commit/671563e1))
+- Fix the tray closing when a Settings, display-profile, customization, or accent color action fails. ([86ddf8bb](https://github.com/OSSBlade/openblade-core/commit/86ddf8bb))
+- Fix page scrollbars staying visible instead of auto-hiding. ([1d152ac3](https://github.com/OSSBlade/openblade-core/commit/1d152ac3))
+- Fix service shutdown hanging when a hardware operation or lighting-port cleanup stalls. New operations are rejected right away and the service stops after the configured deadlines. ([9b54abae](https://github.com/OSSBlade/openblade-core/commit/9b54abae))
+- Save rapid preference changes with at most one write in flight plus one follow-up, and still save the final state on shutdown. ([03f60d48](https://github.com/OSSBlade/openblade-core/commit/03f60d48))
+- Update the About page right away when delayed battery-health data becomes available or unavailable. ([f033aaf2](https://github.com/OSSBlade/openblade-core/commit/f033aaf2))
+- Fix the playback mute indicator after a rejected write; it now reapplies the latest Windows mute state. ([2f3e78b3](https://github.com/OSSBlade/openblade-core/commit/2f3e78b3))
+- Retry transient battery-state read failures before blocking controls. Writes are not retried. ([cdccdb83](https://github.com/OSSBlade/openblade-core/commit/cdccdb83))
+- Use sentence case for the About page's component labels. ([8515743e](https://github.com/OSSBlade/openblade-core/commit/8515743e))
+- Fix false Performance-key failure notifications when the final selected mode was applied. ([baa74173](https://github.com/OSSBlade/openblade-core/commit/baa74173))
+- Save Gaming mode's Windows-key and Alt+Tab toggles to the active power profile immediately. ([6060d9b9](https://github.com/OSSBlade/openblade-core/commit/6060d9b9))
+- Fix duplicate Session Agent launches consuming log entries. ([a0cb0dc7](https://github.com/OSSBlade/openblade-core/commit/a0cb0dc7))
+- Wait 1.25 seconds after the last performance-key press before sending the mode to the firmware. Notifications still update immediately. ([28726e28](https://github.com/OSSBlade/openblade-core/commit/28726e28))
+- Make the microphone-mute key update every Windows default capture device, not only the Multimedia one. ([2e40d531](https://github.com/OSSBlade/openblade-core/commit/2e40d531))
+- Return the keyboard firmware to Normal mode when OpenBlade shuts down. ([02e259ef](https://github.com/OSSBlade/openblade-core/commit/02e259ef))
+- Make F8 and F9 change the built-in display brightness by 10 percentage points, using levels Windows reports. ([c9b444ba](https://github.com/OSSBlade/openblade-core/commit/c9b444ba))
+- Keep keyboard-brightness changes working when battery readback fails. ([c9b444ba](https://github.com/OSSBlade/openblade-core/commit/c9b444ba))
+- Fix the performance shortcut being ignored after an external performance or fan change. The performance key and Fn+P now select the next mode, and external-change warnings stay. ([21a295f5](https://github.com/OSSBlade/openblade-core/commit/21a295f5))
+- Restore the firmware Driver-mode handling that the extended Fn layer, performance key, and M1 through M5 need. OpenBlade checks the mode every 15 seconds and writes only after a confirmed fallback to Normal mode. ([3a5f7abd](https://github.com/OSSBlade/openblade-core/commit/3a5f7abd))
+- Restore media and brightness-key behavior while firmware Driver mode is active. Held keys repeat normally and one-shot actions ignore auto-repeat. ([07c823c7](https://github.com/OSSBlade/openblade-core/commit/07c823c7))
+- Stop treating Razer Elevation Service and Razer Game Manager Service 3 as laptop controllers. Synapse and Chroma components that compete for the same controls still show as conflicts. ([3a5f7abd](https://github.com/OSSBlade/openblade-core/commit/3a5f7abd))
+- Fix performance-key notifications in the Session Agent by including the Microsoft-signed Windows App Runtime notification resource. ([415de370](https://github.com/OSSBlade/openblade-core/commit/415de370))
+- Check keyboard-shortcut and website values before M1 through M5 override their normal behavior. Invalid actions show a message and the key keeps its default action. ([18ab090a](https://github.com/OSSBlade/openblade-core/commit/18ab090a))
+- Fix option pickers losing their visible selection during startup and status refreshes. ([1d5d64da](https://github.com/OSSBlade/openblade-core/commit/1d5d64da))
+- Treat known current values for `Not set` profile fields as saveable changes. Display, laptop behavior, and lid-logo pages now show the unsaved prompt and profile save action. ([3ed0c0b2](https://github.com/OSSBlade/openblade-core/commit/3ed0c0b2))
+- Make Fn+P use the Windows P-key scan code observed on the target laptop. ([219f36f4](https://github.com/OSSBlade/openblade-core/commit/219f36f4))
+- Keep tray hover telemetry updating while the main window is hidden and read only the sensors the Dashboard or hover label shows. NVIDIA GPU sensors are read only while the GPU is active, and missing or powered-down GPU temperatures are hidden. ([278d68c8](https://github.com/OSSBlade/openblade-core/commit/278d68c8))
+- Fix duplicated Dashboard control cards showing stale visibility, availability, selection, or loading state. ([a2bb68e6](https://github.com/OSSBlade/openblade-core/commit/a2bb68e6))
+- Keep the Power mode, Fans, and Battery controls visible and usable during a brief adapter read failure. Fix Dashboard content showing under the Settings navigation item after reordering the selected Settings page. ([7cee2e12](https://github.com/OSSBlade/openblade-core/commit/7cee2e12))
+- Keep Dashboard card controls and their Laptop, Lighting, and Display page controls in sync after startup, so source-page controls no longer stay disabled. ([c99f36b9](https://github.com/OSSBlade/openblade-core/commit/c99f36b9))
+- Fix the Dashboard customizer crashing when the default card is unchecked. Edits apply when you select Done, without restarting the tray, and selection controls align with the dialog's right edge. ([75389ff6](https://github.com/OSSBlade/openblade-core/commit/75389ff6))
+- Restore the outlined application icon so the taskbar glyph stays legible on a dark taskbar. ([75389ff6](https://github.com/OSSBlade/openblade-core/commit/75389ff6))
+- Fix the approved Tidal and Wave/Wheel oracle fixtures failing hash checks in fresh clones by checking them out with CRLF line endings. ([7a208a91](https://github.com/OSSBlade/openblade-core/commit/7a208a91))
+- Fix closed information banners reserving empty space, so the first section gap matches across Dashboard, Lighting, Display, and Settings. ([4db2540a](https://github.com/OSSBlade/openblade-core/commit/4db2540a))
+- Sort the Lighting page's effect picker alphabetically. ([32c1c889](https://github.com/OSSBlade/openblade-core/commit/32c1c889))
+- Show one `Unavailable` label for the dashboard fan reading when neither fan sensor has a value. ([29d1ad6a](https://github.com/OSSBlade/openblade-core/commit/29d1ad6a))
+- Fix the selected lighting effect being replaced by the external-effect placeholder while a write is pending. ([7a571e88](https://github.com/OSSBlade/openblade-core/commit/7a571e88))
+- Use OpenBlade green (`#47E10C`) as the default and recovery color for lighting effects when no color is available. ([9daeae1b](https://github.com/OSSBlade/openblade-core/commit/9daeae1b))
+- Fix Reactive and Ripple key input being blocked by detection of other Razer software. ([a4785ac0](https://github.com/OSSBlade/openblade-core/commit/a4785ac0))
+- Fix dashboard telemetry columns clipping the last reading, and keep all three groups on one row at the minimum window width. ([21a64586](https://github.com/OSSBlade/openblade-core/commit/21a64586))
+- Switch the profile comparison to its compact layout sooner and move pending-change labels below profile names so badges no longer overlap the next column. ([caf6d065](https://github.com/OSSBlade/openblade-core/commit/caf6d065))
+- Fix legacy zero-brightness visible effects restoring at 100% in profile and override recovery. They now use the same 50% fallback as the Lighting page. ([14088b2a](https://github.com/OSSBlade/openblade-core/commit/14088b2a))
+- Keep laptop behavior controls on their last known selection and disabled while readback loads, and remove a garbled function-key fallback label. ([c4bd0014](https://github.com/OSSBlade/openblade-core/commit/c4bd0014))
+- Keep the last connected dashboard state during brief service reconnects so controls no longer flash unavailable. ([3d29fa87](https://github.com/OSSBlade/openblade-core/commit/3d29fa87))
+- Use consistent separators in dashboard live readings, show one label for fully unavailable temperatures, and remove extra footer margins. ([24047c05](https://github.com/OSSBlade/openblade-core/commit/24047c05))
+- Read telemetry between the ten-second full-state checks, so visible refreshes no longer repeat capability, firmware, and control-state reads. Settings changed elsewhere are still detected. ([c050af28](https://github.com/OSSBlade/openblade-core/commit/c050af28))
+- Add separate time limits for display-agent connect, query, change, and response steps. A client disconnect or stall affects only its own connection. ([c050af28](https://github.com/OSSBlade/openblade-core/commit/c050af28))
+- Enforce an 800 by 600 DIP minimum window size that fits the display's usable area at high scaling. ([c050af28](https://github.com/OSSBlade/openblade-core/commit/c050af28))
+- Fix the laptop briefly showing as missing after a transient HID probe failure. ([4d7de125](https://github.com/OSSBlade/openblade-core/commit/4d7de125))
+- Fix concurrent Reactive and Ripple status updates overwriting each other. ([c050af28](https://github.com/OSSBlade/openblade-core/commit/c050af28))
+- Treat failed or incomplete device enumeration as an error instead of a complete device list. ([c050af28](https://github.com/OSSBlade/openblade-core/commit/c050af28))
+- Reuse one connection for Reactive and Ripple key bursts, and keep the Raw Input listener alive through brief status-stream failures. ([bcdd29a5](https://github.com/OSSBlade/openblade-core/commit/bcdd29a5))
+- Retry Reactive and Ripple key pulses after a brief send failure instead of dropping the first pulse. ([c3f5eac8](https://github.com/OSSBlade/openblade-core/commit/c3f5eac8))
+- Keep a healthy lighting renderer running through temporary firmware-read failures, so the laptop no longer flashes unavailable and key-triggered effects continue. ([bcdd29a5](https://github.com/OSSBlade/openblade-core/commit/bcdd29a5))
+- Raise host-rendered fades to 30 frames per second with unchanged effect durations, and start unknown visible brightness at 50%. ([bcdd29a5](https://github.com/OSSBlade/openblade-core/commit/bcdd29a5))
+- Fix stalled or truncated display IPC frames affecting more than one client connection. ([df37652f](https://github.com/OSSBlade/openblade-core/commit/df37652f))
+- Keep Reactive and Ripple key pulses through brief stalls instead of canceling them after 100 ms. ([24104b23](https://github.com/OSSBlade/openblade-core/commit/24104b23))
+- Keep fixed-speed and manual-curve fan settings across service restarts. ([df37652f](https://github.com/OSSBlade/openblade-core/commit/df37652f))
+- Skip invalid saved lighting overrides at startup instead of retrying them every time. ([df37652f](https://github.com/OSSBlade/openblade-core/commit/df37652f))
+- Refresh the UI when only fan-control details or lighting-renderer ownership change. ([df37652f](https://github.com/OSSBlade/openblade-core/commit/df37652f))
+- Fix lighting cleanup returning before the hardware was released when several callers ran at once. ([df37652f](https://github.com/OSSBlade/openblade-core/commit/df37652f))
+- Fix a failed HID cancellation blocking the hardware session indefinitely. ([df37652f](https://github.com/OSSBlade/openblade-core/commit/df37652f))
+- Add a two-second read deadline so incomplete local requests cannot occupy every service pipe listener. ([df37652f](https://github.com/OSSBlade/openblade-core/commit/df37652f))
+- Keep exclusive ownership of the service pipe from startup so another local process cannot claim its name. ([df37652f](https://github.com/OSSBlade/openblade-core/commit/df37652f))
+- Run setup service-control operations from the Windows System32 `sc.exe`. ([df37652f](https://github.com/OSSBlade/openblade-core/commit/df37652f))
+- Apply the protected machine-data permissions to existing files and folders, not only the parent folder. ([df37652f](https://github.com/OSSBlade/openblade-core/commit/df37652f))
+- Stop interactive keyboard pulses from waiting behind periodic firmware checks, and keep status through routine subscription rotation. ([c83fdf61](https://github.com/OSSBlade/openblade-core/commit/c83fdf61))
+- Keep repeated key-triggered lighting pulses working, keep Raw Input active across brief service reconnects, and refresh cached input-device identity after device changes. ([bd598c48](https://github.com/OSSBlade/openblade-core/commit/bd598c48))
+- Fix one transient device access failure disabling every control. ([bd598c48](https://github.com/OSSBlade/openblade-core/commit/bd598c48))
+- Keep the last confirmed capabilities when a refresh fails, and reduce controller and external-power discovery work. ([24104b23](https://github.com/OSSBlade/openblade-core/commit/24104b23))
+- Reuse one Ambient Awareness connection and the admitted lighting port instead of reconnecting for every 20 Hz frame. ([24104b23](https://github.com/OSSBlade/openblade-core/commit/24104b23))
+- Make dashboard telemetry rows fit their content so unavailable temperature values wrap without clipping or extra space. ([bd598c48](https://github.com/OSSBlade/openblade-core/commit/bd598c48))
+- Fix an unconfirmed visible lighting effect showing 0% brightness while the firmware used another value. It now defaults to 50%. ([bd598c48](https://github.com/OSSBlade/openblade-core/commit/bd598c48))
+- Apply the OpenBlade application icon to every executable project. ([bd598c48](https://github.com/OSSBlade/openblade-core/commit/bd598c48))
+- Remove the glitchy long-distance navigation selection-indicator animation. ([c83fdf61](https://github.com/OSSBlade/openblade-core/commit/c83fdf61))
+- Enforce an 800 by 600 DIP minimum app-window size to protect responsive layouts. ([c83fdf61](https://github.com/OSSBlade/openblade-core/commit/c83fdf61))
 
 ### Added
 
-- Removed the optional UIAccess input companion from the MVP. Interactive
-  lighting and performance-shortcut input remain supported in normal user apps,
-  while elevated applications are treated as an explicit Windows input-boundary
-  limitation. ([c3a0411e](https://github.com/OSSBlade/openblade-core/commit/c3a0411e))
-- JSON export for all saved AC, USB-C, and battery profiles from the Profiles
-  page, including a portable schema version, OpenBlade version, and export time. ([0c9881be](https://github.com/OSSBlade/openblade-core/commit/0c9881be))
-- Short height-and-opacity transitions for conditional Power mode and fan-control
-  subcards, with no reserved space after a card collapses. ([0c9881be](https://github.com/OSSBlade/openblade-core/commit/0c9881be))
-- Green accent dots on navigation items with unsaved profile changes. ([0c9881be](https://github.com/OSSBlade/openblade-core/commit/0c9881be))
-- Adjustable Fixed Fan Speed from 2,000 to 5,400 RPM in captured 100 RPM
-  steps, plus a native slider that reflects the active target. ([fc5401c3](https://github.com/OSSBlade/openblade-core/commit/fc5401c3))
-- CPU and GPU manual fan-curve editing, an optional hotter-sensor policy, and
-  a service-owned one-second control loop. Curve writes stop if another app
-  exits firmware manual mode, and missing or critical temperature data forces
-  the captured 5,400 RPM fail-safe target. ([fc5401c3](https://github.com/OSSBlade/openblade-core/commit/fc5401c3))
-- Exact-device manual curves use the firmware-defined Razer `TZRZ` ACPI thermal
-  zone through Windows PDH for the CPU-side temperature and signed NVIDIA NVML
-  for GPU temperature, without installing or redistributing a sensor driver. ([8adb5439](https://github.com/OSSBlade/openblade-core/commit/8adb5439))
-- Sanitized Synapse oracle evidence proving that Manual Fan Curve is a
-  host-calculated pair of independent per-fan RPM writes rather than a
-  firmware-stored curve table. ([fc5401c3](https://github.com/OSSBlade/openblade-core/commit/fc5401c3))
+- Remove the optional UIAccess input companion. Interactive lighting and performance shortcuts work in normal apps; elevated apps are a Windows input limit. ([c3a0411e](https://github.com/OSSBlade/openblade-core/commit/c3a0411e))
+- Export all saved AC, USB-C, and battery profiles as JSON from the Profiles page. ([0c9881be](https://github.com/OSSBlade/openblade-core/commit/0c9881be))
+- Add short transitions for conditional Power mode and fan-control subcards. ([0c9881be](https://github.com/OSSBlade/openblade-core/commit/0c9881be))
+- Show green accent dots on navigation items with unsaved profile changes. ([0c9881be](https://github.com/OSSBlade/openblade-core/commit/0c9881be))
+- Add adjustable Fixed Fan Speed from 2,000 to 5,400 RPM in 100 RPM steps, with a slider that reflects the active target. ([fc5401c3](https://github.com/OSSBlade/openblade-core/commit/fc5401c3))
+- Add CPU and GPU manual fan-curve editing and an optional hotter-sensor policy. Curve writes stop if another app exits firmware manual mode, and missing or critical temperature data sets fans to 5,400 RPM. ([fc5401c3](https://github.com/OSSBlade/openblade-core/commit/fc5401c3))
+- Manual fan curves read CPU-side temperature from the firmware thermal zone and GPU temperature from NVIDIA, with no sensor driver to install. ([8adb5439](https://github.com/OSSBlade/openblade-core/commit/8adb5439))
+- Add Synapse evidence showing Manual Fan Curve is a pair of per-fan RPM writes calculated by the host. ([fc5401c3](https://github.com/OSSBlade/openblade-core/commit/fc5401c3))
 
-- Exact-device Function-key behavior readback so Settings can show and verify
-  the current Function keys or Media keys state. ([a325aa12](https://github.com/OSSBlade/openblade-core/commit/a325aa12))
-- Exact-device Gaming Mode readback so Settings can show and verify the current
-  firmware-facing On or Off state without implying Synapse software policy. ([ff08de7d](https://github.com/OSSBlade/openblade-core/commit/ff08de7d))
+- Read the current Function keys or Media keys state in Settings. ([a325aa12](https://github.com/OSSBlade/openblade-core/commit/a325aa12))
+- Read the current Gaming Mode On or Off state in Settings. ([ff08de7d](https://github.com/OSSBlade/openblade-core/commit/ff08de7d))
 
-- Settings now offers a confirmed full shutdown that stops the tray,
-  SessionAgent, and LocalSystem service without launching a shell command. ([df0858f1](https://github.com/OSSBlade/openblade-core/commit/df0858f1))
-- A lightweight per-user SessionAgent that exclusively owns Windows display
-  queries and changes while the LocalSystem service remains the hardware and
-  profile authority. ([2e8ef3fa](https://github.com/OSSBlade/openblade-core/commit/2e8ef3fa))
-- Built-in display controls for driver-enumerated fixed refresh rates, EDID-reported Windows Dynamic Refresh Rate, HDR, and the locally installed Razer color profiles. ([e8cf4a65](https://github.com/OSSBlade/openblade-core/commit/e8cf4a65))
-- Keyboard lighting controls for Off, Static, Spectrum Cycling, single/dual/random Breathing, Reactive Short/Medium/Long, color, and brightness on the exact RZ09-0581/PID 02E0 device. ([438aa0ec](https://github.com/OSSBlade/openblade-core/commit/438aa0ec))
-- Capture-faithful Tidal keyboard lighting with fixed or random two-color
-  palettes and independent leftward/rightward direction controls. ([9eead2da](https://github.com/OSSBlade/openblade-core/commit/9eead2da))
-- Host-rendered Starlight keyboard lighting with one color, two colors, or
-  random colors and independent Short, Medium, and Long twinkle durations. ([6c4a004e](https://github.com/OSSBlade/openblade-core/commit/6c4a004e))
-- Capture-faithful Wave and Wheel keyboard lighting. Wave supports leftward and
-  rightward motion; Wheel supports clockwise and counterclockwise rotation. ([b7c241b0](https://github.com/OSSBlade/openblade-core/commit/b7c241b0))
-- Capture-calibrated Ripple keyboard lighting with a selected color and
-  per-key expanding rings driven by the existing data-minimized Raw Input path. ([e2a5fb9e](https://github.com/OSSBlade/openblade-core/commit/e2a5fb9e))
-- Typed laptop-logo lighting controls for Static, Breathing, and Off with
-  independent state/effect readback and rollback. ([9eead2da](https://github.com/OSSBlade/openblade-core/commit/9eead2da))
-- Data-minimized Reactive input through Windows Raw Input: scan-code make events map directly to matrix slots without recording characters, virtual-key values, applications, window titles, or input packets. ([2178462f](https://github.com/OSSBlade/openblade-core/commit/2178462f))
-- Sanitized Synapse oracle USBPcap evidence for lighting brightness readback, the 102-slot matrix envelope, effect timing, dual/random Breathing, and Reactive key placement and decay. The admitted configuration was also exercised in repeated installed OpenBlade runs on the target laptop. ([438aa0ec](https://github.com/OSSBlade/openblade-core/commit/438aa0ec))
-- Sanitized Synapse oracle evidence for all five Ambient Awareness screen
-  regions: Full, Left, Top, Right, and Bottom. The capture confirms that region
-  selection is host-side screen sampling followed by the shared matrix stream,
-  not a firmware region command. ([9c70267f](https://github.com/OSSBlade/openblade-core/commit/9c70267f))
-- Ambient Awareness with Full screen, Left, Top, Right, and Bottom sampling.
-  The signed-in SessionAgent downsamples directly to the 17 by 6 keyboard grid;
-  only typed RGB colors cross IPC, and sampling stops when the effect is no
-  longer active. ([0f0ab99e](https://github.com/OSSBlade/openblade-core/commit/0f0ab99e))
-- A sanitized, hash-pinned five-second Tidal matrix oracle for both directions;
-  raw USB captures remain local and are not distributed. ([9eead2da](https://github.com/OSSBlade/openblade-core/commit/9eead2da))
-- A sanitized, hash-pinned one-second Wave and Wheel matrix oracle covering all
-  four captured direction variants. ([b7c241b0](https://github.com/OSSBlade/openblade-core/commit/b7c241b0))
-- Keyboard lighting power policies that switch lighting off while the display
-  is off or the signed-in user is idle for 1 through 60 minutes, then restore
-  the current profile or manual override after every suppression reason clears. ([f2caac2e](https://github.com/OSSBlade/openblade-core/commit/f2caac2e))
-- Performance-button and Fn+P support from the captured MI_01 Raw Input reports.
-  Plugged-in power cycles Balanced, Silent, Performance, and Custom; battery
-  cycles Balanced and Battery Saver; USB-C remains Balanced. ([7375cd9e](https://github.com/OSSBlade/openblade-core/commit/7375cd9e))
-- Native Windows notifications after a physical performance-button or Fn+P
-  shortcut successfully applies a new mode. Profile changes, startup, resume,
-  polling, blocked shortcuts, and failed shortcuts do not generate a success
-  notification. ([7733c774](https://github.com/OSSBlade/openblade-core/commit/7733c774))
-- The bounded read-only performance discriminator probe now includes fixed
-  `0D/87` CPU and GPU component queries. Target-hardware readback confirmed the
-  saved CPU Medium and GPU High values, allowing Custom mode to expose the
-  captured Low, Medium, and High component choices while blocking High/High. ([7375cd9e](https://github.com/OSSBlade/openblade-core/commit/7375cd9e))
-- Exact-device Startup animation control with validated read-only `0F/98`
-  state, based on isolated On, Off, and restored-On responses. Function-key
-  behavior uses validated read-only `02/86` state, and the firmware-facing
-  Gaming Mode bit uses validated read-only `00/88` state. ([ff08de7d](https://github.com/OSSBlade/openblade-core/commit/ff08de7d))
-- A sanitized Synapse protocol-logger and persistence audit proving that
-  Function key behavior and Gaming Mode are displayed from Synapse-owned saved
-  state and replayed through setters, not hydrated from observed firmware
-  getters. The investigation restored both original selections and sent no
-  guessed commands. ([c562dc48](https://github.com/OSSBlade/openblade-core/commit/c562dc48))
-- Developer-only, exact-device candidate probes for the original Function-key
-  and Gaming Mode getter hypotheses. Each named command has one compile-time
-  request, strict RZ09-0581/PID 02E0/BIOS 3.01 and controller gates, and one
-  exchange with no retry. Both readbacks were subsequently discriminated across
-  known states and admitted to production with strict payload decoding. ([a325aa12](https://github.com/OSSBlade/openblade-core/commit/a325aa12))
-- A captured-feature audit that maps every reproducible target-device operation
-  to its production surface and records why Trackpad, Snap Tap, and
-  uncaptured effects remain hidden instead of relying on guessed commands. ([a0099df9](https://github.com/OSSBlade/openblade-core/commit/a0099df9))
+- Add a confirmed full shutdown in Settings that stops the tray, SessionAgent, and service. ([df0858f1](https://github.com/OSSBlade/openblade-core/commit/df0858f1))
+- Add a lightweight per-user SessionAgent that handles display queries and changes. ([2e8ef3fa](https://github.com/OSSBlade/openblade-core/commit/2e8ef3fa))
+- Add display controls for fixed refresh rates, Windows Dynamic Refresh Rate, HDR, and the locally installed Razer color profiles. ([e8cf4a65](https://github.com/OSSBlade/openblade-core/commit/e8cf4a65))
+- Add keyboard lighting on the RZ09-0581 (PID 02E0): Off, Static, Spectrum Cycling, single/dual/random Breathing, Reactive Short/Medium/Long, color, and brightness. ([438aa0ec](https://github.com/OSSBlade/openblade-core/commit/438aa0ec))
+- Add Tidal keyboard lighting with fixed or random two-color palettes and leftward or rightward direction. ([9eead2da](https://github.com/OSSBlade/openblade-core/commit/9eead2da))
+- Add Starlight keyboard lighting with one color, two colors, or random colors and Short, Medium, or Long twinkle durations. ([6c4a004e](https://github.com/OSSBlade/openblade-core/commit/6c4a004e))
+- Add Wave and Wheel keyboard lighting. Wave moves leftward or rightward; Wheel rotates clockwise or counterclockwise. ([b7c241b0](https://github.com/OSSBlade/openblade-core/commit/b7c241b0))
+- Add Ripple keyboard lighting with a selected color and expanding rings per key press. ([e2a5fb9e](https://github.com/OSSBlade/openblade-core/commit/e2a5fb9e))
+- Add laptop-logo lighting controls for Static, Breathing, and Off. ([9eead2da](https://github.com/OSSBlade/openblade-core/commit/9eead2da))
+- Reactive lighting reads key scan codes through Windows Raw Input and does not record characters, applications, window titles, or input packets. ([2178462f](https://github.com/OSSBlade/openblade-core/commit/2178462f))
+- Add Synapse evidence for lighting brightness, the 102-slot matrix, effect timing, dual/random Breathing, and Reactive key placement and decay, and test the supported setup repeatedly on the target laptop. ([438aa0ec](https://github.com/OSSBlade/openblade-core/commit/438aa0ec))
+- Add Synapse evidence for the five Ambient Awareness screen regions: Full, Left, Top, Right, and Bottom. Region selection is host-side screen sampling, not a firmware command. ([9c70267f](https://github.com/OSSBlade/openblade-core/commit/9c70267f))
+- Add Ambient Awareness with Full screen, Left, Top, Right, and Bottom sampling. Sampling stops when the effect is no longer active. ([0f0ab99e](https://github.com/OSSBlade/openblade-core/commit/0f0ab99e))
+- Add a five-second Tidal reference capture for both directions. Raw USB captures stay local. ([9eead2da](https://github.com/OSSBlade/openblade-core/commit/9eead2da))
+- Add a one-second Wave and Wheel reference capture covering all four directions. ([b7c241b0](https://github.com/OSSBlade/openblade-core/commit/b7c241b0))
+- Add keyboard lighting power policies that turn lighting off while the display is off or the user is idle for 1 to 60 minutes, then restore it when those conditions clear. ([f2caac2e](https://github.com/OSSBlade/openblade-core/commit/f2caac2e))
+- Add Performance-button and Fn+P support. Plugged in, it cycles Balanced, Silent, Performance, and Custom; on battery, Balanced and Battery Saver; on USB-C, Balanced stays. ([7375cd9e](https://github.com/OSSBlade/openblade-core/commit/7375cd9e))
+- Show a Windows notification after a Performance-button or Fn+P press applies a new mode. ([7733c774](https://github.com/OSSBlade/openblade-core/commit/7733c774))
+- Custom mode now offers the captured Low, Medium, and High CPU and GPU choices, and blocks High/High. ([7375cd9e](https://github.com/OSSBlade/openblade-core/commit/7375cd9e))
+- Add Startup animation control. Function-key behavior and the firmware Gaming Mode bit are also read from the laptop. ([ff08de7d](https://github.com/OSSBlade/openblade-core/commit/ff08de7d))
+- Add a Synapse audit showing Function key behavior and Gaming Mode are shown from Synapse's own saved state, not read from firmware. ([c562dc48](https://github.com/OSSBlade/openblade-core/commit/c562dc48))
+- Add developer-only probes for the Function-key and Gaming Mode readbacks on the RZ09-0581 (PID 02E0, BIOS 3.01). Both readbacks are now in the product. ([a325aa12](https://github.com/OSSBlade/openblade-core/commit/a325aa12))
+- Add an audit mapping each captured target-device operation to its product control. Trackpad, Snap Tap, and uncaptured effects stay hidden. ([a0099df9](https://github.com/OSSBlade/openblade-core/commit/a0099df9))
 
 ### Changed
 
-- Reactive and Ripple key presses now wake the existing matrix stream instead
-  of submitting competing feature-report writes. The service also avoids a
-  redundant renderer-ownership read for every key, reducing intermittent input
-  latency and animation-frame contention. ([0c9881be](https://github.com/OSSBlade/openblade-core/commit/0c9881be))
+- Reactive and Ripple key presses no longer compete with other lighting writes, which reduces intermittent input latency and animation stutter. ([0c9881be](https://github.com/OSSBlade/openblade-core/commit/0c9881be))
 
-- Direct Fixed Fan Speed and Manual Fan Curve changes now accept the generic
-  manual firmware readback used by PID 02E0, while entering manual control
-  still requires a confirmed Balanced and Automatic state. ([c2ebb52b](https://github.com/OSSBlade/openblade-core/commit/c2ebb52b))
-- Reactive and Ripple input now queues accepted keys for one persistent renderer
-  and timestamps each pulse when the renderer can consume it. Animated effects
-  use deadline-based scheduling so HID write time no longer accumulates as
-  visible frame drift. ([24104b23](https://github.com/OSSBlade/openblade-core/commit/24104b23))
-- Firmware controls consistently reserve an inline progress indicator while a
-  read or write is pending, and page navigation marks the specific page with
-  unsaved changes. ([c2ebb52b](https://github.com/OSSBlade/openblade-core/commit/c2ebb52b))
-- Lighting color rows now stay compact; the native picker flyout contains the
-  color channels and hex input. Tidal directions are labeled Outward and Inward
-  to match the captured keyboard motion. ([c2ebb52b](https://github.com/OSSBlade/openblade-core/commit/c2ebb52b))
-- A transient device-admission miss during a scoped lighting action no longer
-  replaces the last verified laptop status with a global unavailable state. ([c2ebb52b](https://github.com/OSSBlade/openblade-core/commit/c2ebb52b))
-- Dashboard fan telemetry now presents the two channels as a clear
-  `Fan 1 / Fan 2` pair, profile comparisons name lighting triggers and outcomes
-  explicitly, and the taskbar hover list can omit the OpenBlade app name. ([b9342c5a](https://github.com/OSSBlade/openblade-core/commit/b9342c5a))
-- Fan mode changes remain visibly pending with a progress ring, and direct
-  Fixed Fan Speed to Manual Fan Curve transitions re-arm the captured manual
-  state before applying the new target. ([b9342c5a](https://github.com/OSSBlade/openblade-core/commit/b9342c5a))
+- Direct Fixed Fan Speed and Manual Fan Curve changes accept the generic manual readback used by PID 02E0. Entering manual control still needs a confirmed Balanced and Automatic state. ([c2ebb52b](https://github.com/OSSBlade/openblade-core/commit/c2ebb52b))
+- Reactive and Ripple keep pulses in step with key presses, and animated effects no longer drift as hardware writes take time. ([24104b23](https://github.com/OSSBlade/openblade-core/commit/24104b23))
+- Firmware controls show a progress indicator while a read or write is pending, and navigation marks the page with unsaved changes. ([c2ebb52b](https://github.com/OSSBlade/openblade-core/commit/c2ebb52b))
+- Lighting color rows are compact; the color picker flyout holds the channels and hex input. Tidal directions are now Outward and Inward. ([c2ebb52b](https://github.com/OSSBlade/openblade-core/commit/c2ebb52b))
+- Fix a brief device-detection miss during a lighting action replacing the last verified laptop status with "unavailable". ([c2ebb52b](https://github.com/OSSBlade/openblade-core/commit/c2ebb52b))
+- Show Dashboard fan telemetry as a `Fan 1 / Fan 2` pair, name lighting triggers and outcomes in profile comparisons, and let the taskbar hover list omit the OpenBlade name. ([b9342c5a](https://github.com/OSSBlade/openblade-core/commit/b9342c5a))
+- Fan mode changes show a progress ring while pending, and switching from Fixed Fan Speed to Manual Fan Curve applies the new target correctly. ([b9342c5a](https://github.com/OSSBlade/openblade-core/commit/b9342c5a))
 
-- Dashboard live readings now use three compact semantic groups for Battery,
-  Temperatures, and Fans while retaining individual visibility controls. ([6ae7b8d7](https://github.com/OSSBlade/openblade-core/commit/6ae7b8d7))
-- Taskbar hover content exposes Power source and Power mode as separate,
-  reorderable items instead of combining AC or Battery with the active mode. ([6ae7b8d7](https://github.com/OSSBlade/openblade-core/commit/6ae7b8d7))
-- Lighting display-off and inactivity rules are now saved independently in the
-  AC, USB-C, and Battery profiles. Schema 4 global rules migrate into all three
-  profiles when first loaded. ([6ae7b8d7](https://github.com/OSSBlade/openblade-core/commit/6ae7b8d7))
-- Switching directly between Fixed, Manual fan curve, and Maximum now performs
-  the firmware-required Automatic transition internally without changing the
-  user-visible selection. ([6ae7b8d7](https://github.com/OSSBlade/openblade-core/commit/6ae7b8d7))
-- The application accent palette now uses `#47E10C` as its Razer-green base. ([6ae7b8d7](https://github.com/OSSBlade/openblade-core/commit/6ae7b8d7))
-- Dashboard colors now have one semantic role each: accent marks the active
-  profile and primary action, green marks readiness, amber marks attention,
-  red marks failure, and ordinary power-source and unsaved-edit labels remain
-  neutral. Status pills share the same foreground, sizing, and container style;
-  profile drafts use neutral text instead of accent dots, and transient checks
-  use progress indicators instead of looking like another status category. ([fc7c4381](https://github.com/OSSBlade/openblade-core/commit/fc7c4381))
-- Custom CPU/GPU controls and Fixed/Manual Curve fan controls now expand as
-  full-width child rows beneath their Power mode and Fans parent rows, matching
-  the visual hierarchy used by Windows Settings. ([0e2edeb1](https://github.com/OSSBlade/openblade-core/commit/0e2edeb1))
-- Dashboard live readings now include the safe CPU-side firmware temperature
-  and NVIDIA GPU temperature. Settings can independently show or hide each
-  temperature, fan, and battery-power item without disabling collection. ([0e2edeb1](https://github.com/OSSBlade/openblade-core/commit/0e2edeb1))
-- Taskbar hover content is now a checked, draggable list, allowing users to
-  choose and order the active profile, net battery power, temperatures, and
-  individual fan speeds within the Windows tooltip length limit. ([0e2edeb1](https://github.com/OSSBlade/openblade-core/commit/0e2edeb1))
-- The UI uses OpenBlade green for its WinUI accent while reserving green, amber,
-  and red status colors for ready, attention, and failure states. ([9daeae1b](https://github.com/OSSBlade/openblade-core/commit/9daeae1b))
-- Lighting edits apply automatically after a short debounce instead of requiring
-  a separate Apply button, and newer edits are not cleared by an older in-flight
-  request. ([0e2edeb1](https://github.com/OSSBlade/openblade-core/commit/0e2edeb1))
-- Fan-curve slider tracks stretch across their child panels and update their RPM
-  labels as values are dragged. ([0e2edeb1](https://github.com/OSSBlade/openblade-core/commit/0e2edeb1))
-- The full-shutdown action uses the Windows critical-action color and keeps its
-  existing confirmation dialog. ([0e2edeb1](https://github.com/OSSBlade/openblade-core/commit/0e2edeb1))
-- Profile comparison now includes laptop lid-logo behavior and the global rules
-  that switch keyboard lighting off with the display or after inactivity. ([0e2edeb1](https://github.com/OSSBlade/openblade-core/commit/0e2edeb1))
-- Explicit Fixed, Manual Curve, and Maximum fan actions now always resubmit the
-  requested RPM target even when firmware already reports its undifferentiated
-  manual state. This also allows changing manual targets without returning to
-  Automatic first. ([fc7c4381](https://github.com/OSSBlade/openblade-core/commit/fc7c4381))
-- Laptop-logo controls now initialize from firmware readback and no longer offer
-  a misleading Leave unchanged choice. When a keyboard effect was selected by
-  another app and cannot be queried, OpenBlade reports that limitation instead
-  of falsely labeling the effect Off. ([fc7c4381](https://github.com/OSSBlade/openblade-core/commit/fc7c4381))
-- Lighting power-policy switches now use the same compact alignment as other
-  settings, and the inactivity value is vertically centered in its NumberBox. ([f9be96b8](https://github.com/OSSBlade/openblade-core/commit/f9be96b8))
-- Gaming Mode and Startup animation now use native right-aligned toggles instead
-  of dropdown menus, while retaining confirmed firmware readback. ([5768a93a](https://github.com/OSSBlade/openblade-core/commit/5768a93a))
-- Self-contained WinUI publishing now includes compiled XAML resources;
-  incomplete payloads fail validation instead of crashing at startup. ([a325aa12](https://github.com/OSSBlade/openblade-core/commit/a325aa12))
+- Group Dashboard live readings into Battery, Temperatures, and Fans, with a visibility control for each item. ([6ae7b8d7](https://github.com/OSSBlade/openblade-core/commit/6ae7b8d7))
+- Show Power source and Power mode as separate, reorderable taskbar hover items. ([6ae7b8d7](https://github.com/OSSBlade/openblade-core/commit/6ae7b8d7))
+- Save lighting display-off and inactivity rules separately in the AC, USB-C, and Battery profiles. Schema 4 global rules move into all three profiles when first loaded. ([6ae7b8d7](https://github.com/OSSBlade/openblade-core/commit/6ae7b8d7))
+- Switching directly between Fixed, Manual fan curve, and Maximum works without changing your selection. ([6ae7b8d7](https://github.com/OSSBlade/openblade-core/commit/6ae7b8d7))
+- Use `#47E10C` as the Razer-green base of the accent palette. ([6ae7b8d7](https://github.com/OSSBlade/openblade-core/commit/6ae7b8d7))
+- Give Dashboard colors one role each: accent for the active profile and primary action, green for ready, amber for attention, red for failure. Power-source and unsaved-edit labels are neutral, status pills share one style, and transient checks use progress indicators. ([fc7c4381](https://github.com/OSSBlade/openblade-core/commit/fc7c4381))
+- Custom CPU/GPU controls and Fixed/Manual Curve fan controls expand as full-width rows under their Power mode and Fans rows, like Windows Settings. ([0e2edeb1](https://github.com/OSSBlade/openblade-core/commit/0e2edeb1))
+- Add CPU-side firmware temperature and NVIDIA GPU temperature to Dashboard live readings. Settings can show or hide each temperature, fan, and battery-power item. ([0e2edeb1](https://github.com/OSSBlade/openblade-core/commit/0e2edeb1))
+- Make taskbar hover content a checked, draggable list for the active profile, net battery power, temperatures, and individual fan speeds, within the Windows tooltip length limit. ([0e2edeb1](https://github.com/OSSBlade/openblade-core/commit/0e2edeb1))
+- Use OpenBlade green as the WinUI accent, with green, amber, and red kept for ready, attention, and failure. ([9daeae1b](https://github.com/OSSBlade/openblade-core/commit/9daeae1b))
+- Apply lighting edits automatically after a short delay, with no Apply button. A newer edit is not cleared by an older one still in progress. ([0e2edeb1](https://github.com/OSSBlade/openblade-core/commit/0e2edeb1))
+- Stretch fan-curve slider tracks across their panels and update RPM labels while dragging. ([0e2edeb1](https://github.com/OSSBlade/openblade-core/commit/0e2edeb1))
+- Show the full-shutdown action in the Windows critical-action color, with its confirmation dialog kept. ([0e2edeb1](https://github.com/OSSBlade/openblade-core/commit/0e2edeb1))
+- Include lid-logo behavior and the display-off and inactivity lighting rules in profile comparison. ([0e2edeb1](https://github.com/OSSBlade/openblade-core/commit/0e2edeb1))
+- Fixed, Manual Curve, and Maximum fan actions always send the requested RPM target, so you can change manual targets without returning to Automatic first. ([fc7c4381](https://github.com/OSSBlade/openblade-core/commit/fc7c4381))
+- Laptop-logo controls start from the laptop's current state and no longer offer a Leave unchanged choice. If another app selected a keyboard effect that can't be read, OpenBlade says so instead of showing Off. ([fc7c4381](https://github.com/OSSBlade/openblade-core/commit/fc7c4381))
+- Align lighting power-policy switches like other settings and center the inactivity value in its NumberBox. ([f9be96b8](https://github.com/OSSBlade/openblade-core/commit/f9be96b8))
+- Use right-aligned toggles for Gaming Mode and Startup animation instead of dropdown menus. ([5768a93a](https://github.com/OSSBlade/openblade-core/commit/5768a93a))
+- Fix self-contained WinUI builds missing compiled XAML resources, which could crash at startup. Incomplete payloads now fail validation. ([a325aa12](https://github.com/OSSBlade/openblade-core/commit/a325aa12))
 
-- Laptop-logo lighting now has its own section on the Lighting page. Firmware-only
-  Function key behavior, Gaming Mode, and Startup animation actions are grouped
-  under Laptop behavior and use explicit Set menus instead of implying that
-  OpenBlade can query their current values. ([da88d598](https://github.com/OSSBlade/openblade-core/commit/da88d598))
-- User-facing power-source labels consistently use AC instead of mixing AC with
-  Plugged in. ([da88d598](https://github.com/OSSBlade/openblade-core/commit/da88d598))
-- Dashboard, Lighting, and Display now present pending profile saves beside the
-  page title instead of as settings-card rows. The compact action names the
-  destination profile, keeps restoration in an overflow menu, and moves below
-  the title in narrow windows. ([bd79b92d](https://github.com/OSSBlade/openblade-core/commit/bd79b92d))
-- Lighting remains available in navigation when its device interface cannot be
-  accessed. The page shows the configured values in a disabled editor and
-  explains whether the service, laptop detection, or another Razer app is
-  preventing control. ([0ad85dd6](https://github.com/OSSBlade/openblade-core/commit/0ad85dd6))
-- Status subscriptions now reserve enough bounded pipe capacity for the Tray,
-  all three SessionAgent observers, and concurrent short control or diagnostic
-  requests, preventing a healthy service from appearing unavailable in the UI. ([f81c4965](https://github.com/OSSBlade/openblade-core/commit/f81c4965))
-- Exact-build lighting validation now covers fixed and random Tidal in both
-  directions, every Starlight color and duration variant, both Wave directions,
-  both Wheel rotations, plus laptop-logo Breathing, Off, and Static restoration
-  before the production control surface can be admitted. ([b7c241b0](https://github.com/OSSBlade/openblade-core/commit/b7c241b0))
+- Give laptop-logo lighting its own section on the Lighting page. Function key behavior, Gaming Mode, and Startup animation sit under Laptop behavior with explicit Set menus. ([da88d598](https://github.com/OSSBlade/openblade-core/commit/da88d598))
+- Use AC instead of Plugged in for power-source labels. ([da88d598](https://github.com/OSSBlade/openblade-core/commit/da88d598))
+- Show pending profile saves beside the page title on Dashboard, Lighting, and Display. The action names the destination profile, restoration is in an overflow menu, and it moves below the title in narrow windows. ([bd79b92d](https://github.com/OSSBlade/openblade-core/commit/bd79b92d))
+- Keep Lighting in navigation when its device can't be accessed. The page shows the configured values in a disabled editor and says whether the service, laptop detection, or another Razer app is the cause. ([0ad85dd6](https://github.com/OSSBlade/openblade-core/commit/0ad85dd6))
+- Fix a healthy service sometimes appearing unavailable in the UI. ([f81c4965](https://github.com/OSSBlade/openblade-core/commit/f81c4965))
+- Validate fixed and random Tidal in both directions, every Starlight variant, both Wave directions, both Wheel rotations, and laptop-logo Breathing, Off, and Static restoration before the lighting controls are enabled. ([b7c241b0](https://github.com/OSSBlade/openblade-core/commit/b7c241b0))
 
-- About now uses the canonical 256 px OpenBlade artwork, groups app and service
-  builds in a dedicated Versions card, integrates the independent-project
-  disclosure into the title card, and uses borderless Windows-style action
-  icons. ([df0858f1](https://github.com/OSSBlade/openblade-core/commit/df0858f1))
-- Profiles can capture Windows' current refresh rate, HDR state, and color
-  profile into the active power profile before saving the draft. ([46aacba3](https://github.com/OSSBlade/openblade-core/commit/46aacba3))
-- The Troubleshooting header now aligns with the other About card content. ([46aacba3](https://github.com/OSSBlade/openblade-core/commit/46aacba3))
-- Named-pipe protocol version 14 carries typed Custom CPU/GPU settings while
-  retaining one-shot laptop controls, lighting suppression, performance
-  shortcuts, and the installing-user-only full shutdown request. ([7375cd9e](https://github.com/OSSBlade/openblade-core/commit/7375cd9e))
-- Profile schema version 4 stores Custom CPU/GPU settings and migrates schema
-  version 3 profiles with the captured Medium/High default. Schema version 3
-  stores the global lighting power policy and remains migratable. ([7375cd9e](https://github.com/OSSBlade/openblade-core/commit/7375cd9e))
-- The tray icon now follows the effective active profile when firmware readback is
-  unavailable, instead of showing a generic error while the service is ready. ([49cd0f76](https://github.com/OSSBlade/openblade-core/commit/49cd0f76))
-- Updated the runtime application icon from the canonical OpenBlade branding
-  repository, including its continuous notch-free display bezel. ([49cd0f76](https://github.com/OSSBlade/openblade-core/commit/49cd0f76))
-- Selecting a visible keyboard effect from Off now starts with a visible color
-  and nonzero brightness. Legacy non-Off settings saved at 0% are migrated, and
-  0% is reserved for Off so Breathing cannot be accepted and then disappear. ([9bba9c97](https://github.com/OSSBlade/openblade-core/commit/9bba9c97))
-- A transient keyboard renderer failure now gets one bounded automatic restart,
-  including while the tray is hidden. Persistent failures and settings changed
-  elsewhere remain stopped and are reported without a retry loop. ([16a14299](https://github.com/OSSBlade/openblade-core/commit/16a14299))
-- Keyboard colors now use a native color picker with optional advanced RGB
-  fields, and lighting overrides are summarized as readable effect details. ([9bba9c97](https://github.com/OSSBlade/openblade-core/commit/9bba9c97))
-- The dashboard falls back to the active USB-C profile when firmware reports a
-  thermal value that is invalid for USB-C, avoiding blank or contradictory
-  performance and fan selections. ([9bba9c97](https://github.com/OSSBlade/openblade-core/commit/9bba9c97))
-- Added a per-user Start minimized option that keeps the app in the notification
-  area on initial launch while preserving normal tray and second-launch behavior. ([9bba9c97](https://github.com/OSSBlade/openblade-core/commit/9bba9c97))
-- Status pills now use the same compact dot indicator for readiness and attention
-  states. ([9bba9c97](https://github.com/OSSBlade/openblade-core/commit/9bba9c97))
-- The external-change pill now says "Changed outside OpenBlade" and clarifies
-  that saved profiles are unchanged, keeping it distinct from an unsaved
-  active-profile draft. ([908ecd30](https://github.com/OSSBlade/openblade-core/commit/908ecd30))
-- Dashboard fields now collapse to the single label "Unavailable" when the
-  service is offline instead of repeating subsystem-specific explanations. ([e6d68fa5](https://github.com/OSSBlade/openblade-core/commit/e6d68fa5))
-- User-facing setting labels now call the performance category "Power mode,"
-  avoiding a duplicate "Performance" label when the Performance mode is selected. ([7b4a1923](https://github.com/OSSBlade/openblade-core/commit/7b4a1923))
-- The Profiles page now uses an adaptive comparison matrix for power, cooling,
-  lighting, and display settings, with a single-profile detail view in narrow windows. ([7b4a1923](https://github.com/OSSBlade/openblade-core/commit/7b4a1923))
-- Display status now identifies the panel, resolution, active refresh mode, color
-  depth, HDR state, and color profile instead of showing a generic detection message. ([7b4a1923](https://github.com/OSSBlade/openblade-core/commit/7b4a1923))
-- Profile headers keep the Active badge beside the power source, while troubleshooting
-  uses concise AC, USB-C, Battery, and None values. ([121dc552](https://github.com/OSSBlade/openblade-core/commit/121dc552))
-- A new About footer page now groups app and service versions, supported-device and
-  firmware details, diagnostics, help links, live troubleshooting, and project attribution.
-  Settings now contains preferences only, and the Dashboard status pill opens About. ([3c3da6d6](https://github.com/OSSBlade/openblade-core/commit/3c3da6d6))
-- Reactive input no longer emits a matrix pulse for the unlit space bar. ([7b52faa9](https://github.com/OSSBlade/openblade-core/commit/7b52faa9))
+- Update About with the 256 px OpenBlade artwork, a Versions card for app and service builds, the independent-project note in the title card, and borderless action icons. ([df0858f1](https://github.com/OSSBlade/openblade-core/commit/df0858f1))
+- Let profiles capture Windows' current refresh rate, HDR state, and color profile before saving the draft. ([46aacba3](https://github.com/OSSBlade/openblade-core/commit/46aacba3))
+- Align the Troubleshooting header with the other About card content. ([46aacba3](https://github.com/OSSBlade/openblade-core/commit/46aacba3))
+- Named-pipe protocol version 14 carries Custom CPU/GPU settings. ([7375cd9e](https://github.com/OSSBlade/openblade-core/commit/7375cd9e))
+- Profile schema version 4 stores Custom CPU/GPU settings and migrates schema version 3 profiles with the captured Medium/High default. Schema version 3 stores the global lighting power policy and can still be migrated. ([7375cd9e](https://github.com/OSSBlade/openblade-core/commit/7375cd9e))
+- Make the tray icon follow the active profile when firmware readback is unavailable, instead of showing a generic error. ([49cd0f76](https://github.com/OSSBlade/openblade-core/commit/49cd0f76))
+- Update the app icon from the OpenBlade branding repository, including its continuous notch-free display bezel. ([49cd0f76](https://github.com/OSSBlade/openblade-core/commit/49cd0f76))
+- Selecting a keyboard effect from Off starts with a visible color and nonzero brightness. Old non-Off settings saved at 0% are migrated, so Breathing can't be accepted and then vanish. ([9bba9c97](https://github.com/OSSBlade/openblade-core/commit/9bba9c97))
+- Restart the keyboard renderer once after a brief failure, including while the tray is hidden. Persistent failures and settings changed elsewhere stay stopped and are reported. ([16a14299](https://github.com/OSSBlade/openblade-core/commit/16a14299))
+- Use a native color picker with optional advanced RGB fields, and summarize lighting overrides as readable effect details. ([9bba9c97](https://github.com/OSSBlade/openblade-core/commit/9bba9c97))
+- Fall back to the active USB-C profile when firmware reports a thermal value that is invalid for USB-C, avoiding blank or contradictory performance and fan selections. ([9bba9c97](https://github.com/OSSBlade/openblade-core/commit/9bba9c97))
+- Add a per-user Start minimized option that keeps the app in the notification area on first launch. ([9bba9c97](https://github.com/OSSBlade/openblade-core/commit/9bba9c97))
+- Use the same compact dot on status pills for ready and attention states. ([9bba9c97](https://github.com/OSSBlade/openblade-core/commit/9bba9c97))
+- Change the external-change pill to "Changed outside OpenBlade" and note that saved profiles are unchanged. ([908ecd30](https://github.com/OSSBlade/openblade-core/commit/908ecd30))
+- Show the single label "Unavailable" on Dashboard fields when the service is offline. ([e6d68fa5](https://github.com/OSSBlade/openblade-core/commit/e6d68fa5))
+- Call the performance category "Power mode" in setting labels, so Performance isn't repeated when that mode is selected. ([7b4a1923](https://github.com/OSSBlade/openblade-core/commit/7b4a1923))
+- Show power, cooling, lighting, and display settings on the Profiles page in an adaptive comparison matrix, with a single-profile view in narrow windows. ([7b4a1923](https://github.com/OSSBlade/openblade-core/commit/7b4a1923))
+- Display status names the panel, resolution, refresh mode, color depth, HDR state, and color profile instead of a generic detection message. ([7b4a1923](https://github.com/OSSBlade/openblade-core/commit/7b4a1923))
+- Keep the Active badge beside the power source in profile headers, and use AC, USB-C, Battery, and None in troubleshooting. ([121dc552](https://github.com/OSSBlade/openblade-core/commit/121dc552))
+- Add an About footer page for app and service versions, supported-device and firmware details, diagnostics, help links, live troubleshooting, and attribution. Settings holds preferences only, and the Dashboard status pill opens About. ([3c3da6d6](https://github.com/OSSBlade/openblade-core/commit/3c3da6d6))
+- Reactive lighting no longer pulses for the unlit space bar. ([7b52faa9](https://github.com/OSSBlade/openblade-core/commit/7b52faa9))
 
-- Display profile automation now remains active after Tray Exit. The first
-  confirmed source is observation-only; later real AC, USB-C, or battery
-  transitions apply the destination profile through one serialized agent queue. ([2e8ef3fa](https://github.com/OSSBlade/openblade-core/commit/2e8ef3fa))
-- Display automation remembers the last successfully reconciled power source so
-  a SessionAgent restart catches up a source change it missed without
-  reasserting settings when the source is unchanged. A transient Windows
-  display failure receives one bounded retry on the next service status update. ([53c35c90](https://github.com/OSSBlade/openblade-core/commit/53c35c90))
-- The SessionAgent starts independently at sign-in, while the existing
-  Start-at-sign-in setting continues to control only the visible tray. ([2e8ef3fa](https://github.com/OSSBlade/openblade-core/commit/2e8ef3fa))
-- Replaced the page-level legacy `ScrollViewer` controls with InteractionTracker-based `ScrollView` controls for smoother high-refresh-rate scrolling. ([06dbaf3a](https://github.com/OSSBlade/openblade-core/commit/06dbaf3a))
-- Display polling and mutation readback now run Windows topology, registry, and ICC work off the UI thread; unchanged option collections are reused and background checks no longer disable controls, removing a confirmed periodic high-refresh jank path. ([2178462f](https://github.com/OSSBlade/openblade-core/commit/2178462f))
-- A transient adapter recheck that retains the last confirmed power source no longer flashes the dashboard as `Controls unavailable`; hardware writes remain blocked until classification recovers. ([06dbaf3a](https://github.com/OSSBlade/openblade-core/commit/06dbaf3a))
-- Refresh-rate choices now match the modes Windows exposes for the internal panel: 60 Hz, 240 Hz, and Dynamic 48-240 Hz. ([2178462f](https://github.com/OSSBlade/openblade-core/commit/2178462f))
-- Reactive decay now matches captured Synapse timing: 0.5 seconds Short, 1.5 seconds Medium, and 2.0 seconds Long. ([2178462f](https://github.com/OSSBlade/openblade-core/commit/2178462f))
-- Spectrum Cycling now follows the measured 37.71-second Synapse RGB curve, including its blue hold, instead of approximating it as a 40-second HSV wheel. Random Breathing now selects independently from the captured 24-color palette and permits consecutive repeats. ([acfbc0aa](https://github.com/OSSBlade/openblade-core/commit/acfbc0aa))
-- Named-pipe protocol version 9 reports explicit host-renderer ownership in addition to the typed, bounded Reactive key-pulse operation introduced in version 8. ([2178462f](https://github.com/OSSBlade/openblade-core/commit/2178462f))
-- Performance, fan, lighting, and built-in display choices now form one profile per power source. Changes apply immediately to the active profile, remain a compact unsaved draft until saved, and are discarded on a power-source transition. ([2178462f](https://github.com/OSSBlade/openblade-core/commit/2178462f))
-- The Profiles page previews pending values directly in the affected profile card,
-  marks that card with an unsaved dot, and keeps Save and Discard in one compact
-  action row. ([8dcae8be](https://github.com/OSSBlade/openblade-core/commit/8dcae8be))
-- Removed the obsolete hidden manual-change-duration preference. Active-page
-  changes are always scoped to the current power source until saved as a profile. ([30276291](https://github.com/OSSBlade/openblade-core/commit/30276291))
-- Profile save and discard now remain truthful when temporary-override cleanup fails or a previously unconfigured display profile must return to its pre-edit state. ([2178462f](https://github.com/OSSBlade/openblade-core/commit/2178462f))
+- Display profile automation keeps running after Tray Exit. The first confirmed power source is only observed; later AC, USB-C, or battery changes apply the destination profile. ([2e8ef3fa](https://github.com/OSSBlade/openblade-core/commit/2e8ef3fa))
+- Display automation catches up on a power-source change missed while the SessionAgent restarted. A brief Windows display failure is retried once. ([53c35c90](https://github.com/OSSBlade/openblade-core/commit/53c35c90))
+- Start the SessionAgent at sign-in on its own. The Start-at-sign-in setting controls only the visible tray. ([2e8ef3fa](https://github.com/OSSBlade/openblade-core/commit/2e8ef3fa))
+- Replace page-level `ScrollViewer` controls with `ScrollView` for smoother scrolling on high-refresh-rate displays. ([06dbaf3a](https://github.com/OSSBlade/openblade-core/commit/06dbaf3a))
+- Fix periodic jank on high-refresh-rate displays by running display polling and readback off the UI thread. Background checks no longer disable controls. ([2178462f](https://github.com/OSSBlade/openblade-core/commit/2178462f))
+- Fix the dashboard briefly showing `Controls unavailable` during a brief adapter recheck. Hardware writes stay blocked until power source detection recovers. ([06dbaf3a](https://github.com/OSSBlade/openblade-core/commit/06dbaf3a))
+- Refresh-rate choices match what Windows exposes for the internal panel: 60 Hz, 240 Hz, and Dynamic 48-240 Hz. ([2178462f](https://github.com/OSSBlade/openblade-core/commit/2178462f))
+- Reactive decay matches Synapse timing: 0.5 seconds Short, 1.5 seconds Medium, and 2.0 seconds Long. ([2178462f](https://github.com/OSSBlade/openblade-core/commit/2178462f))
+- Spectrum Cycling follows the measured 37.71-second Synapse RGB curve, including its blue hold, instead of a 40-second HSV wheel. Random Breathing picks independently from the captured 24-color palette and can repeat a color. ([acfbc0aa](https://github.com/OSSBlade/openblade-core/commit/acfbc0aa))
+- Named-pipe protocol version 9 reports which side renders host lighting, in addition to the Reactive key-pulse operation from version 8. ([2178462f](https://github.com/OSSBlade/openblade-core/commit/2178462f))
+- Performance, fan, lighting, and display choices form one profile per power source. Changes apply right away to the active profile, stay a compact unsaved draft until saved, and are discarded when the power source changes. ([2178462f](https://github.com/OSSBlade/openblade-core/commit/2178462f))
+- Preview pending values in the affected Profiles card, mark it with an unsaved dot, and keep Save and Discard in one row. ([8dcae8be](https://github.com/OSSBlade/openblade-core/commit/8dcae8be))
+- Remove the hidden manual-change-duration preference. Active-page changes apply to the current power source until saved as a profile. ([30276291](https://github.com/OSSBlade/openblade-core/commit/30276291))
+- Fix profile save and discard reporting success after a temporary-override cleanup failure, or leaving a previously unconfigured display profile in the wrong state. ([2178462f](https://github.com/OSSBlade/openblade-core/commit/2178462f))
 
 ### Safety
 
-- Transient unknown power readings and service reconnects block display writes
-  without discarding the last confirmed source baseline. Same-source profile
-  saves and external display changes do not trigger automatic reapplication. ([2e8ef3fa](https://github.com/OSSBlade/openblade-core/commit/2e8ef3fa))
-- Display settings are applied only on direct user action or a confirmed power-profile transition, then validated and read back through Windows. Periodic observation reports changes made elsewhere without reasserting them. ([2178462f](https://github.com/OSSBlade/openblade-core/commit/2178462f))
-- SDR color profiles are unavailable while HDR is enabled. ([e8cf4a65](https://github.com/OSSBlade/openblade-core/commit/e8cf4a65))
-- Color-profile selection now activates and verifies the current user's Windows profile scope before applying the panel's MHC2 calibration. ([e8cf4a65](https://github.com/OSSBlade/openblade-core/commit/e8cf4a65))
-- The Display page observes changes made by Windows or other software without reasserting OpenBlade values, and pauses observation while a picker is open. ([e8cf4a65](https://github.com/OSSBlade/openblade-core/commit/e8cf4a65))
-- Transient USB-C adapter-classification failures retain the last confirmed power-source label while blocking hardware writes until classification recovers. ([e8cf4a65](https://github.com/OSSBlade/openblade-core/commit/e8cf4a65))
-- Lighting writes remain fail-closed unless the exact model, PID, BIOS, typed effect parameters, pinned oracle evidence, acknowledged transition handshake, and bounded 102-slot matrix report match. The admitted effect set passed the exact-build workflow and repeated installed use on the target laptop. ([438aa0ec](https://github.com/OSSBlade/openblade-core/commit/438aa0ec))
-- Production lighting admission now fingerprints the reviewed lighting transport
-  and renderer sources. Unrelated UI, service, and display commits retain the
-  admitted command set, while a semantic lighting implementation change fails
-  closed until its new fingerprint is deliberately reviewed and approved. ([438aa0ec](https://github.com/OSSBlade/openblade-core/commit/438aa0ec))
-- Reactive keyboard observation exists only while accepted Reactive lighting is active; the production lighting port independently rejects pulses unless its live renderer owns Reactive. Unsupported and extended keys are ignored, and repeated make events are delivered sequentially through a bounded queue. ([2178462f](https://github.com/OSSBlade/openblade-core/commit/2178462f))
-- Reactive input, renderer-stream, and rollback failures are surfaced without success notifications or per-key message spam. Partial lighting rollback is classified as indeterminate instead of claiming that the prior state was restored. ([2178462f](https://github.com/OSSBlade/openblade-core/commit/2178462f))
-- Suspend, resume, removal, and reconnect drain renderer ownership and restore it once only when OpenBlade owned the prior effect. Automatic power transitions preserve unknown external lighting, while a transition from an OpenBlade-owned effect applies the destination profile. ([2178462f](https://github.com/OSSBlade/openblade-core/commit/2178462f))
-- Brightness changes made by another controller are observed through independent readback. Matrix effects have no firmware GET command, so concurrent effect changes remain visible through the existing Razer-app coexistence warning rather than being claimed as directly detectable. ([2178462f](https://github.com/OSSBlade/openblade-core/commit/2178462f))
+- Unknown power readings and service reconnects block display writes. Saving a profile for the same source, or changing display settings elsewhere, does not reapply settings. ([2e8ef3fa](https://github.com/OSSBlade/openblade-core/commit/2e8ef3fa))
+- Display settings apply only on your action or a confirmed power-profile change, then are checked through Windows. Changes made elsewhere are reported, not overwritten. ([2178462f](https://github.com/OSSBlade/openblade-core/commit/2178462f))
+- SDR color profiles are unavailable while HDR is on. ([e8cf4a65](https://github.com/OSSBlade/openblade-core/commit/e8cf4a65))
+- Color-profile selection activates and verifies the current user's Windows profile before applying the panel's MHC2 calibration. ([e8cf4a65](https://github.com/OSSBlade/openblade-core/commit/e8cf4a65))
+- The Display page reports changes made by Windows or other software without overwriting them, and pauses while a picker is open. ([e8cf4a65](https://github.com/OSSBlade/openblade-core/commit/e8cf4a65))
+- A brief USB-C adapter detection failure keeps the last confirmed power-source label, and hardware writes stay blocked until detection recovers. ([e8cf4a65](https://github.com/OSSBlade/openblade-core/commit/e8cf4a65))
+- Lighting writes are blocked unless the exact model, PID, BIOS, and effect settings match the reviewed evidence. The supported effects passed the exact-build workflow and repeated installed use on the target laptop. ([438aa0ec](https://github.com/OSSBlade/openblade-core/commit/438aa0ec))
+- Lighting support is tied to the reviewed lighting code. Unrelated UI, service, and display commits keep it, and a real change to lighting code stays blocked until it is reviewed and approved. ([438aa0ec](https://github.com/OSSBlade/openblade-core/commit/438aa0ec))
+- Reactive keyboard observation runs only while Reactive lighting is active. Unsupported and extended keys are ignored. ([2178462f](https://github.com/OSSBlade/openblade-core/commit/2178462f))
+- Reactive input and lighting failures are reported without success notifications or per-key messages. A partial lighting rollback is reported as uncertain. ([2178462f](https://github.com/OSSBlade/openblade-core/commit/2178462f))
+- Suspend, resume, removal, and reconnect restore lighting once, only when OpenBlade owned the prior effect. Automatic power transitions leave unknown external lighting alone, while a transition from an OpenBlade-owned effect applies the destination profile. ([2178462f](https://github.com/OSSBlade/openblade-core/commit/2178462f))
+- OpenBlade detects brightness changes made by another controller. Effect changes can't be read from firmware, so the Razer-app coexistence warning is the only signal. ([2178462f](https://github.com/OSSBlade/openblade-core/commit/2178462f))
 
 ## [0.1.0] - 2026-07-17
 
 ### Added
 
-- A native Windows 11 WinUI 3 tray application backed by a LocalSystem service and versioned named-pipe contracts. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
-- Automatic profiles for the validated 280 W adapter, 100 W USB-C PD operation, and battery operation on the 2026 Razer Blade 16 (RZ09-0581, VID 1532, PID 02E0, BIOS 3.01). ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
-- Admitted performance modes for each power source, automatic fan control, the validated Maximum fan sequence on full-power AC, and independent subsystem result reporting. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
-- Battery protection with a 50-80% charge-limit slider and a temporary charge-to-100% override that restores the configured limit after unplugging. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
-- Optional fan-speed and net battery-power readings with a configurable refresh interval. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
-- A Windows Settings-inspired light, dark, and system-following interface with Mica, tray shortcuts, profile editing, and a customizable hover label. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
-- Troubleshooting and redacted diagnostic export covering laptop identity, BIOS, EC, MCU, VBIOS, UI and service versions, connection state, capabilities, and command results. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
-- Product versions that include the source commit hash for reproducible diagnostics. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
-- Transactional install, update, and uninstall support for the LocalSystem service and unelevated tray application. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
+- Add a native Windows 11 WinUI 3 tray app backed by a service. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
+- Add automatic profiles for the 280 W adapter, 100 W USB-C PD, and battery on the 2026 Razer Blade 16 (RZ09-0581, VID 1532, PID 02E0, BIOS 3.01). ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
+- Add performance modes for each power source, automatic fan control, and the Maximum fan sequence on full-power AC. Each subsystem reports its own result. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
+- Add battery protection with a 50-80% charge-limit slider and a temporary charge-to-100% override that returns to the configured limit after unplugging. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
+- Add optional fan-speed and net battery-power readings with a configurable refresh interval. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
+- Add a Windows Settings-style interface in light, dark, or system theme, with Mica, tray shortcuts, profile editing, and a customizable hover label. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
+- Add troubleshooting and a redacted diagnostic export covering laptop identity, BIOS, EC, MCU, VBIOS, UI and service versions, connection state, capabilities, and command results. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
+- Include the source commit hash in product versions for diagnostics. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
+- Add install, update, and uninstall for the service and tray app. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 
 ### Changed
 
-- Renamed the project to OpenBlade to reflect its Razer Blade-only scope. ([e8cf4a65](https://github.com/OSSBlade/openblade-core/commit/e8cf4a65))
-- Other Razer software is treated as a coexistence warning instead of being stopped automatically or making all controls read-only. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
-- Settings changed by another controller are observed and reported instead of being immediately overwritten. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
-- The core repository includes only the application and tray icon binaries needed at runtime. Brand source files, exports, and unused variants remain in the separate branding repository. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
+- Rename the project to OpenBlade to reflect its Razer Blade-only scope. ([e8cf4a65](https://github.com/OSSBlade/openblade-core/commit/e8cf4a65))
+- Other Razer software shows a coexistence warning instead of being stopped or making all controls read-only. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
+- Settings changed by another controller are reported, not overwritten. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
+- The core repository includes only the app and tray icon binaries needed at runtime. Brand source files stay in the branding repository. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 
 ### Safety
 
-- Hardware writes fail closed unless the connected laptop, product ID, command, and value are explicitly supported. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
-- The service serializes hardware access and exposes typed operations only; there is no raw-command IPC endpoint. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
-- OpenBlade uses the standard Windows HID interface and does not install a kernel driver or depend on Synapse components. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
-- Captured protocol data committed to the repository is sanitized; raw packet captures remain excluded. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
+- Hardware writes are blocked unless the laptop, product ID, command, and value are supported. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
+- The service handles hardware access one request at a time and offers typed operations only. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
+- OpenBlade uses the standard Windows HID interface, with no kernel driver and no Synapse components. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
+- Captured protocol data in the repository is sanitized, and raw packet captures are excluded. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 
 ### Known limitations
 
 - Version 0.1.0 supports only the Razer Blade 16 RZ09-0581 / PID 02E0 on BIOS 3.01 and Windows 11 x64. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
-- Sensor coverage is intentionally limited to fan speed and net battery power. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
-- Reactive oracle captures cover alphanumeric anchors, punctuation, modifiers, arrows, F1-F12, Delete, Fn, and the Fn+F12 Print Screen chord. The installed Raw Input path was confirmed with the A key; remaining mapped positions are backed by the captured matrix layout and focused automated tests. The unlit space bar is deliberately ignored, the power button was excluded, and no numpad is present on this keyboard. ([438aa0ec](https://github.com/OSSBlade/openblade-core/commit/438aa0ec))
-- Fan control provides Automatic and validated Maximum modes, not custom fan curves. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
-- Unrecognized external adapters remain read-only. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
-- Unsupported or unverified controls remain unavailable rather than attempting arbitrary firmware commands. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
+- Sensor readings cover only fan speed and net battery power. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
+- Reactive captures cover alphanumeric keys, punctuation, modifiers, arrows, F1-F12, Delete, Fn, and the Fn+F12 Print Screen chord. Installed testing confirmed the A key; other positions rely on the captured layout and automated tests. The unlit space bar is ignored, the power button was excluded, and this keyboard has no numpad. ([438aa0ec](https://github.com/OSSBlade/openblade-core/commit/438aa0ec))
+- Fan control offers Automatic and Maximum modes, not custom fan curves. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
+- Unrecognized external adapters are read-only. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
+- Controls that aren't supported on your laptop are unavailable. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 
 [Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.65.1-nightly.117...HEAD
 [0.65.1-nightly.117]: https://github.com/OSSBlade/openblade-core/compare/v0.64.2-nightly.116...v0.65.1-nightly.117
