@@ -131,7 +131,7 @@ public interface IFanTemperatureSource
     ValueTask<FanTemperatureReadings> ReadAsync(CancellationToken cancellationToken);
 
     // Curves need the temperature of an awake GPU even without a workload.
-    // Background telemetry may omit that read to avoid unnecessary NVML work.
+    // Other readers keep ReadAsync's workload gate to avoid unnecessary NVML work.
     ValueTask<FanTemperatureReadings> ReadForFanCurveAsync(CancellationToken cancellationToken) =>
         ReadForFanCurveAsync(includeCpu: true, includeGpu: true, cancellationToken);
 
@@ -143,6 +143,13 @@ public interface IFanTemperatureSource
     // Fan temperature policy needs device-power evidence, not workload absence.
     // Sources without that evidence must provide an actual GPU temperature.
     ValueTask<FanTemperatureReadings> ReadForFanStopAsync(CancellationToken cancellationToken) => ReadAsync(cancellationToken);
+
+    // Live readings also show an awake GPU that has no measurable workload,
+    // such as an app holding the adapter in D0 while idle.
+    ValueTask<FanTemperatureReadings> ReadForLiveReadingsAsync(
+        bool includeCpu,
+        bool includeGpu,
+        CancellationToken cancellationToken) => ReadAsync(includeCpu, includeGpu, cancellationToken);
 
     async ValueTask<FanTemperatureReadings> ReadAsync(
         bool includeCpu,
@@ -250,6 +257,15 @@ public sealed class SafeWindowsFanTemperatureSource : IFanTemperatureSource, IDi
     internal static readonly TimeSpan GpuSessionIdleTimeout = TimeSpan.FromSeconds(5);
     internal static readonly TimeSpan GpuSessionIdleRetry = TimeSpan.FromMilliseconds(100);
 
+    // Live readings read an awake GPU without a workload only after D0 has
+    // persisted across samples, so NVIDIA's own brief wakes neither open NVML
+    // nor flash a temperature. Such reads stay this far apart, and between
+    // them the last reading is reused only while every sample still reports
+    // D0, so live-reading polling leaves an unheld GPU idle long enough to
+    // enter D3 instead of holding it awake.
+    internal static readonly TimeSpan IdleGpuLiveReadingDwell = TimeSpan.FromSeconds(3);
+    internal static readonly TimeSpan IdleGpuLiveReadingInterval = TimeSpan.FromSeconds(10);
+
     private readonly IGpuActivitySource gpuActivitySource;
     private readonly Func<CancellationToken, ValueTask<int?>> cpuTemperatureReader;
     private readonly Func<CancellationToken, ValueTask<bool>> cpuTemperaturePrepare;
@@ -261,6 +277,9 @@ public sealed class SafeWindowsFanTemperatureSource : IFanTemperatureSource, IDi
     private readonly Func<FanStopGpuPowerState> gpuPowerState;
     private long lastGpuReadTimestamp;
     private bool gpuIdleReleasePending;
+    // Both reset on any sample that does not report D0.
+    private long? gpuPoweredOnSinceTimestamp;
+    private (int Celsius, long Timestamp)? lastPoweredOnGpuReading;
     private bool disposed;
 
     public SafeWindowsFanTemperatureSource()
@@ -356,7 +375,7 @@ public sealed class SafeWindowsFanTemperatureSource : IFanTemperatureSource, IDi
             cancellationToken);
 
     public ValueTask<FanTemperatureReadings> ReadForFanStopAsync(CancellationToken cancellationToken) =>
-        ReadCoreAsync(includeCpu: true, includeGpu: true, renewActiveGpuSession: false, sampleIdleGpu: true, cancellationToken);
+        ReadCoreAsync(includeCpu: true, includeGpu: true, renewActiveGpuSession: false, sampleIdleGpu: true, liveReadings: false, cancellationToken);
 
     public ValueTask<FanTemperatureReadings> ReadForFanCurveAsync(CancellationToken cancellationToken) =>
         ReadForFanCurveAsync(includeCpu: true, includeGpu: true, cancellationToken);
@@ -365,7 +384,7 @@ public sealed class SafeWindowsFanTemperatureSource : IFanTemperatureSource, IDi
         bool includeCpu,
         bool includeGpu,
         CancellationToken cancellationToken) =>
-        ReadCoreAsync(includeCpu, includeGpu, renewActiveGpuSession: true, sampleIdleGpu: true, cancellationToken);
+        ReadCoreAsync(includeCpu, includeGpu, renewActiveGpuSession: true, sampleIdleGpu: true, liveReadings: false, cancellationToken);
 
     private void ReleaseGpuSession()
     {
@@ -381,13 +400,20 @@ public sealed class SafeWindowsFanTemperatureSource : IFanTemperatureSource, IDi
         bool includeCpu,
         bool includeGpu,
         CancellationToken cancellationToken) =>
-        ReadCoreAsync(includeCpu, includeGpu, renewActiveGpuSession: true, sampleIdleGpu: false, cancellationToken);
+        ReadCoreAsync(includeCpu, includeGpu, renewActiveGpuSession: true, sampleIdleGpu: false, liveReadings: false, cancellationToken);
+
+    public ValueTask<FanTemperatureReadings> ReadForLiveReadingsAsync(
+        bool includeCpu,
+        bool includeGpu,
+        CancellationToken cancellationToken) =>
+        ReadCoreAsync(includeCpu, includeGpu, renewActiveGpuSession: true, sampleIdleGpu: false, liveReadings: true, cancellationToken);
 
     private async ValueTask<FanTemperatureReadings> ReadCoreAsync(
         bool includeCpu,
         bool includeGpu,
         bool renewActiveGpuSession,
         bool sampleIdleGpu,
+        bool liveReadings,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -411,10 +437,22 @@ public sealed class SafeWindowsFanTemperatureSource : IFanTemperatureSource, IDi
             {
                 FanStopGpuPowerState power = gpuPowerState();
                 cancellationToken.ThrowIfCancellationRequested();
+                ObserveGpuPower(power);
                 int? gpuCelsius = null;
+                bool idleLiveReading = liveReadings && gpuActive is not true
+                    && power == FanStopGpuPowerState.PoweredOn;
+                if (idleLiveReading && lastPoweredOnGpuReading is { } recent
+                    && IsWithin(recent.Timestamp, IdleGpuLiveReadingInterval))
+                {
+                    // Every sample since this reading has reported D0.
+                    gpuCelsius = recent.Celsius;
+                }
                 // Idle D0 can still be hot. D3 or unknown power must not open
                 // NVML, even when a workload counter still reports activity.
-                if (power == FanStopGpuPowerState.PoweredOn && (sampleIdleGpu || gpuActive is true))
+                else if (power == FanStopGpuPowerState.PoweredOn
+                    && (sampleIdleGpu || gpuActive is true
+                        || idleLiveReading && gpuPoweredOnSinceTimestamp is long poweredOnSince
+                            && timeProvider.GetElapsedTime(poweredOnSince) >= IdleGpuLiveReadingDwell))
                 {
                     gpuCelsius = gpuTemperature.TryRead();
                     if (gpuCelsius is not (>= 10 and <= 125))
@@ -426,8 +464,13 @@ public sealed class SafeWindowsFanTemperatureSource : IFanTemperatureSource, IDi
                     {
                         gpuCelsius = null;
                         power = FanStopGpuPowerState.Unknown;
+                        ObserveGpuPower(power);
                     }
                     cancellationToken.ThrowIfCancellationRequested();
+                    if (gpuCelsius is int celsius)
+                    {
+                        lastPoweredOnGpuReading = (celsius, timeProvider.GetTimestamp());
+                    }
 
                     if (power == FanStopGpuPowerState.PoweredOn && gpuCelsius is not null
                         && gpuActive is true)
@@ -463,6 +506,24 @@ public sealed class SafeWindowsFanTemperatureSource : IFanTemperatureSource, IDi
         {
             gate.Release();
         }
+    }
+
+    private void ObserveGpuPower(FanStopGpuPowerState power)
+    {
+        if (power == FanStopGpuPowerState.PoweredOn)
+        {
+            gpuPoweredOnSinceTimestamp ??= timeProvider.GetTimestamp();
+            return;
+        }
+
+        gpuPoweredOnSinceTimestamp = null;
+        lastPoweredOnGpuReading = null;
+    }
+
+    private bool IsWithin(long timestamp, TimeSpan interval)
+    {
+        TimeSpan age = timeProvider.GetElapsedTime(timestamp);
+        return age >= TimeSpan.Zero && age < interval;
     }
 
     private void ReleaseIdleGpuSession()

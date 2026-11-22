@@ -18340,7 +18340,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         {
             try
             {
-                temperatures = await fanTemperatureSource.ReadAsync(
+                temperatures = await fanTemperatureSource.ReadForLiveReadingsAsync(
                         includeCpu,
                         includeGpu,
                         cancellationToken)
