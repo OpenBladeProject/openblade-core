@@ -574,7 +574,9 @@ mod power_setting_tests {
 
 /// `control` forwards each SCM control, with its decoded payload, to the
 /// bound ingress. The ingress binds once per process, and only this test in
-/// each test binary binds it.
+/// each test binary binds it. Other tests call `control` too (the stop
+/// trampoline test in `windows/scm/tests.rs`), so once it is bound their
+/// controls are recorded as well, concurrently.
 #[cfg(test)]
 mod control_tests {
     use std::{ffi::c_void, sync::Mutex};
@@ -589,8 +591,12 @@ mod control_tests {
     type Seen = (u32, u32, Option<PowerSetting>);
     static SEEN: Mutex<Vec<Seen>> = Mutex::new(Vec::new());
 
+    /// Runs inside the `extern "system"` handler, where a panic aborts the
+    /// process: it tolerates a lock poisoned by a failed assertion elsewhere.
     fn record(code: u32, event: u32, setting: Option<PowerSetting>) {
-        SEEN.lock().unwrap().push((code, event, setting));
+        SEEN.lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .push((code, event, setting));
     }
 
     #[test]
@@ -616,8 +622,17 @@ mod control_tests {
                 std::ptr::null_mut(),
             );
         }
+        // Only the power events this test sent; copied out so no assertion
+        // fails while the recorder's lock is held.
+        let power: Vec<Seen> = SEEN
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .iter()
+            .filter(|(code, _, _)| *code == SERVICE_CONTROL_POWEREVENT)
+            .copied()
+            .collect();
         assert_eq!(
-            *SEEN.lock().unwrap(),
+            power,
             [
                 (
                     SERVICE_CONTROL_POWEREVENT,
