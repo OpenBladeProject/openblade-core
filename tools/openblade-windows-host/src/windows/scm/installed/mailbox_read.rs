@@ -1414,6 +1414,7 @@ impl ReadSource {
         })
     }
     /// Stops the reader so a mutation or its caller can own the HID exchange.
+    /// Every stop other than the terminal `ReadSource::stop` goes through here.
     ///
     /// The retained `ReaderDrain` phase is the single restart point: the next
     /// observation or mutation reconstructs the reader in `drain_mutation`
