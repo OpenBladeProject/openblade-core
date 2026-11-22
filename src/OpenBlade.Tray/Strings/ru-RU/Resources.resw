@@ -2225,7 +2225,7 @@ OpenBlade повторно проверит этот список и остан�
     <value>Поддерживаемый драйвер клавиатуры Razer недоступен.</value>
   </data>
   <data name="SnapTap_Status_RecoveryRequired" xml:space="preserve">
-    <value>Перезапустите Windows перед повторным включением SnapTap.</value>
+    <value>Выключите и снова включите SnapTap для повторной попытки. Если сообщение повторяется, перезагрузите Windows.</value>
   </data>
   <data name="SnapTap_InstallDriver.Content" xml:space="preserve">
     <value>Установить драйвер</value>
@@ -2816,7 +2816,7 @@ OpenBlade повторно проверит этот список и остан�
     <value>Драйвер Razer</value>
   </data>
   <data name="KeyboardBackend_Recovery" xml:space="preserve">
-    <value>Перезагрузите Windows перед повторным использованием этого способа ввода.</value>
+    <value>Переключите способ ввода для повторной попытки. Если сообщение повторяется, перезагрузите Windows.</value>
   </data>
   <data name="KeyboardBackend_Unknown" xml:space="preserve">
     <value>Выберите способ ввода, чтобы продолжить.</value>

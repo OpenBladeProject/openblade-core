@@ -28,6 +28,35 @@ public sealed class DriverOwnershipJournalReaderTests
     }
 
     [Fact]
+    public void SameBootJournalReleasesOnlyOnExplicitRetryWithNoHooksAndReleasedInput()
+    {
+        Assert.True(SnapTapDriverSupervisor.CanRetrySameBootJournal(true, CurrentBoot, CurrentBoot, [], true));
+        Assert.False(SnapTapDriverSupervisor.CanRetrySameBootJournal(false, CurrentBoot, CurrentBoot, [], true));
+        Assert.False(SnapTapDriverSupervisor.CanRetrySameBootJournal(true, CurrentBoot, CurrentBoot, [], false));
+        // A journal from a later or unknown boot is not this session's evidence.
+        Assert.False(SnapTapDriverSupervisor.CanRetrySameBootJournal(true, CurrentBoot, PreviousBoot, [], true));
+        Assert.False(SnapTapDriverSupervisor.CanRetrySameBootJournal(true, null, CurrentBoot, [], true));
+        foreach (byte[] hook in new[]
+        {
+            RazerSnapTapDriverProtocol.EncodeHook(0x1E),
+            RazerSnapTapDriverProtocol.EncodeHook(0x3B, RazerKeyboardHookPurpose.FunctionRow),
+        })
+        {
+            Assert.False(SnapTapDriverSupervisor.CanRetrySameBootJournal(true, CurrentBoot, CurrentBoot, [hook], true));
+        }
+    }
+
+    [Fact]
+    public void RetryReleaseWaitIsBoundedAndStopsOnRequest()
+    {
+        int checks = 0;
+        Assert.True(SnapTapDriverSupervisor.WaitForReleasedInput(() => ++checks >= 3, () => false, 5000));
+        Assert.Equal(3, checks);
+        Assert.False(SnapTapDriverSupervisor.WaitForReleasedInput(() => false, () => false, 120));
+        Assert.False(SnapTapDriverSupervisor.WaitForReleasedInput(() => true, () => true, 5000));
+    }
+
+    [Fact]
     public void CombinedJournalUsesSameBootAdmissionForBothWindowsBackends()
     {
         WithDirectory(directory =>

@@ -27,7 +27,12 @@ internal static class SnapTapDriverSupervisor
         elapsedMilliseconds > (!started ? StartupHeartbeatBudgetMilliseconds
             : admitting ? AdmissionHeartbeatBudgetMilliseconds : InputHeartbeatBudgetMilliseconds);
 
-    internal static int Run(Func<bool> shouldStop, KeyboardDriverFeatures features = KeyboardDriverFeatures.SnapTap)
+    // An explicit retry waits this long for the user to release the keys and mouse
+    // button used to change the setting before it refuses a same-boot journal.
+    internal const int RetryReleaseBudgetMilliseconds = 5000;
+
+    internal static int Run(Func<bool> shouldStop, KeyboardDriverFeatures features = KeyboardDriverFeatures.SnapTap,
+        bool retryRequested = false)
     {
         KeyboardDriverStatusStore.ConfigureScope(features);
         KeyboardDriverFeatures requestedFeatures = features;
@@ -85,9 +90,25 @@ internal static class SnapTapDriverSupervisor
                 if (previous is null) { continue; }
                 if (!CanDiscardJournal(previous.BootIdentity, boot, baseline))
                 {
-                    return PublishTerminal(endpoint.Profile, SnapTapRuntimeState.RecoveryRequired,
-                        SnapTapDiagnosticFailure.Create(SnapTapDiagnosticFailure.Supervisor,
-                            "OwnershipJournal", stage, "RecoveryRequired"), 4);
+                    // Automatic starts keep a same-boot journal closed. A launch from an
+                    // explicit preference change may release it after read-only checks:
+                    // the exclusive helper mutex excludes a live owner, fresh enumeration
+                    // shows no OpenBlade hook, and Windows reports no key or button down.
+                    bool sameBoot = string.Equals(previous.BootIdentity, boot, StringComparison.Ordinal);
+                    bool ownedHooks = baseline.Any(record => IsPurposeHook(record, RazerKeyboardHookPurpose.Combined));
+                    bool released = retryRequested && sameBoot && !ownedHooks
+                        && WaitForReleasedInput(SnapTapDriverLoop.AllReleased, shouldStop, RetryReleaseBudgetMilliseconds);
+                    if (!CanRetrySameBootJournal(retryRequested, previous.BootIdentity, boot, baseline, released))
+                    {
+                        return PublishTerminal(endpoint.Profile, SnapTapRuntimeState.RecoveryRequired,
+                            SnapTapDiagnosticFailure.Create(SnapTapDiagnosticFailure.Supervisor,
+                                "OwnershipJournal", stage, "RecoveryRequired") with
+                            {
+                                Context = $"RetryRequested={retryRequested}; SameBoot={sameBoot}; OwnedHooks={ownedHooks}; InputReleased={released}",
+                            }, 4);
+                    }
+                    Trace.TraceInformation("Released same-boot driver ownership journal {0} after an explicit retry.",
+                        Path.GetFileName(previousPath));
                 }
                 File.Delete(previousPath);
             }
@@ -196,9 +217,9 @@ internal static class SnapTapDriverSupervisor
                     }
                     SnapTapRuntimeStatus? finalStatus = KeyboardDriverStatusStore.Read();
                     observedWorkerFailure ??= MatchingTerminalFailure(finalStatus, worker.Id, workerStartedAt);
-                    bool foregroundPause = IsCleanForegroundPause(worker.ExitCode, finalStatus, worker.Id, workerStartedAt)
+                    bool cleanPause = IsCleanPause(worker.ExitCode, finalStatus, worker.Id, workerStartedAt)
                         && observedWorkerFailure is null;
-                    if (worker.ExitCode != 0 && !foregroundPause && observedWorkerFailure is null)
+                    if (worker.ExitCode != 0 && !cleanPause && observedWorkerFailure is null)
                     {
                         observedWorkerFailure = SnapTapDiagnosticFailure.Create(
                             SnapTapDiagnosticFailure.Supervisor, "SuperviseWorker",
@@ -214,10 +235,10 @@ internal static class SnapTapDriverSupervisor
                             SnapTapDiagnosticFailure.Create(SnapTapDiagnosticFailure.Supervisor,
                                 "ReconcileHooks", stage, cleanupReason!, true, observedWorkerFailure), 1);
                     }
-                    clean = worker.ExitCode is 0 or 3 || foregroundPause;
-                    if (foregroundPause)
+                    clean = worker.ExitCode is 0 or 3 || cleanPause;
+                    if (cleanPause)
                     {
-                        Trace.TraceInformation("SnapTap foreground pause reconciled; waiting to rearm: {0}", finalStatus?.Failure);
+                        Trace.TraceInformation("SnapTap clean pause reconciled; waiting to rearm: {0}", finalStatus?.Failure);
                         if (interrupted || shouldStop())
                         {
                             return 0;
@@ -280,21 +301,23 @@ internal static class SnapTapDriverSupervisor
         }
     }
 
-    internal static bool IsCleanForegroundPause(
+    // Two worker pauses are clean: a focus loss in the input loop, and a subscription
+    // enable refused before submission during hook setup. Neither submitted output.
+    internal static bool IsCleanPause(
         int exitCode, SnapTapRuntimeStatus? status, int processId, DateTimeOffset startedAt) =>
-        exitCode == SnapTapDriverLoop.ForegroundPauseExitCode
+        exitCode == SnapTapDriverLoop.CleanPauseExitCode
         && status is { State: SnapTapRuntimeState.Paused, Failure: { } failure }
         && status.ProcessId == processId && status.UpdatedAt >= startedAt
         && failure is
         {
             Component: SnapTapDiagnosticFailure.Worker,
             Operation: "Run",
-            Stage: "InputLoop",
-            Reason: "ForegroundUnavailable",
             MayHaveSubmitted: false,
             Cause: null,
             Related: null,
-        };
+        }
+        && failure is { Stage: "InputLoop", Reason: "ForegroundUnavailable" }
+            or { Stage: "HookSetup", Reason: "SubscriptionDeferred" };
 
     internal static bool TryReconcileHooks(
         IRazerSnapTapHookTransport guardian,
@@ -403,6 +426,26 @@ internal static class SnapTapDriverSupervisor
     internal static bool CanDiscardJournal(string? previousBoot, string currentBoot, IReadOnlyList<byte[]> hooks) =>
         DriverOwnershipJournalReader.IsLaterBoot(previousBoot, currentBoot)
         && !hooks.Any(record => IsPurposeHook(record, RazerKeyboardHookPurpose.Combined));
+
+    // The residual risk is a key an earlier worker sent as pressed that Windows does
+    // not report as down; the user accepts it by explicitly retrying.
+    internal static bool CanRetrySameBootJournal(bool retryRequested, string? previousBoot, string currentBoot,
+        IReadOnlyList<byte[]> hooks, bool inputReleased) =>
+        retryRequested && inputReleased
+        && string.Equals(previousBoot, currentBoot, StringComparison.Ordinal)
+        && !hooks.Any(record => IsPurposeHook(record, RazerKeyboardHookPurpose.Combined));
+
+    internal static bool WaitForReleasedInput(Func<bool> released, Func<bool> shouldStop, int budgetMilliseconds)
+    {
+        long started = Environment.TickCount64;
+        while (!shouldStop())
+        {
+            if (released()) { return true; }
+            if (Environment.TickCount64 - started >= budgetMilliseconds) { return false; }
+            Thread.Sleep(50);
+        }
+        return false;
+    }
 
     internal static bool CanStartWithHooks(IReadOnlyList<byte[]> hooks) => hooks.Count == 0;
 

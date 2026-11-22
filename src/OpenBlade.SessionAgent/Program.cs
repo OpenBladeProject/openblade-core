@@ -306,7 +306,8 @@ internal static class Program
                     canPublishIdleStatus: () => specialKeyBindings.SnapTapBackend == KeyboardInputBackend.WindowsHook);
                 keyboardDriver = new SnapTapProcessCoordinator(
                     driverDemand,
-                    () => SnapTapInputProcess.Start(KeyboardInputBackend.RazerDriver, driverLaunchFeatures),
+                    () => SnapTapInputProcess.Start(KeyboardInputBackend.RazerDriver, driverLaunchFeatures,
+                        keyboardDriver?.LaunchIsExplicitRetry == true),
                     status =>
                     {
                         KeyboardDriverStatusStore.Write(status, driverPublicationFeatures);
@@ -316,7 +317,7 @@ internal static class Program
                     {
                         KeyboardDriverFeatures features = driverLaunchFeatures;
                         driverPublicationFeatures = features;
-                        return SnapTapInputProcess.Start(backend, features);
+                        return SnapTapInputProcess.Start(backend, features, keyboardDriver?.LaunchIsExplicitRetry == true);
                     },
                     canStartChild: () => ((driverLaunchFeatures & KeyboardDriverFeatures.FunctionRow) == 0 || reactiveOwner?.CanTransferFunctionRowInput == true)
                         && ((driverLaunchFeatures & KeyboardDriverFeatures.SnapTap) == 0 || snapTap.CanTransferOwnership),
