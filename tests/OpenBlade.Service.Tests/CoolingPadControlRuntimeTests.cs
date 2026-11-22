@@ -754,28 +754,39 @@ public sealed class CoolingPadControlRuntimeTests
     }
 
     [Fact]
-    public async Task EmergencyUsesTheRawReadingRatherThanTheSmoothedOne()
+    public async Task EmergencyFollowsTheSmoothedReading()
     {
         var provider = new Provider();
         var clock = new Clock();
-        var temperatures = new Temperatures { Reading = new(65, null) };
+        var temperatures = new Temperatures { Reading = new(90, null) };
         var runtime = new CoolingPadControlRuntime(provider, new(), temperatures, clock);
         await runtime.SetUserAsync("owner", default);
         await runtime.ApplyAsync(QuietAuto(CoolingPadTemperatureSource.Cpu), () => true, default);
-        Assert.Equal(700, runtime.Status.ConfirmedTargetRpm);
+        Assert.Equal(1600, runtime.Status.ConfirmedTargetRpm);
 
-        // Smoothing would move the input only about 5 C; the raw reading crosses the limit.
-        temperatures.Reading = new(95, null);
-        clock.Now = clock.Now.AddSeconds(1);
-        await runtime.MaintainAsync(() => true, default);
+        // A one-second 100 C spike moves the smoothed input to about 92 C, below the limit.
+        temperatures.Reading = new(100, null);
+        await TickAsync(1);
+        Assert.Equal(1600, runtime.Status.ConfirmedTargetRpm);
+
+        // Sustained heat crosses the 95 C limit.
+        await TickAsync(15);
         Assert.Equal(CoolingPadSettings.MaximumRpm, runtime.Status.ConfirmedTargetRpm);
 
-        // Below the limit the table resumes from the smoothed temperature.
-        temperatures.Reading = new(65, null);
-        clock.Now = clock.Now.AddSeconds(1);
-        await runtime.MaintainAsync(() => true, default);
-        Assert.InRange(runtime.Status.ConfirmedTargetRpm!.Value, 700, 1000);
+        // Once the smoothed input falls back below the limit, the table resumes.
+        temperatures.Reading = new(90, null);
+        await TickAsync(20);
+        Assert.Equal(1600, runtime.Status.ConfirmedTargetRpm);
         Assert.True(runtime.Status.Active);
+
+        async Task TickAsync(int seconds)
+        {
+            for (int second = 0; second < seconds; second++)
+            {
+                clock.Now = clock.Now.AddSeconds(1);
+                await runtime.MaintainAsync(() => true, default);
+            }
+        }
     }
 
     private static CoolingPadSettings Fixed => new() { FanMode = CoolingPadFanMode.Fixed, FixedRpm = 1500 };
