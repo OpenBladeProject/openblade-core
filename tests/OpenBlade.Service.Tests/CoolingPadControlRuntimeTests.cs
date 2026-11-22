@@ -22,6 +22,112 @@ public sealed class CoolingPadControlRuntimeTests
     }
 
     [Fact]
+    public async Task CleanServiceHandbackResumesSavedSettingsAfterSleepAndRestart()
+    {
+        var provider = new Provider { Connection = CoolingPadConnectionState.PresentExact };
+        var store = new CoolingPadStateStore();
+        var runtime = await CreateAsync(provider, store);
+        Assert.Equal(ControlOperationStatus.Applied, (await runtime.ApplyAsync(Fixed, () => true, default)).Status);
+
+        // Low power hands the pad back; the same service resumes once admitted again.
+        Assert.Equal(ControlOperationStatus.Applied, (await runtime.ReleaseAsync(() => true, default, serviceOwnedRestoration: true)).Status);
+        Assert.False(runtime.Status.Active);
+        await runtime.MaintainAsync(() => true, default);
+        await runtime.ResumeSavedControlAsync("owner", () => true, () => true, default);
+        Assert.True(runtime.Status.Active);
+        Assert.Equal(["fan:Fixed:1500", "fan:Fixed:1500"], provider.Pad.Writes);
+
+        // A service stop hands it back too; a new service resumes from the stored intent.
+        Assert.Equal(ControlOperationStatus.Applied, (await runtime.ReleaseAsync(() => true, default, serviceOwnedRestoration: true)).Status);
+        var restarted = new CoolingPadControlRuntime(provider, store, new Temperatures());
+        await restarted.MaintainAsync(() => true, default);
+        await restarted.ResumeSavedControlAsync("owner", () => true, () => true, default);
+        Assert.True(restarted.Status.Active);
+        Assert.Equal(CoolingPadFanMode.Fixed, restarted.Status.Requested.FanMode);
+        Assert.Equal(3, provider.Pad.Writes.Count);
+    }
+
+    [Fact]
+    public async Task ExplicitReleaseEndsResumption()
+    {
+        var provider = new Provider { Connection = CoolingPadConnectionState.PresentExact };
+        var store = new CoolingPadStateStore();
+        var runtime = await CreateAsync(provider, store);
+        await runtime.ApplyAsync(Fixed, () => true, default);
+        Assert.Equal(ControlOperationStatus.Applied,
+            (await runtime.ReleaseAsync(() => true, default, serviceOwnedRestoration: true, userRequested: true)).Status);
+        await runtime.MaintainAsync(() => true, default);
+        await runtime.ResumeSavedControlAsync("owner", () => true, () => true, default);
+        var restarted = new CoolingPadControlRuntime(provider, store, new Temperatures());
+        await restarted.MaintainAsync(() => true, default);
+        await restarted.ResumeSavedControlAsync("owner", () => true, () => true, default);
+        Assert.False(runtime.Status.Active);
+        Assert.False(restarted.Status.Active);
+        Assert.Single(provider.Pad.Writes);
+    }
+
+    [Fact]
+    public async Task RetainedRestorationStateOrAPausedWriteWaitsForTheUser()
+    {
+        // A stop that did not hand the pad back leaves its journal; a new service reads first.
+        var provider = new Provider { Connection = CoolingPadConnectionState.PresentExact };
+        var store = new CoolingPadStateStore();
+        var runtime = await CreateAsync(provider, store);
+        await runtime.ApplyAsync(Fixed, () => true, default);
+        var restarted = new CoolingPadControlRuntime(provider, store, new Temperatures());
+        await restarted.MaintainAsync(() => true, default);
+        await restarted.ResumeSavedControlAsync("owner", () => true, () => true, default);
+        Assert.True(restarted.Status.WritesPaused);
+        Assert.Single(provider.Pad.Writes);
+
+        // An uncertain submission pauses writes; resumption never replays it.
+        var uncertain = new Provider { Connection = CoolingPadConnectionState.PresentExact };
+        var paused = await CreateAsync(uncertain);
+        uncertain.Pad.FailWrite = true;
+        Assert.Equal(ControlOperationStatus.Failed, (await paused.ApplyAsync(Fixed, () => true, default)).Status);
+        uncertain.Pad.FailWrite = false;
+        await paused.MaintainAsync(() => true, default);
+        await paused.ResumeSavedControlAsync("owner", () => true, () => true, default);
+        Assert.False(paused.Status.Active);
+        Assert.Single(uncertain.Pad.Writes);
+    }
+
+    [Fact]
+    public async Task BlockedResumptionRetriesOnlyAfterItsInterval()
+    {
+        var clock = new Clock();
+        var provider = new Provider { Connection = CoolingPadConnectionState.PresentExact, ReturnNull = true };
+        var store = new CoolingPadStateStore();
+        await store.SaveSettingsAsync("owner", Fixed, default);
+        await store.SaveResumeIntentAsync("owner", true, default);
+        var runtime = new CoolingPadControlRuntime(provider, store, new Temperatures(), clock);
+        await runtime.MaintainAsync(() => true, default);
+        bool admitted = false;
+        Task ResumeAsync() => runtime.ResumeSavedControlAsync("owner", () => admitted, () => true, default);
+
+        // A closed admission opens nothing and is checked again after a second.
+        await ResumeAsync();
+        admitted = true;
+        clock.Now += TimeSpan.FromMilliseconds(500);
+        await ResumeAsync();
+        Assert.Equal(0, provider.Opens);
+        clock.Now += TimeSpan.FromMilliseconds(500);
+        await ResumeAsync();
+        Assert.Equal(1, provider.Opens);
+
+        // The pad could not be opened; that attempt waits the longer interval.
+        provider.ReturnNull = false;
+        clock.Now += CoolingPadControlRuntime.ResumeRetryInterval - TimeSpan.FromSeconds(1);
+        await ResumeAsync();
+        Assert.Equal(1, provider.Opens);
+        Assert.Empty(provider.Pad.Writes);
+        clock.Now += TimeSpan.FromSeconds(1);
+        await ResumeAsync();
+        Assert.True(runtime.Status.Active);
+        Assert.Equal(["fan:Fixed:1500"], provider.Pad.Writes);
+    }
+
+    [Fact]
     public async Task DirectFanTransitionRestoresExactSavedVendorPresetWithoutLightingReadback()
     {
         var provider = new Provider();

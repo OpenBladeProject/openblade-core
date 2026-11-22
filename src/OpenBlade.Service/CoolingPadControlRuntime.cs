@@ -5,6 +5,8 @@ namespace OpenBlade.Service;
 
 /// <summary>
 /// One serial owner for exact-pad control. Saved intent is inert until an explicit Apply.
+/// After a clean service-owned handback (service stop, low power or user change), the
+/// service applies that user's saved settings again; an explicit Release ends this.
 /// A possibly submitted operation stops all writes until an explicit successful read.
 /// </summary>
 internal sealed class CoolingPadControlRuntime(
@@ -32,6 +34,12 @@ internal sealed class CoolingPadControlRuntime(
     private long mirroredSequence = -1;
     private DateTimeOffset nextDiscovery;
     private long? lastTemperatureTimestamp;
+    private bool resumeIntent;
+    private DateTimeOffset nextResumeAttempt;
+    // A closed admission (asleep, locked, another user) is checked again each second.
+    // An attempt that reached the pad and was refused retries at the longer interval.
+    internal static readonly TimeSpan ResumeAdmissionInterval = TimeSpan.FromSeconds(1);
+    internal static readonly TimeSpan ResumeRetryInterval = TimeSpan.FromSeconds(5);
 
     internal CoolingPadStatusSnapshot Status => Volatile.Read(ref status);
 
@@ -66,6 +74,7 @@ internal sealed class CoolingPadControlRuntime(
                 await LoadOwnershipAsync(token).ConfigureAwait(false);
                 CoolingPadSettings settings = await store.LoadSettingsAsync(user, token).ConfigureAwait(false);
                 if (!CoolingPadSettings.IsWellFormed(settings)) { throw new InvalidDataException("Saved cooling pad settings are invalid."); }
+                resumeIntent = await store.LoadResumeIntentAsync(user, token).ConfigureAwait(false);
                 owner = user;
                 configurationFailure = false;
                 leases.Clear();
@@ -86,6 +95,7 @@ internal sealed class CoolingPadControlRuntime(
                 DiagnosticTrace.TraceException(nameof(CoolingPadControlRuntime), nameof(SetUserAsync), exception);
                 owner = user;
                 configurationFailure = true;
+                resumeIntent = false;
                 leases.Clear();
                 authority = static () => false;
                 UpdateStatus(previous => previous with
@@ -154,6 +164,11 @@ internal sealed class CoolingPadControlRuntime(
                 ? await CurveTargetAsync(settings, token).ConfigureAwait(false)
                 : settings.FanMode == CoolingPadFanMode.Fixed ? settings.FixedRpm : null;
             await store.SaveSettingsAsync(owner, settings, token).ConfigureAwait(false);
+            if (resumeIntent != (fan || lighting))
+            {
+                await store.SaveResumeIntentAsync(owner, fan || lighting, token).ConfigureAwait(false);
+                resumeIntent = fan || lighting;
+            }
             UpdateStatus(previous => previous with { Requested = settings });
             if (!settings.AllowDemandApi) { leases.Clear(); }
             authority = continuedOwnership ?? admission;
@@ -226,7 +241,7 @@ internal sealed class CoolingPadControlRuntime(
     }
 
     internal async Task<ControlOperationResult> ReleaseAsync(Func<bool> admission, CancellationToken token,
-        bool serviceOwnedRestoration = false)
+        bool serviceOwnedRestoration = false, bool userRequested = false)
     {
         Revoke();
         await gate.WaitAsync(token).ConfigureAwait(false);
@@ -235,6 +250,12 @@ internal sealed class CoolingPadControlRuntime(
         {
             leases.Clear();
             await LoadOwnershipAsync(token).ConfigureAwait(false);
+            if (userRequested && owner is not null && resumeIntent)
+            {
+                // The user stopped control. Later handbacks must not start it again.
+                await store.SaveResumeIntentAsync(owner, false, token).ConfigureAwait(false);
+                resumeIntent = false;
+            }
             if (ownership is null)
             {
                 UpdateStatus(previous => previous with { Active = false, Message = "Cooling pad control is stopped." });
@@ -381,6 +402,30 @@ internal sealed class CoolingPadControlRuntime(
 
     internal Task<ControlOperationResult> HandBackForUserTransitionAsync(Func<bool> admission, CancellationToken token) =>
         ReleaseAsync(admission, token, serviceOwnedRestoration: true);
+
+    /// <summary>
+    /// Applies the user's saved settings again after a clean service-owned handback, so a
+    /// service restart, sleep or user change does not leave the pad on its own settings.
+    /// Retained restoration state, paused writes, a failed apply or an explicit Release
+    /// wait for the user instead. A blocked attempt retries at a bounded interval.
+    /// </summary>
+    internal async Task ResumeSavedControlAsync(string user, Func<bool> admission, Func<bool> continuedOwnership,
+        CancellationToken token)
+    {
+        if (clock.GetUtcNow() < nextResumeAttempt || !ResumeEligible()) { return; }
+        if (!admission())
+        {
+            nextResumeAttempt = clock.GetUtcNow() + ResumeAdmissionInterval;
+            return;
+        }
+        nextResumeAttempt = clock.GetUtcNow() + ResumeRetryInterval;
+        await SetUserAsync(user, token).ConfigureAwait(false);
+        if (!resumeIntent || !ResumeEligible()) { return; }
+        await ApplyAsync(Status.Requested, admission, token, continuedOwnership).ConfigureAwait(false);
+    }
+
+    private bool ResumeEligible() => !configurationFailure
+        && Status is { Active: false, WritesPaused: false, RecoveryRequired: false, Connection: CoolingPadConnectionState.PresentExact };
 
     internal async Task<ControlOperationResult> SetLeaseAsync(Guid id, string client, int rpm, int seconds,
         Func<bool> clientAlive, CancellationToken token)

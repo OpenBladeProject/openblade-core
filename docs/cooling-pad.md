@@ -11,8 +11,14 @@ setting; each change applies after a short pause, like the laptop controls, and
 the page refreshes the pad status while it is open. Until you choose a setting,
 the pad keeps its own settings. The page always shows the settings the service
 is running, including ones changed by another OpenBlade client; a change you are
-making takes precedence until it applies. Starting OpenBlade or reconnecting the
-pad does not start control automatically.
+making takes precedence until it applies. Reconnecting the pad does not start
+control automatically.
+
+OpenBlade hands the pad back to its own settings when the laptop sleeps or shuts
+down and when the service stops, for example during an update. Once Windows is
+awake and you are signed in again, it applies your cooling-pad settings again.
+**Release control** stops this until you choose a setting again. If the handback
+was not confirmed, the page asks you to check the pad first.
 
 Choose Automatic with a Quiet, Balanced or Performance profile, a fixed target
 from 500 to 3200 RPM in 50-RPM steps, a manual fan curve, or Off. Automatic and
@@ -44,6 +50,22 @@ baseline from OpenBlade's own mirror session can support explicit mirror recover
 after a service restart; unreadable current pixels are never treated as saved.
 
 Both persistent profile 1 and volatile profile 0 effect parameters are saved. Pixel data from another custom renderer remains unreadable.
+Byte 0 of `0F/02` is the store flag that openrazer and padctl call VARSTORE (`1`)
+and NOSTORE (`0`); the strip shows whichever effect was written last. When the
+two records hold different effects, a read cannot tell which one is showing on
+its own. The service then reports the effect it wrote last and confirmed while
+that record still holds it, which covers its own Apply (profile 1), keyboard
+sync (profile 0) and restoration (profile 0 when the baseline has it). Otherwise, including after a restart before its next lighting
+write, or after a controller or identity boundary, the lighting mode is
+unconfirmed instead of read from profile 1 alone.
+
+The service resumes control only after a clean service-owned handback. It keeps a
+per-user resume record beside the saved settings, written by an Apply that takes
+control and removed by **Release control**. A retained restoration journal,
+paused writes, a failed Apply or a configuration failure all wait for the user.
+Resumption uses the same session, power and per-command admission as an Apply,
+checks a closed admission again each second, and waits five seconds after an
+attempt that reached the pad and was refused. Shutdown cleanup is never undone.
 
 A failed or ambiguous submission pauses control. Read the current state before
 choosing an explicit recovery action. OpenBlade retains a write-ahead recovery
