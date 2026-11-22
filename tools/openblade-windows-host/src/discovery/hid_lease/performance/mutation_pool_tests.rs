@@ -1,10 +1,13 @@
 //! The transaction-ID pool through the mutation paths of the Reader, on the
-//! in-memory port: recipes and fan no-ops free their IDs, a prepared fan
-//! record pins its own, and an exhausted pool is named.
+//! in-memory port: recipes and fan no-ops free their IDs; an uncertain
+//! setter's ID, a temporary-charge cancellation's IDs and a prepared fan
+//! record's IDs are never issued again; and an exhausted pool is named.
 use super::super::mutation::{Permit, Refusal};
 use super::*;
 use openblade_domain::{
+    battery_history::{Desired, Request as BatteryRequest},
     fan_recipe::FanIntent,
+    temporary_charge_history::{CONTRACT, TemporaryChargeRecord},
     thermal_mutation::{Destination, Preset, Progress},
 };
 
@@ -17,7 +20,13 @@ const ADMITTED: ReadAdmission = ReadAdmission {
 struct Request {
     destination: Option<Destination>,
     fan: Option<FanIntent>,
+    // A temporary full charge target, and the IDs its cancellation spends.
+    tfc: Option<bool>,
+    reserved: Option<[u8; 8]>,
+    cancel_ids: Mutex<Option<[u8; 8]>>,
     rows: Mutex<Vec<Progress>>,
+    battery_rows: Mutex<Vec<u8>>,
+    fan_rows: Mutex<Vec<u8>>,
     refusals: Mutex<Vec<Refusal>>,
 }
 impl Permit for Request {
@@ -29,6 +38,49 @@ impl Permit for Request {
     }
     fn is_fan(&self) -> bool {
         self.fan.is_some()
+    }
+    fn temporary_target(&self) -> Option<bool> {
+        self.tfc
+    }
+    fn temporary_reserved_ids(&self) -> Option<[u8; 8]> {
+        self.reserved
+    }
+    fn resolve_temporary_charge(
+        &self,
+        source: u8,
+        flags: u8,
+        policy: Option<u8>,
+        ids: [u8; 8],
+        cancel_ids: Option<[u8; 8]>,
+    ) -> io::Result<Option<TemporaryChargeRecord>> {
+        let enabled = self.tfc.unwrap();
+        let requested = BatteryRequest::SetFullChargeOverride { enabled };
+        let configured = Desired {
+            limit: 80,
+            protection: true,
+            temporary: !enabled,
+        };
+        let record = TemporaryChargeRecord {
+            contract: CONTRACT.into(),
+            desired: configured.requested(&requested),
+            requested,
+            configured,
+            source,
+            baseline: flags,
+            target: if enabled { 4 } else { 0 },
+            policy,
+            ids,
+            cancel_ids,
+            origin: None,
+            fan_owner: None,
+        };
+        record.validate()?;
+        *self.cancel_ids.lock().unwrap() = cancel_ids;
+        Ok(Some(record))
+    }
+    fn record_battery(&self, progress: u8) -> io::Result<()> {
+        self.battery_rows.lock().unwrap().push(progress);
+        Ok(())
     }
     fn resolve_fan(
         &self,
@@ -64,7 +116,8 @@ impl Permit for Request {
     fn prepare_fan(&self, _: openblade_domain::fan_history::FanRecord) -> io::Result<()> {
         Ok(())
     }
-    fn record_fan(&self, _: u8) -> io::Result<()> {
+    fn record_fan(&self, progress: u8) -> io::Result<()> {
+        self.fan_rows.lock().unwrap().push(progress);
         Ok(())
     }
 }
@@ -80,17 +133,29 @@ fn balanced() -> Fixture {
     fixture
 }
 
-fn limit(cancelled: &AtomicBool) -> Limit<'_> {
+const BUDGET: Duration = Duration::from_secs(10);
+
+fn limit(cancelled: &AtomicBool, budget: Duration) -> Limit<'_> {
     Limit {
-        deadline: Instant::now() + Duration::from_secs(10),
+        deadline: Instant::now() + budget,
         cancelled,
     }
 }
 
 async fn apply(fixture: &Fixture, request: &Request) -> Option<ObservedPerformance> {
+    apply_within(fixture, request, BUDGET).await
+}
+
+async fn apply_within(
+    fixture: &Fixture,
+    request: &Request,
+    budget: Duration,
+) -> Option<ObservedPerformance> {
     let cancelled = AtomicBool::new(false);
     let mut reader = Reader::new(fixture.port(), ADMITTED);
-    let observed = reader.apply_preset(request, limit(&cancelled)).await;
+    let observed = reader
+        .apply_preset(request, limit(&cancelled, budget))
+        .await;
     reader.retire(None).await.unwrap();
     observed
 }
@@ -99,7 +164,7 @@ async fn read(fixture: &Fixture) -> Option<ObservedPerformance> {
     let cancelled = AtomicBool::new(false);
     let mut reader = Reader::new(fixture.port(), ADMITTED);
     let observed = reader
-        .observe(&mut || Some(ADMITTED), limit(&cancelled))
+        .observe(&mut || Some(ADMITTED), limit(&cancelled, BUDGET))
         .await;
     reader.retire(None).await.unwrap();
     observed
@@ -110,8 +175,33 @@ fn sent_ids(fixture: &Fixture) -> Vec<u8> {
     s.sent.iter().map(|(.., id)| *id).collect()
 }
 
+fn preset(destination: Preset) -> Request {
+    Request {
+        destination: Some(Destination::Preset(destination)),
+        ..Request::default()
+    }
+}
+
+/// Wraps the pool several times with reads and confirmed preset recipes.
+async fn churn(fixture: &Fixture) {
+    let before = sent_ids(fixture).len();
+    for round in 0..160 {
+        assert!(read(fixture).await.is_some(), "{round}");
+        let destination = if round % 2 == 0 {
+            Preset::Silent
+        } else {
+            Preset::Balanced
+        };
+        assert!(
+            apply(fixture, &preset(destination)).await.is_some(),
+            "{round}"
+        );
+    }
+    assert!(sent_ids(fixture).len() - before > 3 * 254);
+}
+
 #[tokio::test(start_paused = true)]
-async fn repeated_thermal_recipes_never_exhaust_the_pool() {
+async fn repeated_confirmed_thermal_recipes_never_exhaust_the_pool() {
     let fixture = balanced();
     for round in 0..300 {
         let (destination, observed) = if round % 2 == 0 {
@@ -119,10 +209,7 @@ async fn repeated_thermal_recipes_never_exhaust_the_pool() {
         } else {
             (Preset::Balanced, ObservedPerformance::BalancedAutomatic)
         };
-        let request = Request {
-            destination: Some(Destination::Preset(destination)),
-            ..Request::default()
-        };
+        let request = preset(destination);
         assert_eq!(apply(&fixture, &request).await, Some(observed), "{round}");
         assert!(request.refusals.lock().unwrap().is_empty(), "{round}");
         assert_eq!(
@@ -133,6 +220,72 @@ async fn repeated_thermal_recipes_never_exhaust_the_pool() {
     assert!(sent_ids(&fixture).len() > 10 * 254);
     // Only the last 0D/82, 07/8C and setter replies can still be read.
     assert!(fixture.transactions.free() >= 250);
+}
+
+#[tokio::test(start_paused = true)]
+async fn an_uncertain_setter_id_is_never_issued_again() {
+    for fault in ["uncorrelated acknowledgement", "failed submission"] {
+        let fixture = balanced();
+        {
+            let mut s = fixture.state.lock().unwrap();
+            if fault == "failed submission" {
+                s.fail_write = Some(1);
+            } else {
+                s.corrupt_ack = Some(1);
+            }
+        }
+        assert_eq!(
+            apply(&fixture, &preset(Preset::Silent)).await,
+            None,
+            "{fault}"
+        );
+        let setter = {
+            let mut s = fixture.state.lock().unwrap();
+            assert_eq!(s.writes, 1, "{fault}");
+            s.fail_write = None;
+            s.corrupt_ack = None;
+            s.selectors = [0, 0];
+            s.sent
+                .iter()
+                .find(|(class, command, ..)| (*class, *command) == (13, 2))
+                .map(|(.., id)| *id)
+                .unwrap()
+        };
+        let before = sent_ids(&fixture).len();
+        churn(&fixture).await;
+        assert!(
+            sent_ids(&fixture)[before..].iter().all(|id| *id != setter),
+            "{fault}: setter ID {setter} was issued again"
+        );
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn temporary_charge_cancel_ids_are_issued_to_nothing_else() {
+    let fixture = balanced();
+    let enable = Request {
+        tfc: Some(true),
+        ..Request::default()
+    };
+    assert_eq!(apply(&fixture, &enable).await, None);
+    assert_eq!(*enable.battery_rows.lock().unwrap(), [0, 70, 71, 72]);
+    let cancel_ids = enable.cancel_ids.lock().unwrap().unwrap();
+    let before = sent_ids(&fixture).len();
+    churn(&fixture).await;
+    assert!(
+        sent_ids(&fixture)[before..]
+            .iter()
+            .all(|id| !cancel_ids.contains(id)),
+        "a cancellation ID was issued to another request"
+    );
+    // The cancellation still has its IDs.
+    let cancel = Request {
+        tfc: Some(false),
+        reserved: Some(cancel_ids),
+        ..Request::default()
+    };
+    assert_eq!(apply(&fixture, &cancel).await, None);
+    assert_eq!(*cancel.battery_rows.lock().unwrap(), [0, 70, 71, 72]);
 }
 
 #[tokio::test(start_paused = true)]

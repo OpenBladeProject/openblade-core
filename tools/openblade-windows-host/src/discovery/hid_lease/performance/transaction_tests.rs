@@ -1,12 +1,15 @@
 //! The transaction-ID pool against a modelled firmware reply mailbox. One
-//! device owns the pool and a single mailbox; every read opens a new port and
-//! Reader on it, as each native job opens a new handle.
+//! device owns the pool and a single mailbox; every read or setter job opens
+//! a new port and Reader on it, as each native job opens a new handle.
 use super::*;
 use openblade_protocol::device_mode::DeviceMode;
 use std::{
     collections::VecDeque,
     sync::{Arc, Mutex, atomic::Ordering},
 };
+
+// The setter the modelled firmware echoes.
+const SET_THERMAL: u8 = 0x02;
 
 const PROOF: ReadAdmission = ReadAdmission {
     lifecycle: 1,
@@ -24,6 +27,8 @@ enum Firmware {
     Ignore,
     /// Takes effect only later (`Device::late`); its GET never completes.
     Stall,
+    /// Answers, but Windows reports the submission failed.
+    Fail,
 }
 
 struct Device {
@@ -82,7 +87,8 @@ impl Device {
     }
 }
 
-/// The reply the firmware gives `request`, with `status`.
+/// The reply the firmware gives `request`, with `status`. A setter's reply
+/// echoes its arguments.
 fn answer(request: &Frame, status: u8, selector: u8) -> Frame {
     let report = &request[1..];
     let (id, class, command, channel) = (report[1], report[6], report[7], report[9]);
@@ -92,6 +98,7 @@ fn answer(request: &Frame, status: u8, selector: u8) -> Frame {
         (CLASS, GET_THERMAL) => &thermal,
         (CLASS, 0x87) => &level,
         (0, 0x84) => &[3, 0],
+        (CLASS, SET_THERMAL) => &report[8..8 + usize::from(report[5])],
         _ => panic!("unexpected request {class:02x}/{command:02x}"),
     };
     let mut frame = [0; FRAME_LENGTH];
@@ -111,6 +118,29 @@ struct MailboxPort {
     stalled: bool,
 }
 
+impl MailboxPort {
+    /// A getter's or setter's SET reaches the firmware, which takes the next
+    /// planned step.
+    fn send(&mut self, frame: Frame) -> io::Result<()> {
+        let device = &self.device;
+        device.sent.lock().unwrap().push(frame);
+        let step = device.plan.lock().unwrap().pop_front();
+        let mut mailbox = device.mailbox.lock().unwrap();
+        match step.unwrap_or(Firmware::Answer) {
+            Firmware::Answer => *mailbox = answer(&frame, 2, device.selector),
+            Firmware::Busy => *mailbox = answer(&frame, 1, device.selector),
+            Firmware::Ignore => {}
+            Firmware::Stall => self.stalled = true,
+            Firmware::Fail => {
+                *mailbox = answer(&frame, 2, device.selector);
+                return Err(io::ErrorKind::BrokenPipe.into());
+            }
+        }
+        self.pending = Some((0, frame));
+        Ok(())
+    }
+}
+
 impl Port for MailboxPort {
     fn transactions(&self) -> &Transactions {
         &self.device.transactions
@@ -122,21 +152,9 @@ impl Port for MailboxPort {
         limit.check()?;
         assert!(self.pending.is_none());
         match transfer {
-            Transfer::SendGetter(frame) => {
-                let device = &self.device;
-                device.sent.lock().unwrap().push(frame);
-                let step = device.plan.lock().unwrap().pop_front();
-                let mut mailbox = device.mailbox.lock().unwrap();
-                match step.unwrap_or(Firmware::Answer) {
-                    Firmware::Answer => *mailbox = answer(&frame, 2, device.selector),
-                    Firmware::Busy => *mailbox = answer(&frame, 1, device.selector),
-                    Firmware::Ignore => {}
-                    Firmware::Stall => self.stalled = true,
-                }
-                self.pending = Some((0, frame));
-            }
+            Transfer::SendGetter(frame) => self.send(frame)?,
             #[cfg(feature = "service-thermal-mutation-v1")]
-            Transfer::SendMutation(_) => panic!("read-only fixture received a mutation"),
+            Transfer::SendMutation(frame) => self.send(frame)?,
             Transfer::ReceiveReply if self.stalled => {}
             Transfer::ReceiveReply => {
                 self.pending = Some((FRAME_LENGTH, *self.device.mailbox.lock().unwrap()));
@@ -187,7 +205,7 @@ async fn unbounded_successful_reads_never_exhaust_the_pool() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn unbounded_custom_reads_and_device_mode_jobs_never_exhaust_the_pool() {
+async fn unbounded_answered_custom_reads_and_device_mode_jobs_never_exhaust_the_pool() {
     let device = Device::new(4);
     for _ in 0..2_000 {
         assert!(matches!(
@@ -251,10 +269,16 @@ async fn an_unconfirmed_retirement_keeps_even_its_unsent_ids() {
 
 #[tokio::test(start_paused = true)]
 async fn an_uncertain_exchange_never_frees_its_id_even_on_a_new_handle() {
-    for failure in [Firmware::Busy, Firmware::Ignore, Firmware::Stall] {
+    for failure in [
+        Firmware::Busy,
+        Firmware::Ignore,
+        Firmware::Stall,
+        Firmware::Fail,
+    ] {
         let device = Device::new(0);
         assert!(read(&device).await.is_some());
-        // ID 3 is sent and gets a busy reply, the older reply 2, or no reply.
+        // ID 3 is sent and gets a busy reply, the older reply 2 or no reply,
+        // or its submission fails after reaching the firmware.
         device.then([failure]);
         assert_eq!(read(&device).await, None, "{failure:?}");
         if failure == Firmware::Stall {
@@ -307,7 +331,7 @@ async fn a_late_reply_is_never_accepted_for_a_new_request() {
 }
 
 #[test]
-fn an_answered_id_is_freed_only_by_a_later_answer_to_the_same_command() {
+fn an_answer_frees_the_older_answered_id_of_its_command() {
     let transactions = Transactions::new();
     let [a, b] = transactions.reserve_pair().unwrap();
     assert!(transactions.sent(a));
@@ -407,14 +431,21 @@ fn only_a_correlated_terminal_reply_answers_a_request() {
             None
         );
     }
-    let corrupt = |byte: usize| {
+    let corrupt = |byte: usize, checksum: bool| {
         let mut frame = reply(2);
         frame[byte] ^= 0x40;
+        if checksum {
+            frame[89] = openblade_protocol::calculate_checksum(&frame[1..]).unwrap();
+        }
         transactions::terminal_reply(&request, 91, &frame)
     };
-    // Report ID, transaction, class, command and checksum.
-    for byte in [0, 2, 7, 8, 89] {
-        assert_eq!(corrupt(byte), None, "{byte}");
+    // A well-formed reply to another transaction, class or command.
+    for byte in [2, 7, 8] {
+        assert_eq!(corrupt(byte, true), None, "{byte}");
+    }
+    // The report ID and the checksum itself.
+    for byte in [0, 89] {
+        assert_eq!(corrupt(byte, false), None, "{byte}");
     }
     assert_eq!(transactions::terminal_reply(&request, 89, &reply(2)), None);
 }
@@ -440,4 +471,149 @@ fn quarantined_ids_exhaust_the_pool() {
     });
     assert_eq!(reader.reserve_pair(), None);
     assert!(reader.exhausted);
+}
+
+/// Reserves every pair the pool can issue, then releases them unsent.
+fn drain(transactions: &Transactions) -> Vec<u8> {
+    let mut issued = Vec::new();
+    while let Some(pair) = transactions.reserve_pair() {
+        issued.extend(pair);
+    }
+    for id in &issued {
+        transactions.release(*id);
+    }
+    issued
+}
+
+#[test]
+fn an_answer_to_another_class_or_command_frees_nothing() {
+    let transactions = Transactions::new();
+    let answer = |class, command| {
+        let [id, held] = transactions.reserve_pair().unwrap();
+        assert!(transactions.sent(id));
+        transactions.answered(id, class, command);
+        transactions.release(held);
+        id
+    };
+    let a = answer(CLASS, GET_THERMAL);
+    // The same command in another class, then another command in this class.
+    answer(7, GET_THERMAL);
+    answer(CLASS, 0x87);
+    assert!(!drain(&transactions).contains(&a));
+    // Only a newer 0D/82 answer replaces a's reply.
+    answer(CLASS, GET_THERMAL);
+    assert!(drain(&transactions).contains(&a));
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_poisoned_pool_submits_nothing() {
+    let device = Device::new(0);
+    let mut reader = Reader::new(device.port(), PROOF);
+    let [id, _] = reader.reserve_pair().unwrap();
+    device.transactions.poison();
+    assert!(!device.transactions.sent(id));
+    let mut frame = [0; FRAME_LENGTH];
+    frame[1..].copy_from_slice(
+        &RazerReport::create(id, CLASS, GET_THERMAL, &[1, 1, 0, 0])
+            .unwrap()
+            .encode(),
+    );
+    let cancelled = AtomicBool::new(false);
+    let mut attempt = Attempt {
+        reader: &mut reader,
+        completed: false,
+    };
+    let sent = attempt
+        .transfer(Transfer::SendGetter(frame), limit(&cancelled))
+        .await;
+    drop(attempt);
+    assert!(sent.is_err());
+    assert!(device.sent.lock().unwrap().is_empty());
+    // It issues nothing either.
+    assert_eq!(reader.reserve_pair(), None);
+    reader.retire(None).await.unwrap();
+}
+
+/// One setter job on a new port and Reader: a 0D/02 setter, then its reply,
+/// retired before it returns. Returns the setter's ID and whether its echo
+/// was read.
+#[cfg(feature = "service-thermal-mutation-v1")]
+async fn set(device: &Arc<Device>) -> (u8, bool) {
+    let cancelled = AtomicBool::new(false);
+    let mut reader = Reader::new(device.port(), PROOF);
+    let [id, _] = reader.reserve_pair().unwrap();
+    let setter = RazerReport::create(id, CLASS, SET_THERMAL, &[1, 1, 0, 0]).unwrap();
+    let mut frame = [0; FRAME_LENGTH];
+    frame[1..].copy_from_slice(&setter.encode());
+    let mut attempt = Attempt {
+        reader: &mut reader,
+        completed: false,
+    };
+    let echoed = async {
+        attempt
+            .transfer(Transfer::SendMutation(frame), limit(&cancelled))
+            .await
+            .ok()?;
+        let (_, reply) = attempt
+            .transfer(Transfer::ReceiveReply, limit(&cancelled))
+            .await
+            .ok()?;
+        setter.validate_response(&reply[1..], None).ok()
+    }
+    .await
+    .is_some();
+    attempt.completed = echoed;
+    drop(attempt);
+    reader.retire(None).await.unwrap();
+    (id, echoed)
+}
+
+#[cfg(feature = "service-thermal-mutation-v1")]
+#[tokio::test(start_paused = true)]
+async fn a_setter_id_returns_only_after_a_later_echo_of_its_command() {
+    // Reads never replace an echo; the next setter's echo does.
+    let device = Device::new(0);
+    let (first, echoed) = set(&device).await;
+    assert!(echoed);
+    for _ in 0..300 {
+        assert!(read(&device).await.is_some());
+    }
+    assert_eq!(device.sends(first), 1);
+    let (second, echoed) = set(&device).await;
+    assert!(echoed);
+    let since = device.sent.lock().unwrap().len();
+    for _ in 0..300 {
+        assert!(read(&device).await.is_some());
+    }
+    assert!(device.sends(first) > 1);
+    assert!(
+        device.sent.lock().unwrap()[since..]
+            .iter()
+            .all(|frame| frame[2] != second)
+    );
+
+    // A setter without its echo keeps its ID out of the pool, whatever
+    // answers follow on new handles.
+    for failure in [
+        Firmware::Busy,
+        Firmware::Ignore,
+        Firmware::Stall,
+        Firmware::Fail,
+    ] {
+        let device = Device::new(0);
+        assert!(read(&device).await.is_some());
+        device.then([failure]);
+        let (uncertain, echoed) = set(&device).await;
+        assert!(!echoed, "{failure:?}");
+        if failure == Firmware::Stall {
+            device.late(uncertain);
+        }
+        for _ in 0..3 {
+            assert!(set(&device).await.1, "{failure:?}");
+        }
+        for _ in 0..300 {
+            assert!(read(&device).await.is_some(), "{failure:?}");
+        }
+        assert_eq!(device.sends(uncertain), 1, "{failure:?}");
+    }
 }

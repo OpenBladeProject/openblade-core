@@ -92,6 +92,16 @@ impl Transactions {
         self.0.lock().ok()
     }
 
+    /// Poisons the pool, as a panic while it was locked would.
+    #[cfg(test)]
+    pub(super) fn poison(&self) {
+        let poisoned = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _pool = self.0.lock();
+            panic!("the pool lock is poisoned on purpose");
+        }));
+        assert!(poisoned.is_err() && self.0.is_poisoned());
+    }
+
     /// Two free IDs, held until they are sent or released. `None` when fewer
     /// than two are free.
     pub(super) fn reserve_pair(&self) -> Option<[u8; 2]> {
