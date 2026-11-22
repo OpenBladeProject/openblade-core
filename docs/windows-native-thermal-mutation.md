@@ -1390,12 +1390,26 @@ step's capture and authorization, and each write's
 an exhausted or unreadable lifecycle counts as low power, which managed's
 gate has no state for. It never admits a write.
 
-In production, a trigger that arrives while the gate is set is refused at
-its capture: Blocked "Saved configuration or the current session is
-unavailable: fresh installed mutation admission is unavailable". Nothing is
-read, the report keeps the pair already selected and its debt, and the save
-is not stored. The gate does real work only when it sets after that capture,
-in the middle of a trigger:
+A trigger, save or explicit override that arrives while the gate is set is
+refused by the write capture, which requires an active lifecycle, and then
+takes the storage-only capture (`WindowsGuard::capture_storage`, through
+`Runtime::capture_intent`). That capture admits storing intent and nothing
+else. It keeps every check of the write capture except the lifecycle epoch:
+the custody's integrity and health, the exact device and mutation artifact,
+the console session, logon identity, unlocked console, fresh Windows power
+status, no competing controller (`WindowsGuard::admits`), and the custody's
+own original-identity admission (`ReadCustody::authorize_storage`). Its
+`authorize` is always `None`, so no read, transaction pair or write can be
+admitted through it, and every step and write still takes the full capture,
+`authorize` and the per-write epoch check, unchanged. It is taken only when
+the gate reads set and the write capture's refusal was not fatal. A store
+fenced by an earlier submission (`Storage::pending`) or a saved document the
+domain decoder refuses still stores nothing.
+
+The deferral then runs as it does when the gate sets after the capture:
+nothing is read, the debt stays owed with no attempt spent, and the first
+report after the gate clears applies the saved intent once. The gate does
+real work only when it sets in the middle of a trigger:
 
 - before each step (`request_triggers.rs`, the check ahead of the step's
   request id). That check is the refusal: a suspend after the first step
@@ -1453,17 +1467,41 @@ Both are follow-ups for C3's resume and DisplayOn reconcile of owed pairs.
 A debt already dropped is recovered only by C3's lease-expiry or
 power-change triggers, or by the next changed report.
 
-Explicit `setPerformanceOverride` and `setFanOverride` are refused by the
-same capture admission (`thermal_native.rs` `WindowsGuard::capture`):
-nothing is submitted, as in managed, but the override is not stored and the
-reply is the admission refusal, where managed stores the override and
-replies Blocked "... intent was stored. Hardware result: The laptop entered
-a low-power transition before the ... command was submitted." Storing
-intent in low power needs a storage-only capture that keeps every
-per-write admission; that is the queued follow-up slice. Until it lands, an
-explicit override or a profile save sent while the gate is set is not
-saved, and a refused report is sent again at the Agent's next 5 s lease
-renewal.
+Explicit `setPerformanceOverride` and `setFanOverride` sent while the gate
+is set store their intent through the storage-only capture, as managed
+stores the override before its write admission refuses
+(`Runtime::store_performance_deferred`, `Runtime::store_fan_deferred`). The
+request is validated as on classified power (`combination_rejected`,
+`override_rejected`) and stored at the battery class, nothing is read or
+submitted, the pair owes a reconciliation at every class with no attempt
+spent (`Runtime::owe_stored_intent`), and the reply is managed's: Blocked
+"Performance override intent was stored. Hardware result: The laptop
+entered a low-power transition before the performance command was
+submitted." or "Fan override intent was stored. Hardware result: The laptop
+entered a low-power transition before the thermal command was submitted.",
+with "... was cleared." for a clear. A fan return to Automatic from saved
+manual intent names the saved preset first, "Fans could not return to
+Automatic with the saved BatterySaver performance intent.", as managed's
+`ApplyDirectAutomaticFanTransitionOutcomeAsync` does when its performance
+step is refused.
+
+Three differences from managed remain:
+
+- Only Windows battery classifies power without an adapter reading. On AC,
+  native classifies the external adapter only from a fresh reading, which
+  the gate refuses, so an explicit request stores nothing and replies
+  Blocked "Hardware application was not confirmed. The external power
+  adapter could not be classified; overrides and control writes are
+  blocked." Managed stores the override against the adapter it last read.
+- A fan request while OpenBlade still owns a fan change that has not been
+  handed back stores nothing and replies Blocked "Fan intent was not stored:
+  OpenBlade still owns a fan change that has not been handed back to
+  firmware Automatic, and the laptop is in a low-power transition." The
+  handback it owes needs a write, which the gate refuses.
+- The stored intent is applied by the next report after the gate clears,
+  at most one 5 s lease renewal later. Managed reconverges after resume
+  through its convergence loop (below). Applying owed pairs on resume
+  itself is C3.
 
 Under the default `ThermalControlPolicy.MaintainDesiredState`
 (`BatteryAutomationPreferences.cs:18-19`), managed reconverges thermal intent
@@ -1483,11 +1521,15 @@ attempts unchanged, so that retry spends none of the budget.
 `NativeLowPowerTriggerVectors` records managed's reply sequence of one
 reporter in low power (a change, a renewal, leaving the rule, no
 application) and after the gate clears, a save, the startup transition, the
-per-write refusal and both explicit requests in low power, with the setters
-each submitted. `request_triggers_low_power.rs` replays them over the rig's
-default `Fresh`, which does not pin the lifecycle at capture: that replay
-covers only the mid-trigger window above. The same rows under the
-production-modelled capture (`CapturedFresh`) are each refused at capture.
+per-write refusal, and explicit requests in low power on AC and, after a
+source change with the gate clear, on battery, with the setters each
+submitted. `request_triggers_low_power.rs` replays the report rows over the
+rig's default `Fresh`, which does not pin the lifecycle at capture, and
+again under the production-modelled capture (`CapturedFresh`, falling back
+to `CapturedStorage`), where they match managed's replies too. The battery
+explicit rows are replayed under the production-modelled capture with
+managed's messages; the AC rows keep managed's status and setters and reply
+as unclassified power.
 
 The steps are the explicit request's permits in reconcile mode: they store
 nothing and validate no override, and they keep every per-write admission,
