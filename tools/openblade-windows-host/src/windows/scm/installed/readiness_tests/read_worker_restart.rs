@@ -59,6 +59,7 @@ fn release_held_read(rig: &Rig, held: &AtomicBool) {
 
 /// One framed request whose connection may end in a runtime error, which
 /// `Rig::request` refuses. Returns the server's result and the reply bytes.
+#[cfg(feature = "service-fan-mutation-v2")]
 async fn exchange(rig: &Rig, request: Value) -> (Result<(), ExchangeError>, io::Result<Vec<u8>>) {
     let (mut client, server) = duplex(65536);
     let publications = rig.source.lock().await.publications();
