@@ -1,5 +1,5 @@
 {
-"comment":"Recorded by PowerSettingNativeVectorsTests; regenerate with OPENBLADE_REGENERATE_NATIVE_POWER_SETTING_VECTORS set to this directory. display rows are ClassifyConsoleDisplayTransition(previous, current). decode rows hold one POWERBROADCAST_SETTING (GUID, little-endian DataLength, payload) as hex; expect holds TryReadPowerSettingDword\u0027s value for each registered GUID, or null when it refuses. A mapping step is one power event; a PBT_POWERSETTINGCHANGE (32787) step may carry a setting. Each step\u0027s signal is the gate signal managed publishes for it: ClassifySuspendResumeNotification, else OnConsoleDisplayNotification\u0027s classified transition for a display read, filtered as Publish filters gate triggers (Suspending, Resumed, DisplayOn).",
+"comment":"Recorded by PowerSettingNativeVectorsTests; regenerate with OPENBLADE_REGENERATE_NATIVE_POWER_SETTING_VECTORS set to this directory. display rows are ClassifyConsoleDisplayTransition(previous, current). decode rows hold one POWERBROADCAST_SETTING (GUID, little-endian DataLength, payload) as hex; expect holds TryReadPowerSettingDword\u0027s value for each registered GUID, or null when it refuses. A mapping step is one power event; a PBT_POWERSETTINGCHANGE (32787) step may carry a setting. Each step\u0027s signal is the gate trigger managed\u0027s NativeSubscription callback publishes for it (OnSuspendResumeNotification, or for a setting change the callback Windows routes its GUID to), filtered as Publish filters gate triggers (Suspending, Resumed, DisplayOn).",
 "display":[
 {"previous":null,"current":0,"expect":null},
 {"previous":null,"current":1,"expect":null},
@@ -40,6 +40,7 @@
 {"name":"display/value-max","bytes":"5695e66f4a70a0478f24c28d936fda4704000000ffffffff","expect":{"powerSource":null,"consoleDisplay":null}},
 {"name":"display/value-256","bytes":"5695e66f4a70a0478f24c28d936fda470400000000010000","expect":{"powerSource":null,"consoleDisplay":null}},
 {"name":"display/value-high-byte","bytes":"5695e66f4a70a0478f24c28d936fda470400000001000001","expect":{"powerSource":null,"consoleDisplay":null}},
+{"name":"display/length-top-byte","bytes":"5695e66f4a70a0478f24c28d936fda470000000101000000","expect":{"powerSource":null,"consoleDisplay":1}},
 {"name":"display/length-0","bytes":"5695e66f4a70a0478f24c28d936fda4700000000","expect":{"powerSource":null,"consoleDisplay":null}},
 {"name":"display/length-3","bytes":"5695e66f4a70a0478f24c28d936fda4703000000010000","expect":{"powerSource":null,"consoleDisplay":null}},
 {"name":"display/length-3-with-a-whole-dword","bytes":"5695e66f4a70a0478f24c28d936fda470300000001000000","expect":{"powerSource":null,"consoleDisplay":null}},
