@@ -495,8 +495,12 @@ impl StatusSource for GuardedStatus {
                         }
                         self.inner.publish(Some(evidence))?;
                         if battery {
+                            // The cancel rereads the epoch to tell a refusal
+                            // caused by a later notice from a current one.
                             let update = match runtime
-                                .battery_source_event(self.mailbox.clone(), epoch)
+                                .battery_source_event(self.mailbox.clone(), epoch, &|| {
+                                    self.origin.power_epoch()
+                                })
                                 .await
                             {
                                 Ok(update) => update,

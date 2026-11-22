@@ -53,9 +53,9 @@ enum SourceCancel {
         fresh: Arc<dyn Fresh>,
         proof: ReadAdmission,
     },
-    /// No cancel can be attempted: claim once and pause.
+    /// No cancel can be attempted at this epoch: claim once and pause.
     Refused,
-    /// A later notice fenced the tick: claim nothing.
+    /// A later notice, or low power, fenced the tick: claim nothing.
     Superseded,
 }
 
@@ -135,6 +135,17 @@ impl BatteryPermit {
         if let Ok(mut v) = self.cause.lock() {
             *v = s.into();
         }
+    }
+    /// Whether this attempt ended proven unsubmitted: its worker joined
+    /// unconfirmed, and the settled journal holds no row of it or only its
+    /// Prepared-only retirement (progress 6). Either way no submission intent
+    /// (progress 70) was written, so no setter was sent.
+    #[cfg(feature = "service-temporary-charge-v1")]
+    fn known_unsubmitted(&self) -> bool {
+        self.joined.load(Ordering::Acquire)
+            && !self.confirmed.load(Ordering::Acquire)
+            && !self.storage.pending()
+            && (!self.prepared.load(Ordering::Acquire) || self.storage.progress() == Some(6))
     }
 }
 impl Permit for BatteryPermit {
@@ -620,6 +631,7 @@ impl Runtime {
         &self,
         mailbox: MailboxSource,
         epoch: u64,
+        current_epoch: &dyn Fn() -> Option<u64>,
     ) -> io::Result<Option<BatteryUpdate>> {
         let _serial = self.gate.lock().await;
         verify_retained_failure(&self.fatal)?;
@@ -628,6 +640,10 @@ impl Runtime {
         };
         reader.drain_active().await?;
         self.reconcile_temporary_owner()?;
+        // Every guard pins the epoch it captured and refuses once it moves, so
+        // a refusal while a later notice holds the epoch (or low power holds
+        // none) is that notice's fence, not a refusal of this evidence.
+        let fenced = || current_epoch() != Some(epoch);
         let unresolved = self.temporary_pending.borrow().clone();
         // Do not consume either reference or fall back to A after a possibly
         // submitted B. Its actual worker/storage fence remains authoritative.
@@ -642,7 +658,7 @@ impl Runtime {
             && !original.storage.pending()
             && original.confirmed.load(Ordering::Acquire)
         {
-            self.admit_source_cancel(&original, &reader.custody(), epoch)?
+            self.admit_source_cancel(&original, &reader.custody(), epoch, &fenced)?
         } else {
             SourceCancel::Refused
         };
@@ -654,13 +670,17 @@ impl Runtime {
         }
         if unresolved.is_none() {
             // The gate has been held and the Reader drained since the peek, so
-            // the capture's own reconcile saw the same owner.
+            // the capture's own reconcile saw the same owner. Fail closed if
+            // it did not: put back what was taken and write nothing.
             let claimed = self.temporary_owner.borrow_mut().take();
-            debug_assert!(claimed.is_some_and(|c| Arc::ptr_eq(&c, &original)));
+            if !claimed.as_ref().is_some_and(|c| Arc::ptr_eq(c, &original)) {
+                *self.temporary_owner.borrow_mut() = claimed;
+                return Ok(None);
+            }
         }
         // Genuine current Battery evidence always ends desired intent, even if
         // configuration admission fails. The obligation is claimed once.
-        original.storage.clear_battery_temporary();
+        let intent = original.storage.take_battery_temporary();
         if unresolved.is_none() {
             // Consumed once even if later bookkeeping fails. Retaining this
             // identity may retry only settled capacity release, never a setter.
@@ -721,6 +741,11 @@ impl Runtime {
             {
                 return Err(e);
             }
+            if fenced() && self.restore_fenced_claim(&original, &permit, intent) {
+                // Managed writes this cancel in the same transition; here the
+                // newer epoch makes the next tick read the source and retry.
+                return Ok(None);
+            }
             if permit.confirmed.load(Ordering::Acquire) && !permit.storage.pending() {
                 message = "Temporary full charge canceled on Battery by independent readback; configured charge policy is retained.".into();
             }
@@ -767,6 +792,7 @@ impl Runtime {
         original: &BatteryPermit,
         custody: &Arc<dyn ReadCustody>,
         epoch: u64,
+        fenced: &dyn Fn() -> bool,
     ) -> io::Result<SourceCancel> {
         let record = original
             .tfc
@@ -779,12 +805,17 @@ impl Runtime {
         let (storage, fresh) = match self.capture(&original.sid, original.session, custody.clone())
         {
             Err(e) if is_fatal_admission(&e) => return Err(e),
+            Err(_) if fenced() => return Ok(SourceCancel::Superseded),
             Err(_) => return Ok(SourceCancel::Refused),
             Ok(captured) => captured,
         };
         fresh.verify_health()?;
         let Some(proof) = fresh.authorize() else {
-            return Ok(SourceCancel::Refused);
+            return Ok(if fenced() {
+                SourceCancel::Superseded
+            } else {
+                SourceCancel::Refused
+            });
         };
         // The epoch only advances, so a different one is a later notice.
         if proof.lifecycle != epoch {
@@ -804,6 +835,28 @@ impl Runtime {
             fresh,
             proof,
         })
+    }
+    /// Puts back an automatic cancel claimed at this tick's epoch whose
+    /// attempt a later notice fenced before any submission, so the next tick
+    /// retries it. Only an attempt proven unsubmitted qualifies; a possibly
+    /// submitted cancel is never retried.
+    #[cfg(feature = "service-temporary-charge-v1")]
+    fn restore_fenced_claim(
+        &self,
+        original: &Arc<BatteryPermit>,
+        attempt: &BatteryPermit,
+        intent: Option<bool>,
+    ) -> bool {
+        // The held gate keeps any newer owner out; never overwrite one.
+        if !attempt.known_unsubmitted() || self.temporary_owner.borrow().is_some() {
+            return false;
+        }
+        // If this attempt read the charge off, the retry confirms that read
+        // without a setter (progress 73).
+        original.storage.restore_battery_temporary(intent);
+        original.abandoned.store(false, Ordering::Release);
+        *self.temporary_owner.borrow_mut() = Some(original.clone());
+        true
     }
 
     pub(in super::super) async fn apply_battery(

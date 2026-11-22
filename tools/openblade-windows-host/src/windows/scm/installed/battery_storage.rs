@@ -99,6 +99,25 @@ impl Storage {
             state.battery_temporary = None;
         }
     }
+    /// Clears the temporary-charge intent at an automatic source cancel's
+    /// claim and returns what it held, for `restore_battery_temporary`.
+    #[cfg(feature = "service-temporary-charge-v1")]
+    pub(in super::super) fn take_battery_temporary(&self) -> Option<bool> {
+        self.state
+            .lock()
+            .ok()
+            .and_then(|mut state| state.battery_temporary.take())
+    }
+    /// Puts back the intent of a claim proven unsubmitted, unless something
+    /// set a new one since.
+    #[cfg(feature = "service-temporary-charge-v1")]
+    pub(in super::super) fn restore_battery_temporary(&self, intent: Option<bool>) {
+        if let Ok(mut state) = self.state.lock()
+            && state.battery_temporary.is_none()
+        {
+            state.battery_temporary = intent;
+        }
+    }
     pub(in super::super) fn desired_battery(&self, source: u8) -> io::Result<Desired> {
         let doc = aggregate(self.files.as_ref(), self.same_path)?;
         let profiles = doc.as_ref().map(|v| &v["profiles"]);

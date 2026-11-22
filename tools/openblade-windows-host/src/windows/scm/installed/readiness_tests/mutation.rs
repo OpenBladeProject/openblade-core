@@ -432,6 +432,9 @@ struct Custody {
     current_session: AtomicUsize,
     current_console: AtomicBool,
     scoped_fresh: AtomicBool,
+    // The next captures open a second Storage over the same files, as a
+    // per-user cache eviction would.
+    other_storage: AtomicBool,
     generation: AtomicU8,
     authentication: AtomicUsize,
     live: AtomicBool,
@@ -444,8 +447,13 @@ struct Custody {
     lifecycle: crate::scm_host::Lifecycle,
     activations: AtomicUsize,
     retired: AtomicBool,
-    // One SCM notice delivered inside the next fresh authorization, after the
-    // caller read its epoch: the race a second power notice can win.
+    // One SCM notice delivered inside a later fresh authorization, after the
+    // caller read its epoch: the race a second power notice can win. It
+    // lands in the authorization after `notice_skip` others have passed.
+    notice_skip: AtomicUsize,
+    // A competing controller that appears in the `refuse_at`th fresh
+    // authorization and stays (0: never), at an unchanged epoch.
+    refuse_at: AtomicUsize,
     notice_during_authorize: StdMutex<
         Option<(
             u32,
@@ -463,6 +471,7 @@ impl Custody {
             current_session: AtomicUsize::new(7),
             current_console: AtomicBool::new(true),
             scoped_fresh: AtomicBool::new(false),
+            other_storage: AtomicBool::new(false),
             generation: AtomicU8::new(7),
             authentication: AtomicUsize::new(1),
             port: port.state.clone(),
@@ -476,6 +485,8 @@ impl Custody {
             lifecycle: Default::default(),
             activations: AtomicUsize::new(0),
             retired: AtomicBool::new(false),
+            notice_skip: AtomicUsize::new(0),
+            refuse_at: AtomicUsize::new(0),
             notice_during_authorize: StdMutex::new(None),
         })
     }
@@ -584,8 +595,10 @@ impl Fresh for Custody {
         let kind = self.on_battery().map(|battery| if battery { 1 } else { 2 });
         self.lifecycle.observe_power_kind(kind)
     }
+    // `usize::MAX` models a capture without a logon identity.
     fn authentication(&self) -> Option<(u32, i32)> {
-        Some((self.authentication.load(Ordering::Acquire) as u32, 0))
+        let authentication = self.authentication.load(Ordering::Acquire);
+        (authentication != usize::MAX).then_some((authentication as u32, 0))
     }
     fn authorize_owned_stop(&self) -> Option<ReadAdmission> {
         self.verify_health().ok()?;
@@ -606,8 +619,23 @@ impl Fresh for Custody {
         self.lifecycle.verify_health()
     }
     fn authorize(&self) -> Option<ReadAdmission> {
-        if let Some((code, event, setting)) = self.notice_during_authorize.lock().unwrap().take() {
+        let notice = {
+            let mut armed = self.notice_during_authorize.lock().unwrap();
+            let skipped = armed.is_some()
+                && self
+                    .notice_skip
+                    .try_update(Ordering::AcqRel, Ordering::Acquire, |n| n.checked_sub(1))
+                    .is_ok();
+            if skipped { None } else { armed.take() }
+        };
+        if let Some((code, event, setting)) = notice {
             self.lifecycle.notice(code, event, setting);
+        }
+        let counted = self
+            .refuse_at
+            .try_update(Ordering::AcqRel, Ordering::Acquire, |n| n.checked_sub(1));
+        if counted == Ok(1) {
+            self.fresh_refuse.store(true, Ordering::Release);
         }
         if self.fresh_refuse.load(Ordering::Acquire) || self.fatal_health.load(Ordering::Acquire) {
             return None;
@@ -822,6 +850,7 @@ impl Rig {
             },
         );
         let storage = Storage::open(Box::new(files.clone()), SID).unwrap();
+        let other_files = files.clone();
         #[cfg(feature = "service-fan-mutation-v2")]
         let retained_storage = storage.clone();
         let fresh = custody.clone();
@@ -850,6 +879,9 @@ impl Rig {
             } else {
                 fresh.clone()
             };
+            if fresh.other_storage.load(Ordering::Acquire) {
+                return Ok((Storage::open(Box::new(other_files.clone()), SID)?, proof));
+            }
             Ok((storage.clone(), proof))
         });
         #[cfg(feature = "service-battery-policy-v1")]

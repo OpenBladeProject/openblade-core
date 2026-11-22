@@ -166,19 +166,6 @@ between the two notices. That Windows sends `PBT_APMPOWERSTATUSCHANGE`
 for every AC/DC switch is attended-only. Suspend, resume, the other power
 events and session changes still fence. The read still updates the display
 state and can still signal `DisplayOn`.
-
-A fence never loses the temporary-full-charge cancel on Battery.
-`battery_source_event` peeks at the owner, then runs one capture and one
-authorization before it claims anything. A proof from a later epoch means a
-power or session notice fenced the tick after it read its epoch, so the event
-claims and submits nothing. The newer epoch makes the next tick read the source
-again and retry. Only an SCM notice advances the epoch, so each retry needs
-another notice and the retries cannot loop.
-Managed also defers a step that was proven never submitted and retries it on a
-later periodic observation while the power source is unchanged
-(`ContinueDeferredTransitionAsync`, `ServiceControlRuntime.cs:17668-17730`).
-A refused authorization still claims the obligation once and pauses it. A
-claimed or possibly submitted cancel is never retried.
 `classify_console_display_transition` ports `ClassifyConsoleDisplayTransition`
 exactly. The display state lives under the lifecycle lock, starts unknown and
 changes only on a valid read, as managed's `consoleDisplayState` does. AC/DC
@@ -192,6 +179,26 @@ and the notice-to-signal mapping), which the domain test
 A Modern Standby display-off sends no `PBT_APMSUSPEND`, so the gate stays
 clear and nothing is fenced, as in managed. A later off-to-on read clears a
 suspend whose resume was missed.
+
+An automatic temporary-full-charge cancel on Battery survives a notice that
+fences its tick. Every guard pins the epoch it captured and refuses once it
+moves, so `battery_source_event` rereads the epoch after a refused capture or
+authorization. A refusal while a later notice holds the epoch, or while low
+power holds none, claims nothing, and the newer epoch makes the next tick read
+the source again; a suspend is retried after resume. After the claim, the
+worker's own per-write admission can fail the same way. When that attempt
+ends proven unsubmitted (its worker joined unconfirmed and the settled
+journal holds no row of it or only its Prepared-only retirement), the owner
+and its intent are put back for the next tick. Each retry needs a newer
+epoch, and only an SCM notice advances one, so retries never outnumber
+notices. A refusal at the tick's own epoch still claims the cancel once and
+pauses it. A cancel whose submission intent (progress 70) was journaled is
+never retried, even when the setter's pre-send checkpoint refused: only the
+worker can tell that the setter was not sent. A retry reuses the enable's
+reserved cancel IDs, because the journal binds an automatic cancel to them,
+and an unsubmitted attempt can have spent only getter IDs. Managed writes
+this cancel in the same transition, since its Battery step has no
+write-block callback (`ControlCoordinator.cs:1731-1738`).
 
 What the remaining lifecycle work needs from this supplier:
 
