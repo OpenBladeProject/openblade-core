@@ -213,17 +213,21 @@ A Service built with `service-keyboard-driver-mode-read-v1` also reports the
 RZ09-0581 keyboard device mode as managed `keyboardDriverModeActive`. The
 feature implies `service-mailbox-observation-v1` and adds the capability marker
 `service-keyboard-driver-mode-read-v1`. Both package readers refuse the feature
-and the marker by name, so no admitted image sends the query. A build without
+and the marker by name, so no admitted image sends the query. Do not admit it
+until the process-wide transaction pool can be reclaimed (see below). A build
+without
 the feature sends no `00/84` query and publishes no `keyboardDriverModeActive`
 member, as before.
 
 The read sends only the reviewed `00/84:0000` query from the exact-device
 semantic admission (`Rz09_0581_02e0_3_01_LightingSemanticAdmission.json`,
 `deviceMode`). The reviewed `00/04` setters exist only in the protocol crate's
-tests. `RazerReport::create` remains a public encoder, so this is not a type
-guarantee: the host's `device_mode_guard_tests` fail when non-test source in the
-Service's crates names the setter or adds a report construction. This stage
-never acquires, maintains or releases Driver mode.
+tests. `RazerReport::create` and `encode_report` remain public encoders, so
+this is not a type guarantee. The host's `device_mode_guard_tests` are a
+textual allowlist over non-test source in the Service's crates: they fail on a
+file that names the setter, renames an encoder on import, or changes its count
+of encoder calls. They do not see an encoder reached through a glob import or a
+macro. This stage never acquires, maintains or releases Driver mode.
 
 The value is the confirmed firmware mode, not ownership, matching managed
 status: `true` for a `0300` reply, `false` for `0000`, and `null` when the reply
@@ -238,17 +242,26 @@ produced it, so a lifecycle, custody or generation change makes it unknown
 until a new job reads it.
 
 The query has its own one-second budget and never takes the last 500 ms of the
-job, so a stalled or failed query cannot cost the thermal read it follows. A
-failed, unanswered or timed-out query seals that Reader like any incomplete
-exchange and publishes `null` until the next interval. So does a job that was
-asked to query and returned nothing. Neither is sent again before the interval
-ends. A job with too little time left sends no query and stays due.
+job, which leave time for retirement and the final admission check. A failed,
+unanswered or timed-out query seals that Reader like any incomplete exchange
+and publishes `null` until the next interval. So does a job that was asked to
+query and returned nothing, including one the worker refused to start; this
+fails closed. Neither is sent again before the interval ends. A job with too
+little time left sends no query and stays due.
 
-Each query uses one pair from the process-wide 127-pair transaction budget. At
-one query per 15 seconds, the queries alone exhaust it after about 31 minutes
-of observed uptime, before any thermal read is counted. The budget is already
-inadequate for sustained reads (see above); this read makes that limit
-arrive sooner and changes no allocation.
+Retirement has no deadline of its own, because the worker owns the native
+resources until terminal I/O and callback drain are confirmed; this is
+unchanged from the thermal read alone. A reading whose retirement ends after
+the job deadline is discarded. So a stalled query whose canceled GET retires
+more than about 500 ms late costs the thermal read of that job, as a stalled
+thermal getter already does.
+
+Each query uses one more pair from the process-wide 127-pair transaction
+budget, on a job that already spends one (two for Custom). With one job every
+15 seconds the pool runs out after about 15 minutes 45 seconds, or 10 minutes
+30 seconds in Custom; with a thermal read every 5 seconds, after about
+7.9 minutes. The pool cannot be reclaimed yet (see above), so this read must
+not be admitted until it can. It changes no allocation.
 
 The read-only composition publishes its status feed unverified, and in the
 mutation compositions a feed status verified after a mutation carries `null`,
