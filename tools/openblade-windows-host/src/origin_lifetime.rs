@@ -212,10 +212,7 @@ impl Lifecycle {
     /// Whether a timer must not arm or must stop now: the gate is set, or
     /// the lifecycle is unreadable or exhausted. This is the fail-closed
     /// form of `low_power()` for callers that need only the answer.
-    #[cfg_attr(
-        not(any(test, feature = "service-profile-triggers-v1")),
-        allow(dead_code)
-    )] // Request triggers read it; Stage 4b timers will.
+    #[cfg_attr(not(test), allow(dead_code))] // Stage 4b timers read it.
     pub(crate) fn low_power_or_unknown(&self) -> bool {
         self.low_power()
             .is_none_or(|transition| transition.suspending())

@@ -22,10 +22,13 @@
 //!
 //! The low-power gate defers a reconciliation as managed
 //! `ApplyFullTransitionAsync` does. Each write's own admission
-//! (`WindowsGuard::authorize_for`, the gate's `epoch_for`) refuses it; the
-//! gate (`Runtime::in_low_power`) is read only after that refusal, to give
-//! managed's reply and to keep the debt owed without spending a retry. The
-//! next report after the gate clears reconciles it.
+//! (`WindowsGuard::authorize_for`, the gate's `epoch_for`) refuses a write
+//! while the gate is set. The gate (`Runtime::gate`) is read before each
+//! step, which stops that step itself, and after a trigger's or a step's
+//! refusal, to give managed's reply and keep the debt owed without spending
+//! a retry. A step is a deferral when the gate set at any time during it,
+//! even if it cleared again. The next report after the gate clears
+//! reconciles the debt.
 use super::fan::FanRequest;
 use super::profiles::Updated;
 use super::*;
@@ -64,6 +67,17 @@ pub(in super::super) const LOW_POWER_DEFERRED: &str =
 /// step whose write admission refused it while the gate was set.
 pub(in super::super) const LOW_POWER_STEP: &str =
     "The laptop entered a low-power transition before the thermal command was submitted.";
+
+/// One reading of the low-power gate (`Runtime::gate`).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Gate {
+    /// Clear at this gate generation. Every boundary advances the
+    /// generation, so a later reading that differs found the gate set at
+    /// some time in between, even if it has cleared again.
+    Clear(u64),
+    /// Set, or the lifecycle is unreadable or exhausted.
+    Low,
+}
 
 /// The classified classes fresh Windows power admits before any adapter
 /// reading: battery, or on AC the two classified external classes, which
@@ -219,9 +233,12 @@ struct Reconciled {
     // journaled as possibly submitted, and the store is not fenced: running
     // the steps again replays no submission.
     retry: bool,
-    // A step was refused by its write admission while the low-power gate was
-    // set, before anything of it was possibly submitted, and no later step
-    // ran. Such a refusal is transient but spends no retry.
+    // The low-power gate stopped a step before it started, or set during a
+    // step that was then refused or not finished with nothing of it possibly
+    // submitted, and the store is not fenced; no later step ran. The
+    // deferred step runs once the gate clears, so the debt stays owed
+    // whatever the earlier steps did, and a deferral spends no retry. A
+    // relabelled step's own refusal is not reported for that reconciliation.
     deferred: bool,
     // The classes the readings of the steps that needed a change found.
     read: Classes,
@@ -233,10 +250,12 @@ struct Reconciled {
 impl Reconciled {
     /// The debt a report's reconciliation of `classes` leaves after
     /// `attempts` earlier transient refusals: settled, unless it may be
-    /// retried and `RETRIES` allows another. A low-power deferral keeps the
-    /// count, so renewals while the laptop sleeps never exhaust it.
+    /// retried and `RETRIES` allows another. A low-power deferral stays owed
+    /// with the count kept, even after an earlier step that may not be
+    /// retried, so renewals while the laptop sleeps never exhaust it and the
+    /// deferred step is not dropped.
     fn after(&self, classes: Classes, attempts: u8) -> Debt {
-        if self.retry && self.deferred {
+        if self.deferred {
             Debt::Owed { classes, attempts }
         } else if self.retry && attempts < RETRIES {
             Debt::Owed {
@@ -433,7 +452,7 @@ impl Runtime {
             // only a changed pair on classified power reaches; it defers
             // before any device access and replies Blocked. The debt is kept
             // as it was for the next report after the gate clears.
-            if changed && !classes.is_empty() && self.in_low_power() {
+            if changed && !classes.is_empty() && self.gate() == Gate::Low {
                 return Ok((
                     Outcome::blocked(format!("{RECORDED} {LOW_POWER_DEFERRED}")),
                     None,
@@ -579,7 +598,7 @@ impl Runtime {
         if !admitted {
             // Managed `ApplyFullTransitionAsync` defers in low power after its
             // pending-reconciliation check; the save is Stored either way.
-            if !pending && self.in_low_power() {
+            if !pending && self.gate() == Gate::Low {
                 return Ok((
                     Outcome {
                         status: 0,
@@ -610,9 +629,10 @@ impl Runtime {
             // compares there and applies nothing, and what the pair owed
             // before the save is left as it was.
             prior
-        } else if reconciled.retry {
+        } else if reconciled.retry || reconciled.deferred {
             // The save was the first attempt, unless the gate deferred it;
-            // later reports retry.
+            // later reports retry. A deferral stays owed even after an
+            // earlier step that may not be retried (`Reconciled::after`).
             Debt::Owed {
                 classes: combined,
                 attempts: reconciled.spent(),
@@ -689,8 +709,10 @@ impl Runtime {
             }
             // Before the step's capture, firmware read or transaction pair,
             // as managed reads the gate before a transition touches the
-            // device: a suspend after the previous step stops this one.
-            if self.in_low_power() {
+            // device: a suspend after the previous step stops this one. This
+            // check is the refusal itself; nothing of the step ran.
+            let before = self.gate();
+            if before == Gate::Low {
                 deferred = true;
                 break;
             }
@@ -751,14 +773,16 @@ impl Runtime {
                     // A refusal by the step's own admission: its capture, its
                     // authorization before any firmware read or pair, or a
                     // write's authorization at submission (`epoch_for`).
-                    // While the gate is set that refusal is the deferral. A
-                    // step that may have submitted is not deferred, since
-                    // nothing of it is replayed.
+                    // When the gate set at any time during the step, even if
+                    // it cleared again, that refusal is the deferral. A step
+                    // that may have submitted, found its class unchanged or
+                    // fenced the store keeps its own result, since nothing
+                    // of it is replayed.
                     if stepped.outcome.status == 2
                         && !stepped.unchanged
                         && !possible
                         && !storage.pending()
-                        && self.in_low_power()
+                        && self.gate() != before
                     {
                         deferred = true;
                         break;
@@ -767,6 +791,13 @@ impl Runtime {
                 }
                 Err(_) => {
                     unfinished = true;
+                    // A step the gate interrupted that cannot have submitted
+                    // anything is a deferral, as a refused one is: it spends
+                    // no retry.
+                    if !possible && !storage.pending() && self.gate() != before {
+                        deferred = true;
+                        break;
+                    }
                     let stepped = if possible {
                         let reason = if storage.pending() {
                             storage.pending_reason()?
@@ -789,12 +820,13 @@ impl Runtime {
             }
         }
         // The deferred step submitted nothing and may run once the gate
-        // clears; it reports managed's per-write low-power refusal.
+        // clears; it reports managed's per-write low-power refusal. It did
+        // not run, so the reconciliation did not run every step.
         if deferred {
             steps.push((Stepped::transient(Outcome::blocked(LOW_POWER_STEP)), false));
         }
         let submitted = steps.iter().any(|(_, possible)| *possible);
-        let ran = !unfinished && steps.len() == order.len();
+        let ran = !unfinished && !deferred && steps.len() == order.len();
         let unchanged = ran && steps.iter().all(|(s, _)| s.unchanged);
         // A step whose class did not change needed nothing; every other step
         // must be confirmed.
@@ -833,11 +865,19 @@ impl Runtime {
         })
     }
 
-    /// Whether the lifecycle's low-power gate is set or unknown now
-    /// (`Runtime::low_power`). It only classifies a refusal that a write's
-    /// own admission already made.
-    fn in_low_power(&self) -> bool {
-        self.low_power.get().is_some_and(|gate| gate())
+    /// The lifecycle's low-power gate now (`Runtime::low_power`); set,
+    /// unreadable or exhausted is `Low`. It stops a step before it starts and
+    /// classifies a refusal that a write's own admission already made; it
+    /// never admits a write. Test composition that does not wire it reads
+    /// clear.
+    fn gate(&self) -> Gate {
+        match self.low_power.get().map(|read| read()) {
+            None => Gate::Clear(0),
+            Some(Some(transition)) if !transition.suspending() => {
+                Gate::Clear(transition.generation)
+            }
+            Some(_) => Gate::Low,
+        }
     }
 
     /// The retries the pair has spent while it owes a reconciliation, or

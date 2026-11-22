@@ -176,6 +176,9 @@ type ReleaseNotice = (
 );
 #[cfg(test)]
 type ReleaseHook = Rc<dyn Fn()>;
+/// Reads the lifecycle's low-power gate transition (`Lifecycle::low_power`).
+#[cfg(feature = "service-profile-triggers-v1")]
+type LowPowerProbe = Box<dyn Fn() -> Option<openblade_domain::low_power_gate::Transition>>;
 #[derive(Clone)]
 pub(super) struct Runtime {
     factory: Rc<Factory>,
@@ -184,13 +187,14 @@ pub(super) struct Runtime {
     // intent (`triggers::Debt`); a pair without an entry owes its startup one.
     #[cfg(feature = "service-profile-triggers-v1")]
     debts: Rc<RefCell<std::collections::HashMap<(String, u32), triggers::Debt>>>,
-    // The lifecycle's low-power gate, set or unknown
-    // (`Lifecycle::low_power_or_unknown`). A reconciliation reads it only to
-    // classify a refusal (`triggers`); every write is still refused by its
-    // own admission (`WindowsGuard::authorize_for`). The native composition
-    // sets it; only test composition leaves it unset, which reads clear.
+    // The lifecycle's low-power gate transition, `None` while the lifecycle
+    // is unreadable or exhausted. A reconciliation reads it to stop before a
+    // step and to classify a step's refusal (`triggers::Gate`); every write
+    // is still refused by its own admission (`WindowsGuard::authorize_for`).
+    // The native composition sets it; only test composition leaves it unset,
+    // which reads clear.
     #[cfg(feature = "service-profile-triggers-v1")]
-    low_power: Rc<std::cell::OnceCell<Box<dyn Fn() -> bool>>>,
+    low_power: Rc<std::cell::OnceCell<LowPowerProbe>>,
     fan_owner: Rc<RefCell<Option<Arc<fan::FanPermit>>>>,
     temporary_owner: Rc<RefCell<Option<Arc<battery::BatteryPermit>>>>,
     temporary_pending: Rc<RefCell<Option<Arc<battery::BatteryPermit>>>>,
@@ -389,16 +393,19 @@ impl Runtime {
     /// Reads the low-power gate from `probe` (`Runtime::low_power`). Test
     /// composition wires its rig's lifecycle here; it may be set once.
     #[cfg(all(test, feature = "service-profile-triggers-v1"))]
-    pub(super) fn read_low_power(&self, probe: impl Fn() -> bool + 'static) {
+    pub(super) fn read_low_power(
+        &self,
+        probe: impl Fn() -> Option<openblade_domain::low_power_gate::Transition> + 'static,
+    ) {
         assert!(self.low_power.set(Box::new(probe)).is_ok());
     }
     #[cfg(not(test))]
     pub(super) fn native(origin: Arc<Origin>, mailbox: &MailboxSource) -> Self {
         let stores = RefCell::new(None::<(String, Arc<Storage>)>);
         #[cfg(feature = "service-profile-triggers-v1")]
-        let low_power: Box<dyn Fn() -> bool> = {
+        let low_power: LowPowerProbe = {
             let origin = origin.clone();
-            Box::new(move || origin.lifecycle.low_power_or_unknown())
+            Box::new(move || origin.lifecycle.low_power())
         };
         Self {
             factory: Rc::new(move |sid, session, custody| {
