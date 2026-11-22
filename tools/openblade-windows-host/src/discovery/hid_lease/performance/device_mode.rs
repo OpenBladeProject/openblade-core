@@ -72,9 +72,10 @@ impl<P: Port, A: ObservationProof> Attempt<'_, P, A> {
         limit: Limit<'_>,
     ) -> Option<DeviceMode> {
         self.checkpoint(authorize, admission, limit).ok()?;
-        // IDs are reserved in process-wide pairs. The query sends the first;
-        // the second is never sent, so no reply can be attributed to it.
-        let [transaction, _] = self.reader.port.reserve_pair()?;
+        // IDs are reserved in pairs. The query sends the first; the second is
+        // never sent, so no reply can be attributed to it, and retirement
+        // frees it.
+        let [transaction, _] = self.reader.reserve_pair()?;
         let query = DeviceModeQuery::new(transaction);
         let mut frame = [0; FRAME_LENGTH];
         frame[1..].copy_from_slice(&query.request().encode());

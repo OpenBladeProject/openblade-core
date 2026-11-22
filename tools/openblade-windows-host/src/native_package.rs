@@ -721,10 +721,10 @@ fn capabilities(schema: u8, role: &str, features: &str, value: &str) -> io::Resu
         return Err(deny());
     }
     // The read-only keyboard Driver mode sends a command no admitted
-    // composition sends, and each query spends a pair from the transaction
-    // pool, which cannot be reclaimed yet. Refuse its feature and its
-    // capability marker by name; no packaging stage may admit it before the
-    // pool can be reclaimed (docs/windows-rust-development-service.md).
+    // composition sends. The transaction pool that blocked it is reclaimed
+    // now, but admitting it is a separate packaging decision: refuse its
+    // feature and its capability marker by name until a stage admits it
+    // (docs/windows-rust-development-service.md).
     const DRIVER_MODE: &str = "service-keyboard-driver-mode-read-v1";
     if has(DRIVER_MODE) || value.split(',').any(|capability| capability == DRIVER_MODE) {
         return Err(deny());

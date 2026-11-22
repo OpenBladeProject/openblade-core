@@ -70,8 +70,8 @@ impl KeyboardPort {
     }
 }
 impl Port for KeyboardPort {
-    fn reserve_pair(&mut self) -> Option<[u8; 2]> {
-        self.io.transactions.reserve_pair()
+    fn transactions(&self) -> &Transactions {
+        &self.io.transactions
     }
     fn verify(&mut self, limit: Limit<'_>) -> io::Result<()> {
         limit.check()?;

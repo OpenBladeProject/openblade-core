@@ -44,6 +44,12 @@ const CONSTRUCTIONS: &[(&str, usize)] = &[
         "tools/openblade-windows-host/src/discovery/hid_lease/performance/mutation_fixture.rs",
         1,
     ),
+    // Rebuilds an already submitted request to correlate its reply; the
+    // result is never encoded or sent.
+    (
+        "tools/openblade-windows-host/src/discovery/hid_lease/performance/transactions.rs",
+        1,
+    ),
     ("tools/openblade-windows-host/src/fan_runtime/device.rs", 2),
     (
         "tools/openblade-windows-host/src/performance_runtime/device.rs",

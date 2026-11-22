@@ -48,8 +48,9 @@ impl<P: Port> Reader<P, ReadAdmission> {
             a.completed = true;
             (b, p, r.preflight)
         } else {
-            let modes = self.port.reserve_pair()?;
-            let power = self.port.reserve_pair()?;
+            // The record names these preflight IDs, so they are retained.
+            let modes = self.reserve_retained_pair()?;
+            let power = self.reserve_retained_pair()?;
             let mut a = Attempt {
                 reader: self,
                 completed: false,
@@ -107,12 +108,7 @@ impl<P: Port> Reader<P, ReadAdmission> {
                 permit.refused(Refusal::PowerChanged);
                 return None;
             }
-            let mut reserve = || {
-                self.port.reserve_pair().or_else(|| {
-                    permit.refused(Refusal::TransactionCapacity);
-                    None
-                })
-            };
+            let mut reserve = || self.reserve_retained_pair();
             let mut ids = Vec::new();
             for _ in 0..plan.pairs() {
                 ids.push(reserve()?);
@@ -155,6 +151,7 @@ impl<P: Port> Reader<P, ReadAdmission> {
                 .map(|levels| [levels.cpu as u8, levels.gpu as u8]);
             record.validate().ok()?;
             permit.prepare_fan(record.clone()).ok()?;
+            self.retain();
             (plan, ids, performance, Some((remaining, fixed)))
         };
         // Managed keeps an observed AC selector only in the class it first read

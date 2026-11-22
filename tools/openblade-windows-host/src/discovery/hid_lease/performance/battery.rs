@@ -9,15 +9,11 @@ impl<P: Port> Reader<P, ReadAdmission> {
         permit: &dyn Permit,
         limit: Limit<'_>,
     ) -> Option<()> {
-        // reserve_pair is monotonic process-wide; no baseline, intent or setter before
-        // the entire actual exchange fits. Retained fan cleanup IDs remain reserved.
+        // No baseline, intent or setter before the entire actual exchange fits.
+        // Retained fan cleanup IDs remain reserved.
         let mut ids = [0; EXCHANGES];
         for pair in ids.as_chunks_mut::<2>().0 {
-            let Some(v) = self.port.reserve_pair() else {
-                permit.refused(Refusal::TransactionCapacity);
-                return None;
-            };
-            pair.copy_from_slice(&v);
+            pair.copy_from_slice(&self.reserve_pair()?);
         }
         let admission = self.admission;
         let mut authorize = || permit.authorize();

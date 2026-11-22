@@ -1905,7 +1905,7 @@ mod tests {
         assert_eq!(custody.releases.load(Ordering::Acquire), 0);
     }
     #[tokio::test]
-    async fn installed_custom_budget_keeps_63_results_then_expires_without_timestamp_renewal() {
+    async fn installed_custom_reads_outlast_the_old_budget_then_expire_without_timestamp_renewal() {
         use crate::discovery::performance::worker_tests::{CustomIo, custom_io_worker};
         let io = CustomIo::new();
         let custody = Arc::new(InjectedCustody {
@@ -1921,7 +1921,8 @@ mod tests {
             custom_io_worker(io.clone(), move || lease.authorize())
         });
         let publisher = publisher();
-        for _ in 0..63 {
+        // Four IDs a read: the unreclaimed pool refused the 64th read's levels.
+        for _ in 0..70 {
             let observed = source
                 .observe(
                     status(0),
@@ -1938,35 +1939,26 @@ mod tests {
             );
             assert_eq!(json["confirmedState"]["performance"], 5);
         }
-        assert_eq!(io.getters.load(Ordering::Acquire), 252);
+        assert_eq!(io.getters.load(Ordering::Acquire), 280);
         let completed = source.last.borrow().as_ref().unwrap().1;
-        // Pair 127 can read the Custom selector, but cannot admit CPU/GPU IDs.
-        assert!(
-            source
-                .observe(
-                    status(0),
-                    Instant::now() + Duration::from_secs(2),
-                    publisher.clone()
-                )
-                .await
-                .unwrap()
-                .is_none()
-        );
-        assert_eq!(io.getters.load(Ordering::Acquire), 254);
-        assert_eq!(source.last.borrow().as_ref().unwrap().1, completed);
-        assert!(
-            source
-                .observe(
-                    status(0),
-                    Instant::now() + Duration::from_secs(2),
-                    publisher.clone()
-                )
-                .await
-                .unwrap()
-                .is_none()
-        );
-        assert_eq!(io.getters.load(Ordering::Acquire), 254);
-        assert_eq!(source.last.borrow().as_ref().unwrap().1, completed);
+        // Unanswered exchanges can still quarantine every ID; then no read
+        // sends anything or renews the result.
+        io.quarantine_free_ids();
+        for _ in 0..2 {
+            assert!(
+                source
+                    .observe(
+                        status(0),
+                        Instant::now() + Duration::from_secs(2),
+                        publisher.clone()
+                    )
+                    .await
+                    .unwrap()
+                    .is_none()
+            );
+            assert_eq!(io.getters.load(Ordering::Acquire), 280);
+            assert_eq!(source.last.borrow().as_ref().unwrap().1, completed);
+        }
         source
             .decorate_at(
                 &publisher,
@@ -1979,7 +1971,7 @@ mod tests {
             .decorate_at(&publisher, None, completed + RETENTION_WINDOW)
             .unwrap();
         assert!(publisher.borrow().active.metadata_only());
-        assert_eq!(io.retirements.load(Ordering::Acquire), 65);
+        assert_eq!(io.retirements.load(Ordering::Acquire), 72);
         source.stop().await.unwrap();
         source.confirm_drained().unwrap();
         assert_eq!(custody.releases.load(Ordering::Acquire), 1);

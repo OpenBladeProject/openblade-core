@@ -30,8 +30,9 @@ use windows_sys::Win32::{
 const IOCTL_HID_SET_FEATURE: u32 = 0x000B0191;
 const IOCTL_HID_GET_FEATURE: u32 = 0x000B0192;
 static OCCUPIED: AtomicBool = AtomicBool::new(false);
-// Canceling Windows I/O does not flush the firmware reply mailbox. Carry
-// correlation across every lease in this process and refuse exhaustion.
+// Canceling Windows I/O or reopening the handle does not flush the firmware
+// reply mailbox, so one pool spans every lease in this process and frees an
+// ID only with proof that its reply is gone (see `transactions`).
 static TRANSACTIONS: Transactions = Transactions::new();
 
 pub(super) struct NativePort {
@@ -167,8 +168,8 @@ impl NativePort {
 }
 
 impl Port for NativePort {
-    fn reserve_pair(&mut self) -> Option<[u8; 2]> {
-        TRANSACTIONS.reserve_pair()
+    fn transactions(&self) -> &Transactions {
+        &TRANSACTIONS
     }
     fn verify(&mut self, limit: Limit<'_>) -> io::Result<()> {
         let lease = self

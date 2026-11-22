@@ -225,6 +225,21 @@ impl<P: Port> Reader<P, ReadAdmission> {
         permit: &dyn Permit,
         limit: Limit<'_>,
     ) -> Option<ObservedPerformance> {
+        self.exhausted = false;
+        let observed = self.apply(permit, limit).await;
+        // Any reservation may be the one that fails, the baseline
+        // observation's included, so the cause is named here once.
+        if observed.is_none() && self.exhausted {
+            permit.refused(Refusal::TransactionCapacity);
+        }
+        observed
+    }
+
+    async fn apply(
+        &mut self,
+        permit: &dyn Permit,
+        limit: Limit<'_>,
+    ) -> Option<ObservedPerformance> {
         if let Some(enabled) = permit.temporary_target() {
             self.apply_temporary_charge(permit, enabled, limit).await;
             return None;
@@ -241,7 +256,7 @@ impl<P: Port> Reader<P, ReadAdmission> {
         let mut authorize = || fence.authorize();
         let mut pace = Pace::start(self);
         let baseline = self.observe(&mut authorize, limit).await?;
-        let initial_power_ids = self.port.reserve_pair()?;
+        let initial_power_ids = self.reserve_pair()?;
         let admission = self.admission;
         let power = {
             let mut attempt = Attempt {
@@ -275,12 +290,7 @@ impl<P: Port> Reader<P, ReadAdmission> {
         // Reserve all remaining commands, including the independent final read
         // and its Custom level getters, before journaling/submitting.
         // Exhaustion cannot strand a partial recipe.
-        let mut reserve = || {
-            self.port.reserve_pair().or_else(|| {
-                permit.refused(Refusal::TransactionCapacity);
-                None
-            })
-        };
+        let mut reserve = || self.reserve_pair();
         let setters = Setters::new(destination, &mut reserve)?;
         let mut power_ids = Vec::new();
         for _ in 0..destination.setters().div_ceil(2) {
@@ -321,9 +331,8 @@ impl<P: Port> Reader<P, ReadAdmission> {
             }
             // Paced once, before the first intent row (`Pace`). A refusal
             // here submitted nothing: retirement settles the Prepared row as
-            // known not submitted. The IDs reserved above are not reused; a
-            // refused recipe consumes no more of the pool than running it
-            // would.
+            // known not submitted. Retirement frees the IDs reserved above
+            // that were never sent.
             if index == 0
                 && !pace.covers(
                     attempt.reader,

@@ -17,8 +17,10 @@ const EXACT: Descriptor = Descriptor {
     version: 1,
 };
 
+// Without a release or an answer nothing is freed: unsettled reservations
+// stop after exactly 127 pairs of the IDs 1 to 254.
 #[test]
-fn in_memory_transaction_allocator_stops_after_exactly_127_pairs() {
+fn unsettled_reservations_stop_after_exactly_127_pairs() {
     let transactions = Transactions::new();
     for pair in 0u8..127 {
         assert_eq!(
@@ -79,8 +81,8 @@ impl Script {
 }
 
 impl Port for Script {
-    fn reserve_pair(&mut self) -> Option<[u8; 2]> {
-        self.transactions.reserve_pair()
+    fn transactions(&self) -> &Transactions {
+        &self.transactions
     }
     fn verify(&mut self, _: Limit<'_>) -> io::Result<()> {
         reviewed_descriptor(self.identity)
@@ -447,7 +449,7 @@ async fn unsupported_state_is_unavailable_and_transactions_are_not_reused() {
     );
     let transactions: Vec<_> = reader.port.sent.iter().map(|frame| frame[2]).collect();
     assert_eq!(transactions, [1, 2, 3, 4]);
-    reader.port.transactions.0.store(254, Ordering::Relaxed);
+    while reader.port.transactions.reserve_pair().is_some() {}
     assert_eq!(
         reader
             .observe(&mut || Some(ADMITTED), limit(&cancelled))
@@ -570,7 +572,7 @@ pub(super) fn custom_reply(transaction: u8, payload: &[u8]) -> Frame {
 impl Script {
     pub(super) fn custom(fan: u8, cpu: &[u8], gpu: &[u8], first: u8) -> Self {
         let mut script = Self::pair([4, 4]);
-        script.transactions.0.store(first - 1, Ordering::Relaxed);
+        script.transactions = Transactions::starting_at(first);
         script.replies = VecDeque::from([
             (90, reply(first, &[1, 1, 4, fan])),
             (91, reply(first + 1, &[1, 2, 4, fan])),
@@ -760,7 +762,7 @@ async fn correction_refused_initial_checkpoint_consumes_no_pair_but_reserved_ref
     );
     assert!(reader.port.sent.is_empty());
     assert_eq!(reader.port.transactions.reserve_pair(), Some([1, 2]));
-    // A distinct reader may never recover IDs burned by an admitted reservation.
+    // An unretired reader keeps the IDs of an admitted reservation held.
     let mut reader = Reader::new(Script::pair([0, 0]), proof);
     let mut calls = 0;
     assert!(

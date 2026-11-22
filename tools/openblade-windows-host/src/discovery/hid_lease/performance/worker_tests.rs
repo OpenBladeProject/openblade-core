@@ -50,8 +50,8 @@ impl BlockingPort {
 }
 
 impl Port for BlockingPort {
-    fn reserve_pair(&mut self) -> Option<[u8; 2]> {
-        self.script.reserve_pair()
+    fn transactions(&self) -> &Transactions {
+        self.script.transactions()
     }
 
     fn verify(&mut self, limit: Limit<'_>) -> io::Result<()> {
@@ -333,6 +333,14 @@ impl CustomIo {
             gpu: AtomicU8::new(2),
         })
     }
+    /// Quarantines every free ID, as that many unanswered exchanges would.
+    pub(crate) fn quarantine_free_ids(&self) {
+        while let Some(pair) = self.transactions.reserve_pair() {
+            for id in pair {
+                assert!(self.transactions.sent(id));
+            }
+        }
+    }
 }
 struct CustomPort {
     io: Arc<CustomIo>,
@@ -340,8 +348,8 @@ struct CustomPort {
     pending: Option<(usize, Frame)>,
 }
 impl Port for CustomPort {
-    fn reserve_pair(&mut self) -> Option<[u8; 2]> {
-        self.io.transactions.reserve_pair()
+    fn transactions(&self) -> &Transactions {
+        &self.io.transactions
     }
     fn verify(&mut self, limit: Limit<'_>) -> io::Result<()> {
         limit.check()

@@ -234,8 +234,8 @@ struct MemoryPort {
     ready_at: Option<Instant>,
 }
 impl Port for MemoryPort {
-    fn reserve_pair(&mut self) -> Option<[u8; 2]> {
-        self.fixture.transactions.reserve_pair()
+    fn transactions(&self) -> &Transactions {
+        &self.fixture.transactions
     }
     fn verify(&mut self, limit: Limit<'_>) -> io::Result<()> {
         if self.pending.is_none() && self.reply.is_none() {
@@ -509,3 +509,5 @@ impl Port for MemoryPort {
 }
 #[path = "mutation_pace_tests.rs"]
 mod pace_tests;
+#[path = "mutation_pool_tests.rs"]
+mod pool_tests;

@@ -1834,7 +1834,10 @@ async fn correction_storage_failure_and_postacceptance_capacity_have_truthful_ca
     }
     rig.stop().await;
     let rig = Rig::new(MemoryFiles::default());
-    rig.port.reserve_for_tests(122);
+    // Eight free IDs: the Custom baseline read frees two of its four once
+    // answered, and the power read keeps two, so the accepted recipe cannot
+    // reserve the rest.
+    rig.port.reserve_for_tests(123);
     let response = rig.set(91, value(1, 1)).await;
     assert_eq!(response["result"]["status"], 2);
     assert!(

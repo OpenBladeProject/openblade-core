@@ -13,25 +13,23 @@ impl<P: Port> Reader<P, ReadAdmission> {
         enabled: bool,
         limit: Limit<'_>,
     ) -> Option<()> {
-        fn reserve<P: Port>(port: &mut P, permit: &dyn Permit) -> Option<[u8; EXCHANGES]> {
+        fn reserve(mut pair: impl FnMut() -> Option<[u8; 2]>) -> Option<[u8; EXCHANGES]> {
             let mut ids = [0; EXCHANGES];
-            for pair in ids.as_chunks_mut::<2>().0 {
-                let Some(v) = port.reserve_pair() else {
-                    permit.refused(Refusal::TransactionCapacity);
-                    return None;
-                };
-                pair.copy_from_slice(&v);
+            for chunk in ids.as_chunks_mut::<2>().0 {
+                chunk.copy_from_slice(&pair()?);
             }
             Some(ids)
         }
         // Enable reserves both its own operation and one process-scoped source
-        // cancellation before any GET/Prepared. No refill, wrap or fan-ID reuse.
+        // cancellation before any GET/Prepared. The record carries the
+        // cancellation IDs to a later Reader, so they are retained; no fan ID
+        // is reused.
         let ids = match permit.temporary_reserved_ids() {
             Some(v) => v,
-            None => reserve(&mut self.port, permit)?,
+            None => reserve(|| self.reserve_pair())?,
         };
         let cancel_ids = if enabled {
-            Some(reserve(&mut self.port, permit)?)
+            Some(reserve(|| self.reserve_retained_pair())?)
         } else {
             None
         };
@@ -71,6 +69,7 @@ impl<P: Port> Reader<P, ReadAdmission> {
         let record = permit
             .resolve_temporary_charge(source, flags, policy, ids, cancel_ids)
             .ok()??;
+        a.reader.retain();
         record.validate().ok()?;
         a.checkpoint(&mut authorize, admission, limit).ok()?;
         permit.record_battery(0).ok()?;

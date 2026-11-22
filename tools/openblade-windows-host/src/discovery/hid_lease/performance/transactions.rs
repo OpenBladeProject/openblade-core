@@ -1,0 +1,188 @@
+//! Report transaction IDs and the proof that lets one be issued again.
+//!
+//! The firmware answers a SET_FEATURE request by placing a reply in a mailbox
+//! that GET_FEATURE reads. The mailbox belongs to the device, not to a handle:
+//! canceling Windows I/O or reopening the handle does not drain it, and an
+//! uncertain request may still leave or later produce its reply. If a new
+//! request's SET does not take effect, its GET returns that older reply, which
+//! only the transaction ID, class and command tell apart. So an ID is issued
+//! again only when no reply bearing it can be read again:
+//!
+//! - an ID that was never sent is free once its Reader has retired;
+//! - an ID whose correlated terminal reply was read is free once a later
+//!   request with the same class and command is answered: the firmware
+//!   answers each request once, and the newer reply replaced it whether the
+//!   firmware keeps one reply buffer or one per command;
+//! - an ID sent without such a reply (canceled, timed out, busy, malformed or
+//!   uncorrelated) is never issued again in this process, even after the
+//!   handle is reopened;
+//! - a pinned ID is never freed. A durable record that names IDs for later
+//!   use or for the journal's cross-family checks keeps them pinned for the
+//!   process lifetime.
+//!
+//! Issue is round-robin from the last issued ID, so a freed ID returns only
+//! after every other free ID has been issued.
+
+use openblade_protocol::{REPORT_LENGTH, RazerReport};
+use std::sync::{Mutex, MutexGuard};
+
+use super::{FRAME_LENGTH, Frame};
+
+// 0 is reserved by the report API and the durable records refuse 255.
+const FIRST: u8 = 1;
+const LAST: u8 = 254;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum State {
+    Free,
+    /// Reserved by a Reader and not yet sent.
+    Held,
+    /// Submitted without a correlated terminal reply.
+    Sent,
+    /// Its terminal reply was read; free once this class and command are
+    /// answered again.
+    Answered {
+        class: u8,
+        command: u8,
+    },
+}
+
+#[derive(Clone, Copy)]
+struct Id {
+    state: State,
+    pinned: bool,
+}
+
+struct Pool {
+    ids: [Id; 256],
+    last: u8,
+}
+
+impl Pool {
+    fn id(&mut self, id: u8) -> &mut Id {
+        &mut self.ids[usize::from(id)]
+    }
+}
+
+pub(super) struct Transactions(Mutex<Pool>);
+
+impl Transactions {
+    pub(super) const fn new() -> Self {
+        Self::after(0)
+    }
+
+    /// A fresh pool whose first reservation starts at `first`.
+    #[cfg(test)]
+    pub(super) const fn starting_at(first: u8) -> Self {
+        Self::after(first - 1)
+    }
+
+    const fn after(last: u8) -> Self {
+        Self(Mutex::new(Pool {
+            ids: [Id {
+                state: State::Free,
+                pinned: false,
+            }; 256],
+            last,
+        }))
+    }
+
+    // A poisoned pool issues and frees nothing.
+    fn pool(&self) -> Option<MutexGuard<'_, Pool>> {
+        self.0.lock().ok()
+    }
+
+    /// Two free IDs, held until they are sent or released. `None` when fewer
+    /// than two are free.
+    pub(super) fn reserve_pair(&self) -> Option<[u8; 2]> {
+        let mut pool = self.pool()?;
+        let mut pair = [0; 2];
+        let mut found = 0;
+        let mut id = pool.last;
+        for _ in FIRST..=LAST {
+            id = if id >= LAST { FIRST } else { id + 1 };
+            if pool.id(id).state == State::Free {
+                pair[found] = id;
+                found += 1;
+                if found == pair.len() {
+                    for reserved in pair {
+                        pool.id(reserved).state = State::Held;
+                    }
+                    pool.last = id;
+                    return Some(pair);
+                }
+            }
+        }
+        None
+    }
+
+    /// Called before a request bearing `id` is submitted. `false` when the
+    /// pool cannot record it, so nothing may be submitted.
+    pub(super) fn sent(&self, id: u8) -> bool {
+        let Some(mut pool) = self.pool() else {
+            return false;
+        };
+        pool.id(id).state = State::Sent;
+        true
+    }
+
+    /// A correlated terminal reply to the request bearing `id` was read.
+    pub(super) fn answered(&self, id: u8, class: u8, command: u8) {
+        let Some(mut pool) = self.pool() else {
+            return;
+        };
+        let answered = State::Answered { class, command };
+        for (other, entry) in pool.ids.iter_mut().enumerate() {
+            if entry.state == answered && !entry.pinned && other != usize::from(id) {
+                entry.state = State::Free;
+            }
+        }
+        let entry = pool.id(id);
+        if entry.state == State::Sent {
+            entry.state = answered;
+        }
+    }
+
+    /// Frees `id` if it was never sent and is not pinned.
+    pub(super) fn release(&self, id: u8) {
+        if let Some(mut pool) = self.pool() {
+            let entry = pool.id(id);
+            if entry.state == State::Held && !entry.pinned {
+                entry.state = State::Free;
+            }
+        }
+    }
+
+    pub(super) fn pin(&self, id: u8, pinned: bool) {
+        if let Some(mut pool) = self.pool() {
+            pool.id(id).pinned = pinned;
+        }
+    }
+
+    /// How many IDs could be issued now.
+    #[cfg(test)]
+    pub(super) fn free(&self) -> usize {
+        self.pool().map_or(0, |mut pool| {
+            (FIRST..=LAST)
+                .filter(|id| pool.id(*id).state == State::Free)
+                .count()
+        })
+    }
+}
+
+/// The (ID, class, command) of `sent` when `reply` is its correlated terminal
+/// reply: checksum, ID, class and command match, and the status is success
+/// or a completed FAILED/NOT_SUPPORTED rejection. Busy, new and timeout
+/// replies are not terminal.
+pub(super) fn terminal_reply(sent: &Frame, length: usize, reply: &Frame) -> Option<(u8, u8, u8)> {
+    let report = &sent[1..];
+    let (id, class, command) = (report[1], report[6], report[7]);
+    let payload = report.get(8..8 + usize::from(report[5]))?;
+    let request = RazerReport::create(id, class, command, payload).ok()?;
+    let response = &reply[1..];
+    (matches!(length, REPORT_LENGTH | FRAME_LENGTH)
+        && reply[0] == 0
+        && (request.validate_response(response, None).is_ok()
+            || request.is_completed_rejection(response)))
+    .then_some((id, class, command))
+}

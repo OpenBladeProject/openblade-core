@@ -14,6 +14,10 @@ use tokio::time::{Instant, sleep_until};
 
 use super::{Descriptor, Selection, blocked, check_cancelled};
 
+mod transactions;
+use transactions::Transactions;
+#[cfg(test)]
+mod transaction_tests;
 #[cfg(all(windows, feature = "firmware-performance-compile-check"))]
 mod windows;
 
@@ -144,7 +148,8 @@ enum Transfer {
 // One operation slot. A pending slot owns its storage until terminal native
 // completion; cancel alone never retires it.
 trait Port {
-    fn reserve_pair(&mut self) -> Option<[u8; 2]>;
+    /// The pool shared by every port on this device's reply mailbox.
+    fn transactions(&self) -> &Transactions;
     fn verify(&mut self, limit: Limit<'_>) -> io::Result<()>;
     fn submit(&mut self, transfer: Transfer, limit: Limit<'_>) -> io::Result<()>;
     fn poll(&mut self) -> Option<io::Result<(usize, Frame)>>;
@@ -173,24 +178,6 @@ fn verify_admission<A: ObservationProof>(
     }
 }
 
-struct Transactions(AtomicU8);
-
-impl Transactions {
-    const fn new() -> Self {
-        Self(AtomicU8::new(0))
-    }
-
-    fn reserve_pair(&self) -> Option<[u8; 2]> {
-        let last = self
-            .0
-            .try_update(Ordering::AcqRel, Ordering::Acquire, |last| {
-                last.checked_add(2)
-            })
-            .ok()?;
-        Some([last + 1, last + 2])
-    }
-}
-
 struct Reader<P: Port, A = Admission> {
     port: P,
     admission: A,
@@ -198,6 +185,14 @@ struct Reader<P: Port, A = Admission> {
     // The two longest exchanges since `mutation::Pace::start`, for an
     // operation's measured pace.
     exchanges: Exchanges,
+    // IDs this Reader reserved; those never sent are freed on retirement.
+    held: Vec<u8>,
+    // Pinned IDs that no record names yet; unpinned on retirement.
+    provisional: Vec<u8>,
+    // The request whose reply the next GET reads.
+    request: Option<Frame>,
+    // A reservation failed because fewer than two IDs were free.
+    exhausted: bool,
 }
 
 /// The two longest exchanges a Reader has completed. Each runs from the
@@ -235,6 +230,61 @@ impl<P: Port, A: ObservationProof> Reader<P, A> {
             admission,
             poisoned: false,
             exchanges: Exchanges::default(),
+            held: Vec::new(),
+            provisional: Vec::new(),
+            request: None,
+            exhausted: false,
+        }
+    }
+
+    /// Two IDs for this Reader's own exchanges.
+    fn reserve_pair(&mut self) -> Option<[u8; 2]> {
+        let pair = self.port.transactions().reserve_pair();
+        match pair {
+            Some(pair) => self.held.extend(pair),
+            None => self.exhausted = true,
+        }
+        pair
+    }
+
+    /// Two IDs that a durable record may name. They stay pinned until this
+    /// Reader retires, and for the process lifetime once `retain` reports the
+    /// record: it may carry them to a later Reader, and the journal requires
+    /// a live fan owner's IDs to stay distinct from later battery IDs.
+    #[cfg(feature = "service-thermal-mutation-v1")]
+    fn reserve_retained_pair(&mut self) -> Option<[u8; 2]> {
+        let pair = self.reserve_pair()?;
+        for id in pair {
+            self.port.transactions().pin(id, true);
+        }
+        self.provisional.extend(pair);
+        Some(pair)
+    }
+
+    /// A record now names every ID from `reserve_retained_pair`.
+    #[cfg(feature = "service-thermal-mutation-v1")]
+    fn retain(&mut self) {
+        self.provisional.clear();
+    }
+
+    /// Records the request before submission: from here on its ID is
+    /// quarantined unless a correlated terminal reply is read.
+    fn sending(&mut self, frame: &Frame) -> io::Result<()> {
+        self.request = Some(*frame);
+        if self.port.transactions().sent(frame[2]) {
+            Ok(())
+        } else {
+            Err(blocked("transaction ID pool is unavailable"))
+        }
+    }
+
+    fn replied(&mut self, length: usize, reply: &Frame) {
+        if let Some((id, class, command)) = self
+            .request
+            .take()
+            .and_then(|request| transactions::terminal_reply(&request, length, reply))
+        {
+            self.port.transactions().answered(id, class, command);
         }
     }
 
@@ -309,10 +359,18 @@ impl<P: Port, A: ObservationProof> Reader<P, A> {
 
     // Once retirement begins no further traffic is permitted, even if a
     // canceled operation completes successfully after the observation deadline.
+    // Only then can no reserved ID still be sent, so the unsent are freed.
     async fn retire(&mut self, deadline: Option<Instant>) -> io::Result<()> {
         self.seal();
         loop {
             if self.port.poll_retirement()? {
+                let transactions = self.port.transactions();
+                for id in self.provisional.drain(..) {
+                    transactions.pin(id, false);
+                }
+                for id in self.held.drain(..) {
+                    transactions.release(id);
+                }
                 return Ok(());
             }
             if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
@@ -352,7 +410,7 @@ impl<P: Port, A: ObservationProof> Attempt<'_, P, A> {
         limit: Limit<'_>,
     ) -> Option<ObservedPerformance> {
         self.checkpoint(authorize, admission, limit).ok()?;
-        let transactions = self.reader.port.reserve_pair()?;
+        let transactions = self.reader.reserve_pair()?;
         self.read_reserved_pair(authorize, admission, limit, transactions, true)
             .await
     }
@@ -455,10 +513,10 @@ impl<P: Port, A: ObservationProof> Attempt<'_, P, A> {
             }),
             (4, fan @ (0 | 1)) => {
                 // Reserve only after a complete Custom selector pair. A new handle
-                // does not replenish the process-wide budget or drain firmware replies.
+                // does not drain firmware replies, so it frees no ID either.
                 let [cpu_id, gpu_id] = match levels {
                     LevelRead::Reserved(ids) => ids,
-                    _ => self.reader.port.reserve_pair()?,
+                    _ => self.reader.reserve_pair()?,
                 };
                 let cpu = self
                     .read_custom(
@@ -528,13 +586,20 @@ impl<P: Port, A: ObservationProof> Attempt<'_, P, A> {
     ) -> io::Result<(usize, Frame)> {
         limit.check()?;
         let reply = matches!(transfer, Transfer::ReceiveReply);
+        match &transfer {
+            Transfer::SendGetter(frame) => self.reader.sending(frame)?,
+            #[cfg(feature = "service-thermal-mutation-v1")]
+            Transfer::SendMutation(frame) => self.reader.sending(frame)?,
+            Transfer::ReceiveReply => {}
+        }
         self.reader.port.submit(transfer, limit)?;
         loop {
             limit.check()?;
             if let Some(completion) = self.reader.port.poll() {
                 limit.check()?;
-                if reply && completion.is_ok() {
+                if reply && let Ok((length, frame)) = &completion {
                     self.reader.exchanges.replied(Instant::now());
+                    self.reader.replied(*length, frame);
                 }
                 return completion;
             }
