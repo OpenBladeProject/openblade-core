@@ -207,6 +207,36 @@ The metadata observer therefore continues to refuse firmware observation.
 Offline fixtures block native-call substitutes and feed the pinned report
 shape through the real reader and in-memory candidate dispatcher.
 
+#### Keyboard Driver mode (read-only)
+
+The installed mailbox read also reports the RZ09-0581 keyboard device mode as
+managed `keyboardDriverModeActive`. It sends only the reviewed `00/84:0000`
+query from the exact-device semantic admission
+(`Rz09_0581_02e0_3_01_LightingSemanticAdmission.json`, `deviceMode`). The
+protocol crate builds the reviewed `00/04` setters in its own tests only, so no
+native path can submit them. This stage never acquires, maintains or releases
+Driver mode.
+
+The value is the confirmed firmware mode, not ownership, matching managed
+status: `true` for a `0300` reply, `false` for `0000`, and `null` when the reply
+is missing, fails validation or names another mode. A status for an unverified
+device is `null`. Managed reads once at startup and then every 15 seconds. The
+native Service adds no loop: the query follows the thermal getter in the same
+serialized, freshly admitted read job, once the last result is 15 seconds old.
+In between, a verified read repeats that result. A result is bound to the read
+admission that produced it, so a lifecycle, custody or generation change makes
+it unknown until a new job reads it. A failed query seals that Reader like any
+incomplete exchange, publishes `null` until the next interval and is never
+retried in between. Each query uses one pair from the process-wide transaction
+budget.
+
+Only the fresh `ObserveState` reply is verified in this Service, so the
+subscription feed still publishes `null` and the native Agent passes every
+function-row key through. The vectors in
+`tools/openblade-windows-host/tests/data/keyboard-driver-mode-vectors.json`
+pin the codec and the published value against managed. Their recorder is
+`ServiceControlRuntimeTests.NativeKeyboardDriverModeVectors`.
+
 ### Phase 10n ownership binding
 
 The installed candidate's conditional firmware factory now requires a private
