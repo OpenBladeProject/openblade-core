@@ -1471,7 +1471,8 @@ submitted, and the reply is Blocked with "The remaining request time cannot
 cover this recipe at the measured device pace; no thermal setter was
 submitted." (no fan setter, for a fan request). Owned Stop cleanup is not
 paced. The refused recipe's transaction IDs were reserved but never sent, so
-retirement returns them to the pool.
+retirement returns them to the pool. A fan record pins its IDs only once a
+setter may reach the device, so a refused fan recipe returns them too.
 
 With `service-profile-triggers-v1`, `reportApplicationContext` and
 `updateProfiles` run for an 11 s reconciliation budget

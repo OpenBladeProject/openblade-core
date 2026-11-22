@@ -258,9 +258,12 @@ thermal getter already does.
 Each query reserves one more pair of transaction IDs, on a job that already
 reserves one (two for Custom). It sends the first ID, and retirement frees the
 unsent second. An answered ID returns to the pool once a later request with
-the same command is answered, so read jobs, with or without the query, keep
-at most one answered ID per command out of the pool and never exhaust it at
-any interval (`transaction_tests`). Before reclamation the pool ran out after
+the same command is answered, so while their exchanges are answered, read
+jobs, with or without the query, keep at most one answered ID per command out
+of the pool and never exhaust it at any interval (`transaction_tests`). A read
+whose exchange keeps failing quarantines one ID each time: about 253 failed
+reads exhaust the pool, 8.5 minutes at the 2 s subscription poll or 21 minutes
+at 5 s. Before reclamation the pool ran out after
 about 15 minutes 45 seconds of one job every 15 seconds. The packaging refusal
 is unchanged.
 
@@ -347,18 +350,34 @@ reply bearing it can be read again:
   nothing.
 - IDs a fan record or a temporary-charge cancellation names stay pinned for
   the process: a later Reader sends them, and the journal requires a live fan
-  owner's IDs to stay distinct from later battery IDs. A fan request that
-  prepares no record, such as an Automatic no-op, returns its preflight IDs.
+  owner's IDs to stay distinct from later battery IDs. A fan record pins them
+  only once a setter may reach the device, so a fan request refused before
+  its first setter, or one that prepares no record such as an Automatic
+  no-op, returns them.
+- A request is recorded as sent before it is submitted, and a pool whose lock
+  is poisoned records nothing, so nothing is submitted.
 
 Issue is round-robin, so a returned ID comes back only after every other free
-ID. Managed restarts its finite IDs at 1 for every reopened session after a
-poisoned one; native does not, because the mailbox outlives the handle.
-Unanswered exchanges and pinned records can still exhaust the pool. A thermal,
-battery or temporary-charge request then refuses with its transaction-capacity
-reason, even when the baseline read is the first reservation to fail; read jobs
-publish no reading. `Attempt::transfer` is the only path that marks a request
-sent or answered. `transactions.rs` rebuilds the sent request to correlate its
-reply, which is why the encoder guard lists it.
+ID. The process pool starts its round at a random ID; a fixed start would
+issue first the IDs a previous process also issued first, whose replies may
+still be in the mailbox. A random start makes such a collision unlikely but
+cannot rule it out. Managed restarts its finite IDs at 1 for every reopened
+session after a poisoned one; native does not, because the mailbox outlives
+the handle.
+
+Unanswered exchanges and pinned records can still exhaust the pool. Measured
+on the in-memory port, one process serves about 12 manual fan set-point
+changes (each pins 20 to 24 IDs), 14 alternations between manual and
+Automatic, or 30 temporary-charge enable and cancellation cycles (8 pinned
+cancellation IDs each), and a read whose exchange keeps failing spends one ID
+per job. A thermal, battery or temporary-charge request then refuses with its
+transaction-capacity reason, even when the baseline read is the first
+reservation to fail; read jobs publish no reading. The follow-up is to release
+a record's pins once its owner settles, in `fan_mutation.rs` and
+`battery_mutation.rs`.
+`Attempt::transfer` is the only path that marks a request sent or answered.
+`transactions.rs` rebuilds the sent request to correlate its reply, which is
+why the encoder guard lists it.
 
 The replay in `tools/openblade-windows-host/tests/fixtures/get-status-v79.frames`
 contains two consecutive managed codec frames recorded before the IPC80 bump.

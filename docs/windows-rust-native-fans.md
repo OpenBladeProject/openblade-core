@@ -137,10 +137,17 @@ State-channel, state-to-target and target-channel spacing remain at least 10,
 The complete recipe and all command IDs are frozen before Prepared. Ordinary
 preflight consumes four IDs. Remaining target-only, Balanced-entry,
 Performance-entry and direct-Automatic budgets are 6, 10, 12 and 6 IDs.
-Before any manual setter, another ten never-reused IDs are retained for normal
-Stop's fresh reads, checks, direct Auto pair and independent final proof.
-Ordinary observations cannot consume these retained IDs. The finite process ID
-budget remains an unresolved production limitation; no reset or refill exists.
+Before any manual setter, another ten IDs are reserved for normal Stop's fresh
+reads, checks, direct Auto pair and independent final proof. Every ID the
+record names stays pinned for the process once a setter may reach the device,
+so ordinary observations cannot consume them. A request refused before its
+first setter, such as by the pace check, returns them. Other IDs return to the
+pool under the rules in
+[the native development Service](windows-rust-development-service.md). The
+pins still bound the process: about 12 manual set-point changes, or 14
+alternations between manual and Automatic, exhaust the pool for fan requests
+until the Service restarts. Releasing the pins when the owner settles is a
+follow-up in the fan and battery mutation code.
 
 The fan history contract is `service-fan-mutation-v2/rz09-0581-linked-v1`.
 It binds requested intent, complete selected recipe, source, selector, ordinary
