@@ -23,7 +23,7 @@ pub(crate) fn entry(origin: Arc<Origin>) -> io::Result<()> {
     }
     *slot = Some(origin);
     drop(slot);
-    crate::scm_host::set_ingress(|code, event| {
+    crate::scm_host::set_ingress(|code, event, setting| {
         if let Ok(slot) = ENTRY_ORIGIN.lock()
             && let Some(origin) = &*slot
         {
@@ -36,7 +36,7 @@ pub(crate) fn entry(origin: Arc<Origin>) -> io::Result<()> {
                     .lifecycle
                     .observe_power_kind(crate::origin_lifetime::sample_power_kind());
             }
-            crate::scm_host::installed_ingress(&origin.lifecycle, code, event, || {
+            crate::scm_host::installed_notice(&origin.lifecycle, code, event, setting, || {
                 origin.revoke_for_stop()
             });
         }
@@ -57,6 +57,21 @@ unsafe extern "system" fn service_main(argc: u32, argv: *mut *mut u16) {
 
 fn service() {
     registered_service(NAME, |runtime, handle, stop| {
+        // Power-setting changes arrive at the SCM handler, which forwards
+        // them to the lifecycle. A registration failure fails start, as the
+        // managed lifecycle source's constructor does.
+        #[cfg(feature = "service-thermal-mutation-v1")]
+        let notices = match super::power_notifications::Registrations::register(
+            super::power_notifications::native::ServiceHandle(handle),
+        ) {
+            Ok(notices) => notices,
+            Err(_) => {
+                let failed =
+                    crate::scm_host::status_for(crate::scm_host::Phase::Stopped { failed: true });
+                let _ = report(handle, &failed);
+                return;
+            }
+        };
         let _ = runtime.block_on(run_candidate(
             &CONTROLS,
             stop,
@@ -66,7 +81,19 @@ fn service() {
             },
             admit_candidate,
             prepare_installed_endpoint,
-            |status| report(handle, status),
+            |status| {
+                // Unregister before the terminal report: SCM may end the
+                // process once it reads SERVICE_STOPPED.
+                #[cfg(feature = "service-thermal-mutation-v1")]
+                if status.dwCurrentState == windows_sys::Win32::System::Services::SERVICE_STOPPED
+                    && notices.close().is_err()
+                {
+                    let mut failed = *status;
+                    failed.dwWin32ExitCode = windows_sys::Win32::Foundation::ERROR_GEN_FAILURE;
+                    return report(handle, &failed);
+                }
+                report(handle, status)
+            },
         ));
     });
 }

@@ -1,5 +1,8 @@
 //! Sticky loaded-origin outcome shared by ingress and publication checks.
-use openblade_domain::low_power_gate::{LowPowerGate, Signal, Transition, WriteScope};
+use openblade_domain::{
+    low_power_gate::{LowPowerGate, Signal, Transition, WriteScope},
+    power_setting::{ConsoleDisplay, PowerSetting, power_event_signal},
+};
 use std::{
     io,
     sync::{
@@ -93,6 +96,8 @@ struct LifecycleState {
     // and how many times a sample has changed it.
     power_kind: Option<u8>,
     power_generation: u64,
+    // The last valid GUID_CONSOLE_DISPLAY_STATE read, unknown until the first.
+    display: ConsoleDisplay,
 }
 impl Default for LifecycleState {
     // Managed LowPowerGate starts clear. This is not an independent awake
@@ -104,6 +109,7 @@ impl Default for LifecycleState {
             gate: LowPowerGate::new(qpc::frequency()),
             power_kind: None,
             power_generation: 0,
+            display: ConsoleDisplay::unknown(),
         }
     }
 }
@@ -114,18 +120,35 @@ impl Lifecycle {
             .map(|_| ())
             .map_err(|_| io::Error::other("lifecycle state lock poisoned"))
     }
-    /// The SCM control callback: its `signal_for` signal, if any, at the
-    /// callback's QPC time.
+    /// An SCM control without a power-setting payload, at the callback's QPC time.
+    #[cfg(test)]
     pub(crate) fn ingress(&self, code: u32, event: u32) {
-        self.record(code, signal_for(code, event), qpc::now());
+        self.notice(code, event, None);
     }
-    /// One power or session notice: advance the epoch, then apply its gate
-    /// signal, if any, at `timestamp`. This is the entry a power-setting
-    /// supplier uses. It passes `Signal::DisplayOn` only for a display
-    /// transition from off to on or dimmed, classified as managed
-    /// `ClassifyConsoleDisplayTransition` does. Display-off, dimmed-to-on and
-    /// AC/DC notices carry no signal and only fence.
+    /// The SCM control callback with its decoded power-setting payload, if
+    /// any, at the callback's QPC time. A console display read updates the
+    /// display state and signals `DisplayOn` only for off to on or dimmed
+    /// (managed `ClassifyConsoleDisplayTransition`); display-off, other
+    /// display changes and AC/DC only fence. The display state and the gate
+    /// share this lock, so a display read classifies against the read the
+    /// gate saw before it.
+    pub(crate) fn notice(&self, code: u32, event: u32, setting: Option<PowerSetting>) {
+        self.apply(code, qpc::now(), |display| {
+            signal_for(code, event, display, setting)
+        });
+    }
+    /// One power or session notice with an already classified gate signal:
+    /// advance the epoch, then apply the signal, if any, at `timestamp`.
+    #[cfg(test)]
     pub(crate) fn record(&self, code: u32, signal: Option<Signal>, timestamp: i64) {
+        self.apply(code, timestamp, |_| signal);
+    }
+    fn apply(
+        &self,
+        code: u32,
+        timestamp: i64,
+        signal: impl FnOnce(&mut ConsoleDisplay) -> Option<Signal>,
+    ) {
         use windows_sys::Win32::System::Services::{
             SERVICE_CONTROL_POWEREVENT, SERVICE_CONTROL_SESSIONCHANGE,
         };
@@ -142,7 +165,7 @@ impl Lifecycle {
             return;
         } // Exhaustion is sticky; never revive epoch one.
         state.epoch = state.epoch.checked_add(1).unwrap_or(0);
-        if let Some(signal) = signal {
+        if let Some(signal) = signal(&mut state.display) {
             // A stale signal changes nothing but has still fenced. Nothing
             // subscribes to transitions yet; a subscriber is notified after
             // this lock is released, as managed raises TransitionChanged.
@@ -197,24 +220,22 @@ impl Lifecycle {
         Some(state.power_generation)
     }
 }
-/// The gate signal of an SCM control, as managed
-/// `ClassifySuspendResumeNotification` maps PBT events: PBT_APMSUSPEND
-/// suspends, and PBT_APMRESUMESUSPEND or PBT_APMRESUMEAUTOMATIC resumes.
-/// Only power events signal. Session notices fence old work, and their
-/// payload never authorizes a user; the mutation supplier checks fresh exact
-/// WTSInfoEx state.
-fn signal_for(code: u32, event: u32) -> Option<Signal> {
-    use windows_sys::Win32::{
-        System::Services::SERVICE_CONTROL_POWEREVENT,
-        UI::WindowsAndMessaging::{PBT_APMRESUMEAUTOMATIC, PBT_APMRESUMESUSPEND, PBT_APMSUSPEND},
-    };
-    match (code, event) {
-        (SERVICE_CONTROL_POWEREVENT, PBT_APMSUSPEND) => Some(Signal::Suspend),
-        (SERVICE_CONTROL_POWEREVENT, PBT_APMRESUMESUSPEND | PBT_APMRESUMEAUTOMATIC) => {
-            Some(Signal::Resume)
-        }
-        _ => None,
-    }
+/// The gate signal of an SCM control (`openblade_domain::power_setting`,
+/// pinned against managed): PBT_APMSUSPEND suspends, PBT_APMRESUMESUSPEND or
+/// PBT_APMRESUMEAUTOMATIC resumes, and a console display read from off to on
+/// or dimmed is display-on. Only power events signal. Session notices fence
+/// old work, and their payload never authorizes a user; the mutation
+/// supplier checks fresh exact WTSInfoEx state.
+fn signal_for(
+    code: u32,
+    event: u32,
+    display: &mut ConsoleDisplay,
+    setting: Option<PowerSetting>,
+) -> Option<Signal> {
+    use windows_sys::Win32::System::Services::SERVICE_CONTROL_POWEREVENT;
+    (code == SERVICE_CONTROL_POWEREVENT)
+        .then(|| power_event_signal(display, event, setting))
+        .flatten()
 }
 /// The current Windows ACLineStatus kind, or `None` when the read fails or
 /// reports an unknown status.
@@ -382,7 +403,12 @@ mod lifecycle_tests {
             (SERVICE_CONTROL_SESSIONCHANGE, 18, None),
             (SERVICE_CONTROL_STOP, 4, None),
         ] {
-            assert_eq!(signal_for(code, event), signal, "{code}/{event}");
+            let mut display = ConsoleDisplay::unknown();
+            assert_eq!(
+                signal_for(code, event, &mut display, None),
+                signal,
+                "{code}/{event}"
+            );
         }
     }
     #[test]
@@ -467,5 +493,67 @@ mod lifecycle_tests {
         let current = WriteScope::LowPowerFanAutomatic { generation: 3 };
         assert_eq!(lifecycle.epoch_for(current), None);
         assert_eq!(lifecycle.low_power(), None);
+    }
+    const SETTING: u32 = openblade_domain::power_setting::PBT_POWERSETTINGCHANGE;
+    fn display(level: u32) -> Option<PowerSetting> {
+        Some(PowerSetting::ConsoleDisplay(level))
+    }
+    fn gate(lifecycle: &Lifecycle) -> (u64, bool) {
+        let transition = lifecycle.low_power().unwrap();
+        (transition.generation, transition.suspending())
+    }
+    #[test]
+    fn a_modern_standby_display_off_without_suspend_leaves_the_gate_clear_and_only_fences() {
+        let lifecycle = Lifecycle::default();
+        lifecycle.notice(POWER, SETTING, display(1));
+        let on = lifecycle.active().unwrap();
+        // Modern Standby turns the display off and sends no PBT_APMSUSPEND.
+        // Managed classifies that as DisplayOff, which never reaches the gate.
+        lifecycle.notice(POWER, SETTING, display(0));
+        assert_eq!(gate(&lifecycle), (0, false));
+        let off = lifecycle.active().unwrap();
+        assert!(off > on, "display-off still fences earlier work");
+        // An AC/DC change in standby and the wake's display-on only fence.
+        lifecycle.notice(POWER, SETTING, Some(PowerSetting::PowerSource(1)));
+        lifecycle.notice(POWER, 10, None);
+        lifecycle.notice(POWER, SETTING, display(1));
+        assert_eq!(gate(&lifecycle), (0, false));
+        assert_eq!(lifecycle.active(), Some(off + 3));
+        assert_eq!(lifecycle.0.lock().unwrap().display.state(), Some(1));
+    }
+    #[test]
+    fn display_on_after_an_observed_off_recovers_a_missed_resume() {
+        let lifecycle = Lifecycle::default();
+        lifecycle.notice(POWER, 4, None);
+        assert_eq!(gate(&lifecycle), (1, true));
+        // The first read has no previous state, so it cannot clear the gate.
+        lifecycle.notice(POWER, SETTING, display(1));
+        assert_eq!(gate(&lifecycle), (1, true));
+        lifecycle.notice(POWER, SETTING, display(0));
+        // A session notice never reads or classifies a display payload.
+        lifecycle.notice(
+            windows_sys::Win32::System::Services::SERVICE_CONTROL_SESSIONCHANGE,
+            SETTING,
+            display(2),
+        );
+        // A refused payload reaches the lifecycle as no setting at all.
+        lifecycle.notice(POWER, SETTING, None);
+        assert_eq!(gate(&lifecycle), (1, true));
+        assert_eq!(lifecycle.active(), None);
+        lifecycle.notice(POWER, SETTING, display(2));
+        assert_eq!(gate(&lifecycle), (2, false));
+        assert!(lifecycle.active().is_some());
+    }
+    #[test]
+    fn a_display_read_after_exhaustion_neither_signals_nor_revives() {
+        let lifecycle = Lifecycle::default();
+        lifecycle.notice(POWER, 4, None);
+        lifecycle.notice(POWER, SETTING, display(0));
+        lifecycle.0.lock().unwrap().epoch = u64::MAX;
+        lifecycle.notice(POWER, SETTING, display(0));
+        lifecycle.notice(POWER, SETTING, display(1));
+        assert_eq!(lifecycle.low_power(), None);
+        assert!(lifecycle.low_power_or_unknown());
+        assert_eq!(lifecycle.active(), None);
     }
 }

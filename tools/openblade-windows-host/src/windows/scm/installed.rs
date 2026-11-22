@@ -18,6 +18,12 @@ mod native;
 pub(crate) use native::entry;
 #[path = "installed/readiness.rs"]
 mod readiness;
+// Only the thermal composition accepts power events, so only it registers
+// the power settings that arrive as them.
+#[cfg(feature = "service-thermal-mutation-v1")]
+#[cfg_attr(test, allow(dead_code))]
+#[path = "installed/power_notifications.rs"]
+mod power_notifications;
 
 const NAME: &str = "OpenBlade";
 
