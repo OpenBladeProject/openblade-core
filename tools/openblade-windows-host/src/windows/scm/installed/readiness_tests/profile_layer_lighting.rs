@@ -256,3 +256,28 @@ async fn a_profile_fan_control_reaches_the_fan_setters() {
     r.origin.stop();
     r.stop().await;
 }
+
+/// A saved fan control whose fixed speed is a JSON string binds as managed
+/// binds it (`AllowReadingFromString`), so the resolved fan intent carries the
+/// number. Before the domain resolution, native read the stored member as-is
+/// and `validate_settings` refused it; this is a deliberate difference from
+/// that build.
+#[test]
+fn a_profile_fixed_speed_saved_as_a_string_resolves_to_its_number() {
+    for text in ["3700", "03700"] {
+        let files = MemoryFiles::default();
+        files.profiles(1);
+        let mut document = files.document("profiles.json");
+        let mut stored = crate::installed::readiness::thermal_storage::legacy_fan(1);
+        stored["fixedSpeedRpm"] = json!(text);
+        assert!(openblade_domain::fan_history::validate_settings(&stored).is_err());
+        document["profiles"]["pluggedIn"]["fanControl"] = stored;
+        document["profiles"]["pluggedIn"]["fans"] = json!(1);
+        files.put("profiles.json", document);
+        files.commit_configuration();
+        let storage = Storage::open(Box::new(files), SID).unwrap();
+        let mut expected = crate::installed::readiness::thermal_storage::legacy_fan(1);
+        expected["fixedSpeedRpm"] = json!(3700);
+        assert_eq!(saved_fan(&storage, 0).unwrap(), Some(expected), "{text}");
+    }
+}
