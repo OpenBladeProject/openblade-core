@@ -18,7 +18,9 @@ Choose Automatic with a Quiet, Balanced or Performance profile, a fixed target
 from 500 to 3200 RPM in 50-RPM steps, a manual fan curve, or Off. Automatic and
 manual curves follow the CPU, the GPU, or both; with both, the higher demand wins.
 Curve input uses the same smoothed temperatures as the laptop's manual fan
-curve, so a brief package spike does not change the fan speed. Fixed targets come from the selected mode configuration; Smart targets are the
+curve, so a brief package spike does not change the fan speed. When the
+selected CPU stays at 95 °C or the GPU at 87 °C for 2 seconds, Automatic and
+curves run the pad at full speed until it drops 3 °C. Fixed targets come from the selected mode configuration; Smart targets are the
 ramping speed the firmware reports. Neither is measured fan speed. A missing or stale
 temperature reading pauses curve updates; the pad keeps its last speed and control
 continues. A GPU that Windows reports powered down is ignored: with both sources the
@@ -165,14 +167,15 @@ firmware revisions and display-off behavior have not been newly validated.
 
 ## Automatic mode
 
-Automatic reproduces Synapse's Smart scheduler from the pinned shared bundle
+Automatic follows Synapse's Smart scheduler from the pinned shared bundle
 (module 74967, product task runner in `main.js`):
 
 - Entering Smart writes `setThermalFanCoolingMode(smart.active, 0, 0)`: `0D/10`
   with the firmware owner and preset Quiet `3`, Balanced `4` or Performance `5`.
 - Each system-monitor sample evaluates a step table: the speed of the point with
   the smallest temperature strictly above the reading, without interpolation.
-  `cpu` uses the CPU table with the package temperature, `gpu` the GPU table,
+  With so few points, that is one speed across normal laptop temperatures:
+  Balanced CPU is 2200 RPM from 40 to 89 °C. `cpu` uses the CPU table with the package temperature, `gpu` the GPU table,
   and `cpu_gpu` the higher of both results.
 - The demand `floor(rpm/50)` is sent with `0D/01` only when it changes.
 - Synapse's default profile is Fixed with `smart.active` Balanced and source
@@ -184,8 +187,12 @@ Automatic reproduces Synapse's Smart scheduler from the pinned shared bundle
 | Balanced | 40:1000, 90:2200, 100:2200 | 30:1000, 80:2200, 90:2200 |
 | Performance | 40:1000, 55:2000, 80:2700, 100:2700 | 30:1000, 45:2000, 70:2700, 90:2700 |
 
-OpenBlade differs in four ways. The profile and temperature source are
-selectable. Tables are evaluated on smoothed temperatures. Above the last point,
+OpenBlade differs in five ways. The profile and temperature source are
+selectable. Tables are evaluated on smoothed temperatures. OpenBlade
+interpolates between the table points in 50-RPM steps, like a manual pad curve,
+so the speed follows the temperature: Balanced CPU gives about 1500 RPM at
+60 °C and 1850 RPM at 75 °C. Below the first point it uses the first point's
+speed. Above the last point,
 Synapse yields no speed and sends 0; OpenBlade keeps the last point's speed. The
 preset write is skipped only when this session already confirmed that exact
 preset. Automatic is source-backed and software-tested; it has not been
@@ -203,7 +210,16 @@ before the input follows it. There is no timed cooldown hold. A missing sensor
 or a sample gap over 10 seconds starts a fresh history. Safety decisions keep
 using the raw readings: the laptop curve still forces maximum speed immediately
 for a missing CPU reading, an unconfirmed missing GPU, CPU at 95 °C or GPU at
-87 °C, and the pad's missing-reading pause checks the raw reading.
+87 °C, and the pad's missing-reading pause checks the raw reading. The pad's
+Automatic mode and manual curve use the same emergency limits on the raw
+readings: a selected CPU at or above 95 °C, or a selected, powered GPU at or
+above 87 °C, for three consecutive one-second samples (2 seconds) sends
+3200 RPM whatever the table or curve says. A shorter spike does not trip them.
+Full speed holds until that reading drops 3 °C below its limit, so a reading at
+the limit does not switch the speed back and forth. The smoothed input is not
+used here because it approaches a steady reading gradually and would take 12
+to 20 seconds to reach the limit. Synapse has no such limit. Fixed targets read
+no temperature and keep their speed.
 
 ## Typed cooling-demand API
 
