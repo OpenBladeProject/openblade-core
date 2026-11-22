@@ -209,13 +209,21 @@ shape through the real reader and in-memory candidate dispatcher.
 
 #### Keyboard Driver mode (read-only)
 
-The installed mailbox read also reports the RZ09-0581 keyboard device mode as
-managed `keyboardDriverModeActive`. It sends only the reviewed `00/84:0000`
-query from the exact-device semantic admission
-(`Rz09_0581_02e0_3_01_LightingSemanticAdmission.json`, `deviceMode`). The
-protocol crate builds the reviewed `00/04` setters in its own tests only, so no
-native path can submit them. This stage never acquires, maintains or releases
-Driver mode.
+A Service built with `service-keyboard-driver-mode-read-v1` also reports the
+RZ09-0581 keyboard device mode as managed `keyboardDriverModeActive`. The
+feature implies `service-mailbox-observation-v1` and adds the capability marker
+`service-keyboard-driver-mode-read-v1`. Both package readers refuse the feature
+and the marker by name, so no admitted image sends the query. A build without
+the feature sends no `00/84` query and publishes no `keyboardDriverModeActive`
+member, as before.
+
+The read sends only the reviewed `00/84:0000` query from the exact-device
+semantic admission (`Rz09_0581_02e0_3_01_LightingSemanticAdmission.json`,
+`deviceMode`). The reviewed `00/04` setters exist only in the protocol crate's
+tests. `RazerReport::create` remains a public encoder, so this is not a type
+guarantee: the host's `device_mode_guard_tests` fail when non-test source in the
+Service's crates names the setter or adds a report construction. This stage
+never acquires, maintains or releases Driver mode.
 
 The value is the confirmed firmware mode, not ownership, matching managed
 status: `true` for a `0300` reply, `false` for `0000`, and `null` when the reply
@@ -223,19 +231,36 @@ is missing, fails validation or names another mode. A status for an unverified
 device is `null`. Managed reads once at startup and then every 15 seconds. The
 native Service adds no loop: the query follows the thermal getter in the same
 serialized, freshly admitted read job, once the last result is 15 seconds old.
-In between, a verified read repeats that result. A result is bound to the read
-admission that produced it, so a lifecycle, custody or generation change makes
-it unknown until a new job reads it. A failed query seals that Reader like any
-incomplete exchange, publishes `null` until the next interval and is never
-retried in between. Each query uses one pair from the process-wide transaction
-budget.
+Until then, each fresh read under the same admission publishes the cached
+result without reading it again. One instant per job decides the query and
+selects the published value. A result is bound to the read admission that
+produced it, so a lifecycle, custody or generation change makes it unknown
+until a new job reads it.
 
-Only the fresh `ObserveState` reply is verified in this Service, so the
-subscription feed still publishes `null` and the native Agent passes every
-function-row key through. The vectors in
+The query has its own one-second budget and never takes the last 500 ms of the
+job, so a stalled or failed query cannot cost the thermal read it follows. A
+failed, unanswered or timed-out query seals that Reader like any incomplete
+exchange and publishes `null` until the next interval. So does a job that was
+asked to query and returned nothing. Neither is sent again before the interval
+ends. A job with too little time left sends no query and stays due.
+
+Each query uses one pair from the process-wide 127-pair transaction budget. At
+one query per 15 seconds, the queries alone exhaust it after about 31 minutes
+of observed uptime, before any thermal read is counted. The budget is already
+inadequate for sustained reads (see above); this read makes that limit
+arrive sooner and changes no allocation.
+
+The read-only composition publishes its status feed unverified, and in the
+mutation compositions a feed status verified after a mutation carries `null`,
+because the mutation's own read sends no query. Only the fresh read-job status
+carries a mode, so the native Agent still passes every function-row key through.
+The vectors in
 `tools/openblade-windows-host/tests/data/keyboard-driver-mode-vectors.json`
 pin the codec and the published value against managed. Their recorder is
-`ServiceControlRuntimeTests.NativeKeyboardDriverModeVectors`.
+`ServiceControlRuntimeTests.NativeKeyboardDriverModeVectors`. Managed
+`RazerReport.ValidateResponse` calls the same Rust codec, so the envelope-failure
+rows compare Rust with itself; only the payload decode and the status rows are
+independent managed evidence.
 
 ### Phase 10n ownership binding
 

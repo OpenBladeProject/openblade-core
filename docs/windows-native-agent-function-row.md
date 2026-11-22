@@ -196,10 +196,11 @@ data directory and run the managed test.
 ## Not matched yet
 
 - Fn observation, so no press is admitted.
-- A native Service status feed that carries Driver mode. The native Service
-  reads the mode only into its fresh `ObserveState` reply (see
-  [Keyboard Driver mode](windows-rust-development-service.md#keyboard-driver-mode-read-only)),
-  so the feed reports `null` and every key passes through.
+- A native Service status feed that carries Driver mode. Only a Service built
+  with the unadmitted read feature reads the mode, and only into the status of
+  its fresh read job (see
+  [Keyboard Driver mode](windows-rust-development-service.md#keyboard-driver-mode-read-only)).
+  The feed reports `null` or no member, so every key passes through.
 - Every effect, including the Service commands and the WMI fallback.
 - The managed fallback from an absent `functionKeyPrimary` to the active
   profile's laptop behavior. The recorded default profile does not exercise it.
