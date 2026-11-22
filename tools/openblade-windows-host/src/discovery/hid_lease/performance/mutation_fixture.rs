@@ -88,6 +88,22 @@ pub(crate) struct State {
 pub(crate) struct Fixture {
     pub(crate) state: Arc<Mutex<State>>,
     transactions: Arc<Transactions>,
+    threads: Arc<Threads>,
+}
+/// Counted threads: started, and exited as their thread-local destructors run.
+#[derive(Default)]
+struct Threads {
+    started: std::sync::atomic::AtomicUsize,
+    exited: std::sync::atomic::AtomicUsize,
+}
+struct Exited(Arc<Threads>);
+impl Drop for Exited {
+    fn drop(&mut self) {
+        self.0.exited.fetch_add(1, Ordering::Release);
+    }
+}
+thread_local! {
+    static EXITED: std::cell::Cell<Option<Exited>> = const { std::cell::Cell::new(None) };
 }
 impl Fixture {
     pub(crate) fn new() -> Self {
@@ -102,6 +118,7 @@ impl Fixture {
                 ..State::default()
             })),
             transactions: Arc::new(Transactions::new()),
+            threads: Arc::default(),
         }
     }
     pub(crate) fn reserve_for_tests(&self, pairs: usize) {
@@ -111,6 +128,26 @@ impl Fixture {
     }
     pub(crate) fn exhaust(&self) {
         while self.transactions.reserve_pair().is_some() {}
+    }
+    /// IDs the pool can issue now.
+    pub(crate) fn free_transactions(&self) -> usize {
+        self.transactions.free()
+    }
+    /// Counts the current thread as running until it exits. Every job thread
+    /// counts itself; a rig counts the other threads it waits on.
+    pub(crate) fn count_thread(&self) {
+        self.threads.started.fetch_add(1, Ordering::AcqRel);
+        EXITED.set(Some(Exited(self.threads.clone())));
+    }
+    /// Counted threads that have exited. The count can lead a thread's
+    /// finished state by its last instructions.
+    pub(crate) fn exited_threads(&self) -> usize {
+        self.threads.exited.load(Ordering::Acquire)
+    }
+    /// Counted threads that have started and not exited.
+    pub(crate) fn running_threads(&self) -> usize {
+        let exited = self.exited_threads();
+        self.threads.started.load(Ordering::Acquire) - exited
     }
     pub(crate) fn read(
         &self,
@@ -130,6 +167,7 @@ impl Fixture {
         let fixture = self.clone();
         Worker::new(
             move |job| {
+                fixture.count_thread();
                 let Some(admission) = authorize() else {
                     return Ok(None);
                 };

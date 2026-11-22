@@ -860,6 +860,10 @@ impl Rig {
             mailbox,
             runtime.clone(),
             metadata.clone(),
+            {
+                let port = port.clone();
+                Arc::new(move || port.count_thread())
+            },
         );
         Self {
             #[cfg(feature = "service-fan-mutation-v2")]
@@ -8802,17 +8806,94 @@ async fn tfc_v1_unknown_source_recovers_to_battery_in_the_same_event_epoch() {
     assert_eq!(r.port.state.lock().unwrap().temporary_raw, 0);
     r.stop().await;
 }
+/// A rig whose jobs all run on paused time (see `Fixture::worker`): with a
+/// latency set, each recipe takes its budget from its request's arrival and
+/// spends it only through its own waits.
+#[cfg(feature = "service-temporary-charge-v1")]
+fn paused_rig(files: MemoryFiles) -> Rig {
+    let r = Rig::new(files);
+    r.port.state.lock().unwrap().latency = Some(Duration::ZERO);
+    r
+}
+/// Runs `work` with the test clock paused, and never moves it while a job or
+/// status-observer thread runs, however slowly the host runs it. On the real
+/// clock a loaded host could expire a temporary-charge job after its SET,
+/// which leaves the row fenced, as it must after possible submission.
+///
+/// The Service polls those threads every 5 ms. A thread is counted as exited
+/// a few instructions before the Service sees it finished, so each exit buys
+/// up to `PER_EXIT` such polls, taken while no counted thread runs. The clock
+/// therefore moves at most 5 ms × (`PER_EXIT` × exits) however long the work
+/// takes, plus one poll per real second in which nothing else moved it, which
+/// only keeps a descheduled thread from hanging the test. The arrival this sets
+/// is the budget start for a recipe that serves no request, such as a source
+/// cancellation; a request sets its own.
+#[cfg(feature = "service-temporary-charge-v1")]
+async fn frozen<T>(port: &Fixture, work: impl std::future::Future<Output = T>) -> T {
+    const PER_EXIT: u32 = 4;
+    const POLL: Duration = Duration::from_millis(5);
+    tokio::time::pause();
+    port.state.lock().unwrap().arrival = Some(tokio::time::Instant::now());
+    let finished = std::cell::Cell::new(false);
+    let work = async {
+        let out = work.await;
+        finished.set(true);
+        out
+    };
+    let clock = async {
+        let started = std::time::Instant::now();
+        let mut moved = started;
+        let (mut seen, mut allowance) = (port.exited_threads(), 0);
+        while !finished.get() {
+            assert!(
+                started.elapsed() < Duration::from_secs(120),
+                "frozen work waited on a timer no counted thread advances"
+            );
+            let exited = port.exited_threads();
+            if exited != seen {
+                (seen, allowance) = (exited, PER_EXIT);
+            }
+            let idle = port.running_threads() == 0;
+            if idle && (allowance > 0 || moved.elapsed() > Duration::from_secs(1)) {
+                allowance = allowance.saturating_sub(1);
+                moved = std::time::Instant::now();
+                tokio::time::advance(POLL).await;
+                // Let the Service observe this poll before the next one.
+                for _ in 0..64 {
+                    tokio::task::yield_now().await;
+                }
+            } else {
+                tokio::task::yield_now().await;
+            }
+        }
+    };
+    let (out, ()) = tokio::join!(work, clock);
+    tokio::time::resume();
+    out
+}
+/// The IDs and cancellation IDs of the last temporary-charge row for `enabled`.
+#[cfg(feature = "service-temporary-charge-v1")]
+fn temporary_charge_ids(files: &MemoryFiles, enabled: bool) -> (Value, Value) {
+    let journal = files.read("thermal-mutation.journal").unwrap().unwrap();
+    let row = journal
+        .split(|b| *b == b'\n')
+        .filter(|row| !row.is_empty())
+        .map(|row| serde_json::from_slice::<Value>(row).unwrap())
+        .rfind(|row| row["tfc"]["requested"]["enabled"] == enabled)
+        .unwrap();
+    (row["tfc"]["ids"].clone(), row["tfc"]["cancel_ids"].clone())
+}
+// The journal segment, not the transaction pool, is near capacity. Its rows
+// carry decimal transaction IDs, so the sizes measured on the probes hold only
+// while the final rig issues the same IDs; the test checks that rather than
+// assume it.
 #[cfg(feature = "service-temporary-charge-v1")]
 #[tokio::test]
 async fn tfc_v1_near_capacity_performance_refuses_before_spending_reserved_source_cancel() {
-    let probe = Rig::new(MemoryFiles::default());
+    let probe = paused_rig(MemoryFiles::default());
     probe.get().await;
-    assert_eq!(
-        probe
-            .request(battery_request(800, "setFullChargeOverride", json!(true)))
-            .await["result"]["status"],
-        1
-    );
+    let enabled = probe.request(battery_request(800, "setFullChargeOverride", json!(true)));
+    assert_eq!(frozen(&probe.port, enabled).await["result"]["status"], 1);
     let enable = probe
         .files
         .read("thermal-mutation.journal")
@@ -8820,10 +8901,11 @@ async fn tfc_v1_near_capacity_performance_refuses_before_spending_reserved_sourc
         .unwrap()
         .len();
     let cancellation = probe.files.last_reservation.load(Ordering::Acquire) - (enable + 1);
+    let probed = temporary_charge_ids(&probe.files, true);
     probe.stop().await;
-    let performance = Rig::new(MemoryFiles::default());
+    let performance = paused_rig(MemoryFiles::default());
     performance.get().await;
-    performance.set(1, value(1, 1)).await;
+    frozen(&performance.port, performance.set(1, value(1, 1))).await;
     let performance_budget = performance.files.last_reservation.load(Ordering::Acquire);
     assert!(performance_budget > 0);
     performance.stop().await;
@@ -8850,14 +8932,21 @@ async fn tfc_v1_near_capacity_performance_refuses_before_spending_reserved_sourc
         .lock()
         .unwrap()
         .insert("thermal-mutation.journal".into(), journal);
-    let r = Rig::new(files);
+    let r = paused_rig(files);
     r.get().await;
-    let response = r
-        .request(battery_request(801, "setFullChargeOverride", json!(true)))
-        .await;
+    let response = r.request(battery_request(801, "setFullChargeOverride", json!(true)));
+    let response = frozen(&r.port, response).await;
     assert_eq!(response["result"]["status"], 1, "{response}");
-    let response = r.set(2, value(1, 1)).await;
+    let enabled = temporary_charge_ids(&r.files, true);
+    assert_eq!(enabled, probed);
+    let response = frozen(&r.port, r.set(2, value(1, 1))).await;
     assert_ne!(response["result"]["status"], 1, "{response}");
+    // A repeated refusal answers the same commands again, which frees the
+    // first one's IDs, so it keeps no further IDs out of the pool.
+    let free = r.port.free_transactions();
+    let response = frozen(&r.port, r.set(3, value(1, 1))).await;
+    assert_ne!(response["result"]["status"], 1, "{response}");
+    assert_eq!(r.port.free_transactions(), free);
     assert_eq!(r.port.state.lock().unwrap().writes, 1);
     r.port.state.lock().unwrap().actual = 0;
     r.metadata.store(1, Ordering::Release);
@@ -8865,9 +8954,12 @@ async fn tfc_v1_near_capacity_performance_refuses_before_spending_reserved_sourc
         windows_sys::Win32::System::Services::SERVICE_CONTROL_POWEREVENT,
         10,
     );
-    r.source.lock().await.process_power_source().await.unwrap();
+    let cancel = async { r.source.lock().await.process_power_source().await };
+    frozen(&r.port, cancel).await.unwrap();
     assert_eq!(r.port.state.lock().unwrap().writes, 2);
     assert_eq!(r.port.state.lock().unwrap().temporary_raw, 0);
+    // The cancellation spent exactly the IDs the enable reserved for it.
+    assert_eq!(temporary_charge_ids(&r.files, false).0, enabled.1);
     assert!(!r.storage.pending());
     r.stop().await;
 }

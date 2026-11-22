@@ -983,27 +983,32 @@ pub(super) fn injected_mutation_source(
     mailbox: super::mailbox_read::MailboxSource,
     runtime: super::thermal_mutation::Runtime,
     metadata: Arc<std::sync::atomic::AtomicU8>,
+    // Runs first on each status-observer thread.
+    observer: Arc<dyn Fn() + Send + Sync>,
 ) -> Box<dyn StatusSource> {
     Box::new(GuardedStatus {
         origin,
         mailbox,
         mutation: Some(runtime),
-        inner: ObservedStatus::new(move |_| Evidence {
-            device: if metadata.load(std::sync::atomic::Ordering::Acquire) == 3 {
-                DeviceMetadata::Unavailable
-            } else {
-                DeviceMetadata::MatchedHost {
-                    model: "Razer Blade 16 (2025) RZ09-0581".into(),
-                    hid: HidMetadata::Candidate,
-                }
-            },
-            power: match metadata.load(std::sync::atomic::Ordering::Acquire) {
-                1 => Power::Battery,
-                4 => Power::Unknown,
-                _ => Power::ExternalUnknown,
-            },
-            controllers: vec![],
-            controller_warning: None,
+        inner: ObservedStatus::new(move |_| {
+            observer();
+            Evidence {
+                device: if metadata.load(std::sync::atomic::Ordering::Acquire) == 3 {
+                    DeviceMetadata::Unavailable
+                } else {
+                    DeviceMetadata::MatchedHost {
+                        model: "Razer Blade 16 (2025) RZ09-0581".into(),
+                        hid: HidMetadata::Candidate,
+                    }
+                },
+                power: match metadata.load(std::sync::atomic::Ordering::Acquire) {
+                    1 => Power::Battery,
+                    4 => Power::Unknown,
+                    _ => Power::ExternalUnknown,
+                },
+                controllers: vec![],
+                controller_warning: None,
+            }
         }),
     })
 }
