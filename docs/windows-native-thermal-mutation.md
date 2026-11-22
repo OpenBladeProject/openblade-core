@@ -161,12 +161,24 @@ callback is its only `PowerChanged` publisher
 HyperBoost, drift validation, convergence, fan-curve maintenance, fan
 recovery, the cooling pad and fan-stop entry. Native's fence for that source
 change is `PBT_APMPOWERSTATUSCHANGE`, which still advances the epoch, so the
-setting read would only fence a second time. That duplicate abandoned work
-captured between the two notices; a temporary-full-charge cancel lost that way
-on battery was never retried. That Windows sends `PBT_APMPOWERSTATUSCHANGE`
+setting read would only fence a second time and abandon work captured
+between the two notices. That Windows sends `PBT_APMPOWERSTATUSCHANGE`
 for every AC/DC switch is attended-only. Suspend, resume, the other power
 events and session changes still fence. The read still updates the display
 state and can still signal `DisplayOn`.
+
+A fence never loses the temporary-full-charge cancel on Battery.
+`battery_source_event` peeks at the owner, then runs one capture and one
+authorization before it claims anything. A proof from a later epoch means a
+power or session notice fenced the tick after it read its epoch, so the event
+claims and submits nothing. The newer epoch makes the next tick read the source
+again and retry. Only an SCM notice advances the epoch, so each retry needs
+another notice and the retries cannot loop.
+Managed also defers a step that was proven never submitted and retries it on a
+later periodic observation while the power source is unchanged
+(`ContinueDeferredTransitionAsync`, `ServiceControlRuntime.cs:17668-17730`).
+A refused authorization still claims the obligation once and pauses it. A
+claimed or possibly submitted cancel is never retried.
 `classify_console_display_transition` ports `ClassifyConsoleDisplayTransition`
 exactly. The display state lives under the lifecycle lock, starts unknown and
 changes only on a valid read, as managed's `consoleDisplayState` does. AC/DC

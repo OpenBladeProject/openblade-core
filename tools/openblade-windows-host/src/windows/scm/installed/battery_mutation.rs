@@ -43,6 +43,22 @@ impl BatteryObservation {
     }
 }
 
+/// How one automatic source cancel was admitted (`battery_source_event`).
+#[cfg(feature = "service-temporary-charge-v1")]
+enum SourceCancel {
+    /// The proof is at this tick's epoch: claim and attempt the cancel.
+    Admitted {
+        record: openblade_domain::temporary_charge_history::TemporaryChargeRecord,
+        storage: Arc<Storage>,
+        fresh: Arc<dyn Fresh>,
+        proof: ReadAdmission,
+    },
+    /// No cancel can be attempted: claim once and pause.
+    Refused,
+    /// A later notice fenced the tick: claim nothing.
+    Superseded,
+}
+
 pub(super) struct BatteryPermit {
     tfc: Mutex<Option<openblade_domain::temporary_charge_history::TemporaryChargeRecord>>,
     reserved_ids: Option<[u8; 8]>,
@@ -615,12 +631,33 @@ impl Runtime {
         let unresolved = self.temporary_pending.borrow().clone();
         // Do not consume either reference or fall back to A after a possibly
         // submitted B. Its actual worker/storage fence remains authoritative.
+        // Peek at the owner: nothing is claimed before the admission below.
         let original = unresolved
             .clone()
-            .or_else(|| self.temporary_owner.borrow_mut().take());
+            .or_else(|| self.temporary_owner.borrow().clone());
         let Some(original) = original else {
             return Ok(None);
         };
+        let admission = if unresolved.is_none()
+            && !original.storage.pending()
+            && original.confirmed.load(Ordering::Acquire)
+        {
+            self.admit_source_cancel(&original, &reader.custody(), epoch)?
+        } else {
+            SourceCancel::Refused
+        };
+        if matches!(admission, SourceCancel::Superseded) {
+            // A notice fenced this tick after it read its epoch, so this
+            // Battery evidence is not current. Claim nothing: the newer epoch
+            // makes the next tick read the source again and retry the cancel.
+            return Ok(None);
+        }
+        if unresolved.is_none() {
+            // The gate has been held and the Reader drained since the peek, so
+            // the capture's own reconcile saw the same owner.
+            let claimed = self.temporary_owner.borrow_mut().take();
+            debug_assert!(claimed.is_some_and(|c| Arc::ptr_eq(&c, &original)));
+        }
         // Genuine current Battery evidence always ends desired intent, even if
         // configuration admission fails. The obligation is claimed once.
         original.storage.clear_battery_temporary();
@@ -631,82 +668,61 @@ impl Runtime {
         }
         let mut message = "Temporary charge intent cleared on Battery; cancellation is paused because original authority or independent confirmation is unavailable.".to_owned();
         let mut attempted = None;
-        if unresolved.is_none()
-            && !original.storage.pending()
-            && original.confirmed.load(Ordering::Acquire)
+        if let SourceCancel::Admitted {
+            record,
+            storage,
+            fresh,
+            proof,
+        } = admission
         {
-            let record = original
-                .tfc
-                .lock()
-                .map_err(|_| io::ErrorKind::Other)?
-                .clone();
-            if let Some(record) = record.filter(|r| r.desired.temporary) {
-                let captured = self.capture(&original.sid, original.session, reader.custody());
-                match captured {
-                    Err(e) if is_fatal_admission(&e) => return Err(e),
-                    Ok((storage, fresh)) => {
-                        fresh.verify_health()?;
-                        if let Some(proof) = fresh.authorize().filter(|p| {
-                            p.lifecycle == epoch && p.generation == original.proof.generation
-                        }) && Arc::ptr_eq(&storage, &original.storage)
-                            && Arc::ptr_eq(&original.custody, &reader.custody())
-                            && original.authentication.is_some()
-                            && fresh.authentication() == original.authentication
-                        {
-                            let permit = Arc::new(BatteryPermit {
-                                tfc: Mutex::new(None),
-                                reserved_ids: record.cancel_ids,
-                                origin: Some(openblade_domain::temporary_charge_history::Origin {
-                                    request: original.request.clone(),
-                                    intent: record.hash()?,
-                                }),
-                                authentication: original.authentication,
-                                custody: original.custody.clone(),
-                                sid: original.sid.clone(),
-                                storage,
-                                fresh,
-                                request: source_request_id(&original.request, epoch),
-                                requested: Request::SetFullChargeOverride { enabled: false },
-                                owner: original.owner.clone(),
-                                caller_pid: original.caller_pid,
-                                session: original.session,
-                                proof,
-                                record: Mutex::new(None),
-                                observation: self.battery_observation.clone(),
-                                prepared: AtomicBool::new(false),
-                                confirmed: AtomicBool::new(false),
-                                joined: AtomicBool::new(false),
-                                registered: AtomicBool::new(false),
-                                abandoned: AtomicBool::new(false),
-                                positive_at: Mutex::new(None),
-                                source: self.battery_source.clone(),
-                                cause: Mutex::new(message.clone()),
-                                fatal: self.fatal.clone(),
-                            });
-                            self.retain_battery_view(&reader, permit.clone());
-                            let awaiting = BatteryAwaitGuard(permit.clone());
-                            let result = reader
-                                .mutate(
-                                    permit.clone(),
-                                    Instant::now() + std::time::Duration::from_secs(4),
-                                )
-                                .await;
-                            drop(awaiting);
-                            attempted = Some(permit.clone());
-                            verify_retained_failure(&self.fatal)?;
-                            if let Err(e) = result
-                                && is_fatal_admission(&e)
-                            {
-                                return Err(e);
-                            }
-                            if permit.confirmed.load(Ordering::Acquire) && !permit.storage.pending()
-                            {
-                                message = "Temporary full charge canceled on Battery by independent readback; configured charge policy is retained.".into();
-                            }
-                        }
-                    }
-                    _ => {}
-                }
+            let permit = Arc::new(BatteryPermit {
+                tfc: Mutex::new(None),
+                reserved_ids: record.cancel_ids,
+                origin: Some(openblade_domain::temporary_charge_history::Origin {
+                    request: original.request.clone(),
+                    intent: record.hash()?,
+                }),
+                authentication: original.authentication,
+                custody: original.custody.clone(),
+                sid: original.sid.clone(),
+                storage,
+                fresh,
+                request: source_request_id(&original.request, epoch),
+                requested: Request::SetFullChargeOverride { enabled: false },
+                owner: original.owner.clone(),
+                caller_pid: original.caller_pid,
+                session: original.session,
+                proof,
+                record: Mutex::new(None),
+                observation: self.battery_observation.clone(),
+                prepared: AtomicBool::new(false),
+                confirmed: AtomicBool::new(false),
+                joined: AtomicBool::new(false),
+                registered: AtomicBool::new(false),
+                abandoned: AtomicBool::new(false),
+                positive_at: Mutex::new(None),
+                source: self.battery_source.clone(),
+                cause: Mutex::new(message.clone()),
+                fatal: self.fatal.clone(),
+            });
+            self.retain_battery_view(&reader, permit.clone());
+            let awaiting = BatteryAwaitGuard(permit.clone());
+            let result = reader
+                .mutate(
+                    permit.clone(),
+                    Instant::now() + std::time::Duration::from_secs(4),
+                )
+                .await;
+            drop(awaiting);
+            attempted = Some(permit.clone());
+            verify_retained_failure(&self.fatal)?;
+            if let Err(e) = result
+                && is_fatal_admission(&e)
+            {
+                return Err(e);
+            }
+            if permit.confirmed.load(Ordering::Acquire) && !permit.storage.pending() {
+                message = "Temporary full charge canceled on Battery by independent readback; configured charge policy is retained.".into();
             }
         }
         if original.storage.pending() {
@@ -741,6 +757,53 @@ impl Runtime {
             message,
             sid: original.sid.clone(),
         }))
+    }
+    /// The single capture and authorization of an automatic source cancel,
+    /// taken before the caller claims the obligation. It claims nothing: on
+    /// `Superseded` the caller returns, and the owner stays for the next tick.
+    #[cfg(feature = "service-temporary-charge-v1")]
+    fn admit_source_cancel(
+        &self,
+        original: &BatteryPermit,
+        custody: &Arc<dyn ReadCustody>,
+        epoch: u64,
+    ) -> io::Result<SourceCancel> {
+        let record = original
+            .tfc
+            .lock()
+            .map_err(|_| io::ErrorKind::Other)?
+            .clone();
+        let Some(record) = record.filter(|r| r.desired.temporary) else {
+            return Ok(SourceCancel::Refused);
+        };
+        let (storage, fresh) = match self.capture(&original.sid, original.session, custody.clone())
+        {
+            Err(e) if is_fatal_admission(&e) => return Err(e),
+            Err(_) => return Ok(SourceCancel::Refused),
+            Ok(captured) => captured,
+        };
+        fresh.verify_health()?;
+        let Some(proof) = fresh.authorize() else {
+            return Ok(SourceCancel::Refused);
+        };
+        // The epoch only advances, so a different one is a later notice.
+        if proof.lifecycle != epoch {
+            return Ok(SourceCancel::Superseded);
+        }
+        if proof.generation != original.proof.generation
+            || !Arc::ptr_eq(&storage, &original.storage)
+            || !Arc::ptr_eq(&original.custody, custody)
+            || original.authentication.is_none()
+            || fresh.authentication() != original.authentication
+        {
+            return Ok(SourceCancel::Refused);
+        }
+        Ok(SourceCancel::Admitted {
+            record,
+            storage,
+            fresh,
+            proof,
+        })
     }
 
     pub(in super::super) async fn apply_battery(

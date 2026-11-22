@@ -10,6 +10,10 @@ fn source_battery(r: &Rig) {
         10,
     );
 }
+/// One origin tick, as the serving loop's interval runs it.
+async fn origin_tick(r: &Rig) {
+    r.source.lock().await.process_power_source().await.unwrap();
+}
 fn get_request() -> Value {
     json!({"operation":"getStatus","version":85,"requestId":"bbbbbbbb-cccc-dddd-eeee-000000000901"})
 }
@@ -747,5 +751,184 @@ async fn tfc_release_a_power_setting_read_during_the_battery_event_does_not_paus
             .contains("canceled on Battery by independent readback"),
         "{view}"
     );
+    r.stop().await;
+}
+
+// A fencing notice delivered inside the automatic cancel's one authorization:
+// after the tick read its epoch, before the claim. The fixture's seam is
+// one-shot, so arm it before each racing tick.
+type Notice = (
+    u32,
+    u32,
+    Option<openblade_domain::power_setting::PowerSetting>,
+);
+const SECOND_UNPLUG: Notice = (
+    windows_sys::Win32::System::Services::SERVICE_CONTROL_POWEREVENT,
+    10, // PBT_APMPOWERSTATUSCHANGE
+    None,
+);
+const RESUME: Notice = (
+    windows_sys::Win32::System::Services::SERVICE_CONTROL_POWEREVENT,
+    openblade_domain::power_setting::PBT_APMRESUMEAUTOMATIC,
+    None,
+);
+const SESSION: Notice = (
+    windows_sys::Win32::System::Services::SERVICE_CONTROL_SESSIONCHANGE,
+    8, // WTS_SESSION_UNLOCK
+    None,
+);
+async fn racing_tick(r: &Rig, notice: Notice) {
+    *r.custody.notice_during_authorize.lock().unwrap() = Some(notice);
+    let epoch = r.custody.lifecycle.active().unwrap();
+    origin_tick(r).await;
+    assert!(
+        r.custody.notice_during_authorize.lock().unwrap().is_none(),
+        "the notice was delivered inside the authorization"
+    );
+    assert_eq!(r.custody.lifecycle.active(), Some(epoch + 1));
+}
+fn writes(r: &Rig) -> usize {
+    r.port.state.lock().unwrap().writes
+}
+async fn assert_superseded_cancel_is_retained(r: &Rig, before: usize) {
+    // The owner stays for the next tick, which is what writes the cancel.
+    assert_eq!(writes(r), before, "a fenced attempt submits nothing");
+    assert!(!r.runtime.release_only_for_tests(), "nothing is claimed");
+}
+async fn assert_canceled_once(r: &Rig, before: usize) {
+    for _ in 0..4 {
+        origin_tick(r).await;
+    }
+    assert_eq!(writes(r) - before, 1);
+    assert!(!r.storage.pending());
+    let view = immediate_battery_view(r, Some(SID)).await;
+    assert_canceled_policy(&view);
+    assert!(
+        view["message"]
+            .as_str()
+            .unwrap()
+            .contains("canceled on Battery by independent readback"),
+        "{view}"
+    );
+}
+async fn fenced_cancel_is_written_on_the_next_tick(notice: Notice) {
+    let r = Rig::new(MemoryFiles::default());
+    policy_and_enable(&r, 980).await;
+    let before = writes(&r);
+    source_battery(&r);
+    racing_tick(&r, notice).await;
+    assert_superseded_cancel_is_retained(&r, before).await;
+    origin_tick(&r).await;
+    assert_eq!(writes(&r) - before, 1, "the next tick writes the cancel");
+    assert_canceled_once(&r, before).await;
+    r.stop().await;
+}
+#[tokio::test]
+async fn tfc_release_a_second_unplug_during_the_cancel_authorization_defers_it_to_the_next_tick() {
+    fenced_cancel_is_written_on_the_next_tick(SECOND_UNPLUG).await;
+}
+#[tokio::test]
+async fn tfc_release_a_resume_during_the_cancel_authorization_defers_it_to_the_next_tick() {
+    fenced_cancel_is_written_on_the_next_tick(RESUME).await;
+}
+#[tokio::test]
+async fn tfc_release_a_session_notice_during_the_cancel_authorization_defers_it_to_the_next_tick() {
+    fenced_cancel_is_written_on_the_next_tick(SESSION).await;
+}
+#[tokio::test]
+async fn tfc_release_a_notice_on_every_tick_defers_the_cancel_until_a_quiet_tick_writes_it_once() {
+    // Each deferral needs a strictly newer epoch, and only an SCM notice
+    // advances one, so retries are bounded by notices: there is no loop.
+    let r = Rig::new(MemoryFiles::default());
+    policy_and_enable(&r, 984).await;
+    let before = writes(&r);
+    source_battery(&r);
+    for notice in [SECOND_UNPLUG, SESSION, RESUME, SECOND_UNPLUG, SESSION] {
+        racing_tick(&r, notice).await;
+        assert_superseded_cancel_is_retained(&r, before).await;
+    }
+    origin_tick(&r).await;
+    assert_eq!(writes(&r) - before, 1);
+    assert_canceled_once(&r, before).await;
+    r.stop().await;
+}
+#[tokio::test]
+async fn tfc_release_a_refused_authorization_during_a_notice_still_pauses_once() {
+    // A refusal is not a newer proof: it claims once and pauses, as before.
+    let r = Rig::new(MemoryFiles::default());
+    policy_and_enable(&r, 986).await;
+    let before = writes(&r);
+    // Hold the release so the claimed, abandoned owner stays observable.
+    r.files.release_fault.store(1, Ordering::Release);
+    r.custody.fresh_refuse.store(true, Ordering::Release);
+    source_battery(&r);
+    racing_tick(&r, SECOND_UNPLUG).await;
+    assert!(r.runtime.release_only_for_tests(), "claimed by the refusal");
+    let view = immediate_battery_view(&r, Some(SID)).await;
+    assert_eq!(
+        view["desiredState"]["battery"]["temporaryFullCharge"],
+        false
+    );
+    assert_eq!(
+        view["confirmedState"]["battery"]["temporaryFullCharge"],
+        true
+    );
+    assert!(
+        view["message"]
+            .as_str()
+            .unwrap()
+            .contains("cancellation is paused"),
+        "{view}"
+    );
+    r.custody.fresh_refuse.store(false, Ordering::Release);
+    r.files.release_fault.store(0, Ordering::Release);
+    for _ in 0..3 {
+        source_battery(&r);
+        origin_tick(&r).await;
+    }
+    assert_eq!(writes(&r), before, "a claimed obligation is never retried");
+    assert!(!r.runtime.release_only_for_tests(), "its release settled");
+    r.stop().await;
+}
+#[tokio::test]
+async fn tfc_release_a_refused_capture_after_a_session_switch_pauses_once() {
+    // Nor is a refused capture: another session now holds the console.
+    let r = Rig::new(MemoryFiles::default());
+    policy_and_enable(&r, 990).await;
+    let before = writes(&r);
+    r.files.release_fault.store(1, Ordering::Release);
+    r.custody.current_session.store(8, Ordering::Release);
+    source_battery(&r);
+    origin_tick(&r).await;
+    assert!(r.runtime.release_only_for_tests(), "claimed by the refusal");
+    r.files.release_fault.store(0, Ordering::Release);
+    r.custody.current_session.store(7, Ordering::Release);
+    for _ in 0..3 {
+        source_battery(&r);
+        origin_tick(&r).await;
+    }
+    assert_eq!(writes(&r), before, "a claimed obligation is never retried");
+    assert!(!r.runtime.release_only_for_tests(), "its release settled");
+    r.stop().await;
+}
+#[tokio::test]
+async fn tfc_release_a_possibly_submitted_cancel_after_a_deferral_is_never_retried() {
+    let r = Rig::new(MemoryFiles::default());
+    policy_and_enable(&r, 988).await;
+    let before = writes(&r);
+    source_battery(&r);
+    racing_tick(&r, SECOND_UNPLUG).await;
+    assert_superseded_cancel_is_retained(&r, before).await;
+    r.port.state.lock().unwrap().temporary_bad_ack = true;
+    origin_tick(&r).await;
+    assert_eq!(writes(&r) - before, 1);
+    assert!(r.storage.pending(), "the setter's result is uncertain");
+    r.port.state.lock().unwrap().temporary_bad_ack = false;
+    for _ in 0..3 {
+        source_battery(&r);
+        origin_tick(&r).await;
+    }
+    assert_eq!(writes(&r) - before, 1, "no setter replay");
+    assert!(r.storage.pending());
     r.stop().await;
 }
