@@ -221,6 +221,25 @@ async fn tfc_release_actual_worker_prepared_race_keeps_origin_until_settlement_a
 async fn tfc_release_outcome_cause_changes_publish_while_release_remains_paused() {
     prepared_race(true).await;
 }
+/// Bounds only waits that explicit sequencing already orders, so it turns a
+/// hang into a failure and never decides the race.
+const HANG_GUARD: Duration = Duration::from_secs(120);
+/// One mutation on the served source, answered as the pipe's `result`.
+/// The pipe's budget is wall clock, and the padded journal costs about a
+/// second of debug-build CPU per request, which a loaded host can stretch past
+/// it. The worker, the origin loop and the outcome are unchanged.
+async fn source_mutation(r: &Rig, request: Value) -> Value {
+    let request =
+        crate::service_status::StatusRequest::decode(&serde_json::to_vec(&request).unwrap())
+            .unwrap();
+    let mutation = r.source.lock().await.mutate(
+        USER,
+        SID.into(),
+        request,
+        tokio::time::Instant::now() + HANG_GUARD,
+    );
+    serde_json::to_value(mutation.await.unwrap().0).unwrap()
+}
 async fn prepared_race(quarantine_after_read_pause: bool) {
     // Measure the unchanged encoded operation sizes so the subsequent ordinary
     // reservation/roll exercises the actual segment boundary without a matrix.
@@ -254,7 +273,9 @@ async fn prepared_race(quarantine_after_read_pause: bool) {
     let r = Rig::new(files);
     let events: Events = Rc::default();
     let controls = Controls::new();
-    let (mut ports, tx) = ports(Fault::None, &events);
+    // Every request goes straight to the source, so the pipe sender only
+    // keeps the serving loop accepting.
+    let (mut ports, _tx) = ports(Fault::None, &events);
     ports.source = r.source.clone();
     let (running, ready) = oneshot::channel();
     let service = lifecycle(&controls, Ok(ports), &events, move || {
@@ -263,11 +284,11 @@ async fn prepared_race(quarantine_after_read_pause: bool) {
     let exercise = async {
         ready.await.unwrap();
         assert_eq!(
-            outer_request(
-                &tx,
+            source_mutation(
+                &r,
                 battery_request(922, "setFullChargeOverride", json!(true))
             )
-            .await["result"]["status"],
+            .await["status"],
             1
         );
         let original = r.storage.temporary_capacity_for_tests();
@@ -282,19 +303,11 @@ async fn prepared_race(quarantine_after_read_pause: bool) {
             .battery_append_hook_for_tests(Arc::new(move |stage| match stage {
                 "before-prepared" => {
                     at.notify_one();
-                    allow
-                        .lock()
-                        .unwrap()
-                        .recv_timeout(Duration::from_secs(3))
-                        .unwrap();
+                    allow.lock().unwrap().recv_timeout(HANG_GUARD).unwrap();
                 }
                 "prepared" => {
                     prepared_tx.send(()).unwrap();
-                    finish
-                        .lock()
-                        .unwrap()
-                        .recv_timeout(Duration::from_secs(3))
-                        .unwrap();
+                    finish.lock().unwrap().recv_timeout(HANG_GUARD).unwrap();
                 }
                 _ => panic!("unexpected worker boundary"),
             }));
@@ -304,16 +317,19 @@ async fn prepared_race(quarantine_after_read_pause: bool) {
                 return;
             }
             allow_prepared_tx.send(()).unwrap();
-            prepared_rx.recv_timeout(Duration::from_secs(3)).unwrap();
+            prepared_rx.recv_timeout(HANG_GUARD).unwrap();
         }));
         r.port.state.lock().unwrap().temporary_raw = 0;
-        let mut policy = Box::pin(outer_request(
-            &tx,
+        let mut policy = Box::pin(source_mutation(
+            &r,
             battery_request(923, "setBatteryPolicy", json!({"chargeLimitPercent":70})),
         ));
         tokio::select! {_=&mut policy=>panic!("policy unexpectedly settled"),_=at_prepare.notified()=>{}}
         // The origin tick sees independent false before the worker can append.
         // Its release hook then commits actual Prepared before the release lock.
+        // Run that tick now rather than wait for the loop's 500 ms interval; an
+        // interval tick that wins the race runs the same once-only hook.
+        origin_tick(&r).await;
         wait_release_view(&r, true).await;
         let busy = immediate_battery_view(&r, Some(SID)).await;
         assert!(
@@ -330,7 +346,7 @@ async fn prepared_race(quarantine_after_read_pause: bool) {
         finish_tx.send(()).unwrap();
         let response = policy.await;
         assert_eq!(
-            response["result"]["status"], 1,
+            response["status"], 1,
             "confirmed settled operation must survive bookkeeping deferral: {response}"
         );
         assert_eq!(r.storage.progress(), Some(62));
@@ -367,7 +383,7 @@ async fn prepared_race(quarantine_after_read_pause: bool) {
             // prove cause coalescing across three continuously paused states.
             // The separate failed-settlement case proves real worker quarantine.
             r.storage.quarantine_settlement().unwrap();
-            r.source.lock().await.process_power_source().await.unwrap();
+            origin_tick(&r).await;
             let changed = immediate_battery_view(&r, Some(SID)).await;
             let reason = r.storage.pending_reason().unwrap();
             assert!(changed["message"].as_str().unwrap().contains(reason));
@@ -395,6 +411,7 @@ async fn prepared_race(quarantine_after_read_pause: bool) {
         assert_eq!(r.storage.temporary_capacity_for_tests(), original);
         assert_eq!(r.port.state.lock().unwrap().writes, 2);
         r.files.release_fault.store(0, Ordering::Release);
+        origin_tick(&r).await;
         wait_release_view(&r, false).await;
         assert_eq!(r.storage.temporary_capacity_for_tests(), (0, None));
         assert!(!r.runtime.release_only_for_tests());
@@ -403,24 +420,22 @@ async fn prepared_race(quarantine_after_read_pause: bool) {
             2,
             "tick performs no hardware replay"
         );
-        let performance = outer_request(&tx, performance_request(924)).await;
-        assert_eq!(performance["result"]["status"], 1, "{performance}");
-        let cancel = outer_request(
-            &tx,
+        let performance = source_mutation(&r, performance_request(924)).await;
+        assert_eq!(performance["status"], 1, "{performance}");
+        let cancel = source_mutation(
+            &r,
             battery_request(925, "setFullChargeOverride", json!(false)),
         )
         .await;
-        assert_eq!(cancel["result"]["status"], 1, "{cancel}");
+        assert_eq!(cancel["status"], 1, "{cancel}");
         assert_eq!(fan_rows(&r).last().unwrap()["progress"], 73);
         assert_eq!(fan_rows(&r).last().unwrap()["tfc"]["origin"], Value::Null);
         assert!(r.files.read("retained-segment").unwrap().is_some());
         controls.handle(windows_sys::Win32::System::Services::SERVICE_CONTROL_STOP);
     };
-    let (result, ()) = tokio::time::timeout(Duration::from_secs(10), async {
-        tokio::join!(service, exercise)
-    })
-    .await
-    .unwrap();
+    let (result, ()) = tokio::time::timeout(HANG_GUARD, async { tokio::join!(service, exercise) })
+        .await
+        .unwrap();
     result.unwrap();
 }
 
