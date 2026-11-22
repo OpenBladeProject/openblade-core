@@ -2216,7 +2216,7 @@ OpenBlade did not retry any stop request.</value>
     <value>The supported Razer keyboard driver is unavailable.</value>
   </data>
   <data name="SnapTap_Status_RecoveryRequired" xml:space="preserve">
-    <value>Restart Windows before enabling SnapTap again.</value>
+    <value>Turn SnapTap off and on to retry. If this keeps appearing, restart Windows.</value>
   </data>
   <data name="SnapTap_DriverLink.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Razer keyboard driver setup guide</value>
@@ -2804,7 +2804,7 @@ OpenBlade did not retry any stop request.</value>
     <value>Razer driver</value>
   </data>
   <data name="KeyboardBackend_Recovery" xml:space="preserve">
-    <value>Restart Windows before using this input method again.</value>
+    <value>Switch input methods to retry. If this keeps appearing, restart Windows.</value>
   </data>
   <data name="KeyboardBackend_SnapTapSelector.AccessibleName" xml:space="preserve">
     <value>SnapTap input</value>

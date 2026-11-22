@@ -8,7 +8,8 @@ internal enum InputHelperBackend { WindowsHook, RazerDriver }
 internal enum InputHelperFeatures { None = 0, SnapTap = 1, FunctionRow = 2 }
 
 internal readonly record struct InputHelperArguments(
-    InputHelperMode Mode, int ParentProcessId, InputHelperBackend Backend, InputHelperFeatures Features);
+    InputHelperMode Mode, int ParentProcessId, InputHelperBackend Backend, InputHelperFeatures Features,
+    bool RetryRequested = false);
 
 // Source-linked into the deployment client: process-family admission must use
 // the same bounded argument grammar as the helper that will consume it.
@@ -16,6 +17,9 @@ internal static class InputHelperCommandLine
 {
     internal const string InputMode = "--snap-tap-input";
     internal const string WorkerMode = "--snap-tap-driver-worker";
+    // Marks a Razer-driver helper launched by an explicit preference change after a
+    // latched outcome. Only that launch may run the same-boot journal recovery checks.
+    internal const string RetryArgument = "explicit-retry";
 
     internal static bool IsRequested(IReadOnlyList<string> args, int startIndex = 0) =>
         startIndex >= 0 && startIndex < args.Count && args[startIndex] is InputMode or WorkerMode;
@@ -40,7 +44,7 @@ internal static class InputHelperCommandLine
         parsed = default;
         if (startIndex < 0 || startIndex > args.Count) { return false; }
         int count = args.Count - startIndex;
-        if (count is < 2 or > 4 || !IsRequested(args, startIndex)
+        if (count is < 2 or > 5 || !IsRequested(args, startIndex)
             || !int.TryParse(args[startIndex + 1], NumberStyles.None, CultureInfo.InvariantCulture, out int parent)
             || parent <= 0)
         {
@@ -49,6 +53,7 @@ internal static class InputHelperCommandLine
 
         InputHelperFeatures features = InputHelperFeatures.SnapTap;
         InputHelperBackend backend = InputHelperBackend.RazerDriver;
+        bool retry = false;
         bool worker = args[startIndex] == WorkerMode;
         if (worker)
         {
@@ -62,14 +67,19 @@ internal static class InputHelperCommandLine
                 if (args[startIndex + 2] == "windows-hook") { backend = InputHelperBackend.WindowsHook; }
                 else if (args[startIndex + 2] != "razer-driver") { return false; }
             }
-            if (count == 4)
+            if (count >= 4)
             {
                 if (backend != InputHelperBackend.RazerDriver) { return false; }
                 features = ParseFeatures(args[startIndex + 3]);
             }
+            if (count == 5)
+            {
+                if (args[startIndex + 4] != RetryArgument) { return false; }
+                retry = true;
+            }
         }
         if (features == InputHelperFeatures.None) { return false; }
-        parsed = new(worker ? InputHelperMode.DriverWorker : InputHelperMode.Input, parent, backend, features);
+        parsed = new(worker ? InputHelperMode.DriverWorker : InputHelperMode.Input, parent, backend, features, retry);
         return true;
     }
 

@@ -8,6 +8,7 @@
                      VerticalAlignment="Center"
                      Visibility="Collapsed"
                      SizeChanged="OnExpandedSelectorSizeChanged"
+                     PointerPressed="OnExpandedSelectorPointerPressed"
                      SelectionChanged="OnExpandedSelectionChanged" />
         <ComboBox x:Name="CompactSelector"
                   HorizontalAlignment="Right"

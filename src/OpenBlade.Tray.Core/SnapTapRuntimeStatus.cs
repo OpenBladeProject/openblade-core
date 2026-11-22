@@ -199,7 +199,7 @@ public static class SnapTapStatusStore
         && status.UpdatedAt >= DateTimeOffset.UnixEpoch
         && status.UpdatedAt <= DateTimeOffset.UtcNow.AddMinutes(1)
         // Paused may carry its reason: the supervisor requires the driver worker's
-        // ForegroundUnavailable diagnostic before it rearms after a clean focus pause.
+        // pause diagnostic (ForegroundUnavailable or SubscriptionDeferred) before it rearms.
         && (status.Failure is null || (IsTerminalState(status.State) || status.State == SnapTapRuntimeState.Paused)
             && status.Failure.IsValid())
         && (status.DriverModel is null || status.DriverModel.Length <= 96);
