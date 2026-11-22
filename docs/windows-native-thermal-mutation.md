@@ -62,21 +62,29 @@ clock whose frequency does not divide ten million.
 The shipping epoch `Lifecycle` (`origin_lifetime.rs`) holds the gate under the
 lock that guards the epoch. The gate replaced the former `awake` flag and is the
 only low-power state. `ingress` stamps each SCM callback with
-`QueryPerformanceCounter`. It maps PBT_APMSUSPEND to `Signal::Suspend`, and
-PBT_APMRESUMESUSPEND or PBT_APMRESUMEAUTOMATIC to `Signal::Resume`. Every power
-and session notice still advances the epoch, a stale signal included.
-A power-setting supplier calls `record(code, signal, timestamp)`. It passes
-`Signal::DisplayOn` for a decoded display on or dim notice, and no signal for
-display-off or AC/DC, which only fence. The 5 s duplicate-resume window and the
-display recovery in the unwired lifecycle worker (`windows/scm/lifecycle.rs`)
+`QueryPerformanceCounter`. The pure `signal_for` maps a power event's
+PBT_APMSUSPEND to `Signal::Suspend`, and PBT_APMRESUMESUSPEND or
+PBT_APMRESUMEAUTOMATIC to `Signal::Resume`. A session notice never signals,
+whatever its event number. Every power and session notice still advances the
+epoch, a stale signal included. A power-setting supplier calls
+`record(code, signal, timestamp)`. Managed raises DisplayOn only for a console
+display transition from off to on or dimmed (`ClassifyConsoleDisplayTransition`,
+`WindowsServiceLifecycleEventSource.cs:539-547`). B2 must port that classifier
+and pass `Signal::DisplayOn` only for such a transition, so that a dimmed-to-on
+or repeated on notice during a suspend never clears the latch. Display-off,
+dimmed-to-on and AC/DC notices carry no signal and only fence. The 5 s
+duplicate-resume window and the display recovery in the unwired lifecycle worker (`windows/scm/lifecycle.rs`)
 decide dispatch, not gate state. That worker's `Activity` sequences evidence
 only. Before the worker is wired, it must read activity from this gate rather
 than keep its own.
 
 `epoch_for(WriteScope)` is the low-power clause of managed
-`ScopedThermalWriteBlockReason` (`ServiceControlRuntime.cs:15410-15421`). The
-gate refuses `WriteScope::Ordinary` while it is set. `active()` is
-`epoch_for(WriteScope::Ordinary)`. Every capture reads it, as do
+`ScopedThermalWriteBlockReason` (`ServiceControlRuntime.cs:15410-15421`). Only
+that scoped thermal clause is ported. Managed runs other cleanup while the gate
+is set, under its own admission: the fan-stop release
+(`ServiceControlRuntime.FanStop.cs:319-339`) and the keyboard Driver-mode
+release. Neither is a `WriteScope`. The gate refuses `WriteScope::Ordinary`
+while it is set. `active()` is `epoch_for(WriteScope::Ordinary)`. Every capture reads it, as do
 `capture_settle`, mailbox custody and status, so nothing is captured in low
 power. `WindowsGuard::authorize_for` compares the pinned epoch with
 `epoch_for(WriteScope::Ordinary)` before and after its Windows checks, so
@@ -86,8 +94,13 @@ firmware Automatic fan handback. The gate admits it only while the exact suspend
 generation it captured is current (`IsActiveForGeneration`), so the next
 resume, DisplayOn or suspend ends it. Nothing captures that scope yet. Owned
 Stop and shutdown handback stay Ordinary, because managed blocks them in low
-power too. `low_power()` returns the current transition for timers that ask
-outside a write. A `None` result (unreadable or exhausted) means low power.
+power too. D1 decision: `epoch_for(WriteScope::LowPowerFanAutomatic)` also pins
+the epoch, so a later AC or session notice fences the cleanup. Managed admits
+it on the generation and ownership only. D1 must either keep that stricter
+fence or recapture after such a notice, and record which. `low_power()` returns
+the current transition for timers that ask outside a write, and `None`
+(unreadable or exhausted) means low power. Timers that need only the answer
+use `low_power_or_unknown()`, which is true for `None`.
 
 ## Saved intent and the bounded compatible slice
 

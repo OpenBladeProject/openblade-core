@@ -114,32 +114,18 @@ impl Lifecycle {
             .map(|_| ())
             .map_err(|_| io::Error::other("lifecycle state lock poisoned"))
     }
-    /// The SCM control callback: PBT_APMSUSPEND sets the gate and either
-    /// resume clears it, at the callback's QPC time, as managed
-    /// `WindowsServiceLifecycleEventSource.Publish` applies them.
+    /// The SCM control callback: its `signal_for` signal, if any, at the
+    /// callback's QPC time.
     pub(crate) fn ingress(&self, code: u32, event: u32) {
-        use windows_sys::Win32::{
-            System::Services::SERVICE_CONTROL_POWEREVENT,
-            UI::WindowsAndMessaging::{
-                PBT_APMRESUMEAUTOMATIC, PBT_APMRESUMESUSPEND, PBT_APMSUSPEND,
-            },
-        };
-        let signal = match (code, event) {
-            (SERVICE_CONTROL_POWEREVENT, PBT_APMSUSPEND) => Some(Signal::Suspend),
-            (SERVICE_CONTROL_POWEREVENT, PBT_APMRESUMESUSPEND | PBT_APMRESUMEAUTOMATIC) => {
-                Some(Signal::Resume)
-            }
-            // Session notices fence old work; their payload never authorizes a user.
-            // Fresh exact WTSInfoEx state is checked by the mutation supplier.
-            _ => None,
-        };
-        self.record(code, signal, qpc::now());
+        self.record(code, signal_for(code, event), qpc::now());
     }
     /// One power or session notice: advance the epoch, then apply its gate
-    /// signal, if any, at `timestamp`. A power-setting supplier decodes its
-    /// payload first and passes `Signal::DisplayOn` for a display on or dim
-    /// notice; display-off and AC/DC notices carry no signal and only fence.
-    fn record(&self, code: u32, signal: Option<Signal>, timestamp: i64) {
+    /// signal, if any, at `timestamp`. This is the entry a power-setting
+    /// supplier uses. It passes `Signal::DisplayOn` only for a display
+    /// transition from off to on or dimmed, classified as managed
+    /// `ClassifyConsoleDisplayTransition` does. Display-off, dimmed-to-on and
+    /// AC/DC notices carry no signal and only fence.
+    pub(crate) fn record(&self, code: u32, signal: Option<Signal>, timestamp: i64) {
         use windows_sys::Win32::System::Services::{
             SERVICE_CONTROL_POWEREVENT, SERVICE_CONTROL_SESSIONCHANGE,
         };
@@ -186,6 +172,14 @@ impl Lifecycle {
         let state = self.0.lock().ok()?;
         (state.epoch != 0).then(|| state.gate.transition())
     }
+    /// Whether a timer must not arm or must stop now: the gate is set, or
+    /// the lifecycle is unreadable or exhausted. This is the fail-closed
+    /// form of `low_power()` for callers that need only the answer.
+    #[cfg_attr(not(test), allow(dead_code))] // Stage 4b timers read it.
+    pub(crate) fn low_power_or_unknown(&self) -> bool {
+        self.low_power()
+            .is_none_or(|transition| transition.suspending())
+    }
     /// Records a sampled Windows power kind and returns the power generation,
     /// which advances only when a sample changes the kind (managed
     /// `ServiceControlRuntime.windowsPowerGeneration`). A failed sample (`None`)
@@ -201,6 +195,25 @@ impl Lifecycle {
             state.power_kind = Some(kind);
         }
         Some(state.power_generation)
+    }
+}
+/// The gate signal of an SCM control, as managed
+/// `ClassifySuspendResumeNotification` maps PBT events: PBT_APMSUSPEND
+/// suspends, and PBT_APMRESUMESUSPEND or PBT_APMRESUMEAUTOMATIC resumes.
+/// Only power events signal. Session notices fence old work, and their
+/// payload never authorizes a user; the mutation supplier checks fresh exact
+/// WTSInfoEx state.
+fn signal_for(code: u32, event: u32) -> Option<Signal> {
+    use windows_sys::Win32::{
+        System::Services::SERVICE_CONTROL_POWEREVENT,
+        UI::WindowsAndMessaging::{PBT_APMRESUMEAUTOMATIC, PBT_APMRESUMESUSPEND, PBT_APMSUSPEND},
+    };
+    match (code, event) {
+        (SERVICE_CONTROL_POWEREVENT, PBT_APMSUSPEND) => Some(Signal::Suspend),
+        (SERVICE_CONTROL_POWEREVENT, PBT_APMRESUMESUSPEND | PBT_APMRESUMEAUTOMATIC) => {
+            Some(Signal::Resume)
+        }
+        _ => None,
     }
 }
 /// The current Windows ACLineStatus kind, or `None` when the read fails or
@@ -341,13 +354,55 @@ mod lifecycle_tests {
             (POWER, 4, 3, None),
             (POWER, 18, 4, Some(8)),
             (SERVICE_CONTROL_SESSIONCHANGE, 8, 4, Some(9)),
+            // A session notice whose event number is PBT_APMSUSPEND only fences.
+            (SERVICE_CONTROL_SESSIONCHANGE, 4, 4, Some(10)),
             // A code outside power and session neither fences nor signals.
-            (1, 4, 4, Some(9)),
+            (1, 4, 4, Some(10)),
         ] {
             lifecycle.ingress(code, event);
             assert_eq!(generation(&lifecycle), expected, "{code}/{event}");
             assert_eq!(lifecycle.active(), epoch, "{code}/{event}");
         }
+    }
+    #[test]
+    fn only_power_suspend_and_both_resumes_signal_the_gate() {
+        use windows_sys::Win32::System::Services::{
+            SERVICE_CONTROL_SESSIONCHANGE, SERVICE_CONTROL_STOP,
+        };
+        for (code, event, signal) in [
+            (POWER, 4, Some(Signal::Suspend)),
+            (POWER, 7, Some(Signal::Resume)),
+            (POWER, 18, Some(Signal::Resume)),
+            // Power status, power setting and unknown PBT events only fence.
+            (POWER, 10, None),
+            (POWER, 32787, None),
+            (POWER, 6, None),
+            (SERVICE_CONTROL_SESSIONCHANGE, 4, None),
+            (SERVICE_CONTROL_SESSIONCHANGE, 7, None),
+            (SERVICE_CONTROL_SESSIONCHANGE, 18, None),
+            (SERVICE_CONTROL_STOP, 4, None),
+        ] {
+            assert_eq!(signal_for(code, event), signal, "{code}/{event}");
+        }
+    }
+    #[test]
+    fn low_power_or_unknown_fails_closed() {
+        let lifecycle = Lifecycle::default();
+        assert!(!lifecycle.low_power_or_unknown());
+        lifecycle.record(POWER, Some(Signal::Suspend), 1);
+        assert!(lifecycle.low_power_or_unknown());
+        lifecycle.record(POWER, Some(Signal::Resume), 2);
+        assert!(!lifecycle.low_power_or_unknown());
+        // Exhausted, then unreadable: both read as low power.
+        lifecycle.0.lock().unwrap().epoch = 0;
+        assert!(lifecycle.low_power_or_unknown());
+        let lifecycle = Lifecycle::default();
+        let _ = std::panic::catch_unwind(|| {
+            let _guard = lifecycle.0.lock().unwrap();
+            panic!("poison the lifecycle lock");
+        });
+        assert!(lifecycle.0.is_poisoned());
+        assert!(lifecycle.low_power_or_unknown());
     }
     #[test]
     fn a_stale_suspend_cannot_set_the_gate_but_still_fences() {
