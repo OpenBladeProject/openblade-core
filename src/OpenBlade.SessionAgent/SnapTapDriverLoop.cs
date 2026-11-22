@@ -338,7 +338,7 @@ internal static class SnapTapDriverLoop
             scan => Native.MapVirtualKeyEx(scan, 3, layout), Native.GetAsyncKeyState);
     }
 
-    private static bool AllReleased()
+    internal static bool AllReleased()
     {
         // First aggregate enable can run RzCommon's pressed-key handoff. Admit
         // that transition only at an idle keyboard, including modifier keys and mouse buttons.

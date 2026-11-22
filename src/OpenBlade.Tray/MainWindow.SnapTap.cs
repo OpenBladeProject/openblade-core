@@ -126,7 +126,7 @@ public sealed partial class MainWindow
                 SnapTapRuntimeState.ManualDriverSetupRequired => LocalizedResources.Get(
                     "SnapTap_Status_ManualDriverSetup", "Install this laptop’s Razer keyboard driver through Synapse, then turn SnapTap off and on."),
                 SnapTapRuntimeState.RecoveryRequired => LocalizedResources.Get(
-                    "SnapTap_Status_RecoveryRequired", "Restart Windows before enabling SnapTap again."),
+                    "SnapTap_Status_RecoveryRequired", "Turn SnapTap off and on to retry. If this keeps appearing, restart Windows."),
                 SnapTapRuntimeState.Unavailable when snapTapBackend == KeyboardInputBackend.RazerDriver => LocalizedResources.Get(
                     "SnapTap_Status_DriverUnavailable", "The supported Razer keyboard driver is unavailable."),
                 SnapTapRuntimeState.Unavailable => LocalizedResources.Get(

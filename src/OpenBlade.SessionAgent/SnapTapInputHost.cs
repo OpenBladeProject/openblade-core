@@ -39,17 +39,23 @@ internal static class SnapTapInputHost
     };
 
     internal static bool TryParseArguments(IReadOnlyList<string> args, out int parentId,
-        out KeyboardInputBackend backend, out KeyboardDriverFeatures features)
+        out KeyboardInputBackend backend, out KeyboardDriverFeatures features) =>
+        TryParseArguments(args, out parentId, out backend, out features, out _);
+
+    internal static bool TryParseArguments(IReadOnlyList<string> args, out int parentId,
+        out KeyboardInputBackend backend, out KeyboardDriverFeatures features, out bool retryRequested)
     {
         parentId = 0;
         backend = KeyboardInputBackend.RazerDriver;
         features = KeyboardDriverFeatures.SnapTap;
+        retryRequested = false;
         if (!InputHelperCommandLine.TryParse(args, out InputHelperArguments parsed)
             || parsed.ParentProcessId == Environment.ProcessId)
         {
             return false;
         }
         parentId = parsed.ParentProcessId;
+        retryRequested = parsed.RetryRequested;
         backend = parsed.Backend == InputHelperBackend.WindowsHook
             ? KeyboardInputBackend.WindowsHook : KeyboardInputBackend.RazerDriver;
         features = parsed.Features switch
@@ -80,7 +86,8 @@ internal static class SnapTapInputHost
 
     internal static int Run(string[] args)
     {
-        if (!TryParseArguments(args, out int parentId, out KeyboardInputBackend backend, out KeyboardDriverFeatures features))
+        if (!TryParseArguments(args, out int parentId, out KeyboardInputBackend backend,
+                out KeyboardDriverFeatures features, out bool retryRequested))
         {
             return 2;
         }
@@ -186,7 +193,7 @@ internal static class SnapTapInputHost
                         publisher.Publish(SnapTapRuntimeState.RecoveryRequired, ownershipFailure);
                         return 4;
                     }
-                    return SnapTapDriverSupervisor.Run(ShouldStop, features);
+                    return SnapTapDriverSupervisor.Run(ShouldStop, features, retryRequested);
                 }
                 finally { if (pairAcquired) { pairMutex!.ReleaseMutex(); } }
             }
