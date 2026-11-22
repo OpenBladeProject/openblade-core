@@ -1040,7 +1040,11 @@ impl Storage {
         // settings replace the power profile's, whichever selected Custom.
         // The provenance names the application when its override sets the
         // preset, Custom settings or GPU tuning, as managed `Resolve` does
-        // (`DesiredIntent::performance`).
+        // (`DesiredIntent::performance`): the managed vector case "an
+        // override of only custom levels or only gpu tuning is an application
+        // source" (profile-resolution-vectors.json) records source 2 for an
+        // override that sets only Custom levels or only GPU tuning. Every
+        // composition reports it, with or without request triggers.
         let source = if resolution.application_override().is_some_and(|o| {
             o.performance.is_some()
                 || o.custom_performance.is_some()

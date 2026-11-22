@@ -566,7 +566,13 @@ Native differs from managed here in these ways:
   those are not native thermal setters and are unchanged.
 
 Resolution uses eligible manual intent, then the current application report's
-performance override, then the matching power profile. Application instances have
+performance override, then the matching power profile. Desired performance
+provenance is the application (source 2) when its override sets the preset,
+Custom levels or GPU tuning, as managed `Resolve` does. The managed vector case
+"an override of only custom levels or only gpu tuning is an application source"
+(`profile-resolution-vectors.json`, `NativeProfileResolutionVectors`) records
+it. This intentional parity fix to the status projection came with request
+triggers but is not gated by their feature. Application instances have
 monotonic sequence numbers and a 15-second lease, use full canonical executable
 paths and production Windows ordinal comparison, and cannot supply caller SID or
 hardware authority. With `service-profile-triggers-v1`, a report that changes
