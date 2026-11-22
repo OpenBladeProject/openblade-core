@@ -1664,7 +1664,18 @@ callback retirement; dropping a requester cannot release custody early.
 Configuration replacement failure, accepted but ineligible intent, transaction
 capacity, pre-submission refusal and possible submission have distinct outcomes.
 A known-unpublished activation refusal may reconstruct a reader only after real
-drain; uncertain publication retains the fence. Initial read admission precedes
+drain; uncertain publication retains the fence. Every mutation entry point stops
+the reader before its own admission checks: `ReadSource::mutate`, owned-Stop
+`mutate_cleanup`, and `drain_active`, which the battery, temporary-charge and fan
+entry points (a reconciliation's fan step included) call before they capture
+admission. Each stop retains the reader-drain phase before it waits
+(`ReadSource::stop_reader`), and the next read or mutation rebuilds the reader
+only after the stop is confirmed and integrity and read custody are freshly
+admitted. A refusal that submitted nothing therefore leaves reads running, even
+when its caller returns without calling `mutate`, the drain was canceled, or the
+request was refused while suspended and the system has resumed. A fenced source,
+an unconfirmed mutation-worker or reader stop and an integrity failure stay
+sealed. Initial read admission precedes
 ID reservation. A sent ID returns to the pool only after a later answer to the
 same command; see the allocator rules in
 [the native development Service](windows-rust-development-service.md).
