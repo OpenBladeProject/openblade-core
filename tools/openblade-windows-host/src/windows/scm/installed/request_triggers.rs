@@ -123,8 +123,8 @@ fn submission_possible(storage: &Storage, id: &str) -> bool {
             && storage.progress() != Some(Progress::KnownNotSubmitted as u8))
 }
 
-/// The low-power gate as an explicit request found it before its capture
-/// (`Runtime::overtaken_by_gate`).
+/// The low-power gate as an explicit request found it once it held its own
+/// write authorization, after its capture (`Runtime::overtaken_by_gate`).
 #[derive(Clone, Copy)]
 pub(super) struct GateMark(Gate);
 

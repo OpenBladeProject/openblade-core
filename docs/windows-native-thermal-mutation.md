@@ -1511,7 +1511,12 @@ it can have been submitted (`submission_possible`: no journal row of the
 request past a known-unsubmitted intent, and no fence that may hide a
 submission), and the store is not fenced. The request then replies as one
 stored while the gate was set and owes the same reconciliation. A request
-that may have submitted keeps its own result and is never relabelled.
+that may have submitted keeps its own result and is never relabelled. The
+request's Prepared row settles as KnownNotSubmitted through the custody's
+retirement append, as fan and battery rows do; unlike a plain journal
+append, that append needs no live lifecycle epoch, so neither the gate nor a
+stop that ends the request leaves its store fenced. A fan reply that is not
+Blocked, such as a clear Stored on unclassified power, keeps its reply.
 
 Four differences from managed remain:
 
