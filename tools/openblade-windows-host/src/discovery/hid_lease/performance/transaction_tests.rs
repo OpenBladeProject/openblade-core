@@ -534,6 +534,26 @@ async fn a_poisoned_pool_submits_nothing() {
     reader.retire(None).await.unwrap();
 }
 
+#[test]
+fn a_seeded_pool_starts_its_round_where_the_seed_puts_it() {
+    assert_eq!(Transactions::seeded(0).reserve_pair(), Some([1, 2]));
+    assert_eq!(Transactions::seeded(253).reserve_pair(), Some([254, 1]));
+    assert_eq!(Transactions::seeded(254 + 9).reserve_pair(), Some([10, 11]));
+    // The process pool draws its start once, then issues every ID once per
+    // round in order.
+    let transactions = Transactions::randomized();
+    let mut issued = Vec::new();
+    while let Some(pair) = transactions.reserve_pair() {
+        issued.extend(pair);
+    }
+    assert_eq!(issued.len(), 254);
+    assert!(
+        issued
+            .windows(2)
+            .all(|ids| ids[1] == if ids[0] == 254 { 1 } else { ids[0] + 1 })
+    );
+}
+
 /// One setter job on a new port and Reader: a 0D/02 setter, then its reply,
 /// retired before it returns. Returns the setter's ID and whether its echo
 /// was read.

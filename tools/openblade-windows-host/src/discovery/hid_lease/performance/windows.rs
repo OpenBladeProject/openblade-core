@@ -33,7 +33,7 @@ static OCCUPIED: AtomicBool = AtomicBool::new(false);
 // Canceling Windows I/O or reopening the handle does not flush the firmware
 // reply mailbox, so one pool spans every lease in this process and frees an
 // ID only with proof that its reply is gone (see `transactions`).
-static TRANSACTIONS: Transactions = Transactions::new();
+static TRANSACTIONS: Transactions = Transactions::randomized();
 
 pub(super) struct NativePort {
     lease: Option<Lease>,

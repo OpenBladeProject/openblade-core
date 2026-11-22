@@ -21,10 +21,15 @@
 //!   process lifetime.
 //!
 //! Issue is round-robin from the last issued ID, so a freed ID returns only
-//! after every other free ID has been issued.
+//! after every other free ID has been issued. The process pool starts its
+//! round at a random ID: every process would otherwise issue the same IDs
+//! first, which a previous process's replies left in the mailbox may bear.
 
 use openblade_protocol::{REPORT_LENGTH, RazerReport};
-use std::sync::{Mutex, MutexGuard};
+use std::{
+    hash::{BuildHasher, RandomState},
+    sync::{Mutex, MutexGuard},
+};
 
 use super::{FRAME_LENGTH, Frame};
 
@@ -56,6 +61,8 @@ struct Id {
 struct Pool {
     ids: [Id; 256],
     last: u8,
+    // `last` is drawn at random before the first reservation.
+    unseeded: bool,
 }
 
 impl Pool {
@@ -64,32 +71,55 @@ impl Pool {
     }
 }
 
+/// The `last` from which `seed` starts the round, uniformly over 1..=254.
+const fn last_before(seed: u64) -> u8 {
+    (seed % LAST as u64) as u8
+}
+
 pub(super) struct Transactions(Mutex<Pool>);
 
 impl Transactions {
+    /// A pool whose first reservation starts at 1.
     pub(super) const fn new() -> Self {
-        Self::after(0)
+        Self::after(0, false)
+    }
+
+    /// The process pool: its first reservation starts at a random ID.
+    pub(super) const fn randomized() -> Self {
+        Self::after(0, true)
     }
 
     /// A fresh pool whose first reservation starts at `first`.
     #[cfg(test)]
     pub(super) const fn starting_at(first: u8) -> Self {
-        Self::after(first - 1)
+        Self::after(first - 1, false)
     }
 
-    const fn after(last: u8) -> Self {
+    /// A fresh pool whose round starts where `seed` puts it.
+    #[cfg(test)]
+    pub(super) const fn seeded(seed: u64) -> Self {
+        Self::after(last_before(seed), false)
+    }
+
+    const fn after(last: u8, unseeded: bool) -> Self {
         Self(Mutex::new(Pool {
             ids: [Id {
                 state: State::Free,
                 pinned: false,
             }; 256],
             last,
+            unseeded,
         }))
     }
 
     // A poisoned pool issues and frees nothing.
     fn pool(&self) -> Option<MutexGuard<'_, Pool>> {
-        self.0.lock().ok()
+        let mut pool = self.0.lock().ok()?;
+        if pool.unseeded {
+            pool.last = last_before(RandomState::new().hash_one(0u8));
+            pool.unseeded = false;
+        }
+        Some(pool)
     }
 
     /// Poisons the pool, as a panic while it was locked would.
