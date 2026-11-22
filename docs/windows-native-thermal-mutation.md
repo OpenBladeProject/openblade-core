@@ -1297,13 +1297,20 @@ With it, three requests apply saved intent, as managed
   active local session is Blocked "Application context requires the active
   local Windows session."
 - A report while the pair still owes a reconciliation. A `(sid, session)`
-  owes one from Service start and after each change of its active pair or
-  saved thermal intent (`Runtime::reconciled`). Only an outcome that may have
-  submitted, which is never replayed, or that confirmed there is nothing to
-  apply settles it (`Reconciled::settles`). A refusal that provably submitted
-  nothing (unknown Windows power, a refused admission, an unreadable store, a
-  pace refusal or an unclassified adapter) leaves it owed, so the next report
-  reconciles. A fresh Service holds no temporary override, so none is replayed.
+  owes one at every class from Service start and after each change of its
+  active pair or saved thermal intent (`Runtime::debts`, `Debt`). A refusal
+  before any step (unknown Windows power, a refused admission, a fenced store)
+  reads no firmware and leaves the debt as it was. Every reconciliation whose
+  steps ran settles it, as managed attempts each change once, with one
+  exception: when each step that needed a change was confirmed or was refused
+  for a cause that may clear by itself (`Stepped::transient`: the measured
+  pace, an adapter not classified yet, a store or profile read that failed,
+  or time or admission that ran out before the intent row), no row of it was
+  possibly submitted and the store is not fenced, the debt stays owed for at
+  most two later reports (`RETRIES`). One change therefore reads firmware
+  for at most three reconciliations, though a renewal arrives every 5 s; an
+  unbounded debt would read firmware and draw transaction pairs on each one.
+  A fresh Service holds no temporary override, so none is replayed.
 - A profile save (`Runtime::save_profiles_locked`, managed
   `UpdateProfilesAsync`) while an application profile is active, when the save
   changes the active id or the performance or fan members at a class fresh
@@ -1313,6 +1320,11 @@ With it, three requests apply saved intent, as managed
   masked, so an edit under that override is no change. A save that changes
   only lighting, battery policy or laptop behaviour has nothing native applies
   and replies Stored "Profiles stored without automatic hardware application."
+  The save owes its changed classes together with any debt from before it. A
+  step whose reading finds a class the save did not change writes nothing and
+  leaves the earlier debt as it was; otherwise the earlier debt is settled only
+  when a step's reading found one of its classes, since the steps there apply
+  that class's whole saved intent.
 
 Each trigger takes the mutation gate first and refuses (Blocked, nothing
 recorded or stored) when its deadline passed while it waited. It applies only
@@ -1328,6 +1340,12 @@ ambiguity. Before accepting, a step checks the override document as a save
 would (`Storage::verify_overrides`): a document changed outside the Service
 fences the store and the step replies Blocked "Saved configuration changed
 unexpectedly; storage reconciliation is required. ..." before any submission.
+A step that saved intent alone refuses at every class fresh Windows power
+admits reads no firmware and reserves no transaction pair
+(`refused_by_saved_intent`): a performance policy with a GPU clock effect or
+no eligible destination, and fan intent with no native plan (ManualCurve, or
+manual fans on battery). It replies the refusal the step would reach after
+its reading.
 A step whose own adapter reading finds unclassified power writes nothing
 (Blocked, `UNCLASSIFIED_BLOCKED`); a step whose reading finds a classified
 class the trigger did not change writes nothing either (`Classes`,
@@ -1453,8 +1471,21 @@ at its own measured pace. These two requests are not canceled at their
 deadline (`readiness::reconciles`): the runtime refuses before it records or
 stores once the deadline has passed, and after that each step bounds itself,
 so a result that finished late is still answered instead of closing the
-connection after a commit. The native Agent's report waits for the budget and
-one frame more (13 s, `REPORT_REPLY_BUDGET`). The managed tray's
+connection after a commit. A step whose transfer has not retired
+`RECONCILE_MARGIN` (1 s) after the deadline is dropped exactly as
+`serve_mutation` drops an explicit request at its deadline, and the trigger
+answers and releases the mutation gate. The Reader keeps that step's worker
+and permit, so every later mutation first waits for the worker's own
+retirement and then settles the permit (`ReadSource::drain_mutation`), and a
+journal row past its intent stays unsettled and fences the store. No later
+request can submit while the old worker still might. The reply is Failed "The
+reconciliation did not finish within its budget." with the store's
+reconciliation reason, after a save too ("Profiles were stored. ..."): the
+profiles are stored and a command may have been submitted, so the caller must
+not read Stored as a settled hardware result. When the step had journaled
+nothing that could be submitted, it is a transient Blocked refusal instead.
+The native Agent's report waits for the budget and one frame more (13 s,
+`REPORT_REPLY_BUDGET`), which covers the margin. The managed tray's
 `ServiceClient` bounds only its 2 s connect and waits for the reply without a
 limit.
 
