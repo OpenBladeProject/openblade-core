@@ -9,7 +9,8 @@ use super::{SCM_ID, Session, Status, replay_status, run_prepared};
 use crate::scm_host::{CONTROLS, Controls, dispatch_named, registered_service, report};
 
 #[cfg(any(test, feature = "lifecycle-evidence-compile-check"))]
-#[allow(dead_code)] // Inactive until the native lifecycle composition is admitted.
+#[allow(dead_code)]
+// The installed status source includes this file for its power read; its tests run here.
 mod lifecycle;
 
 const NAME: &str = "OpenBladeRustReadOnlyDev";

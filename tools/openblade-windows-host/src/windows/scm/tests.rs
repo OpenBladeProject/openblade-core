@@ -26,8 +26,6 @@ use crate::windows::{
     tests::{assert_closed, open_pipe, read_status, runtime, test_id},
 };
 
-mod metadata_lifecycle;
-
 // Spelled out instead of reusing scm_host's mask, so a production change fails here.
 // STOP (0x1) | SHUTDOWN (0x4), plus POWEREVENT (0x40) | SESSIONCHANGE (0x80) when
 // the thermal composition is compiled.
