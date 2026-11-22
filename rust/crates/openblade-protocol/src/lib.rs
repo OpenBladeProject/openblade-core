@@ -5,6 +5,7 @@
 
 pub mod battery;
 pub mod custom_performance;
+pub mod device_mode;
 pub mod fan;
 pub mod thermal_preset;
 
