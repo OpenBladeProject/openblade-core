@@ -4,6 +4,42 @@ use crate::{REPORT_LENGTH, calculate_checksum};
 use serde_json::Value;
 use std::{format, string::String, vec::Vec};
 
+/// The reviewed 00/04 setter. It lives only in this test module until a reviewed
+/// stage admits Driver-mode ownership; the managed vectors pin it here.
+struct DeviceModeSet {
+    request: RazerReport,
+    arguments: [u8; 2],
+}
+
+impl DeviceModeSet {
+    const ID: u8 = 0x04;
+
+    fn new(transaction: u8, mode: DeviceMode) -> Self {
+        let arguments = [mode as u8, 0];
+        Self {
+            request: RazerReport::create(transaction, CLASS, Self::ID, &arguments)
+                .expect("fixed two-byte device-mode setter"),
+            arguments,
+        }
+    }
+
+    fn request(&self) -> &RazerReport {
+        &self.request
+    }
+
+    /// C# `TryDecodeSet`: the acknowledgement echoes the setter arguments.
+    fn acknowledge(&self, response: &[u8]) -> Result<(), ProtocolValidationFailure> {
+        let payload = self
+            .request
+            .validate_response(response, Some(PAYLOAD_LENGTH))?;
+        if payload.as_slice() == self.arguments {
+            Ok(())
+        } else {
+            Err(ProtocolValidationFailure::PayloadValidator)
+        }
+    }
+}
+
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| format!("{byte:02X}")).collect()
 }
