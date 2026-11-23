@@ -20,7 +20,7 @@ public sealed partial class ServiceControlRuntimeTests
         + "Each transition row runs in order on that runtime: submitted is whether any device setter was submitted, performance the confirmed preset after it, desired the desired preset and source its source. "
         + "leaseExpired is ExpireApplicationContextAsync after the 15 s lease; gameReported reports Game again. "
         + "powerUnchanged, powerToBattery and powerToPluggedIn are HandlePowerSourceChangedAsync with the gate clear. "
-        + "resumeUnchangedAfterDeferral reports Other.exe with the LowPowerGate entered, exits it, and runs HandlePowerSourceChangedAsync on the unchanged source, as resume processing does.";
+        + "resumeUnchangedAfterDeferral reports Other.exe with the LowPowerGate entered, exits it, and runs HandlePowerSourceChangedAsync on the unchanged source. It models only that part of resume processing: not the rest of ProcessNativeAsync (lighting invalidation and restore, resume validation) or the later convergence.";
 
     [Fact]
     public async Task NativeLifecycleReconcileVectors_MatchManagedTransitions()
