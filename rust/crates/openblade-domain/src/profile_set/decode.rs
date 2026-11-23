@@ -382,6 +382,14 @@ fn lighting_power_policy(json: &Json) -> Decoded<LightingPowerPolicy> {
     }
 }
 
+/// A managed `DisplayProfileSettings` alone, as the IPC codec writes it inside
+/// a power profile or an application override. The native Agent's display
+/// automation reads these members of Service status without the rest of the
+/// profile set.
+pub fn display_settings(json: &Json) -> Result<DisplaySettings, Malformed> {
+    display(json)
+}
+
 fn display(json: &Json) -> Decoded<DisplaySettings> {
     let object = Object::of(
         json,
