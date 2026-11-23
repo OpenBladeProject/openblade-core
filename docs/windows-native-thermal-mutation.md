@@ -1166,8 +1166,9 @@ resolves every request's profile layer through it (see below). With
 `service-profile-triggers-v1`, a changed foreground report, a report while the
 session owes a reconciliation and a save that changes the active
 application's thermal intent apply the saved intent
-([Request-driven reconciliation](#request-driven-reconciliation)); lease expiry
-and power changes do not trigger one yet.
+([Request-driven reconciliation](#request-driven-reconciliation)), and the
+origin tick applies it after a resume, a Windows power-kind change or lease
+expiry ([Lifecycle reconciliation](#lifecycle-reconciliation)).
 `openblade_domain::application_context` holds managed `ProfileAutomationState`'s
 selection rules over borrowed rules: the first enabled rule whose path matches
 a report (`SetApplicationContext`, `ProfileAutomationState.cs:216-236`), the
@@ -1322,7 +1323,8 @@ Differences from managed:
 The Cargo feature `service-profile-triggers-v1` composes it. No packaged
 composition implies it, and both package readers (`native_package` and
 `WindowsNativePackage`) refuse it by feature name and by its `build.rs`
-capability marker: it has no resume or lease-expiry trigger (C3) yet.
+capability marker: no packaging stage has admitted it, and its lifecycle
+reconciliation is not validated across a physical sleep and resume.
 Without it, `updateProfiles` stores profiles only and
 `reportApplicationContext` records the report only, as before the feature
 existed.
@@ -1466,20 +1468,26 @@ in standby, the step applies it again under a new journal id. That is a
 fresh application after a fresh read, not a replay of the earlier
 submission.
 
-Two debt drops remain, each unchanged by this slice:
+Two debt drops were left by the low-power slice:
 
 - A step that may have submitted and has not handed back by the bound
   ends the reconciliation, as every unfinished step does, so the debt
   settles and a later class is not applied after resume. This is the
   unfinished form of the deferral after a possibly submitted step above.
+  It is kept: owing that class again would re-run a step whose
+  submission is unknown, and the store stays fenced until read-only
+  reconciliation settles the row. Once it has, a lifecycle power-kind
+  change or lease expiry owes every class again, as does the next changed
+  report.
 - A fencing notice that does not move the gate generation, such as a
-  repeated resume or a power-status change inside the first step after
-  the gate cleared, refuses that step's write admission as lost
-  admission rather than a deferral, and the debt settles.
-
-Both are follow-ups for C3's resume and DisplayOn reconcile of owed pairs.
-A debt already dropped is recovered only by C3's lease-expiry or
-power-change triggers, or by the next changed report.
+  repeated resume or a power-status change inside a step, refuses that
+  step's write admission as lost admission rather than a deferral. Such a
+  step, refused with nothing of it possibly submitted while the
+  lifecycle's ordinary write epoch moved (`Runtime::admission_epoch`,
+  `Lifecycle::active`), now counts as transient: the debt stays owed with
+  one of its `RETRIES` spent, and the next report or lifecycle cause
+  applies it under fresh admission. The epoch only classifies a refusal
+  the write's own admission made.
 
 Explicit `setPerformanceOverride` and `setFanOverride` sent while the gate
 is set store their intent through the storage-only capture, as managed
@@ -1549,10 +1557,9 @@ Four differences from managed remain:
   after the gate clears, through a fresh capture, a fresh adapter reading
   and every per-write admission. There is no safety reason to drop it, so
   native keeps it.
-- The stored intent is applied by the next report after the gate clears,
-  at most one 5 s lease renewal later. Managed reconverges after resume
-  through its convergence loop (below). Applying owed pairs on resume
-  itself is C3.
+- The stored intent is applied by the lifecycle tick after the gate clears,
+  or else by the next report, at most one 5 s lease renewal later. Managed
+  reconverges after resume through its convergence loop (below).
 
 Under the default `ThermalControlPolicy.MaintainDesiredState`
 (`BatteryAutomationPreferences.cs:18-19`), managed reconverges thermal intent
@@ -1562,10 +1569,9 @@ observation reaches `EvaluateThermalConvergenceObservationAsync`
 (`ServiceControlRuntime.cs:17599`, `:19943`), and the 15 s periodic
 observation (`ServicePeriodicObservationLoop.cs:7`) repeats it. Only Strict
 waits for a power-source change, which runs `ApplyFullTransitionAsync`.
-Native has no convergence loop; the next report after the gate clears,
-at most one 5 s lease renewal later, is what reconciles a deferred debt under
-MaintainDesiredState. C3 can do it on resume: on the gate clearing (resume or
-DisplayOn), run `reconcile_locked` for each owed pair; a deferral leaves the
+Native has no convergence loop; the lifecycle tick after the gate clears
+reconciles a deferred debt in its place
+([Lifecycle reconciliation](#lifecycle-reconciliation)). A deferral leaves the
 attempts unchanged, so that retry spends none of the budget.
 
 `low-power-trigger-vectors.json` pins the replies.
@@ -1650,16 +1656,91 @@ Differences from managed:
 - A report that cannot read the saved profiles keeps its sequence and the
   pair already selected and replies Blocked with the reason. Managed holds its
   profiles in memory and has no such case.
-- A deferral in low power is retried by the next report after the gate
-  clears. Managed reconverges after resume under its default
-  MaintainDesiredState policy and reapplies only on a power-source change
-  under Strict. Lease expiry, resume and power changes trigger no native
-  reconciliation yet (C3).
+- A deferral in low power is retried by the lifecycle tick after the gate
+  clears, or else by the next report. Managed reconverges after resume under
+  its default MaintainDesiredState policy and reapplies only on a
+  power-source change under Strict
+  ([Lifecycle reconciliation](#lifecycle-reconciliation)).
 - The margin bounds a step, not the wait for the mutation gate. A trigger
   queued behind owned fan cleanup (`stop_fans`) or a battery power-source
   event (`battery_source_event`) waits for that work, as every mutation
   does, and refuses before it records or stores once its deadline has passed.
   Its reply can then arrive after the Agent has stopped waiting.
+
+#### Lifecycle reconciliation
+
+With `service-profile-triggers-v1`, the serving loop's 500 ms origin tick
+(`serve_connections`, after `process_power_source`) also runs
+`StatusSource::reconcile_lifecycle`, which calls
+`Runtime::reconcile_lifecycle` (`lifecycle_triggers.rs`). It applies what the
+latest admitted reporter's pair owes after three lifecycle transitions, as
+managed runs `ApplyFullTransitionAsync` after them without a request:
+
+- A gate boundary: the gate generation moved through a resume, a new resume
+  or a DisplayOn that cleared a set gate (managed `ProcessNativeAsync`, which
+  `WindowsServiceLifecycleEventSource.cs:354-364` also dispatches for that
+  DisplayOn). A boundary owes nothing by itself. It runs a debt the pair
+  already owes, such as intent deferred or stored in low power.
+- A Windows power-kind change, AC to battery or back
+  (`Lifecycle::observe_power_kind`, sampled on every SCM power notice): the
+  pair owes every class, as managed `HandlePowerSourceChangedAsync` applies
+  on a changed source. A change while the gate is set is owed and applied
+  after the boundary that clears it, as managed skips `PowerChanged` in low
+  power and compares the source again on resume.
+- The 15 s application lease expiring with an application profile active
+  (managed `ExpireApplicationContextAsync`): the foreground is cleared and the
+  pair owes every class, so the power profile applies.
+
+The tick takes the mutation gate only when it is free and otherwise waits for
+the next tick. Its first tick records a mark and reconciles nothing. It
+then runs `reconcile_locked` as a report does, with the reporter's recorded
+process, session and SID: a fresh `WindowsGuard::capture` of the same console
+session unlocked, the same primary identity, known Windows power and
+competing-controller absence; fresh admission and health checks before any
+firmware read; then each step's capture, authorization, per-write epoch check,
+journal id, readback and stop on ambiguity. A fenced store, a refused capture
+or unknown Windows power runs nothing and keeps the debt. The tick in low power
+records the cause and reads nothing. A boundary renews the lease, since
+Windows `Instant` counts time asleep, which is not reporter absence. The
+tick's reconciliation id is a fresh `OpenBlade.LifecycleReconcile` string,
+and each step journals under its own `step_request` id as a report's does.
+
+The steps are a report's, so the same retry budget applies: a deferral
+spends no attempt, a transient refusal at most `RETRIES`, and every other
+outcome settles the debt. A transition consumed while the pair cannot be
+admitted, such as a locked session at resume, leaves the debt to the next
+report or transition; the tick never polls.
+
+`lifecycle-reconcile-vectors.json` pins managed's outcomes, recorded by
+`NativeLifecycleReconcileVectors` over the native fixture's saved
+performance: lease expiry, a renewed Game report, an unchanged power source,
+battery and back to AC, and a resume on an unchanged source after a report
+the gate deferred. `request_triggers_lifecycle.rs` replays them. Native
+differs from managed in two rows:
+
+- Lease expiry. Both select the power profile's Balanced. Managed submits
+  nothing: `PublishApplicationContextStatus` publishes the new desired state
+  before `ApplyFullTransitionAsync` reads it as the prior one, so its drift
+  tracker reads OpenBlade's own Game preset as an external change and pauses
+  automatic performance and fans. Native has no drift tracker and applies, as
+  its report that leaves a rule already does.
+- Resume on an unchanged source after a deferral. Managed's
+  `HandlePowerSourceChangedAsync` submits nothing then; its convergence loop
+  reconverges later under MaintainDesiredState. Native applies the deferred
+  debt at the tick after the boundary.
+
+Not ported:
+
+- Managed's display-off work (`ReportConsoleDisplayState`,
+  `PrepareOwnedHyperBoostForDisplayOffAsync` and lighting suppression).
+  Native composes no HyperBoost or lighting renderer, and display-off never
+  sets the gate in either.
+- A swap between the classified external classes, full and limited adapter,
+  under an unchanged Windows AC line status. Detecting it needs a firmware
+  adapter read on a notice and a record of the last applied class; the next
+  report, or a step's own adapter reading, finds it instead.
+- Pairs other than the latest admitted reporter's. The Agent reports one
+  pair, and without a report the tick reads nothing.
 
 ## Submission, ambiguity and finite transport lifetime
 
