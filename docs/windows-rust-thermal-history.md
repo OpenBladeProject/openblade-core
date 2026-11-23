@@ -115,12 +115,19 @@ a temporary-charge record's `ids` and `superseded_ids`. It adds the
 reservations of the owners still live at the end of the journal (a manual fan
 owner's `cleanup` and a temporary-charge owner's `cancel_ids`). It then takes,
 newest first and as far as its limit allows, the IDs of known-not-submitted
-(6) requests and `superseded_ids` sets. Older settled requests, the
+(6) requests and `superseded_ids` sets. A retired fan request adds its
+`preflight` and `ids`, not its `cleanup`: the newest fan row can be an older
+owner's settle-only 51, which sends no 07/8C, so the retired request's
+preflight can hold the newest 07/8C reply. Older settled requests, the
 reservations of replaced owners and performance rows add none. Neither does
 an earlier request's reply to a command that the newest request of its
 family did not send again, such as a setter it never reached. At most 80 are
 taken: the largest live set (74) always fits, and 174 of the 254 IDs stay
-free. The journal format is unchanged.
+free. That is twice the most IDs reserved at once (66: a live fan owner's
+whole record, a temporary-charge owner's cancellation, the next fan request
+with its Custom levels, and a read with its Custom levels). Three such peaks
+would not fit beside any limit that holds the live set. The journal format is
+unchanged.
 
 The seed reads the journal as release does (`journal_read_release`). That
 authenticates the active tail and every archived segment, opening the
@@ -130,9 +137,14 @@ nothing instead of completing the roll when the source is composed; the first
 mutation's own read completes it, as before. The seed searches only the active
 tail, so a request in an archived segment adds nothing. A failed read is
 retried once. A read that fails fatal admission is not retried; the source
-keeps that failure, as its own reads keep it. A journal that still cannot be
-read or validated adds none, which is the window before this seed, and an
-absent one does not delay startup.
+keeps that failure, as its own reads keep it. So an owner store inconsistent
+with the journal, which `join_row`'s original owner binding rejects, stops
+the Service at start, including the provisional start of a new package: the
+startup status probe fails with the kept failure and the Service never
+reports RUNNING. Before the seed, such a Service started and failed at its
+first capture. A journal that still cannot be read or validated adds none,
+which is the window before this seed, and an absent one does not delay
+startup.
 
 ## Publication and metadata recovery
 
