@@ -201,6 +201,16 @@ accepts encodings it never writes, such as a missing `brightnessPercent` or
 other member-name casing and a string percent; it rejects an array like
 native).
 
+The installed Agent's `agent-display-automation-v1` build (marker
+`session-display-automation-v1`) adds managed display automation: each
+confirmed power source or application change applies the profile through the
+same applyProfile composition, under the display operation gate that also
+serializes every manual query and write. Both package readers refuse the
+feature and the marker. See
+[Native Agent display automation](../docs/windows-native-agent-display-automation.md)
+for the managed inventory, the omissions and deviations, and the parity
+vectors.
+
 Current HDR output mode, complete snapshot parity, and native display behavior
 need separate evidence before replacement. Live refresh still needs authorized
 validation of the exact packet on the active console, fresh power/session and
