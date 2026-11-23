@@ -155,6 +155,29 @@ impl DiscoverySource for WindowsMetadata {
     }
 }
 
+/// Every present HID interface's opaque path and devnode hardware IDs, for a
+/// caller that selects interfaces by ID before it opens any. An interface whose
+/// row or IDs cannot be read is skipped, and an incomplete scan is an error.
+#[allow(dead_code)] // The standalone discovery binary scans through `discover`.
+pub(crate) fn hid_interfaces(cancelled: &AtomicBool) -> io::Result<Vec<(String, Vec<String>)>> {
+    let mut found = Vec::new();
+    let state = WindowsMetadata.scan_hid(cancelled, |interface| {
+        if let Some(Interface {
+            path,
+            hardware_ids: Some(ids),
+        }) = interface
+        {
+            found.push((path, ids));
+        }
+        Ok(())
+    })?;
+    if state == ScanState::Complete {
+        Ok(found)
+    } else {
+        Err(io::Error::other("HID enumeration incomplete"))
+    }
+}
+
 fn platform(installation_type: RegistryText) -> Platform {
     match installation_type.value() {
         Some("Client") => {}

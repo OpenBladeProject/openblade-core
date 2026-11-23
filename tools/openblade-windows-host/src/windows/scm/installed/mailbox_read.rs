@@ -36,6 +36,9 @@ mod driver_mode_absent_tests;
 #[path = "driver_mode_rig.rs"]
 mod driver_mode_rig;
 #[cfg(feature = "service-live-readings-v1")]
+#[path = "firmware_versions.rs"]
+mod firmware_versions;
+#[cfg(feature = "service-live-readings-v1")]
 #[path = "live_readings.rs"]
 mod live_readings;
 
@@ -982,6 +985,8 @@ pub(super) struct ReadSource {
     driver_mode: Rc<driver_mode::Cadence>,
     #[cfg(feature = "service-live-readings-v1")]
     live: Rc<live_readings::Host>,
+    #[cfg(feature = "service-live-readings-v1")]
+    firmware: Rc<firmware_versions::Host>,
     metadata: Rc<RefCell<Option<Arc<Publication>>>>,
 }
 impl ReadSource {
@@ -996,10 +1001,14 @@ impl ReadSource {
         });
         #[cfg(feature = "service-thermal-mutation-v1")]
         let source = source.with_mutation(MutationFactories::native());
-        // Only the acquired production source reads Windows battery state.
+        // Only the acquired production source reads Windows battery state and
+        // firmware versions.
         #[cfg(feature = "service-live-readings-v1")]
         let source = Self {
             live: Rc::new(live_readings::Host::new(Rc::new(live_readings::Windows))),
+            firmware: Rc::new(firmware_versions::Host::new(Arc::new(
+                firmware_versions::Windows,
+            ))),
             ..source
         };
         Ok(source)
@@ -1055,6 +1064,8 @@ impl ReadSource {
             live: Rc::new(live_readings::Host::new(Rc::new(
                 live_readings::Unavailable,
             ))),
+            #[cfg(feature = "service-live-readings-v1")]
+            firmware: Rc::new(firmware_versions::Host::none()),
             metadata: Rc::default(),
         }
     }
@@ -1126,6 +1137,11 @@ impl ReadSource {
             let health = self.live.battery_health();
             next.active = next.active.with_battery_health(health);
             next.inactive = next.inactive.with_battery_health(health);
+            // Managed captures firmware versions once, at start. The worker
+            // reads them off this path, so a status before it finishes has none.
+            let firmware = self.firmware.poll(now);
+            next.active = next.active.with_firmware_versions(firmware.clone());
+            next.inactive = next.inactive.with_firmware_versions(firmware);
         }
         if serde_json::to_vec(&next.active)? == serde_json::to_vec(&current.active)?
             && serde_json::to_vec(&next.inactive)? == serde_json::to_vec(&current.inactive)?
@@ -1371,6 +1387,12 @@ impl ReadSource {
             }
             *source.last.borrow_mut() = Some((observed.clone(), Instant::now()));
             source.decorate(&publisher, None)?;
+            // The reply at revision N carries what publication N carries.
+            #[cfg(feature = "service-live-readings-v1")]
+            {
+                observed =
+                    observed.with_firmware_versions(publisher.borrow().active.firmware_versions());
+            }
             #[cfg(feature = "service-thermal-mutation-v1")]
             {
                 observed = source.current_policy(observed)?;
@@ -1384,6 +1406,9 @@ impl ReadSource {
     }
     pub(super) async fn stop(&self) -> io::Result<()> {
         self.lease.revoke();
+        // A firmware capture still running ends after the read it is in.
+        #[cfg(feature = "service-live-readings-v1")]
+        self.firmware.stop();
         #[cfg(feature = "service-thermal-mutation-v1")]
         let settlement = self.drain_mutation(false).await;
         #[cfg(feature = "service-thermal-mutation-v1")]

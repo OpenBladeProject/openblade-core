@@ -1031,6 +1031,24 @@ impl Snapshot {
         );
         self
     }
+    /// Managed `Firmware`: the versions the Service captured once. With none
+    /// captured the member stays absent, and a published record is never
+    /// removed, as managed never replaces its captured record.
+    #[cfg(all(windows, feature = "service-live-readings-v1"))]
+    pub(crate) fn with_firmware_versions(mut self, firmware: Option<FirmwareVersions>) -> Self {
+        if let Some(firmware) = firmware {
+            self.feature_fields.insert(
+                "firmware".into(),
+                serde_json::to_value(firmware).unwrap_or(Value::Null),
+            );
+        }
+        self
+    }
+    /// The firmware versions this status carries, if it has them.
+    #[cfg(all(windows, feature = "service-live-readings-v1"))]
+    pub(crate) fn firmware_versions(&self) -> Option<FirmwareVersions> {
+        serde_json::from_value(self.feature_fields.get("firmware")?.clone()).ok()
+    }
     /// Whether this status names an exact verified device.
     #[cfg(all(windows, feature = "service-keyboard-driver-mode-v1"))]
     pub(crate) fn device_verified(&self) -> bool {
@@ -1365,6 +1383,25 @@ struct LiveReadings {
     fan2_rpm: Option<i32>,
     cpu_temperature_celsius: Option<i32>,
     gpu_temperature_celsius: Option<i32>,
+}
+
+/// Managed `FirmwareVersions`. The record has no null text: a part that could
+/// not be read is the managed text `Unavailable`. The two accesses are null
+/// except on the exact RZ09-0581, where managed publishes `ReadOnly` (1).
+#[cfg(all(windows, feature = "service-live-readings-v1"))]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct FirmwareVersions {
+    pub(crate) bios_version: String,
+    pub(crate) ec_version: String,
+    pub(crate) mcu_version: String,
+    pub(crate) vbios_version: String,
+    pub(crate) model_number: String,
+    pub(crate) vbios_gpu_name: String,
+    pub(crate) thunderbolt_firmware_version: String,
+    pub(crate) touchpad_firmware_version: String,
+    pub(crate) thunderbolt_firmware_access: Option<u8>,
+    pub(crate) touchpad_firmware_access: Option<u8>,
 }
 
 // Verify the same connection before submitting a request and before releasing

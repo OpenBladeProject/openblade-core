@@ -84,8 +84,10 @@ service-keyboard-driver-mode-read-v1 = ["service-mailbox-observation-v1"]
 service-keyboard-driver-mode-v1 = ["service-keyboard-driver-mode-read-v1", "service-fan-mutation-v2", "openblade-protocol/device-mode-setters"]
 # Read-only RZ09-0581 live readings: the capture-backed 0D/88 fan speed pair
 # on the installed mailbox read job, Windows battery power flow and battery
-# health, and the managed liveReadings and batteryHealth members. It sends no
-# setter and reads no temperature. Packaging refuses an image that carries it.
+# health, and the managed liveReadings and batteryHealth members. It also
+# publishes the managed firmware versions from Windows metadata reads on a
+# worker thread. It sends no setter and reads no temperature. Packaging
+# refuses an image that carries it.
 service-live-readings-v1 = ["service-mailbox-observation-v1"]
 service-hardware-compile-check = ["installed-service-candidate", "firmware-performance-compile-check"]
 installed-service-candidate = [
@@ -162,6 +164,7 @@ windows-sys = { version = "=0.61.2", features = [
     "Wdk_System_SystemServices",
     "Win32_Devices_DeviceAndDriverInstallation",
     "Win32_Devices_HumanInterfaceDevice",
+    "Win32_Devices_Properties",
     "Win32_Globalization",
     "Win32_Networking_WindowsWebServices",
     "Win32_Security_Authorization",

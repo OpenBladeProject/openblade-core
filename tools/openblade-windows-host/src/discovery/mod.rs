@@ -83,6 +83,22 @@ impl Model<'_> {
     }
 }
 
+/// Managed `RazerBladeModelCatalog.Find`: the catalog model number that the
+/// trimmed `text` starts with, ignoring ASCII case. The catalog is the model
+/// inventory; an invalid inventory is an error rather than an unknown model.
+#[allow(dead_code)] // The standalone discovery binary does not look a model up by text.
+pub(crate) fn catalog_model(text: &str) -> io::Result<Option<&'static str>> {
+    let text = text.trim();
+    Ok(Inventory::load()?
+        .models
+        .into_iter()
+        .map(|model| model.model_number)
+        .find(|number| {
+            text.get(..number.len())
+                .is_some_and(|prefix| prefix.eq_ignore_ascii_case(number))
+        }))
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase", tag = "state", content = "value")]
 enum RegistryText {
