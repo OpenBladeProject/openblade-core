@@ -206,8 +206,10 @@ any claim on it is decided and its cancel has joined
 
 The pool never issues an ID again once it was sent without a correlated
 reply, because a retry could then accept the first attempt's late reply. A
-restarted Service quarantines a still-live enable's `cancel_ids` and every
-`superseded_ids` set from the journal as well. So a
+restarted Service also quarantines, from the journal's active tail, a
+still-live enable's `cancel_ids` and the newest temporary-charge request's
+IDs. As far as its limit allows, it adds earlier `superseded_ids` sets (see
+[thermal history](windows-rust-thermal-history.md)). So a
 fenced attempt that sent some of the reserved IDs is retried with fresh ones
 instead, when it joined, journaled no submission intent and was not
 confirmed. `TemporaryClaim::roll_back_spent` puts the owner and intent back

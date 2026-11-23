@@ -104,18 +104,35 @@ other cancel: a crash after its Prepared is an abandoned Prepared, after its
 and after its 72 nothing. The enable's charge stays live until the retry
 confirms.
 
-Before its first Reader, a new Service process quarantines in its transaction
-pool the journal IDs an earlier process may have sent without reading their
-reply (`transaction_seed`). It reads the active tail through the read custody
-and changes no journal format. The IDs are those of a final request whose last
-row is unsettled, of every known-not-submitted (6) request, every
-`superseded_ids` set, and the reservations of the owners still live at the
-end of the journal: a manual fan owner's `cleanup` and a temporary-charge
-owner's `cancel_ids`. Confirmed requests, the reservations of replaced owners
-and performance rows add none. At most 48 are taken, the live ones first and
-then the newest, which leaves 206 of the 254 IDs. A journal that cannot be read
-or validated adds none, which is the window before this seed, and an absent
-one does not delay startup.
+Before any job runs, a new Service process quarantines in its transaction
+pool the journal IDs whose replies an earlier process may have left in the
+mailbox (`transaction_seed`). Reading a reply does not clear it, and a new
+process has answered nothing, so a confirmed request's IDs are as exposed as
+an unsettled one's. The seed takes every ID that each family's newest fan,
+battery and temporary-charge request may have sent, whatever its progress:
+a fan record's `preflight`, `ids` and `cleanup`, a battery record's `ids`, and
+a temporary-charge record's `ids` and `superseded_ids`. It adds the
+reservations of the owners still live at the end of the journal (a manual fan
+owner's `cleanup` and a temporary-charge owner's `cancel_ids`). It then takes,
+newest first and as far as its limit allows, the IDs of known-not-submitted
+(6) requests and `superseded_ids` sets. Older settled requests, the
+reservations of replaced owners and performance rows add none. Neither does
+an earlier request's reply to a command that the newest request of its
+family did not send again, such as a setter it never reached. At most 80 are
+taken: the largest live set (74) always fits, and 174 of the 254 IDs stay
+free. The journal format is unchanged.
+
+The seed reads the journal as release does (`journal_read_release`). That
+authenticates the active tail and every archived segment, opening the
+historical package files that prove each battery and temporary-charge row's
+producer, but never recovers. So an interrupted roll makes the seed find
+nothing instead of completing the roll when the source is composed; the first
+mutation's own read completes it, as before. The seed searches only the active
+tail, so a request in an archived segment adds nothing. A failed read is
+retried once. A read that fails fatal admission is not retried; the source
+keeps that failure, as its own reads keep it. A journal that still cannot be
+read or validated adds none, which is the window before this seed, and an
+absent one does not delay startup.
 
 ## Publication and metadata recovery
 
