@@ -197,9 +197,15 @@ what the claim took, or nothing. It refuses over a newer owner or intent,
 after an independent read found the charge off since its confirmed positive,
 over quarantined or unsettled storage, and once the reservation the claim saw
 was spent or replaced. An attempt that sent some of the reserved IDs is
-restored for a fresh-ID retry instead, as described next. Each retry needs a
-newer epoch, and only an SCM notice advances one, so retries never outnumber
-notices. A rolled-back retry reuses the enable's reserved cancel IDs. The
+restored for a fresh-ID retry instead, as described next. Each fenced retry
+needs a newer epoch, and only an SCM notice advances one, so those retries
+never outnumber notices. An attempt that sent nothing at the tick's own epoch
+while its fresh admission still holds, such as one whose write port failed to
+open, is rolled back the same way at most twice per enable
+(`UNSENT_CANCEL_RETRIES`), and the tick's coalescing mark is cleared so the
+next tick reads the source again. A refused admission at the tick's own
+epoch, and a third such attempt, pause the cancel with its warning. A
+rolled-back retry reuses the enable's reserved cancel IDs. The
 enable keeps those IDs pinned until it settles: it has left every owner slot,
 any claim on it is decided and its cancel has joined
 (`BatteryPermit::settle_pins`).

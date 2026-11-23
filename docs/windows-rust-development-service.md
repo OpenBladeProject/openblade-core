@@ -341,11 +341,14 @@ The step runs on the 500 ms origin tick after the power-source check and
 before the lifecycle reconciliation, the managed step order
 (`ServicePeriodicObservationLoop.cs:42-90`). It is taken under the source lock
 and awaited after it is released. It is due at the first eligible tick and
-then every 15 seconds. That first tick is the managed startup call
+then 20 seconds after the last step: the 15 s interval plus a 5 s lead for the
+read job. That first tick is the managed startup call
 (`ServiceStartupCoordinator.cs:85-86`) and always reads `00/84`. After it, a
 step whose read job already confirmed Driver under the current read admission
 within the interval starts no job, since managed would read and find Driver;
-a Normal, unknown or stale result is read again. A step failure continues the
+a Normal, unknown or stale result is read again. The lead lets the read job,
+which finds the owner's result stale after 15 s, query first whenever a
+subscription refresh runs it, so a healthy Driver keyboard needs no owner job. A step failure continues the
 loop, and only fatal admission evidence stops the Service. A tick that finds a
 request holding the mutation gate tries again at the next tick. A
 recovery-only read lease never activates a write, so the step does not run
@@ -370,7 +373,10 @@ present, the step is refused before any firmware access. It keeps the last
 confirmed status, consumes no recovery and runs again at the next step.
 Managed maintains Driver mode with no user signed in. Native adds no
 Service-scoped write authority for it, and the function row has no user to
-serve then.
+serve then. The tick also captures again, with no job, whenever the
+lifecycle write epoch moves, between steps and after an Indeterminate step
+too, and an Indeterminate owner still captures at each due step. The
+shutdown release therefore holds the capture of the current epoch.
 
 The step publishes through the read cadence that every fresh status projects
 (`ReadSource::record_driver_mode`): a confirmed mode, or `null` after a failed
@@ -395,20 +401,24 @@ managed order (`ServiceControlRuntime.cs:12925-12950`,
   lifecycle change, low power and a write lease that never activated
   (`ServiceControlRuntime.cs:13399-13520`). After origin loss the release is
   refused.
-- Owned-Stop admission is the one `Runtime::stop_fans` uses: the last write
-  capture's own, or, after a power or session notice advanced the lifecycle
-  epoch that capture pins, a settle capture of the same SID, session and logon
-  at the current epoch (`Fresh::capture_settle`). Both keep origin and custody
-  trust, the exact device, the same unlocked console session and fresh
-  competing-controller absence. The fan handback uses the settle capture only
-  to read and append its record; this release uses it for its one `00/04:0000`
-  write. No Service-scoped authority is added.
+- Owned-Stop admission is the latest ordinary write capture's own, as the
+  fan handback's owner path uses it (`Runtime::stop_fans`): origin and custody
+  trust, the exact device, the same unlocked console session, the lifecycle
+  epoch it pins and fresh competing-controller absence. A settle capture
+  (`Fresh::capture_settle`) authorizes owned-Stop reads only. Its type,
+  `Settle`, is not a `Fresh`, so it cannot authorize a request or this
+  release's `00/04:0000` setter; only the fan handback's settle permit uses it,
+  to read and append its record. After a notice with no tick since, or after a
+  session change, the release is refused. No Service-scoped authority is
+  added.
 - A fresh `00/84` read of Driver writes `00/04:0000` once, whoever set it, as
   managed does, and requires the exact acknowledgement and an independent
   `00/84` readback of Normal. A read of Normal ends an owned claim as a
   foreign change and writes nothing.
-- The release job runs at most once per process. A release that starts no
-  job, such as a lane that refused it before any exchange, keeps that attempt.
+- The release job runs at most once per process. A release that sends
+  nothing keeps that attempt: a lane that refused the job, or a job whose
+  measured pace could not fit the setter, its acknowledgement and the readback
+  in its time (`Exhausted`).
 - A process that never captured a console user's write admission, or whose
   read lease is recovery-only, has no owned-Stop admission and cannot write.
 
@@ -418,14 +428,30 @@ guardian blocked it and the handback cleared that block
 release already joined every fan job, and the handback refuses, and never
 settles, a fan row that is still pending, so nothing can clear the block.
 
-The keyboard has a 0.5 s share of the drain, the gate and active-work waits
-included, and the source drain timeout grows by the same share so the fan
-handback keeps its own 2 s. The listener retirement takes up to 2 s, so the
-Stop drain takes at most 2 + 2.5 = 4.5 s, inside the 5 s SCM wait hint
-(`scm_host.rs`). A keyboard outcome (`Release`) is a diagnostic: a refusal, a
+The keyboard has a 0.9 s share of the drain from the release's start, and
+the source drain timeout grows by the same share so the fan handback keeps
+its own 2 s. Inside the share, the gate wait and the join of active work have
+150 ms, and the job has 700 ms from its own start, ending at least 50 ms
+before the share does so the lane can retire it. The share also ends the
+release when the job's worker has not retired by then, and the fan handback
+joins that worker within its own time. A healthy release takes about
+0.43-0.57 s: three exchanges, about 22 fresh admissions at 8-9 ms each and
+three 30 ms settles. Twice the per-exchange allowance plus those admissions is
+about 1.09 s, which does not fit; the job's measured pace refuses the setter
+instead when it cannot finish. Native accepts SERVICE_CONTROL_SHUTDOWN, not
+PRESHUTDOWN, so at system shutdown the whole Stop must end within
+WaitToKillServiceTimeout, about 5 s, as managed's 5 s shutdown cleanup does.
+The listener retirement takes up to 2 s, so the Stop drain takes at most
+2 + 2.9 = 4.9 s, inside that window and the 5 s SCM wait hint
+(`scm_host.rs`). The keyboard gets what the fans leave. These figures are
+estimates; a real release on RZ09-0581 still needs an attended timing. A
+keyboard outcome (`Release`) is a diagnostic: a refusal, a
 skip or an unconfirmed write never skips the fan step or fails the Stop, and
-only fatal admission evidence does. The Service has no diagnostics sink yet,
-so the outcome is dropped at process exit, as an unregistration failure is.
+only fatal admission evidence does. An authorization only refuses, so a
+refused owned-Stop authorization is checked again for that evidence, such as
+lost custody integrity, before it is reported as `Unadmitted`. The Service
+has no diagnostics sink yet, so the outcome is dropped at process exit, as an
+unregistration failure is.
 
 The setter and readback IDs are not journaled until 6a-5, so none is pinned.
 The job reserves both pairs before its first send. A sent ID stays quarantined
