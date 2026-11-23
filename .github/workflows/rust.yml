@@ -301,6 +301,10 @@ jobs:
           # images send no 00/84 query and publish no Driver-mode member.
           $driverMode = @('openblade-windows-service-candidate', 'service-keyboard-driver-mode-read-v1')
           $driverModeProfiles = @('openblade-windows-service-candidate', 'service-keyboard-driver-mode-read-v1,service-profiles-v1')
+          # The keyboard Driver-mode ownership alone, without the lifecycle
+          # triggers lane that otherwise carries its serving-loop tick: the
+          # owner step, its release budgets and the tick.
+          $driverModeOwner = @('openblade-windows-service-candidate', 'service-keyboard-driver-mode-v1')
           # The read-only live readings alone and beside every Service write.
           # The lanes without it pin that ObserveState still refuses them.
           $liveReadings = @('openblade-windows-service-candidate', 'service-live-readings-v1')
@@ -349,6 +353,9 @@ jobs:
               ($driverMode + 'job_tests'),
               ($driverMode + 'native_package'),
               ($driverModeProfiles + 'driver_mode::tests'),
+              ($driverModeOwner + 'driver_mode'),
+              ($driverModeOwner + 'device_mode'),
+              ($driverModeOwner + 'a_serving_loop_tick_runs_the_keyboard_driver_mode_step'),
               ($liveReadings + 'live_readings::tests'),
               ($liveReadings + 'live_readings::windows::tests'),
               ($liveReadings + 'fan_rpm'),
@@ -414,6 +421,7 @@ jobs:
               @('openblade-windows-service-candidate', 'service-keyboard-driver-mode-read-v1,service-live-readings-v1,service-profiles-v1'),
               @('openblade-windows-service-candidate', 'service-live-readings-v1,service-fan-mutation-v2'),
               @('openblade-windows-service-candidate', 'service-profile-triggers-v1'),
+              @('openblade-windows-service-candidate', 'service-keyboard-driver-mode-v1'),
               @('openblade-windows-agent-candidate', 'agent-display-brightness-write-v1'),
               @('openblade-windows-agent-candidate', 'agent-display-profile-apply-v1'),
               @('openblade-windows-agent-candidate', 'agent-battery-report-v1'),
