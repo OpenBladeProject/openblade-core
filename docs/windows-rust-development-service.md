@@ -546,9 +546,57 @@ marker by name. A build without the feature still refuses the request with
   an ObserveState that asks for `BatteryPower`, mapped as managed
   `MapBatteryPowerFlow`. A failure is null.
 - **Battery health.** The battery class IOCTLs, summed as managed
-  `MapBatteryHealth`, published as `batteryHealth` in every status. The first
-  status captures it. While it is null, the first verified observation and each
-  power-source change capture it again. A captured value is never cleared.
+  `MapBatteryHealth`, published as `batteryHealth` in every status of a
+  Service that has a thermal reader. The first status captures it. While it is
+  null, the first verified observation and each power-source change capture it
+  again. A captured value is never cleared. A Service whose reader did not start
+  (`MailboxSource::NoReader`) publishes diagnostic status only and no
+  `batteryHealth`, where managed captures it at construction whatever the
+  device.
+- **Firmware versions.** Managed's `FirmwareVersions`, published as `firmware`
+  in every status of a Service that has a thermal reader, every ObserveState
+  reply and the subscription feed, whatever sensors a request asks for. A
+  Service whose reader did not start (`MailboxSource::NoReader`) publishes no
+  `firmware`, where managed captures it at construction whatever the device. Managed captures it once when the Service starts
+  and never refreshes it, and so does this Service. A worker thread captures it
+  after the first status publication, never on the read job, so it spends none
+  of the job's HID budget. The record is published once, when the worker is done
+  or 10 s have passed. A status before then has no `firmware` member, and a part
+  still unread at 10 s is `Unavailable`. Every source is a Windows metadata
+  read. The Service's laptop control handle is not used, and no command is sent
+  to any device. A part that cannot be read is the managed text
+  `Unavailable` and does not affect another part (the record has no null text).
+  - BIOS, EC and model: the `HARDWARE\DESCRIPTION\System\BIOS` registry values
+    `BIOSVersion`, `ECFirmwareMajorRelease` and `ECFirmwareMinorRelease`
+    (`major.minor` with a two-digit minor, each an int that is a byte), and
+    `SystemSKU`, mapped to the catalog's model number by its prefix.
+  - VBIOS and GPU name: the one NVIDIA adapter under
+    `SYSTEM\CurrentControlSet\Control\Video`, whose adapter and BIOS strings
+    must both be text, without a leading "Version".
+  - Thunderbolt: the `DEVPKEY` firmware version of the one USB4 root router
+    with the exact instance, hardware ID, service and parent, when it parses as
+    a .NET `Version`.
+  - Touchpad: the BCD version number from the HID attributes of the one
+    093A:3001 collection with usage 000D:0005. The RZ09-0581 touchpad is HID
+    over I2C (`ACPI\PIXA3854`), so its interface path does not name its
+    vendor. The interface is found by the devnode hardware ID that hidclass
+    builds for every top-level collection, `HID\VID_093A&UP:000D_U:0005`, from
+    the discovery scan's path and hardware IDs, and only interfaces with that ID
+    are opened. They are opened with no access and shared for reading and
+    writing, as managed opens them, and only `HidD_GetAttributes`,
+    `HidD_GetPreparsedData` and `HidP_GetCaps` are called. No report is read or
+    written. The vendor, product, usage and BCD version checks stay on the
+    attributes. Managed opens every HID interface and then filters; native does
+    not, so the laptop's own control collections are never opened.
+  - Thunderbolt and the touchpad are read only on the exact RZ09-0581, which
+    also carries a `ReadOnly` access for each. Any other model has neither
+    read and a null access.
+  - **McuVersion is always `Unavailable`.** Managed reads it with a firmware
+    query over the laptop's control interface (`IBladeDevice.ReadMcuVersionAsync`)
+    after its first verified observation, and a native Service may not send a
+    command without its own reviewed admission. Until one is admitted, the
+    native record is the record of a managed Service that has not yet read the
+    MCU. Windows has no source for it.
 - **Temperatures.** Both stay null. The CPU temperature worker below is
   unchanged, and the Service has no GPU temperature source.
 
@@ -574,7 +622,7 @@ state names no model, so the record is bound to its one producer, the exact
 RZ09-0581 performance Reader: `capability_tests` pins that Reader's identity
 to the record's and fails when another source file publishes an observation.
 
-Still unavailable natively: GPU temperature, firmware versions, and a reply
+Still unavailable natively: GPU temperature, the MCU version, and a reply
 for Custom High/High with Automatic fans, which the thermal read does not
 confirm, so that ObserveState has no fresh read and no live readings. A failed
 thermal read refuses the whole ObserveState, where managed still publishes the
@@ -584,6 +632,16 @@ codec and the battery mappings against managed
 (`ServiceControlRuntimeTests.NativeLiveReadingVectors`), and the managed codec
 decodes the native frames in `live-reading-native-frames.json`
 (`NativeLiveReadingFrames_DecodeThroughTheManagedCodec`).
+
+The vectors in `tools/openblade-windows-host/tests/data/firmware-version-vectors.json`
+pin the firmware record against managed
+(`ServiceControlRuntimeTests.NativeFirmwareVersionVectors`): each row feeds one set
+of Windows reads through `WindowsFirmwareVersionSource` and the two device
+selectors, writes the result through the v85 status codec and is replayed
+through the native capture. The same file pins `Version.TryParse` and
+`Convert.ToInt32`, the two framework parsers the native code mirrors. The managed
+codec decodes the native frames in `firmware-version-native-frames.json`
+(`NativeFirmwareVersionFrames_DecodeThroughTheManagedCodec`).
 
 ### Phase 10n ownership binding
 
