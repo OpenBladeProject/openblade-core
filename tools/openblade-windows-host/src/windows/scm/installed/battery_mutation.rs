@@ -91,6 +91,31 @@ impl TemporaryClaim {
     /// Puts back exactly what `take` took, or nothing. A newer owner, or a
     /// read since the claim that found the charge off, keeps the claim.
     fn roll_back(self, runtime: &Runtime) -> bool {
+        self.put_back(runtime, |storage, taken| {
+            storage.restore_temporary_claim(taken)
+        })
+    }
+    /// Puts the owner and intent back for a retry with fresh IDs after
+    /// `attempt` sent some of the enable's reserved IDs, which may still be
+    /// answered, and submitted no setter (`Storage::restore_spent_claim`).
+    /// Every later automatic cancel of the enable draws fresh IDs. The caller
+    /// admits only an attempt that used the reserved IDs, so an enable is
+    /// retried this way once.
+    fn roll_back_spent(self, runtime: &Runtime, attempt: &BatteryPermit) -> bool {
+        let owner = self.owner.clone();
+        let restored = self.put_back(runtime, |storage, taken| {
+            storage.restore_spent_claim(taken, &attempt.request)
+        });
+        if restored {
+            owner.cancel_spent.store(true, Ordering::Release);
+        }
+        restored
+    }
+    fn put_back(
+        self,
+        runtime: &Runtime,
+        restore: impl FnOnce(&Storage, super::super::thermal_storage::TemporaryTaken) -> bool,
+    ) -> bool {
         if runtime.temporary_owner.borrow().is_some()
             || runtime.read_off_since_positive(&self.owner)
         {
@@ -99,7 +124,7 @@ impl TemporaryClaim {
         let Some(taken) = self.taken else {
             return false;
         };
-        if !self.owner.storage.restore_temporary_claim(taken) {
+        if !restore(&self.owner.storage, taken) {
             return false;
         }
         self.owner.abandoned.store(false, Ordering::Release);
@@ -111,6 +136,13 @@ impl TemporaryClaim {
 pub(super) struct BatteryPermit {
     tfc: Mutex<Option<openblade_domain::temporary_charge_history::TemporaryChargeRecord>>,
     reserved_ids: Option<[u8; 8]>,
+    // An automatic cancel's enable's reserved IDs, which an earlier attempt
+    // sent: this attempt draws fresh IDs and names these in its record.
+    superseded: Option<[u8; 8]>,
+    // An enable whose reserved cancel IDs an attempt sent: every later
+    // automatic cancel of it draws fresh IDs (`TemporaryClaim::roll_back_spent`).
+    #[cfg(feature = "service-temporary-charge-v1")]
+    cancel_spent: AtomicBool,
     origin: Option<openblade_domain::temporary_charge_history::Origin>,
     #[cfg(feature = "service-temporary-charge-v1")]
     authentication: Option<(u32, i32)>,
@@ -126,7 +158,8 @@ pub(super) struct BatteryPermit {
     proof: ReadAdmission,
     record: Mutex<Option<BatteryRecord>>,
     // The source-cancel IDs the Reader pinned for an enable's record, until
-    // the enable no longer owns the charge (`settle_pins`).
+    // the enable no longer owns the charge, or a fresh-ID cancel's own IDs,
+    // until its attempt joined (`settle_pins`).
     pins: RecordPins,
     settled: Arc<SettledPins>,
     observation: Arc<Mutex<BatteryObservation>>,
@@ -221,6 +254,11 @@ impl BatteryPermit {
     /// The journal need not be settled: `NoMatchingReservation` can settle
     /// while `storage.pending()` holds, which is harmless because the cancel
     /// has joined, nothing resends its IDs and the pending store is fenced.
+    /// A fresh-ID cancel attempt (`superseded`) pins its own IDs, which only
+    /// it sends: it settles them once its worker has joined, whether its
+    /// claim is rolled back or stands, since a later attempt draws new ones.
+    /// The enable keeps its spent reserved IDs pinned as above.
+    ///
     /// The pins move to the queue, so a second call queues nothing, and a
     /// sent ID stays quarantined.
     fn settle_pins(&self) {
@@ -251,6 +289,9 @@ impl Permit for BatteryPermit {
     }
     fn temporary_reserved_ids(&self) -> Option<[u8; 8]> {
         self.reserved_ids
+    }
+    fn temporary_fresh_ids(&self) -> bool {
+        self.superseded.is_some()
     }
     fn resolve_temporary_charge(
         &self,
@@ -289,6 +330,7 @@ impl Permit for BatteryPermit {
             policy,
             ids,
             cancel_ids,
+            superseded_ids: self.superseded,
             origin: self.origin.clone(),
             fan_owner: self.storage.retained_fan_binding()?,
         };
@@ -804,12 +846,17 @@ impl Runtime {
             proof,
         } = admission
         {
+            // Once an attempt sent the reserved IDs, which may still be
+            // answered, every later attempt draws fresh ones instead.
+            let spent = original.cancel_spent.load(Ordering::Acquire);
             let permit = Arc::new(BatteryPermit {
                 tfc: Mutex::new(None),
                 // The only permit that carries reserved IDs. The fenced
                 // rollback trusts `Transactions::unsent` on these pinned IDs,
                 // so no other path may send them.
-                reserved_ids: record.cancel_ids,
+                reserved_ids: record.cancel_ids.filter(|_| !spent),
+                superseded: record.cancel_ids.filter(|_| spent),
+                cancel_spent: AtomicBool::new(false),
                 origin: Some(openblade_domain::temporary_charge_history::Origin {
                     request: original.request.clone(),
                     intent: record.hash()?,
@@ -856,9 +903,25 @@ impl Runtime {
             {
                 return Err(e);
             }
+            // Only this attempt sends its fresh IDs, so they settle once it
+            // joined; an unjoined attempt keeps them pinned.
+            if permit.joined.load(Ordering::Acquire) {
+                permit.settle_pins();
+            }
             if fenced()
-                && permit.known_unsubmitted()
-                && claim.take().is_some_and(|claim| claim.roll_back(self))
+                && let Some(claim) = claim.take()
+                && if permit.known_unsubmitted() {
+                    claim.roll_back(self)
+                } else {
+                    // It sent IDs that may still be answered. Retry once with
+                    // fresh ones if it used the reserved IDs, joined and
+                    // submitted no setter; a fresh-ID attempt that sent
+                    // pauses.
+                    permit.reserved_ids.is_some()
+                        && permit.joined.load(Ordering::Acquire)
+                        && !permit.confirmed.load(Ordering::Acquire)
+                        && claim.roll_back_spent(self, &permit)
+                }
             {
                 // Managed writes this cancel in the same transition; here the
                 // newer epoch makes the next tick read the source and retry.
@@ -1023,6 +1086,9 @@ impl Runtime {
         let permit = Arc::new(BatteryPermit {
             tfc: Mutex::new(None),
             reserved_ids: None,
+            superseded: None,
+            #[cfg(feature = "service-temporary-charge-v1")]
+            cancel_spent: AtomicBool::new(false),
             origin: None,
             #[cfg(feature = "service-temporary-charge-v1")]
             authentication,

@@ -24,6 +24,13 @@ pub(crate) trait Permit: Send + Sync {
     fn temporary_reserved_ids(&self) -> Option<[u8; 8]> {
         None
     }
+    /// Whether a temporary-charge cancel without reserved IDs draws fresh
+    /// ones that its record names in place of its enable's reserved IDs, which
+    /// an earlier attempt may have sent. They are pinned like those
+    /// (`Reader::reserve_retained_pair`) and handed to `retained_pins`.
+    fn temporary_fresh_ids(&self) -> bool {
+        false
+    }
     fn resolve_temporary_charge(
         &self,
         _source: u8,

@@ -17,9 +17,35 @@ pub(in super::super) enum TemporaryRelease {
     NoMatchingReservation,
     Deferred(ReleaseDeferred),
 }
+/// The journal space `entry`'s enable reserves for its automatic cancel: the
+/// cancel's four rows, or its Prepared and known-not-submitted rows followed
+/// by a fresh-ID retry's four (`retry_capacity`), whichever is larger.
 fn cancellation_capacity(entry: &Entry) -> io::Result<usize> {
-    let Some(t) = entry.tfc.as_ref().filter(|t| t.cancel_ids.is_some()) else {
+    let Some(row) = cancellation_row(entry)? else {
         return Ok(0);
+    };
+    let row = row_len(&row)?;
+    Ok((row * 4).max(row * 2 + retry_capacity(entry)?))
+}
+/// The four rows of a fresh-ID retry of `entry`'s automatic cancel, at the
+/// size of its largest: three-digit fresh IDs, and the reserved IDs named.
+fn retry_capacity(entry: &Entry) -> io::Result<usize> {
+    let Some(mut row) = cancellation_row(entry)? else {
+        return Ok(0);
+    };
+    let cancel = row.tfc.as_mut().ok_or_else(denied)?;
+    cancel.superseded_ids = Some(cancel.ids);
+    cancel.ids = [254; openblade_domain::temporary_charge_history::EXCHANGES];
+    Ok(row_len(&row)? * 4)
+}
+fn row_len(row: &Entry) -> io::Result<usize> {
+    Ok(serde_json::to_vec(row)?.len() + 1)
+}
+/// The largest automatic cancel row the journal admits for `entry`'s enable,
+/// with its reserved IDs. `None` for a row that reserves no cancellation.
+fn cancellation_row(entry: &Entry) -> io::Result<Option<Entry>> {
+    let Some(t) = entry.tfc.as_ref().filter(|t| t.cancel_ids.is_some()) else {
+        return Ok(None);
     };
     let mut cancel = t.clone();
     cancel.requested =
@@ -43,7 +69,7 @@ fn cancellation_capacity(entry: &Entry) -> io::Result<usize> {
     let mut row = entry.clone();
     row.tfc = Some(cancel);
     row.progress = 72;
-    Ok((serde_json::to_vec(&row)?.len() + 1) * 4)
+    Ok(Some(row))
 }
 impl Storage {
     #[cfg(all(test, feature = "service-temporary-charge-v1"))]
@@ -94,6 +120,7 @@ impl Storage {
         // Bookkeeping only: no history/IDs/fan reservation is rewritten.
         s.temporary_capacity = 0;
         s.temporary_capacity_origin = None;
+        s.temporary_retry_capacity = 0;
         Ok(TemporaryRelease::Released)
     }
     #[cfg(all(test, feature = "service-temporary-charge-v1"))]
@@ -138,6 +165,58 @@ impl Storage {
         if s.temporary_capacity != taken.capacity || s.temporary_capacity_origin != taken.origin {
             return false;
         }
+        s.battery_temporary = taken.intent;
+        true
+    }
+    /// Puts back the intent a claim took, for a retry with fresh IDs after
+    /// `attempt` sent some of the reserved ones and submitted no setter, and
+    /// reserves the retry's own rows (`retry_capacity`). Like
+    /// `restore_temporary_claim`, it refuses over quarantined or unsettled
+    /// storage or a newer intent, and unless the attempt left the reservation
+    /// as the claim saw it, or journaled only Prepared and known not
+    /// submitted, whose Prepared spent it. The room the retry reserves is what
+    /// that Prepared checked it left (`record_battery`), and nothing else
+    /// writes while the claim is decided.
+    #[cfg(feature = "service-temporary-charge-v1")]
+    pub(in super::super) fn restore_spent_claim(
+        &self,
+        taken: TemporaryTaken,
+        attempt: &str,
+    ) -> bool {
+        let Ok(mut s) = self.state.lock() else {
+            return false;
+        };
+        if s.quarantined
+            || s.last.as_ref().is_some_and(|e| !settled(e.progress))
+            || s.battery_temporary.is_some()
+            || taken.origin.is_none()
+            || s.temporary_retry_capacity == 0
+        {
+            return false;
+        }
+        let left = match s.last.as_ref().filter(|e| e.request == attempt) {
+            Some(last) => {
+                last.progress == 6
+                    && s.temporary_capacity == 0
+                    && s.temporary_capacity_origin.is_none()
+            }
+            None => {
+                s.temporary_capacity == taken.capacity
+                    && s.temporary_capacity_origin == taken.origin
+            }
+        };
+        let room = s
+            .journal
+            .as_deref()
+            .unwrap_or_default()
+            .len()
+            .checked_add(s.temporary_retry_capacity)
+            .is_some_and(|n| n <= crate::thermal_history::SEGMENT);
+        if !left || !room {
+            return false;
+        }
+        s.temporary_capacity = s.temporary_retry_capacity;
+        s.temporary_capacity_origin = taken.origin;
         s.battery_temporary = taken.intent;
         true
     }
@@ -271,14 +350,20 @@ impl Storage {
                 }
                 Ok(())
             })?;
-            let needed = row * 4
-                + cancellation_capacity(&entry)?
-                + if entry.tfc.as_ref().is_some_and(|t| t.origin.is_some()) {
-                    0
-                } else {
-                    s.temporary_capacity
+            let own = match entry.tfc.as_ref().filter(|t| t.origin.is_some()) {
+                // An automatic cancel with its enable's reserved IDs also leaves
+                // room for a fresh-ID retry after its own Prepared and
+                // known-not-submitted rows (`restore_spent_claim`).
+                Some(t)
+                    if t.superseded_ids.is_none()
+                        && s.temporary_capacity_origin.as_ref() == t.origin.as_ref() =>
+                {
+                    (row * 4).max(row * 2 + s.temporary_retry_capacity)
                 }
-                + retained;
+                Some(_) => row * 4,
+                None => row * 4 + cancellation_capacity(&entry)? + s.temporary_capacity,
+            };
+            let needed = own + retained;
             if s.temporary_capacity > 0
                 && s.journal
                     .as_deref()
@@ -323,6 +408,15 @@ impl Storage {
         {
             s.temporary_capacity = 0;
             s.temporary_capacity_origin = None;
+            // A fresh-ID retry is the last attempt; a reserved cancel keeps
+            // what its retry would need.
+            if entry
+                .tfc
+                .as_ref()
+                .is_some_and(|t| t.superseded_ids.is_some())
+            {
+                s.temporary_retry_capacity = 0;
+            }
         }
         if matches!(entry.progress, 72 | 73) {
             s.temporary_capacity = cancellation_capacity(&entry)?;
@@ -337,6 +431,11 @@ impl Storage {
                     })
                 })
                 .transpose()?;
+            s.temporary_retry_capacity = if s.temporary_capacity_origin.is_some() {
+                retry_capacity(&entry)?
+            } else {
+                0
+            };
         }
         #[cfg(test)]
         let policy_prepared = entry.battery.is_some() && entry.progress == 0;

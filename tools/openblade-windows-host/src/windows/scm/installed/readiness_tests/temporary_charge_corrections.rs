@@ -362,6 +362,17 @@ mod cases {
         r.port.state.lock().unwrap().actual = 15;
         let response = r.set(2, value(1, 1)).await;
         assert_eq!(response["result"]["status"], 1, "{response}");
+        // The abandoned reservation also covered a fresh-ID retry, so one
+        // ordinary operation no longer reaches the boundary. Settled
+        // operations continue until one rolls.
+        for n in 3.. {
+            if r.files.read("retained-segment").unwrap().is_some() {
+                break;
+            }
+            assert!(n < 12, "settled operations never reached the boundary");
+            let response = r.set(n, value(1 + i32::from(n % 2), 1)).await;
+            assert_eq!(response["result"]["status"], 1, "{response}");
+        }
         let response = r
             .request(battery_request(859, "setFullChargeOverride", json!(false)))
             .await;

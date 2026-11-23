@@ -649,6 +649,10 @@ struct State {
     battery_temporary: Option<bool>,
     temporary_capacity: usize,
     temporary_capacity_origin: Option<openblade_domain::temporary_charge_history::Origin>,
+    // The part of a live enable's cancellation reservation that a fresh-ID
+    // retry needs (`battery_storage::retry_capacity`); it outlives the
+    // reserved cancel's Prepared row, which spends the reservation.
+    temporary_retry_capacity: usize,
 }
 pub(super) struct Storage {
     same_path: fn(&str, &str) -> bool,
@@ -755,6 +759,7 @@ impl Storage {
                 battery_temporary: None,
                 temporary_capacity: 0,
                 temporary_capacity_origin: None,
+                temporary_retry_capacity: 0,
             }),
         }))
     }

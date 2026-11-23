@@ -167,6 +167,46 @@ public sealed class NativeHandbackTests : IDisposable
         Assert.Throws<IOException>(() => WindowsNativeThermalHistory.Read(files, [Original], Original));
     }
 
+    // A source cancel retried with fresh IDs (superseded_ids) is handed back
+    // like any other cancel: by its progress and desired state, with no new
+    // record field. Rows: the enable (0-3), the reserved attempt's Prepared and
+    // known-not-submitted rows (4-5), then the fresh retry (6-9). The enable
+    // stays live until the retry confirms.
+    [Theory]
+    [InlineData(4, null, 0, true, "099")]
+    [InlineData(5, null, null, true, null)]
+    [InlineData(6, null, 0, true, "100")]
+    [InlineData(7, 70, null, true, "100")]
+    [InlineData(8, 71, null, true, "100")]
+    [InlineData(9, null, null, false, null)]
+    public void FreshIdCancelRetryCrashIsHandedBackByItsProgress(int last, int? pending, int? prepared, bool live, string? request)
+    {
+        string journal = Vector("temporary-charge-history-v1.json").GetProperty("cases").EnumerateArray()
+            .Single(c => c.GetProperty("name").GetString() == "source-cancel-fresh-ids-after-known-unsent").GetProperty("journal").GetString()!;
+        string[] rows = Lines(journal)[..(last + 1)];
+        using var files = ManagedMailboxCorrectionTests.Bootstrap();
+        Thermal(files, Bytes(string.Join('\n', rows) + "\n"));
+        var handback = WindowsNativeThermalHistory.Read(files, [Original], Original).Handback!;
+        Assert.Equal(pending, handback.Pending?.Progress);
+        Assert.Equal(prepared, handback.AbandonedPrepared?.Progress);
+        Assert.Equal(live, handback.LiveTemporaryCharge is not null);
+        var open = handback.Pending ?? handback.AbandonedPrepared;
+        Assert.Equal(request, open?.Request[^3..]);
+        if (open is not null)
+        {
+            // The cancel's target, not the enable's: managed reads the charge off.
+            Assert.Equal(("temporaryCharge", new NativeHandbackBattery(80, true, false)), (open.Family, open.Battery));
+        }
+        // A confirmed retry leaves nothing to hand back, and no record is written.
+        Assert.Equal(last == 9, handback.IsEmpty);
+        if (!handback.IsEmpty)
+        {
+            // The record carries no transaction IDs, so it round-trips unchanged.
+            var (parsed, _, _) = WindowsNativeHandback.Parse(handback.Serialize([]));
+            Assert.Equal(handback, parsed);
+        }
+    }
+
 
     [Fact]
     public void LiveTemporaryChargeOfAnEarlierOwnerIsNotHandedBackByALaterExit()

@@ -30,7 +30,11 @@ internal static class WindowsNativeTemporaryChargeHistory
     private static bool Policy(int p) => p == 80 || p is >= 128 and <= 255 && (p & 127) is >= 50 and <= 80 && (p & 127) % 5 == 0;
     internal static byte[] Canonical(JsonElement t)
     {
-        Members(t, "contract", "requested", "configured", "desired", "source", "baseline", "target", "policy", "ids", "cancel_ids", "origin", "fan_owner");
+        // superseded_ids is present only on an automatic cancel that replaced its
+        // enable's reserved IDs; a reader without it refuses the member.
+        bool replaced = t.TryGetProperty("superseded_ids", out var superseded);
+        string[] members = ["contract", "requested", "configured", "desired", "source", "baseline", "target", "policy", "ids", "cancel_ids", "origin", "fan_owner"];
+        Members(t, replaced ? [.. members, "superseded_ids"] : members);
         if (t.GetProperty("contract").GetString() != Contract) { throw Denied(); }
         var r = t.GetProperty("requested"); Members(r, "operation", "enabled");
         if (r.GetProperty("operation").GetString() != "setFullChargeOverride") { throw Denied(); }
@@ -41,14 +45,17 @@ internal static class WindowsNativeTemporaryChargeHistory
         if (source is < 0 or > 2 || baseline is not (0 or 4) || target != (enabled ? 4 : 0) || d != (c.Limit, c.Protection, enabled)
             || policy.ValueKind != JsonValueKind.Null && !Policy(Number(policy))
             || enabled && (source == 1 || !c.Protection || policy.ValueKind == JsonValueKind.Null || Number(policy) == 80 || cancel.ValueKind == JsonValueKind.Null || origin.ValueKind != JsonValueKind.Null)
-            || !enabled && cancel.ValueKind != JsonValueKind.Null) { throw Denied(); }
+            || !enabled && cancel.ValueKind != JsonValueKind.Null
+            || replaced && (enabled || origin.ValueKind == JsonValueKind.Null)) { throw Denied(); }
         var seen = new HashSet<int>();
         void Ids(JsonElement ids)
         {
             if (ids.ValueKind != JsonValueKind.Array || ids.GetArrayLength() != 8) { throw Denied(); }
             foreach (var id in ids.EnumerateArray()) { int n = Number(id); if (n is < 1 or > 254 || !seen.Add(n)) { throw Denied(); } }
         }
+        // Fresh IDs share none with the reserved IDs they replace.
         Ids(t.GetProperty("ids")); if (cancel.ValueKind != JsonValueKind.Null) { Ids(cancel); }
+        if (replaced) { Ids(superseded); }
         if (origin.ValueKind != JsonValueKind.Null)
         {
             Members(origin, "request", "intent");
@@ -69,6 +76,7 @@ internal static class WindowsNativeTemporaryChargeHistory
             D("configured"); D("desired"); w.WriteNumber("source", source); w.WriteNumber("baseline", baseline); w.WriteNumber("target", target);
             w.WritePropertyName("policy"); policy.WriteTo(w);
             foreach (string key in new[] { "ids", "cancel_ids" }) { w.WritePropertyName(key); t.GetProperty(key).WriteTo(w); }
+            if (replaced) { w.WritePropertyName("superseded_ids"); superseded.WriteTo(w); }
             w.WritePropertyName("origin");
             if (origin.ValueKind == JsonValueKind.Null) { w.WriteNullValue(); }
             else { w.WriteStartObject(); w.WriteString("request", origin.GetProperty("request").GetString()); w.WriteString("intent", origin.GetProperty("intent").GetString()); w.WriteEndObject(); }

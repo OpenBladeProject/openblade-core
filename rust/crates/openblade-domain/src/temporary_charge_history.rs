@@ -31,6 +31,12 @@ pub struct TemporaryChargeRecord {
     // A successful enable retains these exact process-pool IDs for one source
     // cancellation. They are not restart authority or fan handback IDs.
     pub cancel_ids: Option<[u8; EXCHANGES]>,
+    // An automatic cancel that may not resend its enable's `cancel_ids`, because
+    // an earlier attempt sent one without a correlated reply, names them here
+    // and carries fresh `ids` instead. Absent on every other row, so older
+    // rows keep their bytes; readers that predate it refuse the member.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub superseded_ids: Option<[u8; EXCHANGES]>,
     pub origin: Option<Origin>,
     pub fan_owner: Option<String>,
 }
@@ -56,6 +62,8 @@ impl TemporaryChargeRecord {
                     || self.cancel_ids.is_none()
                     || self.origin.is_some())
             || !enabled && self.cancel_ids.is_some()
+            // Only an automatic cancel replaces its enable's reserved IDs.
+            || self.superseded_ids.is_some() && (enabled || self.origin.is_none())
             || self.origin.as_ref().is_some_and(|o| {
                 self.source != 1
                     || !crate::thermal_history::is_guid(&o.request)
@@ -68,8 +76,15 @@ impl TemporaryChargeRecord {
         {
             return Err(deny());
         }
+        // Fresh IDs share none with the reserved IDs they replace, which an
+        // earlier attempt may have sent without a reply.
         let mut seen = [false; 256];
-        for id in self.ids.iter().chain(self.cancel_ids.iter().flatten()) {
+        for id in self
+            .ids
+            .iter()
+            .chain(self.cancel_ids.iter().flatten())
+            .chain(self.superseded_ids.iter().flatten())
+        {
             if *id == 0 || *id == 255 || seen[*id as usize] {
                 return Err(deny());
             }
@@ -136,5 +151,69 @@ mod tests {
         let mut old = old;
         old.requested = Request::SetFullChargeOverride { enabled: false };
         assert!(old.validate().is_err());
+    }
+    fn case(name: &str) -> std::vec::Vec<crate::thermal_history::Entry> {
+        let v: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../tools/openblade-windows-host/tests/data/temporary-charge-history-v1.json"
+        ))
+        .unwrap();
+        let case = v["cases"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["name"] == name)
+            .unwrap();
+        case["journal"]
+            .as_str()
+            .unwrap()
+            .lines()
+            .map(|row| serde_json::from_str(row).unwrap())
+            .collect()
+    }
+    fn journal(rows: &[crate::thermal_history::Entry]) -> std::vec::Vec<u8> {
+        let mut bytes = std::vec::Vec::new();
+        for row in rows {
+            bytes.extend(serde_json::to_vec(row).unwrap());
+            bytes.push(b'\n');
+        }
+        bytes
+    }
+    #[test]
+    fn temporary_charge_fresh_cancel_ids_name_the_reserved_ids_they_replace() {
+        let rows = case("source-cancel-fresh-ids-after-known-unsent");
+        crate::thermal_history::rows(&journal(&rows), |_, _| Ok(())).unwrap();
+        let enable = rows[3].tfc.clone().unwrap();
+        let fresh = rows.last().unwrap().tfc.clone().unwrap();
+        assert_eq!(fresh.superseded_ids, enable.cancel_ids);
+        assert!(
+            fresh
+                .ids
+                .iter()
+                .all(|id| !enable.cancel_ids.unwrap().contains(id))
+        );
+        // The member follows `cancel_ids` and is absent from every other row,
+        // so rows written before it keep their canonical bytes and intents.
+        let canonical = serde_json::to_string(&fresh).unwrap();
+        assert!(canonical.contains("\"cancel_ids\":null,\"superseded_ids\":[108,"));
+        assert!(
+            !serde_json::to_string(&enable)
+                .unwrap()
+                .contains("superseded_ids")
+        );
+        // A reader that dropped the member would bind the fresh IDs to the
+        // enable's reserved slot, which they do not match: it cannot misread
+        // the row as the reserved cancellation, even rehashed.
+        let mut stripped = rows.clone();
+        for row in &mut stripped[6..] {
+            let tfc = row.tfc.as_mut().unwrap();
+            tfc.superseded_ids = None;
+            row.intent = tfc.hash().unwrap();
+        }
+        assert!(crate::thermal_history::rows(&journal(&stripped), |_, _| Ok(())).is_err());
+        // Each fresh row still validates on its own as a cancel record.
+        fresh.validate().unwrap();
+        let mut reserved_too = fresh.clone();
+        reserved_too.cancel_ids = enable.cancel_ids;
+        assert!(reserved_too.validate().is_err());
     }
 }

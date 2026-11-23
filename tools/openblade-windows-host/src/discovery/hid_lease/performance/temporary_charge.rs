@@ -25,9 +25,12 @@ impl<P: Port> Reader<P, ReadAdmission> {
         // cancellation before any GET/Prepared. The record carries the
         // cancellation IDs to a later Reader, so they are retained until the
         // enable's ownership settles (`BatteryPermit::settle_pins`); no fan
-        // ID is reused.
+        // ID is reused. A cancel replacing reserved IDs an earlier attempt
+        // sent draws fresh ones the same way, which `retain` hands to its own
+        // record once that names them.
         let ids = match permit.temporary_reserved_ids() {
             Some(v) => v,
+            None if permit.temporary_fresh_ids() => reserve(|| self.reserve_retained_pair())?,
             None => reserve(|| self.reserve_pair())?,
         };
         // Only these steps send the IDs. The pool marks an ID sent before its

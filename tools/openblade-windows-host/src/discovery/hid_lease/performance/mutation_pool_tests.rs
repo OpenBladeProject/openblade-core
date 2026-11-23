@@ -23,6 +23,10 @@ struct Request {
     // A temporary full charge target, and the IDs its cancellation spends.
     tfc: Option<bool>,
     reserved: Option<[u8; 8]>,
+    // The reserved IDs a fresh-ID cancel replaces, and the IDs it drew.
+    superseded: Option<[u8; 8]>,
+    ids: Mutex<Option<[u8; 8]>>,
+    pins: Mutex<Vec<u8>>,
     cancel_ids: Mutex<Option<[u8; 8]>>,
     rows: Mutex<Vec<Progress>>,
     battery_rows: Mutex<Vec<u8>>,
@@ -44,6 +48,12 @@ impl Permit for Request {
     }
     fn temporary_reserved_ids(&self) -> Option<[u8; 8]> {
         self.reserved
+    }
+    fn temporary_fresh_ids(&self) -> bool {
+        self.superseded.is_some()
+    }
+    fn retained_pins(&self, ids: &[u8]) {
+        self.pins.lock().unwrap().extend_from_slice(ids);
     }
     fn resolve_temporary_charge(
         &self,
@@ -71,11 +81,18 @@ impl Permit for Request {
             policy,
             ids,
             cancel_ids,
-            origin: None,
+            superseded_ids: self.superseded,
+            origin: self
+                .superseded
+                .map(|_| openblade_domain::temporary_charge_history::Origin {
+                    request: "aaaaaaaa-bbbb-cccc-dddd-000000000002".into(),
+                    intent: "5".repeat(64),
+                }),
             fan_owner: None,
         };
         record.validate()?;
         *self.cancel_ids.lock().unwrap() = cancel_ids;
+        *self.ids.lock().unwrap() = Some(ids);
         Ok(Some(record))
     }
     fn record_battery(&self, progress: u8) -> io::Result<()> {
@@ -286,6 +303,42 @@ async fn temporary_charge_cancel_ids_are_issued_to_nothing_else() {
     };
     assert_eq!(apply(&fixture, &cancel).await, None);
     assert_eq!(*cancel.battery_rows.lock().unwrap(), [0, 70, 71, 72]);
+}
+
+// A cancel that replaces its enable's reserved IDs draws fresh ones as the
+// enable drew those: pinned, and handed to the record that names them, so no
+// other request is issued them until that record settles.
+#[tokio::test(start_paused = true)]
+async fn temporary_charge_fresh_cancel_ids_are_pinned_for_their_record() {
+    let fixture = balanced();
+    let enable = Request {
+        tfc: Some(true),
+        ..Request::default()
+    };
+    assert_eq!(apply(&fixture, &enable).await, None);
+    let reserved = enable.cancel_ids.lock().unwrap().unwrap();
+    // An automatic cancel runs on Battery.
+    fixture.state.lock().unwrap().actual = 0;
+    let cancel = Request {
+        tfc: Some(false),
+        superseded: Some(reserved),
+        ..Request::default()
+    };
+    assert_eq!(apply(&fixture, &cancel).await, None);
+    assert_eq!(*cancel.battery_rows.lock().unwrap(), [0, 70, 71, 72]);
+    let fresh = cancel.ids.lock().unwrap().unwrap();
+    assert!(fresh.iter().all(|id| !reserved.contains(id)), "{fresh:?}");
+    assert_eq!(*cancel.pins.lock().unwrap(), fresh);
+    assert_eq!(fixture.pinned_transactions(&fresh), fresh);
+    fixture.state.lock().unwrap().actual = 15;
+    let before = sent_ids(&fixture).len();
+    churn(&fixture).await;
+    assert!(
+        sent_ids(&fixture)[before..]
+            .iter()
+            .all(|id| !fresh.contains(id) && !reserved.contains(id)),
+        "a pinned cancellation ID was issued to another request"
+    );
 }
 
 #[tokio::test(start_paused = true)]

@@ -422,6 +422,19 @@ async fn prepared_race(quarantine_after_read_pause: bool) {
         );
         let performance = source_mutation(&r, performance_request(924)).await;
         assert_eq!(performance["status"], 1, "{performance}");
+        // The released reservation also covered a fresh-ID retry, so one
+        // ordinary operation no longer reaches the boundary. Settled
+        // operations continue until one rolls.
+        for n in 926.. {
+            if r.files.read("retained-segment").unwrap().is_some() {
+                break;
+            }
+            assert!(n < 936, "settled operations never reached the boundary");
+            let mut request = performance_request(n);
+            request["value"]["value"] = json!(2 - n % 2);
+            let performance = source_mutation(&r, request).await;
+            assert_eq!(performance["status"], 1, "{performance}");
+        }
         let cancel = source_mutation(
             &r,
             battery_request(925, "setFullChargeOverride", json!(false)),
@@ -861,7 +874,8 @@ enum Window {
     /// No request was sent.
     Unsent,
     /// A request bearing one of the cancel's reserved IDs was sent, but no
-    /// submission intent (progress 70) was journaled.
+    /// submission intent (progress 70) was journaled. The claim returns, and
+    /// a later tick cancels with fresh IDs.
     Sent,
     /// Submission intent was journaled; no setter was sent.
     IntentJournaled,
@@ -877,6 +891,15 @@ async fn window_row(notice: Notice, position: usize) -> Option<Window> {
     let reservation = r.storage.temporary_capacity_for_tests();
     source_battery(&r);
     let sent = requests(&r);
+    let reserved: Vec<u8> = serde_json::from_value(
+        fan_rows(&r)
+            .iter()
+            .rev()
+            .find_map(|row| row["tfc"]["cancel_ids"].as_array().cloned())
+            .map(Value::Array)
+            .unwrap(),
+    )
+    .unwrap();
     let epoch = r.custody.lifecycle.active();
     if !notice_tick(&r, notice, position).await {
         r.stop().await;
@@ -890,15 +913,23 @@ async fn window_row(notice: Notice, position: usize) -> Option<Window> {
         (_, 0, true) => Window::IntentJournaled,
         _ => Window::Submitted,
     };
-    if window == Window::Unsent {
-        // Deferred before or after the claim, everything is as it was.
+    let attempt: Vec<u8> = r.port.state.lock().unwrap().sent[sent..]
+        .iter()
+        .map(|s| s.3)
+        .collect();
+    if window <= Window::Sent {
+        // Deferred before or after the claim, the claim returns.
         assert!(r.runtime.temporary_owned_for_tests(), "position {position}");
         assert!(r.storage.temporary_desired(), "position {position}");
-        assert_eq!(
-            r.storage.temporary_capacity_for_tests(),
-            reservation,
-            "position {position}"
-        );
+        let capacity = r.storage.temporary_capacity_for_tests();
+        if window == Window::Unsent {
+            assert_eq!(capacity, reservation, "position {position}");
+        } else {
+            // The attempt spent the reservation; what returns is the
+            // fresh-ID retry's, for the same enable.
+            assert!(capacity.0 > 0, "position {position}");
+            assert_eq!(capacity.1, reservation.1, "position {position}");
+        }
     } else {
         // A retry would resend an ID that may still be answered, so the
         // claim stands.
@@ -935,15 +966,28 @@ async fn window_row(notice: Notice, position: usize) -> Option<Window> {
             assert!(!r.storage.pending());
         }
         Window::Sent => {
-            assert_eq!(total, 0, "position {position}: never retried");
-            assert!(!retried, "position {position}: not even read again");
-            let view = immediate_battery_view(&r, Some(SID)).await;
+            assert_eq!(total, 1, "position {position}: written once later");
+            assert_eq!(r.port.state.lock().unwrap().temporary_raw, 0);
+            assert!(!r.storage.pending());
+            // The retry names the IDs it replaces and sends none of them.
+            let cancel = fan_rows(&r).last().unwrap().clone();
+            assert_eq!(cancel["progress"], 72, "position {position}");
+            assert_eq!(
+                cancel["tfc"]["superseded_ids"],
+                json!(reserved),
+                "position {position}"
+            );
+            let retry: Vec<u8> = r.port.state.lock().unwrap().sent[sent + attempt.len()..]
+                .iter()
+                .map(|s| s.3)
+                .collect();
             assert!(
-                view["message"]
-                    .as_str()
-                    .unwrap()
-                    .contains("cancellation is paused"),
-                "position {position}: {view}"
+                retry.iter().all(|id| !reserved.contains(id)),
+                "position {position}: {retry:?} reissues {reserved:?}"
+            );
+            assert!(
+                attempt.iter().all(|id| reserved.contains(id)),
+                "position {position}: {attempt:?}"
             );
         }
         Window::IntentJournaled => {
@@ -970,19 +1014,19 @@ async fn window_map(notice: Notice, name: &str) {
     // Once a request is sent, no later position counts as unsent.
     assert!(rows.windows(2).all(|w| w[0] <= w[1]), "{name}: {rows:?}");
     let count = |window| rows.iter().filter(|row| **row == window).count();
-    // One letter per position: u unsent and retried, p paused after a
-    // request was sent, i intent journaled, s submitted.
+    // One letter per position: u unsent and retried, f retried with fresh
+    // IDs after a request was sent, i intent journaled, s submitted.
     let map: String = rows
         .iter()
         .map(|row| match row {
             Window::Unsent => 'u',
-            Window::Sent => 'p',
+            Window::Sent => 'f',
             Window::IntentJournaled => 'i',
             Window::Submitted => 's',
         })
         .collect();
     println!(
-        "{name}: {map}; {} positions; {} unsent, {} paused after a request, {} with intent journaled, {} submitted",
+        "{name}: {map}; {} positions; {} unsent, {} retried with fresh IDs, {} with intent journaled, {} submitted",
         rows.len(),
         count(Window::Unsent),
         count(Window::Sent),
@@ -1370,11 +1414,35 @@ async fn tfc_release_a_fenced_attempt_whose_worker_did_not_retire_keeps_its_clai
     let _ = r.source.lock().await.drain().await;
 }
 #[tokio::test]
+async fn tfc_release_a_fenced_attempt_that_sent_and_did_not_retire_keeps_its_claim() {
+    // It sent some reserved IDs, and its worker may still send: no fresh-ID
+    // retry runs beside it.
+    let r = scoped_rig();
+    policy_and_enable(&r, 980).await;
+    let before = writes(&r);
+    source_battery(&r);
+    let sent = requests(&r);
+    r.port.state.lock().unwrap().mutation_worker_error = Some(Arc::new(|| {
+        io::Error::other("injected unconfirmed retirement")
+    }));
+    let fired = notice_at_first_getter(&r);
+    let _ = r.source.lock().await.process_power_source().await;
+    r.port.state.lock().unwrap().battery_getter_hook = None;
+    assert!(fired.load(Ordering::Acquire));
+    assert!(requests(&r) > sent, "the attempt sent");
+    assert_eq!(writes(&r), before);
+    assert!(!r.storage.temporary_desired());
+    assert!(!r.runtime.temporary_owned_for_tests());
+    let _ = r.source.lock().await.drain().await;
+}
+#[tokio::test]
 async fn tfc_release_a_charge_read_off_by_a_fenced_attempt_is_not_restored() {
     // The charge is already off at the unplug. An attempt fenced after it
-    // read that keeps its claim; one fenced before any request is retried,
-    // reads it, and ends the intent without a setter.
-    let mut read_off = 0;
+    // read that keeps its claim, and so does a fresh-ID retry. One fenced
+    // before any request is retried, and one fenced after it sent the read
+    // but before the reply reached it is retried with fresh IDs; either
+    // retry reads it and ends the intent without a setter.
+    let (mut read_off, mut unanswered) = (0, 0);
     for position in 0.. {
         assert!(position < 64, "a tick has a bounded set of authorizations");
         let r = scoped_rig();
@@ -1387,13 +1455,19 @@ async fn tfc_release_a_charge_read_off_by_a_fenced_attempt_is_not_restored() {
             r.stop().await;
             break;
         }
-        if r.port.state.lock().unwrap().temporary_reads != reads {
-            read_off += 1;
-            assert!(!r.storage.temporary_desired(), "position {position}");
-            assert!(
-                !r.runtime.temporary_owned_for_tests(),
-                "position {position}"
-            );
+        let read = r.port.state.lock().unwrap().temporary_reads != reads;
+        let restored = r.runtime.temporary_owned_for_tests();
+        assert_eq!(
+            r.storage.temporary_desired(),
+            restored,
+            "position {position}"
+        );
+        if read {
+            if restored {
+                unanswered += 1;
+            } else {
+                read_off += 1;
+            }
         }
         for _ in 0..4 {
             origin_tick(&r).await;
@@ -1404,9 +1478,18 @@ async fn tfc_release_a_charge_read_off_by_a_fenced_attempt_is_not_restored() {
             "position {position}"
         );
         assert_eq!(writes(&r), before, "position {position}: already off");
+        if read && restored {
+            let last = fan_rows(&r).last().unwrap().clone();
+            assert_eq!(last["progress"], 73, "position {position}");
+            assert!(
+                last["tfc"]["superseded_ids"].is_array(),
+                "position {position}: {last}"
+            );
+        }
         r.stop().await;
     }
     assert!(read_off > 0);
+    assert!(unanswered > 0);
 }
 
 /// Starts the budget of the next job now. A job takes its arrival once, and a
@@ -1482,8 +1565,8 @@ enum Fence {
     AfterRequest,
 }
 /// Fences a near-capacity cancel at `fence` and reports whether that attempt
-/// sent nothing, after checking that only such an attempt is restored, and
-/// with its reservation.
+/// sent nothing, after checking that its claim returns: with its reservation
+/// if it sent nothing, and otherwise with its enable's fresh-ID retry's.
 async fn near_capacity_fenced(r: &Rig, fence: Fence) -> bool {
     let reservation = r.storage.temporary_capacity_for_tests();
     let before = writes(r);
@@ -1503,32 +1586,34 @@ async fn near_capacity_fenced(r: &Rig, fence: Fence) -> bool {
     }
     let unsent = requests(r) == sent;
     assert_eq!(writes(r), before);
-    assert_eq!(r.runtime.temporary_owned_for_tests(), unsent);
-    assert_eq!(r.storage.temporary_desired(), unsent);
+    assert!(r.runtime.temporary_owned_for_tests(), "{fence:?}");
+    assert!(r.storage.temporary_desired(), "{fence:?}");
+    let capacity = r.storage.temporary_capacity_for_tests();
     if unsent {
-        assert_eq!(r.storage.temporary_capacity_for_tests(), reservation);
+        assert_eq!(capacity, reservation, "{fence:?}");
+    } else {
+        assert!(capacity.0 > 0, "{fence:?}");
+        assert_eq!(capacity.1, reservation.1, "{fence:?}");
     }
     unsent
 }
-async fn near_capacity_fence_case(reservation: usize, fence: Fence, retried: bool) {
+async fn near_capacity_fence_case(reservation: usize, fence: Fence, unsent: bool) {
     let r = near_capacity_rig(reservation);
     enable_near_capacity(&r).await;
     frozen(&r.port, async {
         let before = writes(&r);
-        assert_eq!(near_capacity_fenced(&r, fence).await, retried);
+        assert_eq!(near_capacity_fenced(&r, fence).await, unsent);
         for _ in 0..3 {
             arrived_tick(&r).await;
         }
+        // Either retry fits the space its enable reserved, without a roll.
         assert!(!rolled(&r), "{fence:?}");
-        assert_eq!(writes(&r) - before, usize::from(retried));
+        assert_eq!(writes(&r) - before, 1);
+        assert_fresh_retry(&r, !unsent);
         let view = immediate_battery_view(&r, Some(SID)).await;
         let message = view["message"].as_str().unwrap();
         assert!(
-            message.contains(if retried {
-                "canceled on Battery by independent readback"
-            } else {
-                "cancellation is paused"
-            }),
+            message.contains("canceled on Battery by independent readback"),
             "{fence:?}: {view}"
         );
         let _ = r.source.lock().await.drain().await;
@@ -1538,20 +1623,33 @@ async fn near_capacity_fence_case(reservation: usize, fence: Fence, retried: boo
 #[tokio::test]
 async fn tfc_release_a_fenced_cancel_near_journal_capacity_keeps_its_reservation() {
     let reservation = isolated(near_capacity_reservation);
-    for (fence, retried) in [(Fence::At(5), true), (Fence::AfterRequest, false)] {
-        isolated(move || near_capacity_fence_case(reservation, fence, retried));
+    for (fence, unsent) in [(Fence::At(5), true), (Fence::AfterRequest, false)] {
+        isolated(move || near_capacity_fence_case(reservation, fence, unsent));
     }
 }
 #[tokio::test]
 async fn tfc_release_a_restored_cancel_keeps_its_reservation_from_another_writer() {
     let reservation = isolated(near_capacity_reservation);
-    isolated(move || near_capacity_restored_case(reservation));
+    for (fence, unsent) in [(Fence::At(5), true), (Fence::AfterRequest, false)] {
+        isolated(move || near_capacity_restored_case(reservation, fence, unsent));
+    }
 }
-async fn near_capacity_restored_case(reservation: usize) {
+/// Whether the last journal row is a cancel naming the reserved IDs it
+/// replaced, as a fresh-ID retry's is.
+fn assert_fresh_retry(r: &Rig, fresh: bool) {
+    let cancel = fan_rows(r).last().unwrap().clone();
+    assert_eq!(cancel["progress"], 72, "{cancel}");
+    assert_eq!(
+        cancel["tfc"].get("superseded_ids").is_some(),
+        fresh,
+        "{cancel}"
+    );
+}
+async fn near_capacity_restored_case(reservation: usize, fence: Fence, unsent: bool) {
     let r = near_capacity_rig(reservation);
     enable_near_capacity(&r).await;
     frozen(&r.port, async {
-        assert!(near_capacity_fenced(&r, Fence::At(5)).await);
+        assert_eq!(near_capacity_fenced(&r, fence).await, unsent);
         // A performance request needs the unscoped fixture's power generation.
         r.custody.scoped_fresh.store(false, Ordering::Release);
         r.port.state.lock().unwrap().actual = 15;
@@ -1570,6 +1668,8 @@ async fn near_capacity_restored_case(reservation: usize) {
         }
         assert_eq!(writes(&r) - before, 1);
         assert!(!r.runtime.temporary_owned_for_tests());
+        assert!(!rolled(&r), "{fence:?}");
+        assert_fresh_retry(&r, !unsent);
         let view = immediate_battery_view(&r, Some(SID)).await;
         assert!(
             view["message"]

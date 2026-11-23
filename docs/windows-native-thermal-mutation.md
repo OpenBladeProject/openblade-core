@@ -197,21 +197,58 @@ or nothing: not over a newer owner or intent, not after an independent read
 found the charge off since its confirmed positive, not over quarantined or
 unsettled storage, and not once the reservation the claim saw was spent or
 replaced. Each retry needs a newer epoch, and only an SCM notice advances one,
-so retries never outnumber notices. A retry reuses the enable's reserved
-cancel IDs, because the journal binds an automatic cancel to them, and the
-pool never issues an ID again once it was sent without a correlated reply: a
-retry after that could accept the first attempt's late reply. The enable
-keeps those IDs pinned until it settles: it has left every owner slot, any
-claim on it is decided and its cancel has joined (`BatteryPermit::settle_pins`).
-So of the 40
-authorizations in each window map, the 7 before the first request (the 07/8C
-power read) are retried and the 21 after it pause. The 2 after the submission
-intent (progress 70) was journaled also pause, even when the setter's pre-send
-checkpoint refused, and the 10 after the setter was sent are never replayed.
-A refusal at the tick's own epoch still claims the cancel once and pauses it.
-Retrying a fenced attempt with fresh pool IDs would need the journal to accept
-them, a journal-contract change across the domain crate and the managed
-reader; it is queued for that review. Managed writes this cancel in the same
+so retries never outnumber notices. Such a retry reuses the enable's reserved
+cancel IDs. The enable keeps those IDs pinned until it settles: it has left
+every owner slot, any claim on it is decided and its cancel has joined
+(`BatteryPermit::settle_pins`).
+
+The pool never issues an ID again once it was sent without a correlated
+reply, because a retry could then accept the first attempt's late reply. So a
+fenced attempt that sent some of the reserved IDs is retried with fresh ones
+instead, when it joined, journaled no submission intent and was not
+confirmed. `TemporaryClaim::roll_back_spent` puts the owner and intent back
+under the same conditions as the unsent rollback, and storage
+(`Storage::restore_spent_claim`) admits it only on settled, unquarantined
+storage with no newer intent, when the attempt journaled nothing and left the
+reservation unchanged, or its last row is its own known-not-submitted 6. It
+replaces the spent reservation with the fresh-ID retry's
+(`retry_capacity`, for the same enable) and marks the enable
+`cancel_spent`. Every later automatic cancel of that enable draws its IDs
+from the pool the way the enable drew the reserved ones
+(`Reader::reserve_retained_pair`), and its record names the reserved IDs it
+replaces in `superseded_ids` (see
+[thermal history](windows-rust-thermal-history.md#temporary-charge-source-cancellation-ids)).
+The Reader hands those IDs to the record once it names them (`retain`), and
+the attempt settles them once it has joined; until then its retirement unpins
+them. A fresh-ID attempt that is itself fenced after it sent anything pauses
+like any other unconfirmed cancel, so one enable sends at most two ID sets,
+and the journal refuses a second superseding request. An attempt that read
+the charge off has independent evidence, so it is not restored either way.
+
+An enable's cancellation reservation covers the retry: the larger of the
+cancel's four rows and its Prepared and known-not-submitted rows followed by
+the four rows of a fresh-ID retry at its largest (`cancellation_capacity`), so
+a journal near capacity still holds the retry without rolling over or
+refusing it. Another writer refuses while either reservation stands.
+
+So of the 40 authorizations in each window map, the 7 before the first
+request (the 07/8C power read) are retried with the reserved IDs and the 21
+after it are retried with fresh IDs. The 2 after the submission intent
+(progress 70) was journaled pause, even when the setter's pre-send checkpoint
+refused, and the 10 after the setter was sent are never replayed. A refusal
+at the tick's own epoch still claims the cancel once and pauses it.
+
+The order of the intent row and the setter's checkpoint stays as it is:
+checkpoint, row 70, then the setter's own pre-send checkpoint, then the send.
+It is the write-ahead order every native setter uses. The intent must be
+durable before the setter could be submitted, and the last admission check
+must follow the append, so append latency cannot make it stale. An unsettled
+70 fences the store, so no retry of either kind starts after it. Turning a 70
+whose pre-send checkpoint refused into a known-not-submitted row would rest
+on pool state that exists only in memory, and managed reads a 70 as pending.
+The fresh-ID contract needs no change there.
+
+Managed writes this cancel in the same
 transition, since its Battery step has no write-block callback
 (`ControlCoordinator.cs:1731-1738`).
 

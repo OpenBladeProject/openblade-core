@@ -140,6 +140,9 @@ internal sealed class WindowsNativeThermalHistory
         if (bytes.Length > SegmentBytes || bytes.Length != 0 && bytes[^1] != 10) { throw Denied(); }
         Row? last = frontier;
         Row? temporaryOwner = null;
+        // The automatic cancel that replaced the live enable's reserved IDs; no other
+        // automatic cancel of that enable may follow it (thermal_history.rs replaced_by).
+        string? replacedBy = null;
         ulong count = 0;
         int position = 0;
         while (position < bytes.Length)
@@ -167,7 +170,11 @@ internal sealed class WindowsNativeThermalHistory
                 if (temporaryOwner is null || origin.GetProperty("request").GetString() != temporaryOwner.Request || origin.GetProperty("intent").GetString() != temporaryOwner.Intent
                     || row.Owner != temporaryOwner.Owner || row.Sid != temporaryOwner.Sid || row.Pid != temporaryOwner.Pid || row.Session != temporaryOwner.Session) { throw Denied(); }
                 using var enabled = JsonDocument.Parse(temporaryOwner.Temporary ?? throw Denied());
-                if (!enabled.RootElement.GetProperty("cancel_ids").EnumerateArray().Select(v => v.GetByte()).SequenceEqual(t.GetProperty("ids").EnumerateArray().Select(v => v.GetByte()))) { throw Denied(); }
+                // Reserved IDs bind the cancel itself; fresh IDs name the reserved set they replace.
+                bool fresh = t.TryGetProperty("superseded_ids", out var superseded);
+                if (!enabled.RootElement.GetProperty("cancel_ids").EnumerateArray().Select(v => v.GetByte()).SequenceEqual((fresh ? superseded : t.GetProperty("ids")).EnumerateArray().Select(v => v.GetByte()))
+                    || replacedBy is not null && replacedBy != row.Request) { throw Denied(); }
+                if (fresh) { replacedBy ??= row.Request; }
             }
             bool coupled = false;
             if (battery is not null || temporary is not null)
@@ -202,7 +209,7 @@ internal sealed class WindowsNativeThermalHistory
             if (battery is not null || fan is not null && f.GetProperty("contract").GetString() == WindowsNativeFanHistory.CoexistenceContract) { batteryGenerations.Add(key); }
             string prior = generations.GetValueOrDefault(key) ?? Empty(original.Installation, original.Epoch, original.Service);
             generations[key] = NativeCanonical.Digest(NativeCanonical.Lines("OpenBlade.ThermalGenerationRow.v1", prior, NativeCanonical.Digest(raw), original.Active));
-            if (temporary is not null && row.Progress is 72 or 73) { temporaryOwner = t.GetProperty("desired").GetProperty("temporary").GetBoolean() ? row : null; }
+            if (temporary is not null && row.Progress is 72 or 73) { temporaryOwner = t.GetProperty("desired").GetProperty("temporary").GetBoolean() ? row : null; replacedBy = null; }
             last = row; count = checked(count + 1);
         }
         if (requireSettled && (ownedFan is not null || last is not null && last.Progress is not (5 or 6 or 50 or 51 or 62 or 63 or 72 or 73))) { throw Denied(); }

@@ -261,6 +261,10 @@ fn rows_from(
     }
     let mut owned = last.as_ref().filter(|e| e.progress == 30).cloned();
     let mut temporary_owner: Option<Entry> = None;
+    // The automatic cancel request that replaced the live enable's reserved
+    // IDs. No other automatic cancel of that enable may follow it, so one
+    // enable sends at most its reserved set and one fresh set.
+    let mut replaced_by: Option<String> = None;
     let mut count = 0u64;
     for line in bytes.split_inclusive(|b| *b == b'\n') {
         if line.len() < 2 || line.len() > ROW {
@@ -283,7 +287,9 @@ fn rows_from(
                 || shape.get("requested") != Some(&Value::Null)
                 || ["policy", "cancel_ids", "origin", "fan_owner"]
                     .iter()
-                    .any(|k| tfc.get(k).is_none()))
+                    .any(|k| tfc.get(k).is_none())
+                // Absent means none; an explicit null has no meaning.
+                || tfc.get("superseded_ids").is_some_and(Value::is_null))
         {
             return Err(deny());
         }
@@ -379,9 +385,15 @@ fn rows_from(
                     || entry.user_sid != original.user_sid
                     || entry.caller_pid != original.caller_pid
                     || entry.session != original.session
-                    || enabled.cancel_ids != Some(t.ids)
+                    // Reserved IDs bind the cancel itself; fresh IDs name the
+                    // reserved set they replace (`validate` keeps them apart).
+                    || enabled.cancel_ids != Some(t.superseded_ids.unwrap_or(t.ids))
+                    || replaced_by.as_ref().is_some_and(|r| *r != entry.request)
                 {
                     return Err(deny());
+                }
+                if t.superseded_ids.is_some() {
+                    replaced_by.get_or_insert_with(|| entry.request.clone());
                 }
             }
             if t.fan_owner != owned.as_ref().map(battery_fan_binding).transpose()? {
@@ -470,6 +482,7 @@ fn rows_from(
             && matches!(entry.progress, 72 | 73)
         {
             temporary_owner = t.desired.temporary.then(|| entry.clone());
+            replaced_by = None;
         }
         visit(&entry, line)?;
         count = count.checked_add(1).ok_or_else(deny)?;

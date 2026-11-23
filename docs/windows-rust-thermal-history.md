@@ -57,6 +57,42 @@ Before Prepared, Storage serializes the exact operation row and reserves six
 complete progress rows, covering the larger legal branch. An oversized operation
 or unavailable reservation fails before Prepared and before firmware intent.
 
+### Temporary-charge source cancellation IDs
+
+A temporary-full-charge enable row (`tfc`) reserves eight `cancel_ids` for
+its automatic source cancel, and an automatic cancel row (`origin` set) names
+them as its `ids`. A cancel whose earlier attempt sent some of them draws
+fresh IDs instead, and its row names the reserved ones in the optional member
+`superseded_ids`, placed after `cancel_ids`:
+
+- `superseded_ids` is valid only on an automatic cancel (`enabled` false,
+  `origin` set). It is eight IDs, disjoint from the row's `ids`, and
+  `cancel_ids` stays null. An explicit null is refused.
+- The journal binds every automatic cancel to its live enable by
+  `cancel_ids == superseded_ids`, or `cancel_ids == ids` when the member is
+  absent.
+- The first superseding request replaces the reserved IDs for that enable.
+  The journal refuses any other automatic cancel request of the same enable
+  after it, with reserved or fresh IDs, until the next temporary-charge 72
+  or 73 row. So one enable's cancels send at most two ID sets.
+
+Rows without the member keep their bytes, canonical form and intent digest,
+so `service-thermal-mutation-v1/rows-v1` and the `tfc` contract keep their
+names, and no existing row changes meaning. A reader that predates the member
+refuses a row that carries it: the Rust domain type denies unknown fields, and
+`WindowsNativeTemporaryChargeHistory` admits only its exact member set. A row
+with the member stripped and rehashed is still refused, because its `ids` no
+longer match the enable's `cancel_ids`. The shared vectors in
+`tools/openblade-windows-host/tests/data/temporary-charge-history-v1.json`
+cover the valid sequences and each refusal for both readers.
+
+Handback needs no new record field, since the record carries no transaction
+IDs. A fresh retry is handed back by its progress and desired state like any
+other cancel: a crash after its Prepared is an abandoned Prepared, after its
+70 or 71 a pending temporary-charge write whose target reads the charge off,
+and after its 72 nothing. The enable's charge stays live until the retry
+confirms.
+
 ## Publication and metadata recovery
 
 Under the same original custody, create-new segment, checkpoint and roll records

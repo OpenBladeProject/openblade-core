@@ -488,3 +488,206 @@ async fn an_owner_whose_closing_row_fails_keeps_its_pins() {
         );
     }
 }
+
+/// Fences a source cancel as its flags read is sent, after its power read:
+/// the attempt sent requests and submitted nothing.
+#[cfg(feature = "service-temporary-charge-v1")]
+async fn fenced_after_a_request(r: &Rig) {
+    let custody = r.custody.clone();
+    let fired = Arc::new(AtomicBool::new(false));
+    let once = fired.clone();
+    r.port.state.lock().unwrap().battery_getter_hook = Some(Arc::new(move |_, _| {
+        if !once.swap(true, Ordering::AcqRel) {
+            custody.lifecycle.ingress(
+                windows_sys::Win32::System::Services::SERVICE_CONTROL_POWEREVENT,
+                10,
+            );
+        }
+    }));
+    origin_tick(r).await;
+    r.port.state.lock().unwrap().battery_getter_hook = None;
+    assert!(fired.load(Ordering::Acquire));
+}
+/// The IDs a journal row's `tfc` member names under `key`.
+#[cfg(feature = "service-temporary-charge-v1")]
+fn row_ids(row: &Value, key: &str) -> Vec<u8> {
+    row["tfc"][key]
+        .as_array()
+        .unwrap_or_else(|| panic!("{key}: {row}"))
+        .iter()
+        .map(|id| id.as_u64().unwrap() as u8)
+        .collect()
+}
+/// An enabled rig whose first source cancel was fenced after it sent some of
+/// the enable's reserved IDs, and the IDs reserved.
+#[cfg(feature = "service-temporary-charge-v1")]
+async fn spent_rig(files: MemoryFiles) -> (Rig, Vec<u8>) {
+    let r = Rig::new(files);
+    r.custody.scoped_fresh.store(true, Ordering::Release);
+    r.get().await;
+    temporary(&r, 800, true).await;
+    let reserved = cancel_ids(&r);
+    let writes = r.port.state.lock().unwrap().writes;
+    source_battery(&r);
+    let since = sent_len(&r);
+    fenced_after_a_request(&r).await;
+    let spent = sent_ids(&r, since);
+    assert!(
+        !spent.is_empty() && spent.iter().all(|id| reserved.contains(id)),
+        "{spent:?} {reserved:?}"
+    );
+    assert_eq!(r.port.state.lock().unwrap().writes, writes);
+    assert!(
+        r.runtime.temporary_owned_for_tests(),
+        "the claim returns for a fresh-ID retry"
+    );
+    assert!(r.storage.temporary_desired());
+    // The enable still owns the charge, so its pins stay.
+    assert_eq!(r.port.pinned_transactions(&reserved).len(), reserved.len());
+    (r, reserved)
+}
+
+// A fenced source cancel that sent some of its enable's reserved IDs never
+// sends them again. The retry draws fresh IDs, names the reserved ones in its
+// record, and its pins are queued for release once its attempt joined.
+#[cfg(feature = "service-temporary-charge-v1")]
+#[tokio::test]
+async fn a_fenced_source_cancel_that_sent_retries_once_with_fresh_pinned_ids() {
+    let (r, reserved) = spent_rig(MemoryFiles::default()).await;
+    let writes = r.port.state.lock().unwrap().writes;
+    let since = sent_len(&r);
+    origin_tick(&r).await;
+    assert_eq!(r.port.state.lock().unwrap().writes, writes + 1);
+    assert_eq!(r.port.state.lock().unwrap().temporary_raw, 0);
+    assert!(!r.storage.pending());
+    let cancel = fan_rows(&r).last().unwrap().clone();
+    assert_eq!(cancel["progress"], 72, "{cancel}");
+    assert_eq!(row_ids(&cancel, "superseded_ids"), reserved);
+    let fresh = row_ids(&cancel, "ids");
+    assert!(fresh.iter().all(|id| !reserved.contains(id)), "{fresh:?}");
+    let retry = sent_ids(&r, since);
+    assert!(retry.iter().all(|id| fresh.contains(id)), "{retry:?}");
+    let queued = r.runtime.queued_pins_for_tests();
+    assert!(fresh.iter().all(|id| queued.contains(id)), "{queued:?}");
+    assert!(reserved.iter().all(|id| queued.contains(id)), "{queued:?}");
+    for _ in 0..3 {
+        source_battery(&r);
+        origin_tick(&r).await;
+    }
+    assert_eq!(r.port.state.lock().unwrap().writes, writes + 1);
+    r.stop().await;
+}
+
+// A fresh-ID retry fenced after it sent pauses like any other unconfirmed
+// cancel: the chain is bounded at the reserved IDs and one fresh set. Its
+// own pins return: its record never named them, so its retirement unpinned them.
+#[cfg(feature = "service-temporary-charge-v1")]
+#[tokio::test]
+async fn a_fenced_fresh_id_retry_that_sent_pauses() {
+    let (r, reserved) = spent_rig(MemoryFiles::default()).await;
+    let writes = r.port.state.lock().unwrap().writes;
+    let since = sent_len(&r);
+    fenced_after_a_request(&r).await;
+    let fresh = sent_ids(&r, since);
+    assert!(
+        !fresh.is_empty() && fresh.iter().all(|id| !reserved.contains(id)),
+        "{fresh:?}"
+    );
+    assert!(!r.runtime.temporary_owned_for_tests());
+    assert!(!r.storage.temporary_desired());
+    assert!(r.port.pinned_transactions(&fresh).is_empty(), "{fresh:?}");
+    let reads = r.port.state.lock().unwrap().temporary_reads;
+    for _ in 0..3 {
+        source_battery(&r);
+        origin_tick(&r).await;
+    }
+    assert_eq!(r.port.state.lock().unwrap().writes, writes);
+    assert_eq!(
+        r.port.state.lock().unwrap().temporary_reads,
+        reads,
+        "not even read again"
+    );
+    r.stop().await;
+}
+
+// A fresh-ID retry fenced before it sent anything gives its claim back too,
+// and the next tick retries with fresh IDs again, never the reserved ones.
+#[cfg(feature = "service-temporary-charge-v1")]
+#[tokio::test]
+async fn a_fresh_id_retry_fenced_before_any_request_is_retried_with_fresh_ids() {
+    let (r, reserved) = spent_rig(MemoryFiles::default()).await;
+    let writes = r.port.state.lock().unwrap().writes;
+    let since = sent_len(&r);
+    r.custody.notice_skip.store(5, Ordering::Release);
+    *r.custody.notice_during_authorize.lock().unwrap() = Some((
+        windows_sys::Win32::System::Services::SERVICE_CONTROL_POWEREVENT,
+        10,
+        None,
+    ));
+    origin_tick(&r).await;
+    assert!(r.custody.notice_during_authorize.lock().unwrap().is_none());
+    r.custody.notice_skip.store(0, Ordering::Release);
+    assert_eq!(sent_len(&r), since, "the fenced attempt sent nothing");
+    assert!(r.runtime.temporary_owned_for_tests());
+    assert!(r.storage.temporary_desired());
+    origin_tick(&r).await;
+    assert_eq!(r.port.state.lock().unwrap().writes, writes + 1);
+    let cancel = fan_rows(&r).last().unwrap().clone();
+    assert_eq!(cancel["progress"], 72, "{cancel}");
+    assert_eq!(row_ids(&cancel, "superseded_ids"), reserved);
+    assert!(sent_ids(&r, since).iter().all(|id| !reserved.contains(id)));
+    r.stop().await;
+}
+
+// A restart in the middle of a fresh-ID retry, whose setter was submitted
+// without a correlated acknowledgement: the reopened journal reads the row
+// and stays unsettled, and a new process writes nothing.
+#[cfg(feature = "service-temporary-charge-v1")]
+#[tokio::test]
+async fn a_restart_during_a_fresh_id_retry_keeps_it_unsettled() {
+    let files = MemoryFiles::default();
+    let (r, reserved) = spent_rig(files.clone()).await;
+    r.port.state.lock().unwrap().temporary_bad_ack = true;
+    origin_tick(&r).await;
+    assert_eq!(
+        r.port.state.lock().unwrap().writes,
+        2,
+        "the enable and the retry"
+    );
+    assert!(r.storage.pending());
+    let last = fan_rows(&r).last().unwrap().clone();
+    assert_eq!(last["progress"], 70, "{last}");
+    assert_eq!(row_ids(&last, "superseded_ids"), reserved);
+    let restarted = Storage::open(Box::new(files.clone()), SID).unwrap();
+    assert!(restarted.pending());
+    assert_eq!(restarted.progress(), Some(70));
+    let _ = r.source.lock().await.drain().await;
+    let next = Rig::new(files);
+    next.custody.scoped_fresh.store(true, Ordering::Release);
+    next.get().await;
+    source_battery(&next);
+    origin_tick(&next).await;
+    assert_eq!(next.port.state.lock().unwrap().writes, 0);
+    assert!(next.storage.pending());
+    let _ = next.source.lock().await.drain().await;
+}
+
+// A fresh-ID retry whose worker never confirms its stop has not joined, and
+// may still send its own IDs: its record keeps them pinned.
+#[cfg(feature = "service-temporary-charge-v1")]
+#[tokio::test]
+async fn an_unjoined_fresh_id_retry_keeps_its_pins() {
+    let (r, reserved) = spent_rig(MemoryFiles::default()).await;
+    r.port.state.lock().unwrap().mutation_worker_error = Some(Arc::new(|| {
+        io::Error::other("injected unconfirmed worker stop")
+    }));
+    let _ = r.source.lock().await.process_power_source().await;
+    r.port.state.lock().unwrap().mutation_worker_error = None;
+    let cancel = fan_rows(&r).last().unwrap().clone();
+    assert_eq!(row_ids(&cancel, "superseded_ids"), reserved, "{cancel}");
+    let mut fresh = row_ids(&cancel, "ids");
+    fresh.sort_unstable();
+    assert_eq!(r.port.pinned_transactions(&fresh), fresh);
+    assert!(queued(&r).iter().all(|id| !fresh.contains(id)));
+    assert_eq!(r.port.pinned_transactions(&reserved).len(), reserved.len());
+}
