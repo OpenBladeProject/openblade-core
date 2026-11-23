@@ -4,7 +4,7 @@
 //! port. No hardware or operating-system supplier is reached.
 use super::*;
 use crate::discovery::performance::DeviceModeRead;
-use crate::installed::readiness::thermal_mutation::{INTERVAL, READ_LEAD, Release};
+use crate::installed::readiness::thermal_mutation::{INTERVAL, Release};
 use openblade_protocol::device_mode::DeviceMode;
 use std::cell::Cell;
 use std::rc::Rc;
@@ -17,6 +17,11 @@ const RESUME: u32 = 18;
 const SETTING: u32 = 10;
 const NORMAL: u8 = 0;
 const DRIVER: u8 = 3;
+/// The release's owned-Stop fresh authorization at the job's checkpoint
+/// after its baseline reply, counted from the release's own admission: the
+/// lane's and the worker's checks and the baseline's earlier checkpoints
+/// come before it.
+const TRAILING_CHECKPOINT: usize = 9;
 
 /// A rig with a verified published status, the lifecycle wired in as the
 /// low-power gate and a console probe naming the rig's user while the
@@ -89,8 +94,8 @@ async fn step(rig: &Rig) {
 /// One interval later: the step is due and the recorded mode is stale, as
 /// the owner's record is at its next due step.
 async fn later(rig: &Rig) {
-    rig.runtime.driver_mode_age_for_tests(INTERVAL + READ_LEAD);
-    rig.reader.driver_mode_age_for_tests(INTERVAL + READ_LEAD);
+    rig.runtime.driver_mode_age_for_tests(INTERVAL);
+    rig.reader.driver_mode_age_for_tests(INTERVAL);
     tick(rig).await;
 }
 /// The mode a fresh observeState status carries: what the read cadence holds
@@ -646,8 +651,7 @@ async fn an_unverified_device_publishes_null_and_resets_the_latch() {
 }
 
 /// The step is due at the first eligible tick, the managed startup call,
-/// then every 15 s plus the read job's lead; an unchanged status is not
-/// republished.
+/// then every 15 s, as managed's; an unchanged status is not republished.
 #[tokio::test]
 async fn the_step_runs_at_the_first_tick_then_every_interval_without_republishing() {
     let (rig, _) = owner_rig(DRIVER).await;
@@ -656,7 +660,7 @@ async fn the_step_runs_at_the_first_tick_then_every_interval_without_republishin
     assert_eq!(published(&rig).await, Some(true));
     let first = revision(&rig).await;
     tick(&rig).await;
-    let early = INTERVAL + READ_LEAD - Duration::from_secs(2);
+    let early = INTERVAL - Duration::from_secs(2);
     rig.runtime.driver_mode_age_for_tests(early);
     rig.reader.driver_mode_age_for_tests(early);
     tick(&rig).await;
@@ -898,7 +902,8 @@ async fn the_tick_recaptures_when_the_write_epoch_moves() {
 }
 
 /// An Indeterminate owner sends nothing more but keeps its capture fresh,
-/// so the release still runs under the current epoch's admission.
+/// so the release still runs under the current epoch's admission. Only an
+/// epoch move captures: a due step does not.
 #[tokio::test]
 async fn an_indeterminate_owner_keeps_capturing_for_the_release() {
     let (rig, _) = owner_rig(NORMAL).await;
@@ -911,37 +916,47 @@ async fn an_indeterminate_owner_keeps_capturing_for_the_release() {
     rig.custody.lifecycle.ingress(POWER, SETTING);
     tick(&rig).await;
     assert_eq!((captures(&rig), keyboard(&rig).len()), (start + 1, sent));
-    // Each due step captures too, with no exchange, and is then not due.
+    // A due step at an unmoved epoch captures nothing and sends nothing.
     later(&rig).await;
-    assert_eq!((captures(&rig), keyboard(&rig).len()), (start + 2, sent));
     tick(&rig).await;
-    assert_eq!(captures(&rig), start + 2);
+    assert_eq!((captures(&rig), keyboard(&rig).len()), (start + 1, sent));
     // The failed setter applied nothing, so the release reads Normal under
     // the renewed admission and ends the claim.
     assert_eq!(release(&rig).await, Some(Release::ForeignChange));
     rig.stop().await;
 }
 
-/// After a step, the next is due once the read job's own query is due, so a
-/// fresh Driver result the read job publishes starts no job.
+/// While the device is unverified, so a due step writes nothing, an epoch
+/// move still re-captures, once, and the release restores Normal. Nothing
+/// sends ObserveState while the Tray is hidden. Control: without a tick
+/// after the notice, the epoch-pinned capture refuses the release.
 #[tokio::test]
-async fn the_read_job_leads_the_next_step() {
-    let (rig, _) = owner_rig(DRIVER).await;
-    tick(&rig).await;
-    let sent = keyboard(&rig).len();
-    assert_eq!(sent, 1);
-    // The owner's result is stale for the read job, and the owner is not due.
-    rig.runtime.driver_mode_age_for_tests(INTERVAL);
-    rig.reader.driver_mode_age_for_tests(INTERVAL);
-    tick(&rig).await;
-    assert_eq!(keyboard(&rig).len(), sent);
-    // The read job's own query reads Driver; the owner's step finds it.
-    record(&rig, DeviceMode::Driver);
-    rig.runtime.driver_mode_age_for_tests(READ_LEAD);
-    tick(&rig).await;
-    assert_eq!(keyboard(&rig).len(), sent);
-    assert_eq!(published(&rig).await, Some(true));
-    rig.stop().await;
+async fn an_unverified_device_still_recaptures_when_the_write_epoch_moves() {
+    for ticked in [true, false] {
+        let (rig, _) = owner_rig(NORMAL).await;
+        rig.custody.pinned_fresh.store(true, Ordering::Release);
+        tick(&rig).await;
+        assert_eq!(owner(&rig), (true, false, false));
+        rig.reader.expire_for_tests();
+        rig.runtime.driver_mode_due_for_tests();
+        let (start, sent) = (captures(&rig), keyboard(&rig).len());
+        rig.custody.lifecycle.ingress(POWER, SETTING);
+        if ticked {
+            for _ in 0..4 {
+                tick(&rig).await;
+            }
+        }
+        assert_eq!(captures(&rig), start + usize::from(ticked), "{ticked}");
+        assert_eq!(keyboard(&rig).len(), sent, "{ticked}");
+        let (outcome, restored) = if ticked {
+            (Release::Restored, NORMAL)
+        } else {
+            (Release::Unadmitted, DRIVER)
+        };
+        assert_eq!(release(&rig).await, Some(outcome), "{ticked}");
+        assert_eq!(mode(&rig), restored, "{ticked}");
+        rig.stop().await;
+    }
 }
 
 /// A release that starts no job does not consume the one attempt: after a
@@ -1317,6 +1332,118 @@ async fn a_request_holding_the_gate_exhausts_the_release_entry() {
     assert!(spent < KEYBOARD_SHUTDOWN_BUDGET / 2, "{spent:?}");
     assert_eq!((keyboard(&rig).len(), mode(&rig)), (keys, DRIVER));
     rig.stop().await;
+}
+
+/// The release job's deadline also ends inside the share after slow
+/// synchronous admissions: after a 600 ms owned-Stop authorization only
+/// what is left of the share remains, so 100 ms exchanges leave no time for
+/// the setter.
+#[tokio::test]
+async fn slow_admissions_leave_the_release_job_only_the_rest_of_the_share() {
+    let (rig, _) = owner_rig(NORMAL).await;
+    tick(&rig).await;
+    rig.port.state.lock().unwrap().device_mode_latency = Some(Duration::from_millis(100));
+    *rig.custody.owned_stop_stall.lock().unwrap() = Some((1, Duration::from_millis(600)));
+    assert_eq!(release(&rig).await, Some(Release::Exhausted));
+    assert_eq!((sets(&rig), mode(&rig)), (1, DRIVER));
+    rig.port.state.lock().unwrap().device_mode_latency = None;
+    rig.stop().await;
+}
+
+/// The setter's pace charges the baseline's trailing checkpoint: a slow
+/// checkpoint after the baseline reply leaves room for the two remaining
+/// exchanges at the baseline's length, but not for that checkpoint again,
+/// so no setter is sent.
+#[tokio::test]
+async fn the_release_pace_charges_the_trailing_checkpoint() {
+    let (rig, _) = owner_rig(NORMAL).await;
+    tick(&rig).await;
+    rig.port.state.lock().unwrap().device_mode_latency = Some(Duration::from_millis(100));
+    *rig.custody.owned_stop_stall.lock().unwrap() =
+        Some((TRAILING_CHECKPOINT, Duration::from_millis(220)));
+    assert_eq!(release(&rig).await, Some(Release::Exhausted));
+    assert_eq!((sets(&rig), mode(&rig)), (1, DRIVER));
+    rig.port.state.lock().unwrap().device_mode_latency = None;
+    rig.stop().await;
+}
+
+/// Each fatal-evidence backstop of the release, on its own.
+#[tokio::test]
+async fn each_release_fatal_backstop_holds_on_its_own() {
+    let fatal = || -> Arc<dyn Fn() -> io::Error + Send + Sync> {
+        Arc::new(|| crate::installed::readiness::thermal_mutation::fatal_admission("injected"))
+    };
+    // Controller admission poisoned once the readback is sent: the lane's
+    // retirement reports it and nothing retains it, so only the release's
+    // own fatal arm fails the release.
+    let (rig, _) = owner_rig(NORMAL).await;
+    tick(&rig).await;
+    let custody = Arc::downgrade(&rig.custody);
+    let readback = rig.port.state.lock().unwrap().device_mode_queries + 2;
+    rig.port.state.lock().unwrap().device_mode_on_query = Some(Arc::new(move |query| {
+        if query == readback {
+            custody
+                .upgrade()
+                .unwrap()
+                .fatal_health
+                .store(true, Ordering::Release);
+        }
+    }));
+    assert!(
+        rig.runtime
+            .release_driver_mode(&mailbox(&rig))
+            .await
+            .is_err()
+    );
+    rig.custody.fatal_health.store(false, Ordering::Release);
+
+    // Fatal evidence another holder of the custody retained while the job
+    // read back Normal, and a worker slow to retire: the share ends before
+    // the lane can report it, so only the release's own check of retained
+    // evidence fails it.
+    let (rig, _) = owner_rig(NORMAL).await;
+    tick(&rig).await;
+    let retained = mailbox(&rig).fatal_evidence();
+    let readback = rig.port.state.lock().unwrap().device_mode_queries + 2;
+    rig.port.state.lock().unwrap().device_mode_on_query = Some(Arc::new(move |query| {
+        if query == readback {
+            *retained.lock().unwrap() = Some("injected retained evidence");
+        }
+    }));
+    rig.port.state.lock().unwrap().device_mode_retire_delay = Some(Duration::from_millis(2400));
+    assert!(
+        rig.runtime
+            .release_driver_mode(&mailbox(&rig))
+            .await
+            .is_err()
+    );
+    assert_eq!(mode(&rig), NORMAL);
+
+    // A fatal worker error is retained, so later steps fail too.
+    let (rig, _) = owner_rig(NORMAL).await;
+    tick(&rig).await;
+    rig.port.state.lock().unwrap().mutation_worker_error = Some(fatal());
+    assert!(
+        rig.runtime
+            .release_driver_mode(&mailbox(&rig))
+            .await
+            .is_err()
+    );
+    rig.port.state.lock().unwrap().mutation_worker_error = None;
+    rig.runtime.driver_mode_due_for_tests();
+    assert!(try_tick(&rig).await.is_err());
+
+    // The fan handback's cleanup returns the worker's fatal error, not the
+    // unconfirmed stop that follows it.
+    let rig = fan_owner_rig().await;
+    rig.origin.stop();
+    rig.port.state.lock().unwrap().mutation_worker_error = Some(fatal());
+    let error = rig.runtime.stop_fans(&mailbox(&rig)).await.unwrap_err();
+    assert!(
+        crate::installed::readiness::thermal_mutation::is_fatal_admission(&error),
+        "{error}"
+    );
+    rig.port.state.lock().unwrap().mutation_worker_error = None;
 }
 
 /// Without owned-Stop origin admission the drain refuses the keyboard
