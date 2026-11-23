@@ -10,21 +10,23 @@ touches:
   - tools/openblade-windows-host/src/windows/scm/installed/battery_mutation.rs
 ---
 
-Native lifecycle reconciliation (Stage 3 C3, plus C1 power-kind and C2 display-off parity) supersedes the "two debt drops remain" part of 2026-11-22-native-low-power-trigger-deferral-second-jack.md.
+Supersedes 2026-11-22-native-transaction-pool-what-still-exhausts-jack.md and 2026-11-22-native-transaction-pool-reclamation-and-the-jack.md where they say fan and temporary-charge (TFC) pins stay out of the pool for the process: a settled record now returns them. Their other findings stand.
 
 ## Decided
-- The serving loop's 500 ms origin tick runs `StatusSource::reconcile_lifecycle` -> `Runtime::reconcile_lifecycle` (lifecycle_triggers.rs). It reconciles only the latest admitted reporter's pair through `reconcile_locked`, on three causes: a moved gate generation (resume, new resume, gate-clearing DisplayOn; owes nothing, runs an existing debt), a changed Windows power kind (owes every class), and an expired 15 s lease with an app active (clears foreground, owes every class). In low power it records the cause and reads nothing.
-- The tick uses `gate.try_lock()` and skips when busy; its first tick only marks. A boundary renews the lease because Windows `Instant` counts sleep.
-- Drop 2 (a fence that does not move the gate generation refusing a step) is recovered: a status-2 step with nothing possibly submitted while `Lifecycle::active()` moved is marked transient, so the debt stays owed with a retry spent (`Runtime::admission_epoch`). Unwired probes (rig default) keep the old behaviour.
-- Drop 1 (possibly submitted step unfinished at the bound) is deliberately kept: owing it again would re-run an unknown submission; it recovers only via a later power-kind change, lease expiry or changed report after the fence settles read-only.
-- lifecycle-reconcile-vectors.json is recorded from managed (`NativeLifecycleReconcileVectors`); native diverges on two rows, asserted in request_triggers_lifecycle.rs: lease expiry (managed submits nothing) and resume on an unchanged source after a deferral (managed submits nothing until convergence).
+- Out of date: "IDs that a fan record or a temporary-charge cancellation names stay pinned" and "pins about 24 IDs ... for the process lifetime" (reclamation learning), and the 12 fan changes, 14 manual/Automatic alternations and 30 TFC cycles exhaustion budgets (what-still-exhausts learning). A failing read still quarantines one ID per job.
+- Mechanism: `Reader::retain(permit)` hands the retained IDs to the record's `RecordPins` (`Permit::retained_pins`). `settle_pins` moves them into the Runtime's shared `SettledPins` queue. Any mutation Reader takes the queue in `apply_preset` (`Permit::settled_pins`), possibly while already running, and unpins them only after `poll_retirement` confirms. `Transactions::unpin` frees only unsent (Held) IDs that are still pinned, so a sent ID stays quarantined and a second settle or unpin frees nothing.
+- A queue, because the host cannot reach the port's pool and some settlements (row 6 in `retired`, TFC slot exits) happen after the record's own Reader retired.
+- Fan settle sites, each after its durable row: own 50/51 in `record_fan`, 51 in `confirm_fan_noop` and `FanSettlePermit::record_fan`, 6 in `retired`, and `supersede_prior` for the replaced owner on a newer 30 or 50, which also clears the replaced owner's `owned`.
+- TFC settle sites: the owner replaced by a newer confirmed enable and a joined, unconfirmed, non-pending enable (`reconcile_temporary_owner`), and `finish_temporary_release` on Released or NoMatchingReservation. The invariant (`BatteryPermit::settle_pins`) is that no request can bear the cancel IDs again: the enable's worker joined and it left every owner slot for good, no claim can restore it, and every cancel attempt that could send the IDs joined. That keeps the fenced rollback's `Transactions::unsent(&cancel_ids)` proof sound. The journal need not be settled: NoMatchingReservation can settle with `storage.pending()` true.
+- Swapping held release and unpin in `Reader::retire` is equivalent only because one Reader runs at a time (`OCCUPIED`).
 
 ## Tried and ruled out
-- Treating managed's leaseExpired row as a race: `ObserveAsync` does wait on the operation gate. Managed really submits nothing, because `PublishApplicationContextStatus` publishes the new desired state before `ApplyFullTransitionAsync` reads `current.DesiredState` as priorDesired, so `CompareTransitionAutomaticPerformance` sees OpenBlade's own Game preset as external and pauses performance and fans. Leaving a rule by report behaves the same in managed; native already writes there.
-- Native's readiness fixture saves battery performance 3 (BatterySaver), not Silent; the C# recorder must match it.
+- Unpinning every provisional ID at settlement: provisional IDs that were never retained are freed at the first retirement and may be issued again, so only retained IDs enter `RecordPins`.
+- Running the long TFC cycle test under `paused_rig` plus `frozen`: the virtual deadline expires as the journal grows. It uses `Rig::new` with `reserve_for_tests(100)`.
+- `release_fault = 1` alone does not defer a release after a confirmed cancel: the cancel's row spends the reservation, so the release is NoMatchingReservation. Pair it with `fresh_refuse` so the cancel sends nothing.
 
 ## Watch out
-- Git Bash `sed -i` with a single substitution strips CR from CRLF files here; renormalize docs and C# with `sed -i 's/\r$//; s/$/\r/'` afterwards and check `file`.
-- `dotnet test --no-build` after regenerating vectors compares against the stale copy in bin; build again before verifying.
-- `service-profiles-v1` lane tests `expired_refresh_discards_old_evidence_and_prevents_overlapping_reads` and `tfc_release_a_fenced_cancel_near_journal_capacity_keeps_its_reservation` failed once under load and passed alone.
-- Not validated across a physical sleep/resume; a locked session at resume consumes the boundary and leaves the debt to the next report.
+- Only fan and battery mutation Readers drain the queue; read-only Readers and thermal permits do not. A failed retirement after taking the queue leaves those IDs pinned (fail-closed). An enable whose claimed cancel never joins keeps its pins.
+- Read-only Readers never unpin, so a premature settle shows only through `r.runtime.queued_pins_for_tests()` or `r.port.pinned_transactions(ids)` (readiness_tests/pool_pins.rs).
+- The gate mutants (settle before a durable row, on the Deferred arm, before the enable or cancel joined, unpin before `poll_retirement`) survived the full lanes until pool_pins added the held-write tick, unjoined-cancel, deferred-release, failed-close and refusal-sweep tests. Rerun them after changes to the settle sites.
+- The scratchpad is shared with concurrent agents: write drafts under a private subdirectory. A shared `note.md` was overwritten once, and `trail note` saved another branch's text.
