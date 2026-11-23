@@ -13,11 +13,11 @@ use tokio::time::{Instant, sleep, timeout_at};
 
 #[cfg(feature = "service-keyboard-driver-mode-read-v1")]
 use super::DeviceModeRead;
-#[cfg(feature = "service-live-readings-v1")]
-use super::FanRpmRead;
 use super::{
     Admission, Limit, MAX_OBSERVATION, ObservationProof, ObservedPerformance, POLL, blocked,
 };
+#[cfg(feature = "service-live-readings-v1")]
+use super::{FanPairSends, FanRpmRead};
 
 pub(crate) struct Reading<A = Admission> {
     pub(crate) admission: A,
@@ -47,12 +47,13 @@ impl<A> Reading<A> {
 /// The read-only queries a job adds after its thermal observation. Each is
 /// sent only after that observation completed, within its own budget, in
 /// field order.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default)]
 pub(crate) struct Queries {
     #[cfg(feature = "service-keyboard-driver-mode-read-v1")]
     pub(crate) device_mode: bool,
+    /// The fan speed pair, counted where it is sent.
     #[cfg(feature = "service-live-readings-v1")]
-    pub(crate) fan_rpm: bool,
+    pub(crate) fan_rpm: Option<FanPairSends>,
 }
 
 pub(super) struct Job {

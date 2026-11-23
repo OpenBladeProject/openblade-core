@@ -4,7 +4,7 @@
 #[cfg(feature = "service-live-readings-v1")]
 use super::worker::Queries;
 use super::{
-    FanRpmRead,
+    FanPairSends, FanRpmRead,
     fan_rpm::{EXCHANGE, QUERY_RESERVE},
     worker::Worker,
     *,
@@ -21,7 +21,9 @@ type Reply = Option<(u8, Vec<u8>)>;
 /// default, with Automatic fans) and each 0D/88
 /// query with a whole managed report: status 2 and `[1, selector, units]`,
 /// or the selector's entry in `replies` when present. `stall` never completes
-/// a fan query's GET, and `first_get_delay` delays the first one's reply.
+/// a fan query's GET, `first_get_delay` delays the first one's reply, and
+/// `hold_query` blocks the worker thread inside the next fan query's SET
+/// until its sender sends or is dropped.
 /// Verification fails at the 1-based `fail_verify` call
 /// (0 never). Every submitted report is recorded as (class, ID, payload),
 /// each fan query's transaction ID in `query_ids` and the time from its send
@@ -33,6 +35,7 @@ pub(crate) struct FanIo {
     pub(crate) replies: Mutex<[Reply; 2]>,
     pub(crate) stall: AtomicBool,
     pub(crate) first_get_delay: Mutex<Option<Duration>>,
+    pub(crate) hold_query: Mutex<Option<std::sync::mpsc::Receiver<()>>>,
     pub(crate) fail_verify: AtomicUsize,
     pub(crate) verifies: AtomicUsize,
     pub(crate) sent: Mutex<Vec<(u8, u8, Vec<u8>)>>,
@@ -48,6 +51,7 @@ impl FanIo {
             replies: Mutex::default(),
             stall: AtomicBool::new(false),
             first_get_delay: Mutex::default(),
+            hold_query: Mutex::default(),
             fail_verify: AtomicUsize::new(0),
             verifies: AtomicUsize::new(0),
             sent: Mutex::default(),
@@ -104,6 +108,10 @@ impl Port for FanPort {
                         ),
                     )),
                     (CLASS, 0x88) => {
+                        let hold = self.io.hold_query.lock().unwrap().take();
+                        if let Some(hold) = hold {
+                            let _ = hold.recv();
+                        }
                         self.io.query_ids.lock().unwrap().push(transaction);
                         self.query_sent = Some(Instant::now());
                         let index = usize::from(payload[1]) - 1;
@@ -208,6 +216,8 @@ const ADMISSION: ReadAdmission = ReadAdmission {
 struct Outcome {
     thermal: Option<ObservedPerformance>,
     fans: FanRpmRead,
+    /// Pairs counted as sent (`FanPairSends`).
+    pairs: u64,
     sealed: bool,
     /// Job time left when the queries ended.
     left: Duration,
@@ -220,6 +230,7 @@ struct Outcome {
 /// Reader within `budget`.
 fn reader_job(io: &Arc<FanIo>, budget: Duration) -> Outcome {
     let cancelled = AtomicBool::new(false);
+    let sends = FanPairSends::default();
     let mut reader = Reader::new(port(io), ADMISSION);
     tokio::runtime::Builder::new_current_thread()
         .enable_time()
@@ -232,7 +243,9 @@ fn reader_job(io: &Arc<FanIo>, budget: Duration) -> Outcome {
                 cancelled: &cancelled,
             };
             let thermal = reader.observe(&mut || Some(ADMISSION), limit).await;
-            let fans = reader.read_fan_rpm(&mut || Some(ADMISSION), limit).await;
+            let fans = reader
+                .read_fan_rpm(&mut || Some(ADMISSION), limit, &sends)
+                .await;
             let sealed = reader.poisoned;
             let left = limit.deadline.saturating_duration_since(Instant::now());
             let before = io.sent.lock().unwrap().len();
@@ -242,6 +255,7 @@ fn reader_job(io: &Arc<FanIo>, budget: Duration) -> Outcome {
             Outcome {
                 thermal,
                 fans,
+                pairs: sends.count(),
                 sealed,
                 left,
                 again,
@@ -259,6 +273,7 @@ fn a_confirmed_pair_reads_both_selectors_in_order_and_leaves_the_reader_open() {
     let io = FanIo::new([0x20, 0x1e]);
     let job = two_seconds(&io);
     assert_eq!(job.fans, FanRpmRead::Confirmed([3200, 3000]));
+    assert_eq!(job.pairs, 1);
     assert!(job.thermal.is_some());
     assert!(!job.sealed);
     assert!(job.again.is_some());
@@ -284,6 +299,7 @@ fn an_unconfirmed_selector_seals_the_reader_and_confirms_neither_speed() {
         io.replies.lock().unwrap()[index] = Some(reply.clone());
         let job = two_seconds(&io);
         assert_eq!(job.fans, FanRpmRead::Unconfirmed, "{reply:?}");
+        assert_eq!(job.pairs, 1, "{reply:?}");
         assert!(job.thermal.is_some());
         assert!(job.sealed);
         assert!(job.again.is_none());
@@ -293,7 +309,8 @@ fn an_unconfirmed_selector_seals_the_reader_and_confirms_neither_speed() {
 }
 
 /// Each checkpoint of each query stops on a lost identity: the first query is
-/// not sent, then each GET is not read, and no speed is confirmed.
+/// not sent, then each GET is not read, and no speed is confirmed. The pair
+/// counts as sent only once its first SET went out.
 #[test]
 fn each_query_checkpoint_stops_on_a_lost_identity() {
     let thermal = FanIo::new([0x20, 0x1e]);
@@ -318,6 +335,7 @@ fn each_query_checkpoint_stops_on_a_lost_identity() {
         io.fail_verify.store(before + check, Ordering::Release);
         let job = two_seconds(&io);
         assert_eq!(job.fans, FanRpmRead::Unconfirmed, "{check}");
+        assert_eq!(job.pairs, u64::from(queries > 0), "{check}");
         assert!(job.thermal.is_some(), "{check}");
         assert!(job.sealed, "{check}");
         assert_eq!(io.queries().len(), queries, "{check}");
@@ -355,6 +373,7 @@ fn a_job_without_time_or_on_a_sealed_reader_sends_no_query() {
     let job = reader_job(&io, Duration::from_millis(500));
     assert!(job.thermal.is_some());
     assert_eq!(job.fans, FanRpmRead::NotRequested);
+    assert_eq!(job.pairs, 0);
     assert!(io.queries().is_empty());
     let cancelled = AtomicBool::new(false);
     let sealed = FanIo::new([0x20, 0x1e]);
@@ -371,14 +390,17 @@ fn a_job_without_time_or_on_a_sealed_reader_sends_no_query() {
                 deadline: Instant::now() + Duration::from_secs(2),
                 cancelled: &cancelled,
             },
+            &FanPairSends::default(),
         ));
     assert_eq!(fans, FanRpmRead::NotRequested);
     assert!(sealed.sent.lock().unwrap().is_empty());
 }
 
-/// The pair alone on a fresh Reader with `budget` beyond the reserve.
-fn fan_pair(io: &Arc<FanIo>, budget: Duration) -> FanRpmRead {
+/// The pair alone on a fresh Reader with `budget` beyond the reserve, and
+/// the pairs counted as sent.
+fn fan_pair(io: &Arc<FanIo>, budget: Duration) -> (FanRpmRead, u64) {
     let cancelled = AtomicBool::new(false);
+    let sends = FanPairSends::default();
     let mut reader = Reader::new(port(io), ADMISSION);
     tokio::runtime::Builder::new_current_thread()
         .enable_time()
@@ -390,7 +412,10 @@ fn fan_pair(io: &Arc<FanIo>, budget: Duration) -> FanRpmRead {
                 deadline: Instant::now() + QUERY_RESERVE + budget,
                 cancelled: &cancelled,
             };
-            reader.read_fan_rpm(&mut || Some(ADMISSION), limit).await
+            let read = reader
+                .read_fan_rpm(&mut || Some(ADMISSION), limit, &sends)
+                .await;
+            (read, sends.count())
         })
 }
 
@@ -403,11 +428,14 @@ fn the_pair_is_sent_only_when_its_budget_covers_both_exchanges() {
     let io = FanIo::new([0x20, 0x1e]);
     assert_eq!(
         fan_pair(&io, pair - Duration::from_millis(1)),
-        FanRpmRead::NotRequested
+        (FanRpmRead::NotRequested, 0)
     );
     assert!(io.sent.lock().unwrap().is_empty());
     let io = FanIo::new([0x20, 0x1e]);
-    assert_eq!(fan_pair(&io, pair), FanRpmRead::Confirmed([3200, 3000]));
+    assert_eq!(
+        fan_pair(&io, pair),
+        (FanRpmRead::Confirmed([3200, 3000]), 1)
+    );
     assert_eq!(io.queries().len(), 2);
 }
 
@@ -424,7 +452,7 @@ fn a_long_first_exchange_leaves_the_second_query_unsent() {
     ] {
         let io = FanIo::new([0x20, 0x1e]);
         *io.first_get_delay.lock().unwrap() = Some(delay);
-        assert_eq!(fan_pair(&io, pair), expected, "{delay:?}");
+        assert_eq!(fan_pair(&io, pair), (expected, 1), "{delay:?}");
         assert_eq!(io.queries().len(), queries, "{delay:?}");
         assert_eq!(io.queries()[0][1], 1);
     }
@@ -442,7 +470,7 @@ fn the_shared_job_sends_the_pair_only_when_asked() {
         let io = FanIo::new([0x20, 0]);
         let worker = fan_io_worker(io.clone(), || Some(ADMISSION));
         let queries = Queries {
-            fan_rpm,
+            fan_rpm: fan_rpm.then(FanPairSends::default),
             #[cfg(feature = "service-keyboard-driver-mode-read-v1")]
             device_mode: false,
         };

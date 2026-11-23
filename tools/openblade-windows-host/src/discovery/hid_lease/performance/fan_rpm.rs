@@ -5,6 +5,10 @@
 //! guard test fails when a new report construction appears.
 use super::*;
 use openblade_protocol::fan_rpm::{FanRpmQuery, FanRpmSelector};
+use std::sync::{
+    Arc,
+    atomic::{AtomicU64, Ordering},
+};
 
 /// The pair's own budget: two exchanges with their checkpoints and settles.
 /// A stalled query ends here rather than at the job deadline.
@@ -19,6 +23,30 @@ const TRANSFER: Duration = Duration::from_millis(50);
 /// the rest of the process, so no SET is sent with less.
 pub(super) const EXCHANGE: Duration = TRANSFER.saturating_mul(2).saturating_add(SETTLE);
 
+/// How many pairs this process has started to send: shared by the read
+/// source that asks for the pair and the worker thread that sends it. A pair
+/// counts just before its first SET is submitted, on the worker, so a pair
+/// whose observation was dropped after that SET, and whose result therefore
+/// never reaches the read source, still counts.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct FanPairSends(Arc<AtomicU64>);
+
+impl FanPairSends {
+    pub(crate) fn count(&self) -> u64 {
+        self.0.load(Ordering::Acquire)
+    }
+
+    fn sending(&self) {
+        self.0.fetch_add(1, Ordering::AcqRel);
+    }
+
+    /// Counts a pair as its first SET would.
+    #[cfg(test)]
+    pub(crate) fn sent_for_tests(&self) {
+        self.sending();
+    }
+}
+
 /// What one read job learned about the two fan speeds.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) enum FanRpmRead {
@@ -26,8 +54,9 @@ pub(crate) enum FanRpmRead {
     /// budget could not cover both exchanges.
     #[default]
     NotRequested,
-    /// Sent, but the pair was not confirmed within its budget. Unknown,
-    /// never a guessed speed.
+    /// Queried, but the pair was not confirmed within its budget, whether
+    /// or not a SET went out (`FanPairSends` tells). Unknown, never a
+    /// guessed speed.
     Unconfirmed,
     /// Both selectors, in RPM, from one job.
     Confirmed([u16; 2]),
@@ -37,11 +66,13 @@ impl<P: Port, A: ObservationProof> Reader<P, A> {
     /// Both fan speed queries within their own budget, ending `QUERY_RESERVE`
     /// before the job deadline, and only when that budget covers both
     /// exchanges. An incomplete pair seals this Reader like any incomplete
-    /// exchange, so it sends nothing more.
+    /// exchange, so it sends nothing more. `sends` counts the pair at its
+    /// first SET.
     pub(super) async fn read_fan_rpm(
         &mut self,
         authorize: Authorize<'_, A>,
         limit: Limit<'_>,
+        sends: &FanPairSends,
     ) -> FanRpmRead {
         if self.poisoned {
             return FanRpmRead::NotRequested;
@@ -63,7 +94,9 @@ impl<P: Port, A: ObservationProof> Reader<P, A> {
             reader: self,
             completed: false,
         };
-        let speeds = attempt.read_fan_speeds(authorize, admission, query).await;
+        let speeds = attempt
+            .read_fan_speeds(authorize, admission, query, sends)
+            .await;
         attempt.completed = speeds.is_some();
         speeds.map_or(FanRpmRead::Unconfirmed, FanRpmRead::Confirmed)
     }
@@ -75,6 +108,7 @@ impl<P: Port, A: ObservationProof> Attempt<'_, P, A> {
         authorize: Authorize<'_, A>,
         admission: A,
         limit: Limit<'_>,
+        sends: &FanPairSends,
     ) -> Option<[u16; 2]> {
         self.checkpoint(authorize, admission, limit).ok()?;
         let transactions = self.reader.reserve_pair()?;
@@ -92,6 +126,9 @@ impl<P: Port, A: ObservationProof> Attempt<'_, P, A> {
             let query = FanRpmQuery::new(transaction, selector);
             let mut frame = [0; FRAME_LENGTH];
             frame[1..].copy_from_slice(&query.request().encode());
+            if index == 0 {
+                sends.sending();
+            }
             self.transfer(Transfer::SendGetter(frame), limit)
                 .await
                 .ok()?;

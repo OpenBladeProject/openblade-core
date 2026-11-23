@@ -8,10 +8,14 @@
 //!
 //! An unconfirmed pair quarantines the transaction ID it sent for the rest of
 //! the process, and the pool is shared with every thermal read and mutation.
-//! So after one, or after an asked-for job that brought back nothing, the
-//! pair is not sent again for `FIRST_BACKOFF`, doubling per consecutive
-//! failure up to `MAX_BACKOFF`; a confirmed pair ends the back-off. A job
-//! that sends nothing (too little time, or a sealed Reader) changes nothing.
+//! So after a pair whose first SET went out (`FanPairSends`, counted on the
+//! worker as it sends) and that confirmed nothing, the pair is not sent again
+//! for `FIRST_BACKOFF`, doubling per consecutive failure up to
+//! `MAX_BACKOFF`; a confirmed pair ends the back-off. A job that sent no SET
+//! (a failed thermal read, a worker that did not start, too little time, a
+//! sealed Reader) leaves the pair due and the pause unchanged, whatever it
+//! brought back. A pair sent by an observation that was dropped before its
+//! result arrived counts when the next job is admitted.
 //!
 //! Managed publishes null after one failed pair. Here the last confirmed pair
 //! under the same read admission stays published through `RETAINED_MISSES`
@@ -34,7 +38,7 @@
 //! Temperatures are not read here: the CPU temperature worker is unchanged
 //! and no native GPU temperature source exists, so both stay null.
 use super::RETENTION_WINDOW;
-use crate::discovery::performance::{FanRpmRead, ReadAdmission};
+use crate::discovery::performance::{FanPairSends, FanRpmRead, ReadAdmission};
 use std::{
     cell::{Cell, RefCell},
     io,
@@ -126,15 +130,30 @@ struct Fans {
     misses: u8,
 }
 
-/// Consecutive unconfirmed pairs and the instant the next may be sent.
+/// Consecutive unconfirmed sent pairs, the instant the next may be sent, and
+/// the sent pairs (`FanPairSends::count`) already accounted for.
 #[derive(Clone, Copy, Default)]
 struct Backoff {
     failures: u32,
     until: Option<Instant>,
+    accounted: u64,
 }
 
 impl Backoff {
-    fn after(failures: u32, now: Instant) -> Self {
+    /// The state after the pairs counted up to `sent`: a confirmed pair ends
+    /// the pause, and otherwise a pair sent since the last account doubles
+    /// it. With no new pair sent, an unconfirmed outcome changes nothing.
+    fn account(self, sent: u64, confirmed: bool, now: Instant) -> Self {
+        if confirmed {
+            return Self {
+                accounted: sent,
+                ..Self::default()
+            };
+        }
+        if sent == self.accounted {
+            return self;
+        }
+        let failures = self.failures.saturating_add(1);
         let doublings = failures.saturating_sub(1).min(16);
         let pause = FIRST_BACKOFF
             .saturating_mul(1 << doublings)
@@ -142,6 +161,7 @@ impl Backoff {
         Self {
             failures,
             until: Some(now + pause),
+            accounted: sent,
         }
     }
 }
@@ -158,6 +178,7 @@ struct Health {
 pub(super) struct Host {
     capture: Rc<dyn Capture>,
     fans: Cell<Option<Fans>>,
+    sends: FanPairSends,
     backoff: Cell<Backoff>,
     health: RefCell<Health>,
 }
@@ -167,6 +188,7 @@ impl Host {
         Self {
             capture,
             fans: Cell::default(),
+            sends: FanPairSends::default(),
             backoff: Cell::default(),
             health: RefCell::default(),
         }
@@ -178,23 +200,23 @@ impl Host {
         map_battery_power_flow(present, rate)
     }
 
-    /// Whether an asked-for job may send the pair at `now`: false while an
-    /// earlier unconfirmed pair's back-off lasts.
-    pub(super) fn fans_due(&self, now: Instant) -> bool {
-        self.backoff.get().until.is_none_or(|until| now >= until)
+    /// The counter an asked-for job passes to the worker to send the pair at
+    /// `now`, or None while a back-off lasts. A pair an earlier, dropped
+    /// observation sent is accounted for first, as unconfirmed.
+    pub(super) fn fan_query(&self, now: Instant) -> Option<FanPairSends> {
+        self.settle(FanRpmRead::NotRequested, now);
+        let due = self.backoff.get().until.is_none_or(|until| now >= until);
+        due.then(|| self.sends.clone())
     }
 
-    /// Records the outcome of a job that was allowed to send the pair. A job
-    /// that brought back no reading passes `Unconfirmed`: it may have sent it.
-    pub(super) fn attempted(&self, read: FanRpmRead, now: Instant) {
-        match read {
-            FanRpmRead::NotRequested => {}
-            FanRpmRead::Confirmed(_) => self.backoff.set(Backoff::default()),
-            FanRpmRead::Unconfirmed => {
-                let failures = self.backoff.get().failures.saturating_add(1);
-                self.backoff.set(Backoff::after(failures, now));
-            }
-        }
+    /// Records what a job that was given the counter brought back:
+    /// `NotRequested` when it brought back no reading. Only a pair it sent
+    /// and did not confirm extends the back-off.
+    pub(super) fn settle(&self, read: FanRpmRead, now: Instant) {
+        let confirmed = matches!(read, FanRpmRead::Confirmed(_));
+        let backoff = self.backoff.get();
+        self.backoff
+            .set(backoff.account(self.sends.count(), confirmed, now));
     }
 
     #[cfg(test)]

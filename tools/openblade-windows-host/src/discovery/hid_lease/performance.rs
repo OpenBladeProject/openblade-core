@@ -31,7 +31,7 @@ mod battery;
 #[cfg(any(test, feature = "service-live-readings-v1"))]
 mod fan_rpm;
 #[cfg(any(test, feature = "service-live-readings-v1"))]
-pub(crate) use fan_rpm::FanRpmRead;
+pub(crate) use fan_rpm::{FanPairSends, FanRpmRead};
 #[cfg(test)]
 pub(crate) mod fan_rpm_tests;
 #[cfg(any(
@@ -363,12 +363,12 @@ impl<P: Port, A: ObservationProof> Reader<P, A> {
         // The fan speed queries follow the thermal read and any device-mode
         // query, only when that read completed (`FanRpmRead`).
         #[cfg(feature = "service-live-readings-v1")]
-        let reading = match reading {
-            Some(reading) if job.queries.fan_rpm => Some(worker::Reading {
-                fan_rpm: self.read_fan_rpm(&mut *authorize, limit).await,
+        let reading = match (reading, &job.queries.fan_rpm) {
+            (Some(reading), Some(sends)) => Some(worker::Reading {
+                fan_rpm: self.read_fan_rpm(&mut *authorize, limit, sends).await,
                 ..reading
             }),
-            reading => reading,
+            (reading, _) => reading,
         };
         // Caller timeout revokes delivery, but the worker owns the native
         // resources until terminal I/O and callback drain are both confirmed.

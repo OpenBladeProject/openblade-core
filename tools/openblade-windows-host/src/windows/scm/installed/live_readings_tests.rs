@@ -331,50 +331,106 @@ async fn transient_fan_failures_retain_the_last_pair_for_two_jobs_then_recover()
     assert_eq!(rig.fan_queries(), 6);
 }
 
-/// A job that asked for fan speeds and brought back no reading may have
-/// sent the pair, so it backs off too and fails closed.
+/// A job that asked for fan speeds and brought back no reading without
+/// sending the pair, here because its thermal read never confirmed, leaves
+/// the pair due: the next job sends it.
 #[tokio::test]
-async fn an_asked_job_that_returns_nothing_backs_the_pair_off() {
+async fn an_asked_job_that_sent_no_pair_leaves_it_due() {
     let rig = Rig::new();
     // No admitted thermal mode decodes, so the job confirms nothing.
     rig.io.thermal.store(0xff, Ordering::Release);
-    assert!(rig.snapshot(2).await.is_none());
+    for _ in 0..3 {
+        assert!(rig.snapshot(2).await.is_none());
+    }
     assert_eq!(rig.fan_queries(), 0);
     rig.io.thermal.store(0, Ordering::Release);
     let observed = rig.observe(2).await.unwrap();
     assert_eq!(observed["confirmedState"]["performance"], 1);
-    assert_eq!(readings(&observed)[1], &Value::Null);
-    assert_eq!(rig.fan_queries(), 0);
-    rig.end_backoff();
-    let observed = rig.observe(2).await.unwrap();
     assert_eq!(readings(&observed)[1], &json!(3200));
+    assert_eq!(rig.fan_queries(), 2);
+}
+
+/// An observation dropped after the pair's first SET, as a disconnecting
+/// client drops it, never brings its result back. The worker counted the
+/// pair as it sent it, so the next job backs the pair off.
+#[tokio::test]
+async fn a_pair_sent_by_a_dropped_observation_backs_off() {
+    let rig = Rig::new();
+    let (release, hold) = std::sync::mpsc::channel::<()>();
+    *rig.io.hold_query.lock().unwrap() = Some(hold);
+    {
+        let observation = rig.snapshot(2);
+        tokio::pin!(observation);
+        while rig.fan_queries() == 0 {
+            tokio::select! {
+                _ = &mut observation => panic!("the held pair completed"),
+                () = tokio::time::sleep(Duration::from_millis(1)) => {}
+            }
+        }
+    }
+    drop(release);
+    // Until the abandoned worker retires, a job starts no read at all.
+    let observed = loop {
+        if let Some(observed) = rig.observe(2).await {
+            break observed;
+        }
+        tokio::time::sleep(Duration::from_millis(1)).await;
+    };
+    assert_eq!(observed["confirmedState"]["performance"], 1);
+    assert_eq!(readings(&observed)[1], &Value::Null);
+    assert_eq!(rig.fan_queries(), 1);
+    rig.end_backoff();
+    let recovered = rig.observe(2).await.unwrap();
+    assert_eq!(readings(&recovered)[1], &json!(3200));
+    assert_eq!(rig.fan_queries(), 3);
 }
 
 /// The back-off starts at the Driver-mode interval, doubles per consecutive
-/// unconfirmed pair up to five minutes, ignores a job that sent nothing and
-/// ends at the next confirmed pair.
+/// sent and unconfirmed pair up to five minutes, ignores a job that sent no
+/// SET whatever it brought back, and ends at the next confirmed pair.
 #[test]
 fn the_fan_backoff_doubles_to_its_bound_and_a_confirmed_pair_ends_it() {
     let host = Host::new(Rc::new(Battery::default()));
     let start = Instant::now();
-    assert!(host.fans_due(start));
+    let sends = host.fan_query(start).unwrap();
     let mut now = start;
     for seconds in [15, 30, 60, 120, 240, 300, 300] {
-        host.attempted(FanRpmRead::Unconfirmed, now);
+        sends.sent_for_tests();
+        host.settle(FanRpmRead::Unconfirmed, now);
         let pause = Duration::from_secs(seconds);
-        assert!(
-            !host.fans_due(now + pause - Duration::from_millis(1)),
-            "{seconds}"
-        );
-        host.attempted(FanRpmRead::NotRequested, now);
-        assert!(host.fans_due(now + pause), "{seconds}");
+        let paused = now + pause - Duration::from_millis(1);
+        assert!(host.fan_query(paused).is_none(), "{seconds}");
+        for unsent in [FanRpmRead::Unconfirmed, FanRpmRead::NotRequested] {
+            host.settle(unsent, paused);
+        }
+        assert!(host.fan_query(now + pause).is_some(), "{seconds}");
         now += pause;
     }
-    host.attempted(FanRpmRead::Confirmed([3200, 3000]), now);
-    assert!(host.fans_due(now));
-    host.attempted(FanRpmRead::Unconfirmed, now);
-    assert!(!host.fans_due(now + Duration::from_secs(15) - Duration::from_millis(1)));
-    assert!(host.fans_due(now + Duration::from_secs(15)));
+    sends.sent_for_tests();
+    host.settle(FanRpmRead::Confirmed([3200, 3000]), now);
+    assert!(host.fan_query(now).is_some());
+    sends.sent_for_tests();
+    host.settle(FanRpmRead::Unconfirmed, now);
+    let first = Duration::from_secs(15);
+    assert!(
+        host.fan_query(now + first - Duration::from_millis(1))
+            .is_none()
+    );
+    assert!(host.fan_query(now + first).is_some());
+}
+
+/// A pair whose job never settled, because its observation was dropped, is
+/// accounted for at the next query: a sent pair pauses the next one, and a
+/// job that sent nothing does not.
+#[test]
+fn a_pair_with_no_settled_outcome_is_accounted_for_at_the_next_query() {
+    let host = Host::new(Rc::new(Battery::default()));
+    let now = Instant::now();
+    let sends = host.fan_query(now).unwrap();
+    assert!(host.fan_query(now).is_some());
+    sends.sent_for_tests();
+    assert!(host.fan_query(now).is_none());
+    assert!(host.fan_query(now + Duration::from_secs(15)).is_some());
 }
 
 /// A speed the managed codec would refuse is not confirmed; it counts as a

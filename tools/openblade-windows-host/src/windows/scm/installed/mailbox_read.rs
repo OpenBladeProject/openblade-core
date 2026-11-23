@@ -1236,7 +1236,11 @@ impl ReadSource {
             #[cfg(feature = "service-live-readings-v1")]
             let fan_speeds = live & live_readings::FAN_SPEEDS != 0;
             #[cfg(feature = "service-live-readings-v1")]
-            let send_fans = fan_speeds && source.live.fans_due(Instant::now());
+            let fan_query = fan_speeds
+                .then(|| source.live.fan_query(Instant::now()))
+                .flatten();
+            #[cfg(feature = "service-live-readings-v1")]
+            let send_fans = fan_query.is_some();
             #[cfg(not(any(
                 feature = "service-keyboard-driver-mode-read-v1",
                 feature = "service-live-readings-v1"
@@ -1262,7 +1266,7 @@ impl ReadSource {
                         #[cfg(feature = "service-keyboard-driver-mode-read-v1")]
                         device_mode: asked.is_some(),
                         #[cfg(feature = "service-live-readings-v1")]
-                        fan_rpm: send_fans,
+                        fan_rpm: fan_query,
                     },
                 )
                 .await;
@@ -1282,18 +1286,19 @@ impl ReadSource {
                 };
                 source.driver_mode.record(asked, read, job);
             }
-            // A job allowed to send the pair records its outcome before any
-            // admission check, so an unconfirmed pair backs off even when this
-            // job publishes nothing. One that brought back no reading may
-            // have sent it, so it backs off too, as the Driver-mode query
-            // fails closed; it also confirmed no fan speed.
+            // A job allowed to send the pair settles it before any admission
+            // check, so a sent, unconfirmed pair backs off even when this job
+            // publishes nothing. Whether a SET went out is the worker's count,
+            // not this result: a job that brought back no reading backs off
+            // only if it sent one. A dropped observation never gets here; the
+            // next `fan_query` accounts for its pair.
             #[cfg(feature = "service-live-readings-v1")]
             if send_fans {
                 let read = match &result {
                     Ok(Some(reading)) => reading.fan_rpm,
-                    _ => crate::discovery::performance::FanRpmRead::Unconfirmed,
+                    _ => crate::discovery::performance::FanRpmRead::NotRequested,
                 };
-                source.live.attempted(read, Instant::now());
+                source.live.settle(read, Instant::now());
             }
             #[cfg(feature = "service-live-readings-v1")]
             if fan_speeds && !matches!(result, Ok(Some(_))) {
