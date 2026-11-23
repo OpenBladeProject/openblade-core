@@ -747,25 +747,28 @@ async fn a_save_that_ends_the_active_rule_updates_the_reported_pair() {
     rig.stop().await;
 }
 
+/// Managed `ControlCoordinator` replies for a reconciliation excluded by
+/// drift outside OpenBlade.
+const PAUSED: &str = "Automatic performance profile application is paused because the setting changed outside OpenBlade. Automatic fans profile application is paused because the setting changed outside OpenBlade.";
+
 /// A reconciliation under a persistent performance override publishes the
-/// override it applied over, as the status reports it.
+/// override, as the status reports it, also when drift outside OpenBlade
+/// pauses it.
 #[tokio::test]
 async fn a_reconciliation_under_an_override_reports_that_override() {
     let rig = rig_at(files_with_game(json!({"pluggedIn":{"performance":2}})), 2);
     assert_eq!(rig.set(1, value(0, 1)).await["result"]["status"], 1);
-    // Firmware changed outside OpenBlade, so the reconciliation writes.
     rig.port.state.lock().unwrap().selectors = [2; 2];
-    let reply = report(&rig, 1, Some(r"C:\Games\Game.exe")).await;
-    assert_eq!(reply["result"]["status"], 1, "{reply}");
+    let before = writes(&rig);
+    let paused = report(&rig, 1, Some(r"C:\Games\Game.exe")).await;
     assert_eq!(
-        rig.get().await["status"]["confirmedState"]["performance"],
-        0
+        paused["result"],
+        json!({"status":2,"message":format!("{RECORDED} {PAUSED}")})
     );
+    assert_eq!(writes(&rig), before);
     let status = rig.get().await;
-    assert_eq!(
-        status["status"]["performanceOverride"]["value"], 0,
-        "{status}"
-    );
+    assert_eq!(status["status"]["externalChanges"], json!([0]), "{status}");
+    assert_eq!(status["status"]["performanceOverride"]["value"], 0);
     assert_eq!(status["status"]["desiredState"]["performance"]["source"], 4);
     rig.stop().await;
 }
@@ -1245,8 +1248,10 @@ async fn a_temporary_preset_on_the_limited_adapter_survives_the_performance_pre_
     limited_adapter(&rig);
     let set = rig.set(1, value(1, 0)).await;
     assert_eq!(set["result"]["status"], 1, "{set}");
-    // Firmware moved outside OpenBlade, so the reconciliation has work.
+    // Firmware moved before a restart, which forgets drift, so the
+    // reconciliation has work.
     rig.port.state.lock().unwrap().selectors = [2; 2];
+    rig.runtime.restart_drift();
     let reply = report(&rig, 1, Some(r"C:\Tools\Other.exe")).await;
     assert_eq!(
         reply["result"],
@@ -1349,5 +1354,48 @@ async fn an_override_document_changed_during_the_baseline_reading_fences_before_
     let _ = rig.source.lock().await.drain().await;
 }
 
+/// A reconciliation that hands manual fans back first decides at its fan
+/// step: performance changed outside OpenBlade excludes it, so the owned
+/// Fixed fans are not handed back and nothing is written.
+#[tokio::test]
+async fn a_fans_first_reconciliation_is_excluded_at_its_fan_step() {
+    let rig = rig_at(files_with_game(json!({"pluggedIn":{"fans":1}})), 0);
+    let applied = report(&rig, 1, Some(r"C:\Games\Game.exe")).await;
+    assert_eq!(applied["result"]["status"], 1, "{applied}");
+    assert_eq!(rig.port.state.lock().unwrap().fans, [1; 2]);
+    // Silent, with the Fixed fans OpenBlade owns.
+    rig.port.state.lock().unwrap().selectors = [5; 2];
+    let before = writes(&rig);
+    let paused = report(&rig, 2, Some(r"C:\Tools\Other.exe")).await;
+    assert_eq!(paused["result"]["status"], 2, "{paused}");
+    assert_eq!(writes(&rig), before);
+    assert_eq!(rig.port.state.lock().unwrap().fans, [1; 2]);
+    assert_eq!(rig.get().await["status"]["externalChanges"], json!([0]));
+    // Firmware changed outside OpenBlade, so the drain's fan handback
+    // cannot confirm it and retains its evidence.
+    rig.origin.stop();
+    let _ = rig.source.lock().await.drain().await;
+}
+
+/// An explicit fan request's confirmed intent is the prior intent of the
+/// next reconciliation: a report over performance changed outside OpenBlade
+/// is paused, where a startup reconciliation would apply over it.
+#[tokio::test]
+async fn an_explicit_fan_intent_is_the_prior_one_of_the_next_reconciliation() {
+    let rig = rig_at(files_with_game(json!({"pluggedIn":{"performance":2}})), 0);
+    let fixed = rig.request(fan_request(1, Some(1), 3700)).await;
+    assert_eq!(fixed["result"]["status"], 1, "{fixed}");
+    // Silent, with the Fixed fans.
+    rig.port.state.lock().unwrap().selectors = [5; 2];
+    let before = writes(&rig);
+    let paused = report(&rig, 1, Some(r"C:\Games\Game.exe")).await;
+    assert_eq!(paused["result"]["status"], 2, "{paused}");
+    assert_eq!(writes(&rig), before);
+    assert_eq!(rig.get().await["status"]["externalChanges"], json!([0]));
+    // Firmware changed outside OpenBlade, so the drain's fan handback
+    // cannot confirm it and retains its evidence.
+    rig.origin.stop();
+    let _ = rig.source.lock().await.drain().await;
+}
 #[path = "request_triggers_low_power.rs"]
 mod low_power;

@@ -136,6 +136,13 @@ async fn reported_game() -> Rig {
     assert_eq!(owed(&rig), None);
     rig
 }
+/// The lease expired and selected the plugged-in power profile, which pauses
+/// over OpenBlade's own Game preset as managed does (`leaseExpired`).
+async fn expired_over_own_preset(rig: &Rig) {
+    let status = rig.get().await;
+    assert_eq!(performance(&status), 2, "{status}");
+    assert_eq!(status["status"]["externalChanges"], json!([0]), "{status}");
+}
 fn vector<'a>(vectors: &'a Value, transition: &str) -> &'a Value {
     vectors["transitions"]
         .as_array()
@@ -306,36 +313,43 @@ async fn a_power_change_in_low_power_is_applied_after_the_resume() {
     rig.stop().await;
 }
 
-/// An expired lease with an application profile active applies the power
-/// profile once (managed `ExpireApplicationContextAsync`); the next report
-/// selects the application again. Managed selects the same desired source
-/// and preset, but submits nothing here: `PublishApplicationContextStatus`
-/// publishes the new desired state before `ApplyFullTransitionAsync` takes it
-/// as the prior one, so its drift tracker reads OpenBlade's own Game preset as
-/// an external change and pauses. Native has no drift tracker and applies, as
-/// its report that leaves a rule already does.
+/// An expired lease with an application profile active selects the power
+/// profile once (managed `ExpireApplicationContextAsync`) and submits nothing:
+/// `PublishApplicationContextStatus` publishes the new desired state before
+/// `ApplyFullTransitionAsync` takes it as the prior one, so managed reads
+/// OpenBlade's own Game preset as an external change and pauses. Native
+/// reproduces that outcome (`thermal_drift::Mode::NextOnly`); the debt is
+/// settled, and the next report selects the application again over its own
+/// preset.
 #[tokio::test]
-async fn an_expired_lease_applies_the_power_profile_once() {
+async fn an_expired_lease_selects_the_power_profile_and_pauses_over_its_own_preset() {
     let vectors: Value = serde_json::from_str(LIFECYCLE_VECTORS).unwrap();
     let rig = applied_game().await;
-    let before = sent(&rig);
+    let before = writes(&rig);
     rig.runtime.expire_application_lease();
     tick(&rig).await;
-    assert!(sent(&rig) > before);
-    assert_eq!(owed(&rig), None);
     let expired = vector(&vectors, "leaseExpired");
-    assert_eq!(expired["source"], 1, "{expired}");
     assert_eq!(expired["submitted"], false, "{expired}");
-    assert_eq!(performance(&rig.get().await), &expired["desired"]);
-    // The cleared foreground cannot expire again.
-    let after = sent(&rig);
-    tick(&rig).await;
-    assert_eq!(sent(&rig), after);
-    let again = report(&rig, 2, Some(r"C:\Games\Game.exe")).await;
-    assert_eq!(again["result"]["status"], 1, "{again}");
+    assert_eq!(writes(&rig), before);
+    assert_eq!(owed(&rig), None);
+    let status = rig.get().await;
+    assert_eq!(performance(&status), &expired["performance"]);
     assert_eq!(
-        performance(&rig.get().await),
-        &vector(&vectors, "gameReported")["desired"]
+        status["status"]["externalChanges"],
+        expired["externalChanges"]
+    );
+    // The cleared foreground cannot expire again.
+    tick(&rig).await;
+    assert_eq!(writes(&rig), before);
+    let again = report(&rig, 2, Some(r"C:\Games\Game.exe")).await;
+    let reported = vector(&vectors, "gameReported");
+    assert_eq!(reported["submitted"], false, "{reported}");
+    assert_eq!(writes(&rig), before, "{again}");
+    let status = rig.get().await;
+    assert_eq!(performance(&status), &reported["desired"]);
+    assert_eq!(
+        status["status"]["externalChanges"],
+        reported["externalChanges"]
     );
     rig.stop().await;
 }
@@ -360,7 +374,8 @@ async fn a_resume_renews_the_lease_instead_of_expiring_it() {
 
 /// The gate setting during the tick's reconciliation defers it with nothing
 /// submitted: the debt stays owed with no retry spent, and the tick after the
-/// resume applies it once.
+/// resume applies it once. The cause is a power change, which applies over
+/// OpenBlade's own preset, where a lease expiry pauses.
 #[tokio::test]
 async fn a_suspend_during_the_tick_reconciliation_defers_it_to_the_resume() {
     let rig = applied_game().await;
@@ -373,7 +388,7 @@ async fn a_suspend_during_the_tick_reconciliation_defers_it_to_the_resume() {
             custody.lifecycle.ingress(POWER, SUSPEND);
         }
     }));
-    rig.runtime.expire_application_lease();
+    unplug(&rig);
     tick(&rig).await;
     assert!(once.load(Ordering::Acquire), "the step read the adapter");
     assert_eq!(writes(&rig), before.1);
@@ -385,7 +400,10 @@ async fn a_suspend_during_the_tick_reconciliation_defers_it_to_the_resume() {
     tick(&rig).await;
     assert!(writes(&rig) > before.1);
     assert_eq!(owed(&rig), None);
-    assert_eq!(performance(&rig.get().await), 1);
+    assert_eq!(
+        performance(&rig.get().await),
+        &saved_battery_performance(&rig)
+    );
     let after = sent(&rig);
     tick(&rig).await;
     assert_eq!(sent(&rig), after);
@@ -397,7 +415,8 @@ async fn a_suspend_during_the_tick_reconciliation_defers_it_to_the_resume() {
 /// write with nothing submitted. It is no deferral, but the debt stays owed
 /// with one retry spent, and since the write epoch moved the first tick after
 /// `PACE` runs the cause again under fresh admission (the second debt drop of
-/// the low-power slice).
+/// the low-power slice). The deferred retry keeps its prior intent
+/// (`thermal_drift::Transition::commit`), so its own preset is not drift.
 #[tokio::test]
 async fn a_fence_without_a_gate_move_is_retried_after_its_pace() {
     let rig = applied_game().await;
@@ -411,7 +430,7 @@ async fn a_fence_without_a_gate_move_is_retried_after_its_pace() {
             custody.lifecycle.ingress(POWER, RESUME);
         }
     }));
-    rig.runtime.expire_application_lease();
+    unplug(&rig);
     tick(&rig).await;
     assert!(once.load(Ordering::Acquire), "the step read the adapter");
     assert_eq!(
@@ -427,7 +446,10 @@ async fn a_fence_without_a_gate_move_is_retried_after_its_pace() {
     tick(&rig).await;
     assert!(writes(&rig) > before);
     assert_eq!(owed(&rig), None);
-    assert_eq!(performance(&rig.get().await), 1);
+    assert_eq!(
+        performance(&rig.get().await),
+        &saved_battery_performance(&rig)
+    );
     let after = sent(&rig);
     tick(&rig).await;
     assert_eq!(sent(&rig), after);
@@ -710,7 +732,7 @@ async fn a_gap_in_the_ticks_renews_the_lease_from_its_threshold() {
     rig.runtime.expire_application_lease();
     tick(&rig).await;
     assert!(sent(&rig) > before);
-    assert_eq!(performance(&rig.get().await), 1);
+    expired_over_own_preset(&rig).await;
     rig.stop().await;
 }
 
@@ -746,7 +768,7 @@ async fn a_busy_tick_keeps_its_time_current_but_never_erases_a_gap() {
     rig.runtime.expire_application_lease();
     tick(&rig).await;
     assert!(sent(&rig) > before);
-    assert_eq!(performance(&rig.get().await), 1);
+    expired_over_own_preset(&rig).await;
     rig.stop().await;
 }
 
@@ -1063,5 +1085,245 @@ async fn the_console_users_activation_applies_its_profile_once() {
     rig.custody.lifecycle.ingress(SESSION_CHANGE, 5);
     tick(&rig).await;
     assert_eq!((captures(&rig), writes(&rig)), (captured, written));
+    rig.stop().await;
+}
+
+/// An observeState request, a fresh exact-device thermal reading the drift
+/// tracker compares with the last one (`thermal_drift::Tracker`), then the
+/// published status.
+async fn observe(rig: &Rig, n: u8) -> Value {
+    rig.get().await;
+    let observed = rig
+        .request(json!({"operation":"observeState","version":85,"requestId":format!("dddddddd-bbbb-cccc-dddd-{n:012}"),"includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0}))
+        .await;
+    assert_eq!(observed["success"], true, "{observed}");
+    rig.get().await
+}
+/// Firmware moved outside OpenBlade to `selector` with `fan`.
+fn moved(rig: &Rig, selector: u8, fan: u8) {
+    let mut state = rig.port.state.lock().unwrap();
+    state.selectors = [selector; 2];
+    state.fans = [fan; 2];
+}
+/// A fresh reading's confirmed preset and the external changes as one
+/// managed vector row records them. The published desired source is not
+/// compared: native status reports the plugged-in power profile's source
+/// on AC even while an application preset is applied, with or without drift.
+async fn assert_row(rig: &Rig, n: u8, row: &Value) {
+    let status = observe(rig, n).await;
+    let status = &status["status"];
+    assert_eq!(
+        status["confirmedState"]["performance"], row["performance"],
+        "{status}"
+    );
+    assert_eq!(
+        status["externalChanges"], row["externalChanges"],
+        "{status}"
+    );
+}
+
+/// Performance changed outside OpenBlade excludes both thermal subsystems
+/// from each later automatic reconciliation (managed
+/// `ResolveAutomaticWriteExclusions`): a power change either way, an expired
+/// lease and a report each write nothing and settle their debt.
+#[tokio::test]
+async fn performance_drift_excludes_every_automatic_reconciliation_and_settles_it() {
+    let vectors: Value = serde_json::from_str(LIFECYCLE_VECTORS).unwrap();
+    let rig = applied_game().await;
+    let ac = rig.port.state.lock().unwrap().actual;
+    let before = writes(&rig);
+    // Silent.
+    moved(&rig, 5, 0);
+    assert_row(&rig, 1, vector(&vectors, "performanceDriftObserved")).await;
+    for (row, cause) in [
+        ("powerToBatteryWithPerformanceDrift", 0),
+        ("powerToPluggedInWithPerformanceDrift", 1),
+    ] {
+        if cause == 0 {
+            unplug(&rig);
+        } else {
+            replug(&rig, ac);
+        }
+        tick(&rig).await;
+        let row = vector(&vectors, row);
+        assert_eq!(row["submitted"], false, "{row}");
+        assert_eq!(writes(&rig), before);
+        assert_eq!(owed(&rig), None);
+        assert_row(&rig, 2 + cause, row).await;
+    }
+    rig.runtime.expire_application_lease();
+    tick(&rig).await;
+    let row = vector(&vectors, "leaseExpiredWithPerformanceDrift");
+    assert_eq!(row["submitted"], false, "{row}");
+    assert_eq!(writes(&rig), before);
+    assert_row(&rig, 4, row).await;
+    let reply = report(&rig, 2, Some(r"C:\Games\Game.exe")).await;
+    assert_eq!(reply["result"]["status"], 2, "{reply}");
+    let row = vector(&vectors, "gameReportedWithPerformanceDrift");
+    assert_eq!(row["submitted"], false, "{row}");
+    assert_eq!(writes(&rig), before);
+    assert_eq!(owed(&rig), None);
+    assert_row(&rig, 5, row).await;
+    rig.stop().await;
+}
+
+/// Fans changed outside OpenBlade exclude performance too; once firmware
+/// returns to the fans OpenBlade resolved, the next reconciliation clears
+/// the change.
+#[tokio::test]
+async fn manual_fan_drift_excludes_both_until_the_fans_return() {
+    let vectors: Value = serde_json::from_str(LIFECYCLE_VECTORS).unwrap();
+    let rig = applied_game().await;
+    let ac = rig.port.state.lock().unwrap().actual;
+    let before = writes(&rig);
+    // Performance with manual fans.
+    moved(&rig, 2, 1);
+    assert_eq!(
+        observe(&rig, 1).await["status"]["externalChanges"],
+        json!([1])
+    );
+    unplug(&rig);
+    tick(&rig).await;
+    let row = vector(&vectors, "powerToBatteryWithManualFanDrift");
+    assert_eq!(row["submitted"], false, "{row}");
+    assert_eq!(writes(&rig), before);
+    assert_eq!(owed(&rig), None);
+    let status = observe(&rig, 2).await;
+    assert_eq!(status["status"]["externalChanges"], row["externalChanges"]);
+    assert_eq!(
+        status["status"]["desiredState"]["performance"]["value"],
+        row["desired"]
+    );
+    moved(&rig, 2, 0);
+    replug(&rig, ac);
+    tick(&rig).await;
+    let row = vector(&vectors, "powerToPluggedInAfterFansReturnedToAutomatic");
+    assert_eq!(row["submitted"], false, "{row}");
+    assert_eq!(writes(&rig), before);
+    assert_row(&rig, 3, row).await;
+    rig.stop().await;
+}
+
+/// An observed HyperBoost excludes both thermal subsystems from a power
+/// change without recording an external change.
+#[tokio::test]
+async fn an_observed_hyperboost_excludes_a_power_change() {
+    let vectors: Value = serde_json::from_str(LIFECYCLE_VECTORS).unwrap();
+    let rig = applied_game().await;
+    let before = writes(&rig);
+    moved(&rig, 7, 0);
+    unplug(&rig);
+    tick(&rig).await;
+    let row = vector(&vectors, "powerToBatteryHyperBoostActive");
+    assert_eq!(row["submitted"], false, "{row}");
+    assert_eq!(writes(&rig), before);
+    assert_eq!(owed(&rig), None);
+    let status = observe(&rig, 1).await;
+    assert_eq!(status["status"]["externalChanges"], row["externalChanges"]);
+    rig.stop().await;
+}
+
+/// A resume whose power change reads neither intent is held: a fresh
+/// reading of the destination within the window clears the change, and one
+/// past it leaves the change recorded.
+#[tokio::test]
+async fn a_resume_holds_a_performance_change_for_its_window() {
+    let vectors: Value = serde_json::from_str(LIFECYCLE_VECTORS).unwrap();
+    for late in [false, true] {
+        let rig = applied_game().await;
+        let before = writes(&rig);
+        suspend(&rig);
+        unplug(&rig);
+        tick(&rig).await;
+        // The firmware battery preset before it settles.
+        moved(&rig, 6, 0);
+        resume(&rig);
+        tick(&rig).await;
+        let row = vector(&vectors, "resumePowerToBatteryUnsettled");
+        assert_eq!(row["submitted"], false, "{row}");
+        assert_eq!(writes(&rig), before);
+        assert_eq!(owed(&rig), None);
+        assert_row(&rig, 1, row).await;
+        // Battery Saver.
+        moved(&rig, 3, 0);
+        if late {
+            rig.runtime
+                .age_drift_hold(std::time::Duration::from_secs(60));
+        }
+        if late {
+            let status = observe(&rig, 2).await;
+            assert_eq!(status["status"]["externalChanges"], json!([0]), "{status}");
+        } else {
+            assert_row(&rig, 2, vector(&vectors, "resumeSettledWithinWindow")).await;
+        }
+        assert_eq!(writes(&rig), before);
+        rig.stop().await;
+    }
+}
+
+/// A user activation applies over drift (managed
+/// `preserveObservedExternalChanges: false`), and its own readback clears
+/// the change.
+#[tokio::test]
+async fn an_activation_applies_over_drift() {
+    const OTHER: &str = "S-1-5-21-111-222-333-1002";
+    let vectors: Value = serde_json::from_str(LIFECYCLE_VECTORS).unwrap();
+    let rig = applied_game().await;
+    *rig.custody.current_sid.lock().unwrap() = OTHER.to_owned();
+    // WTS_SESSION_LOGON.
+    rig.custody.lifecycle.ingress(SESSION_CHANGE, 5);
+    tick(&rig).await;
+    moved(&rig, 5, 0);
+    assert_eq!(
+        observe(&rig, 1).await["status"]["externalChanges"],
+        json!([0])
+    );
+    let row = vector(&vectors, "performanceDriftObservedBeforeActivation");
+    assert_eq!(row["externalChanges"], json!([0]), "{row}");
+    let before = writes(&rig);
+    *rig.custody.current_sid.lock().unwrap() = SID.to_owned();
+    rig.custody.lifecycle.ingress(SESSION_CHANGE, 5);
+    tick(&rig).await;
+    let row = vector(&vectors, "userActivatedWithPerformanceDrift");
+    assert_eq!(row["submitted"], true, "{row}");
+    assert!(writes(&rig) > before);
+    assert_eq!(owed(&rig), None);
+    let status = observe(&rig, 2).await;
+    assert_eq!(status["status"]["confirmedState"]["performance"], 2);
+    assert_eq!(status["status"]["externalChanges"], row["externalChanges"]);
+    rig.stop().await;
+}
+
+/// OpenBlade's own explicit write clears a recorded change by its readback
+/// (managed `ConfirmIntentional`), and a restart forgets it: the first
+/// reading after it only sets the baseline.
+#[tokio::test]
+async fn an_own_write_clears_drift_and_a_restart_forgets_it() {
+    let rig = applied_game().await;
+    moved(&rig, 5, 0);
+    assert_eq!(
+        observe(&rig, 1).await["status"]["externalChanges"],
+        json!([0])
+    );
+    assert_eq!(rig.set(1, value(2, 1)).await["result"]["status"], 1);
+    assert_eq!(
+        observe(&rig, 2).await["status"]["externalChanges"],
+        json!([])
+    );
+    moved(&rig, 5, 0);
+    assert_eq!(
+        observe(&rig, 3).await["status"]["externalChanges"],
+        json!([0])
+    );
+    rig.runtime.restart_drift();
+    assert_eq!(
+        observe(&rig, 4).await["status"]["externalChanges"],
+        json!([])
+    );
+    moved(&rig, 2, 0);
+    assert_eq!(
+        observe(&rig, 5).await["status"]["externalChanges"],
+        json!([0])
+    );
     rig.stop().await;
 }
