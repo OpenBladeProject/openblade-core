@@ -466,7 +466,10 @@ impl Stream for NativeStream {
     }
 }
 
-fn token_context(token: &OwnedHandle) -> io::Result<(Logon, u32)> {
+/// A token's logon kind and session, as a request's caller is classified.
+/// The lifecycle tick's console user is classified the same way
+/// (`thermal_native::console_user`).
+pub(super) fn token_context(token: &OwnedHandle) -> io::Result<(Logon, u32)> {
     use windows_sys::Win32::Security::TOKEN_INFORMATION_CLASS;
     fn query(
         token: &OwnedHandle,

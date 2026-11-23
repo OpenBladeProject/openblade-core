@@ -398,18 +398,32 @@ fn session_unlocked(session: u32) -> bool {
 }
 /// The console session and its primary user's SID, as `Identity::admits`
 /// reads them, for the lifecycle tick's pair when no report of that session
-/// was admitted. It names a candidate only: the capture that follows proves
-/// the same console session unlocked, the same primary SID and logon LUID,
-/// and every other admission, before any read or write.
+/// was admitted and for its activation. The token's logon is classified as a
+/// request's caller is (`windows::token_context`), and only an interactive
+/// one is named: a token carrying the remote-logon group is refused, as a
+/// remote-interactive request is. It names a candidate only: the capture
+/// that follows proves the same console session unlocked, the same primary
+/// SID and logon LUID, and every other admission, before any read or write.
 #[cfg(feature = "service-profile-triggers-v1")]
 #[cfg_attr(test, allow(dead_code))] // Only the native composition reads the console; tests inject it.
 pub(super) fn console_user() -> Option<(String, u32)> {
     let session = crate::console_session::observe()?;
-    let identity = session_identity(session).ok()?;
-    (identity.primary && identity.session == session).then_some((identity.sid, session))
+    let token = session_token(session).ok()?;
+    let identity = crate::windows_token::Identity::read(&token).ok()?;
+    let (logon, logon_session) = super::windows::token_context(&token).ok()?;
+    (identity.primary
+        && identity.session == session
+        && logon_session == session
+        && logon == super::Logon::Interactive)
+        .then_some((identity.sid, session))
 }
 #[cfg_attr(test, allow(dead_code))] // Only the native session and path checks call this; tests inject them.
 fn session_identity(session: u32) -> io::Result<crate::windows_token::Identity> {
+    crate::windows_token::Identity::read(&session_token(session)?)
+}
+/// The primary token of `session`'s user.
+#[cfg_attr(test, allow(dead_code))] // Only the native session and path checks call this; tests inject them.
+fn session_token(session: u32) -> io::Result<OwnedHandle> {
     if session == 0 {
         return Err(deny());
     }
@@ -419,8 +433,7 @@ fn session_identity(session: u32) -> io::Result<crate::windows_token::Identity> 
     if unsafe { WTSQueryUserToken(session, &mut token) } == 0 {
         return Err(io::Error::last_os_error());
     }
-    let token = unsafe { OwnedHandle::from_raw_handle(token) };
-    crate::windows_token::Identity::read(&token)
+    Ok(unsafe { OwnedHandle::from_raw_handle(token) })
 }
 
 // Existing per-user directories can be SYSTEM-owned and inherit the protected
