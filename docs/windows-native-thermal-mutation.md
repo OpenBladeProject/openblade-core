@@ -1674,8 +1674,8 @@ With `service-profile-triggers-v1`, the serving loop's 500 ms origin tick
 (`serve_connections`, after `process_power_source`) also runs
 `StatusSource::reconcile_lifecycle`, which calls
 `Runtime::reconcile_lifecycle` (`lifecycle_triggers.rs`). It applies what the
-console pair owes after three lifecycle transitions, as managed runs
-`ApplyFullTransitionAsync` after them without a request:
+console pair owes after four lifecycle transitions, as managed runs
+`ApplyFullTransitionAsync` after them without an explicit request:
 
 - A gate boundary: the gate generation moved through a resume, a new resume
   or a DisplayOn that cleared a set gate (managed `ProcessNativeAsync`, which
@@ -1683,68 +1683,97 @@ console pair owes after three lifecycle transitions, as managed runs
   DisplayOn). A boundary owes nothing by itself. It runs a debt the pair
   already owes, such as intent deferred or stored in low power.
 - A Windows power-kind change, AC to battery or back
-  (`Lifecycle::observe_power_kind`, sampled on every SCM power notice): the
-  pair owes every class, as managed `HandlePowerSourceChangedAsync` applies
-  on a changed source. A change while the gate is set is owed and applied
-  after the boundary that clears it, as managed skips `PowerChanged` in low
-  power and compares the source again on resume.
+  (`Lifecycle::observe_power_kind`, sampled on every SCM power notice and
+  once when `Runtime::native` starts): the pair owes every class, as managed
+  `HandlePowerSourceChangedAsync` applies on a changed source. A change
+  while the gate is set is owed and applied after the boundary that clears
+  it, as managed skips `PowerChanged` in low power and compares the source
+  again on resume.
 - The 15 s application lease (`APPLICATION_LEASE`) expiring with an
   application profile active (managed `ExpireApplicationContextAsync`): the
   reporter's foreground is cleared and its pair owes every class, so the
   power profile applies.
+- A console user other than the last one activated, including the first one
+  after the Service starts. Managed `ActivateUserAsync` applies a new active
+  user's profile at that user's first admitted request
+  (`ControlRequestHandler.cs:210-220`, `ServiceControlRuntime.cs:1668-1677`),
+  which the Tray sends once it starts after logon. The pair owes every class.
+  Managed compares only the SID with its last active user, so the same user
+  in a new session, as after a logoff and logon, owes nothing new. Its
+  Service start applies the machine configuration
+  (`ReconcileStartupProfileAsync`); native keeps no machine profile, so the
+  console user's activation at the first tick is the start-up application.
 
 The pair is the console session's interactive user. It is the latest
 admitted reporter when that reporter reported from the console session, and
 otherwise the console user itself (`Runtime::console`,
-`thermal_native::console_user`: the console session and its primary token's
-SID), with the Service's own process recorded as the steps' caller. Managed's
-`HandlePowerSourceChangedAsync` needs no report, and by default no
+`thermal_native::console_user`), with the Service's own process recorded as
+the steps' caller. Managed's transitions need no report, and by default no
 application rule exists, so neither reporter ever sends one. After a switch
-to another session, the latest reporter is not the console user. The console
-probe names a candidate only. The attempt's `WindowsGuard::capture` proves
-it afresh before any read or write: the same console session unlocked, the
-same primary SID and logon LUID, known Windows power and competing-controller
-absence.
+to another session, the latest reporter is not the console user.
+`console_user` reads the console session's primary token. It classifies the
+token's logon with the request path's own `token_context`, and it names only
+an interactive one: a token carrying the remote-logon group (S-1-5-14) is
+refused, as a remote-interactive request is. The probe names a candidate
+only. The attempt's `WindowsGuard::capture` proves it afresh before any read
+or write: the same console session unlocked, the same primary SID and logon
+LUID, known Windows power and competing-controller absence. The tick reads
+the console user only at its first pass, after the write epoch moved (every
+session notice fences it) and while no user is known, so it queries no token
+on most ticks and still sees a logon without a further notice.
 
-The tick takes the mutation gate only when it is free; otherwise it keeps
-its state for the next tick. Its first tick records a mark and reconciles
-nothing. A cause stays pending until an attempt passes the trigger's
-admission and runs its steps. An attempt runs `reconcile_locked` as a report
-does: the capture, then fresh admission and health checks before any
-firmware read (`admit_trigger`, shared with the report path), then each
-step's capture, authorization, per-write epoch check, journal id, readback
-and stop on ambiguity. An attempt refused before its steps (no console user,
-a refused capture such as a locked session at resume, a fenced store or
-unknown Windows power) keeps the cause. So does one whose steps the write
-epoch overtook with the debt still owed. Either is retried only once the
-ordinary write epoch has moved, as an unlock's session notice or a later
-power notice moves it, at most `RETRIES` more times; ticks at an unmoved
-epoch take no capture. A fenced store stays fenced across those retries, so
-a possibly submitted step is never run again. In low power the tick records
-the cause, renews the lease and takes no capture. The tick's reconciliation
-id is a fresh `OpenBlade.LifecycleReconcile` string, and each step journals
-under its own `step_request` id as a report's does.
+The tick takes the mutation gate only when it is free. Otherwise it keeps
+its state, updating only its time, for the next tick. An attempt runs
+`reconcile_locked` as a report does: the capture, then fresh admission and
+health checks before any firmware read (`admit_trigger`, shared with the
+report path), then each step's capture, authorization, per-write epoch
+check, journal id, readback and stop on ambiguity. In low power the tick
+records the cause, renews the lease and takes no capture. The tick's
+reconciliation id is a fresh `OpenBlade.LifecycleReconcile` string, and each
+step journals under its own `step_request` id as a report's does.
 
-A boundary, low power, or a gap of at least 5 s since the last tick ended
+A cause stays pending until an attempt's steps leave nothing owed, or a
+newer cause replaces it. The retry budget is the debt's own, as a report's
+is:
+
+- An attempt refused before any step spends nothing. Causes include no
+  console user, a refused capture (such as a locked session at resume), a
+  fenced store and unknown Windows power. Such an attempt reads no firmware
+  and takes at most one capture per epoch move. Unrelated notices, such as a
+  battery-level power notice or another session's notice, therefore cannot
+  use the cause up before an unlock.
+- An attempt whose steps leave the debt owed has spent the debt's budget
+  through `Reconciled::after`: a deferral spends nothing, a transient
+  refusal spends one of `RETRIES`, and every other outcome settles the
+  debt. Only a step with nothing possibly submitted can leave it owed. Such
+  a step was overtaken by the write epoch, or refused transiently at an
+  unmoved epoch, for example by a USB-C adapter whose class is not settled
+  yet.
+- Either kind is retried only once the ordinary write epoch has moved, as
+  an unlock's session notice or a later power notice moves it. Ticks at an
+  unmoved epoch take no capture.
+- A fenced store stays fenced across those retries until read-only
+  reconciliation settles its row, so a possibly submitted step never runs
+  again.
+
+A boundary, low power, or a gap of at least 5 s since the last tick
 (`SLEPT`) renews the lease instead of expiring it. Windows `Instant` counts
 time asleep, which is not reporter absence, and Modern Standby on this host
 can sleep without a suspend notice, so only the gap shows it. A reporter
 that stops while the ticks keep running expires as before. The tick stamps
-its end after an attempt, so the attempt's own time is no gap.
-
-The steps are a report's, so the debt's retry budget is unchanged: a
-deferral spends no attempt, a transient refusal at most `RETRIES`, and every
-other outcome settles the debt.
+its time after an attempt and also when it finds the gate held, so neither
+an attempt nor a long request is a gap.
 
 `lifecycle-reconcile-vectors.json` pins managed's outcomes, recorded by
 `NativeLifecycleReconcileVectors` over the native fixture's saved
 performance: lease expiry, a renewed Game report, an unchanged power source,
-battery and back to AC, and the gate's Enter and Exit around a deferred
-report followed by `HandlePowerSourceChangedAsync` on the unchanged source.
-That last row models only that part of managed's resume. It does not run
-the full `ProcessNativeAsync` (lighting invalidation and restore, resume
-validation) or the later convergence. `request_triggers_lifecycle.rs`
-replays the rows. Native differs from managed in three ways:
+battery and back to AC, the gate's Enter and Exit around a deferred report
+followed by `HandlePowerSourceChangedAsync` on the unchanged source, and a
+user's activation on battery followed by the same user's again. The resume
+row models only that part of managed's resume. It does not run the full
+`ProcessNativeAsync` (lighting invalidation and restore, resume validation)
+or the later convergence. `request_triggers_lifecycle.rs` replays the rows.
+Native differs from managed in four ways:
 
 - Lease expiry. Both select the power profile's Balanced. Managed submits
   nothing: `PublishApplicationContextStatus` publishes the new desired state
@@ -1759,10 +1788,33 @@ replays the rows. Native differs from managed in three ways:
 - External changes. Managed excludes a subsystem its drift tracker found
   changed outside OpenBlade from automatic writes
   (`ResolveAutomaticWriteExclusions`, `ServiceControlRuntime.cs:16655-16694`).
-  Native has no drift tracker, so a power-kind change or lease expiry
-  overwrites an out-of-band performance or fan change with the saved intent.
-  This conflicts with Architecture rule 5 and must be resolved before the
-  feature is admitted for packaging.
+  Native has no drift tracker, so a power-kind change, lease expiry or
+  activation overwrites an out-of-band performance or fan change with the
+  saved intent. This conflicts with Architecture rule 5 and must be resolved
+  before the feature is admitted for packaging.
+- Activation timing. Managed activates a user at its first admitted request.
+  Native activates the console user at the first tick that reads it, and
+  only the console session's user, whose capture must prove it unlocked.
+
+Offline evidence covers the tick's logic through injected probes only. The
+native wiring is compile-only, and no offline test reaches it:
+`Runtime::native`'s start-up power-kind sample and the
+`thermal_native::console_user` probe with its token classification. They
+need a physical logon, lock, unlock and sleep/resume validation.
+
+Remaining residuals:
+
+- A cause refused before its steps is retried at every epoch move for as
+  long as it stays refused, one capture each time, until a newer cause
+  replaces it. There is no separate ceiling, since such a refusal reads no
+  firmware.
+- Steps from the console pair record the Service's own process as their
+  caller.
+- A tick reconciles nothing until the status feed has a publisher, which the
+  first status read creates; in production the Tray's subscription creates
+  it.
+- The gap heuristic does not help if the Service keeps ticking through
+  standby.
 
 Not ported:
 
