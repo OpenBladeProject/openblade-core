@@ -301,6 +301,10 @@ jobs:
           # images send no 00/84 query and publish no Driver-mode member.
           $driverMode = @('openblade-windows-service-candidate', 'service-keyboard-driver-mode-read-v1')
           $driverModeProfiles = @('openblade-windows-service-candidate', 'service-keyboard-driver-mode-read-v1,service-profiles-v1')
+          # The read-only live readings alone and beside every Service write.
+          # The lanes without it pin that ObserveState still refuses them.
+          $liveReadings = @('openblade-windows-service-candidate', 'service-live-readings-v1')
+          $liveReadingsProfiles = @('openblade-windows-service-candidate', 'service-live-readings-v1,service-profiles-v1')
           # One run per filter, so a filter that matches no test fails the step.
           foreach ($run in @(
               @('openblade-windows-service-candidate', 'service-temporary-charge-v1', 'service_status::object_tests'),
@@ -341,6 +345,12 @@ jobs:
               ($driverMode + 'job_tests'),
               ($driverMode + 'native_package'),
               ($driverModeProfiles + 'driver_mode::tests'),
+              ($liveReadings + 'live_readings::tests'),
+              ($liveReadings + 'fan_rpm'),
+              ($liveReadings + 'readiness::tests::observation'),
+              ($liveReadings + 'native_package'),
+              ($liveReadingsProfiles + 'live_readings::tests'),
+              @('openblade-windows-service-candidate', 'service-mailbox-observation-v1', 'readiness::tests::observation'),
               @('openblade-windows-service-candidate', 'service-mailbox-observation-v1', 'driver_mode_absent'),
               @('openblade-windows-service-candidate', 'service-profiles-v1', 'driver_mode_absent'),
               @('openblade-windows-service-candidate', 'service-temporary-charge-v1', 'job_tests'),
@@ -388,6 +398,9 @@ jobs:
               # The read-only observation lane alone carries older unused-code
               # warnings, so the Driver-mode read is linted beside every write.
               @('openblade-windows-service-candidate', 'service-keyboard-driver-mode-read-v1,service-profiles-v1'),
+              # The live readings for the same reason, also beside the Driver-mode read.
+              @('openblade-windows-service-candidate', 'service-live-readings-v1,service-profiles-v1'),
+              @('openblade-windows-service-candidate', 'service-keyboard-driver-mode-read-v1,service-live-readings-v1,service-profiles-v1'),
               @('openblade-windows-service-candidate', 'service-profile-triggers-v1'),
               @('openblade-windows-agent-candidate', 'agent-display-brightness-write-v1'),
               @('openblade-windows-agent-candidate', 'agent-display-profile-apply-v1'),
