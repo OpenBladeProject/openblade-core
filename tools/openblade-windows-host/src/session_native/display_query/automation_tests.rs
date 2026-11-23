@@ -924,6 +924,115 @@ fn the_console_locking_mid_apply_is_refused_and_retried_without_a_trigger() {
     assert!(rig.recovery().scheduled().is_none());
 }
 
+/// A manual mutation that preempts a running transition, in the production
+/// order: `preempt` before the gate, the transition's result, then `begin` and
+/// `complete` under the gate. Managed begins before the transition records,
+/// so the transition neither unpauses nor resumes: no power generation moves
+/// after the mutation captured its power, nothing resumed waits on the gate
+/// to re-latch a pause, and the manual result alone ends the pause.
+#[test]
+fn a_preempted_transition_records_as_under_a_begun_manual_operation() {
+    let rig = Rig::new();
+    rig.observe(target(1, None));
+    rig.observe(target(0, None));
+    let recovery = rig.automation.recovery();
+    let power = rig.power.clone();
+    let captured = Arc::new(Mutex::new(None));
+    let slot = captured.clone();
+    let mut applier = Scripted {
+        during: Some(Box::new(move |_| {
+            // The source is lost and comes back while the write is in
+            // flight, so its completion would resume the latest target.
+            power.observed(3, false);
+            recovery.lock().unwrap().mark_unavailable(false);
+            power.observed(0, false);
+            recovery.lock().unwrap().observe(target(0, None));
+            // The mutation preempts before the gate and captures power
+            // under it, before the transition records.
+            recovery.lock().unwrap().preempt();
+            *slot.lock().unwrap() = power.capture();
+        })),
+        ..Scripted::default()
+    };
+    rig.run(&mut applier).unwrap().0.unwrap();
+    let manual = captured.lock().unwrap().expect("confirmed power");
+    assert!(rig.power.current(manual), "the mutation's power is current");
+    assert!(rig.recovery().scheduled().is_none(), "nothing resumed");
+    let ((hold, paused, _), (in_flight, cancellation_hold, manual_pending, _)) = rig.flags();
+    assert!(hold && paused && manual_pending);
+    assert!(!in_flight && !cancellation_hold);
+
+    assert!(rig.recovery().begin(Fields::HDR, Some(0)));
+    rig.recovery()
+        .complete(Status::Succeeded, &Panel::default().snapshot());
+    assert!(!rig.paused());
+    // No late transition re-latched a pause, so a read re-applies nothing
+    // over the manual change.
+    assert!(!rig.recovery().explicit_read(&Panel::default().snapshot()));
+    assert!(rig.recovery().scheduled().is_none());
+    assert_eq!(applier.applied.len(), 1);
+}
+
+#[test]
+fn a_preempted_retry_leaves_a_failed_manual_operation_its_inherited_pause() {
+    let rig = Rig::new();
+    rig.observe(target(1, None));
+    rig.observe(target(0, None));
+    let recovery = rig.automation.recovery();
+    let mut attempt = 0;
+    let stale = (
+        Status::Blocked,
+        Some(refresh_write::STALE),
+        Fields::default(),
+    );
+    let mut applier = Scripted {
+        results: [stale, stale].into(),
+        // The mutation preempts the second attempt.
+        during: Some(Box::new(move |_| {
+            attempt += 1;
+            if attempt == 2 {
+                recovery.lock().unwrap().preempt();
+            }
+        })),
+        ..Scripted::default()
+    };
+    let (result, delays) = rig.run(&mut applier).unwrap();
+    result.unwrap();
+    assert_eq!(delays.len(), 1);
+    assert!(
+        rig.paused(),
+        "a canceled attempt under a manual operation pauses"
+    );
+    assert!(rig.recovery().begin(Fields::HDR, Some(0)));
+    rig.recovery()
+        .complete(Status::Failed, &Snapshot::unavailable("refused"));
+    assert!(
+        rig.paused(),
+        "managed restores the pause the write in flight left"
+    );
+    assert_eq!(rig.file.record()["AutomaticWritesPaused"], true);
+}
+
+#[test]
+fn a_manual_turn_holds_scheduling_until_it_ends() {
+    let rig = Rig::new();
+    rig.observe(target(1, None));
+    let gate = Gate::default();
+    let turn = manual_turn(&rig.automation.recovery, &gate, true).unwrap();
+    assert!(rig.flags().1.2, "pending from the preempt");
+    // A status before the mutation's begin is observed as managed observes
+    // one after `BeginManualOperation`: paused, so nothing is scheduled.
+    assert_eq!(rig.observe(target(0, None)), Observation::SameSource);
+    assert!(rig.recovery().scheduled().is_none());
+    // A mutation refused before its begin leaves nothing pending.
+    drop(turn);
+    assert!(!rig.flags().1.2);
+    assert_eq!(
+        rig.observe(target(2, None)),
+        Observation::TransitionScheduled
+    );
+}
+
 #[test]
 fn an_already_matching_display_submits_nothing() {
     let rig = Rig::new();

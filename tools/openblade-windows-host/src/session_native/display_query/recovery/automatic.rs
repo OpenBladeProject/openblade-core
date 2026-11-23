@@ -212,11 +212,21 @@ impl<F: CheckpointFile> Recovery<F> {
         }
     }
 
-    /// A manual mutation is about to wait for the display operation gate:
-    /// cancel the active transition first, as managed `BeginManualOperation`
-    /// runs before the applier's gate.
+    /// A manual mutation is about to wait for the display operation gate.
+    /// Managed `BeginManualOperation` runs before the applier's gate, so the
+    /// mutation is pending from here: the active transition is canceled, and
+    /// whichever of its result and the mutation's `begin` comes first, the
+    /// transition records as it would under a begun manual operation and
+    /// neither unpauses nor resumes. `end_manual_turn` clears what a mutation
+    /// refused before `begin` leaves.
     pub(in super::super) fn preempt(&mut self) {
-        self.cancel_active();
+        self.begin_manual();
+    }
+
+    /// The manual turn ended, still holding the gate. The endpoint serves one
+    /// request at a time, so no manual operation is pending after it.
+    pub(in super::super) fn end_manual_turn(&mut self) {
+        self.automatic.manual_pending = false;
     }
 
     /// Managed `Observe` for a confirmed source.
@@ -237,7 +247,7 @@ impl<F: CheckpointFile> Recovery<F> {
                 self.latch();
                 return Observation::BaselineEstablished;
             }
-            if target.application.is_some() && !self.paused && !self.manual_hold {
+            if target.application.is_some() && !self.writes_paused() && !self.manual_hold {
                 self.schedule(target, admitted);
                 return Observation::TransitionScheduled;
             }
@@ -247,7 +257,10 @@ impl<F: CheckpointFile> Recovery<F> {
         if last == source {
             if self.automatic.context.source != Some(source) {
                 let admitted = self.advance_to(source);
-                if self.automatic.pending == Some(source) && !self.paused && !self.manual_hold {
+                if self.automatic.pending == Some(source)
+                    && !self.writes_paused()
+                    && !self.manual_hold
+                {
                     self.schedule(target, admitted);
                     return Observation::TransitionScheduled;
                 }
@@ -261,7 +274,7 @@ impl<F: CheckpointFile> Recovery<F> {
             }
             if automation_changed
                 && !self.manual_hold
-                && !self.paused
+                && !self.writes_paused()
                 && (had_observed || self.baseline.is_some() || target.application.is_some())
             {
                 let admitted = self.advance_to(source);
@@ -280,7 +293,7 @@ impl<F: CheckpointFile> Recovery<F> {
         self.baseline = None;
         self.owned = Fields::default();
         self.application_profile_id = None;
-        if self.paused {
+        if self.writes_paused() {
             let _ = self.persist();
             return Observation::SameSource;
         }
@@ -504,6 +517,14 @@ impl<F: CheckpointFile> Recovery<F> {
             automatic.manual_pending,
             automatic.pending,
         )
+    }
+
+    /// Managed `automaticWritesPaused` for scheduling. Managed
+    /// `BeginManualOperation` pauses before the applier's gate; native records
+    /// the pause at `begin`, under the gate, so a mutation pending since
+    /// `preempt` pauses scheduling as well.
+    fn writes_paused(&self) -> bool {
+        self.paused || self.automatic.manual_pending
     }
 
     fn current(&self, transition: &Transition) -> bool {

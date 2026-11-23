@@ -150,19 +150,53 @@ pub(super) fn turn(gate: &Gate) -> io::Result<MutexGuard<'_, ()>> {
         .map_err(|_| io::Error::other("display operation gate failed"))
 }
 
+/// One manual operation's hold on the display operation gate. A mutation is
+/// a pending manual operation from `preempt`, before the gate, until the turn
+/// ends; ending it, still under the gate, clears what a mutation refused
+/// before its `begin` left pending.
+#[cfg(feature = "agent-display-automation-v1")]
+pub(super) struct ManualTurn<'a, F: CheckpointFile> {
+    mutation: Option<&'a Mutex<Recovery<F>>>,
+    _gate: MutexGuard<'a, ()>,
+}
+
+#[cfg(feature = "agent-display-automation-v1")]
+impl<F: CheckpointFile> Drop for ManualTurn<'_, F> {
+    fn drop(&mut self) {
+        // A poisoned recovery state already failed the operation and the
+        // feature; nothing is pending that a later operation could observe.
+        if let Some(Ok(mut recovery)) = self.mutation.map(Mutex::lock) {
+            recovery.end_manual_turn();
+        }
+    }
+}
+
 /// The display operation gate for one manual operation. A mutation first
-/// cancels the running transition, as managed `BeginManualOperation` runs
-/// before the applier's gate; the mutation's own begin records the rest.
+/// marks itself pending and cancels the running transition, as managed
+/// `BeginManualOperation` runs before the applier's gate; the mutation's own
+/// `begin` records the rest.
 #[cfg(feature = "agent-display-automation-v1")]
 pub(super) fn manual_turn<'a, F: CheckpointFile>(
-    recovery: &Mutex<Recovery<F>>,
+    recovery: &'a Mutex<Recovery<F>>,
     gate: &'a Gate,
     mutation: bool,
-) -> io::Result<MutexGuard<'a, ()>> {
-    if mutation {
+) -> io::Result<ManualTurn<'a, F>> {
+    let mutation = mutation.then_some(recovery);
+    if mutation.is_some() {
         lock(recovery)?.preempt();
     }
-    turn(gate)
+    match turn(gate) {
+        Ok(gate) => Ok(ManualTurn {
+            mutation,
+            _gate: gate,
+        }),
+        Err(error) => {
+            if mutation.is_some() {
+                lock(recovery)?.end_manual_turn();
+            }
+            Err(error)
+        }
+    }
 }
 
 /// Without display automation the endpoint serves one request at a time, so
@@ -233,7 +267,7 @@ impl Writer {
 
     /// `manual_turn` on this endpoint's checkpoint and gate.
     #[cfg(feature = "agent-display-automation-v1")]
-    fn turn(&self, mutation: bool) -> io::Result<MutexGuard<'_, ()>> {
+    fn turn(&self, mutation: bool) -> io::Result<ManualTurn<'_, WindowsCheckpointFile>> {
         manual_turn(&self.recovery, &self.gate, mutation)
     }
 
