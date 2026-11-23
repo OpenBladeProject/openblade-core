@@ -88,47 +88,69 @@ impl Capture for Windows {
             return Err(io::Error::last_os_error());
         }
         let set = DeviceInfoSet(raw);
-        let mut capacities = Vec::new();
-        for index in 0..=MAX_BATTERIES {
-            let mut interface = SP_DEVICE_INTERFACE_DATA {
-                cbSize: size_of::<SP_DEVICE_INTERFACE_DATA>() as u32,
-                ..Default::default()
-            };
-            // SAFETY: The set is owned for the loop, the GUID is valid, and
-            // the initialized output supplies its documented size.
-            if unsafe {
-                SetupDiEnumDeviceInterfaces(
-                    set.0,
-                    null(),
-                    &GUID_DEVICE_BATTERY,
-                    index,
-                    &mut interface,
+        collect_capacities(
+            |index| set.interface(index),
+            |interface| {
+                let information = set.path(interface)?.as_deref().and_then(read_capacity);
+                Ok(
+                    information.map_or(Interface::Unreadable, |information| Interface::Battery {
+                        capabilities: information.Capabilities,
+                        designed: information.DesignedCapacity,
+                        full: information.FullChargedCapacity,
+                    }),
                 )
-            } == 0
-            {
-                // SAFETY: The last error of the failed call on this thread.
-                return if unsafe { GetLastError() } == ERROR_NO_MORE_ITEMS {
-                    Ok(capacities)
-                } else {
-                    Err(io::Error::last_os_error())
-                };
-            }
-            if index == MAX_BATTERIES {
-                break;
-            }
-            let Some(path) = set.path(&interface)? else {
-                continue;
-            };
-            if let Some(information) = read_capacity(&path)
-                && information.Capabilities & BATTERY_CAPACITY_RELATIVE == 0
-            {
-                capacities.push((
-                    information.DesignedCapacity,
-                    information.FullChargedCapacity,
-                ));
-            }
+            },
+        )
+    }
+}
+
+/// What one enumerated battery interface reported.
+#[derive(Clone, Copy)]
+enum Interface {
+    Battery {
+        capabilities: u32,
+        designed: u32,
+        full: u32,
+    },
+    /// A blank path, or no tag or information: managed skips it.
+    Unreadable,
+}
+
+/// Managed `ReadBatteryCapacities` over an enumeration: `enumerate` gives the
+/// interface at an index, or None once there are no more, and `read` what
+/// that interface reports. The result is the (design, full charge) capacities
+/// of each battery reporting absolute capacity, in enumeration order. More
+/// than `MAX_BATTERIES` interfaces fail the capture without reading the extra
+/// one.
+fn collect_capacities<I>(
+    mut enumerate: impl FnMut(u32) -> io::Result<Option<I>>,
+    mut read: impl FnMut(&I) -> io::Result<Interface>,
+) -> io::Result<Vec<(u32, u32)>> {
+    let mut capacities = Vec::new();
+    for index in 0..=MAX_BATTERIES {
+        let Some(interface) = enumerate(index)? else {
+            return Ok(capacities);
+        };
+        if index == MAX_BATTERIES {
+            break;
         }
-        Err(io::Error::other("too many battery interfaces"))
+        if let Some(capacity) = absolute_capacity(read(&interface)?) {
+            capacities.push(capacity);
+        }
+    }
+    Err(io::Error::other("too many battery interfaces"))
+}
+
+/// A battery's capacities, or None when it reports relative capacity
+/// (percentages rather than mWh) or nothing, as managed skips both.
+fn absolute_capacity(interface: Interface) -> Option<(u32, u32)> {
+    match interface {
+        Interface::Battery {
+            capabilities,
+            designed,
+            full,
+        } if capabilities & BATTERY_CAPACITY_RELATIVE == 0 => Some((designed, full)),
+        _ => None,
     }
 }
 
@@ -148,6 +170,28 @@ struct InterfaceDetail {
 }
 
 impl DeviceInfoSet {
+    /// The battery interface at `index`, or None once there are no more.
+    fn interface(&self, index: u32) -> io::Result<Option<SP_DEVICE_INTERFACE_DATA>> {
+        let mut interface = SP_DEVICE_INTERFACE_DATA {
+            cbSize: size_of::<SP_DEVICE_INTERFACE_DATA>() as u32,
+            ..Default::default()
+        };
+        // SAFETY: The set is owned by `self`, the GUID is valid, and the
+        // initialized output supplies its documented size.
+        let found = unsafe {
+            SetupDiEnumDeviceInterfaces(self.0, null(), &GUID_DEVICE_BATTERY, index, &mut interface)
+        } != 0;
+        if found {
+            return Ok(Some(interface));
+        }
+        // SAFETY: The last error of the failed call on this thread.
+        if unsafe { GetLastError() } == ERROR_NO_MORE_ITEMS {
+            Ok(None)
+        } else {
+            Err(io::Error::last_os_error())
+        }
+    }
+
     /// The interface's terminated device path. Managed fails the capture
     /// when the detail cannot be read; a blank path is skipped.
     fn path(&self, interface: &SP_DEVICE_INTERFACE_DATA) -> io::Result<Option<Vec<u16>>> {
@@ -256,4 +300,69 @@ fn read_capacity(path: &[u16]) -> Option<BATTERY_INFORMATION> {
         )
     } != 0;
     read.then_some(information)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn battery(capabilities: u32, designed: u32) -> Interface {
+        Interface::Battery {
+            capabilities,
+            designed,
+            full: designed - 1,
+        }
+    }
+
+    /// Up to `MAX_BATTERIES` interfaces are read; one more fails the capture
+    /// without being read.
+    #[test]
+    fn more_interfaces_than_the_bound_fail_without_being_read() {
+        for (count, expect) in [
+            (0, Some(0)),
+            (MAX_BATTERIES, Some(MAX_BATTERIES)),
+            (MAX_BATTERIES + 1, None),
+        ] {
+            let mut reads = 0;
+            let result = collect_capacities(
+                |index| Ok((index < count).then_some(index)),
+                |index| {
+                    reads += 1;
+                    Ok(battery(0, 1000 + index))
+                },
+            );
+            let collected = result.ok().map(|capacities| capacities.len() as u32);
+            assert_eq!(collected, expect, "{count}");
+            assert_eq!(reads, count.min(MAX_BATTERIES), "{count}");
+        }
+    }
+
+    /// A relative-capacity or unreadable battery is skipped and other
+    /// capability bits do not matter. A failure of either step fails the
+    /// capture.
+    #[test]
+    fn relative_and_unreadable_batteries_are_skipped() {
+        let interfaces = [
+            battery(BATTERY_CAPACITY_RELATIVE, 2000),
+            battery(!BATTERY_CAPACITY_RELATIVE, 3000),
+            Interface::Unreadable,
+            battery(0, 4000),
+            battery(BATTERY_CAPACITY_RELATIVE | 1, 5000),
+        ];
+        let result = collect_capacities(
+            |index| Ok(interfaces.get(index as usize).copied()),
+            |interface| Ok(*interface),
+        );
+        assert_eq!(result.unwrap(), vec![(3000, 2999), (4000, 3999)]);
+        let enumeration = collect_capacities(
+            |_| Err::<Option<u32>, _>(io::ErrorKind::Other.into()),
+            |_| unreachable!(),
+        );
+        assert!(enumeration.is_err());
+        let read = collect_capacities(
+            |index| Ok((index == 0).then_some(())),
+            |_| Err(io::ErrorKind::Other.into()),
+        );
+        assert!(read.is_err());
+    }
 }
