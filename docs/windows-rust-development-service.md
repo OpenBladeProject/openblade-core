@@ -341,14 +341,18 @@ The step runs on the 500 ms origin tick after the power-source check and
 before the lifecycle reconciliation, the managed step order
 (`ServicePeriodicObservationLoop.cs:42-90`). It is taken under the source lock
 and awaited after it is released. It is due at the first eligible tick and
-then 20 seconds after the last step: the 15 s interval plus a 5 s lead for the
-read job. That first tick is the managed startup call
-(`ServiceStartupCoordinator.cs:85-86`) and always reads `00/84`. After it, a
-step whose read job already confirmed Driver under the current read admission
-within the interval starts no job, since managed would read and find Driver;
-a Normal, unknown or stale result is read again. The lead lets the read job,
-which finds the owner's result stale after 15 s, query first whenever a
-subscription refresh runs it, so a healthy Driver keyboard needs no owner job. A step failure continues the
+then 15 seconds after the last step, managed's interval. That first tick is
+the managed startup call (`ServiceStartupCoordinator.cs:85-86`) and always
+reads `00/84`. After it, a step starts no job when a client's ObserveState
+read job confirmed Driver under the current read admission within the
+interval, since managed would read and find Driver. Subscription refreshes do
+not run the read job, so otherwise a due step on a verified device runs one
+mutation job that reads `00/84` first. That is the cost of the managed cadence:
+while a client keeps the device verified and no client read recorded Driver
+within the interval, every 15 s brings one `00/84` exchange, with a reader
+stop and restart and their fresh admissions, when the keyboard is already in
+Driver mode. With no ObserveState in the last 5 s the device is unverified and
+a due step starts no job. A step failure continues the
 loop, and only fatal admission evidence stops the Service. A tick that finds a
 request holding the mutation gate tries again at the next tick. A
 recovery-only read lease never activates a write, so the step does not run
@@ -374,9 +378,12 @@ confirmed status, consumes no recovery and runs again at the next step.
 Managed maintains Driver mode with no user signed in. Native adds no
 Service-scoped write authority for it, and the function row has no user to
 serve then. The tick also captures again, with no job, whenever the
-lifecycle write epoch moves, between steps and after an Indeterminate step
-too, and an Indeterminate owner still captures at each due step. The
-shutdown release therefore holds the capture of the current epoch.
+lifecycle write epoch moves: between steps, while the device is unverified
+and after an Indeterminate step. An Indeterminate owner captures only on such
+a move. The shutdown release therefore holds the capture of the current
+epoch. A capture refused for a cause that clears without a notice, such as a
+competing controller that exits, is retried only at the next epoch move or
+the next due step on a verified device.
 
 The step publishes through the read cadence that every fresh status projects
 (`ReadSource::record_driver_mode`): a confirmed mode, or `null` after a failed
@@ -408,17 +415,18 @@ managed order (`ServiceControlRuntime.cs:12925-12950`,
   (`Fresh::capture_settle`) authorizes owned-Stop reads only. Its type,
   `Settle`, is not a `Fresh`, so it cannot authorize a request or this
   release's `00/04:0000` setter; only the fan handback's settle permit uses it,
-  to read and append its record. After a notice with no tick since, or after a
-  session change, the release is refused. No Service-scoped authority is
-  added.
+  to read and append its record. After a lifecycle notice with no tick
+  since, the epoch the capture pins refuses the release. A tick after the
+  notice captures again for the console user signed in then; when that
+  capture is refused, as after a switch to a session nobody is signed in to,
+  the release is refused too. No Service-scoped authority is added.
 - A fresh `00/84` read of Driver writes `00/04:0000` once, whoever set it, as
   managed does, and requires the exact acknowledgement and an independent
   `00/84` readback of Normal. A read of Normal ends an owned claim as a
   foreign change and writes nothing.
-- The release job runs at most once per process. A release that sends
-  nothing keeps that attempt: a lane that refused the job, or a job whose
-  measured pace could not fit the setter, its acknowledgement and the readback
-  in its time (`Exhausted`).
+- The release job runs at most once per process, and only Stop starts it.
+  A job whose measured pace could not fit the setter, its acknowledgement and
+  the readback in its time sends nothing and reports `Exhausted`.
 - A process that never captured a console user's write admission, or whose
   read lease is recovery-only, has no owned-Stop admission and cannot write.
 
@@ -434,9 +442,10 @@ its own 2 s. Inside the share, the gate wait and the join of active work have
 150 ms, and the job has 700 ms from its own start, ending at least 50 ms
 before the share does so the lane can retire it. The share also ends the
 release when the job's worker has not retired by then, and the fan handback
-joins that worker within its own time. A healthy release takes about
-0.43-0.57 s: three exchanges, about 22 fresh admissions at 8-9 ms each and
-three 30 ms settles. Twice the per-exchange allowance plus those admissions is
+joins that worker within its own time. By count, a healthy release takes
+about 0.28 s besides its three exchanges: about 22 fresh admissions at 8-9 ms
+each and three 30 ms settles. That is an estimate pending an attended timing.
+Twice the per-exchange allowance plus those admissions is
 about 1.09 s, which does not fit; the job's measured pace refuses the setter
 instead when it cannot finish. Native accepts SERVICE_CONTROL_SHUTDOWN, not
 PRESHUTDOWN, so at system shutdown the whole Stop must end within
@@ -473,6 +482,20 @@ Driver mode and the D1 suspend fan handback, one slice. Until it lands the
 Service only refrains from acquiring or maintaining while the gate is set; it
 does not restore Normal at a low-power boundary. Physical validation on
 RZ09-0581 is also outstanding.
+
+Known gap at system shutdown, part of that slice: Windows closes applications
+and logs off every user session before it notifies services. Microsoft
+documents that order for the full shutdown that Fast Startup begins with
+("Preparing for fast startup" in *Distinguishing Fast Startup from
+Wake-from-Hibernation*); the SCM then sends PRESHUTDOWN and SHUTDOWN
+(*Service Control Handler Function*). When Fast Startup is on, a shut down
+then hibernates the system session instead of stopping services, so no
+SHUTDOWN arrives. Either way, under console-user write admission the shutdown
+release finds no signed-in console user and is refused at admission, or never
+runs, and Driver mode stays on. Managed maintains and releases with no user
+signed in. The slice must design a shutdown and low-power release admission
+that does not depend on a signed-in console user; this gap still blocks
+packaging. The order has not been observed on RZ09-0581.
 
 #### Live readings (read-only)
 
