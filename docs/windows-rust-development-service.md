@@ -299,10 +299,15 @@ marker by name. A build without the feature still refuses the request with
 - **Fan speed budget and back-off.** No 0D/88 SET is sent unless the remaining
   budget covers that exchange's SET, settle and GET (130 ms: 50 ms for each
   transfer and the 30 ms settle), and the pair starts only when the budget
-  covers both. A pair that cannot start sends nothing and stays due. An
-  unconfirmed pair, or an asked-for job that brought back nothing, pauses the
-  pair: no job sends it for 15 s, as the Driver-mode query waits, doubling
-  per consecutive failure to 5 minutes. A confirmed pair ends the pause.
+  covers both. A pair that cannot start sends nothing and stays due. A pair
+  whose first SET went out and that confirmed nothing pauses the pair: no
+  job sends it for 15 s, as the Driver-mode query waits, doubling per
+  consecutive failure to 5 minutes. A confirmed pair ends the pause. A job
+  that sent no SET, such as one whose thermal read failed, whose worker did
+  not start or that lacked the time, leaves the pair due and the pause
+  unchanged. The worker counts the pair as it submits the first SET, so a
+  pair sent by an observation that a disconnecting client dropped still
+  pauses the next one.
   Each unconfirmed pair quarantines at most one transaction ID (an answered
   first query's ID is reclaimed and an unsent second ID stays free), and the
   pool of about 253 IDs is shared with every thermal read and mutation.
@@ -346,7 +351,10 @@ charge", which the model's battery evidence refutes; true only keeps the
 tray's charge-limit actions waiting for the temporary state. The record admits
 no control. The record follows the published confirmed state in every
 projection: a fresh read, a retained read, an unavailable read and a
-mutation's own read. It applies in every mailbox composition.
+mutation's own read. It applies in every mailbox composition. A confirmed
+state names no model, so the record is bound to its one producer, the exact
+RZ09-0581 performance Reader: `capability_tests` pins that Reader's identity
+to the record's and fails when another source file publishes an observation.
 
 Still unavailable natively: GPU temperature, firmware versions, and a reply
 for Custom High/High with Automatic fans, which the thermal read does not
@@ -1142,6 +1150,7 @@ product ABI are unchanged.
 
 ### Known compatibility gaps
 
+- With null capabilities the tray's `ProfileAdmissionPolicy.Supports` refuses every profile draft. Beside an observed HyperBoost, the observation record lets it admit a draft that changes nothing, and it still refuses any change. Native profile admission stays authoritative, so the tray is unchanged.
 - Session Display IPC stays at version 2 although main changed what it means. Manual setters now admit `ExternalUnknown` with fresh Service external-power evidence, and the display checkpoint admits source 3 as an unowned manual hold. The native Agent implements both. A version-2 peer built before that change refuses an `ExternalUnknown` manual request and treats a source-3 checkpoint as invalid, so automation pauses with every field uncertain. Both outcomes fail closed. The version number cannot tell the two behaviours apart.
 - The read-only protocol-51 projection keeps a confirmed Custom preset whose levels the firmware did not report, with `customPerformance` null. Protocol 85 admits that state; every v51-era managed reader rejects it, because `ValidPerformanceState` requires `IsWellFormed`, so such a status fails closed. This branch made that choice before the reconciliation and did not revisit it.
 
