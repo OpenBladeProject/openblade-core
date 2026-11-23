@@ -1014,6 +1014,13 @@ impl ReadSource {
         Ok(source)
     }
     #[cfg(all(test, feature = "service-live-readings-v1"))]
+    fn with_firmware_capture_for_tests(self, capture: Arc<dyn firmware_versions::Capture>) -> Self {
+        Self {
+            firmware: Rc::new(firmware_versions::Host::new(capture)),
+            ..self
+        }
+    }
+    #[cfg(all(test, feature = "service-live-readings-v1"))]
     fn with_live_capture_for_tests(self, capture: Rc<dyn live_readings::Capture>) -> Self {
         Self {
             live: Rc::new(live_readings::Host::new(capture)),

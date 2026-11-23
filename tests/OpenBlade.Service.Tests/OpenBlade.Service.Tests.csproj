@@ -32,6 +32,8 @@
     <None Include="../../tools/openblade-windows-host/tests/data/keyboard-driver-mode-vectors.json" Link="keyboard-driver-mode-vectors.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../tools/openblade-windows-host/tests/data/live-reading-vectors.json" Link="live-reading-vectors.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../tools/openblade-windows-host/tests/data/live-reading-native-frames.json" Link="live-reading-native-frames.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../tools/openblade-windows-host/tests/data/firmware-version-vectors.json" Link="firmware-version-vectors.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../tools/openblade-windows-host/tests/data/firmware-version-native-frames.json" Link="firmware-version-native-frames.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../tools/openblade-windows-host/tests/data/power-setting-vectors.json" Link="power-setting-vectors.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../tools/openblade-windows-host/tests/data/request-trigger-vectors.json" Link="request-trigger-vectors.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../tools/openblade-windows-host/tests/data/low-power-trigger-vectors.json" Link="low-power-trigger-vectors.json" CopyToOutputDirectory="PreserveNewest" />

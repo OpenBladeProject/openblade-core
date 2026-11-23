@@ -539,3 +539,7 @@ impl Host {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "firmware_versions_tests.rs"]
+mod tests;
