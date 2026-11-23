@@ -504,7 +504,8 @@ impl StatusSource for GuardedStatus {
         let publisher = self.inner.publisher.clone()?;
         let mailbox = self.mailbox.clone();
         Some(Box::pin(async move {
-            let status = publisher.borrow().active.clone();
+            // The latest status is cloned only for an attempt that runs.
+            let status = || publisher.borrow().active.clone();
             if let Some(status) = runtime.reconcile_lifecycle(&mailbox, status).await? {
                 publish_reconciled(&publisher, &mailbox, status)?;
             }

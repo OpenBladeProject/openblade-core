@@ -914,3 +914,100 @@ async fn a_suspend_is_followed_by_one_origin_and_power_check_not_a_burst() {
     }
     drive.await.unwrap();
 }
+
+#[cfg(feature = "service-profile-triggers-v1")]
+type SharedSource = Rc<Mutex<Box<dyn StatusSource>>>;
+/// The serving loop's origin tick runs the lifecycle reconciliation after
+/// its power check, awaits it with the source lock released, and runs it once
+/// per tick.
+#[cfg(feature = "service-profile-triggers-v1")]
+struct LifecycleSource {
+    inner: CountingSource,
+    // The serving loop's source, set once the loop's ports exist.
+    source: Rc<RefCell<Option<SharedSource>>>,
+    reconciled: Rc<Cell<usize>>,
+    unlocked: Rc<Cell<usize>>,
+}
+#[cfg(feature = "service-profile-triggers-v1")]
+impl StatusSource for LifecycleSource {
+    fn snapshot(&mut self, caller: Caller, at: Instant) -> Pending<'_, Snapshot> {
+        self.inner.snapshot(caller, at)
+    }
+    fn verify_origin(&self) -> io::Result<()> {
+        self.inner.verify_origin()
+    }
+    fn process_power_source(&mut self) -> Pending<'_, ()> {
+        self.inner.process_power_source()
+    }
+    fn drain(&mut self) -> Pending<'_, ()> {
+        self.inner.drain()
+    }
+    fn reconcile_lifecycle(&mut self) -> Option<Reconciling> {
+        let power = self.inner.power_checks.get();
+        let source = self.source.borrow().clone();
+        let reconciled = self.reconciled.clone();
+        let unlocked = self.unlocked.clone();
+        Some(Box::pin(async move {
+            // Created after this tick's power check.
+            assert_eq!(power, reconciled.get() + 1);
+            if source.is_some_and(|source| source.try_lock().is_ok()) {
+                unlocked.set(unlocked.get() + 1);
+            }
+            reconciled.set(reconciled.get() + 1);
+            Ok(())
+        }))
+    }
+}
+
+#[cfg(feature = "service-profile-triggers-v1")]
+#[tokio::test(start_paused = true)]
+async fn a_serving_loop_tick_runs_the_lifecycle_reconciliation() {
+    let events = Events::default();
+    let (ports, _tx) = ports(Fault::None, &events);
+    let origin_checks = Rc::new(Cell::new(0));
+    let power_checks = Rc::new(Cell::new(0));
+    let reconciled = Rc::new(Cell::new(0));
+    let unlocked = Rc::new(Cell::new(0));
+    let source = Rc::new(RefCell::new(None));
+    *ports.source.lock().await = Box::new(LifecycleSource {
+        inner: CountingSource {
+            inner: TestSource {
+                fault: Fault::None,
+                events: events.clone(),
+                publications: None,
+            },
+            origin_checks: origin_checks.clone(),
+            power_checks: power_checks.clone(),
+        },
+        source: source.clone(),
+        reconciled: reconciled.clone(),
+        unlocked: unlocked.clone(),
+    });
+    *source.borrow_mut() = Some(ports.source.clone());
+    let (shutdown, receiver) = oneshot::channel();
+    let (failed, _notified) = oneshot::channel();
+    let drive = ports.drive(receiver, failed);
+    tokio::pin!(drive);
+    let settle = || async {
+        for _ in 0..5_000 {
+            tokio::task::yield_now().await;
+        }
+    };
+    let script = async {
+        settle().await;
+        assert_eq!((power_checks.get(), reconciled.get()), (1, 1));
+        for ticks in 2..=4 {
+            tokio::time::advance(Duration::from_millis(500)).await;
+            settle().await;
+            assert_eq!((power_checks.get(), reconciled.get()), (ticks, ticks));
+        }
+        assert_eq!(unlocked.get(), reconciled.get());
+        shutdown.send(()).unwrap();
+    };
+    tokio::select! {
+        biased;
+        result = &mut drive => panic!("drive ended early: {result:?}"),
+        () = script => {}
+    }
+    drive.await.unwrap();
+}

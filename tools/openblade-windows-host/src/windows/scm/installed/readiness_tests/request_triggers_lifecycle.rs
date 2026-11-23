@@ -1,5 +1,5 @@
 //! Lifecycle-driven reconciliation (`Runtime::reconcile_lifecycle`): the
-//! origin tick applies what the reporting pair owes after a resume, a
+//! origin tick applies what the console pair owes after a resume, a
 //! gate-clearing DisplayOn, a Windows power-kind change or an expired
 //! application lease. Each case drives the tick the serving loop runs every
 //! 500 ms over the rig's lifecycle, store and scripted mailbox; no hardware or
@@ -11,11 +11,27 @@ use openblade_domain::power_setting::{PBT_POWERSETTINGCHANGE, PowerSetting};
 /// transition (`ServiceControlRuntimeTests.NativeLifecycleReconcileVectors`).
 const LIFECYCLE_VECTORS: &str =
     include_str!("../../../../../tests/data/lifecycle-reconcile-vectors.json");
+/// `PBT_APMPOWERSTATUSCHANGE`, the notice Windows sends for an AC/DC switch.
+const POWER_STATUS: u32 = 10;
+/// `SERVICE_CONTROL_SESSIONCHANGE` and `WTS_SESSION_UNLOCK`.
+const SESSION_CHANGE: u32 = 14;
+const UNLOCK: u32 = 8;
 
 /// Wires the rig's lifecycle in as the runtime's gate, write epoch and power
-/// generation,
-/// as `Runtime::native` does, and takes the tick's first mark.
+/// generation, and the rig's console user as its console probe, as
+/// `Runtime::native` does, and takes the tick's first mark.
 async fn wired(rig: &Rig) {
+    let custody = rig.custody.clone();
+    rig.runtime.read_console(move || {
+        Some((
+            custody.current_sid.lock().unwrap().clone(),
+            custody.current_session.load(Ordering::Acquire) as u32,
+        ))
+    });
+    unconsoled(rig).await;
+}
+/// `wired` without a console probe answer: no console user is known.
+async fn unconsoled(rig: &Rig) {
     gated(rig);
     let epoch = rig.custody.clone();
     rig.runtime
@@ -23,14 +39,20 @@ async fn wired(rig: &Rig) {
     let custody = rig.custody.clone();
     rig.runtime
         .read_power_generation(move || custody.lifecycle.observe_power_kind(None));
+    // The baseline sample `Runtime::native` takes at start.
+    Fresh::power_generation(rig.custody.as_ref());
     tick(rig).await;
 }
-/// One origin tick's lifecycle reconciliation, as the serving loop runs it.
+/// One origin tick's lifecycle reconciliation, as the serving loop runs it
+/// (`a_serving_loop_tick_runs_the_lifecycle_reconciliation` drives the loop).
 async fn tick(rig: &Rig) {
     let reconcile = rig.source.lock().await.reconcile_lifecycle();
     if let Some(reconcile) = reconcile {
         reconcile.await.unwrap();
     }
+}
+fn captures(rig: &Rig) -> usize {
+    rig.factory_calls.load(Ordering::Acquire)
 }
 fn performance(status: &Value) -> &Value {
     &status["status"]["confirmedState"]["performance"]
@@ -42,16 +64,25 @@ fn display(rig: &Rig, level: u32) {
         Some(PowerSetting::ConsoleDisplay(level)),
     );
 }
-/// Windows reports battery, as the SCM power notice samples it.
+/// An SCM power-status notice as native ingress delivers it: the Windows
+/// power kind is sampled, then the lifecycle fences.
+fn power_notice(rig: &Rig) {
+    Fresh::power_generation(rig.custody.as_ref());
+    rig.custody.lifecycle.ingress(POWER, POWER_STATUS);
+}
+/// Windows reports battery, with its power notice.
 fn unplug(rig: &Rig) {
     rig.port.state.lock().unwrap().actual = 0;
     rig.metadata.store(1, Ordering::Release);
-    rig.custody.lifecycle.observe_power_kind(Some(1));
+    power_notice(rig);
 }
 fn replug(rig: &Rig, actual: u8) {
     rig.port.state.lock().unwrap().actual = actual;
     rig.metadata.store(0, Ordering::Release);
-    rig.custody.lifecycle.observe_power_kind(Some(2));
+    power_notice(rig);
+}
+fn unlock(rig: &Rig) {
+    rig.custody.lifecycle.ingress(SESSION_CHANGE, UNLOCK);
 }
 fn saved_battery_performance(rig: &Rig) -> Value {
     rig.files.document("profiles.json")["profiles"]["battery"]["performance"].clone()
@@ -101,9 +132,12 @@ async fn a_debt_deferred_in_low_power_is_reconciled_once_at_the_resume_tick() {
     assert_eq!(deferred["result"], deferred_report());
     assert_eq!(owed(&rig), Some(0));
     let before = sent(&rig);
+    let captured = captures(&rig);
     for _ in 0..3 {
         tick(&rig).await;
     }
+    // Low power takes no capture at all, not only no write.
+    assert_eq!(captures(&rig), captured);
     assert_eq!(sent(&rig), before);
     assert_eq!(owed(&rig), Some(0));
     resume(&rig);
@@ -191,7 +225,7 @@ async fn a_power_kind_change_reconciles_the_new_source_once() {
     let ac = rig.port.state.lock().unwrap().actual;
     let before = sent(&rig);
     // A power notice that keeps the kind is no power boundary.
-    rig.custody.lifecycle.observe_power_kind(Some(2));
+    power_notice(&rig);
     tick(&rig).await;
     assert_eq!(sent(&rig), before);
     assert_eq!(vector(&vectors, "powerUnchanged")["submitted"], false);
@@ -223,11 +257,16 @@ async fn a_power_kind_change_reconciles_the_new_source_once() {
 async fn a_power_change_in_low_power_is_applied_after_the_resume() {
     let rig = applied_game().await;
     let before = sent(&rig);
+    let captured = captures(&rig);
     suspend(&rig);
     unplug(&rig);
     tick(&rig).await;
+    tick(&rig).await;
+    assert_eq!(captures(&rig), captured);
     assert_eq!(sent(&rig), before);
-    assert_eq!(owed(&rig), Some(0));
+    // The change is owed to the pair the first attempt after the resume
+    // resolves; nothing is recorded in low power.
+    assert_eq!(owed(&rig), None);
     resume(&rig);
     tick(&rig).await;
     assert!(sent(&rig) > before);
@@ -328,10 +367,11 @@ async fn a_suspend_during_the_tick_reconciliation_defers_it_to_the_resume() {
 /// A fence that leaves the gate generation in place, here a repeated resume
 /// while the tick's performance step reads the adapter, refuses that step's
 /// write with nothing submitted. It is no deferral, but the debt stays owed
-/// with one retry spent, and the next report applies it once under fresh
-/// admission (the second debt drop of the low-power slice).
+/// with one retry spent, and since the write epoch moved the next tick runs
+/// the cause again under fresh admission (the second debt drop of the
+/// low-power slice).
 #[tokio::test]
-async fn a_fence_without_a_gate_move_keeps_the_debt_for_the_next_report() {
+async fn a_fence_without_a_gate_move_is_retried_by_the_next_tick() {
     let rig = applied_game().await;
     let before = writes(&rig);
     let generation = rig.custody.lifecycle.low_power().unwrap().generation;
@@ -353,14 +393,162 @@ async fn a_fence_without_a_gate_move_keeps_the_debt_for_the_next_report() {
     assert_eq!(writes(&rig), before);
     assert_eq!(owed(&rig), Some(1));
     rig.port.state.lock().unwrap().on_power = None;
-    // No cause, so the tick reads nothing; the next report reconciles.
-    let idle = sent(&rig);
     tick(&rig).await;
-    assert_eq!(sent(&rig), idle);
-    let applied = report(&rig, 2, Some(r"C:\Tools\Other.exe")).await;
-    assert_eq!(applied["result"]["status"], 1, "{applied}");
     assert!(writes(&rig) > before);
     assert_eq!(owed(&rig), None);
+    assert_eq!(performance(&rig.get().await), 1);
+    let after = sent(&rig);
+    tick(&rig).await;
+    assert_eq!(sent(&rig), after);
+    rig.stop().await;
+}
+
+/// A step refused at an unmoved write epoch is no overtaken step: its debt
+/// settles as the report path settles it, and the tick does not retry it.
+#[tokio::test]
+async fn a_step_refused_at_an_unmoved_epoch_settles_the_debt() {
+    let rig = applied_game().await;
+    let before = (sent(&rig), writes(&rig));
+    let epoch = rig.custody.lifecycle.active();
+    // The tick's own authorization passes; the step's first one refuses.
+    rig.custody.refuse_at.store(2, Ordering::Release);
+    rig.runtime.expire_application_lease();
+    tick(&rig).await;
+    assert_eq!(rig.custody.lifecycle.active(), epoch);
+    assert_eq!(writes(&rig), before.1);
+    assert_eq!(owed(&rig), None);
+    let captured = captures(&rig);
+    rig.custody.fresh_refuse.store(false, Ordering::Release);
+    tick(&rig).await;
+    assert_eq!(captures(&rig), captured);
+    assert_eq!(writes(&rig), before.1);
+    rig.stop().await;
+}
+
+/// A resume to the lock screen refuses the attempt before any firmware
+/// read, and the cause stays pending: ticks at the same write epoch take no
+/// capture, and the unlock's session notice moves the epoch, so the next tick
+/// applies the battery profile the unplug owed.
+#[tokio::test]
+async fn a_cause_refused_at_a_locked_resume_applies_after_the_unlock() {
+    let rig = applied_game().await;
+    let before = sent(&rig);
+    suspend(&rig);
+    unplug(&rig);
+    // Locked: every Windows supplier check of the attempt refuses.
+    rig.custody.fresh_refuse.store(true, Ordering::Release);
+    resume(&rig);
+    tick(&rig).await;
+    assert_eq!(sent(&rig), before);
+    assert_eq!(owed(&rig), Some(0));
+    let captured = captures(&rig);
+    for _ in 0..3 {
+        tick(&rig).await;
+    }
+    assert_eq!(captures(&rig), captured);
+    rig.custody.fresh_refuse.store(false, Ordering::Release);
+    unlock(&rig);
+    tick(&rig).await;
+    assert!(sent(&rig) > before);
+    assert_eq!(owed(&rig), None);
+    assert_eq!(
+        performance(&rig.get().await),
+        &saved_battery_performance(&rig)
+    );
+    let after = (sent(&rig), captures(&rig));
+    unlock(&rig);
+    tick(&rig).await;
+    assert_eq!((sent(&rig), captures(&rig)), after);
+    rig.stop().await;
+}
+
+/// A refused trigger capture keeps the cause, and its retries are bounded:
+/// one attempt and at most `RETRIES` more, each only after the write epoch
+/// moved. The debt is then left to the next report.
+#[tokio::test]
+async fn a_refused_capture_is_retried_at_most_twice_on_epoch_moves() {
+    let rig = applied_game().await;
+    rig.custody.scoped_fresh.store(true, Ordering::Release);
+    rig.custody.current_console.store(false, Ordering::Release);
+    let captured = captures(&rig);
+    let written = writes(&rig);
+    unplug(&rig);
+    tick(&rig).await;
+    assert_eq!(captures(&rig), captured + 1);
+    tick(&rig).await;
+    assert_eq!(captures(&rig), captured + 1);
+    for _ in 0..4 {
+        unlock(&rig);
+        tick(&rig).await;
+    }
+    assert_eq!(captures(&rig), captured + 3);
+    assert_eq!(writes(&rig), written);
+    assert_eq!(owed(&rig), Some(0));
+    // The next admitted report applies the debt.
+    rig.custody.current_console.store(true, Ordering::Release);
+    let renewed = report(&rig, 2, Some(r"C:\Games\Game.exe")).await;
+    assert_eq!(renewed["result"]["status"], 1, "{renewed}");
+    assert_eq!(owed(&rig), None);
+    rig.stop().await;
+}
+
+/// A tick that finds a request holding the mutation gate reads nothing and
+/// keeps its mark, so the next tick still sees the power change.
+#[tokio::test]
+async fn a_busy_mutation_gate_keeps_the_cause_for_the_next_tick() {
+    let rig = applied_game().await;
+    let before = sent(&rig);
+    unplug(&rig);
+    {
+        let _held = rig.runtime.hold_mutation_gate();
+        tick(&rig).await;
+        assert_eq!(sent(&rig), before);
+    }
+    tick(&rig).await;
+    assert!(sent(&rig) > before);
+    assert_eq!(
+        performance(&rig.get().await),
+        &saved_battery_performance(&rig)
+    );
+    rig.stop().await;
+}
+
+/// In low power a lease past its end is renewed, not expired: nothing is
+/// owed and nothing is captured.
+#[tokio::test]
+async fn a_lease_in_low_power_is_renewed_not_expired() {
+    let rig = applied_game().await;
+    suspend(&rig);
+    tick(&rig).await;
+    let captured = captures(&rig);
+    rig.runtime.expire_application_lease();
+    tick(&rig).await;
+    assert_eq!(owed(&rig), None);
+    assert_eq!(captures(&rig), captured);
+    rig.stop().await;
+}
+
+/// Modern Standby can sleep without a suspend notice: a gap in the ticks is
+/// time the reporter could not renew in, so it renews the lease. A reporter
+/// that stops while the ticks keep running still expires.
+#[tokio::test]
+async fn a_gap_in_the_ticks_renews_the_lease() {
+    let rig = applied_game().await;
+    let before = sent(&rig);
+    rig.runtime
+        .age_lifecycle_tick(std::time::Duration::from_secs(60));
+    rig.runtime.expire_application_lease();
+    tick(&rig).await;
+    assert_eq!(sent(&rig), before);
+    assert_eq!(owed(&rig), None);
+    let renewed = report(&rig, 2, Some(r"C:\Games\Game.exe")).await;
+    assert_eq!(renewed["result"], json!({"status":0,"message":RENEWED}));
+    // A stall short of the gap is not sleep: the lease expires.
+    rig.runtime
+        .age_lifecycle_tick(std::time::Duration::from_secs(1));
+    rig.runtime.expire_application_lease();
+    tick(&rig).await;
+    assert!(sent(&rig) > before);
     assert_eq!(performance(&rig.get().await), 1);
     rig.stop().await;
 }
@@ -392,17 +580,61 @@ async fn an_uncertain_prior_submission_is_never_replayed_by_a_lifecycle_tick() {
     rig.stop().await;
 }
 
-/// A tick without a reporter reads nothing, whatever the lifecycle did.
+/// Without any report, the console user's pair is reconciled: managed's
+/// power-source change needs no report, and by default no application rule
+/// exists, so no reporter ever sends one.
 #[tokio::test]
-async fn a_tick_without_a_reporter_reads_nothing() {
-    let files = MemoryFiles::default();
-    files.profiles(2);
-    let rig = Rig::new(files);
+async fn a_power_change_without_a_reporter_applies_the_console_users_profile() {
+    let rig = rig_at(files_with_game(json!({"pluggedIn":{"performance":2}})), 0);
+    // A tick publishes into the status feed, which the first status read opens.
+    rig.get().await;
     wired(&rig).await;
+    assert_eq!(captures(&rig), 0);
     unplug(&rig);
+    tick(&rig).await;
+    assert!(writes(&rig) > 0);
+    assert_eq!(owed(&rig), None);
+    assert_eq!(
+        performance(&rig.get().await),
+        &saved_battery_performance(&rig)
+    );
+    rig.stop().await;
+}
+
+/// After a switch to another console session the latest reporter is not the
+/// console user: the console session's pair is reconciled.
+#[tokio::test]
+async fn a_console_switch_reconciles_the_console_session_not_the_reporter() {
+    let rig = applied_game().await;
+    rig.custody.current_session.store(8, Ordering::Release);
+    assert_eq!(rig.runtime.owed_attempts(SID, 8), Some(0));
+    unplug(&rig);
+    tick(&rig).await;
+    assert!(writes(&rig) > 0);
+    assert_eq!(rig.runtime.owed_attempts(SID, 8), None);
+    assert_eq!(
+        performance(&rig.get().await),
+        &saved_battery_performance(&rig)
+    );
+    rig.stop().await;
+}
+
+/// With no console user known, a tick reads nothing whatever the lifecycle
+/// did.
+#[tokio::test]
+async fn a_tick_without_a_console_user_reads_nothing() {
+    let rig = rig_at(files_with_game(json!({"pluggedIn":{"performance":2}})), 0);
+    // A tick publishes into the status feed, which the first status read opens.
+    rig.get().await;
+    rig.runtime.read_console(|| None);
+    unconsoled(&rig).await;
+    unplug(&rig);
+    tick(&rig).await;
     suspend(&rig);
     resume(&rig);
+    unlock(&rig);
     tick(&rig).await;
+    assert_eq!(captures(&rig), 0);
     assert_eq!(sent(&rig), 0);
     assert_eq!(rig.port.state.lock().unwrap().opened, 0);
     rig.stop().await;

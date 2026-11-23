@@ -62,6 +62,42 @@ const UNFINISHED_UNSUBMITTED: &str =
 /// so an unbounded debt would read firmware, and draw transaction pairs, on
 /// each one.
 const RETRIES: u8 = 2;
+
+/// A trigger's admission before any firmware read or transaction pair
+/// (`admit_trigger`).
+enum TriggerAdmission {
+    /// The store is fenced by an earlier submission or a changed document.
+    Fenced,
+    /// Unclassified Windows power, nothing owed at a class it admits, or a
+    /// refused fresh authorization: the owed classes it admits.
+    Refused(Classes),
+    /// The owed classes to reconcile.
+    Admitted(Classes),
+}
+
+/// Managed applies only on classified power with a verified device and
+/// writes not blocked (`ActivePowerSource`, `DeviceVerified`,
+/// `WritesBlocked`). Every write still passes its own admission, and each
+/// step refuses an adapter its own reading finds unclassified. A refusal
+/// here reads no firmware and leaves the debt as it was.
+fn admit_trigger(
+    storage: &Storage,
+    fresh: &dyn Fresh,
+    owed: Classes,
+) -> io::Result<TriggerAdmission> {
+    let classes = owed.intersection(Classes::admitted(fresh));
+    if storage.pending() {
+        return Ok(TriggerAdmission::Fenced);
+    }
+    fresh.verify_health()?;
+    let admitted = !classes.is_empty() && fresh.authorize().is_some();
+    fresh.verify_health()?;
+    Ok(if admitted {
+        TriggerAdmission::Admitted(classes)
+    } else {
+        TriggerAdmission::Refused(classes)
+    })
+}
 /// Managed `DeferLightingIntentForLowPower` (`ServiceControlRuntime.cs:19471`):
 /// the message `ApplyFullTransitionAsync` is interrupted with, before any
 /// device access, while the low-power gate is set (`:16360`).
@@ -450,7 +486,7 @@ impl Runtime {
                 instance: instance.clone(),
                 sequence,
                 foreground,
-                expires: Instant::now() + std::time::Duration::from_secs(15),
+                expires: Instant::now() + super::APPLICATION_LEASE,
             });
         };
         let MailboxSource::Reader(reader) = &mailbox else {
@@ -500,36 +536,32 @@ impl Runtime {
             return stored(idle);
         };
         let unapplied = if changed { RECORDED } else { idle };
-        // Managed applies only on classified power with a verified device and
-        // writes not blocked (`ActivePowerSource`, `DeviceVerified`,
-        // `WritesBlocked`); every write still passes its own admission, and
-        // each step refuses an adapter its own reading finds unclassified.
-        // A refusal here reads no firmware and leaves the debt as it was.
-        let classes = owed.intersection(Classes::admitted(fresh.as_ref()));
-        // A fenced store, such as an override document changed outside the
-        // Service, names its storage reconciliation before any submission.
-        if storage.pending() {
-            return Ok((
-                Outcome::blocked(format!("{unapplied} {}", storage.pending_reason()?)),
-                None,
-            ));
-        }
-        fresh.verify_health()?;
-        let admitted = !classes.is_empty() && fresh.authorize().is_some();
-        fresh.verify_health()?;
-        if !admitted {
-            // Managed checks the gate inside `ApplyFullTransitionAsync`, which
-            // only a changed pair on classified power reaches; it defers
-            // before any device access and replies Blocked. The debt is kept
-            // as it was for the next report after the gate clears.
-            if changed && !classes.is_empty() && self.gate() == Gate::Low {
+        let classes = match admit_trigger(&storage, fresh.as_ref(), owed)? {
+            // A fenced store, such as an override document changed outside
+            // the Service, names its storage reconciliation before any
+            // submission.
+            TriggerAdmission::Fenced => {
                 return Ok((
-                    Outcome::blocked(format!("{RECORDED} {LOW_POWER_DEFERRED}")),
+                    Outcome::blocked(format!("{unapplied} {}", storage.pending_reason()?)),
                     None,
                 ));
             }
-            return stored(unapplied);
-        }
+            TriggerAdmission::Refused(classes) => {
+                // Managed checks the gate inside `ApplyFullTransitionAsync`,
+                // which only a changed pair on classified power reaches; it
+                // defers before any device access and replies Blocked. The
+                // debt is kept as it was for the next report after the gate
+                // clears.
+                if changed && !classes.is_empty() && self.gate() == Gate::Low {
+                    return Ok((
+                        Outcome::blocked(format!("{RECORDED} {LOW_POWER_DEFERRED}")),
+                        None,
+                    ));
+                }
+                return stored(unapplied);
+            }
+            TriggerAdmission::Admitted(classes) => classes,
+        };
         let reconciled = self
             .reconcile_locked(
                 &mailbox,
@@ -861,8 +893,10 @@ impl Runtime {
                     // change during the step, lost the step's admission with
                     // nothing submitted. It is no deferral, since the gate
                     // never set, but the cause clears by itself: the debt
-                    // stays owed with a retry spent, for the next report or
-                    // lifecycle tick to apply once under fresh admission.
+                    // stays owed with a retry spent. A lifecycle attempt is
+                    // retried by the tick once the write epoch has moved
+                    // (`triggers::lifecycle`); otherwise the next report
+                    // applies it under fresh admission.
                     if stepped.outcome.status == 2
                         && !stepped.unchanged
                         && !possible

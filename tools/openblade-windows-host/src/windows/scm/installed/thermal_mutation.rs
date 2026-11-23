@@ -231,6 +231,13 @@ type LowPowerProbe = Box<dyn Fn() -> Option<openblade_domain::low_power_gate::Tr
 /// (`Lifecycle::observe_power_kind(None)`); every SCM power notice samples.
 #[cfg(feature = "service-profile-triggers-v1")]
 type PowerProbe = Box<dyn Fn() -> Option<u64>>;
+/// Reads the console session and its primary user's SID
+/// (`thermal_native::console_user`); `None` while none is known.
+#[cfg(feature = "service-profile-triggers-v1")]
+type ConsoleProbe = Box<dyn Fn() -> Option<(String, u32)>>;
+/// How long a foreground report holds without renewal (managed
+/// `ApplicationContextLeaseDuration`).
+pub(super) const APPLICATION_LEASE: std::time::Duration = std::time::Duration::from_secs(15);
 #[derive(Clone)]
 pub(super) struct Runtime {
     factory: Rc<Factory>,
@@ -251,9 +258,14 @@ pub(super) struct Runtime {
     // cause (`triggers::lifecycle`). Unset reads unknown: no power cause.
     #[cfg(feature = "service-profile-triggers-v1")]
     power_generation: Rc<std::cell::OnceCell<PowerProbe>>,
-    // What the lifecycle tick last saw, `None` before its first admitted tick.
+    // What the lifecycle tick last saw and the cause it still owes an
+    // attempt, `None` before its first tick (`triggers::lifecycle`).
     #[cfg(feature = "service-profile-triggers-v1")]
-    lifecycle_mark: Rc<std::cell::Cell<Option<triggers::lifecycle::Mark>>>,
+    lifecycle: Rc<std::cell::Cell<Option<triggers::lifecycle::Tick>>>,
+    // The console session's interactive user, for the lifecycle tick's pair
+    // when no report of that session was admitted. Unset reads the reporter.
+    #[cfg(feature = "service-profile-triggers-v1")]
+    console: Rc<std::cell::OnceCell<ConsoleProbe>>,
     // The lifecycle's ordinary write epoch (`Lifecycle::active`), so a step
     // refused by a fence that left the gate generation in place keeps its
     // debt (`reconcile_locked`). Unset reads unknown: no such retry.
@@ -450,7 +462,9 @@ impl Runtime {
             #[cfg(feature = "service-profile-triggers-v1")]
             power_generation: Rc::default(),
             #[cfg(feature = "service-profile-triggers-v1")]
-            lifecycle_mark: Rc::default(),
+            lifecycle: Rc::default(),
+            #[cfg(feature = "service-profile-triggers-v1")]
+            console: Rc::default(),
             #[cfg(feature = "service-profile-triggers-v1")]
             admission_epoch: Rc::default(),
             fan_owner: Rc::default(),
@@ -494,6 +508,12 @@ impl Runtime {
     pub(super) fn read_admission_epoch(&self, probe: impl Fn() -> Option<u64> + 'static) {
         assert!(self.admission_epoch.set(Box::new(probe)).is_ok());
     }
+    /// Reads the console session's user from `probe` (`Runtime::console`);
+    /// it may be set once.
+    #[cfg(all(test, feature = "service-profile-triggers-v1"))]
+    pub(super) fn read_console(&self, probe: impl Fn() -> Option<(String, u32)> + 'static) {
+        assert!(self.console.set(Box::new(probe)).is_ok());
+    }
     #[cfg(not(test))]
     pub(super) fn native(origin: Arc<Origin>, mailbox: &MailboxSource) -> Self {
         let stores = RefCell::new(None::<(String, Arc<Storage>)>);
@@ -504,6 +524,14 @@ impl Runtime {
         };
         #[cfg(feature = "service-profile-triggers-v1")]
         let power_generation: PowerProbe = {
+            // The tick reads the generation without sampling, and only a
+            // sample that differs from a known kind advances it. Sample the
+            // kind once now, so the first power change after start is a
+            // change and not the baseline, whether or not a capture or a
+            // power notice sampled it first.
+            origin
+                .lifecycle
+                .observe_power_kind(crate::origin_lifetime::sample_power_kind());
             let origin = origin.clone();
             Box::new(move || origin.lifecycle.observe_power_kind(None))
         };
@@ -569,7 +597,11 @@ impl Runtime {
             #[cfg(feature = "service-profile-triggers-v1")]
             power_generation: Rc::new(power_generation.into()),
             #[cfg(feature = "service-profile-triggers-v1")]
-            lifecycle_mark: Rc::default(),
+            lifecycle: Rc::default(),
+            #[cfg(feature = "service-profile-triggers-v1")]
+            console: Rc::new(std::cell::OnceCell::from(
+                Box::new(super::thermal_native::console_user) as ConsoleProbe,
+            )),
             #[cfg(feature = "service-profile-triggers-v1")]
             admission_epoch: Rc::new(admission_epoch.into()),
             fan_owner: Rc::default(),
@@ -630,7 +662,7 @@ impl Runtime {
             instance,
             sequence,
             foreground: Foreground::reported(path),
-            expires: Instant::now() + std::time::Duration::from_secs(15),
+            expires: Instant::now() + APPLICATION_LEASE,
         });
         Outcome {
             status: 0,
