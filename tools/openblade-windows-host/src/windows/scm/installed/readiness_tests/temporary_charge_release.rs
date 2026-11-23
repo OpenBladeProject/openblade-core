@@ -1347,6 +1347,24 @@ fn notice_at_first_getter(r: &Rig) -> Arc<AtomicBool> {
     }));
     fired
 }
+/// Arms one second unplug for when the fixture answers the cancel's second
+/// flags read, which follows its Prepared row and precedes any submission
+/// intent.
+fn notice_at_second_flags_read(r: &Rig) -> Arc<AtomicBool> {
+    let custody = r.custody.clone();
+    let fired = Arc::new(AtomicBool::new(false));
+    let once = fired.clone();
+    let reads = AtomicUsize::new(0);
+    r.port.state.lock().unwrap().battery_getter_hook = Some(Arc::new(move |command, _| {
+        if command == 0x8f
+            && reads.fetch_add(1, Ordering::AcqRel) == 1
+            && !once.swap(true, Ordering::AcqRel)
+        {
+            custody.lifecycle.ingress(POWER, 10);
+        }
+    }));
+    fired
+}
 #[tokio::test]
 async fn tfc_release_a_notice_after_the_confirmed_cancel_does_not_restore_it() {
     let r = scoped_rig();
@@ -1563,6 +1581,9 @@ enum Fence {
     /// As the first getter request is answered, which the tick always sends
     /// before anything it submits.
     AfterRequest,
+    /// As the second flags read is answered, after the Prepared row: the
+    /// attempt retires known not submitted (6), having spent the reservation.
+    AfterPrepared,
 }
 /// Fences a near-capacity cancel at `fence` and reports whether that attempt
 /// sent nothing, after checking that its claim returns: with its reservation
@@ -1577,12 +1598,19 @@ async fn near_capacity_fenced(r: &Rig, fence: Fence) -> bool {
         Fence::At(position) => {
             assert!(notice_tick(r, SECOND_UNPLUG, position).await, "{fence:?}");
         }
-        Fence::AfterRequest => {
-            let fired = notice_at_first_getter(r);
+        Fence::AfterRequest | Fence::AfterPrepared => {
+            let fired = if matches!(fence, Fence::AfterRequest) {
+                notice_at_first_getter(r)
+            } else {
+                notice_at_second_flags_read(r)
+            };
             origin_tick(r).await;
             r.port.state.lock().unwrap().battery_getter_hook = None;
             assert!(fired.load(Ordering::Acquire), "{fence:?}");
         }
+    }
+    if matches!(fence, Fence::AfterPrepared) {
+        assert_eq!(fan_rows(r).last().unwrap()["progress"], 6, "{fence:?}");
     }
     let unsent = requests(r) == sent;
     assert_eq!(writes(r), before);
@@ -1623,14 +1651,22 @@ async fn near_capacity_fence_case(reservation: usize, fence: Fence, unsent: bool
 #[tokio::test]
 async fn tfc_release_a_fenced_cancel_near_journal_capacity_keeps_its_reservation() {
     let reservation = isolated(near_capacity_reservation);
-    for (fence, unsent) in [(Fence::At(5), true), (Fence::AfterRequest, false)] {
+    for (fence, unsent) in [
+        (Fence::At(5), true),
+        (Fence::AfterRequest, false),
+        (Fence::AfterPrepared, false),
+    ] {
         isolated(move || near_capacity_fence_case(reservation, fence, unsent));
     }
 }
 #[tokio::test]
 async fn tfc_release_a_restored_cancel_keeps_its_reservation_from_another_writer() {
     let reservation = isolated(near_capacity_reservation);
-    for (fence, unsent) in [(Fence::At(5), true), (Fence::AfterRequest, false)] {
+    for (fence, unsent) in [
+        (Fence::At(5), true),
+        (Fence::AfterRequest, false),
+        (Fence::AfterPrepared, false),
+    ] {
         isolated(move || near_capacity_restored_case(reservation, fence, unsent));
     }
 }
