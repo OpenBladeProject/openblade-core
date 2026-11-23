@@ -1289,6 +1289,20 @@ fn notice_at_retirement(r: &Rig) -> Arc<AtomicBool> {
     }));
     fired
 }
+/// Arms one second unplug for when the fixture answers the first battery
+/// getter, an event of the cancel's own request rather than a count of the
+/// authorizations the worker makes while it waits.
+fn notice_at_first_getter(r: &Rig) -> Arc<AtomicBool> {
+    let custody = r.custody.clone();
+    let fired = Arc::new(AtomicBool::new(false));
+    let once = fired.clone();
+    r.port.state.lock().unwrap().battery_getter_hook = Some(Arc::new(move |_, _| {
+        if !once.swap(true, Ordering::AcqRel) {
+            custody.lifecycle.ingress(POWER, 10);
+        }
+    }));
+    fired
+}
 #[tokio::test]
 async fn tfc_release_a_notice_after_the_confirmed_cancel_does_not_restore_it() {
     let r = scoped_rig();
@@ -1395,13 +1409,28 @@ async fn tfc_release_a_charge_read_off_by_a_fenced_attempt_is_not_restored() {
     assert!(read_off > 0);
 }
 
-/// A rig whose enable leaves the journal with just its cancellation
-/// reservation free.
-async fn near_capacity_rig() -> Rig {
-    let probe = Rig::new(MemoryFiles::default());
-    enable(&probe, 800).await;
+/// Starts the budget of the next job now. A job takes its arrival once, and a
+/// `frozen` section lags the real clock by the time it has held, so a tick that
+/// found none would measure its deadline from a clock that is behind.
+fn arrive(r: &Rig) {
+    r.port.state.lock().unwrap().arrival = Some(tokio::time::Instant::now());
+}
+/// One origin tick that starts its own budget (see `arrive`).
+async fn arrived_tick(r: &Rig) {
+    arrive(r);
+    origin_tick(r).await;
+}
+/// The journal space an enable reserves for its cancellation.
+async fn near_capacity_reservation() -> usize {
+    let probe = paused_rig(MemoryFiles::default());
+    frozen(&probe.port, enable(&probe, 800)).await;
     let reservation = probe.files.last_reservation.load(Ordering::Acquire);
     probe.stop().await;
+    reservation
+}
+/// A rig whose journal leaves just its cancellation `reservation` free once
+/// `enable_near_capacity` has enabled it.
+fn near_capacity_rig(reservation: usize) -> Rig {
     let files = MemoryFiles::default();
     files.roll_settled.store(true, Ordering::Release);
     files.bytes.lock().unwrap().insert(
@@ -1409,9 +1438,28 @@ async fn near_capacity_rig() -> Rig {
         padded_history(crate::thermal_history::SEGMENT - reservation),
     );
     let r = scoped_rig_with(files);
-    enable(&r, 801).await;
-    assert!(r.storage.temporary_capacity_for_tests().0 > 0);
+    // The padded journal makes each append cost real CPU, so a loaded host
+    // can outrun a wall-clock budget. Jobs run on paused time instead, and
+    // the callers hold the test clock with `frozen` (see its documentation).
+    r.port.state.lock().unwrap().latency = Some(Duration::ZERO);
     r
+}
+/// Enables the temporary charge on a near-capacity rig. The request waits on
+/// `HANG_GUARD` rather than the pipe's wall-clock budget (see
+/// `source_mutation`), and its job runs on paused time, so a loaded host
+/// costs it neither. The test clock is not held, which keeps it level with the
+/// real one for the `frozen` section that follows.
+async fn enable_near_capacity(r: &Rig) {
+    r.get().await;
+    // A request starts its job's budget at its arrival, as `request_as` does.
+    r.port.state.lock().unwrap().arrival = Some(tokio::time::Instant::now());
+    let response = source_mutation(
+        r,
+        battery_request(801, "setFullChargeOverride", json!(true)),
+    )
+    .await;
+    assert_eq!(response["status"], 1, "{response}");
+    assert!(r.storage.temporary_capacity_for_tests().0 > 0);
 }
 fn journal_len(r: &Rig) -> usize {
     r.files
@@ -1422,18 +1470,37 @@ fn journal_len(r: &Rig) -> usize {
 fn rolled(r: &Rig) -> bool {
     r.files.read("retained-segment").unwrap().is_some()
 }
-/// Fences a near-capacity cancel at `position` and reports whether that
-/// attempt sent nothing, after checking that only such an attempt is
-/// restored, and with its reservation.
-async fn near_capacity_fenced(r: &Rig, position: usize) -> bool {
+/// Where a near-capacity cancel is fenced.
+#[derive(Clone, Copy, Debug)]
+enum Fence {
+    /// At this authorization of the tick, counted from its first. Only the
+    /// authorizations before the first request are the tick's own: after it,
+    /// the worker authorizes once per poll, so their number varies with load.
+    At(usize),
+    /// As the first getter request is answered, which the tick always sends
+    /// before anything it submits.
+    AfterRequest,
+}
+/// Fences a near-capacity cancel at `fence` and reports whether that attempt
+/// sent nothing, after checking that only such an attempt is restored, and
+/// with its reservation.
+async fn near_capacity_fenced(r: &Rig, fence: Fence) -> bool {
     let reservation = r.storage.temporary_capacity_for_tests();
     let before = writes(r);
     source_battery(r);
     let sent = requests(r);
-    assert!(
-        notice_tick(r, SECOND_UNPLUG, position).await,
-        "position {position}"
-    );
+    arrive(r);
+    match fence {
+        Fence::At(position) => {
+            assert!(notice_tick(r, SECOND_UNPLUG, position).await, "{fence:?}");
+        }
+        Fence::AfterRequest => {
+            let fired = notice_at_first_getter(r);
+            origin_tick(r).await;
+            r.port.state.lock().unwrap().battery_getter_hook = None;
+            assert!(fired.load(Ordering::Acquire), "{fence:?}");
+        }
+    }
     let unsent = requests(r) == sent;
     assert_eq!(writes(r), before);
     assert_eq!(r.runtime.temporary_owned_for_tests(), unsent);
@@ -1443,16 +1510,16 @@ async fn near_capacity_fenced(r: &Rig, position: usize) -> bool {
     }
     unsent
 }
-#[tokio::test]
-async fn tfc_release_a_fenced_cancel_near_journal_capacity_keeps_its_reservation() {
-    for (position, retried) in [(5, true), (20, false)] {
-        let r = near_capacity_rig().await;
+async fn near_capacity_fence_case(reservation: usize, fence: Fence, retried: bool) {
+    let r = near_capacity_rig(reservation);
+    enable_near_capacity(&r).await;
+    frozen(&r.port, async {
         let before = writes(&r);
-        assert_eq!(near_capacity_fenced(&r, position).await, retried);
+        assert_eq!(near_capacity_fenced(&r, fence).await, retried);
         for _ in 0..3 {
-            origin_tick(&r).await;
+            arrived_tick(&r).await;
         }
-        assert!(!rolled(&r), "position {position}");
+        assert!(!rolled(&r), "{fence:?}");
         assert_eq!(writes(&r) - before, usize::from(retried));
         let view = immediate_battery_view(&r, Some(SID)).await;
         let message = view["message"].as_str().unwrap();
@@ -1462,42 +1529,58 @@ async fn tfc_release_a_fenced_cancel_near_journal_capacity_keeps_its_reservation
             } else {
                 "cancellation is paused"
             }),
-            "position {position}: {view}"
+            "{fence:?}: {view}"
         );
         let _ = r.source.lock().await.drain().await;
+    })
+    .await;
+}
+#[tokio::test]
+async fn tfc_release_a_fenced_cancel_near_journal_capacity_keeps_its_reservation() {
+    let reservation = isolated(near_capacity_reservation);
+    for (fence, retried) in [(Fence::At(5), true), (Fence::AfterRequest, false)] {
+        isolated(move || near_capacity_fence_case(reservation, fence, retried));
     }
 }
 #[tokio::test]
 async fn tfc_release_a_restored_cancel_keeps_its_reservation_from_another_writer() {
-    let r = near_capacity_rig().await;
-    assert!(near_capacity_fenced(&r, 5).await);
-    // A performance request needs the unscoped fixture's power generation.
-    r.custody.scoped_fresh.store(false, Ordering::Release);
-    r.port.state.lock().unwrap().actual = 15;
-    r.metadata.store(0, Ordering::Release);
-    r.custody.lifecycle.ingress(POWER, 10);
-    origin_tick(&r).await;
-    let journal = journal_len(&r);
-    let response = r.set(2, value(1, 1)).await;
-    assert_eq!(response["result"]["status"], 2, "{response}");
-    assert_eq!(journal_len(&r), journal, "the reservation is not spent");
-    assert!(!rolled(&r));
-    let before = writes(&r);
-    source_battery(&r);
-    for _ in 0..2 {
-        origin_tick(&r).await;
-    }
-    assert_eq!(writes(&r) - before, 1);
-    assert!(!r.runtime.temporary_owned_for_tests());
-    let view = immediate_battery_view(&r, Some(SID)).await;
-    assert!(
-        view["message"]
-            .as_str()
-            .unwrap()
-            .contains("canceled on Battery by independent readback"),
-        "{view}"
-    );
-    let _ = r.source.lock().await.drain().await;
+    let reservation = isolated(near_capacity_reservation);
+    isolated(move || near_capacity_restored_case(reservation));
+}
+async fn near_capacity_restored_case(reservation: usize) {
+    let r = near_capacity_rig(reservation);
+    enable_near_capacity(&r).await;
+    frozen(&r.port, async {
+        assert!(near_capacity_fenced(&r, Fence::At(5)).await);
+        // A performance request needs the unscoped fixture's power generation.
+        r.custody.scoped_fresh.store(false, Ordering::Release);
+        r.port.state.lock().unwrap().actual = 15;
+        r.metadata.store(0, Ordering::Release);
+        r.custody.lifecycle.ingress(POWER, 10);
+        arrived_tick(&r).await;
+        let journal = journal_len(&r);
+        let response = r.set(2, value(1, 1)).await;
+        assert_eq!(response["result"]["status"], 2, "{response}");
+        assert_eq!(journal_len(&r), journal, "the reservation is not spent");
+        assert!(!rolled(&r));
+        let before = writes(&r);
+        source_battery(&r);
+        for _ in 0..2 {
+            arrived_tick(&r).await;
+        }
+        assert_eq!(writes(&r) - before, 1);
+        assert!(!r.runtime.temporary_owned_for_tests());
+        let view = immediate_battery_view(&r, Some(SID)).await;
+        assert!(
+            view["message"]
+                .as_str()
+                .unwrap()
+                .contains("canceled on Battery by independent readback"),
+            "{view}"
+        );
+        let _ = r.source.lock().await.drain().await;
+    })
+    .await;
 }
 
 #[tokio::test]
