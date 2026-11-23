@@ -441,6 +441,9 @@ fn the_fan_backoff_doubles_to_its_bound_and_a_confirmed_pair_ends_it() {
     sends.sent_for_tests();
     host.settle(FanRpmRead::Confirmed([3200, 3000]), now);
     assert!(host.fan_query(now).is_some());
+    // The confirmation accounted for every pair sent before it.
+    host.settle(FanRpmRead::Unconfirmed, now);
+    assert!(host.fan_query(now).is_some());
     sends.sent_for_tests();
     host.settle(FanRpmRead::Unconfirmed, now);
     let first = Duration::from_secs(15);
