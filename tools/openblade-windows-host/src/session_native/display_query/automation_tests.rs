@@ -13,7 +13,7 @@ use crate::session_native::{
         recovery::{Cancel, DURABILITY, Observation},
         refresh_write::{self, SetRefreshRate},
         test_support::Memory,
-        write::{CHANGED_POWER, manual_turn},
+        write::{CHANGED_POWER, UNCONFIRMED_POWER, manual_turn},
     },
     power_admission::PowerContext,
 };
@@ -115,6 +115,8 @@ pub(super) struct Scripted {
     pub(super) results: VecDeque<(Status, Option<&'static str>, Fields)>,
     pub(super) applied: Vec<(Settings, PowerContext)>,
     pub(super) queries: usize,
+    /// Every apply also reports a fatal reply failure.
+    fatal: bool,
     during: Option<During>,
 }
 
@@ -151,7 +153,9 @@ impl Applier for Scripted {
                 state: self.panel.snapshot(),
             },
             unresolved,
-            fatal: None,
+            fatal: self
+                .fatal
+                .then(|| io::Error::other("scripted fatal reply failure")),
         })
     }
 }
@@ -897,22 +901,23 @@ fn a_resumption_never_takes_another_source_admission() {
 }
 
 #[test]
-fn the_console_locking_mid_apply_is_refused_and_retried_without_a_trigger() {
+fn a_switched_console_mid_apply_is_refused_and_retried_without_a_trigger() {
     let rig = Rig::new();
     rig.observe(target(1, None));
     rig.observe(target(0, None));
-    let locked = Arc::new(AtomicBool::new(true));
-    let mut applier = HostApplier(PanelHost::new(rig.power.clone(), locked.clone()));
+    let switched = Arc::new(AtomicBool::new(true));
+    let mut applier = HostApplier(PanelHost::new(rig.power.clone(), switched.clone()));
     let transition = rig.recovery().take_transition().unwrap();
     let delays = AtomicUsize::new(0);
-    // The session is locked for the first attempt and unlocked in the delay.
+    // The console is switched to another session for the first attempt and back
+    // in the delay. A locked but active console is not refused, as in managed.
     run_transition(
         &rig.automation.recovery,
         &mut applier,
         &transition,
         |_, _| {
             delays.fetch_add(1, Ordering::SeqCst);
-            locked.store(false, Ordering::SeqCst);
+            switched.store(false, Ordering::SeqCst);
             true
         },
     )
@@ -920,7 +925,7 @@ fn the_console_locking_mid_apply_is_refused_and_retried_without_a_trigger() {
     assert_eq!(delays.load(Ordering::SeqCst), 1);
     assert_eq!(applier.0.writes, ["brightness 40"]);
     assert_eq!(rig.last(), (Status::Succeeded, None));
-    // Locking and unlocking is no trigger of its own.
+    // A session switch is no trigger of its own.
     assert!(rig.recovery().scheduled().is_none());
 }
 
@@ -1120,6 +1125,92 @@ fn a_resolving_read_reschedules_only_a_target_the_gate_still_refuses() {
     assert!(!rig.paused());
     assert!(!rig.recovery().explicit_read(&Panel::default().snapshot()));
     assert!(rig.recovery().scheduled().is_none());
+}
+
+#[test]
+fn a_fatal_reply_failure_is_recorded_once_and_ends_the_feature() {
+    let rig = Rig::new();
+    rig.observe(target(1, None));
+    rig.observe(target(0, None));
+    let mut applier = Scripted {
+        results: [(Status::Failed, Some(FAILED), Fields::default())].into(),
+        fatal: true,
+        ..Scripted::default()
+    };
+    let (result, delays) = rig.run(&mut applier).unwrap();
+    assert!(result.is_err());
+    assert!(delays.is_empty(), "a fatal failure is never retried");
+    assert_eq!(applier.applied.len(), 1);
+    assert_eq!(rig.last(), (Status::Failed, Some(FAILED.to_owned())));
+    assert!(!rig.in_flight());
+    assert!(!rig.paused());
+}
+
+#[test]
+fn a_checkpoint_failure_at_completion_keeps_the_write_uncertain_and_pauses() {
+    let rig = Rig::new();
+    rig.observe(target(1, None));
+    rig.observe(target(0, None));
+    // The write-ahead checkpoint is saved; the completion's is not.
+    rig.file
+        .allow
+        .store(rig.file.writes.load(Ordering::SeqCst) + 1, Ordering::SeqCst);
+    let mut applier = Scripted::default();
+    rig.run(&mut applier).unwrap().0.unwrap();
+    assert_eq!(applier.applied.len(), 1);
+    assert_eq!(rig.last(), (Status::Blocked, Some(DURABILITY.to_owned())));
+    let ((hold, paused, uncertain), (in_flight, ..)) = rig.flags();
+    assert!(hold && paused && !in_flight);
+    assert_eq!(uncertain, Fields::BRIGHTNESS);
+    assert_eq!(rig.file.record()["AutomaticWritesPaused"], true);
+    assert_eq!(rig.file.record()["UncertainBrightness"], true);
+}
+
+#[test]
+fn a_checkpoint_failure_while_observing_latches_and_schedules_nothing() {
+    // The first confirmed status.
+    let rig = Rig::new();
+    rig.file.allow.store(0, Ordering::SeqCst);
+    assert_eq!(
+        rig.observe(target(
+            1,
+            Some(settings(Some("fixed-60"), None, None, None))
+        )),
+        Observation::BaselineEstablished
+    );
+    assert!(rig.recovery().scheduled().is_none());
+    let ((hold, paused, _), _) = rig.flags();
+    assert!(hold && paused);
+
+    // A source change.
+    let rig = Rig::new();
+    rig.observe(target(1, None));
+    rig.file
+        .allow
+        .store(rig.file.writes.load(Ordering::SeqCst), Ordering::SeqCst);
+    assert_eq!(rig.observe(target(0, None)), Observation::SameSource);
+    assert!(rig.recovery().scheduled().is_none());
+    let ((hold, paused, _), _) = rig.flags();
+    assert!(hold && paused);
+}
+
+#[test]
+fn a_transition_whose_power_is_no_longer_confirmed_is_refused_after_one_read() {
+    let rig = Rig::new();
+    rig.observe(target(1, None));
+    rig.observe(target(0, None));
+    // Power admission withdraws before automation hears of it.
+    rig.power.observed(3, false);
+    let mut applier = HostApplier(PanelHost::new(rig.power.clone(), Arc::default()));
+    let (result, delays) = rig.run(&mut applier).unwrap();
+    result.unwrap();
+    assert_eq!(delays.len(), 1, "Blocked is retried once");
+    assert!(applier.0.writes.is_empty());
+    assert_eq!(
+        rig.last(),
+        (Status::Blocked, Some(UNCONFIRMED_POWER.to_owned()))
+    );
+    assert!(!rig.paused());
 }
 
 #[test]
@@ -1409,22 +1500,23 @@ async fn a_fatal_transition_ends_the_runner() {
 
 /// A scripted `ProfileHost` under the real profile composition: each write
 /// takes the next scripted attempt, or applies itself to the panel. While
-/// `locked`, or on a superseded admission, every write is refused by its
-/// fence as the real one is (the fence's active-console and power checks).
+/// `switched` away from the console session, or on a superseded admission,
+/// every write is refused by its fence as the real one is (the fence's
+/// active-console and power checks).
 struct PanelHost {
     panel: Panel,
     power: PowerAdmission,
-    locked: Arc<AtomicBool>,
+    switched: Arc<AtomicBool>,
     script: VecDeque<Option<Attempt>>,
     writes: Vec<String>,
 }
 
 impl PanelHost {
-    fn new(power: PowerAdmission, locked: Arc<AtomicBool>) -> Self {
+    fn new(power: PowerAdmission, switched: Arc<AtomicBool>) -> Self {
         Self {
             panel: Panel::default(),
             power,
-            locked,
+            switched,
             script: VecDeque::new(),
             writes: Vec::new(),
         }
@@ -1438,7 +1530,7 @@ impl PanelHost {
         if let Some(Some(attempt)) = self.script.pop_front() {
             return attempt;
         }
-        if self.locked.load(Ordering::SeqCst) || !self.power.current(admitted) {
+        if self.switched.load(Ordering::SeqCst) || !self.power.current(admitted) {
             return Attempt::Done(Status::Blocked, Cow::Borrowed(refresh_write::STALE));
         }
         let write = apply(&mut self.panel);
