@@ -1,67 +1,103 @@
 //! Keyboard Driver-mode ownership on exact RZ09-0581
 //! (`service-keyboard-driver-mode-v1`): the managed maintenance
 //! (`ServiceControlRuntime` 15 s step, `ProductionLightingPort.MaintainDriverModeAsync`)
-//! and the shutdown release (`ReleaseDriverModeCoreAsync("shutdown")`,
-//! `TryRestoreOwnedDeviceModeCoreAsync`).
+//! and the shutdown release (`ReleaseDriverModeCoreAsync("shutdown")`).
 //!
 //! - Acquire and maintain read 00/84 first. A keyboard already in Driver mode
 //!   publishes true with no write and no claim. From Normal, ownership is
 //!   claimed before the 00/04:0300 setter can be submitted; a refusal before
 //!   submission (managed `KnownNotApplied`) clears the claim and any later
-//!   failure keeps it, so cleanup can still restore Normal. The setter's exact
-//!   acknowledgement and an independent 00/84 readback must both confirm.
-//! - A setter that may have been submitted without that confirmation is
-//!   Indeterminate: the step publishes null and the owner stops, sending nothing
-//!   more in this process; nothing is ever replayed. The read job's own 00/84
-//!   cadence keeps publishing the confirmed mode.
-//! - Each write captures the console user's ordinary write admission, as the
-//!   lifecycle tick does (`Runtime::console_pair`): fresh exact-device,
+//!   failure keeps it. The setter's exact acknowledgement and an independent
+//!   00/84 readback must both confirm.
+//! - An acquire setter that may have been submitted without that confirmation
+//!   is Indeterminate: the step publishes null and the owner sends no further
+//!   acquire or maintain exchange in this process; nothing is ever replayed.
+//!   The read job's own 00/84 cadence keeps publishing the confirmed mode, and
+//!   the shutdown release still restores Normal after a fresh read of Driver.
+//! - Each step captures the console user's ordinary write admission, the
+//!   candidate the lifecycle tick uses: fresh exact-device,
 //!   competing-controller, AC line, session, SID and lifecycle-epoch checks,
 //!   which refuse in low power. With nobody signed in, or a locked session,
 //!   the step is refused and retried at the next one, and the last confirmed
 //!   status stays. Managed maintains without a user; native adds no write
 //!   authority, and the function row has no user to serve then.
-//! - A step that failed gets one recovery per failure streak: a fresh capture
-//!   and read-before-write. Success or a lost device resets the latch.
-//! - Ownership lives in memory, as managed's does: a restart reads 00/84 again
-//!   and never claims a keyboard already in Driver mode. A durable record and
-//!   crash recovery are a later slice.
-//! - Shutdown restores Normal only when OpenBlade owns Driver mode, under the
-//!   owned-Stop admission of the last write capture; a fresh 00/84 read that
-//!   is not Driver is a foreign change and is never overwritten, and a
-//!   release that may have been submitted unconfirmed blocks any later
-//!   restore write. The low-power boundary release is a later slice.
+//! - After the startup call, a step whose read job already confirmed Driver
+//!   under the current read admission starts no job. A step that failed gets
+//!   one recovery per failure streak: a fresh capture and read-before-write.
+//!   A step refused before any exchange records nothing and spends no
+//!   recovery. Success or a lost device resets the latch.
+//! - Ownership lives in memory, as managed's does. The shutdown release
+//!   follows managed: a fresh 00/84 read of Driver under the owned-Stop
+//!   admission writes Normal once, whoever set it; a read of Normal ends an
+//!   owned claim as a foreign change. The low-power boundary release is a
+//!   later slice.
 use super::super::mailbox_read::ReadSource;
 use super::*;
 use crate::discovery::performance::{DeviceModeJob, DeviceModeRead, DeviceModeStep};
 use openblade_protocol::device_mode::DeviceMode;
-use std::cell::Cell;
+use std::{cell::Cell, time::Duration};
 
-/// Managed `ServicePeriodicObservationLoop.ObservationInterval`.
-pub(in super::super) const INTERVAL: std::time::Duration = std::time::Duration::from_secs(15);
-/// One Driver-mode job: three exchanges with their settles and checkpoints.
-const BUDGET: std::time::Duration = std::time::Duration::from_secs(2);
+/// Managed `ServicePeriodicObservationLoop.ObservationInterval`, the read
+/// job's own 00/84 cadence.
+pub(in super::super) use super::super::mailbox_read::DRIVER_MODE_INTERVAL as INTERVAL;
+/// One acquire job from its start: three exchanges with their settles and
+/// checkpoints.
+const JOB_BUDGET: Duration = Duration::from_secs(2);
+/// The keyboard's whole share of the shutdown drain, the wait for the gate
+/// and for active work included. The fan handback keeps the drain
+/// time it had (`readiness::SOURCE_DRAIN_TIMEOUT`).
+pub(in super::super) const SHUTDOWN_BUDGET: Duration = Duration::from_millis(500);
 
-/// Why a shutdown release did not restore Normal. Each leaves the mode as it
-/// was.
-const RELEASE_UNRESOLVED: &str =
-    "Keyboard Driver-mode release is unresolved; no restore write is submitted.";
-const RELEASE_BLOCKED: &str =
-    "Keyboard Driver mode was left unchanged: a fan or laptop-control write is not settled.";
-const RELEASE_UNADMITTED: &str = "Keyboard Driver mode was left unchanged: fresh owned-Stop admission is unavailable (competing controller, session or lifecycle change).";
-const RELEASE_UNCONFIRMED: &str =
-    "Keyboard Driver mode was not confirmed Normal; evidence is retained.";
-const RELEASE_ORIGIN_LOST: &str = "Unexpected origin loss cannot authorize owned keyboard cleanup.";
+/// How a shutdown release ended. Only a fatal admission error fails the
+/// Stop. The Service has no diagnostics sink yet, so the outcome is kept for
+/// tests, and the process exit drops it, as an
+/// unregistration failure is (docs/windows-native-thermal-mutation.md).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in super::super) enum Release {
+    /// Normal confirmed by the exact acknowledgement and readback.
+    Restored,
+    /// A fresh read found Normal and nothing was claimed.
+    NotDriver,
+    /// A fresh read found Normal although OpenBlade had claimed Driver mode.
+    ForeignChange,
+    /// A fan row was not settled (managed
+    /// `FanStopController.BlocksOrdinaryHardware`). Nothing was sent. Managed
+    /// retries once after the fan handback when that cleared the block; here
+    /// every fan job has joined by then (`ReadSource::drain_active`), and
+    /// the handback never settles an unsettled fan row, so nothing could
+    /// clear it and there is no retry.
+    FanBlocked,
+    /// A laptop-control journal row or earlier write is not settled (managed
+    /// `RequiresReconciliation`). Nothing was sent.
+    Unsettled,
+    /// No owned-Stop admission: no capture, a competing controller, a
+    /// session, logon or lifecycle change, low power, or a write lease that
+    /// never activated. Nothing was sent.
+    Unadmitted,
+    /// The share ran out before the job started. Nothing was sent.
+    Exhausted,
+    /// The job ran without confirming Normal; a setter may have been
+    /// submitted.
+    Unconfirmed,
+    /// The release job already ran; it is never repeated.
+    Attempted,
+    /// Origin loss cannot authorize owned cleanup.
+    OriginLost,
+}
+/// A write capture: its identity, per-user store and fresh admission.
+#[derive(Clone)]
+struct Captured {
+    sid: String,
+    session: u32,
+    storage: Arc<Storage>,
+    fresh: Arc<dyn Fresh>,
+}
 
-/// A write capture: its per-user store and its fresh admission.
-type Captured = (Arc<Storage>, Arc<dyn Fresh>);
-
-/// What OpenBlade holds of the keyboard's Driver mode. The worker thread
-/// claims through it, so it is shared with each job.
+/// What OpenBlade has claimed of the keyboard's Driver mode. The worker
+/// thread claims through it, so it is shared with each job.
 #[derive(Default)]
 struct Ownership {
     owns: AtomicBool,
-    release_uncertain: AtomicBool,
     // Acquire claims made, so a test can tell a cleared claim from none.
     #[cfg(test)]
     claims: std::sync::atomic::AtomicUsize,
@@ -72,24 +108,29 @@ struct Ownership {
 pub(super) struct Keyboard {
     ownership: Arc<Ownership>,
     /// An acquire setter may have been submitted unconfirmed: no further
-    /// acquire write in this process.
+    /// acquire or maintain exchange in this process.
     indeterminate: Cell<bool>,
     /// The recovery of the current failure streak has run.
     recovered: Cell<bool>,
+    /// The startup call's job has run.
+    started: Cell<bool>,
     /// When the next step is due; `None` until the first eligible tick.
     due: Cell<Option<Instant>>,
-    /// The latest write capture, for the shutdown release's owned-Stop
-    /// admission.
+    /// The latest write capture, for the shutdown release.
     capture: RefCell<Option<Captured>>,
-    /// The shutdown release was attempted; it is never repeated.
+    /// The shutdown release job started; it is never repeated.
     released: Cell<bool>,
+    /// The last shutdown release's outcome.
+    release: Cell<Option<Release>>,
 }
 
-/// How one acquire job ended.
+/// How one acquire step ended.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Acquired {
-    /// The confirmed mode: true for Driver.
-    Mode(bool),
+    /// Driver mode confirmed: read, or written and read back.
+    Driver,
+    /// The read job holds Driver for this admission; no job ran.
+    Current,
     /// Nothing confirmed and nothing possibly submitted unconfirmed.
     Failed,
     /// The setter may have been submitted unconfirmed.
@@ -116,11 +157,17 @@ impl Permit for DriverModePermit {
     fn device_mode(&self) -> Option<&DeviceModeJob> {
         Some(&self.job)
     }
+    fn budget(&self) -> Option<Duration> {
+        Some(JOB_BUDGET)
+    }
     fn cleanup(&self) -> bool {
         self.cleanup
     }
     fn resolve(&self, _: i32, _: ObservedPerformance) -> io::Result<Option<Destination>> {
         Ok(None)
+    }
+    fn failed(&self, error: &io::Error) {
+        remember_failure(&self.fatal, error)
     }
     fn retired(&self) -> io::Result<Settlement> {
         verify_retained_failure(&self.fatal)?;
@@ -137,69 +184,76 @@ impl Permit for DriverModePermit {
 impl Runtime {
     /// One maintenance step on the origin tick, after the power check. It is
     /// due at the first eligible tick and then every `INTERVAL`. In low power
-    /// it reads and writes nothing and publishes nothing: no acquire before
-    /// Windows reports the system active again. A tick that finds a request
+    /// it reads, writes and publishes nothing: no acquire before Windows
+    /// reports the system active again. A recovery-only lease never activates
+    /// a write, so the step never runs there. A tick that finds a request
     /// holding the mutation gate retries at the next tick. Without a fresh
-    /// exact-device read (`ReadSource::driver_mode_verified`) the step
-    /// publishes null, writes nothing, resets the recovery latch (managed
-    /// `TryGetVerifiedDevice` false) and stays due, so the first verified
-    /// tick is the startup call. After an Indeterminate step the owner stops:
-    /// it sends nothing more in this process, and the read job's own 00/84
-    /// cadence keeps publishing the confirmed mode. The step publishes through
-    /// that cadence (`ReadSource::record_driver_mode`). Returns the mode it
-    /// confirmed, inner `None` when unknown, and `None` when it read nothing.
+    /// exact-device read (`ReadSource::driver_mode_verified`) the step writes
+    /// nothing, resets the recovery latch (managed `TryGetVerifiedDevice`
+    /// false) and stays due; the status projects null for that read. The
+    /// step publishes through the read cadence (`ReadSource::record_driver_mode`).
+    /// Only fatal admission evidence is an error.
     pub(in super::super) async fn maintain_driver_mode(
         &self,
         mailbox: &MailboxSource,
-    ) -> io::Result<Option<Option<bool>>> {
+    ) -> io::Result<()> {
         let keyboard = &self.keyboard;
         let now = Instant::now();
         if keyboard.indeterminate.get()
-            || self.in_low_power()
+            || self.driver_mode_low_power()
             || keyboard.due.get().is_some_and(|due| now < due)
         {
-            return Ok(None);
+            return Ok(());
         }
         let MailboxSource::Reader(reader) = mailbox else {
-            return Ok(None);
+            return Ok(());
         };
+        if reader.recovery_only() {
+            return Ok(());
+        }
         let Ok(_serial) = self.gate.try_lock() else {
-            return Ok(None);
+            return Ok(());
         };
         verify_retained_failure(&self.fatal)?;
         if !reader.driver_mode_verified() {
             keyboard.recovered.set(false);
-            return Ok(Some(None));
+            return Ok(());
         }
         keyboard.due.set(Some(now + INTERVAL));
-        let Some(first) = self.acquire_once(reader).await? else {
-            return Ok(None);
+        let Some(first) = self.acquire_once(reader, now).await? else {
+            return Ok(());
         };
         // One recovery per failure streak: a fresh capture and
         // read-before-write, never a replay. An Indeterminate step has none.
         let result = if first == Acquired::Failed && !keyboard.recovered.replace(true) {
-            self.acquire_once(reader).await?.unwrap_or(Acquired::Failed)
+            self.acquire_once(reader, now)
+                .await?
+                .unwrap_or(Acquired::Failed)
         } else {
             first
         };
-        Ok(Some(match result {
-            Acquired::Mode(active) => {
-                keyboard.recovered.set(false);
-                Some(active)
-            }
-            Acquired::Failed | Acquired::Indeterminate => None,
-        }))
+        if matches!(result, Acquired::Driver | Acquired::Current) {
+            keyboard.recovered.set(false);
+        }
+        Ok(())
     }
 
-    /// One acquire job under a fresh console-user capture. `None` when it was
-    /// refused before any firmware access: managed returns without
-    /// publishing while a fan or laptop-control write is unsettled, and a
-    /// refused capture keeps the last confirmed status.
-    async fn acquire_once(&self, reader: &ReadSource) -> io::Result<Option<Acquired>> {
-        if self.fan_unsettled() {
-            return Ok(None);
+    /// Whether the low-power gate reads set, unreadable or exhausted, as the
+    /// lifecycle tick's gate does (`Runtime::gate`). Test composition that
+    /// does not wire it reads clear.
+    fn driver_mode_low_power(&self) -> bool {
+        match self.low_power.get().map(|read| read()) {
+            None => false,
+            Some(Some(transition)) => transition.suspending(),
+            Some(None) => true,
         }
-        let Some((sid, session)) = self.console_pair() else {
+    }
+
+    /// A fresh capture of the console user's ordinary write admission, kept
+    /// for the shutdown release. `None` when nobody is signed in or the
+    /// capture is refused; only fatal admission evidence is an error.
+    fn capture_console(&self, reader: &ReadSource) -> io::Result<Option<Captured>> {
+        let Some((sid, session)) = self.console.get().and_then(|read| read()) else {
             return Ok(None);
         };
         reader.custody().verify_integrity()?;
@@ -208,15 +262,42 @@ impl Runtime {
             Err(error) if is_fatal_admission(&error) => return Err(error),
             Err(_) => return Ok(None),
         };
-        // Managed `RequiresReconciliation`: an unsettled journal row.
-        if storage.pending() {
+        let captured = Captured {
+            sid,
+            session,
+            storage,
+            fresh,
+        };
+        *self.keyboard.capture.borrow_mut() = Some(captured.clone());
+        Ok(Some(captured))
+    }
+
+    /// One acquire attempt under a fresh capture. `None` when it was refused
+    /// before any exchange: managed returns without publishing while a fan or
+    /// laptop-control write is unsettled, and a refused capture or job keeps
+    /// the last confirmed status. `step` dates what it records, so the next
+    /// due step finds it stale and reads again.
+    async fn acquire_once(
+        &self,
+        reader: &ReadSource,
+        step: Instant,
+    ) -> io::Result<Option<Acquired>> {
+        let Some(captured) = self.capture_console(reader)? else {
+            return Ok(None);
+        };
+        let keyboard = &self.keyboard;
+        // The startup call always reads. After it, a read job's own Driver
+        // result under this admission needs no job (managed reads 00/84 and
+        // finds Driver).
+        if keyboard.started.get() && reader.driver_mode_confirmed() == Some(true) {
+            return Ok(Some(Acquired::Current));
+        }
+        if self.fan_unsettled() || captured.storage.pending() {
             return Ok(None);
         }
-        let keyboard = &self.keyboard;
-        *keyboard.capture.borrow_mut() = Some((storage, fresh.clone()));
         let ownership = keyboard.ownership.clone();
         let permit = Arc::new(DriverModePermit {
-            fresh: fresh.clone(),
+            fresh: captured.fresh.clone(),
             job: DeviceModeJob::new(DeviceMode::Driver, Some(DeviceMode::Normal), move || {
                 ownership.owns.store(true, Ordering::Release);
                 #[cfg(test)]
@@ -225,16 +306,23 @@ impl Runtime {
             cleanup: false,
             fatal: self.fatal.clone(),
         });
-        let admission = fresh.authorize();
-        let result = reader.mutate(permit.clone(), Instant::now() + BUDGET).await;
+        let admission = captured.fresh.authorize();
+        // The job's own budget starts after the lane wait (`Permit::budget`);
+        // the interval bounds the wait.
+        let result = reader
+            .mutate(permit.clone(), Instant::now() + INTERVAL)
+            .await;
         if let Err(error) = result
             && is_fatal_admission(&error)
         {
             return Err(error);
         }
         let acquired = match permit.job.step() {
-            DeviceModeStep::Pending | DeviceModeStep::Unread => Acquired::Failed,
-            DeviceModeStep::Observed(mode) => Acquired::Mode(mode == DeviceMode::Driver),
+            // Refused before any exchange: nothing to record or recover.
+            DeviceModeStep::Pending => return Ok(None),
+            DeviceModeStep::Unread => Acquired::Failed,
+            // The baseline was not Normal, so it was Driver.
+            DeviceModeStep::Observed(_) | DeviceModeStep::Confirmed => Acquired::Driver,
             DeviceModeStep::Claimed => {
                 // Known not applied: the claim is cleared.
                 keyboard.ownership.owns.store(false, Ordering::Release);
@@ -244,131 +332,173 @@ impl Runtime {
                 keyboard.indeterminate.set(true);
                 Acquired::Indeterminate
             }
-            DeviceModeStep::Confirmed => Acquired::Mode(true),
         };
+        keyboard.started.set(true);
         // A read job under the same admission publishes this result for the
-        // interval instead of querying again.
+        // interval instead of querying again; a failure publishes null, as
+        // managed does after a failed step.
         if let Some(admission) = admission {
-            let read = match acquired {
-                Acquired::Mode(true) => DeviceModeRead::Confirmed(DeviceMode::Driver),
-                Acquired::Mode(false) => DeviceModeRead::Confirmed(DeviceMode::Normal),
-                _ => DeviceModeRead::Unconfirmed,
+            let read = if acquired == Acquired::Driver {
+                DeviceModeRead::Confirmed(DeviceMode::Driver)
+            } else {
+                DeviceModeRead::Unconfirmed
             };
-            reader.record_driver_mode(admission, read, Instant::now());
-        } else if !matches!(acquired, Acquired::Mode(_)) {
-            // Managed publishes null after a failed step.
-            reader.forget_driver_mode();
+            reader.record_driver_mode(admission, read, step);
         }
         Ok(Some(acquired))
     }
 
     /// The shutdown release before the fan handback (managed
-    /// `ReleaseDriverModeCoreAsync("shutdown")`). A keyboard OpenBlade does
-    /// not own is left alone. Its error leaves the mode unchanged or
-    /// unresolved; the caller still runs the fan step.
+    /// `ReleaseDriverModeCoreAsync("shutdown")`), within its share of the
+    /// drain. Its outcome is a diagnostic; only fatal admission evidence is
+    /// an error, so a refusal never fails the Stop.
     pub(in super::super) async fn release_driver_mode(
         &self,
         mailbox: &MailboxSource,
     ) -> io::Result<()> {
-        let _serial = self.gate.lock().await;
+        let release = self
+            .release_once(mailbox, Instant::now() + SHUTDOWN_BUDGET)
+            .await?;
+        self.keyboard.release.set(Some(release));
+        Ok(())
+    }
+
+    /// The shutdown release after origin loss, which cannot authorize it.
+    pub(in super::super) fn refuse_release_driver_mode(&self) {
+        self.keyboard.release.set(Some(Release::OriginLost));
+    }
+
+    async fn release_once(
+        &self,
+        mailbox: &MailboxSource,
+        deadline: Instant,
+    ) -> io::Result<Release> {
+        let Ok(_serial) = tokio::time::timeout_at(deadline, self.gate.lock()).await else {
+            return Ok(Release::Exhausted);
+        };
         let keyboard = &self.keyboard;
-        let ownership = keyboard.ownership.clone();
-        if !ownership.owns.load(Ordering::Acquire) {
-            return Ok(());
-        }
-        if ownership.release_uncertain.load(Ordering::Acquire) || keyboard.released.replace(true) {
-            return Err(io::Error::other(RELEASE_UNRESOLVED));
+        if keyboard.released.get() {
+            return Ok(Release::Attempted);
         }
         let MailboxSource::Reader(reader) = mailbox else {
-            return Err(io::Error::other(RELEASE_UNADMITTED));
+            return Ok(Release::Unadmitted);
         };
+        // Join active work first, as the fan handback does.
+        match tokio::time::timeout_at(deadline, reader.drain_active()).await {
+            Err(_) => return Ok(Release::Exhausted),
+            Ok(Err(error)) if is_fatal_admission(&error) => return Err(error),
+            Ok(Err(_)) => return Ok(Release::Unsettled),
+            Ok(Ok(())) => {}
+        }
         // Managed order: the fan guardian, a pending reconciliation, then
         // controller presence, each leaving the mode unchanged.
-        let Some((storage, fresh)) = keyboard.capture.borrow().clone() else {
-            return Err(io::Error::other(RELEASE_UNADMITTED));
+        if self.fan_unsettled() {
+            return Ok(Release::FanBlocked);
+        }
+        let Some(captured) = keyboard.capture.borrow().clone() else {
+            return Ok(Release::Unadmitted);
         };
-        if self.fan_unsettled() || storage.pending() {
-            return Err(io::Error::other(RELEASE_BLOCKED));
+        if captured.storage.pending() {
+            return Ok(Release::Unsettled);
         }
-        // The owned-Stop admission of the latest write capture: its lifecycle
-        // epoch, session, SID, AC line and fresh competing-controller absence.
-        if fresh.authorize_owned_stop().is_none() {
-            verify_retained_failure(&self.fatal)?;
-            return Err(io::Error::other(RELEASE_UNADMITTED));
-        }
-        let claim = ownership.clone();
+        let Some(fresh) = self.owned_stop_admission(&captured)? else {
+            return Ok(Release::Unadmitted);
+        };
+        keyboard.released.set(true);
         let permit = Arc::new(DriverModePermit {
             fresh,
-            job: DeviceModeJob::new(DeviceMode::Normal, Some(DeviceMode::Driver), move || {
-                claim.release_uncertain.store(true, Ordering::Release);
-            }),
+            job: DeviceModeJob::new(DeviceMode::Normal, Some(DeviceMode::Driver), || {}),
             cleanup: true,
             fatal: self.fatal.clone(),
         });
-        let result = reader
-            .mutate_cleanup(permit.clone(), Instant::now() + BUDGET)
-            .await;
-        let released = match permit.job.step() {
-            DeviceModeStep::Confirmed => {
-                ownership.release_uncertain.store(false, Ordering::Release);
-                ownership.owns.store(false, Ordering::Release);
-                Ok(())
-            }
-            // Not Driver now: a foreign change, never overwritten.
-            DeviceModeStep::Observed(_) => {
-                ownership.owns.store(false, Ordering::Release);
-                Ok(())
-            }
-            // Known not applied: only this clears the uncertain release.
-            DeviceModeStep::Claimed => {
-                ownership.release_uncertain.store(false, Ordering::Release);
-                Err(io::Error::other(RELEASE_UNCONFIRMED))
-            }
-            DeviceModeStep::Pending
-            | DeviceModeStep::Unread
-            | DeviceModeStep::Submitted
-            | DeviceModeStep::Acknowledged => Err(io::Error::other(RELEASE_UNCONFIRMED)),
-        };
-        match result {
-            Err(error) if is_fatal_admission(&error) => Err(error),
-            _ => released,
+        let result = reader.mutate_cleanup(permit.clone(), deadline).await;
+        if let Err(error) = result
+            && is_fatal_admission(&error)
+        {
+            return Err(error);
         }
+        let ownership = &keyboard.ownership;
+        Ok(match permit.job.step() {
+            DeviceModeStep::Confirmed => {
+                ownership.owns.store(false, Ordering::Release);
+                Release::Restored
+            }
+            // Not Driver: a foreign change if OpenBlade had claimed it.
+            DeviceModeStep::Observed(_) => {
+                if ownership.owns.swap(false, Ordering::AcqRel) {
+                    Release::ForeignChange
+                } else {
+                    Release::NotDriver
+                }
+            }
+            // No exchange: the job never started.
+            DeviceModeStep::Pending => {
+                keyboard.released.set(false);
+                verify_retained_failure(&self.fatal)?;
+                Release::Unadmitted
+            }
+            DeviceModeStep::Unread
+            | DeviceModeStep::Claimed
+            | DeviceModeStep::Submitted
+            | DeviceModeStep::Acknowledged => Release::Unconfirmed,
+        })
     }
 
-    /// The shutdown release after origin loss: an owned Driver mode cannot be
-    /// restored then.
-    pub(in super::super) fn refuse_release_driver_mode(&self) -> io::Result<()> {
-        if self.keyboard.ownership.owns.load(Ordering::Acquire) {
-            Err(io::Error::other(RELEASE_ORIGIN_LOST))
-        } else {
-            Ok(())
+    /// The owned-Stop admission the fan handback uses (`Runtime::stop_fans`):
+    /// the latest capture's own, or, after a power or session notice advanced
+    /// the lifecycle epoch it pins, a settle capture of the same SID, session
+    /// and logon at the current epoch (`Fresh::capture_settle`). Either keeps
+    /// every owned-Stop check: origin and custody trust, the exact device, the
+    /// same unlocked console session and fresh competing-controller absence.
+    fn owned_stop_admission(&self, captured: &Captured) -> io::Result<Option<Arc<dyn Fresh>>> {
+        if captured.fresh.authorize_owned_stop().is_some() {
+            return Ok(Some(captured.fresh.clone()));
+        }
+        match captured.fresh.capture_settle(
+            &captured.sid,
+            captured.session,
+            captured.fresh.authentication(),
+        ) {
+            Ok(fresh) if fresh.authorize_owned_stop().is_some() => Ok(Some(fresh)),
+            Err(error) if is_fatal_admission(&error) => Err(error),
+            _ => {
+                verify_retained_failure(&self.fatal)?;
+                Ok(None)
+            }
         }
     }
 }
 
 #[cfg(test)]
 impl Runtime {
-    /// (owns, release uncertain, indeterminate, recovery latch).
-    pub(in super::super) fn driver_mode_state_for_tests(&self) -> (bool, bool, bool, bool) {
+    /// (owns, indeterminate, recovery latch).
+    pub(in super::super) fn driver_mode_state_for_tests(&self) -> (bool, bool, bool) {
         let keyboard = &self.keyboard;
         (
             keyboard.ownership.owns.load(Ordering::Acquire),
-            keyboard.ownership.release_uncertain.load(Ordering::Acquire),
             keyboard.indeterminate.get(),
             keyboard.recovered.get(),
         )
     }
-    /// Makes the next tick's step due now.
+    /// The last shutdown release's outcome.
+    pub(in super::super) fn driver_mode_release(&self) -> Option<Release> {
+        self.keyboard.release.get()
+    }
     /// Acquire claims made so far.
     pub(in super::super) fn driver_mode_claims_for_tests(&self) -> usize {
         self.keyboard.ownership.claims.load(Ordering::Acquire)
     }
+    /// The mutation gate, for a test that holds it.
+    pub(in super::super) fn driver_mode_gate_for_tests(&self) -> Rc<tokio::sync::Mutex<()>> {
+        self.gate.clone()
+    }
+    /// Makes the next tick's step due now.
     pub(in super::super) fn driver_mode_due_for_tests(&self) {
         self.keyboard.due.set(None);
     }
     /// Moves the next step's due time `by` earlier, as if that much time had
     /// passed.
-    pub(in super::super) fn driver_mode_age_for_tests(&self, by: std::time::Duration) {
+    pub(in super::super) fn driver_mode_age_for_tests(&self, by: Duration) {
         let due = self.keyboard.due.get();
         self.keyboard.due.set(due.map(|due| due - by));
     }

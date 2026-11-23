@@ -27,6 +27,8 @@ use windows_sys::{
 #[cfg(feature = "service-keyboard-driver-mode-read-v1")]
 #[path = "driver_mode.rs"]
 mod driver_mode;
+#[cfg(feature = "service-keyboard-driver-mode-v1")]
+pub(super) use driver_mode::INTERVAL as DRIVER_MODE_INTERVAL;
 #[cfg(all(test, not(feature = "service-keyboard-driver-mode-read-v1")))]
 #[path = "driver_mode_absent_tests.rs"]
 mod driver_mode_absent_tests;
@@ -99,6 +101,12 @@ pub(super) trait ReadCustody: Send + Sync {
     fn activate_mutation(&self) -> Result<(), ActivationFailure> {
         Err(ActivationFailure::KnownUnpublished(deny()))
     }
+    /// Whether this custody only recovers an earlier owner's record: it
+    /// refuses mutation activation for its whole life (`ReadLease`).
+    #[cfg(feature = "service-keyboard-driver-mode-v1")]
+    fn recovery_only(&self) -> bool {
+        false
+    }
     #[cfg(feature = "service-thermal-mutation-v1")]
     fn journal_read(&self, _: bool) -> io::Result<Option<Vec<u8>>> {
         Err(deny())
@@ -169,6 +177,10 @@ impl ReadCustody for GuardedReadCustody {
         self.verify_integrity()
             .map_err(ActivationFailure::KnownUnpublished)?;
         self.original.activate_mutation()
+    }
+    #[cfg(feature = "service-keyboard-driver-mode-v1")]
+    fn recovery_only(&self) -> bool {
+        self.original.recovery_only()
     }
     fn journal_read(&self, pending: bool) -> io::Result<Option<Vec<u8>>> {
         self.verify_integrity()?;
@@ -730,6 +742,10 @@ impl ReadCustody for ReadLease {
             .ok_or_else(deny)?
             ._owner
             .journal_replace(expected, bytes)
+    }
+    #[cfg(feature = "service-keyboard-driver-mode-v1")]
+    fn recovery_only(&self) -> bool {
+        self.recovery_only
     }
     #[cfg(feature = "service-thermal-mutation-v1")]
     fn activate_mutation(&self) -> Result<(), ActivationFailure> {
@@ -1446,8 +1462,24 @@ impl ReadSource {
     ) {
         self.driver_mode.record(admission, read, at);
     }
-    pub(super) fn forget_driver_mode(&self) {
-        self.driver_mode.forget();
+    /// The mode a read job confirmed under the current read admission within
+    /// the interval, `None` when unknown or stale (`driver_mode::Cadence`).
+    pub(super) fn driver_mode_confirmed(&self) -> Option<bool> {
+        let admission = self.lease.authorize()?;
+        self.driver_mode.active(admission, Instant::now())
+    }
+    /// Whether this source can never activate a mutation: a recovery-only
+    /// lease, whose every write would only stop and rebuild the reader.
+    pub(super) fn recovery_only(&self) -> bool {
+        !self.activated.get() && self.lease.recovery_only()
+    }
+    #[cfg(test)]
+    pub(super) fn driver_mode_recorded_for_tests(&self) -> bool {
+        self.driver_mode.recorded()
+    }
+    #[cfg(test)]
+    pub(super) fn driver_mode_age_for_tests(&self, by: std::time::Duration) {
+        self.driver_mode.age(by);
     }
     /// Whether the retained read is a fresh exact-device observation, as the
     /// published status projects it (`decorate_at`): managed
@@ -1725,10 +1757,13 @@ impl ReadSource {
         // budget, so its own deadline is the bound: 6 s for battery, temporary
         // charge, performance and fan requests (`readiness::mutation_budget`)
         // and 4 s for the automatic temporary-charge release. Owned-Stop
-        // cleanup runs through `mutate_cleanup` with its own deadline.
-        let result = worker
-            .observe_with_budget(deadline, None, super::RECIPE_BUDGET)
-            .await;
+        // cleanup runs through `mutate_cleanup` with its own deadline. A keyboard
+        // Driver-mode job has its own shorter budget, counted from its start.
+        #[cfg(feature = "service-keyboard-driver-mode-v1")]
+        let budget = permit.budget().unwrap_or(super::RECIPE_BUDGET);
+        #[cfg(not(feature = "service-keyboard-driver-mode-v1"))]
+        let budget = super::RECIPE_BUDGET;
+        let result = worker.observe_with_budget(deadline, None, budget).await;
         if let Err(error) = &result {
             permit.failed(error);
         }

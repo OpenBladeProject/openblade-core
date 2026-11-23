@@ -704,7 +704,7 @@ fn capabilities(schema: u8, role: &str, features: &str, value: &str) -> io::Resu
     // Keyboard Driver-mode ownership writes 00/04, which no admitted
     // composition sends, and its low-power release and D1 fan handback are a
     // later slice. Refuse its feature and its capability marker by name,
-    // before the read and trigger features it implies, until a stage admits
+    // before the read and trigger features built with it, until a stage admits
     // it (docs/windows-rust-development-service.md).
     const DRIVER_OWNER: &str = "service-keyboard-driver-mode-v1";
     if has(DRIVER_OWNER)

@@ -61,6 +61,15 @@ mod transaction_seed;
 
 const PROBE_TIMEOUT: Duration = Duration::from_secs(4);
 const DRAIN_TIMEOUT: Duration = Duration::from_secs(2);
+/// The source drain's bound. The keyboard Driver-mode release takes its own
+/// share before the fan handback (`thermal_mutation::KEYBOARD_SHUTDOWN_BUDGET`,
+/// 0.5 s) and the fans keep the 2 s they had. With the listener's 2 s that is
+/// 4.5 s, inside the 5 s Stop wait hint (`scm_host::status_for`).
+#[cfg(feature = "service-keyboard-driver-mode-v1")]
+const SOURCE_DRAIN_TIMEOUT: Duration =
+    DRAIN_TIMEOUT.saturating_add(thermal_mutation::KEYBOARD_SHUTDOWN_BUDGET);
+#[cfg(not(feature = "service-keyboard-driver-mode-v1"))]
+const SOURCE_DRAIN_TIMEOUT: Duration = DRAIN_TIMEOUT;
 const MAX_SUBSCRIPTIONS: usize = 8;
 
 #[path = "subscription.rs"]
@@ -148,8 +157,12 @@ type Observation = Pin<Box<dyn Future<Output = io::Result<Option<Snapshot>>> + '
 type Mutation = Pin<
     Box<dyn Future<Output = io::Result<(thermal_mutation::Outcome, Option<Snapshot>)>> + 'static>,
 >;
-/// One lifecycle reconciliation, awaited without the source lock.
-#[cfg(feature = "service-profile-triggers-v1")]
+/// One lifecycle reconciliation or keyboard Driver-mode step, awaited without
+/// the source lock.
+#[cfg(any(
+    feature = "service-profile-triggers-v1",
+    feature = "service-keyboard-driver-mode-v1"
+))]
 type Reconciling = Pin<Box<dyn Future<Output = io::Result<()>> + 'static>>;
 trait StatusSource {
     fn process_power_source(&mut self) -> Pending<'_, ()> {
@@ -359,14 +372,13 @@ impl Ports {
                 // managed startup call; native runs no startup reconciliation
                 // for it to precede. Its own admission refuses in low power.
                 #[cfg(feature = "service-keyboard-driver-mode-v1")]
-                let mut source = {
+                {
                     let maintain = source.maintain_driver_mode();
                     drop(source);
                     if let Some(maintain) = maintain {
                         maintain.await?;
                     }
-                    self.source.lock().await
-                };
+                }
                 // A resume, a gate-clearing DisplayOn, a power-kind change or
                 // an expired lease reconciles what the reporting pair owes.
                 // It is bounded by its own steps and serialized with requests
@@ -374,6 +386,8 @@ impl Ports {
                 // runs.
                 #[cfg(feature = "service-profile-triggers-v1")]
                 {
+                    #[cfg(feature = "service-keyboard-driver-mode-v1")]
+                    let mut source = self.source.lock().await;
                     let reconcile = source.reconcile_lifecycle();
                     drop(source);
                     if let Some(reconcile) = reconcile {
@@ -419,7 +433,7 @@ impl Ports {
         // listener ownership or retirement cannot be confirmed.
         let owned = self.endpoint.listener().and_then(Listener::verify);
         let listener = timeout(DRAIN_TIMEOUT, self.endpoint.retire()).await;
-        let runtime = timeout(DRAIN_TIMEOUT, async {
+        let runtime = timeout(SOURCE_DRAIN_TIMEOUT, async {
             self.source.lock().await.drain().await
         })
         .await;

@@ -521,10 +521,7 @@ impl StatusSource for GuardedStatus {
             // fatal admission evidence stops the Service. The step publishes
             // through the read cadence every status projects
             // (`ReadSource::record_driver_mode`).
-            match runtime.maintain_driver_mode(&mailbox).await {
-                Err(error) if super::thermal_mutation::is_fatal_admission(&error) => Err(error),
-                _ => Ok(()),
-            }
+            runtime.maintain_driver_mode(&mailbox).await
         }))
     }
     fn process_power_source(&mut self) -> Pending<'_, ()> {
@@ -929,14 +926,17 @@ impl StatusSource for GuardedStatus {
             #[cfg(feature = "service-thermal-mutation-v1")]
             if let Some(runtime) = &self.mutation {
                 // Managed shutdown order: the keyboard Driver-mode release,
-                // then the fan handback. A keyboard failure or refusal never
-                // skips the fan step; the first error is kept.
+                // then the fan handback. The keyboard's outcome is a diagnostic
+                // (`Runtime::driver_mode_release`): only fatal admission
+                // evidence fails the Stop, and nothing it does skips the fan
+                // step. The first error is kept.
                 #[cfg(feature = "service-keyboard-driver-mode-v1")]
                 {
                     let keyboard = if self.origin.admit_owned_stop().is_ok() {
                         runtime.release_driver_mode(&self.mailbox).await
                     } else {
-                        runtime.refuse_release_driver_mode()
+                        runtime.refuse_release_driver_mode();
+                        Ok(())
                     };
                     if result.is_ok() {
                         result = keyboard;

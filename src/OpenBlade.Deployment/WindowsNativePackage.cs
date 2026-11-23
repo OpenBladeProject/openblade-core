@@ -77,7 +77,7 @@ internal sealed record NativeArtifact(string Id, string Role, string Target, str
         bool agentGpu = features.Contains("agent-gpu-v1", StringComparer.Ordinal);
         // Keyboard Driver-mode ownership writes 00/04, which no admitted composition sends, and its
         // low-power release and D1 fan handback are a later slice. Refuse its feature and its capability
-        // marker by name, before the read and trigger features it implies, until a packaging stage
+        // marker by name, before the read and trigger features built with it, until a packaging stage
         // admits it (docs/windows-rust-development-service.md).
         if (features.Contains("service-keyboard-driver-mode-v1", StringComparer.Ordinal) || capabilities.Split(',').Contains("service-keyboard-driver-mode-v1", StringComparer.Ordinal))
         { throw new InvalidDataException("Keyboard Driver-mode ownership is not admitted for packaging."); }

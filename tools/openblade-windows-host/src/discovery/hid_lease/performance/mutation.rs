@@ -68,6 +68,12 @@ pub(crate) trait Permit: Send + Sync {
     fn device_mode(&self) -> Option<&super::DeviceModeJob> {
         None
     }
+    /// This job's own budget from its start, after the lane wait, when it is
+    /// shorter than the request recipe budget.
+    #[cfg(feature = "service-keyboard-driver-mode-v1")]
+    fn budget(&self) -> Option<std::time::Duration> {
+        None
+    }
     fn is_fan(&self) -> bool {
         false
     }

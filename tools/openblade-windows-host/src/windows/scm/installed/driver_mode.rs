@@ -22,7 +22,7 @@ use std::{cell::Cell, time::Duration};
 use tokio::time::Instant;
 
 /// Managed `ServicePeriodicObservationLoop.ObservationInterval`.
-pub(super) const INTERVAL: Duration = Duration::from_secs(15);
+pub(in super::super) const INTERVAL: Duration = Duration::from_secs(15);
 
 #[derive(Clone, Copy)]
 struct Observed {
@@ -58,12 +58,19 @@ impl Cadence {
         }));
     }
 
-    /// Forgets the last result, so statuses publish null and the next read job
-    /// queries again (the Driver-mode owner's failed step without a read
-    /// admission to record it under).
-    #[cfg(feature = "service-keyboard-driver-mode-v1")]
-    pub(super) fn forget(&self) {
-        self.0.set(None);
+    /// Whether any result is held.
+    #[cfg(all(test, feature = "service-keyboard-driver-mode-v1"))]
+    pub(super) fn recorded(&self) -> bool {
+        self.0.get().is_some()
+    }
+
+    /// Dates the held result `by` earlier, as if that much time had passed.
+    #[cfg(all(test, feature = "service-keyboard-driver-mode-v1"))]
+    pub(super) fn age(&self, by: Duration) {
+        if let Some(mut observed) = self.0.get() {
+            observed.at = observed.at.checked_sub(by).unwrap_or(observed.at);
+            self.0.set(Some(observed));
+        }
     }
 
     /// The value that a verified status read under `admission` by the job

@@ -77,9 +77,11 @@ service-keyboard-driver-mode-read-v1 = ["service-mailbox-observation-v1"]
 # RZ09-0581 keyboard Driver-mode ownership: the 15 s acquire and maintain
 # step on the origin tick (00/84 read, claim, 00/04:0300 setter, exact
 # acknowledgement, independent 00/84 readback) and the shutdown restore of
-# Normal before the fan handback, under console-user write admission. No
-# packaged composition implies it, and both package readers refuse it.
-service-keyboard-driver-mode-v1 = ["service-keyboard-driver-mode-read-v1", "service-profile-triggers-v1", "openblade-protocol/device-mode-setters"]
+# Normal before the fan handback, under console-user write admission. It
+# implies the fan feature for that handback and the fan guardian, not profile
+# triggers. No packaged composition implies it, and both package readers
+# refuse it.
+service-keyboard-driver-mode-v1 = ["service-keyboard-driver-mode-read-v1", "service-fan-mutation-v2", "openblade-protocol/device-mode-setters"]
 # Read-only RZ09-0581 live readings: the capture-backed 0D/88 fan speed pair
 # on the installed mailbox read job, Windows battery power flow and battery
 # health, and the managed liveReadings and batteryHealth members. It sends no

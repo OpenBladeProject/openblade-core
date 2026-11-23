@@ -114,8 +114,10 @@ mod profiles;
 #[cfg(feature = "service-profile-triggers-v1")]
 #[path = "request_triggers.rs"]
 mod triggers;
+#[cfg(feature = "service-keyboard-driver-mode-v1")]
+pub(super) use keyboard::SHUTDOWN_BUDGET as KEYBOARD_SHUTDOWN_BUDGET;
 #[cfg(all(test, feature = "service-keyboard-driver-mode-v1"))]
-pub(super) use keyboard::INTERVAL;
+pub(super) use keyboard::{INTERVAL, Release};
 #[cfg(all(test, feature = "service-profile-triggers-v1"))]
 pub(super) use triggers::{
     APPLICATION_SESSION_REQUIRED, LOW_POWER_DEFERRED, LOW_POWER_PERFORMANCE, LOW_POWER_STEP,
@@ -255,7 +257,10 @@ type ReleaseNotice = (
 #[cfg(test)]
 type ReleaseHook = Rc<dyn Fn()>;
 /// Reads the lifecycle's low-power gate transition (`Lifecycle::low_power`).
-#[cfg(feature = "service-profile-triggers-v1")]
+#[cfg(any(
+    feature = "service-profile-triggers-v1",
+    feature = "service-keyboard-driver-mode-v1"
+))]
 type LowPowerProbe = Box<dyn Fn() -> Option<openblade_domain::low_power_gate::Transition>>;
 /// Reads the lifecycle's Windows power generation without sampling it
 /// (`Lifecycle::observe_power_kind(None)`); every SCM power notice samples.
@@ -263,7 +268,10 @@ type LowPowerProbe = Box<dyn Fn() -> Option<openblade_domain::low_power_gate::Tr
 type PowerProbe = Box<dyn Fn() -> Option<u64>>;
 /// Reads the console session and its primary user's SID
 /// (`thermal_native::console_user`); `None` while none is known.
-#[cfg(feature = "service-profile-triggers-v1")]
+#[cfg(any(
+    feature = "service-profile-triggers-v1",
+    feature = "service-keyboard-driver-mode-v1"
+))]
 type ConsoleProbe = Box<dyn Fn() -> Option<(String, u32)>>;
 /// How long a foreground report holds without renewal (managed
 /// `ApplicationContextLeaseDuration`).
@@ -282,7 +290,10 @@ pub(super) struct Runtime {
     // is still refused by its own admission (`WindowsGuard::authorize_for`).
     // The native composition sets it; only test composition leaves it unset,
     // which reads clear.
-    #[cfg(feature = "service-profile-triggers-v1")]
+    #[cfg(any(
+        feature = "service-profile-triggers-v1",
+        feature = "service-keyboard-driver-mode-v1"
+    ))]
     low_power: Rc<std::cell::OnceCell<LowPowerProbe>>,
     // The Windows power generation, for the lifecycle tick's power-change
     // cause (`triggers::lifecycle`). Unset reads unknown: no power cause.
@@ -296,7 +307,10 @@ pub(super) struct Runtime {
     // The console session's interactive user, for the lifecycle tick's pair
     // when no report of that session was admitted and for its activation.
     // Unset reads the reporter and activates no one.
-    #[cfg(feature = "service-profile-triggers-v1")]
+    #[cfg(any(
+        feature = "service-profile-triggers-v1",
+        feature = "service-keyboard-driver-mode-v1"
+    ))]
     console: Rc<std::cell::OnceCell<ConsoleProbe>>,
     // The lifecycle's ordinary write epoch (`Lifecycle::active`), so a step
     // refused by a fence that left the gate generation in place keeps its
@@ -492,13 +506,19 @@ impl Runtime {
             application: Rc::default(),
             #[cfg(feature = "service-profile-triggers-v1")]
             debts: Rc::default(),
-            #[cfg(feature = "service-profile-triggers-v1")]
+            #[cfg(any(
+                feature = "service-profile-triggers-v1",
+                feature = "service-keyboard-driver-mode-v1"
+            ))]
             low_power: Rc::default(),
             #[cfg(feature = "service-profile-triggers-v1")]
             power_generation: Rc::default(),
             #[cfg(feature = "service-profile-triggers-v1")]
             lifecycle: Rc::default(),
-            #[cfg(feature = "service-profile-triggers-v1")]
+            #[cfg(any(
+                feature = "service-profile-triggers-v1",
+                feature = "service-keyboard-driver-mode-v1"
+            ))]
             console: Rc::default(),
             #[cfg(feature = "service-profile-triggers-v1")]
             admission_epoch: Rc::default(),
@@ -526,7 +546,13 @@ impl Runtime {
     }
     /// Reads the low-power gate from `probe` (`Runtime::low_power`). Test
     /// composition wires its rig's lifecycle here; it may be set once.
-    #[cfg(all(test, feature = "service-profile-triggers-v1"))]
+    #[cfg(all(
+        test,
+        any(
+            feature = "service-profile-triggers-v1",
+            feature = "service-keyboard-driver-mode-v1"
+        )
+    ))]
     pub(super) fn read_low_power(
         &self,
         probe: impl Fn() -> Option<openblade_domain::low_power_gate::Transition> + 'static,
@@ -547,14 +573,23 @@ impl Runtime {
     }
     /// Reads the console session's user from `probe` (`Runtime::console`);
     /// it may be set once.
-    #[cfg(all(test, feature = "service-profile-triggers-v1"))]
+    #[cfg(all(
+        test,
+        any(
+            feature = "service-profile-triggers-v1",
+            feature = "service-keyboard-driver-mode-v1"
+        )
+    ))]
     pub(super) fn read_console(&self, probe: impl Fn() -> Option<(String, u32)> + 'static) {
         assert!(self.console.set(Box::new(probe)).is_ok());
     }
     #[cfg(not(test))]
     pub(super) fn native(origin: Arc<Origin>, mailbox: &MailboxSource) -> Self {
         let stores = RefCell::new(None::<(String, Arc<Storage>)>);
-        #[cfg(feature = "service-profile-triggers-v1")]
+        #[cfg(any(
+            feature = "service-profile-triggers-v1",
+            feature = "service-keyboard-driver-mode-v1"
+        ))]
         let low_power: LowPowerProbe = {
             let origin = origin.clone();
             Box::new(move || origin.lifecycle.low_power())
@@ -629,13 +664,19 @@ impl Runtime {
             application: Rc::default(),
             #[cfg(feature = "service-profile-triggers-v1")]
             debts: Rc::default(),
-            #[cfg(feature = "service-profile-triggers-v1")]
+            #[cfg(any(
+                feature = "service-profile-triggers-v1",
+                feature = "service-keyboard-driver-mode-v1"
+            ))]
             low_power: Rc::new(low_power.into()),
             #[cfg(feature = "service-profile-triggers-v1")]
             power_generation: Rc::new(power_generation.into()),
             #[cfg(feature = "service-profile-triggers-v1")]
             lifecycle: Rc::default(),
-            #[cfg(feature = "service-profile-triggers-v1")]
+            #[cfg(any(
+                feature = "service-profile-triggers-v1",
+                feature = "service-keyboard-driver-mode-v1"
+            ))]
             console: Rc::new(std::cell::OnceCell::from(
                 Box::new(super::thermal_native::console_user) as ConsoleProbe,
             )),

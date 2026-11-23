@@ -414,14 +414,6 @@ impl Runtime {
         })
     }
 
-    /// The lifecycle tick's console-user pair for another console-scoped
-    /// writer (the keyboard Driver-mode owner): the same candidate, which
-    /// that writer's own capture proves afresh.
-    #[cfg(feature = "service-keyboard-driver-mode-v1")]
-    pub(in super::super) fn console_pair(&self) -> Option<(String, u32)> {
-        self.lifecycle_pair().map(|pair| (pair.sid, pair.session))
-    }
-
     /// The console session's interactive user: the latest admitted reporter
     /// when it reported from the console session, with its process, else the
     /// console user with this Service's process as the steps' recorded

@@ -216,6 +216,9 @@ impl<P: Port> Reader<P, ReadAdmission> {
         let [baseline_id, set_id] = self.reserve_pair()?;
         let [readback_id, _] = self.reserve_pair()?;
         let admission = self.admission;
+        // The exchanges are timed from here, so the setter is sent only when
+        // the job can still read its acknowledgement and the readback.
+        let pace = mutation::Pace::start(self);
         let mut attempt = Attempt {
             reader: self,
             completed: false,
@@ -229,14 +232,24 @@ impl<P: Port> Reader<P, ReadAdmission> {
             attempt.completed = true;
             return Some(());
         }
+        // Two exchanges remain, the setter and the readback, each charged at the
+        // baseline's measured length (its checkpoints and settle included); no
+        // journal row is written. With one exchange measured, `covers` charges
+        // the second remaining one at the second-longest, which is zero, so the
+        // baseline is charged again as fixed time. Too little time left is known
+        // not applied, before any claim.
+        let baseline_length = attempt.reader.exchanges.slowest;
+        if !pace.covers(attempt.reader, 2, 0, baseline_length, limit) {
+            return None;
+        }
         // Managed claims ownership before the setter is submitted, so any
         // later failure leaves cleanup able to restore Normal.
         (job.claim)();
         job.record(DeviceModeStep::Claimed);
         let set = DeviceModeSet::new(set_id, job.target);
-        attempt.checkpoint(&mut authorize, admission, limit).ok()?;
         let mut frame = [0; FRAME_LENGTH];
         frame[1..].copy_from_slice(&set.request().encode());
+        attempt.checkpoint(&mut authorize, admission, limit).ok()?;
         // From the call that may submit it, the setter counts as possibly
         // submitted until its exact acknowledgement is read.
         job.record(DeviceModeStep::Submitted);
