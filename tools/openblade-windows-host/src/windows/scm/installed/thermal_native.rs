@@ -359,9 +359,6 @@ impl WindowsGuard {
 pub(super) struct SettleGuard(WindowsGuard);
 #[cfg_attr(test, allow(dead_code))] // Test composition injects its own Fresh; only the native factory builds the guard.
 impl SettleGuard {
-    pub(super) fn authentication(&self) -> (u32, i32) {
-        self.0.authentication()
-    }
     pub(super) fn verify_health(&self) -> io::Result<()> {
         self.0.verify_health()
     }

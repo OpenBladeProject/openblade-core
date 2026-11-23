@@ -44,6 +44,10 @@ impl BatteryObservation {
     }
 }
 
+/// Retries of an automatic source cancel that sent nothing at an unmoved
+/// epoch (`Runtime::battery_source_event`), per enable.
+#[cfg(feature = "service-temporary-charge-v1")]
+const UNSENT_CANCEL_RETRIES: u8 = 2;
 /// How one automatic source cancel was admitted (`battery_source_event`).
 #[cfg(feature = "service-temporary-charge-v1")]
 enum SourceCancel {
@@ -143,6 +147,10 @@ pub(super) struct BatteryPermit {
     // automatic cancel of it draws fresh IDs (`TemporaryClaim::roll_back_spent`).
     #[cfg(feature = "service-temporary-charge-v1")]
     cancel_spent: AtomicBool,
+    // Automatic cancels of this enable that sent nothing and were retried at
+    // an unmoved epoch (`UNSENT_CANCEL_RETRIES`).
+    #[cfg(feature = "service-temporary-charge-v1")]
+    unsent_retries: std::sync::atomic::AtomicU8,
     origin: Option<openblade_domain::temporary_charge_history::Origin>,
     #[cfg(feature = "service-temporary-charge-v1")]
     authentication: Option<(u32, i32)>,
@@ -857,6 +865,7 @@ impl Runtime {
                 reserved_ids: record.cancel_ids.filter(|_| !spent),
                 superseded: record.cancel_ids.filter(|_| spent),
                 cancel_spent: AtomicBool::new(false),
+                unsent_retries: std::sync::atomic::AtomicU8::new(0),
                 origin: Some(openblade_domain::temporary_charge_history::Origin {
                     request: original.request.clone(),
                     intent: record.hash()?,
@@ -908,7 +917,18 @@ impl Runtime {
             if permit.joined.load(Ordering::Acquire) {
                 permit.settle_pins();
             }
-            if fenced()
+            // An attempt that sent nothing at this tick's own epoch while its
+            // admission still holds, such as one whose write port failed to
+            // open, gives the claim back too, a bounded number of times:
+            // nothing it did can be answered, and the next tick reads the
+            // source again and retries. A refused admission still pauses
+            // once, and so does the cancel once the retries are spent.
+            let fence = fenced();
+            let unsent = !fence
+                && permit.known_unsubmitted()
+                && permit.fresh.authorize() == Some(permit.proof)
+                && original.unsent_retries.fetch_add(1, Ordering::AcqRel) < UNSENT_CANCEL_RETRIES;
+            if (fence || unsent)
                 && let Some(claim) = claim.take()
                 && if permit.known_unsubmitted() {
                     claim.roll_back(self)
@@ -924,7 +944,11 @@ impl Runtime {
                 }
             {
                 // Managed writes this cancel in the same transition; here the
-                // newer epoch makes the next tick read the source and retry.
+                // newer epoch makes the next tick read the source and retry. At
+                // an unmoved epoch, the tick's coalescing mark is cleared.
+                if unsent {
+                    self.temporary_event.set(None);
+                }
                 return Ok(None);
             }
             if permit.confirmed.load(Ordering::Acquire) && !permit.storage.pending() {
@@ -1089,6 +1113,8 @@ impl Runtime {
             superseded: None,
             #[cfg(feature = "service-temporary-charge-v1")]
             cancel_spent: AtomicBool::new(false),
+            #[cfg(feature = "service-temporary-charge-v1")]
+            unsent_retries: std::sync::atomic::AtomicU8::new(0),
             origin: None,
             #[cfg(feature = "service-temporary-charge-v1")]
             authentication,

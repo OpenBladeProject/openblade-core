@@ -120,10 +120,13 @@ impl<P: Port, A: ObservationProof> Attempt<'_, P, A> {
 #[cfg(feature = "service-keyboard-driver-mode-v1")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum DeviceModeStep {
-    /// The job never ran on a bound, admitted device: no exchange was sent.
+    /// No setter was sent and nothing is in doubt: the job never ran on a
+    /// bound, admitted device, sent nothing, or read its baseline and then
+    /// found too little time for the setter, its acknowledgement and the
+    /// readback (`Pace::covers`).
     Pending,
-    /// Bound; no baseline 00/84 reply was confirmed. Only that query may
-    /// have been sent.
+    /// The baseline 00/84 query may have been sent and no reply was
+    /// confirmed. Only that query may have been sent.
     Unread,
     /// The baseline read this mode and the job wrote nothing.
     Observed(DeviceMode),
@@ -188,6 +191,19 @@ impl DeviceModeJob {
     }
 }
 
+/// The fixed time `Pace::covers` charges a Driver-mode setter beyond its own
+/// and the readback's exchanges, after the baseline read: the baseline's
+/// measured length again, and the readback's trailing checkpoint, which no
+/// reply-to-reply exchange includes, at the baseline's own, from its reply to
+/// `now`.
+#[cfg(feature = "service-keyboard-driver-mode-v1")]
+pub(super) fn setter_fixed(exchanges: &Exchanges, now: Instant) -> Duration {
+    let trailing = exchanges
+        .last
+        .map_or(Duration::ZERO, |last| now.saturating_duration_since(last));
+    exchanges.slowest.saturating_add(trailing)
+}
+
 #[cfg(feature = "service-keyboard-driver-mode-v1")]
 impl<P: Port> Reader<P, ReadAdmission> {
     /// The Driver-mode write recipe (`DeviceModeJob`). Every ID it may send is
@@ -202,7 +218,6 @@ impl<P: Port> Reader<P, ReadAdmission> {
         job: &DeviceModeJob,
         limit: Limit<'_>,
     ) {
-        job.record(DeviceModeStep::Unread);
         let _ = self.run_device_mode(permit, job, limit).await;
     }
 
@@ -224,6 +239,8 @@ impl<P: Port> Reader<P, ReadAdmission> {
             completed: false,
         };
         attempt.checkpoint(&mut authorize, admission, limit).ok()?;
+        // From the call that may send it, the baseline query is in doubt.
+        job.record(DeviceModeStep::Unread);
         let baseline = attempt
             .query_device_mode(&mut authorize, admission, limit, baseline_id)
             .await?;
@@ -236,10 +253,14 @@ impl<P: Port> Reader<P, ReadAdmission> {
         // baseline's measured length (its checkpoints and settle included); no
         // journal row is written. With one exchange measured, `covers` charges
         // the second remaining one at the second-longest, which is zero, so the
-        // baseline is charged again as fixed time. Too little time left is known
-        // not applied, before any claim.
-        let baseline_length = attempt.reader.exchanges.slowest;
-        if !pace.covers(attempt.reader, 2, 0, baseline_length, limit) {
+        // baseline is charged again as fixed time. Exchanges are timed reply to
+        // reply, so the readback's trailing checkpoint is in none of them; it is
+        // charged at the baseline's own, measured from its reply to now. Too
+        // little time left is known not applied, before any claim, and the
+        // baseline read leaves nothing in doubt.
+        let fixed = setter_fixed(&attempt.reader.exchanges, Instant::now());
+        if !pace.covers(attempt.reader, 2, 0, fixed, limit) {
+            job.record(DeviceModeStep::Pending);
             return None;
         }
         // Managed claims ownership before the setter is submitted, so any

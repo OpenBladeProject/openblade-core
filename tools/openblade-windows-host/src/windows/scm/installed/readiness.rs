@@ -63,8 +63,10 @@ const PROBE_TIMEOUT: Duration = Duration::from_secs(4);
 const DRAIN_TIMEOUT: Duration = Duration::from_secs(2);
 /// The source drain's bound. The keyboard Driver-mode release takes its own
 /// share before the fan handback (`thermal_mutation::KEYBOARD_SHUTDOWN_BUDGET`,
-/// 0.5 s) and the fans keep the 2 s they had. With the listener's 2 s that is
-/// 4.5 s, inside the 5 s Stop wait hint (`scm_host::status_for`).
+/// 0.9 s) and the fans keep the 2 s they had. With the listener's 2 s that is
+/// 4.9 s, inside the 5 s Stop wait hint (`scm_host::status_for`) and the
+/// system-shutdown window, WaitToKillServiceTimeout, about 5 s: native
+/// accepts SERVICE_CONTROL_SHUTDOWN, not PRESHUTDOWN.
 #[cfg(feature = "service-keyboard-driver-mode-v1")]
 const SOURCE_DRAIN_TIMEOUT: Duration =
     DRAIN_TIMEOUT.saturating_add(thermal_mutation::KEYBOARD_SHUTDOWN_BUDGET);

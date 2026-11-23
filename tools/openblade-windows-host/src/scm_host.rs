@@ -231,6 +231,9 @@ const RUNNING_CONTROLS: u32 = SERVICE_ACCEPT_STOP
     };
 
 pub(crate) fn status_for(phase: Phase) -> SERVICE_STATUS {
+    // The 5 s Stop hint covers the drain: the listener's 2 s and the source's
+    // up to 2.9 s (`readiness::SOURCE_DRAIN_TIMEOUT`). At system shutdown the SCM
+    // allows about the same, WaitToKillServiceTimeout, for SHUTDOWN.
     let (state, controls, checkpoint, wait_hint, error) = match phase {
         Phase::Starting => (SERVICE_START_PENDING, 0, 1, 5000, NO_ERROR),
         Phase::Running => (SERVICE_RUNNING, RUNNING_CONTROLS, 0, 0, NO_ERROR),

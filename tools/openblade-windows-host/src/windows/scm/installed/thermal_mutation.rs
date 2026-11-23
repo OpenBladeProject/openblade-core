@@ -117,7 +117,7 @@ mod triggers;
 #[cfg(feature = "service-keyboard-driver-mode-v1")]
 pub(super) use keyboard::SHUTDOWN_BUDGET as KEYBOARD_SHUTDOWN_BUDGET;
 #[cfg(all(test, feature = "service-keyboard-driver-mode-v1"))]
-pub(super) use keyboard::{INTERVAL, Release};
+pub(super) use keyboard::{INTERVAL, READ_LEAD, Release};
 #[cfg(all(test, feature = "service-profile-triggers-v1"))]
 pub(super) use triggers::{
     APPLICATION_SESSION_REQUIRED, LOW_POWER_DEFERRED, LOW_POWER_PERFORMANCE, LOW_POWER_STEP,
@@ -156,30 +156,31 @@ pub(super) trait Fresh: Send + Sync {
         false
     }
     /// Settle-only Stop admission for this owner's exact identity at the
-    /// current lifecycle epoch (`WindowsGuard::capture_settle`). The result
-    /// authorizes owned-stop reads only; its `authorize` is always None.
+    /// current lifecycle epoch (`WindowsGuard::capture_settle`).
     fn capture_settle(
         &self,
         _sid: &str,
         _session: u32,
         _authentication: Option<(u32, i32)>,
-    ) -> io::Result<Arc<dyn Fresh>> {
+    ) -> io::Result<Arc<dyn Settle>> {
         Err(io::ErrorKind::PermissionDenied.into())
     }
 }
-impl Fresh for SettleGuard {
-    fn authentication(&self) -> Option<(u32, i32)> {
-        Some(self.authentication())
-    }
+/// A settle capture (`Fresh::capture_settle`): owned-Stop reads only. It is
+/// not a `Fresh`, so it cannot authorize a request or a setter: every request
+/// permit, the keyboard Driver-mode owner's included, holds an
+/// `Arc<dyn Fresh>`, and only the fan handback's settle permit, which appends
+/// nothing but the owner's 51 row, holds this.
+pub(super) trait Settle: Send + Sync {
+    fn authorize_owned_stop(&self) -> Option<ReadAdmission>;
+    fn verify_health(&self) -> io::Result<()>;
+}
+impl Settle for SettleGuard {
     fn authorize_owned_stop(&self) -> Option<ReadAdmission> {
         self.authorize_owned_stop()
     }
     fn verify_health(&self) -> io::Result<()> {
         self.verify_health()
-    }
-    // Never request admission: a settle capture cannot start a request.
-    fn authorize(&self) -> Option<ReadAdmission> {
-        None
     }
 }
 impl Fresh for WindowsGuard {
@@ -188,7 +189,7 @@ impl Fresh for WindowsGuard {
         sid: &str,
         session: u32,
         authentication: Option<(u32, i32)>,
-    ) -> io::Result<Arc<dyn Fresh>> {
+    ) -> io::Result<Arc<dyn Settle>> {
         Ok(self.capture_settle(sid, session, authentication)?)
     }
     fn on_battery(&self) -> Option<bool> {
@@ -264,7 +265,10 @@ type ReleaseHook = Rc<dyn Fn()>;
 type LowPowerProbe = Box<dyn Fn() -> Option<openblade_domain::low_power_gate::Transition>>;
 /// Reads the lifecycle's Windows power generation without sampling it
 /// (`Lifecycle::observe_power_kind(None)`); every SCM power notice samples.
-#[cfg(feature = "service-profile-triggers-v1")]
+#[cfg(any(
+    feature = "service-profile-triggers-v1",
+    feature = "service-keyboard-driver-mode-v1"
+))]
 type PowerProbe = Box<dyn Fn() -> Option<u64>>;
 /// Reads the console session and its primary user's SID
 /// (`thermal_native::console_user`); `None` while none is known.
@@ -315,7 +319,11 @@ pub(super) struct Runtime {
     // The lifecycle's ordinary write epoch (`Lifecycle::active`), so a step
     // refused by a fence that left the gate generation in place keeps its
     // debt (`reconcile_locked`). Unset reads unknown: no such retry.
-    #[cfg(feature = "service-profile-triggers-v1")]
+    // The keyboard Driver-mode owner re-captures when it moves.
+    #[cfg(any(
+        feature = "service-profile-triggers-v1",
+        feature = "service-keyboard-driver-mode-v1"
+    ))]
     admission_epoch: Rc<std::cell::OnceCell<PowerProbe>>,
     fan_owner: Rc<RefCell<Option<Arc<fan::FanPermit>>>>,
     temporary_owner: Rc<RefCell<Option<Arc<battery::BatteryPermit>>>>,
@@ -520,7 +528,10 @@ impl Runtime {
                 feature = "service-keyboard-driver-mode-v1"
             ))]
             console: Rc::default(),
-            #[cfg(feature = "service-profile-triggers-v1")]
+            #[cfg(any(
+                feature = "service-profile-triggers-v1",
+                feature = "service-keyboard-driver-mode-v1"
+            ))]
             admission_epoch: Rc::default(),
             fan_owner: Rc::default(),
             temporary_owner: Rc::default(),
@@ -567,7 +578,13 @@ impl Runtime {
     }
     /// Reads the lifecycle's ordinary write epoch from `probe`
     /// (`Runtime::admission_epoch`); it may be set once.
-    #[cfg(all(test, feature = "service-profile-triggers-v1"))]
+    #[cfg(all(
+        test,
+        any(
+            feature = "service-profile-triggers-v1",
+            feature = "service-keyboard-driver-mode-v1"
+        )
+    ))]
     pub(super) fn read_admission_epoch(&self, probe: impl Fn() -> Option<u64> + 'static) {
         assert!(self.admission_epoch.set(Box::new(probe)).is_ok());
     }
@@ -607,7 +624,10 @@ impl Runtime {
             let origin = origin.clone();
             Box::new(move || origin.lifecycle.observe_power_kind(None))
         };
-        #[cfg(feature = "service-profile-triggers-v1")]
+        #[cfg(any(
+            feature = "service-profile-triggers-v1",
+            feature = "service-keyboard-driver-mode-v1"
+        ))]
         let admission_epoch: PowerProbe = {
             let origin = origin.clone();
             Box::new(move || origin.lifecycle.active())
@@ -680,7 +700,10 @@ impl Runtime {
             console: Rc::new(std::cell::OnceCell::from(
                 Box::new(super::thermal_native::console_user) as ConsoleProbe,
             )),
-            #[cfg(feature = "service-profile-triggers-v1")]
+            #[cfg(any(
+                feature = "service-profile-triggers-v1",
+                feature = "service-keyboard-driver-mode-v1"
+            ))]
             admission_epoch: Rc::new(admission_epoch.into()),
             fan_owner: Rc::default(),
             temporary_owner: Rc::default(),

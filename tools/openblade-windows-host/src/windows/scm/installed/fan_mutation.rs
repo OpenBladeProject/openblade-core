@@ -724,7 +724,7 @@ impl Permit for FanPermit {
 /// that state first, so it needs this fresh read admission.
 struct FanSettlePermit {
     owner: Arc<FanPermit>,
-    fresh: Arc<dyn Fresh>,
+    fresh: Arc<dyn Settle>,
     proof: ReadAdmission,
 }
 impl FanSettlePermit {

@@ -1700,9 +1700,19 @@ impl ReadSource {
         } else {
             worker.observe(deadline, None).await
         };
+        if let Err(error) = &result {
+            permit.failed(error);
+        }
         let drained = self.drain_mutation(false).await;
-        drained?;
-        result.map(|r| r.map(|r| r.performance))
+        // As in `mutate`: the unconfirmed stop that follows a failed job must
+        // not erase the job's own fatal admission evidence.
+        match result {
+            Err(error) if super::thermal_mutation::is_fatal_admission(&error) => Err(error),
+            result => {
+                drained?;
+                result.map(|r| r.map(|r| r.performance))
+            }
+        }
     }
     /// Joins active mutation work and stops the reader. The next read restarts
     /// it (`stop_reader`), so the caller may return without a mutation.

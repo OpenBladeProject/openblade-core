@@ -20,17 +20,20 @@
 //!   which refuse in low power. With nobody signed in, or a locked session,
 //!   the step is refused and retried at the next one, and the last confirmed
 //!   status stays. Managed maintains without a user; native adds no write
-//!   authority, and the function row has no user to serve then.
+//!   authority, and the function row has no user to serve then. The tick
+//!   also re-captures, with no job, whenever the lifecycle write epoch moves,
+//!   so the release holds the latest ordinary capture.
 //! - After the startup call, a step whose read job already confirmed Driver
-//!   under the current read admission starts no job. A step that failed gets
+//!   under the current read admission starts no job; the next step is due
+//!   after the read job's own query, so the read job leads. A step that failed gets
 //!   one recovery per failure streak: a fresh capture and read-before-write.
 //!   A step refused before any exchange records nothing and spends no
 //!   recovery. Success or a lost device resets the latch.
 //! - Ownership lives in memory, as managed's does. The shutdown release
 //!   follows managed: a fresh 00/84 read of Driver under the owned-Stop
 //!   admission writes Normal once, whoever set it; a read of Normal ends an
-//!   owned claim as a foreign change. The low-power boundary release is a
-//!   later slice.
+//!   owned claim as a foreign change, within the keyboard's bounded share
+//!   of the drain. The low-power boundary release is a later slice.
 use super::super::mailbox_read::ReadSource;
 use super::*;
 use crate::discovery::performance::{DeviceModeJob, DeviceModeRead, DeviceModeStep};
@@ -43,10 +46,40 @@ pub(in super::super) use super::super::mailbox_read::DRIVER_MODE_INTERVAL as INT
 /// One acquire job from its start: three exchanges with their settles and
 /// checkpoints.
 const JOB_BUDGET: Duration = Duration::from_secs(2);
-/// The keyboard's whole share of the shutdown drain, the wait for the gate
-/// and for active work included. The fan handback keeps the drain
-/// time it had (`readiness::SOURCE_DRAIN_TIMEOUT`).
-pub(in super::super) const SHUTDOWN_BUDGET: Duration = Duration::from_millis(500);
+/// How long after a step the next one is due beyond the read job's own
+/// cadence, so the read job, which finds the owner's result stale at
+/// `INTERVAL`, reads first: a fresh Driver result then starts no job. It
+/// exceeds two subscription refreshes, which run the read job.
+pub(in super::super) const READ_LEAD: Duration = Duration::from_secs(5);
+const _: () =
+    assert!(READ_LEAD.as_nanos() > 2 * super::super::subscription::REFRESH_INTERVAL.as_nanos());
+/// The shutdown release's bound for the gate wait and the join of active
+/// work (`ReadSource::drain_active`), from the release's start. A read job
+/// is joined within it; a write job still running exhausts it.
+const ENTRY_BUDGET: Duration = Duration::from_millis(150);
+/// The release job from its start: its baseline read, setter and readback.
+/// A healthy one takes about 0.43-0.57 s: three exchanges, about 22 fresh
+/// admissions at 8-9 ms each and three 30 ms settles. The allowance of twice
+/// `FRAME_EXCHANGE` per exchange plus those admissions and settles is about
+/// 1.09 s, which does not fit the share below; the job's measured pace still
+/// refuses the setter when the acknowledgement and readback cannot finish in
+/// time (`Pace::covers`).
+const RELEASE_JOB_BUDGET: Duration = Duration::from_millis(700);
+/// What the share keeps after the job for the lane to retire it.
+const RETIRE_SLACK: Duration = Duration::from_millis(50);
+/// The keyboard's whole share of the shutdown drain from the release's start:
+/// the entry, the synchronous admissions, the job and its retirement. Native
+/// accepts SERVICE_CONTROL_SHUTDOWN, not PRESHUTDOWN, so at system shutdown
+/// the whole Stop must end within WaitToKillServiceTimeout, about 5 s, as
+/// managed's 5 s shutdown cleanup budget does. The listener's 2 s, this
+/// share and the fans' unchanged 2 s (`readiness::SOURCE_DRAIN_TIMEOUT`)
+/// are 4.9 s, so the keyboard has what the fans leave. The figures are
+/// estimates; RZ09-0581 needs an attended timing of a real release.
+pub(in super::super) const SHUTDOWN_BUDGET: Duration = Duration::from_millis(900);
+const _: () = assert!(
+    SHUTDOWN_BUDGET.as_nanos()
+        == ENTRY_BUDGET.as_nanos() + RELEASE_JOB_BUDGET.as_nanos() + RETIRE_SLACK.as_nanos()
+);
 
 /// How a shutdown release ended. Only a fatal admission error fails the
 /// Stop. The Service has no diagnostics sink yet, so the outcome is kept for
@@ -74,7 +107,8 @@ pub(in super::super) enum Release {
     /// session, logon or lifecycle change, low power, or a write lease that
     /// never activated. Nothing was sent.
     Unadmitted,
-    /// The share ran out before the job started. Nothing was sent.
+    /// Nothing was sent: the share ran out first, or the job's measured
+    /// pace could not fit the setter, its acknowledgement and the readback.
     Exhausted,
     /// The job ran without confirming Normal; a setter may have been
     /// submitted.
@@ -84,11 +118,9 @@ pub(in super::super) enum Release {
     /// Origin loss cannot authorize owned cleanup.
     OriginLost,
 }
-/// A write capture: its identity, per-user store and fresh admission.
+/// A write capture: its per-user store and fresh admission.
 #[derive(Clone)]
 struct Captured {
-    sid: String,
-    session: u32,
     storage: Arc<Storage>,
     fresh: Arc<dyn Fresh>,
 }
@@ -118,6 +150,8 @@ pub(super) struct Keyboard {
     due: Cell<Option<Instant>>,
     /// The latest write capture, for the shutdown release.
     capture: RefCell<Option<Captured>>,
+    /// The lifecycle write epoch the latest capture attempt read.
+    capture_epoch: Cell<Option<u64>>,
     /// The shutdown release job started; it is never repeated.
     released: Cell<bool>,
     /// The last shutdown release's outcome.
@@ -183,26 +217,35 @@ impl Permit for DriverModePermit {
 
 impl Runtime {
     /// One maintenance step on the origin tick, after the power check. It is
-    /// due at the first eligible tick and then every `INTERVAL`. In low power
-    /// it reads, writes and publishes nothing: no acquire before Windows
-    /// reports the system active again. A recovery-only lease never activates
-    /// a write, so the step never runs there. A tick that finds a request
-    /// holding the mutation gate retries at the next tick. Without a fresh
-    /// exact-device read (`ReadSource::driver_mode_verified`) the step writes
-    /// nothing, resets the recovery latch (managed `TryGetVerifiedDevice`
-    /// false) and stays due; the status projects null for that read. The
-    /// step publishes through the read cadence (`ReadSource::record_driver_mode`).
-    /// Only fatal admission evidence is an error.
+    /// due at the first eligible tick and then `INTERVAL` plus `READ_LEAD`
+    /// after the last. In low power it reads, writes and publishes nothing: no
+    /// acquire before Windows reports the system active again. A recovery-only
+    /// lease never activates a write, so the step never runs there. A tick
+    /// that finds a request holding the mutation gate retries at the next
+    /// tick. Without a fresh exact-device read
+    /// (`ReadSource::driver_mode_verified`) the step writes nothing, resets
+    /// the recovery latch (managed `TryGetVerifiedDevice` false) and stays
+    /// due; the status projects null for that read. The step publishes
+    /// through the read cadence (`ReadSource::record_driver_mode`).
+    ///
+    /// The shutdown release uses the latest capture, whose admission pins the
+    /// lifecycle write epoch. So whenever that epoch moves, a tick re-captures
+    /// with no job, between steps and after an Indeterminate one too, and an
+    /// Indeterminate owner still re-captures at each due step. Only fatal
+    /// admission evidence is an error.
     pub(in super::super) async fn maintain_driver_mode(
         &self,
         mailbox: &MailboxSource,
     ) -> io::Result<()> {
         let keyboard = &self.keyboard;
         let now = Instant::now();
-        if keyboard.indeterminate.get()
-            || self.driver_mode_low_power()
-            || keyboard.due.get().is_some_and(|due| now < due)
-        {
+        if self.driver_mode_low_power() {
+            return Ok(());
+        }
+        let epoch = self.driver_mode_epoch();
+        let moved = epoch.is_some() && keyboard.capture_epoch.get() != epoch;
+        let due = keyboard.due.get().is_none_or(|due| now >= due);
+        if !due && !moved {
             return Ok(());
         }
         let MailboxSource::Reader(reader) = mailbox else {
@@ -215,11 +258,18 @@ impl Runtime {
             return Ok(());
         };
         verify_retained_failure(&self.fatal)?;
+        if keyboard.indeterminate.get() || !due {
+            if due {
+                keyboard.due.set(Some(now + INTERVAL + READ_LEAD));
+            }
+            self.capture_console(reader)?;
+            return Ok(());
+        }
         if !reader.driver_mode_verified() {
             keyboard.recovered.set(false);
             return Ok(());
         }
-        keyboard.due.set(Some(now + INTERVAL));
+        keyboard.due.set(Some(now + INTERVAL + READ_LEAD));
         let Some(first) = self.acquire_once(reader, now).await? else {
             return Ok(());
         };
@@ -249,10 +299,20 @@ impl Runtime {
         }
     }
 
+    /// The lifecycle's ordinary write epoch (`Lifecycle::active`) that every
+    /// capture pins. Test composition that does not wire it reads unknown,
+    /// and only due steps capture.
+    fn driver_mode_epoch(&self) -> Option<u64> {
+        self.admission_epoch.get().and_then(|read| read())
+    }
+
     /// A fresh capture of the console user's ordinary write admission, kept
     /// for the shutdown release. `None` when nobody is signed in or the
-    /// capture is refused; only fatal admission evidence is an error.
+    /// capture is refused; only fatal admission evidence is an error. The
+    /// epoch it read is recorded either way, so a refusal is retried when the
+    /// epoch moves again or at the next due step, not on every tick.
     fn capture_console(&self, reader: &ReadSource) -> io::Result<Option<Captured>> {
+        self.keyboard.capture_epoch.set(self.driver_mode_epoch());
         let Some((sid, session)) = self.console.get().and_then(|read| read()) else {
             return Ok(None);
         };
@@ -262,12 +322,7 @@ impl Runtime {
             Err(error) if is_fatal_admission(&error) => return Err(error),
             Err(_) => return Ok(None),
         };
-        let captured = Captured {
-            sid,
-            session,
-            storage,
-            fresh,
-        };
+        let captured = Captured { storage, fresh };
         *self.keyboard.capture.borrow_mut() = Some(captured.clone());
         Ok(Some(captured))
     }
@@ -350,15 +405,30 @@ impl Runtime {
 
     /// The shutdown release before the fan handback (managed
     /// `ReleaseDriverModeCoreAsync("shutdown")`), within its share of the
-    /// drain. Its outcome is a diagnostic; only fatal admission evidence is
-    /// an error, so a refusal never fails the Stop.
+    /// drain from its start. The share ends the release wherever it is, the
+    /// lane's join of a job past its deadline included: a worker that has not
+    /// retired stays registered, and the fan handback joins it within its own
+    /// drain time (`ReadSource::drain_active`). The outcome is a diagnostic;
+    /// only fatal admission evidence is an error, so a refusal never fails
+    /// the Stop.
     pub(in super::super) async fn release_driver_mode(
         &self,
         mailbox: &MailboxSource,
     ) -> io::Result<()> {
-        let release = self
-            .release_once(mailbox, Instant::now() + SHUTDOWN_BUDGET)
-            .await?;
+        let start = Instant::now();
+        let job = RefCell::new(None);
+        let release = match tokio::time::timeout_at(
+            start + SHUTDOWN_BUDGET,
+            self.release_once(mailbox, start, &job),
+        )
+        .await
+        {
+            Ok(release) => release?,
+            Err(_) => match job.borrow_mut().take() {
+                None => Release::Exhausted,
+                Some((permit, _)) => self.released(&permit, true)?,
+            },
+        };
         self.keyboard.release.set(Some(release));
         Ok(())
     }
@@ -368,12 +438,16 @@ impl Runtime {
         self.keyboard.release.set(Some(Release::OriginLost));
     }
 
+    /// The release from `start`. The job it starts is left in `job`, with its
+    /// deadline, so an exhausted share still reads how far it got.
     async fn release_once(
         &self,
         mailbox: &MailboxSource,
-        deadline: Instant,
+        start: Instant,
+        job: &RefCell<Option<(Arc<DriverModePermit>, Instant)>>,
     ) -> io::Result<Release> {
-        let Ok(_serial) = tokio::time::timeout_at(deadline, self.gate.lock()).await else {
+        let entry = start + ENTRY_BUDGET;
+        let Ok(_serial) = tokio::time::timeout_at(entry, self.gate.lock()).await else {
             return Ok(Release::Exhausted);
         };
         let keyboard = &self.keyboard;
@@ -384,7 +458,7 @@ impl Runtime {
             return Ok(Release::Unadmitted);
         };
         // Join active work first, as the fan handback does.
-        match tokio::time::timeout_at(deadline, reader.drain_active()).await {
+        match tokio::time::timeout_at(entry, reader.drain_active()).await {
             Err(_) => return Ok(Release::Exhausted),
             Ok(Err(error)) if is_fatal_admission(&error) => return Err(error),
             Ok(Err(_)) => return Ok(Release::Unsettled),
@@ -404,6 +478,14 @@ impl Runtime {
         let Some(fresh) = self.owned_stop_admission(&captured)? else {
             return Ok(Release::Unadmitted);
         };
+        // The admissions are synchronous, so the share is checked after them.
+        // The job ends early enough for the lane to retire it in the share.
+        let end = start + SHUTDOWN_BUDGET - RETIRE_SLACK;
+        let now = Instant::now();
+        if now >= end {
+            return Ok(Release::Exhausted);
+        }
+        let deadline = (now + RELEASE_JOB_BUDGET).min(end);
         keyboard.released.set(true);
         let permit = Arc::new(DriverModePermit {
             fresh,
@@ -411,12 +493,25 @@ impl Runtime {
             cleanup: true,
             fatal: self.fatal.clone(),
         });
+        *job.borrow_mut() = Some((permit.clone(), deadline));
         let result = reader.mutate_cleanup(permit.clone(), deadline).await;
-        if let Err(error) = result
-            && is_fatal_admission(&error)
-        {
-            return Err(error);
+        match result {
+            Err(error) if is_fatal_admission(&error) => Err(error),
+            // The lane refused before registering the job.
+            Err(_) if permit.job.step() == DeviceModeStep::Pending => {
+                keyboard.released.set(false);
+                self.refused(&*permit.fresh)?;
+                Ok(Release::Unadmitted)
+            }
+            _ => self.released(&permit, Instant::now() >= deadline),
         }
+    }
+
+    /// The release outcome from how far its job got. `spent` says the job's
+    /// time ran out. A fatal error its worker reported fails the release.
+    fn released(&self, permit: &DriverModePermit, spent: bool) -> io::Result<Release> {
+        verify_retained_failure(&self.fatal)?;
+        let keyboard = &self.keyboard;
         let ownership = &keyboard.ownership;
         Ok(match permit.job.step() {
             DeviceModeStep::Confirmed => {
@@ -431,11 +526,17 @@ impl Runtime {
                     Release::NotDriver
                 }
             }
-            // No exchange: the job never started.
+            // Nothing was sent, so the attempt is kept. The job ran out of
+            // time if its deadline passed or its pace refused the setter
+            // while owned-Stop admission still held; otherwise admission was
+            // lost.
             DeviceModeStep::Pending => {
                 keyboard.released.set(false);
-                verify_retained_failure(&self.fatal)?;
-                Release::Unadmitted
+                if spent || permit.fresh.authorize_owned_stop().is_some() {
+                    Release::Exhausted
+                } else {
+                    Release::Unadmitted
+                }
             }
             DeviceModeStep::Unread
             | DeviceModeStep::Claimed
@@ -444,27 +545,37 @@ impl Runtime {
         })
     }
 
-    /// The owned-Stop admission the fan handback uses (`Runtime::stop_fans`):
-    /// the latest capture's own, or, after a power or session notice advanced
-    /// the lifecycle epoch it pins, a settle capture of the same SID, session
-    /// and logon at the current epoch (`Fresh::capture_settle`). Either keeps
-    /// every owned-Stop check: origin and custody trust, the exact device, the
-    /// same unlocked console session and fresh competing-controller absence.
+    /// The owned-Stop admission of the latest ordinary capture, as the fan
+    /// handback's owner path uses it (`Runtime::stop_fans`): origin and
+    /// custody trust, the exact device, the same unlocked console session,
+    /// the lifecycle epoch it pins and fresh competing-controller absence.
+    /// The tick re-captures whenever that epoch moves
+    /// (`Runtime::maintain_driver_mode`); a settle capture authorizes
+    /// owned-Stop reads only (`Settle`), never this setter.
     fn owned_stop_admission(&self, captured: &Captured) -> io::Result<Option<Arc<dyn Fresh>>> {
-        if captured.fresh.authorize_owned_stop().is_some() {
-            return Ok(Some(captured.fresh.clone()));
+        verify_retained_failure(&self.fatal)?;
+        match captured.fresh.verify_health() {
+            Err(error) if is_fatal_admission(&error) => return Err(error),
+            Err(_) => return Ok(None),
+            Ok(()) => {}
         }
-        match captured.fresh.capture_settle(
-            &captured.sid,
-            captured.session,
-            captured.fresh.authentication(),
-        ) {
-            Ok(fresh) if fresh.authorize_owned_stop().is_some() => Ok(Some(fresh)),
+        if captured.fresh.authorize_owned_stop().is_none() {
+            self.refused(&*captured.fresh)?;
+            return Ok(None);
+        }
+        Ok(Some(captured.fresh.clone()))
+    }
+
+    /// Fails the release on fatal admission evidence behind a refusal:
+    /// retained, or found by a fresh health check. An authorization refuses
+    /// as `None` even when its cause, such as lost custody integrity, is
+    /// fatal, so a refusal is checked again rather than reported as
+    /// `Unadmitted`.
+    fn refused(&self, fresh: &dyn Fresh) -> io::Result<()> {
+        verify_retained_failure(&self.fatal)?;
+        match fresh.verify_health() {
             Err(error) if is_fatal_admission(&error) => Err(error),
-            _ => {
-                verify_retained_failure(&self.fatal)?;
-                Ok(None)
-            }
+            _ => Ok(()),
         }
     }
 }
