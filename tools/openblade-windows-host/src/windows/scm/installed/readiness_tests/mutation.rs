@@ -551,14 +551,17 @@ struct Custody {
         )>,
     >,
     port: Arc<StdMutex<crate::discovery::performance::mutation_fixture::State>>,
-    // The files whose journal `journal_read` returns, as production's
-    // `ReadLease` reads it (`Rig::restarted`). Without them it refuses.
+    // The files whose journal `journal_read_release` returns, as production's
+    // `ReadLease` reads it (`Rig::restarted`), once each of
+    // `journal_failures` has been returned. Without files it refuses.
     journal: StdMutex<Option<MemoryFiles>>,
+    journal_failures: StdMutex<std::collections::VecDeque<io::Error>>,
 }
 impl Custody {
     fn new(port: &Fixture) -> Arc<Self> {
         Arc::new_cyclic(|me| Self {
             journal: StdMutex::new(None),
+            journal_failures: StdMutex::default(),
             me: me.clone(),
             current_sid: StdMutex::new(SID.into()),
             current_session: AtomicUsize::new(7),
@@ -586,7 +589,10 @@ impl Custody {
     }
 }
 impl ReadCustody for Custody {
-    fn journal_read(&self, pending: bool) -> io::Result<Option<Vec<u8>>> {
+    fn journal_read_release(&self, pending: bool) -> io::Result<Option<Vec<u8>>> {
+        if let Some(failure) = self.journal_failures.lock().unwrap().pop_front() {
+            return Err(failure);
+        }
         let files = self.journal.lock().unwrap().clone();
         files
             .ok_or(io::ErrorKind::PermissionDenied)?
@@ -938,19 +944,25 @@ fn saved_intent(files: &MemoryFiles, entry: &Value) -> bool {
 }
 impl Rig {
     fn new(files: MemoryFiles) -> Self {
-        Self::start(files, false)
+        Self::start(files, None)
     }
     /// A rig over the files an earlier rig left, whose custody reads their
     /// journal as production's `ReadLease` does: a restarted Service, with a
     /// fresh transaction pool on a fresh port.
     fn restarted(files: MemoryFiles) -> Self {
-        Self::start(files, true)
+        Self::start(files, Some(Vec::new()))
     }
-    fn start(files: MemoryFiles, journal: bool) -> Self {
+    /// `restarted`, whose custody first fails each journal read with one of
+    /// `failures`.
+    fn restarted_failing(files: MemoryFiles, failures: Vec<io::Error>) -> Self {
+        Self::start(files, Some(failures))
+    }
+    fn start(files: MemoryFiles, journal: Option<Vec<io::Error>>) -> Self {
         let port = Fixture::new();
         let custody = Custody::new(&port);
-        if journal {
+        if let Some(failures) = journal {
             *custody.journal.lock().unwrap() = Some(files.clone());
+            *custody.journal_failures.lock().unwrap() = failures.into();
         }
         let persisted = files.clone();
         port.state.lock().unwrap().before_write = Some(Arc::new(move |_number| {

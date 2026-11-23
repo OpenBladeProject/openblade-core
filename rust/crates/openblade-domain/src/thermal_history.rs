@@ -918,6 +918,67 @@ mod tests {
         ))
         .unwrap()
     }
+    #[test]
+    fn rows_report_the_owners_they_leave_live() {
+        let fan: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../tools/openblade-windows-host/tests/data/fan-history-v3.json"
+        ))
+        .unwrap();
+        let tfc: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../tools/openblade-windows-host/tests/data/temporary-charge-history-v1.json"
+        ))
+        .unwrap();
+        let owners = |raw: &serde_json::Value| {
+            rows_with_owners(raw.as_str().unwrap().as_bytes(), |_, _| Ok(()))
+                .unwrap()
+                .2
+        };
+        let case = |name: &str| {
+            let cases = tfc["cases"].as_array().unwrap();
+            owners(&cases.iter().find(|c| c["name"] == name).unwrap()["journal"])
+        };
+        let owned = owners(&fan["owned"]);
+        assert_eq!(owned.fan.unwrap().progress, 30);
+        assert!(owned.temporary.is_none());
+        // A cleanup (50), an observed handback (51) and one after a retired
+        // request (6) each end the ownership.
+        for key in [
+            "released",
+            "observedAutomatic",
+            "retiredThenObservedAutomatic",
+        ] {
+            assert!(owners(&fan[key]).fan.is_none(), "{key}");
+        }
+        let enabled = case("enable").temporary.unwrap();
+        assert_eq!(
+            (enabled.progress, enabled.tfc.unwrap().cancel_ids),
+            (72, Some(core::array::from_fn(|i| 108 + i as u8)))
+        );
+        // A known-unsent cancel (6) leaves the enable live, and a settled
+        // cancel ends it.
+        let unsent = tfc["cases"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["name"] == "source-cancel-fresh-ids-after-known-unsent");
+        let rows: Vec<&str> = unsent.unwrap()["journal"]
+            .as_str()
+            .unwrap()
+            .split_inclusive('\n')
+            .collect();
+        let before_retry = rows[..6].concat();
+        let live = rows_with_owners(before_retry.as_bytes(), |_, _| Ok(()))
+            .unwrap()
+            .2;
+        assert_eq!(live.temporary.unwrap().progress, 72);
+        for name in [
+            "source-cancel-fresh-ids-after-known-unsent",
+            "cancel-off-unknown-policy",
+            "fresh-ids-bound-resets-at-next-enable",
+        ] {
+            assert!(case(name).temporary.is_none(), "{name}");
+        }
+    }
     /// The managed reader consumes the same journals.
     #[test]
     fn custom_rows_carry_their_settings_and_four_setters() {

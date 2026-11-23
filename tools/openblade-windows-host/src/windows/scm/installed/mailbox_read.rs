@@ -1703,6 +1703,17 @@ mod tests {
     };
     use tokio::time::timeout;
 
+    /// The acquired source seeds the pool its native workers reserve from.
+    #[cfg(feature = "service-thermal-mutation-v1")]
+    #[test]
+    fn native_factories_quarantine_the_native_workers_pool() {
+        assert!(
+            crate::discovery::performance::mutation::quarantines_native_pool(
+                &*MutationFactories::native().quarantine
+            )
+        );
+    }
+
     fn fixture() -> serde_json::Value {
         serde_json::from_str(include_str!(
             "../../../../../../tests/Fixtures/Parity/managed-mailbox-handoff-v1.json"

@@ -40,6 +40,32 @@ pub(super) fn quarantine(ids: &[u8]) {
     TRANSACTIONS.quarantine(ids);
 }
 
+/// Whether `quarantine` withholds a free ID of the pool the native workers
+/// share: it quarantines one the pool just reserved and released.
+#[cfg(all(test, feature = "service-thermal-mutation-v1"))]
+pub(super) fn quarantines_process_pool(quarantine: &dyn Fn(&[u8])) -> bool {
+    // Callers share the one pool, so they count its free IDs one at a time.
+    static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _serial = SERIAL
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let Some(pair) = TRANSACTIONS.reserve_pair() else {
+        return false;
+    };
+    pair.into_iter().for_each(|id| TRANSACTIONS.release(id));
+    let free = TRANSACTIONS.free();
+    quarantine(&pair[..1]);
+    TRANSACTIONS.free() + 1 == free
+}
+
+#[cfg(all(test, feature = "service-thermal-mutation-v1"))]
+#[test]
+fn the_native_quarantine_reaches_the_process_pool() {
+    assert!(quarantines_process_pool(
+        &super::mutation::quarantine_native
+    ));
+}
+
 pub(super) struct NativePort {
     lease: Option<Lease>,
     identity: Option<LeaseIdentity>,
