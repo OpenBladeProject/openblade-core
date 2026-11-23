@@ -1485,9 +1485,10 @@ Two debt drops were left by the low-power slice:
   step, refused with nothing of it possibly submitted while the
   lifecycle's ordinary write epoch moved (`Runtime::admission_epoch`,
   `Lifecycle::active`), now counts as transient: the debt stays owed with
-  one of its `RETRIES` spent, and the next report or lifecycle cause
-  applies it under fresh admission. The epoch only classifies a refusal
-  the write's own admission made.
+  one of its `RETRIES` spent. A lifecycle attempt keeps its cause and the
+  tick retries it under fresh admission once the epoch has moved (see
+  Lifecycle reconciliation); otherwise the next report applies it. The
+  epoch only classifies a refusal the write's own admission made.
 
 Explicit `setPerformanceOverride` and `setFanOverride` sent while the gate
 is set store their intent through the storage-only capture, as managed
@@ -1673,8 +1674,8 @@ With `service-profile-triggers-v1`, the serving loop's 500 ms origin tick
 (`serve_connections`, after `process_power_source`) also runs
 `StatusSource::reconcile_lifecycle`, which calls
 `Runtime::reconcile_lifecycle` (`lifecycle_triggers.rs`). It applies what the
-latest admitted reporter's pair owes after three lifecycle transitions, as
-managed runs `ApplyFullTransitionAsync` after them without a request:
+console pair owes after three lifecycle transitions, as managed runs
+`ApplyFullTransitionAsync` after them without a request:
 
 - A gate boundary: the gate generation moved through a resume, a new resume
   or a DisplayOn that cleared a set gate (managed `ProcessNativeAsync`, which
@@ -1687,36 +1688,63 @@ managed runs `ApplyFullTransitionAsync` after them without a request:
   on a changed source. A change while the gate is set is owed and applied
   after the boundary that clears it, as managed skips `PowerChanged` in low
   power and compares the source again on resume.
-- The 15 s application lease expiring with an application profile active
-  (managed `ExpireApplicationContextAsync`): the foreground is cleared and the
-  pair owes every class, so the power profile applies.
+- The 15 s application lease (`APPLICATION_LEASE`) expiring with an
+  application profile active (managed `ExpireApplicationContextAsync`): the
+  reporter's foreground is cleared and its pair owes every class, so the
+  power profile applies.
 
-The tick takes the mutation gate only when it is free and otherwise waits for
-the next tick. Its first tick records a mark and reconciles nothing. It
-then runs `reconcile_locked` as a report does, with the reporter's recorded
-process, session and SID: a fresh `WindowsGuard::capture` of the same console
-session unlocked, the same primary identity, known Windows power and
-competing-controller absence; fresh admission and health checks before any
-firmware read; then each step's capture, authorization, per-write epoch check,
-journal id, readback and stop on ambiguity. A fenced store, a refused capture
-or unknown Windows power runs nothing and keeps the debt. The tick in low power
-records the cause and reads nothing. A boundary renews the lease, since
-Windows `Instant` counts time asleep, which is not reporter absence. The
-tick's reconciliation id is a fresh `OpenBlade.LifecycleReconcile` string,
-and each step journals under its own `step_request` id as a report's does.
+The pair is the console session's interactive user. It is the latest
+admitted reporter when that reporter reported from the console session, and
+otherwise the console user itself (`Runtime::console`,
+`thermal_native::console_user`: the console session and its primary token's
+SID), with the Service's own process recorded as the steps' caller. Managed's
+`HandlePowerSourceChangedAsync` needs no report, and by default no
+application rule exists, so neither reporter ever sends one. After a switch
+to another session, the latest reporter is not the console user. The console
+probe names a candidate only. The attempt's `WindowsGuard::capture` proves
+it afresh before any read or write: the same console session unlocked, the
+same primary SID and logon LUID, known Windows power and competing-controller
+absence.
 
-The steps are a report's, so the same retry budget applies: a deferral
-spends no attempt, a transient refusal at most `RETRIES`, and every other
-outcome settles the debt. A transition consumed while the pair cannot be
-admitted, such as a locked session at resume, leaves the debt to the next
-report or transition; the tick never polls.
+The tick takes the mutation gate only when it is free; otherwise it keeps
+its state for the next tick. Its first tick records a mark and reconciles
+nothing. A cause stays pending until an attempt passes the trigger's
+admission and runs its steps. An attempt runs `reconcile_locked` as a report
+does: the capture, then fresh admission and health checks before any
+firmware read (`admit_trigger`, shared with the report path), then each
+step's capture, authorization, per-write epoch check, journal id, readback
+and stop on ambiguity. An attempt refused before its steps (no console user,
+a refused capture such as a locked session at resume, a fenced store or
+unknown Windows power) keeps the cause. So does one whose steps the write
+epoch overtook with the debt still owed. Either is retried only once the
+ordinary write epoch has moved, as an unlock's session notice or a later
+power notice moves it, at most `RETRIES` more times; ticks at an unmoved
+epoch take no capture. A fenced store stays fenced across those retries, so
+a possibly submitted step is never run again. In low power the tick records
+the cause, renews the lease and takes no capture. The tick's reconciliation
+id is a fresh `OpenBlade.LifecycleReconcile` string, and each step journals
+under its own `step_request` id as a report's does.
+
+A boundary, low power, or a gap of at least 5 s since the last tick ended
+(`SLEPT`) renews the lease instead of expiring it. Windows `Instant` counts
+time asleep, which is not reporter absence, and Modern Standby on this host
+can sleep without a suspend notice, so only the gap shows it. A reporter
+that stops while the ticks keep running expires as before. The tick stamps
+its end after an attempt, so the attempt's own time is no gap.
+
+The steps are a report's, so the debt's retry budget is unchanged: a
+deferral spends no attempt, a transient refusal at most `RETRIES`, and every
+other outcome settles the debt.
 
 `lifecycle-reconcile-vectors.json` pins managed's outcomes, recorded by
 `NativeLifecycleReconcileVectors` over the native fixture's saved
 performance: lease expiry, a renewed Game report, an unchanged power source,
-battery and back to AC, and a resume on an unchanged source after a report
-the gate deferred. `request_triggers_lifecycle.rs` replays them. Native
-differs from managed in two rows:
+battery and back to AC, and the gate's Enter and Exit around a deferred
+report followed by `HandlePowerSourceChangedAsync` on the unchanged source.
+That last row models only that part of managed's resume. It does not run
+the full `ProcessNativeAsync` (lighting invalidation and restore, resume
+validation) or the later convergence. `request_triggers_lifecycle.rs`
+replays the rows. Native differs from managed in three ways:
 
 - Lease expiry. Both select the power profile's Balanced. Managed submits
   nothing: `PublishApplicationContextStatus` publishes the new desired state
@@ -1728,6 +1756,13 @@ differs from managed in two rows:
   `HandlePowerSourceChangedAsync` submits nothing then; its convergence loop
   reconverges later under MaintainDesiredState. Native applies the deferred
   debt at the tick after the boundary.
+- External changes. Managed excludes a subsystem its drift tracker found
+  changed outside OpenBlade from automatic writes
+  (`ResolveAutomaticWriteExclusions`, `ServiceControlRuntime.cs:16655-16694`).
+  Native has no drift tracker, so a power-kind change or lease expiry
+  overwrites an out-of-band performance or fan change with the saved intent.
+  This conflicts with Architecture rule 5 and must be resolved before the
+  feature is admitted for packaging.
 
 Not ported:
 
@@ -1739,8 +1774,8 @@ Not ported:
   under an unchanged Windows AC line status. Detecting it needs a firmware
   adapter read on a notice and a record of the last applied class; the next
   report, or a step's own adapter reading, finds it instead.
-- Pairs other than the latest admitted reporter's. The Agent reports one
-  pair, and without a report the tick reads nothing.
+- Sessions other than the console's. A disconnected session's debt is kept
+  for its next report or for when it is the console session again.
 
 ## Submission, ambiguity and finite transport lifetime
 
