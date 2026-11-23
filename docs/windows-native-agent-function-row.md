@@ -200,6 +200,9 @@ data directory and run the managed test.
   with the unadmitted read feature reads the mode, and only into the status of
   its fresh read job (see
   [Keyboard Driver mode](windows-rust-development-service.md#keyboard-driver-mode-read-only)).
+  The unadmitted ownership feature acquires the mode and publishes it the
+  same way (see
+  [Keyboard Driver mode ownership](windows-rust-development-service.md#keyboard-driver-mode-ownership)).
   The feed reports `null` or no member, so every key passes through.
 - Every effect, including the Service commands and the WMI fallback.
 - The managed fallback from an absent `functionKeyPrimary` to the active

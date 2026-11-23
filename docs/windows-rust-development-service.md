@@ -220,13 +220,15 @@ member, as before.
 
 The read sends only the reviewed `00/84:0000` query from the exact-device
 semantic admission (`Rz09_0581_02e0_3_01_LightingSemanticAdmission.json`,
-`deviceMode`). The reviewed `00/04` setters exist only in the protocol crate's
-tests. `RazerReport::create` and `encode_report` remain public encoders, so
+`deviceMode`). The reviewed `00/04` setters exist only behind the protocol
+crate's `device-mode-setters` feature, which only the ownership feature below
+enables, and in its tests. `RazerReport::create` and `encode_report` remain public encoders, so
 this is not a type guarantee. The host's `device_mode_guard_tests` are a
 textual allowlist over non-test source in the Service's crates: they fail on a
-file that names the setter, renames an encoder on import, or changes its count
+file other than the codec and the write recipe that names the setter, renames an encoder on import, or changes its count
 of encoder calls. They do not see an encoder reached through a glob import or a
-macro. This stage never acquires, maintains or releases Driver mode.
+macro. The read alone never acquires, maintains or releases Driver mode; see
+the ownership section below.
 
 The value is the confirmed firmware mode, not ownership, matching managed
 status: `true` for a `0300` reply, `false` for `0000`, and `null` when the reply
@@ -279,6 +281,127 @@ pin the codec and the published value against managed. Their recorder is
 `RazerReport.ValidateResponse` calls the same Rust codec, so the envelope-failure
 rows compare Rust with itself; only the payload decode and the status rows are
 independent managed evidence.
+
+#### Keyboard Driver mode ownership
+
+A Service built with `service-keyboard-driver-mode-v1` acquires and maintains
+RZ09-0581 keyboard Driver mode and restores Normal at shutdown. The feature
+implies `service-keyboard-driver-mode-read-v1`, `service-profile-triggers-v1`
+and the protocol crate's `device-mode-setters`, and adds the capability marker
+`service-keyboard-driver-mode-v1`. Both package readers refuse the feature and
+the marker by name, before the features it implies, so no admitted image sends
+`00/04`. Packaging admission also waits for the low-power slice below.
+
+The setters are the reviewed `00/04:0000` and `00/04:0300` of the same
+semantic admission. Only the write recipe `Reader::apply_device_mode`
+(`discovery/hid_lease/performance/device_mode.rs`) builds them. The guard
+tests allow exactly that file and the codec to name the setter, and pin that
+only this feature enables `device-mode-setters`.
+
+Acquire and maintain follow managed `ProductionLightingPort.MaintainDriverModeAsync`
+(`src/OpenBlade.Protocol/ProductionLightingPort.cs:855-900`):
+
+- One mutation job reads `00/84` first. A keyboard already in Driver mode is
+  reported `true` with no write and no claim.
+- From Normal, ownership is claimed before the setter can be submitted. A
+  refusal before submission (managed `KnownNotApplied`) clears the claim; any
+  later failure keeps it, so shutdown can still restore Normal.
+- The setter's reply must correlate and echo `0300` byte for byte
+  (`DeviceModeSet::acknowledge`), and an independent `00/84` readback on its
+  own transaction ID must read Driver.
+- A setter that may have been submitted without both confirmations is
+  Indeterminate. That step publishes `null` and the owner stops: it sends
+  nothing more in this process and never replays the write. Managed treats
+  it like any failure: it publishes `null`, runs its one recovery on a fresh
+  port and tries again at later steps. Native is stricter, so a possibly
+  submitted setter is never followed by another. The independent read job
+  keeps its own `00/84` cadence, so a later fresh read publishes the
+  confirmed firmware mode.
+- A step that fails gets one recovery per failure streak: a fresh capture and
+  read-before-write, never a replay. A confirmed mode or a lost device resets
+  the latch (`ServiceControlRuntime.cs:12568-12665`).
+
+The step runs on the 500 ms origin tick after the power-source check and
+before the lifecycle reconciliation, the managed step order
+(`ServicePeriodicObservationLoop.cs:42-90`). It is taken under the source lock
+and awaited after it is released. It is due at the first eligible tick and
+then every 15 seconds. That first tick is the managed startup call
+(`ServiceStartupCoordinator.cs:85-86`); native has no startup reconciliation
+for it to precede. A step failure continues the loop, and only fatal admission
+evidence stops the Service. A tick that finds a request holding the mutation
+gate tries again at the next tick.
+
+The step writes nothing, and publishes nothing new, while the low-power gate is
+set, while this pair's laptop-control journal row is unsettled (managed
+`RequiresReconciliation`) and while a fan job or fan row is unsettled (managed
+`FanStopController.BlocksOrdinaryHardware`). In the native Service the fan row
+is the same per-user journal, so the fan check guards a fan job that has not
+joined. Without a fresh exact-device read (`ReadSource::driver_mode_verified`)
+the step publishes `null`, writes nothing, resets the recovery latch (managed
+`TryGetVerifiedDevice` false) and stays due.
+
+Write admission is a deliberate deviation from managed. Each job captures the
+console user's ordinary write admission, the same `lifecycle_pair` candidate
+the lifecycle tick uses: fresh exact-device, competing-controller, AC line,
+session, SID and lifecycle-epoch checks, and the epoch refuses in low power.
+With nobody signed in, with the session locked or switched, or with a
+competing controller present, the step is refused before any firmware access.
+It keeps the last confirmed status, consumes no recovery and runs again at the
+next step. Managed maintains Driver mode with no user signed in. Native adds
+no Service-scoped write authority for it, and the function row has no user to
+serve then.
+
+The step publishes through the read cadence that every fresh status projects
+(`ReadSource::record_driver_mode`): a confirmed mode, or `null` after a failed
+or Indeterminate step. It never edits the subscription feed, so an unchanged
+status is never republished. The feed stays unverified as described above.
+
+Ownership lives in memory, as it does in managed. A restart reads `00/84`
+again and never claims a keyboard already in Driver mode. A durable
+owned-or-uncertain record and crash recovery are stage 6a-5.
+
+At shutdown the Service restores Normal before the fan handback, the managed
+order (`ServiceControlRuntime.cs:12925-12950`,
+`ServiceControlRuntime.FanStop.cs:430-490`). A keyboard failure or refusal
+never skips the fan step, and the first error is kept. The release follows
+`TryRestoreOwnedDeviceModeCoreAsync` (`ProductionLightingPort.cs:1237-1285`):
+
+- A keyboard OpenBlade does not own is left alone.
+- An earlier release that may have been submitted unconfirmed blocks any
+  further restore write.
+- A fresh `00/84` read that is not Driver is a foreign change. Ownership ends
+  and nothing is written.
+- The managed skip reasons the native Service can observe leave the mode
+  unchanged: an unsettled fan job or row, an unsettled journal row, and no
+  owned-Stop admission of the last write capture. The last covers a competing
+  controller, a session or lifecycle change and no verified device
+  (`ServiceControlRuntime.cs:13399-13520`). After origin loss the release is
+  refused.
+- Otherwise the release claims an uncertain release, writes `00/04:0000`,
+  and requires the exact acknowledgement and an independent `00/84` readback
+  of Normal. Only a refusal before submission clears the uncertain release.
+
+Managed `ReleaseDriverModeCoreAsync` writes Normal whenever it reads Driver.
+Native restores only a Driver mode it claimed, because nothing durable yet
+tells it who set the mode.
+
+The setter and readback IDs are not journaled until 6a-5, so none is pinned.
+The job reserves both pairs before its first send. A sent ID stays quarantined
+until a correlated reply is read, and retirement frees the unsent one, so long
+runs keep at most one answered ID per command out of the pool
+(`driver_mode_owner` tests). A stale reply across a restart fails closed: the
+acknowledgement must match the request's ID, class, command, status and
+checksum and echo the arguments byte for byte, and the independent readback
+uses a different ID and must read the target. The residual is that the
+journal seed does not cover these IDs. A late reply to an earlier process's
+exchange on a reused ID could pass one check, but not both unless it also
+named the target mode.
+
+Remaining before packaging admission: the low-power boundary release of
+Driver mode and the D1 suspend fan handback, one slice. Until it lands the
+Service only refrains from acquiring or maintaining while the gate is set; it
+does not restore Normal at a low-power boundary. Physical validation on
+RZ09-0581 is also outstanding.
 
 #### Live readings (read-only)
 
