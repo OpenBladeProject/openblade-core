@@ -14,7 +14,7 @@ use crate::loaded_origin::Origin;
 use crate::{
     discovery::performance::{
         ObservedPerformance, ReadAdmission,
-        mutation::{Permit, Refusal, Settlement},
+        mutation::{Permit, Refusal, SettledPins, Settlement},
     },
     service_status::{ReadConfirmation, Snapshot},
 };
@@ -253,6 +253,9 @@ pub(super) struct Runtime {
     #[cfg(feature = "service-temporary-charge-v1")]
     temporary_event: Rc<std::cell::Cell<Option<u64>>>,
     fan_pending: Rc<RefCell<Option<Arc<fan::FanPermit>>>>,
+    // Pins of settled fan and temporary-charge records, which the next
+    // mutation Reader to retire unpins (`mutation::SettledPins`).
+    settled_pins: Arc<SettledPins>,
     gate: Rc<tokio::sync::Mutex<()>>,
     // Public battery history is bounded independently of request/user intent.
     // Only independent reads update its timestamp; sibling publications cannot.
@@ -438,6 +441,7 @@ impl Runtime {
             #[cfg(feature = "service-temporary-charge-v1")]
             temporary_event: Rc::default(),
             fan_pending: Rc::default(),
+            settled_pins: Arc::default(),
             gate: Rc::default(),
             battery_observation: Arc::default(),
             battery_source: Arc::new(std::sync::atomic::AtomicU8::new(3)),
@@ -528,6 +532,7 @@ impl Runtime {
             #[cfg(feature = "service-temporary-charge-v1")]
             temporary_event: Rc::default(),
             fan_pending: Rc::default(),
+            settled_pins: Arc::default(),
             gate: Rc::default(),
             battery_observation: Arc::default(),
             battery_source: Arc::new(std::sync::atomic::AtomicU8::new(3)),
@@ -1560,5 +1565,13 @@ impl Runtime {
     pub(super) fn battery_clock_for_tests(&self) -> Rc<dyn Fn() -> Option<Instant>> {
         let history = self.battery_observation.clone();
         Rc::new(move || history.lock().unwrap().policy.map(|(_, at)| at))
+    }
+}
+
+#[cfg(test)]
+impl Runtime {
+    /// The settled pins waiting for a Reader to unpin them.
+    pub(super) fn queued_pins_for_tests(&self) -> Vec<u8> {
+        self.settled_pins.peek()
     }
 }

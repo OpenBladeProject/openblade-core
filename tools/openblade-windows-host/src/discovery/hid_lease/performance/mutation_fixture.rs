@@ -131,6 +131,13 @@ impl Fixture {
     pub(crate) fn exhaust(&self) {
         while self.transactions.reserve_pair().is_some() {}
     }
+    /// Those of `ids` the pool keeps pinned.
+    pub(crate) fn pinned_transactions(&self, ids: &[u8]) -> Vec<u8> {
+        ids.iter()
+            .copied()
+            .filter(|id| self.transactions.pinned(*id))
+            .collect()
+    }
     /// IDs the pool can issue now.
     pub(crate) fn free_transactions(&self) -> usize {
         self.transactions.free()

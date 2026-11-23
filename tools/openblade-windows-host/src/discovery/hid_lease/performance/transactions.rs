@@ -17,8 +17,9 @@
 //!   uncorrelated) is never issued again in this process, even after the
 //!   handle is reopened;
 //! - a pinned ID is never freed. A durable record that names IDs for later
-//!   use or for the journal's cross-family checks keeps them pinned for the
-//!   process lifetime.
+//!   use or for the journal's cross-family checks keeps them pinned until it
+//!   settles; `unpin` then returns them to the rules above, so a sent one
+//!   stays quarantined.
 //!
 //! Issue is round-robin from the last issued ID, so a freed ID returns only
 //! after every other free ID has been issued. The process pool starts its
@@ -201,10 +202,39 @@ impl Transactions {
         }
     }
 
-    pub(super) fn pin(&self, id: u8, pinned: bool) {
+    /// Keeps `id` out of the pool until `unpin`, whatever its state.
+    pub(super) fn pin(&self, id: u8) {
         if let Some(mut pool) = self.pool() {
-            pool.id(id).pinned = pinned;
+            pool.id(id).pinned = true;
         }
+    }
+
+    /// Unpins `ids` and frees each one that was never sent. A sent ID stays
+    /// quarantined, and an answered one is freed by the next answer to its
+    /// class and command, as if it had never been pinned. An ID that is not
+    /// pinned is left alone: it was already returned and may have been
+    /// issued again, so unpinning twice frees nothing.
+    ///
+    /// An unsent ID it frees can be issued at once, so it is called only at
+    /// a Reader's retirement, for IDs no Reader or record can send again.
+    pub(super) fn unpin(&self, ids: impl IntoIterator<Item = u8>) {
+        if let Some(mut pool) = self.pool() {
+            for id in ids {
+                let entry = pool.id(id);
+                if entry.pinned {
+                    entry.pinned = false;
+                    if entry.state == State::Held {
+                        entry.state = State::Free;
+                    }
+                }
+            }
+        }
+    }
+
+    /// Whether `id` is pinned.
+    #[cfg(test)]
+    pub(super) fn pinned(&self, id: u8) -> bool {
+        self.pool().is_none_or(|mut pool| pool.id(id).pinned)
     }
 
     /// How many IDs could be issued now.

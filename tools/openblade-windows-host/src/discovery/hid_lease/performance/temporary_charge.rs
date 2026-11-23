@@ -23,8 +23,9 @@ impl<P: Port> Reader<P, ReadAdmission> {
     ) -> Option<()> {
         // Enable reserves both its own operation and one process-scoped source
         // cancellation before any GET/Prepared. The record carries the
-        // cancellation IDs to a later Reader, so they are retained; no fan ID
-        // is reused.
+        // cancellation IDs to a later Reader, so they are retained until the
+        // enable's ownership settles (`BatteryPermit::settle_pins`); no fan
+        // ID is reused.
         let ids = match permit.temporary_reserved_ids() {
             Some(v) => v,
             None => reserve(|| self.reserve_pair())?,
@@ -86,7 +87,7 @@ impl<P: Port> Reader<P, ReadAdmission> {
         let record = permit
             .resolve_temporary_charge(source, flags, policy, ids, cancel_ids)
             .ok()??;
-        a.reader.retain();
+        a.reader.retain(permit);
         record.validate().ok()?;
         a.checkpoint(&mut authorize, admission, limit).ok()?;
         permit.record_battery(0).ok()?;

@@ -5,7 +5,7 @@ use openblade_domain::{
     thermal_mutation::{Destination, Plan, Progress, admits_class, confirms, pins_class},
 };
 use openblade_protocol::{custom_performance::CustomLevelPair, thermal_preset::PresetPair};
-use std::sync::{Arc, atomic::Ordering};
+use std::sync::{Arc, Mutex, atomic::Ordering};
 
 /// Internal host evidence. Clients cannot construct a permit or journal progress.
 /// The implementation retains the actual owner, original request, loaded epoch,
@@ -81,6 +81,16 @@ pub(crate) trait Permit: Send + Sync {
     fn cleanup(&self) -> bool {
         false
     }
+    /// The record this permit resolved names `ids`, which the Reader pinned
+    /// for it (`Reader::retain`). They stay pinned until the permit settles
+    /// them; by default they stay pinned for the process.
+    fn retained_pins(&self, _ids: &[u8]) {}
+    /// Pins of records that have durably settled since the last call: no
+    /// request bearing them can be sent for those records again. The Reader
+    /// unpins them when it retires.
+    fn settled_pins(&self) -> Vec<u8> {
+        Vec::new()
+    }
     /// The Windows power kind, read at the moment of the call: `Some(false)`
     /// is AC (ACLineStatus online), `Some(true)` battery and `None` unknown. It
     /// is never wattage evidence.
@@ -105,6 +115,47 @@ pub(crate) trait Permit: Send + Sync {
         Ok(Settlement::Complete)
     }
     fn record(&self, progress: Progress) -> io::Result<()>;
+}
+
+/// The IDs a Reader pinned for one durable record (`Permit::retained_pins`).
+#[derive(Default)]
+pub(crate) struct RecordPins(Mutex<Vec<u8>>);
+
+impl RecordPins {
+    pub(crate) fn retain(&self, ids: &[u8]) {
+        // A poisoned lock records nothing, so those IDs stay pinned.
+        if let Ok(mut pins) = self.0.lock() {
+            pins.extend_from_slice(ids);
+        }
+    }
+}
+
+/// Pins of settled records, waiting for a Reader to retire and unpin them
+/// (`Permit::settled_pins`). The permits of one runtime share it, so a record
+/// that settles after its own Reader retired is unpinned by the next one.
+#[derive(Default)]
+pub(crate) struct SettledPins(Mutex<Vec<u8>>);
+
+impl SettledPins {
+    /// Queues `record`'s pins and leaves it none, so settling a record again
+    /// queues nothing. A poisoned lock queues nothing, and the pins stay.
+    pub(crate) fn settle(&self, record: &RecordPins) {
+        if let (Ok(mut pins), Ok(mut queue)) = (record.0.lock(), self.0.lock()) {
+            queue.append(&mut pins);
+        }
+    }
+
+    pub(crate) fn take(&self) -> Vec<u8> {
+        self.0
+            .lock()
+            .map(|mut queue| std::mem::take(&mut *queue))
+            .unwrap_or_default()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn peek(&self) -> Vec<u8> {
+        self.0.lock().map(|queue| queue.clone()).unwrap_or_default()
+    }
 }
 
 /// Positive native retirement is independent from durable settlement.
@@ -236,6 +287,9 @@ impl<P: Port> Reader<P, ReadAdmission> {
         if observed.is_none() && self.exhausted {
             permit.refused(Refusal::TransactionCapacity);
         }
+        // Taken after the operation, so the records it settled are included;
+        // they are unpinned once this Reader has retired.
+        self.settled.extend(permit.settled_pins());
         observed
     }
 

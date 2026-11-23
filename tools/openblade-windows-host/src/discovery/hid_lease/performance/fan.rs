@@ -255,9 +255,10 @@ impl<P: Port> Reader<P, ReadAdmission> {
                 }
                 // From here a setter may reach the device, and a later Reader
                 // or the journal's cross-family checks may rely on the
-                // record's IDs, so they stay pinned for the process. Owned
-                // Stop cleanup reserved none of its own.
-                a.reader.retain();
+                // record's IDs, so they stay pinned until the record settles
+                // (`FanPermit::settle_pins`). Owned Stop cleanup reserved none
+                // of its own.
+                a.reader.retain(permit);
                 a.checkpoint(&mut authorize, admission, limit).ok()?;
                 permit
                     .record_fan(if cleanup { 40 } else { 10 } + step as u8 * 2)

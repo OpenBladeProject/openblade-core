@@ -1,5 +1,6 @@
 //! Exact0581 installed battery request, retaining the shared worker and owner.
 use super::*;
+use crate::discovery::performance::mutation::RecordPins;
 use crate::thermal_history::Entry;
 use openblade_domain::battery_history::{BatteryRecord, CONTRACT, Request};
 
@@ -124,6 +125,10 @@ pub(super) struct BatteryPermit {
     pub(super) session: u32,
     proof: ReadAdmission,
     record: Mutex<Option<BatteryRecord>>,
+    // The source-cancel IDs the Reader pinned for an enable's record, until
+    // the enable no longer owns the charge (`settle_pins`).
+    pins: RecordPins,
+    settled: Arc<SettledPins>,
     observation: Arc<Mutex<BatteryObservation>>,
     prepared: AtomicBool,
     confirmed: AtomicBool,
@@ -197,6 +202,27 @@ impl BatteryPermit {
     fn known_unsubmitted(&self) -> bool {
         self.joined.load(Ordering::Acquire) && self.unsent.load(Ordering::Acquire)
     }
+    /// Queues an enable's source-cancel pins for the next Reader to unpin,
+    /// once this permit has left the owner slots for good. The automatic
+    /// cancel is the only sender of `cancel_ids`, and its fenced rollback
+    /// trusts `Transactions::unsent` on them, which holds only while they
+    /// stay pinned and so are never reissued. Each caller therefore settles
+    /// only after:
+    ///
+    /// - this permit's last journal row is durable and settled
+    ///   (`storage.pending()` is false), or a newer confirmed row replaced it;
+    /// - no claim can put it back: a `TemporaryClaim` lives within one
+    ///   `battery_source_event`, which decides its rollback before
+    ///   `finish_temporary_release`, and `reconcile_temporary_owner` reaches
+    ///   only permits in a slot, which a claimed owner is not;
+    /// - any cancel that sent these IDs has joined.
+    ///
+    /// The unpinning itself waits for a later Reader's retirement, so no
+    /// cancel Reader is running then. The pins move to the queue, so a second
+    /// call queues nothing, and a sent ID stays quarantined.
+    fn settle_pins(&self) {
+        self.settled.settle(&self.pins);
+    }
 }
 impl Permit for BatteryPermit {
     fn mutation_registered(&self) {
@@ -204,6 +230,12 @@ impl Permit for BatteryPermit {
     }
     fn observe_temporary_unsent(&self, unsent: bool) {
         self.unsent.store(unsent, Ordering::Release);
+    }
+    fn retained_pins(&self, ids: &[u8]) {
+        self.pins.retain(ids);
+    }
+    fn settled_pins(&self) -> Vec<u8> {
+        self.settled.take()
     }
     fn temporary_target(&self) -> Option<bool> {
         if !cfg!(feature = "service-temporary-charge-v1") {
@@ -515,9 +547,18 @@ impl Runtime {
                 return Ok(());
             }
             if p.confirmed.load(Ordering::Acquire) && !p.storage.pending() {
-                *self.temporary_owner.borrow_mut() = Some(p);
+                // The newer confirmed row is the journal's temporary owner
+                // now, so no source cancel can be admitted for the one it
+                // replaces.
+                let replaced = self.temporary_owner.borrow_mut().replace(p);
+                if let Some(replaced) = replaced {
+                    replaced.settle_pins();
+                }
             } else if p.storage.pending() {
                 *self.temporary_pending.borrow_mut() = Some(p);
+            } else {
+                // Joined and settled without a confirmation: it owns nothing.
+                p.settle_pins();
             }
         }
         Ok(())
@@ -574,6 +615,9 @@ impl Runtime {
         use super::super::thermal_storage::TemporaryRelease;
         match self.release_temporary_reservation(&original) {
             Ok(TemporaryRelease::Released | TemporaryRelease::NoMatchingReservation) => {
+                // Out of every slot, with any claim on it decided and its
+                // cancel joined (`BatteryPermit::settle_pins`).
+                original.settle_pins();
                 self.release_presentation(&original, None)
             }
             Ok(TemporaryRelease::Deferred(reason)) => {
@@ -779,6 +823,8 @@ impl Runtime {
                 session: original.session,
                 proof,
                 record: Mutex::new(None),
+                pins: RecordPins::default(),
+                settled: self.settled_pins.clone(),
                 observation: self.battery_observation.clone(),
                 prepared: AtomicBool::new(false),
                 confirmed: AtomicBool::new(false),
@@ -988,6 +1034,8 @@ impl Runtime {
             session: caller.session,
             proof,
             record: Mutex::new(None),
+            pins: RecordPins::default(),
+            settled: self.settled_pins.clone(),
             observation: self.battery_observation.clone(),
             prepared: AtomicBool::new(false),
             confirmed: AtomicBool::new(false),

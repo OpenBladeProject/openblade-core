@@ -1,5 +1,6 @@
 //! Installed explicit fan runtime; one original custody and one global journal.
 use super::*;
+use crate::discovery::performance::mutation::RecordPins;
 use crate::service_status::FanOverride;
 use crate::thermal_history::Entry;
 use openblade_domain::{
@@ -75,6 +76,9 @@ pub(super) struct FanPermit {
     // This request returns saved manual fans to Automatic (`previousManual`).
     returning: AtomicBool,
     record: Mutex<Option<FanRecord>>,
+    // The IDs the Reader pinned for `record`, until it settles (`settle_pins`).
+    pins: RecordPins,
+    settled: Arc<SettledPins>,
     accepted: AtomicBool,
     owned: AtomicBool,
     release: AtomicBool,
@@ -118,6 +122,24 @@ impl FanPermit {
         self.storage
             .record_fan(entry, self.cleanup())
             .inspect_err(|e| remember_failure(&self.fatal, e))
+    }
+    /// Queues the record's pins for the next Reader to unpin. Called only
+    /// after a durable row closes the record: its own 50, 51 or 6, or a newer
+    /// owner's 30 or 50 (`supersede_prior`). From then on nothing sends the
+    /// record's IDs: owned Stop and the settle-only permit act only for the
+    /// current owner, and the journal checks later battery IDs against the
+    /// current owner's alone. A sent ID stays quarantined after unpinning.
+    /// The pins move to the queue, so a second call queues nothing.
+    fn settle_pins(&self) {
+        self.settled.settle(&self.pins);
+    }
+    /// Drops the earlier owner once this request's 30 or 50 row has replaced
+    /// it, and settles its record.
+    fn supersede_prior(&self) -> io::Result<()> {
+        if let Some(prior) = self.prior.lock().map_err(|_| io::ErrorKind::Other)?.take() {
+            prior.settle_pins();
+        }
+        Ok(())
     }
     /// The saved destination a return to Automatic applies, resolved as a
     /// performance request resolves it. Managed writes every destination there
@@ -606,6 +628,7 @@ impl Permit for FanPermit {
             // 51 is v3's independently observed Automatic proof: no setter ACKs.
             owner.write(51)?;
             owner.owned.store(false, Ordering::Release);
+            owner.settle_pins();
             *self.released.lock().map_err(|_| io::ErrorKind::Other)? = Some(record.selector);
         }
         prior.take();
@@ -646,15 +669,22 @@ impl Permit for FanPermit {
             self.prepared.store(true, Ordering::Release);
         }
         if progress == 30 {
-            self.prior.lock().map_err(|_| io::ErrorKind::Other)?.take();
+            self.supersede_prior()?;
             self.owned.store(true, Ordering::Release);
         }
         // 51 is owned Stop cleanup's no-setter Automatic proof (see `apply_fan`).
         if matches!(progress, 50 | 51) {
-            self.prior.lock().map_err(|_| io::ErrorKind::Other)?.take();
+            self.supersede_prior()?;
             self.owned.store(false, Ordering::Release);
+            self.settle_pins();
         }
         Ok(())
+    }
+    fn retained_pins(&self, ids: &[u8]) {
+        self.pins.retain(ids);
+    }
+    fn settled_pins(&self) -> Vec<u8> {
+        self.settled.take()
     }
     fn record(&self, _: Progress) -> io::Result<()> {
         Err(io::ErrorKind::PermissionDenied.into())
@@ -665,12 +695,14 @@ impl Permit for FanPermit {
     fn retired(&self) -> io::Result<Settlement> {
         verify_retained_failure(&self.fatal)?;
         self.fresh.verify_health()?;
-        if self.prepared.load(Ordering::Acquire)
-            && self.storage.progress() == Some(0)
-            && let Err(e) = self.write(6)
-        {
-            self.storage.quarantine_settlement()?;
-            return Ok(Settlement::Unresolved(e));
+        if self.prepared.load(Ordering::Acquire) && self.storage.progress() == Some(0) {
+            if let Err(e) = self.write(6) {
+                self.storage.quarantine_settlement()?;
+                return Ok(Settlement::Unresolved(e));
+            }
+            // Known not submitted: this Reader has retired, so the next one
+            // unpins the record's IDs.
+            self.settle_pins();
         }
         self.joined.store(true, Ordering::Release);
         Ok(Settlement::Complete)
@@ -772,13 +804,13 @@ impl Permit for FanSettlePermit {
             return Err(io::ErrorKind::PermissionDenied.into());
         }
         self.owner.write(51)?;
-        self.owner
-            .prior
-            .lock()
-            .map_err(|_| io::ErrorKind::Other)?
-            .take();
+        self.owner.supersede_prior()?;
         self.owner.owned.store(false, Ordering::Release);
+        self.owner.settle_pins();
         Ok(())
+    }
+    fn settled_pins(&self) -> Vec<u8> {
+        self.owner.settled.take()
     }
     fn resolve_fan(
         &self,
@@ -1069,6 +1101,8 @@ impl Runtime {
             verified: Mutex::new(None),
             returning: AtomicBool::new(false),
             record: Mutex::new(None),
+            pins: RecordPins::default(),
+            settled: self.settled_pins.clone(),
             accepted: AtomicBool::new(false),
             owned: AtomicBool::new(false),
             release: AtomicBool::new(false),

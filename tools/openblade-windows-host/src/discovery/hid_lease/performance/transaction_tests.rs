@@ -400,8 +400,8 @@ fn freed_ids_return_only_after_every_other_free_id() {
 fn pinned_ids_are_never_freed_until_unpinned() {
     let transactions = Transactions::new();
     let [a, b] = transactions.reserve_pair().unwrap();
-    transactions.pin(a, true);
-    transactions.pin(b, true);
+    transactions.pin(a);
+    transactions.pin(b);
     assert!(transactions.sent(a));
     transactions.answered(a, CLASS, GET_THERMAL);
     let [c, _] = transactions.reserve_pair().unwrap();
@@ -409,16 +409,67 @@ fn pinned_ids_are_never_freed_until_unpinned() {
     transactions.answered(c, CLASS, GET_THERMAL);
     transactions.release(b);
     assert_eq!(transactions.free(), 250);
-    // Unpinned, b is released and a waits for the next 0D/82 answer.
-    transactions.pin(a, false);
-    transactions.pin(b, false);
-    transactions.release(b);
+    // Unpinned, the unsent b is free and a waits for the next 0D/82 answer.
+    transactions.unpin([a, b]);
     assert_eq!(transactions.free(), 251);
     let [e, _] = transactions.reserve_pair().unwrap();
     assert!(transactions.sent(e));
     transactions.answered(e, CLASS, GET_THERMAL);
     // a and c are free; e is the readable reply and the other is held.
     assert_eq!(transactions.free(), 251);
+}
+
+#[test]
+fn unpinning_frees_only_the_unsent_and_never_an_id_issued_again() {
+    let transactions = Transactions::new();
+    let [quarantined, answered] = transactions.reserve_pair().unwrap();
+    let [unsent, other] = transactions.reserve_pair().unwrap();
+    for id in [quarantined, answered, unsent, other] {
+        transactions.pin(id);
+    }
+    // Sent without a terminal reply, answered, and never sent.
+    assert!(transactions.sent(quarantined));
+    assert!(transactions.sent(answered));
+    transactions.answered(answered, CLASS, GET_THERMAL);
+    assert_eq!(transactions.free(), 250);
+    transactions.unpin([quarantined, answered, unsent]);
+    assert_eq!(transactions.free(), 251);
+    // The unsent ID is issued again, now held by a Reader that has not
+    // pinned it. Unpinning it again must not free that Reader's ID.
+    let reissued = drain_until(&transactions, unsent);
+    transactions.unpin([unsent]);
+    assert!(transactions.unsent(&[reissued]));
+    transactions.release(reissued);
+    // The answered ID waits for the next 0D/82 answer, as if never pinned;
+    // the quarantined one is never issued again.
+    let [reply, held] = transactions.reserve_pair().unwrap();
+    assert!(transactions.sent(reply));
+    transactions.answered(reply, CLASS, GET_THERMAL);
+    transactions.release(held);
+    // An odd number of free IDs leaves one unissued per round, so the
+    // rounds are taken together.
+    let issued: Vec<u8> = (0..3).flat_map(|_| drain(&transactions)).collect();
+    assert!(issued.contains(&answered) && issued.contains(&unsent));
+    assert!(!issued.contains(&quarantined) && !issued.contains(&other));
+    // A pinned ID that was never unpinned stays out, and a poisoned pool
+    // frees nothing.
+    transactions.poison();
+    transactions.unpin([other]);
+    assert_eq!(transactions.free(), 0);
+}
+
+/// Reserves pairs until `id` is issued, releasing every other ID unsent.
+/// Returns `id`, held.
+fn drain_until(transactions: &Transactions, id: u8) -> u8 {
+    loop {
+        let pair = transactions.reserve_pair().unwrap();
+        for other in pair.into_iter().filter(|other| *other != id) {
+            transactions.release(other);
+        }
+        if pair.contains(&id) {
+            return id;
+        }
+    }
 }
 
 #[test]
@@ -658,4 +709,70 @@ async fn a_setter_id_returns_only_after_a_later_echo_of_its_command() {
         }
         assert_eq!(device.sends(uncertain), 1, "{failure:?}");
     }
+}
+
+/// A permit that keeps the pins of one record and settles them on request.
+#[cfg(feature = "service-thermal-mutation-v1")]
+#[derive(Default)]
+struct Owner {
+    pins: super::mutation::RecordPins,
+    settled: super::mutation::SettledPins,
+}
+#[cfg(feature = "service-thermal-mutation-v1")]
+impl super::mutation::Permit for Owner {
+    fn authorize(&self) -> Option<ReadAdmission> {
+        None
+    }
+    fn resolve(
+        &self,
+        _: i32,
+        _: ObservedPerformance,
+    ) -> io::Result<Option<openblade_domain::thermal_mutation::Destination>> {
+        Ok(None)
+    }
+    fn record(&self, _: openblade_domain::thermal_mutation::Progress) -> io::Result<()> {
+        Ok(())
+    }
+    fn retained_pins(&self, ids: &[u8]) {
+        self.pins.retain(ids);
+    }
+    fn settled_pins(&self) -> Vec<u8> {
+        self.settled.take()
+    }
+}
+
+#[cfg(feature = "service-thermal-mutation-v1")]
+#[tokio::test(start_paused = true)]
+async fn a_retained_pair_returns_only_once_its_record_settles_and_a_reader_retires() {
+    use super::mutation::Permit;
+    let device = Device::new(0);
+    let transactions = &device.transactions;
+    let owner = Owner::default();
+    let mut first = Reader::new(device.port(), PROOF);
+    let [sent, unsent] = first.reserve_retained_pair().unwrap();
+    first.retain(&owner);
+    // Sent without a correlated terminal reply.
+    assert!(transactions.sent(sent));
+    first.retire(None).await.unwrap();
+    // Retained across the Reader's retirement and every round of the pool.
+    for _ in 0..3 {
+        let issued = drain(transactions);
+        assert!(!issued.contains(&sent) && !issued.contains(&unsent));
+    }
+    // The record settles while a later Reader holds IDs of its own, and
+    // twice: the second settle queues nothing.
+    let mut second = Reader::new(device.port(), PROOF);
+    let own = second.reserve_pair().unwrap();
+    owner.settled.settle(&owner.pins);
+    owner.settled.settle(&owner.pins);
+    second.settled.extend(owner.settled_pins());
+    assert_eq!(second.settled, [sent, unsent]);
+    assert!(owner.settled_pins().is_empty());
+    // Nothing returns before that Reader retires.
+    assert_eq!(transactions.free(), 250);
+    second.retire(None).await.unwrap();
+    assert_eq!(transactions.free(), 253);
+    let issued: Vec<u8> = (0..3).flat_map(|_| drain(transactions)).collect();
+    assert!(issued.contains(&unsent) && own.iter().all(|id| issued.contains(id)));
+    assert!(!issued.contains(&sent), "a sent ID stays quarantined");
 }

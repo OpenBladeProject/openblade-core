@@ -1,6 +1,9 @@
 //! Prelisted fake-I/O installed dispatcher tests. Every root, SID, authority,
 //! metadata sample and native port is injected before a default resolver exists.
 use super::*;
+#[cfg(feature = "service-fan-mutation-v2")]
+#[path = "pool_pins.rs"]
+mod pool_pins;
 #[path = "profile_layer_lighting.rs"]
 mod profile_layer_lighting;
 #[path = "read_worker_restart.rs"]

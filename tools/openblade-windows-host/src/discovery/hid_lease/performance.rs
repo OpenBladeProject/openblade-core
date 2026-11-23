@@ -185,6 +185,9 @@ struct Reader<P: Port, A = Admission> {
     held: Vec<u8>,
     // Pinned IDs that no record names yet; unpinned on retirement.
     provisional: Vec<u8>,
+    // Pinned IDs of records that have settled (`mutation::Permit::settled_pins`);
+    // unpinned on retirement.
+    settled: Vec<u8>,
     // The request whose reply the next GET reads.
     request: Option<Frame>,
     // A reservation failed because fewer than two IDs were free.
@@ -228,6 +231,7 @@ impl<P: Port, A: ObservationProof> Reader<P, A> {
             exchanges: Exchanges::default(),
             held: Vec::new(),
             provisional: Vec::new(),
+            settled: Vec::new(),
             request: None,
             exhausted: false,
         }
@@ -244,24 +248,26 @@ impl<P: Port, A: ObservationProof> Reader<P, A> {
     }
 
     /// Two IDs that a durable record may name. They stay pinned until this
-    /// Reader retires, and for the process lifetime once `retain` is called:
+    /// Reader retires, and until the record settles once `retain` is called:
     /// the record may carry them to a later Reader, and the journal requires
     /// a live fan owner's IDs to stay distinct from later battery IDs.
     #[cfg(feature = "service-thermal-mutation-v1")]
     fn reserve_retained_pair(&mut self) -> Option<[u8; 2]> {
         let pair = self.reserve_pair()?;
         for id in pair {
-            self.port.transactions().pin(id, true);
+            self.port.transactions().pin(id);
         }
         self.provisional.extend(pair);
         Some(pair)
     }
 
-    /// Pins every ID from `reserve_retained_pair` for the process. Call it
-    /// once a record names them, before its first setter could be submitted;
-    /// until then, retirement unpins them.
+    /// Hands every ID from `reserve_retained_pair` to `permit`'s record, which
+    /// keeps them pinned until it settles (`mutation::Permit::retained_pins`).
+    /// Call it once the record names them, before its first setter could be
+    /// submitted; until then, retirement unpins them.
     #[cfg(feature = "service-thermal-mutation-v1")]
-    fn retain(&mut self) {
+    fn retain(&mut self, permit: &dyn mutation::Permit) {
+        permit.retained_pins(&self.provisional);
         self.provisional.clear();
     }
 
@@ -358,17 +364,18 @@ impl<P: Port, A: ObservationProof> Reader<P, A> {
     // Once retirement begins no further traffic is permitted, even if a
     // canceled operation completes successfully after the observation deadline.
     // Only then can no reserved ID still be sent, so the unsent are freed.
+    // Held IDs go first: `release` skips the pinned ones, which `unpin` then
+    // frees, so nothing this Reader frees is released twice. A failed
+    // retirement frees nothing, and its settled pins stay out of the pool.
     async fn retire(&mut self, deadline: Option<Instant>) -> io::Result<()> {
         self.seal();
         loop {
             if self.port.poll_retirement()? {
                 let transactions = self.port.transactions();
-                for id in self.provisional.drain(..) {
-                    transactions.pin(id, false);
-                }
                 for id in self.held.drain(..) {
                     transactions.release(id);
                 }
+                transactions.unpin(self.provisional.drain(..).chain(self.settled.drain(..)));
                 return Ok(());
             }
             if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
