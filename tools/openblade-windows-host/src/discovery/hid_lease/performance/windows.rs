@@ -393,15 +393,25 @@ pub(super) fn mutation_worker(
 ) -> Worker<ReadAdmission> {
     Worker::new(
         move |job| {
-            let runtime = tokio::runtime::Builder::new_current_thread()
+            // Nothing is sent before the port opens, so a refusal or failure
+            // up to then is a job that was not applied: `Ok(None)`, as the read
+            // worker reports it (`run`). An error here would mark the lane's
+            // stop unconfirmed and fence every later mutation and owned-Stop
+            // cleanup behind a write that never started.
+            let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
                 .enable_time()
-                .build()?;
+                .build()
+            else {
+                return Ok(None);
+            };
             let limit = job.limit();
             let mut authorize = || permit.authorize();
             let Some(admission) = authorize() else {
                 return Ok(None);
             };
-            let (port, selection) = NativePort::open(&mut authorize, admission, limit)?;
+            let Ok((port, selection)) = NativePort::open(&mut authorize, admission, limit) else {
+                return Ok(None);
+            };
             let mut reader = Reader::new(port, admission);
             let observed = runtime.block_on(async {
                 let result = if reader
@@ -422,4 +432,23 @@ pub(super) fn mutation_worker(
         },
         Some(&OCCUPIED),
     )
+}
+
+/// The write worker sends nothing before its port opens, so an open that
+/// fails is a job that was not applied, as for the read worker: an error
+/// would leave the mutation lane's stop unconfirmed and fence every later
+/// mutation and owned-Stop cleanup (`ReadSource::drain_mutation`). The
+/// service tests drive the same outcome through the fixture
+/// (`State::mutation_open_fails`); this pins the production worker to it.
+#[cfg(all(test, feature = "service-thermal-mutation-v1"))]
+#[test]
+fn a_mutation_port_that_fails_to_open_is_not_applied() {
+    let source = include_str!("windows.rs");
+    let start = source.find("pub(super) fn mutation_worker(").unwrap();
+    let worker = &source[start..start + source[start..].find("Some(&OCCUPIED)").unwrap()];
+    assert!(worker.contains(
+        "let Ok((port, selection)) = NativePort::open(&mut authorize, admission, limit) else {\n                return Ok(None);"
+    ));
+    assert!(worker.contains(".build()\n            else {\n                return Ok(None);"));
+    assert!(!worker.contains("limit)?;") && !worker.contains(".build()?"));
 }
