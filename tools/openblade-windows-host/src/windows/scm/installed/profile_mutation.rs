@@ -51,6 +51,12 @@ impl Runtime {
             Ok(captured) => captured,
             Err(error) if is_fatal_admission(&error) => return Err(error),
             Err(error) => {
+                // As a report's refused capture: nothing is owed for after
+                // the controller leaves, and startup ends.
+                #[cfg(feature = "service-profile-triggers-v1")]
+                if is_competing_controller(&error) {
+                    self.drop_for_controller(&sid, caller.session);
+                }
                 return blocked(format!(
                     "Saved configuration or the current session is unavailable: {error}"
                 ));

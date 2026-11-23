@@ -290,11 +290,12 @@ pub(super) struct Runtime {
     // intent (`triggers::Debt`); a pair without an entry owes its startup one.
     #[cfg(feature = "service-profile-triggers-v1")]
     debts: Rc<RefCell<std::collections::HashMap<(String, u32), triggers::Debt>>>,
-    // The pairs whose startup reconciliation has ended: a debt of theirs
-    // settled once, however (`triggers::Runtime::owe`). Until then their
-    // reconciliation applies over confirmed drift (`thermal_drift::Mode`).
+    // Each user's startup reconciliation, keyed on the SID as managed keys
+    // activation (`triggers::Startup`). A user without an entry is starting
+    // and has compared nothing; until it ends, the user's reconciliation
+    // applies over confirmed drift (`thermal_drift::Mode`).
     #[cfg(feature = "service-profile-triggers-v1")]
-    started: Rc<RefCell<std::collections::HashSet<(String, u32)>>>,
+    startup: Rc<RefCell<std::collections::HashMap<String, triggers::Startup>>>,
     // The lifecycle's low-power gate transition, `None` while the lifecycle
     // is unreadable or exhausted. A reconciliation reads it to stop before a
     // step and to classify a step's refusal (`triggers::Gate`); every write
@@ -534,7 +535,7 @@ impl Runtime {
             #[cfg(feature = "service-profile-triggers-v1")]
             debts: Rc::default(),
             #[cfg(feature = "service-profile-triggers-v1")]
-            started: Rc::default(),
+            startup: Rc::default(),
             #[cfg(any(
                 feature = "service-profile-triggers-v1",
                 feature = "service-keyboard-driver-mode-v1"
@@ -708,7 +709,7 @@ impl Runtime {
             #[cfg(feature = "service-profile-triggers-v1")]
             debts: Rc::default(),
             #[cfg(feature = "service-profile-triggers-v1")]
-            started: Rc::default(),
+            startup: Rc::default(),
             #[cfg(any(
                 feature = "service-profile-triggers-v1",
                 feature = "service-keyboard-driver-mode-v1"

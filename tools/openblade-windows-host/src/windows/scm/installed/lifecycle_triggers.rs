@@ -50,8 +50,10 @@
 //! control stays advisory and never queues behind another controller
 //! (Architecture rule 5), as managed's transition applies nothing then and
 //! keeps nothing for later. The next lifecycle cause or changed report owes
-//! afresh. Settling ends the pair's startup reconciliation too, so that
-//! cause compares confirmed drift rather than applying over it.
+//! afresh. The drop ends the user's startup reconciliation too, so that
+//! cause compares confirmed drift rather than applying over it
+//! (`Runtime::drop_for_controller`, which a report's refused capture takes
+//! as well).
 use super::*;
 use std::sync::atomic::AtomicU64;
 
@@ -416,7 +418,7 @@ impl Runtime {
             // and nothing is kept owed for after it leaves, which would
             // overwrite what the user chose there (module comment).
             Err(error) if is_competing_controller(&error) => {
-                self.owe(key, Debt::Settled);
+                self.drop_for_controller(&sid, session);
                 return Ok(Attempt::Done(None));
             }
             // A locked or switched session, an unknown AC line status, or a
@@ -566,13 +568,13 @@ impl Runtime {
     }
 
     /// Forgets every drift latch, OpenBlade's own confirmed state and each
-    /// pair's ended startup reconciliation, as a Service restart does: the
-    /// next reading only sets the baseline, and the next reconciliation
-    /// applies over drift.
+    /// user's startup reconciliation, as a Service restart does: the next
+    /// reading only sets the baseline, and the next reconciliation applies
+    /// over drift.
     #[cfg(test)]
     pub(in super::super::super) fn restart_drift(&self) {
         *self.drift.lock().unwrap() = Default::default();
-        self.started.borrow_mut().clear();
+        self.startup.borrow_mut().clear();
     }
 
     /// The inter-tick gap that renews the lease (`SLEPT`).

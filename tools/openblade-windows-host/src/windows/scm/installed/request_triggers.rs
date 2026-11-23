@@ -244,6 +244,27 @@ impl Debt {
     }
 }
 
+/// Where a user's startup reconciliation stands (`Runtime::startup`), which
+/// applies over confirmed drift as managed `ReconcileStartupProfileAsync`
+/// does (`thermal_drift::Mode::Overwrite`). It is keyed on the SID, as
+/// managed keys activation: the same user in a new session is not starting
+/// again. Managed ends startup after one transition on classified power and
+/// keeps it pending on unclassified power (`ReconcileStartupProfileCoreAsync`).
+/// Native ends it once a starting reconciliation has compared a fresh reading
+/// and a debt of that user then settles, or once a competing controller
+/// drops a cause (`Runtime::drop_for_controller`). A debt that settles with
+/// nothing compared, such as refusals on an adapter not classified yet or
+/// saved intent that reads no firmware, leaves the user starting: its next
+/// reconciliation still overwrites, instead of comparing an intent that
+/// native never confirmed and pausing until an explicit request.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Startup {
+    /// A starting reconciliation compared a fresh reading
+    /// (`thermal_drift::Transition::compared`).
+    Compared,
+    Ended,
+}
+
 /// Managed `ServiceTransitionApplicationOutcome.ToOperationResult`: Applied
 /// (1) when fully applied, else Stored (0) when the trigger stored intent,
 /// else Failed (3) when a setter may have been submitted, else Blocked (2).
@@ -514,6 +535,9 @@ impl Runtime {
             Err(error) if is_fatal_admission(&error) => return Err(error),
             Err(error) => {
                 record(prior);
+                if is_competing_controller(&error) {
+                    self.drop_for_controller(&sid, caller.session);
+                }
                 return Ok((
                     Outcome::blocked(format!(
                         "Saved configuration or the current session is unavailable: {error}"
@@ -798,11 +822,12 @@ impl Runtime {
             resume,
         } = step;
         // One drift decision for both steps, from the first step's own
-        // fresh reading (`thermal_drift::Transition`). The pair's startup
+        // fresh reading (`thermal_drift::Transition`). The user's startup
         // reconciliation applies over drift, whatever its cause; any resume
         // hold is stamped on this runtime's clock, which the status reading
         // that settles it reads too.
-        let mode = if self.starting(&(sid.clone(), caller.session)) {
+        let starting = self.starting(&sid);
+        let mode = if starting {
             thermal_drift::Mode::Overwrite
         } else {
             mode
@@ -999,6 +1024,14 @@ impl Runtime {
                 }
             }
         }
+        // A starting reconciliation that compared a reading ends startup
+        // once the debt it runs for settles (`Runtime::owe`).
+        if starting && transition.compared() {
+            self.startup
+                .borrow_mut()
+                .entry(sid)
+                .or_insert(Startup::Compared);
+        }
         // The deferred step submitted nothing and may run once the gate
         // clears; it reports managed's per-write low-power refusal. It did
         // not run, so the reconciliation did not run every step.
@@ -1116,22 +1149,47 @@ impl Runtime {
         }
     }
 
-    /// Records what the pair `key` owes. A settled debt ends the pair's
-    /// startup reconciliation, however it settled: applied, out of retries,
-    /// or dropped for a competing controller.
+    /// Records what the pair `key` owes. A settled debt ends its user's
+    /// startup reconciliation once a starting reconciliation compared a
+    /// reading (`Startup`), however the debt settled: applied, excluded, or
+    /// out of retries.
     pub(super) fn owe(&self, key: (String, u32), debt: Debt) {
-        if debt == Debt::Settled {
-            self.started.borrow_mut().insert(key.clone());
+        if debt == Debt::Settled
+            && let Some(startup) = self.startup.borrow_mut().get_mut(&key.0)
+        {
+            *startup = Startup::Ended;
         }
         self.debts.borrow_mut().insert(key, debt);
     }
 
-    /// Whether the pair `key` still owes its startup reconciliation, which
-    /// applies over confirmed drift as managed `ReconcileStartupProfileAsync`
-    /// does (`thermal_drift::Mode::Overwrite`). A report, save or lifecycle
-    /// cause that replaces its debt before it settled is part of it.
-    fn starting(&self, key: &(String, u32)) -> bool {
-        !self.started.borrow().contains(key)
+    /// A capture refused because fresh competing-controller absence is not
+    /// confirmed: the pair's debt is dropped and its user's startup ends,
+    /// whatever was compared. Strict thermal control stays advisory and
+    /// keeps nothing owed for after the controller leaves, which would
+    /// overwrite what the user chose there (Architecture rule 5), as
+    /// managed's transition applies nothing then and ends its startup
+    /// (`CompleteStartupProfileReconciliation`; a controller does not block
+    /// writes there).
+    ///
+    /// With nothing of OpenBlade's own confirmed, the next power change then
+    /// compares only its new intent and pauses unless firmware already shows
+    /// it. Managed's transition pauses there too: the startup's desired state
+    /// is its prior intent, which firmware does not show under the
+    /// controller's state. Only managed's convergence loop, which native does
+    /// not have, repairs it later; native resumes at an explicit request,
+    /// another user's activation or a restart.
+    pub(super) fn drop_for_controller(&self, sid: &str, session: u32) {
+        self.startup
+            .borrow_mut()
+            .insert(sid.to_owned(), Startup::Ended);
+        self.owe((sid.to_owned(), session), Debt::Settled);
+    }
+
+    /// Whether the user `sid` is still in its startup reconciliation
+    /// (`Startup`). A report, save or lifecycle cause that replaces its debt
+    /// before it settled is part of it.
+    fn starting(&self, sid: &str) -> bool {
+        self.startup.borrow().get(sid) != Some(&Startup::Ended)
     }
 
     /// What the pair `key` owes; startup is owed until it is settled.

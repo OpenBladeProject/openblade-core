@@ -11,7 +11,8 @@
 //! Per subsystem, only what a reading confirmed is OpenBlade's own (`Own`,
 //! managed's prior desired state): a write's confirming readback
 //! (`own_performance`, `own_fans`), or a reconciliation's fresh reading that
-//! already shows the intent it applies. A setter with no readback of its
+//! already shows the intent it applies, or the preset an overwrite whose
+//! intent has no destination leaves in place. A setter with no readback of its
 //! own, such as one a step dropped at its bound or deadline submitted, is
 //! settled by the next reading that reports its subsystem (`submitted`).
 //! Saved intent that native did not apply is never OpenBlade's own.
@@ -31,7 +32,7 @@
 use openblade_domain::{
     automation::UNCLASSIFIED_EXTERNAL,
     profile_set::FanMode,
-    thermal_mutation::{CUSTOM, Destination},
+    thermal_mutation::{CUSTOM, Destination, Preset},
     thermal_observation::{CustomPerformanceLevels, ObservedPerformance},
 };
 use std::sync::{Arc, Mutex};
@@ -100,7 +101,7 @@ pub(super) enum Mode {
     /// at a gate boundary. A reading that shows the new intent or
     /// OpenBlade's own confirmed state is OpenBlade's own.
     WithPrior,
-    /// Managed `preserveObservedExternalChanges: false`: a pair's startup
+    /// Managed `preserveObservedExternalChanges: false`: a user's startup
     /// reconciliation and a user's activation apply over any drift.
     Overwrite,
 }
@@ -175,6 +176,14 @@ fn matches(reading: ObservedPerformance, desired: Destination) -> bool {
         && desired
             .custom_levels()
             .is_none_or(|levels| reading.custom_levels() == Some(levels))
+}
+/// The destination a reading shows: its preset, or Custom with its levels.
+/// `None` without a preset, or for Custom whose levels read nothing.
+fn destination(reading: ObservedPerformance) -> Option<Destination> {
+    match preset(reading)? {
+        CUSTOM => reading.custom_levels().map(Destination::Custom),
+        wire => Preset::from_wire(wire).map(Destination::Preset),
+    }
 }
 /// Whether a subsystem is an external change, from whether the reading shows
 /// the new intent and OpenBlade's own confirmed state, each `None` when
@@ -352,6 +361,15 @@ impl Tracker {
             } else if mode == Mode::WithPrior {
                 let own = self.own.performance.map(|own| matches(reading, own));
                 self.performance = changed(self.performance, shown, own);
+            } else if next.performance.is_none()
+                && let Some(left) = destination(reading)
+            {
+                // An overwrite whose intent has no destination, such as a GPU
+                // clock effect native cannot apply, writes no preset and
+                // leaves the reading's in place. That preset is OpenBlade's
+                // own from then on, so a later intent compares with it
+                // instead of pausing over state the overwrite accepted.
+                self.own_performance(left);
             }
         }
         if let Some(manual) = manual(reading) {
@@ -363,7 +381,7 @@ impl Tracker {
             }
         }
         // The startup reconciliation and an activation apply over drift;
-        // their own readbacks then clear it.
+        // their own readbacks, or the preset adopted above, then clear it.
         if mode == Mode::Overwrite {
             return None;
         }
@@ -441,13 +459,19 @@ impl Transition {
             .ok()
             .and_then(|decided| decided.flatten())
     }
+    /// Whether a step's fresh reading was compared with the intent: it
+    /// decided, and not for an observed HyperBoost, which compares nothing.
+    pub(super) fn compared(&self) -> bool {
+        self.decided
+            .lock()
+            .is_ok_and(|decided| matches!(*decided, Some(None | Some(Exclusion::External))))
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use ObservedPerformance as O;
-    use openblade_domain::thermal_mutation::Preset;
     use openblade_domain::thermal_observation::CustomPerformanceLevel::{Low, Medium};
 
     fn desired(preset: Preset, fans: Fans) -> Desired {
@@ -827,6 +851,90 @@ mod tests {
     }
 
     #[test]
+    fn an_overwrite_without_a_destination_owns_the_preset_it_leaves() {
+        let now = Instant::now();
+        let unresolved = Desired {
+            performance: None,
+            fans: Fans::Automatic,
+        };
+        let battery = desired(Preset::BatterySaver, Fans::Automatic);
+        // A latch the overwrite accepted is cleared with the preset it left,
+        // which a later intent then compares as OpenBlade's own.
+        let mut tracker = baselined(O::BalancedAutomatic);
+        tracker.observe(O::PerformanceAutomatic);
+        assert_eq!(
+            tracker.decide(
+                O::PerformanceAutomatic,
+                unresolved,
+                Mode::Overwrite,
+                false,
+                now
+            ),
+            None
+        );
+        assert!(tracker.external().is_empty());
+        assert_eq!(
+            tracker.own.performance,
+            Some(Destination::Preset(Preset::Performance))
+        );
+        assert_eq!(
+            tracker.decide(
+                O::PerformanceAutomatic,
+                battery,
+                Mode::WithPrior,
+                false,
+                now
+            ),
+            None
+        );
+        // Custom is owned with the levels it read; Custom without readable
+        // levels, or a reading without a preset, owns nothing.
+        let levels = CustomPerformanceLevels {
+            cpu: Low,
+            gpu: Medium,
+        };
+        let custom = O::Custom {
+            manual: false,
+            levels: Some(levels),
+        };
+        let mut tracker = Tracker::default();
+        tracker.decide(custom, unresolved, Mode::Overwrite, false, now);
+        assert_eq!(tracker.own.performance, Some(Destination::Custom(levels)));
+        for reading in [
+            O::Custom {
+                manual: true,
+                levels: None,
+            },
+            O::FixedMaximum,
+        ] {
+            let mut tracker = Tracker::default();
+            tracker.decide(reading, unresolved, Mode::Overwrite, false, now);
+            assert_eq!(tracker.own.performance, None, "{reading:?}");
+        }
+        // A comparison with prior state adopts nothing: the reading is no
+        // evidence there.
+        let mut tracker = baselined(O::PerformanceAutomatic);
+        tracker.decide(
+            O::PerformanceAutomatic,
+            unresolved,
+            Mode::WithPrior,
+            false,
+            now,
+        );
+        assert_eq!(tracker.own.performance, None);
+        // An overwrite with a destination owns only what shows it.
+        let mut tracker = baselined(O::PerformanceAutomatic);
+        tracker.decide(
+            O::PerformanceAutomatic,
+            battery,
+            Mode::Overwrite,
+            false,
+            now,
+        );
+        assert_eq!(tracker.own.performance, None);
+    }
+
+    #[test]
     fn a_resume_hold_clears_when_the_destination_is_read_within_the_window() {
         let now = Instant::now();
         let next = desired(Preset::BatterySaver, Fans::Automatic);
@@ -932,6 +1040,7 @@ mod tests {
         let transition = Transition::new(tracker.clone(), Mode::WithPrior, true, start);
         let next = desired(Preset::Balanced, Fans::Automatic);
         assert_eq!(transition.exclusion(), None);
+        assert!(!transition.compared());
         assert_eq!(
             transition.decide(O::SilentAutomatic, next).unwrap(),
             Some(Exclusion::External)
@@ -942,6 +1051,18 @@ mod tests {
             Some(Exclusion::External)
         );
         assert_eq!(transition.exclusion(), Some(Exclusion::External));
+        assert!(transition.compared());
+        // An observed HyperBoost compares nothing; any other decision does.
+        for (reading, compared) in [(O::HyperBoostObserved, false), (O::BalancedAutomatic, true)] {
+            let decision = Transition::new(
+                Arc::new(Mutex::new(Tracker::default())),
+                Mode::Overwrite,
+                false,
+                start,
+            );
+            decision.decide(reading, next).unwrap();
+            assert_eq!(decision.compared(), compared, "{reading:?}");
+        }
         // The hold is stamped from the reconciliation's start.
         let mut tracker = tracker.lock().unwrap();
         assert_eq!(tracker.hold.unwrap().expires, start + RESUME_WINDOW);
