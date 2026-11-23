@@ -138,6 +138,10 @@ impl Fixture {
             .filter(|id| self.transactions.pinned(*id))
             .collect()
     }
+    /// `Transactions::quarantine` on this port's pool.
+    pub(crate) fn quarantine(&self, ids: &[u8]) {
+        self.transactions.quarantine(ids);
+    }
     /// IDs the pool can issue now.
     pub(crate) fn free_transactions(&self) -> usize {
         self.transactions.free()

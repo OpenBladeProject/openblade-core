@@ -712,3 +712,10 @@ impl<P: Port> Attempt<'_, P, ReadAdmission> {
 pub(crate) fn native_mutation_worker(permit: Arc<dyn Permit>) -> Worker<ReadAdmission> {
     super::windows::mutation_worker(permit)
 }
+
+/// Quarantines `ids` in the pool every native worker shares
+/// (`Transactions::quarantine`).
+#[cfg(windows)]
+pub(crate) fn quarantine_native(ids: &[u8]) {
+    super::windows::quarantine(ids);
+}

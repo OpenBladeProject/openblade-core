@@ -55,6 +55,9 @@ mod thermal_native;
 #[cfg(feature = "service-thermal-mutation-v1")]
 #[path = "thermal_storage.rs"]
 mod thermal_storage;
+#[cfg(feature = "service-thermal-mutation-v1")]
+#[path = "transaction_seed.rs"]
+mod transaction_seed;
 
 const PROBE_TIMEOUT: Duration = Duration::from_secs(4);
 const DRAIN_TIMEOUT: Duration = Duration::from_secs(2);

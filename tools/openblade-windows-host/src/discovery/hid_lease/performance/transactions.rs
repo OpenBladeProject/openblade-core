@@ -25,6 +25,9 @@
 //! after every other free ID has been issued. The process pool starts its
 //! round at a random ID: every process would otherwise issue the same IDs
 //! first, which a previous process's replies left in the mailbox may bear.
+//! The mailbox also outlives the process, so before its first reservation the
+//! Service quarantines the IDs its journal names that an earlier process may
+//! have sent without reading their reply (`quarantine`).
 
 use openblade_protocol::{REPORT_LENGTH, RazerReport};
 use std::{
@@ -190,6 +193,23 @@ impl Transactions {
     pub(super) fn unsent(&self, ids: &[u8]) -> bool {
         self.pool()
             .is_some_and(|mut pool| ids.iter().all(|id| pool.id(*id).state == State::Held))
+    }
+
+    /// Treats each free `id` as sent without a correlated reply, so this
+    /// process never issues it: an earlier process may have sent it, and a
+    /// reply bearing it may still be in the mailbox. An ID this process holds
+    /// or has sent keeps its state, and so does every pinned ID, which is one
+    /// of those.
+    #[cfg(feature = "service-thermal-mutation-v1")]
+    pub(super) fn quarantine(&self, ids: &[u8]) {
+        if let Some(mut pool) = self.pool() {
+            for id in ids.iter().copied().filter(|id| (FIRST..=LAST).contains(id)) {
+                let entry = pool.id(id);
+                if entry.state == State::Free {
+                    entry.state = State::Sent;
+                }
+            }
+        }
     }
 
     /// Frees `id` if it was never sent and is not pinned.

@@ -35,6 +35,11 @@ static OCCUPIED: AtomicBool = AtomicBool::new(false);
 // ID only with proof that its reply is gone (see `transactions`).
 static TRANSACTIONS: Transactions = Transactions::randomized();
 
+#[cfg(feature = "service-thermal-mutation-v1")]
+pub(super) fn quarantine(ids: &[u8]) {
+    TRANSACTIONS.quarantine(ids);
+}
+
 pub(super) struct NativePort {
     lease: Option<Lease>,
     identity: Option<LeaseIdentity>,

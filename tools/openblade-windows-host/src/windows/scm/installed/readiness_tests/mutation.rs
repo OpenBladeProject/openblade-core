@@ -4,6 +4,8 @@ use super::*;
 #[cfg(feature = "service-fan-mutation-v2")]
 #[path = "pool_pins.rs"]
 mod pool_pins;
+#[path = "pool_seed.rs"]
+mod pool_seed;
 #[path = "profile_layer_lighting.rs"]
 mod profile_layer_lighting;
 #[path = "read_worker_restart.rs"]
@@ -549,10 +551,14 @@ struct Custody {
         )>,
     >,
     port: Arc<StdMutex<crate::discovery::performance::mutation_fixture::State>>,
+    // The files whose journal `journal_read` returns, as production's
+    // `ReadLease` reads it (`Rig::restarted`). Without them it refuses.
+    journal: StdMutex<Option<MemoryFiles>>,
 }
 impl Custody {
     fn new(port: &Fixture) -> Arc<Self> {
         Arc::new_cyclic(|me| Self {
+            journal: StdMutex::new(None),
             me: me.clone(),
             current_sid: StdMutex::new(SID.into()),
             current_session: AtomicUsize::new(7),
@@ -580,6 +586,16 @@ impl Custody {
     }
 }
 impl ReadCustody for Custody {
+    fn journal_read(&self, pending: bool) -> io::Result<Option<Vec<u8>>> {
+        let files = self.journal.lock().unwrap().clone();
+        files
+            .ok_or(io::ErrorKind::PermissionDenied)?
+            .read(if pending {
+                "thermal-mutation.journal.pending"
+            } else {
+                CUSTODY_JOURNAL
+            })
+    }
     fn authorize_owned_stop(&self) -> Option<ReadAdmission> {
         if !self.live.load(Ordering::Acquire) || self.authority_for_fan.load(Ordering::Acquire) != 0
         {
@@ -922,8 +938,20 @@ fn saved_intent(files: &MemoryFiles, entry: &Value) -> bool {
 }
 impl Rig {
     fn new(files: MemoryFiles) -> Self {
+        Self::start(files, false)
+    }
+    /// A rig over the files an earlier rig left, whose custody reads their
+    /// journal as production's `ReadLease` does: a restarted Service, with a
+    /// fresh transaction pool on a fresh port.
+    fn restarted(files: MemoryFiles) -> Self {
+        Self::start(files, true)
+    }
+    fn start(files: MemoryFiles, journal: bool) -> Self {
         let port = Fixture::new();
         let custody = Custody::new(&port);
+        if journal {
+            *custody.journal.lock().unwrap() = Some(files.clone());
+        }
         let persisted = files.clone();
         port.state.lock().unwrap().before_write = Some(Arc::new(move |_number| {
             // Battery overrides are memory-scoped, not manual-overrides fields.
@@ -962,11 +990,13 @@ impl Rig {
         }));
         let read = port.clone();
         let write = port.clone();
+        let pool = port.clone();
         let reader = ReadSource::injected_mutation(
             custody.clone(),
             MutationFactories {
                 read: Box::new(move |custody| read.read(Arc::new(move || custody.authorize()))),
                 write: Box::new(move |permit| write.write(permit)),
+                quarantine: Box::new(move |ids| pool.quarantine(ids)),
             },
         );
         // Storage reaches the journal through custody, as `CustodialFiles` does.

@@ -979,14 +979,11 @@ impl ReadSource {
             native_read_worker(move || custody.authorize())
         });
         #[cfg(feature = "service-thermal-mutation-v1")]
-        let source = {
-            let mut source = source;
-            source.factories = Some(Rc::new(MutationFactories {
-                read: Box::new(|custody| native_read_worker(move || custody.authorize())),
-                write: Box::new(crate::discovery::performance::mutation::native_mutation_worker),
-            }));
-            source
-        };
+        let source = source.with_mutation(MutationFactories {
+            read: Box::new(|custody| native_read_worker(move || custody.authorize())),
+            write: Box::new(crate::discovery::performance::mutation::native_mutation_worker),
+            quarantine: Box::new(crate::discovery::performance::mutation::quarantine_native),
+        });
         // Only the acquired production source reads Windows battery state.
         #[cfg(feature = "service-live-readings-v1")]
         let source = Self {
@@ -1406,6 +1403,23 @@ pub(super) struct MutationFactories {
     pub(super) write: Box<
         dyn Fn(Arc<dyn crate::discovery::performance::mutation::Permit>) -> Worker<ReadAdmission>,
     >,
+    /// Quarantines IDs in the transaction pool the workers above share.
+    pub(super) quarantine: Box<super::transaction_seed::Quarantine<'static>>,
+}
+
+#[cfg(feature = "service-thermal-mutation-v1")]
+impl ReadSource {
+    /// Adds the mutation lanes. Before any worker job can reserve an ID, it
+    /// quarantines the IDs the journal names that an earlier process may
+    /// have sent without reading their reply (`transaction_seed`).
+    fn with_mutation(mut self, factories: MutationFactories) -> Self {
+        super::transaction_seed::quarantine_unanswered(
+            self.lease.journal_read(false),
+            &*factories.quarantine,
+        );
+        self.factories = Some(Rc::new(factories));
+        self
+    }
 }
 
 #[cfg(feature = "service-thermal-mutation-v1")]
@@ -1428,9 +1442,7 @@ impl ReadSource {
         lease: Arc<dyn ReadCustody>,
         factories: MutationFactories,
     ) -> Self {
-        let mut source = Self::compose(lease, |custody| (factories.read)(custody));
-        source.factories = Some(Rc::new(factories));
-        source
+        Self::compose(lease, |custody| (factories.read)(custody)).with_mutation(factories)
     }
 }
 

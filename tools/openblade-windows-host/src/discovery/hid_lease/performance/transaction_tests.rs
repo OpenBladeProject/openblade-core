@@ -810,3 +810,68 @@ async fn an_unconfirmed_retirement_frees_no_pins() {
         );
     }
 }
+
+// A restarted Service opens the same device with a fresh pool. The Service
+// quarantines the IDs its journal names that an earlier process may have
+// left unanswered (`transaction_seed`), because the mailbox outlived it.
+#[cfg(feature = "service-thermal-mutation-v1")]
+#[tokio::test(start_paused = true)]
+async fn a_restarted_pool_never_issues_an_id_an_earlier_process_left_unanswered() {
+    // The earlier process's SET bearing 1 stalls, its read is abandoned and
+    // the firmware answers it later, after that process has gone.
+    let earlier = Device::new(0);
+    earlier.then([Firmware::Stall]);
+    assert_eq!(read(&earlier).await, None);
+    earlier.late(1);
+    let stale = *earlier.mailbox.lock().unwrap();
+    let restart = || {
+        let device = Device::new(0);
+        *device.mailbox.lock().unwrap() = stale;
+        device
+    };
+    // Unseeded, the new pool issues 1 first; its SET does not take effect
+    // and the read accepts the earlier process's reply as its own.
+    let unseeded = restart();
+    unseeded.then([Firmware::Ignore]);
+    assert!(read(&unseeded).await.is_some());
+    assert_eq!(unseeded.sends(1), 1);
+    // Seeded, 1 is never issued: the same failure reads a reply bearing
+    // another ID and is refused, and later reads are answered.
+    let seeded = restart();
+    seeded.transactions.quarantine(&[1]);
+    seeded.then([Firmware::Ignore]);
+    assert_eq!(read(&seeded).await, None);
+    for _ in 0..300 {
+        assert!(read(&seeded).await.is_some());
+    }
+    assert_eq!(seeded.sends(1), 0);
+}
+
+#[cfg(feature = "service-thermal-mutation-v1")]
+#[test]
+fn quarantine_takes_only_free_ids() {
+    let transactions = Transactions::new();
+    let [held, pinned] = transactions.reserve_pair().unwrap();
+    transactions.pin(pinned);
+    let [answered, free] = transactions.reserve_pair().unwrap();
+    assert!(transactions.sent(answered));
+    transactions.answered(answered, CLASS, GET_THERMAL);
+    transactions.release(free);
+    let before = transactions.free();
+    // 0 and 255 are never issued, so they are ignored.
+    transactions.quarantine(&[0, held, pinned, answered, free, 255]);
+    assert_eq!(transactions.free(), before - 1);
+    // The others keep their own rules: the held and pinned IDs were never
+    // sent, and the answered one returns after its command's next answer.
+    transactions.release(held);
+    transactions.unpin([pinned]);
+    let [next, spare] = transactions.reserve_pair().unwrap();
+    assert!(transactions.sent(next));
+    transactions.answered(next, CLASS, GET_THERMAL);
+    transactions.release(spare);
+    let issued = drain(&transactions);
+    for id in [held, pinned, answered] {
+        assert!(issued.contains(&id), "{id}");
+    }
+    assert!(!issued.contains(&free));
+}
