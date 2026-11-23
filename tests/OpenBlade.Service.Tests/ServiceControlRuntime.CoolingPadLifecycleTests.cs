@@ -193,13 +193,17 @@ public sealed partial class ServiceControlRuntimeTests
         Assert.Equal(2, pad.FanWrites);
     }
 
-    [Fact]
-    public async Task CoolingPadResumptionFollowsTheNotifyMePolicy()
+    [Theory]
+    // Notify me, and an upgraded Restore them whose disclosure the user has not seen yet.
+    [InlineData(ThermalControlPolicy.Strict, ThermalPolicyUpgradeDisclosureState.NotRequired)]
+    [InlineData(ThermalControlPolicy.MaintainDesiredState, ThermalPolicyUpgradeDisclosureState.UpgradeDisclosurePending)]
+    public async Task CoolingPadResumptionFollowsTheNotifyMePolicy(ThermalControlPolicy policy,
+        ThermalPolicyUpgradeDisclosureState disclosure)
     {
         var time = new ManualTimeProvider();
         var gate = new LowPowerGate();
         var pad = new LifecyclePad();
-        string machineRoot = Path.Combine(directory, "pad-notify-me");
+        string machineRoot = Path.Combine(directory, $"pad-{policy}-{disclosure}");
         var user = new SecurityIdentifier("S-1-5-21-100-200-300-1001");
         string userRoot = Path.Combine(machineRoot, "users", user.Value);
         var validator = ProfileSetValidator.CreateUnverifiedSafeDefaults();
@@ -207,7 +211,7 @@ public sealed partial class ServiceControlRuntimeTests
             Path.Combine(userRoot, "battery-preferences.json"), Path.Combine(userRoot, "battery-configuration.commit.json"), validator);
         BatteryConfiguration configuration = await configurationStore.LoadAsync(default);
         await configurationStore.SaveConfigurationAsync(configuration.Profiles,
-            configuration.Preferences with { ThermalControlPolicy = ThermalControlPolicy.Strict }, default);
+            configuration.Preferences with { ThermalControlPolicy = policy, ThermalPolicyUpgradeDisclosure = disclosure }, default);
         TestContext context = CreateContext(providerAvailable: true, lowPowerGate: gate, timeProvider: time,
             userConfigurationRepository: new ThermalTestUserConfigurationRepository(machineRoot, validator),
             coolingPadDeviceProvider: new LifecyclePadProvider(pad));

@@ -79,12 +79,15 @@ public sealed partial class ServiceControlRuntime
         // The pad follows "If settings change outside OpenBlade" for changes found while it is
         // controlled and for resuming control after a handback.
         bool restoreOutsideChanges = CoolingPadRestoresOutsideChanges();
+        BatteryAutomationPreferences current = preferences;
+        bool restoreOutsideLighting = current.AlwaysOverrideExternalLightingChanges;
         try
         {
             await coolingPadControl.MaintainAsync(
                 () => sessionEpoch == Interlocked.Read(ref sessionAdmissionEpoch)
                     && powerEpoch == Interlocked.Read(ref powerAdmissionEpoch)
-                    && CoolingPadWriteAdmission(user, allowLowPower: false), token, restoreOutsideChanges).ConfigureAwait(false);
+                    && CoolingPadWriteAdmission(user, allowLowPower: false), token, restoreOutsideChanges,
+                restoreOutsideLighting).ConfigureAwait(false);
             if (user is not null && restoreOutsideChanges && !coolingPadControl.Status.Active)
             {
                 // Same admission as a user's Apply, bound to the active session. Shutdown
@@ -103,9 +106,15 @@ public sealed partial class ServiceControlRuntime
     }
 
     // "Restore them" restores; "Notify me" leaves the pad to the change. The pad has no
-    // laptop thermal ledger, so the saved choice applies directly.
-    private bool CoolingPadRestoresOutsideChanges() =>
-        preferences.ThermalControlPolicy == ThermalControlPolicy.MaintainDesiredState;
+    // laptop thermal ledger, so the saved choice applies directly. A policy upgraded from
+    // an earlier version restores nothing until the user has seen its disclosure, as for
+    // the laptop. Lighting additionally needs the lighting ownership opt-in.
+    private bool CoolingPadRestoresOutsideChanges()
+    {
+        BatteryAutomationPreferences current = preferences;
+        return current.ThermalControlPolicy == ThermalControlPolicy.MaintainDesiredState
+            && current.ThermalPolicyUpgradeDisclosure != ThermalPolicyUpgradeDisclosureState.UpgradeDisclosurePending;
+    }
 
     private bool CoolingPadSessionContinues(string expectedUser, Func<bool> stillControlsSession)
     {

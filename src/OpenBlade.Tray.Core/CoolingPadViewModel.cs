@@ -324,7 +324,7 @@ public sealed class CoolingPadViewModel : INotifyPropertyChanged, IAsyncDisposab
         refusedRetries = 0;
         changePending = true;
         long ticket = ++applyTicket;
-        _ = ApplyAfterDelayAsync(ticket, applyDelay);
+        _ = ApplyAfterDelayAsync(ticket, applyDelay, retry: false);
     }
 
     private void ScheduleRetry()
@@ -332,17 +332,21 @@ public sealed class CoolingPadViewModel : INotifyPropertyChanged, IAsyncDisposab
         if (lifetime.IsCancellationRequested) { return; }
         changePending = true;
         long ticket = ++applyTicket;
-        _ = ApplyAfterDelayAsync(ticket, retryDelay);
+        _ = ApplyAfterDelayAsync(ticket, retryDelay, retry: true);
     }
 
-    private async Task ApplyAfterDelayAsync(long ticket, TimeSpan delay)
+    private static string RetryFeedback =>
+        TrayText.Get("The cooling pad has not accepted the change yet. OpenBlade will try again.");
+
+    private async Task ApplyAfterDelayAsync(long ticket, TimeSpan delay, bool retry)
     {
         try
         {
             // Coalesce slider drags and color-picker movement into one apply.
             if (delay > TimeSpan.Zero) { await Task.Delay(delay, lifetime); }
             if (ticket != applyTicket) { return; }
-            if (busy) { applyPending = true; return; }
+            // A retry that meets another operation stays a retry, so it keeps its allowance.
+            if (busy) { if (retry) { retryPending = true; } else { applyPending = true; } return; }
             await ExecuteAsync(Operation.Apply, lifetime);
         }
         catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { }
@@ -373,7 +377,21 @@ public sealed class CoolingPadViewModel : INotifyPropertyChanged, IAsyncDisposab
         if (busy || (apply && !CanApply) || (release && !CanRelease)
             || (operation is Operation.ExplicitRead or Operation.AutomaticRead && !CanRefresh))
         {
+            if (apply && !busy && feedback == RetryFeedback)
+            {
+                // The retry cannot run while writes are stopped; do not promise one.
+                feedback = null;
+                NotifyState();
+            }
             return;
+        }
+        if (release)
+        {
+            // Releasing control replaces any refused change still waiting to be tried again.
+            applyTicket++;
+            retryPending = false;
+            changePending = false;
+            refusedRetries = 0;
         }
 
         CoolingPadSettings? settings = null;
@@ -420,7 +438,7 @@ public sealed class CoolingPadViewModel : INotifyPropertyChanged, IAsyncDisposab
                         retryPending = true;
                         // Hold the draft so a status update cannot replace it before the retry.
                         changePending = true;
-                        feedback = TrayText.Get("The cooling pad has not accepted the change yet. OpenBlade will try again.");
+                        feedback = RetryFeedback;
                         return;
                     }
                     // The editor no longer matches the service request; the next status reloads it.

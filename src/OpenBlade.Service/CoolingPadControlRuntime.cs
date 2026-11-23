@@ -44,7 +44,11 @@ internal sealed class CoolingPadControlRuntime(
     private CoolingPadDeviceSnapshot? controlled;
     private DateTimeOffset nextOutsideCheck;
     private readonly Queue<DateTimeOffset> outsideRestorations = new();
-    internal static readonly TimeSpan OutsideChangeCheckInterval = TimeSpan.FromSeconds(3);
+    // Each check is one full configuration read (about eight short HID queries).
+    internal static readonly TimeSpan OutsideChangeCheckInterval = TimeSpan.FromSeconds(5);
+    // Consecutive comparison reads that may fail before the failure stops control.
+    internal const int OutsideReadFailureLimit = 3;
+    private int outsideReadFailures;
     // Restoring a change made elsewhere is bounded so OpenBlade never fights another controller.
     internal const int OutsideRestorationLimit = 3;
     internal static readonly TimeSpan OutsideRestorationWindow = TimeSpan.FromMinutes(10);
@@ -146,9 +150,14 @@ internal sealed class CoolingPadControlRuntime(
     {
         if (!CoolingPadSettings.IsWellFormed(settings)) { return Block("Cooling pad settings are invalid."); }
         await gate.WaitAsync(token).ConfigureAwait(false);
-        // A chosen setting starts a new allowance for restoring changes made elsewhere.
-        outsideRestorations.Clear();
-        try { return await ApplyCoreAsync(Freeze(settings), admission, token, continuedOwnership).ConfigureAwait(false); }
+        try
+        {
+            ControlOperationResult result = await ApplyCoreAsync(Freeze(settings), admission, token, continuedOwnership)
+                .ConfigureAwait(false);
+            // An accepted setting starts a new allowance for restoring changes made elsewhere.
+            if (result.Status is ControlOperationStatus.Applied or ControlOperationStatus.Stored) { outsideRestorations.Clear(); }
+            return result;
+        }
         finally { gate.Release(); }
     }
 
@@ -158,7 +167,6 @@ internal sealed class CoolingPadControlRuntime(
         Func<bool> admission, CancellationToken token, Func<bool>? continuedOwnership)
     {
         bool submitted = false;
-        bool fanCompleted = false;
         try
         {
             await LoadOwnershipAsync(token).ConfigureAwait(false);
@@ -224,7 +232,6 @@ internal sealed class CoolingPadControlRuntime(
                 await device!.SetFanAsync(settings.FanMode, target,
                     () => Allowed() && (!IsTemperatureDriven(settings.FanMode) || TemperatureIsFresh()), token,
                     SmartPreset(settings)).ConfigureAwait(false);
-                fanCompleted = true;
             }
             if (lighting)
             {
@@ -246,6 +253,7 @@ internal sealed class CoolingPadControlRuntime(
             // The confirmed configuration a later read compares to find a change made elsewhere.
             controlled = status.Active ? applied : null;
             nextOutsideCheck = clock.GetUtcNow() + OutsideChangeCheckInterval;
+            outsideReadFailures = 0;
             nextCurveRead = clock.GetUtcNow().AddSeconds(1);
             mirroredSequence = -1;
             return Result(fan || lighting ? ControlOperationStatus.Applied : ControlOperationStatus.Stored);
@@ -257,14 +265,6 @@ internal sealed class CoolingPadControlRuntime(
         }
         // The target is computed before any submission, so a missing reading is a refusal.
         catch (TemperatureUnavailableException exception) when (!submitted) { return Block(exception.Message); }
-        catch (CoolingPadOperationException exception) when (exception.LocalAdmissionDeferred && !exception.SubmissionUnknown
-            && !fanCompleted)
-        {
-            // Native submission proved that admission closed before the first SET of this
-            // apply. Nothing reached the pad, so this is a refusal the caller may retry.
-            Fail(exception, false);
-            return Result(ControlOperationStatus.Blocked);
-        }
         catch (Exception exception) { return Fail(exception, submitted); }
     }
 
@@ -326,7 +326,12 @@ internal sealed class CoolingPadControlRuntime(
     /// Follows "If settings change outside OpenBlade": true restores the saved settings when a
     /// read finds them changed elsewhere; false releases control and leaves that change in place.
     /// </param>
-    internal async Task MaintainAsync(Func<bool> admission, CancellationToken token, bool restoreOutsideChanges = true)
+    /// <param name="restoreOutsideLighting">
+    /// The lighting ownership opt-in. Without it a lighting change made elsewhere releases
+    /// control, because only that policy may restore lighting automatically.
+    /// </param>
+    internal async Task MaintainAsync(Func<bool> admission, CancellationToken token, bool restoreOutsideChanges = true,
+        bool restoreOutsideLighting = true)
     {
         await gate.WaitAsync(token).ConfigureAwait(false);
         bool submitted = false;
@@ -372,17 +377,21 @@ internal sealed class CoolingPadControlRuntime(
                 nextOutsideCheck = clock.GetUtcNow() + OutsideChangeCheckInterval;
                 CoolingPadDeviceSnapshot current;
                 try { current = FreezeSnapshot(await ReadDeviceAsync(token).ConfigureAwait(false)); }
-                catch (Exception exception) when (exception is IOException or TimeoutException)
+                catch (Exception exception) when (exception is TimeoutException
+                    or IOException and not CoolingPadOperationException
+                    && ++outsideReadFailures < OutsideReadFailureLimit)
                 {
-                    // A failed read is not a change and submitted nothing. Keep control and defer
-                    // this tick's write; the next tick reads again.
+                    // A transient read failure is not a change and submitted nothing. Keep control
+                    // and defer this tick's write; repeated failures or a refusal stop control.
                     DiagnosticTrace.TraceException(nameof(CoolingPadControlRuntime), nameof(MaintainAsync), exception);
                     return;
                 }
+                outsideReadFailures = 0;
                 (bool fanOutside, bool lightingOutside) = OutsideChanges(expected, current, settings);
                 if (fanOutside || lightingOutside)
                 {
-                    await HandleOutsideChangeAsync(current, fanOutside, lightingOutside, restoreOutsideChanges, admission, token)
+                    await HandleOutsideChangeAsync(current, fanOutside, lightingOutside,
+                        restoreOutsideChanges && (!lightingOutside || restoreOutsideLighting), admission, token)
                         .ConfigureAwait(false);
                     return;
                 }
@@ -397,9 +406,10 @@ internal sealed class CoolingPadControlRuntime(
                 UpdateStatus(previous => previous with { ConfirmedTargetRpm = demand });
                 if (settings.FanMode == CoolingPadFanMode.Fixed && controlled is not null)
                 {
-                    // A fixed target is stored in the fan record; compare later reads with the new one.
-                    CoolingPadDeviceSnapshot written = await device.ReadSnapshotAsync(token).ConfigureAwait(false);
-                    controlled = controlled with { FanConfiguration = written.FanConfiguration };
+                    // A fixed target is stored in the fan record, which SetFan just confirmed by
+                    // readback; compare later reads with the new value.
+                    if (controlled.FanConfiguration is { } record)
+                    { controlled = controlled with { FanConfiguration = record with { ConfiguredRpm = demand } }; }
                 }
             }
             if (settings.LightingMode == CoolingPadLightingMode.KeyboardMirror
@@ -448,6 +458,13 @@ internal sealed class CoolingPadControlRuntime(
             ControlOperationResult result = await ApplyCoreAsync(status.Requested, admission, token, authority).ConfigureAwait(false);
             if (result.Status == ControlOperationStatus.Applied)
             { UpdateStatus(previous => previous with { Message = "Cooling pad settings changed outside OpenBlade and were restored." }); }
+            // A refused restoration would otherwise repeat at every check; stop instead.
+            if (result.Status == ControlOperationStatus.Blocked && status.Active)
+            {
+                await ReleaseAfterOutsideChangeAsync(current, fanOutside, lightingOutside,
+                    "Cooling pad settings changed outside OpenBlade and could not be restored. OpenBlade stopped controlling it.",
+                    admission, token).ConfigureAwait(false);
+            }
             return;
         }
         // Notify me, or another controller keeps changing the pad: stop instead of fighting it.

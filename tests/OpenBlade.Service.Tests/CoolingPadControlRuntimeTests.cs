@@ -929,14 +929,16 @@ public sealed class CoolingPadControlRuntimeTests
     }
 
     [Fact]
-    public async Task ProvenLocalDeferralAtTheFirstSubmissionIsARefusal()
+    public async Task ProvenLocalDeferralAfterTheSettingsAreSavedFailsWithoutPausing()
     {
         var provider = new Provider();
         var runtime = await CreateAsync(provider);
         bool admitted = true;
         provider.Pad.MarkLocalAdmissionDeferral = true;
         provider.Pad.BeforeFan = () => admitted = false;
-        Assert.Equal(ControlOperationStatus.Blocked, (await runtime.ApplyAsync(Fixed, () => admitted, default)).Status);
+        // The request and journal are already saved, so this is not a refusal; nothing was
+        // submitted, so writes stay available for a retry.
+        Assert.Equal(ControlOperationStatus.Failed, (await runtime.ApplyAsync(Fixed, () => admitted, default)).Status);
         Assert.Empty(provider.Pad.Writes);
         Assert.False(runtime.Status.WritesPaused);
         Assert.False(runtime.Status.Active);
@@ -1019,6 +1021,94 @@ public sealed class CoolingPadControlRuntimeTests
         await runtime.ResumeSavedControlAsync("owner", () => true, () => true, default);
         Assert.False(runtime.Status.Active);
         Assert.Equal(2, provider.Pad.Writes.Count);
+    }
+
+    [Fact]
+    public async Task OutsideLightingChangeWithoutTheLightingOptInReleasesInsteadOfRestoring()
+    {
+        var clock = new Clock();
+        var provider = new Provider { Connection = CoolingPadConnectionState.PresentExact };
+        var store = new CoolingPadStateStore();
+        var runtime = new CoolingPadControlRuntime(provider, store, new Temperatures(), clock);
+        await runtime.SetUserAsync("owner", default);
+        var both = Fixed with { LightingMode = CoolingPadLightingMode.Static, BrightnessPercent = 80 };
+        Assert.Equal(ControlOperationStatus.Applied, (await runtime.ApplyAsync(both, () => true, default)).Status);
+
+        // Restore them is selected, but only the lighting ownership policy restores lighting.
+        provider.Pad.Snapshot = provider.Pad.Snapshot with { BrightnessRaw = 10 };
+        clock.Now += CoolingPadControlRuntime.OutsideChangeCheckInterval;
+        await runtime.MaintainAsync(() => true, default, restoreOutsideChanges: true, restoreOutsideLighting: false);
+        Assert.Equal(["fan:Fixed:1500", "lighting"], provider.Pad.Writes);
+        Assert.True(provider.Pad.RestoredFan);
+        Assert.False(provider.Pad.RestoredLighting);
+        Assert.False(runtime.Status.Active);
+        Assert.Equal("Cooling pad settings changed outside OpenBlade. OpenBlade stopped controlling it.", runtime.Status.Message);
+    }
+
+    [Fact]
+    public async Task RefusedRestorationOfAnOutsideChangeReleasesInsteadOfRepeating()
+    {
+        var clock = new Clock();
+        var provider = new Provider { Connection = CoolingPadConnectionState.PresentExact };
+        var runtime = new CoolingPadControlRuntime(provider, new CoolingPadStateStore(), new Temperatures(), clock);
+        await runtime.SetUserAsync("owner", default);
+        Assert.Equal(ControlOperationStatus.Applied, (await runtime.ApplyAsync(Fixed, () => true, default)).Status);
+
+        // The pad now reports a fan record the restore apply cannot read for restoration.
+        provider.Pad.Snapshot = provider.Pad.Snapshot with { FanConfiguration = null };
+        clock.Now += CoolingPadControlRuntime.OutsideChangeCheckInterval;
+        await runtime.MaintainAsync(() => true, default, restoreOutsideChanges: true);
+        Assert.Single(provider.Pad.Writes);
+        Assert.False(runtime.Status.Active);
+        Assert.Equal("Cooling pad settings changed outside OpenBlade and could not be restored. OpenBlade stopped controlling it.",
+            runtime.Status.Message);
+    }
+
+    [Fact]
+    public async Task FailedComparisonReadsDeferABoundedNumberOfTicksAndRefusalsStopAtOnce()
+    {
+        var clock = new Clock();
+        var provider = new Provider { Connection = CoolingPadConnectionState.PresentExact };
+        var runtime = new CoolingPadControlRuntime(provider, new CoolingPadStateStore(), new Temperatures(), clock);
+        await runtime.SetUserAsync("owner", default);
+        Assert.Equal(ControlOperationStatus.Applied, (await runtime.ApplyAsync(Fixed, () => true, default)).Status);
+
+        provider.Pad.ReadFailure = new TimeoutException("No reply.");
+        for (int tick = 1; tick < CoolingPadControlRuntime.OutsideReadFailureLimit; tick++)
+        {
+            clock.Now += CoolingPadControlRuntime.OutsideChangeCheckInterval;
+            await runtime.MaintainAsync(() => true, default);
+            Assert.True(runtime.Status.Active);
+            Assert.Equal("Cooling pad settings applied.", runtime.Status.Message);
+        }
+        // A success resets the allowance.
+        provider.Pad.ReadFailure = null;
+        clock.Now += CoolingPadControlRuntime.OutsideChangeCheckInterval;
+        await runtime.MaintainAsync(() => true, default);
+        provider.Pad.ReadFailure = new TimeoutException("No reply.");
+        for (int tick = 1; tick < CoolingPadControlRuntime.OutsideReadFailureLimit; tick++)
+        {
+            clock.Now += CoolingPadControlRuntime.OutsideChangeCheckInterval;
+            await runtime.MaintainAsync(() => true, default);
+        }
+        Assert.Equal("Cooling pad settings applied.", runtime.Status.Message);
+        // The next failure in a row reaches the ordinary failure path.
+        clock.Now += CoolingPadControlRuntime.OutsideChangeCheckInterval;
+        await runtime.MaintainAsync(() => true, default);
+        Assert.Equal("No reply.", runtime.Status.Message);
+        Assert.True(runtime.Status.RecoveryRequired);
+        Assert.Single(provider.Pad.Writes);
+
+        // A refusal from the device layer is never deferred.
+        var refused = new Provider { Connection = CoolingPadConnectionState.PresentExact };
+        var second = new CoolingPadControlRuntime(refused, new CoolingPadStateStore(), new Temperatures(), clock);
+        await second.SetUserAsync("owner", default);
+        Assert.Equal(ControlOperationStatus.Applied, (await second.ApplyAsync(Fixed, () => true, default)).Status);
+        refused.Pad.ReadFailure = new CoolingPadOperationException("Another controller owns the pad.", false);
+        clock.Now += CoolingPadControlRuntime.OutsideChangeCheckInterval;
+        await second.MaintainAsync(() => true, default);
+        Assert.Equal("Another controller owns the pad.", second.Status.Message);
+        Assert.True(second.Status.RecoveryRequired);
     }
 
     [Fact]
@@ -1108,13 +1198,18 @@ public sealed class CoolingPadControlRuntimeTests
         };
         internal List<string> Writes = [];
         internal bool FailWrite;
+        internal Exception? ReadFailure;
         internal bool MarkLocalAdmissionDeferral;
         internal int DisposeCalls;
         internal int ReadCalls;
         internal Action? BeforeFan, AfterFan;
         internal CoolingPadDeviceSnapshot? Restored;
         internal bool RestoredFan, RestoredLighting;
-        public Task<CoolingPadDeviceSnapshot> ReadSnapshotAsync(CancellationToken token) { ReadCalls++; return Task.FromResult(Snapshot); }
+        public Task<CoolingPadDeviceSnapshot> ReadSnapshotAsync(CancellationToken token)
+        {
+            ReadCalls++;
+            return ReadFailure is { } failure ? Task.FromException<CoolingPadDeviceSnapshot>(failure) : Task.FromResult(Snapshot);
+        }
         public Task SetFanAsync(CoolingPadFanMode mode, int? rpm, Func<bool> allowed, CancellationToken token,
             CoolingPadFanPreset? smartPreset = null)
         {

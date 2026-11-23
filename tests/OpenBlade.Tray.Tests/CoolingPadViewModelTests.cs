@@ -198,6 +198,26 @@ public sealed class CoolingPadViewModelTests
     }
 
     [Fact]
+    public async Task ReleasingControlCancelsARefusedChangeWaitingToBeRetried()
+    {
+        var client = new PadClient { BlockedResult = true };
+        await using var vm = new CoolingPadViewModel(client, new InlineDispatcher(), applyDelay: TimeSpan.Zero,
+            refreshInterval: TimeSpan.FromHours(1), retryDelay: TimeSpan.FromMilliseconds(150));
+        vm.ApplyStatus(new() { Connected = true, Active = true, Requested = CoolingPadSettings.Default with { FanMode = CoolingPadFanMode.Fixed } });
+        vm.FixedRpm = 2000;
+        Assert.Equal(1, client.Writes);
+        Assert.Equal(TrayText.Get("The cooling pad has not accepted the change yet. OpenBlade will try again."), vm.StatusText);
+
+        client.BlockedResult = false;
+        client.NextStatus = new() { Connected = true, Active = false };
+        await vm.ReleaseCommand.ExecuteAsync(null);
+        Assert.Equal(1, client.Releases);
+        await Task.Delay(400);
+        Assert.Equal(1, client.Writes);
+        Assert.NotEqual(TrayText.Get("The cooling pad has not accepted the change yet. OpenBlade will try again."), vm.StatusText);
+    }
+
+    [Fact]
     public async Task PersistentRefusalStopsRetryingAndReportsIt()
     {
         var client = new PadClient { BlockedResult = true };
