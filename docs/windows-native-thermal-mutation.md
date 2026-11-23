@@ -1887,6 +1887,9 @@ effect leaves it unresolved, the reading is no evidence and the recorded
 change stays as it is. Either subsystem changed, or an observed HyperBoost,
 excludes both from that reconciliation. The excluded steps write nothing
 and reply with managed's paused or deferred message, and the debt settles.
+Under manual firmware fans with a fan intent that has no native recipe,
+such as Silent with Fixed fans, an unplug and a replug therefore both write
+nothing and report `externalChanges` [1] until the fans read Automatic.
 
 A user's startup and a user activation apply over drift (managed
 `preserveObservedExternalChanges: false`). Startup is keyed on the SID, as
@@ -1898,15 +1901,27 @@ reconciliation has compared a fresh reading and a debt of that user then
 settles. A debt that settles with nothing compared, such as refusals on an
 adapter not classified yet or saved intent that reads no firmware, leaves
 the user starting, so its next reconciliation still overwrites instead of
-pausing over an intent native never confirmed. A capture that a competing
-controller refuses, at a report, a save or a lifecycle cause, drops the
-pair's debt and ends startup, as managed ends startup after a transition a
-controller kept from writing (`CompleteStartupProfileReconciliation`). With
-nothing of OpenBlade's own confirmed, the next power change then pauses
-unless firmware shows its intent. Managed's transition pauses there too,
-since firmware does not show the startup's desired state; only its
-convergence loop repairs it. Startup is not a debt's own state: only the
-starting user's reconciliation, or the activation itself, overwrites.
+pausing over an intent native never confirmed. An observed HyperBoost that
+OpenBlade does not own compares nothing either, so it also keeps startup
+pending: the first comparing cause after it still overwrites, including a
+change recorded in between, where managed would compare. Startup is not a
+debt's own state: only the starting user's reconciliation, or the
+activation itself, overwrites.
+
+A capture that a competing controller refuses, at a report, a save or a
+lifecycle cause, drops the pair's debt and ends startup
+(`Runtime::drop_for_controller`). This is native's stricter write
+admission, not managed parity: managed's `ApplyFullTransitionAsync` and
+`ScopedThermalWriteBlockReason` have no controller clause, so its startup
+under a controller writes the saved profile. A controller-detection
+failure, or an inventory slower than 1 s, returns the same denial with no
+controller present. With nothing of OpenBlade's own confirmed, the next
+power change then compares only its new intent. Unless firmware already
+shows it, the user sees `externalChanges` [0] although nothing changed
+outside OpenBlade. That heals when a later intent matches firmware;
+otherwise it stays paused until an explicit request. Only captures drop a
+debt this way: a step whose own authorization a controller refuses inside
+`reconcile_locked` spends a retry instead.
 
 A power change within one minute (`RESUME_WINDOW`) after the last gate
 boundary, in low power or after the resume, is a resume change. When its
@@ -1950,7 +1965,9 @@ Native differs from managed in these ways:
   native reading; an undecodable reading resolves nothing and writes
   nothing. A competing controller refuses the capture before any reading,
   so native records no external change there where managed does
-  (`powerToBatteryWithController`). An excluded step's own reading reaches
+  (`powerToBatteryWithController`, whose [0] is drift against the desired
+  state managed published first, not a controller gate). An excluded
+  step's own reading reaches
   `confirmedState` only at the next status reading.
 - Resume on an unchanged source after a deferral. Managed's
   `HandlePowerSourceChangedAsync` submits nothing then; its convergence loop
@@ -1959,6 +1976,17 @@ Native differs from managed in these ways:
 - Activation timing. Managed activates a user at its first admitted request.
   Native activates the console user at the first tick that reads it, and
   only the console session's user, whose capture must prove it unlocked.
+- Controller and save admission. Managed's startup and ordinary thermal
+  transitions have no competing-controller clause; its controller gates
+  cover fan-curve maintenance, fan recovery and convergence only. Native
+  refuses every write while fresh controller absence is unconfirmed, which
+  drops the cause and pauses the next power change as described above.
+  Managed also stores profiles without device, power or controller
+  admission, while a native save outside low power takes the write capture
+  and is refused under a competing controller, a locked session or an
+  unknown AC status. If saves are relaxed later, a controller refusal of a
+  step's own authorization inside `reconcile_locked` does not take
+  `Runtime::drop_for_controller`, so it needs its own handling.
 
 Offline evidence covers the tick's logic through injected probes only. The
 native wiring is compile-only, and no offline test reaches it:

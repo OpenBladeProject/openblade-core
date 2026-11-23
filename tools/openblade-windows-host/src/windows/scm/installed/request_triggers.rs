@@ -1166,18 +1166,25 @@ impl Runtime {
     /// confirmed: the pair's debt is dropped and its user's startup ends,
     /// whatever was compared. Strict thermal control stays advisory and
     /// keeps nothing owed for after the controller leaves, which would
-    /// overwrite what the user chose there (Architecture rule 5), as
-    /// managed's transition applies nothing then and ends its startup
-    /// (`CompleteStartupProfileReconciliation`; a controller does not block
-    /// writes there).
+    /// overwrite what the user chose there (Architecture rule 5).
+    ///
+    /// This is native's stricter write admission, not managed parity.
+    /// Managed has no controller clause on startup or ordinary thermal
+    /// transitions (`ApplyFullTransitionAsync`,
+    /// `ScopedThermalWriteBlockReason`), so its startup under a controller
+    /// writes the saved profile. Native refuses every write under a
+    /// controller. A controller-detection failure, or an inventory slower
+    /// than 1 s, returns the same denial with no controller present.
     ///
     /// With nothing of OpenBlade's own confirmed, the next power change then
-    /// compares only its new intent and pauses unless firmware already shows
-    /// it. Managed's transition pauses there too: the startup's desired state
-    /// is its prior intent, which firmware does not show under the
-    /// controller's state. Only managed's convergence loop, which native does
-    /// not have, repairs it later; native resumes at an explicit request,
-    /// another user's activation or a restart.
+    /// compares only its new intent. Unless firmware already shows it, the
+    /// user sees `externalChanges` [0] although nothing changed outside
+    /// OpenBlade. That heals when a later intent matches firmware; otherwise
+    /// it stays paused until an explicit request, another user's activation
+    /// or a restart.
+    ///
+    /// Only captures take this path. A step whose own authorization a
+    /// controller refuses inside `reconcile_locked` spends a retry instead.
     pub(super) fn drop_for_controller(&self, sid: &str, session: u32) {
         self.startup
             .borrow_mut()

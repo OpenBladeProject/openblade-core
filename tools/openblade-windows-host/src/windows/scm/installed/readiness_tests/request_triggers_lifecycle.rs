@@ -799,9 +799,11 @@ async fn a_busy_tick_keeps_its_time_current_but_never_erases_a_gap() {
 
 /// A cause whose capture meets a competing controller is dropped and owes
 /// nothing: once the controller leaves, neither a later notice nor the
-/// reporter's next renewal applies the profile it would have, as managed
-/// applies nothing at a power change with a controller present and nothing
-/// once it leaves.
+/// reporter's next renewal applies the profile it would have. Native refuses
+/// every write under a controller, a stricter admission than managed, whose
+/// thermal transition has no controller gate. Managed's rows submit nothing
+/// for another reason: they compare with the desired state managed published
+/// first and record drift (`externalChanges` [0]).
 #[tokio::test]
 async fn a_competing_controller_drops_the_cause_and_owes_nothing_after_it_leaves() {
     let vectors: Value = serde_json::from_str(LIFECYCLE_VECTORS).unwrap();

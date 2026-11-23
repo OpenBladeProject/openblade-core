@@ -59,9 +59,9 @@ async fn a_startup_without_a_destination_owns_the_preset_it_leaves() {
 /// A competing controller that drops the first activation ends startup
 /// with nothing of OpenBlade's own confirmed, so the next power change
 /// compares only its new intent and pauses, whether firmware moved or not.
-/// Managed's transition pauses there too, since firmware does not show the
-/// startup's desired state; only its convergence loop, which native does not
-/// have, repairs it (`Runtime::drop_for_controller`).
+/// This follows from native's stricter write admission, not managed parity:
+/// managed's startup has no controller gate and writes the saved profile
+/// (`Runtime::drop_for_controller`).
 #[tokio::test]
 async fn a_controller_dropped_startup_pauses_the_next_power_change() {
     let rig = rig_at(files_with_game(json!({"pluggedIn":{"performance":2}})), 0);

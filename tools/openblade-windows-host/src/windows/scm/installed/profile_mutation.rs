@@ -44,9 +44,11 @@ impl Runtime {
             return blocked("Authenticated thermal custody is unavailable.".into());
         };
         reader.custody().verify_integrity()?;
-        // The per-user store. Storing consults no device, power or controller
-        // admission, as managed stores profiles without any. With triggers, a
-        // save in low power takes the storage capture and its deferral.
+        // The per-user store. Managed stores profiles without device, power
+        // or controller admission. A native save takes the write capture, so
+        // a competing controller, a locked session or an unknown AC status
+        // refuses it (a documented deviation). With triggers, a save in low
+        // power takes the storage capture and its deferral instead.
         let (storage, fresh) = match self.capture_intent(&sid, caller.session, reader.custody()) {
             Ok(captured) => captured,
             Err(error) if is_fatal_admission(&error) => return Err(error),
