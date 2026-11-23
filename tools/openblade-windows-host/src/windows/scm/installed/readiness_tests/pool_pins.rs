@@ -300,3 +300,191 @@ async fn an_owner_closed_without_a_setter_returns_its_pins() {
         assert!(r.port.pinned_transactions(&owner).is_empty(), "{case}");
     }
 }
+
+/// Every ID the pool keeps pinned, sorted.
+fn pinned_ids(r: &Rig) -> Vec<u8> {
+    r.port.pinned_transactions(&(1..=254).collect::<Vec<u8>>())
+}
+fn queued(r: &Rig) -> Vec<u8> {
+    let mut queued = r.runtime.queued_pins_for_tests();
+    queued.sort_unstable();
+    queued
+}
+
+// A competing controller that appears at any fresh authorization refuses the
+// request, before or after its record named IDs. Whatever it pinned is then
+// queued for release: a record known not to have submitted anything (row 6,
+// or no row at all) settles.
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn a_refused_request_queues_every_pin_it_kept() {
+    let mut retained = false;
+    // From the 30th on, a refusal follows a setter.
+    for at in 1..30 {
+        let r = fan_rig(0, 0);
+        r.get().await;
+        r.custody.refuse_at.store(at, Ordering::Release);
+        let out = r.request(fan_request(300, Some(1), 3700)).await;
+        assert_eq!(out["result"]["status"], 2, "{at}: {out}");
+        assert!(!r.storage.pending(), "{at}");
+        assert_eq!(pinned_ids(&r), queued(&r), "{at}");
+        retained |= !queued(&r).is_empty();
+    }
+    assert!(retained, "no refusal came after the record named its IDs");
+}
+#[cfg(feature = "service-temporary-charge-v1")]
+#[tokio::test]
+async fn a_refused_enable_queues_every_pin_it_kept() {
+    let mut retained = false;
+    for at in 1..30 {
+        let r = Rig::new(MemoryFiles::default());
+        r.get().await;
+        r.custody.refuse_at.store(at, Ordering::Release);
+        let out = r
+            .request(battery_request(700, "setFullChargeOverride", json!(true)))
+            .await;
+        assert_eq!(out["result"]["status"], 2, "{at}: {out}");
+        assert!(!r.storage.pending(), "{at}");
+        assert_eq!(pinned_ids(&r), queued(&r), "{at}");
+        retained |= !queued(&r).is_empty();
+    }
+    assert!(retained, "no refusal came after the enable named its IDs");
+}
+
+// The origin tick reconciles while an enable's setter is still held. The
+// enable has not joined, so the tick leaves its pins alone, and once it
+// confirms they are still pinned for its source cancel.
+#[cfg(feature = "service-temporary-charge-v1")]
+#[tokio::test]
+async fn a_tick_during_an_enable_leaves_its_pins_pinned() {
+    let r = Rig::new(MemoryFiles::default());
+    r.get().await;
+    let release = Arc::new(AtomicBool::new(false));
+    let writes = r.port.state.lock().unwrap().writes;
+    r.port.state.lock().unwrap().held_write = Some((writes + 1, release.clone()));
+    let enable = r.request(battery_request(800, "setFullChargeOverride", json!(true)));
+    let tick = async {
+        while r.port.state.lock().unwrap().writes == writes {
+            tokio::task::yield_now().await;
+        }
+        let released = async {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            release.store(true, Ordering::Release);
+        };
+        tokio::join!(origin_tick(&r), released);
+    };
+    let (response, ()) = tokio::time::timeout(Duration::from_secs(10), async {
+        tokio::join!(enable, tick)
+    })
+    .await
+    .unwrap();
+    assert_eq!(response["result"]["status"], 1, "{response}");
+    let reserved = cancel_ids(&r);
+    assert_eq!(r.port.pinned_transactions(&reserved), reserved);
+    assert!(queued(&r).iter().all(|id| !reserved.contains(id)));
+    r.stop().await;
+}
+
+// A source cancel whose worker never confirms its stop has not joined, and
+// may still send the enable's reserved IDs: the enable keeps them.
+#[cfg(feature = "service-temporary-charge-v1")]
+#[tokio::test]
+async fn an_unjoined_source_cancel_keeps_the_enables_pins() {
+    let r = Rig::new(MemoryFiles::default());
+    r.get().await;
+    temporary(&r, 810, true).await;
+    let reserved = cancel_ids(&r);
+    r.port.state.lock().unwrap().mutation_worker_error = Some(Arc::new(|| {
+        io::Error::other("injected unconfirmed worker stop")
+    }));
+    source_battery(&r);
+    let _ = r.source.lock().await.process_power_source().await;
+    r.port.state.lock().unwrap().mutation_worker_error = None;
+    assert_eq!(r.port.pinned_transactions(&reserved), reserved);
+    assert!(queued(&r).iter().all(|id| !reserved.contains(id)));
+}
+
+// A cancel refused before any request leaves the reservation, and a release
+// that storage then defers puts the enable back in its slot with its pins.
+// Once the release goes through, they are queued.
+#[cfg(feature = "service-temporary-charge-v1")]
+#[tokio::test]
+async fn a_deferred_release_keeps_the_enables_pins() {
+    let r = Rig::new(MemoryFiles::default());
+    r.get().await;
+    temporary(&r, 820, true).await;
+    let reserved = cancel_ids(&r);
+    r.custody.fresh_refuse.store(true, Ordering::Release);
+    r.files.release_fault.store(1, Ordering::Release);
+    source_battery(&r);
+    let _ = r.source.lock().await.process_power_source().await;
+    assert!(r.runtime.release_only_for_tests());
+    assert_eq!(r.port.pinned_transactions(&reserved), reserved);
+    assert!(queued(&r).iter().all(|id| !reserved.contains(id)));
+    r.custody.fresh_refuse.store(false, Ordering::Release);
+    r.files.release_fault.store(0, Ordering::Release);
+    let _ = r.source.lock().await.process_power_source().await;
+    assert!(!r.runtime.release_only_for_tests());
+    assert!(
+        reserved.iter().all(|id| queued(&r).contains(id)),
+        "{:?}",
+        queued(&r)
+    );
+}
+
+// A newer confirmed enable replaces the owner, whose pins are then queued.
+#[cfg(feature = "service-temporary-charge-v1")]
+#[tokio::test]
+async fn a_replaced_enable_queues_its_pins() {
+    let r = Rig::new(MemoryFiles::default());
+    r.get().await;
+    temporary(&r, 830, true).await;
+    let first = cancel_ids(&r);
+    temporary(&r, 831, true).await;
+    let second = cancel_ids(&r);
+    assert!(first.iter().all(|id| !second.contains(id)));
+    assert!(
+        first.iter().all(|id| queued(&r).contains(id)),
+        "{:?}",
+        queued(&r)
+    );
+    assert_eq!(r.port.pinned_transactions(&second), second);
+    r.stop().await;
+}
+
+// An owner whose closing 51 cannot be appended stays the owner, from an
+// explicit request or from Stop, and keeps its pins.
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn an_owner_whose_closing_row_fails_keeps_its_pins() {
+    for explicit in [true, false] {
+        let r = foreign_selector_rig(0, [2; 2], [0; 2], 15).await;
+        let owner = fan_record_ids(&r, 230);
+        if explicit {
+            // The request saves its intent after its first read, so only the
+            // journal is made to fail: from that read on it no longer holds
+            // the bytes the store expects, and the 51 is the append refused.
+            let files = r.files.clone();
+            let at = r.port.state.lock().unwrap().power_reads + 1;
+            r.port.state.lock().unwrap().on_power = Some(Arc::new(move |n| {
+                if n == at {
+                    let mut bytes = files.bytes.lock().unwrap();
+                    let journal = bytes.get_mut("thermal-mutation.journal").unwrap();
+                    journal.insert(journal.len() - 1, b' ');
+                }
+            }));
+            let out = r.request(fan_request(232, Some(0), 3700)).await;
+            assert_ne!(out["result"]["status"], 1, "{out}");
+        } else {
+            r.files.fail.store(true, Ordering::Release);
+            r.origin.stop();
+            let _ = r.source.lock().await.drain().await;
+        }
+        assert_eq!(fan_rows(&r).last().unwrap()["progress"], 30, "{explicit}");
+        assert_eq!(r.port.pinned_transactions(&owner), owner, "{explicit}");
+        assert!(
+            queued(&r).iter().all(|id| !owner.contains(id)),
+            "{explicit}"
+        );
+    }
+}

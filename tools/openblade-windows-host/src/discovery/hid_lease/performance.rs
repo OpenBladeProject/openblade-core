@@ -365,8 +365,11 @@ impl<P: Port, A: ObservationProof> Reader<P, A> {
     // canceled operation completes successfully after the observation deadline.
     // Only then can no reserved ID still be sent, so the unsent are freed.
     // Held IDs go first: `release` skips the pinned ones, which `unpin` then
-    // frees, so nothing this Reader frees is released twice. A failed
-    // retirement frees nothing, and its settled pins stay out of the pool.
+    // frees, so nothing this Reader frees is released twice. The order is
+    // otherwise immaterial only because one Reader runs at a time (the
+    // device's `OCCUPIED` worker guard): no other Reader can be issued an ID
+    // between the two steps. A retirement that is never confirmed frees
+    // nothing, and its provisional and settled pins stay out of the pool.
     async fn retire(&mut self, deadline: Option<Instant>) -> io::Result<()> {
         self.seal();
         loop {

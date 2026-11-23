@@ -776,3 +776,37 @@ async fn a_retained_pair_returns_only_once_its_record_settles_and_a_reader_retir
     assert!(issued.contains(&unsent) && own.iter().all(|id| issued.contains(id)));
     assert!(!issued.contains(&sent), "a sent ID stays quarantined");
 }
+
+// A Reader whose retirement is never confirmed may still have a request in
+// flight, so it frees none of its pins: neither its own provisional pair nor
+// a settled record's pins it took.
+#[cfg(feature = "service-thermal-mutation-v1")]
+#[tokio::test(start_paused = true)]
+async fn an_unconfirmed_retirement_frees_no_pins() {
+    use super::mutation::Permit;
+    let device = Device::new(0);
+    let transactions = &device.transactions;
+    let owner = Owner::default();
+    let mut first = Reader::new(device.port(), PROOF);
+    let retained = first.reserve_retained_pair().unwrap();
+    first.retain(&owner);
+    first.retire(None).await.unwrap();
+    owner.settled.settle(&owner.pins);
+    let mut second = Reader::new(device.port(), PROOF);
+    let provisional = second.reserve_retained_pair().unwrap();
+    second.settled.extend(owner.settled_pins());
+    let free = transactions.free();
+    device.unretired.store(true, Ordering::Release);
+    let deadline = Instant::now() + Duration::from_millis(50);
+    assert!(second.retire(Some(deadline)).await.is_err());
+    assert_eq!(transactions.free(), free);
+    for _ in 0..3 {
+        let issued = drain(transactions);
+        assert!(
+            retained
+                .iter()
+                .chain(&provisional)
+                .all(|id| !issued.contains(id))
+        );
+    }
+}
