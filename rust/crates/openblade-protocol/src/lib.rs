@@ -7,6 +7,7 @@ pub mod battery;
 pub mod custom_performance;
 pub mod device_mode;
 pub mod fan;
+pub mod fan_rpm;
 pub mod thermal_preset;
 
 use openblade_types::{ProtocolValidationFailure, ReportEncodingError};
