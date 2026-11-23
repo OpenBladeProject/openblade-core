@@ -550,7 +550,7 @@ public sealed class WindowsNativeEpochTests
     public void KeyboardDriverModeOwnerIsNotAdmittedByFeatureOrMarker()
     {
         // Driver-mode ownership writes 00/04. The image is refused by its own name, before the
-        // read and trigger features it implies, even in a record that drops them and claims only
+        // read feature it implies, even in a record that drops it and claims only
         // the admitted composition it would extend.
         string source = new('a', 40);
         const string owner = "service-keyboard-driver-mode-v1";
@@ -560,7 +560,7 @@ public sealed class WindowsNativeEpochTests
         Assert.Equal("service-temporary-charge-v1", NativeArtifact.Inspect(
             [.. Image("service", schema: 2, features: features, capabilities: admitted)], "service", source).StartupPolicy);
         string forged = features.Replace("service-mailbox-observation-v1,", owner + ",service-mailbox-observation-v1,", StringComparison.Ordinal);
-        string built = features.Replace("service-mailbox-observation-v1,", "service-keyboard-driver-mode-read-v1," + owner + ",service-mailbox-observation-v1,service-profile-triggers-v1,service-profiles-v1,", StringComparison.Ordinal);
+        string built = features.Replace("service-mailbox-observation-v1,", "service-keyboard-driver-mode-read-v1," + owner + ",service-mailbox-observation-v1,", StringComparison.Ordinal);
         string marked = admitted + ",service-keyboard-driver-mode-read-v1," + owner;
         foreach (string withFeature in new[] { forged, built })
         {

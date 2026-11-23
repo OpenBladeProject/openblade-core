@@ -33,6 +33,9 @@ pub(crate) struct State {
     pub(crate) on_power: Option<Arc<dyn Fn(usize) + Send + Sync>>,
     pub(crate) on_mutation_retired: Option<Arc<dyn Fn() + Send + Sync>>,
     pub(crate) mutation_worker_error: Option<Arc<dyn Fn() -> io::Error + Send + Sync>>,
+    // The next this many write jobs fail to open their port, before any
+    // exchange, as `NativePort::open` can (`windows::mutation_worker`).
+    pub(crate) mutation_open_fails: usize,
     // A read job fails after its port retires, so its worker's stop stays unconfirmed.
     pub(crate) read_worker_error: Option<Arc<dyn Fn() -> io::Error + Send + Sync>>,
     pub(crate) actual: u8,
@@ -101,6 +104,12 @@ pub(crate) struct State {
     pub(crate) device_mode_ignore_set: bool,
     /// The 00/04 acknowledgement echoes another mode.
     pub(crate) device_mode_bad_ack: bool,
+    // Every 00/84 reply times out.
+    pub(crate) device_mode_mute: bool,
+    // Each keyboard 00/04 or 00/84 exchange completes this long after it is
+    // sent, on the real clock, so a job that stalls costs real time.
+    #[cfg(feature = "service-keyboard-driver-mode-v1")]
+    pub(crate) device_mode_latency: Option<Duration>,
 }
 #[derive(Clone)]
 pub(crate) struct Fixture {
@@ -200,6 +209,13 @@ impl Fixture {
                 let Some(admission) = authorize() else {
                     return Ok(None);
                 };
+                if permit.is_some() {
+                    let mut s = fixture.state.lock().unwrap();
+                    if s.mutation_open_fails > 0 {
+                        s.mutation_open_fails -= 1;
+                        return Ok(None);
+                    }
+                }
                 // A thermal or fan recipe, as opposed to a battery or
                 // temporary-charge one.
                 let thermal = permit.as_ref().is_some_and(|permit| {
@@ -213,9 +229,14 @@ impl Fixture {
                         || s.power_stall.is_some()
                         || !s.exchange_stall.is_empty()
                         || s.setter_latency.is_some();
+                    #[cfg(feature = "service-keyboard-driver-mode-v1")]
+                    let real = s.device_mode_latency.is_some();
+                    #[cfg(not(feature = "service-keyboard-driver-mode-v1"))]
+                    let real = false;
                     let paused = (latency || permit.is_none() || thermal)
                         && s.held_read.is_none()
-                        && s.held_write.is_none();
+                        && s.held_write.is_none()
+                        && !real;
                     let arrival = if paused && permit.is_some() {
                         s.arrival.take()
                     } else {
@@ -358,6 +379,8 @@ impl Port for MemoryPort {
                         s.power_latency.unwrap_or_default() + stall.unwrap_or_default()
                     }
                     (13, 1 | 2 | 7) => s.setter_latency.unwrap_or_default(),
+                    #[cfg(feature = "service-keyboard-driver-mode-v1")]
+                    (0, 0x04 | 0x84) => s.device_mode_latency.unwrap_or_default(),
                     _ => Duration::ZERO,
                 } + s
                     .exchange_stall
@@ -513,7 +536,9 @@ impl Port for MemoryPort {
                         if let Some(hook) = &s.device_mode_on_query {
                             hook(s.device_mode_queries);
                         }
-                        if s.device_mode_timeout == Some(s.device_mode_queries) {
+                        if s.device_mode_timeout == Some(s.device_mode_queries)
+                            || s.device_mode_mute
+                        {
                             self.reply_timeout = true;
                         }
                         vec![s.device_mode, 0]

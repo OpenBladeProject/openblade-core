@@ -1014,13 +1014,19 @@ async fn a_serving_loop_tick_runs_the_lifecycle_reconciliation() {
 
 /// The lifecycle source with a keyboard Driver-mode step that records where
 /// the tick runs it.
-#[cfg(feature = "service-keyboard-driver-mode-v1")]
+#[cfg(all(
+    feature = "service-keyboard-driver-mode-v1",
+    feature = "service-profile-triggers-v1"
+))]
 struct DriverModeSource {
     inner: LifecycleSource,
     maintained: Rc<Cell<usize>>,
     unlocked: Rc<Cell<usize>>,
 }
-#[cfg(feature = "service-keyboard-driver-mode-v1")]
+#[cfg(all(
+    feature = "service-keyboard-driver-mode-v1",
+    feature = "service-profile-triggers-v1"
+))]
 impl StatusSource for DriverModeSource {
     fn snapshot(&mut self, caller: Caller, at: Instant) -> Pending<'_, Snapshot> {
         self.inner.snapshot(caller, at)
@@ -1062,7 +1068,10 @@ impl StatusSource for DriverModeSource {
 /// Managed step order on every tick: the power-source classification, the
 /// keyboard Driver-mode step, then the lifecycle reconciliation. The step is
 /// awaited with the source lock released.
-#[cfg(feature = "service-keyboard-driver-mode-v1")]
+#[cfg(all(
+    feature = "service-keyboard-driver-mode-v1",
+    feature = "service-profile-triggers-v1"
+))]
 #[tokio::test(start_paused = true)]
 async fn a_serving_loop_tick_runs_the_driver_mode_step_after_the_power_check() {
     let events = Events::default();

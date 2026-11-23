@@ -4,9 +4,10 @@
 //! `RazerReport::create` and `encode_report` are public encoders, so no type
 //! stops other code building 00/04. This guard is a textual allowlist: it
 //! fails when non-test source in the native Service's crates names the setter
-//! outside the codec and the one Driver-mode write recipe, renames an encoder
-//! on import, or adds a call to either encoder, so each new one is reviewed
-//! against the admitted commands. It does not see an encoder reached through
+//! outside the codec and the one Driver-mode write recipe, builds a
+//! Driver-mode job outside its one owner, renames an encoder on import, or
+//! adds a call to either encoder, so each new one is reviewed against the
+//! admitted commands. It does not see an encoder reached through
 //! a glob import or a macro.
 use std::{
     collections::BTreeMap,
@@ -69,6 +70,12 @@ const SETTER_USERS: &[&str] = &[
     "tools/openblade-windows-host/src/discovery/hid_lease/performance/device_mode.rs",
 ];
 
+/// The only non-test file that may build a Driver-mode job, and so ask the
+/// recipe for a 00/04 setter: the Service's owner (`Runtime::maintain_driver_mode`
+/// and the shutdown release). The recipe's module defines it.
+const JOB_USERS: &[&str] =
+    &["tools/openblade-windows-host/src/windows/scm/installed/driver_mode_owner.rs"];
+
 fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
@@ -121,6 +128,10 @@ fn no_non_test_source_names_the_setter_or_adds_an_encoder_call() {
         assert!(
             !text.contains("DeviceModeSet") || SETTER_USERS.contains(&name.as_str()),
             "{name} names the setter"
+        );
+        assert!(
+            !text.contains("DeviceModeJob::new") || JOB_USERS.contains(&name.as_str()),
+            "{name} builds a Driver-mode job"
         );
         for encoder in ["RazerReport as ", "encode_report as "] {
             assert!(!text.contains(encoder), "{name} renames an encoder");

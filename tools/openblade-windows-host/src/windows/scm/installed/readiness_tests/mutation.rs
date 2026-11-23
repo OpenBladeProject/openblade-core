@@ -520,6 +520,9 @@ struct Custody {
     current_session: AtomicUsize,
     current_console: AtomicBool,
     scoped_fresh: AtomicBool,
+    // The next write captures pin the lifecycle epoch, as `WindowsGuard`
+    // does (`PinnedFresh`).
+    pinned_fresh: AtomicBool,
     // The next captures open a second Storage over the same files, as a
     // per-user cache eviction would.
     other_storage: AtomicBool,
@@ -570,6 +573,7 @@ impl Custody {
             current_session: AtomicUsize::new(7),
             current_console: AtomicBool::new(true),
             scoped_fresh: AtomicBool::new(false),
+            pinned_fresh: AtomicBool::new(false),
             other_storage: AtomicBool::new(false),
             generation: AtomicU8::new(7),
             authentication: AtomicUsize::new(1),
@@ -680,7 +684,8 @@ impl ReadCustody for Custody {
         );
         drop(port);
         match self.activation_refusal.load(Ordering::Acquire) {
-            1 => {
+            // 3 is a recovery-only lease, which refuses every activation.
+            1 | 3 => {
                 return Err(
                     crate::installed::readiness::mailbox_read::ActivationFailure::KnownUnpublished(
                         io::ErrorKind::PermissionDenied.into(),
@@ -698,6 +703,10 @@ impl ReadCustody for Custody {
         }
         assert_eq!(self.activations.fetch_add(1, Ordering::AcqRel), 0);
         Ok(())
+    }
+    #[cfg(feature = "service-keyboard-driver-mode-v1")]
+    fn recovery_only(&self) -> bool {
+        self.activation_refusal.load(Ordering::Acquire) == 3
     }
     fn revoke(&self) {
         self.live.store(false, Ordering::Release);
@@ -841,6 +850,53 @@ impl Fresh for SettleFresh {
     }
     fn authorize(&self) -> Option<ReadAdmission> {
         None
+    }
+}
+/// Test model of `WindowsGuard::capture`'s epoch pin: a write capture whose
+/// request and owned-Stop admissions both refuse once a power or session
+/// notice advances the lifecycle epoch it captured at. Its settle renewal is
+/// the custody's (`Custody::capture_settle`).
+struct PinnedFresh {
+    custody: Arc<Custody>,
+    epoch: u64,
+}
+impl PinnedFresh {
+    fn new(custody: Arc<Custody>) -> io::Result<Self> {
+        let epoch = custody
+            .lifecycle
+            .active()
+            .ok_or(io::ErrorKind::PermissionDenied)?;
+        Ok(Self { custody, epoch })
+    }
+    fn current(&self) -> bool {
+        self.custody.lifecycle.active() == Some(self.epoch)
+    }
+}
+impl Fresh for PinnedFresh {
+    fn on_battery(&self) -> Option<bool> {
+        self.custody.on_battery()
+    }
+    fn authentication(&self) -> Option<(u32, i32)> {
+        Fresh::authentication(self.custody.as_ref())
+    }
+    fn verify_health(&self) -> io::Result<()> {
+        Fresh::verify_health(self.custody.as_ref())
+    }
+    fn authorize(&self) -> Option<ReadAdmission> {
+        self.current()
+            .then(|| Fresh::authorize(self.custody.as_ref()))?
+    }
+    fn authorize_owned_stop(&self) -> Option<ReadAdmission> {
+        self.current()
+            .then(|| Fresh::authorize_owned_stop(self.custody.as_ref()))?
+    }
+    fn capture_settle(
+        &self,
+        sid: &str,
+        session: u32,
+        authentication: Option<(u32, i32)>,
+    ) -> io::Result<Arc<dyn Fresh>> {
+        Fresh::capture_settle(self.custody.as_ref(), sid, session, authentication)
     }
 }
 struct Origin(Arc<crate::loaded_origin::lifetime::Lifetime>, Arc<Custody>);
@@ -1049,7 +1105,9 @@ impl Rig {
             if fresh.controller.load(Ordering::Acquire) {
                 return Err(crate::installed::readiness::thermal_mutation::competing_controller());
             }
-            let proof: Arc<dyn Fresh> = if fresh.scoped_fresh.load(Ordering::Acquire) {
+            let proof: Arc<dyn Fresh> = if fresh.pinned_fresh.load(Ordering::Acquire) {
+                Arc::new(PinnedFresh::new(fresh.clone())?)
+            } else if fresh.scoped_fresh.load(Ordering::Acquire) {
                 if !fresh.current_console.load(Ordering::Acquire) {
                     return Err(io::ErrorKind::PermissionDenied.into());
                 }
@@ -4472,6 +4530,37 @@ fn fan_rows(r: &Rig) -> Vec<Value> {
         .filter(|b| !b.is_empty())
         .map(|b| serde_json::from_slice(b).unwrap())
         .collect()
+}
+/// A write job whose port fails to open sent nothing and is not applied
+/// (`windows::mutation_worker`). It leaves the mutation lane confirmed, so the
+/// next request still writes and owned Stop still hands manual fans back to
+/// Automatic. This is the shared lane: thermal, fan, battery and temporary
+/// charge requests and every owned-Stop cleanup run through it.
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn a_write_port_that_fails_to_open_leaves_the_lane_and_owned_stop_working() {
+    let rig = fan_rig_with(0, 0, 2);
+    rig.get().await;
+    let owned = rig.request(fan_request(101, Some(1), 3700)).await;
+    assert_eq!(owned["result"]["status"], 1, "{owned}");
+    let writes = rig.port.state.lock().unwrap().writes;
+    rig.port.state.lock().unwrap().mutation_open_fails = 1;
+    let refused = rig.request(fan_request(102, Some(1), 4000)).await;
+    assert_ne!(refused["result"]["status"], 1, "{refused}");
+    assert_eq!(rig.port.state.lock().unwrap().mutation_open_fails, 0);
+    assert_eq!(
+        rig.port.state.lock().unwrap().writes,
+        writes,
+        "nothing was sent"
+    );
+    let applied = rig.request(fan_request(103, Some(1), 4000)).await;
+    assert_eq!(applied["result"]["status"], 1, "{applied}");
+    rig.stop().await;
+    assert_eq!(
+        rig.port.state.lock().unwrap().fans,
+        [0, 0],
+        "handed back to Automatic"
+    );
 }
 #[cfg(feature = "service-fan-mutation-v2")]
 #[test]

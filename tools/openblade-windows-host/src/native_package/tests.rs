@@ -762,8 +762,8 @@ fn a_keyboard_driver_mode_reader_is_not_admitted_by_feature_or_marker() {
 #[test]
 fn a_keyboard_driver_mode_owner_is_not_admitted_by_feature_or_marker() {
     // Driver-mode ownership writes 00/04. The reader refuses it by its own
-    // name, even in a record that drops the read and trigger features it
-    // implies and claims only the admitted composition it would extend.
+    // name, even in a record that drops the read feature it implies and
+    // claims only the admitted composition it would extend.
     const OWNER: &str = "service-keyboard-driver-mode-v1";
     let temporary = "controller-admission-compile-check,firmware-performance-compile-check,hid-identity-compile-check,installed-service-candidate,lifecycle-evidence-compile-check,service-battery-policy-v1,service-fan-mutation-v2,service-hardware-compile-check,service-mailbox-observation-v1,service-temporary-charge-v1,service-thermal-mutation-v1,startup-custody-v1";
     let admitted = "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1,service-fan-mutation-v2,service-battery-policy-v1,service-temporary-charge-v1";
@@ -774,9 +774,7 @@ fn a_keyboard_driver_mode_owner_is_not_admitted_by_feature_or_marker() {
     );
     let built = temporary.replace(
         "service-mailbox-observation-v1,",
-        &format!(
-            "{OWNER},service-keyboard-driver-mode-read-v1,service-mailbox-observation-v1,service-profile-triggers-v1,service-profiles-v1,"
-        ),
+        &format!("{OWNER},service-keyboard-driver-mode-read-v1,service-mailbox-observation-v1,"),
     );
     let marked = format!("{admitted},service-keyboard-driver-mode-read-v1,{OWNER}");
     for features in [forged.as_str(), built.as_str()] {
