@@ -347,3 +347,19 @@ fn a_job_without_time_for_the_query_sends_none() {
     assert_eq!(mode(&job), Some(DeviceModeRead::NotRequested));
     assert_eq!(io.queries(), 0);
 }
+
+/// The setter's pace check charges the baseline again and the readback's
+/// trailing checkpoint at the baseline's own, from its reply to now, which no
+/// reply-to-reply exchange includes.
+#[cfg(feature = "service-keyboard-driver-mode-v1")]
+#[test]
+fn the_setter_charges_the_trailing_checkpoint() {
+    let replied = tokio::time::Instant::now();
+    let exchanges = super::Exchanges {
+        last: Some(replied),
+        slowest: Duration::from_millis(100),
+        second: Duration::ZERO,
+    };
+    let fixed = super::device_mode::setter_fixed(&exchanges, replied + Duration::from_millis(40));
+    assert_eq!(fixed, Duration::from_millis(140));
+}

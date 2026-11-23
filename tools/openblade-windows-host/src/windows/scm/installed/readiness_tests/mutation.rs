@@ -26,7 +26,7 @@ use crate::discovery::performance::{ReadAdmission, mutation_fixture::Fixture};
 use crate::installed::readiness::{
     mailbox_read::{MailboxSource, MutationFactories, ReadCustody, ReadSource},
     status_source::{StatusOrigin, injected_mutation_source},
-    thermal_mutation::{Fresh, Runtime},
+    thermal_mutation::{Fresh, Runtime, Settle},
     thermal_storage::{Files, Storage},
 };
 use std::{
@@ -538,6 +538,8 @@ struct Custody {
     controller: AtomicBool,
     fatal_health: AtomicBool,
     integrity_lost: AtomicBool,
+    // Loses integrity at the nth check once armed (0 is off).
+    integrity_lost_at: AtomicUsize,
     activation_refusal: AtomicU8,
     lifecycle: crate::scm_host::Lifecycle,
     activations: AtomicUsize,
@@ -585,6 +587,7 @@ impl Custody {
             controller: AtomicBool::new(false),
             fatal_health: AtomicBool::new(false),
             integrity_lost: AtomicBool::new(false),
+            integrity_lost_at: AtomicUsize::new(0),
             activation_refusal: AtomicU8::new(0),
             lifecycle: Default::default(),
             activations: AtomicUsize::new(0),
@@ -623,6 +626,13 @@ impl ReadCustody for Custody {
         })
     }
     fn verify_integrity(&self) -> io::Result<()> {
+        if self
+            .integrity_lost_at
+            .try_update(Ordering::AcqRel, Ordering::Acquire, |n| n.checked_sub(1))
+            == Ok(1)
+        {
+            self.integrity_lost.store(true, Ordering::Release);
+        }
         if self.integrity_lost.load(Ordering::Acquire) {
             Err(
                 crate::installed::readiness::thermal_mutation::fatal_admission(
@@ -801,7 +811,7 @@ impl Fresh for Custody {
         sid: &str,
         session: u32,
         authentication: Option<(u32, i32)>,
-    ) -> io::Result<Arc<dyn Fresh>> {
+    ) -> io::Result<Arc<dyn Settle>> {
         Fresh::verify_health(self)?;
         let fresh = SettleFresh {
             custody: self.me.upgrade().ok_or(io::ErrorKind::PermissionDenied)?,
@@ -828,10 +838,7 @@ struct SettleFresh {
     authentication: Option<(u32, i32)>,
     epoch: u64,
 }
-impl Fresh for SettleFresh {
-    fn authentication(&self) -> Option<(u32, i32)> {
-        self.authentication
-    }
+impl Settle for SettleFresh {
     fn verify_health(&self) -> io::Result<()> {
         Fresh::verify_health(self.custody.as_ref())
     }
@@ -847,9 +854,6 @@ impl Fresh for SettleFresh {
         }
         // Controller absence, integrity, origin trust, custody and generation.
         Fresh::authorize_owned_stop(c.as_ref())
-    }
-    fn authorize(&self) -> Option<ReadAdmission> {
-        None
     }
 }
 /// Test model of `WindowsGuard::capture`'s epoch pin: a write capture whose
@@ -895,7 +899,7 @@ impl Fresh for PinnedFresh {
         sid: &str,
         session: u32,
         authentication: Option<(u32, i32)>,
-    ) -> io::Result<Arc<dyn Fresh>> {
+    ) -> io::Result<Arc<dyn Settle>> {
         Fresh::capture_settle(self.custody.as_ref(), sid, session, authentication)
     }
 }

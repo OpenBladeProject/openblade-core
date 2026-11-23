@@ -110,6 +110,11 @@ pub(crate) struct State {
     // sent, on the real clock, so a job that stalls costs real time.
     #[cfg(feature = "service-keyboard-driver-mode-v1")]
     pub(crate) device_mode_latency: Option<Duration>,
+    // A keyboard Driver-mode write job's worker retires this long after its
+    // port does, on the real clock, as a cancelled exchange that is slow to
+    // retire would.
+    #[cfg(feature = "service-keyboard-driver-mode-v1")]
+    pub(crate) device_mode_retire_delay: Option<Duration>,
 }
 #[derive(Clone)]
 pub(crate) struct Fixture {
@@ -274,6 +279,13 @@ impl Fixture {
                             reader.observe(&mut || authorize(), limit).await
                         };
                         reader.retire(None).await?;
+                        #[cfg(feature = "service-keyboard-driver-mode-v1")]
+                        if permit.as_ref().is_some_and(|p| p.device_mode().is_some()) {
+                            let delay = fixture.state.lock().unwrap().device_mode_retire_delay;
+                            if let Some(delay) = delay {
+                                std::thread::sleep(delay);
+                            }
+                        }
                         if permit.is_some() {
                             let hook = fixture.state.lock().unwrap().on_mutation_retired.clone();
                             if let Some(hook) = hook {

@@ -1812,3 +1812,40 @@ async fn tfc_release_battery_evidence_behind_a_possibly_submitted_enable_reports
     assert!(r.storage.pending());
     r.stop().await;
 }
+
+/// An automatic cancel whose write port failed to open sent nothing at the
+/// tick's own epoch while its admission held: the claim is given back and
+/// the next tick reads the source again and writes the cancel once.
+#[tokio::test]
+async fn tfc_release_a_cancel_whose_port_failed_to_open_is_retried_at_the_next_tick() {
+    let r = scoped_rig();
+    policy_and_enable(&r, 994).await;
+    let before = writes(&r);
+    r.port.state.lock().unwrap().mutation_open_fails = 1;
+    source_battery(&r);
+    origin_tick(&r).await;
+    assert_eq!(r.port.state.lock().unwrap().mutation_open_fails, 0);
+    assert_eq!(writes(&r), before, "nothing was sent");
+    assert!(
+        !r.runtime.release_only_for_tests(),
+        "the claim was given back"
+    );
+    assert_canceled_once(&r, before).await;
+    r.stop().await;
+}
+/// The retries of a cancel that sent nothing are bounded: after two, the
+/// next one pauses the cancel visibly and it is not retried again.
+#[tokio::test]
+async fn tfc_release_a_cancel_whose_port_keeps_failing_to_open_pauses_after_two_retries() {
+    let r = scoped_rig();
+    policy_and_enable(&r, 996).await;
+    let before = writes(&r);
+    r.port.state.lock().unwrap().mutation_open_fails = 3;
+    source_battery(&r);
+    for _ in 0..3 {
+        origin_tick(&r).await;
+    }
+    assert_eq!(r.port.state.lock().unwrap().mutation_open_fails, 0);
+    assert_paused_once(&r, before).await;
+    r.stop().await;
+}
