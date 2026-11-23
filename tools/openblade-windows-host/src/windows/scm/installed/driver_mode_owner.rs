@@ -23,9 +23,10 @@
 //!   authority, and the function row has no user to serve then. The tick
 //!   also re-captures, with no job, whenever the lifecycle write epoch moves,
 //!   so the release holds the latest ordinary capture.
-//! - After the startup call, a step whose read job already confirmed Driver
-//!   under the current read admission starts no job; the next step is due
-//!   after the read job's own query, so the read job leads. A step that failed gets
+//! - After the startup call, a step starts no job when a client's
+//!   ObserveState read job confirmed Driver under the current read admission
+//!   within the cadence. Otherwise each due step runs a mutation job that
+//!   reads 00/84 first. A step that failed gets
 //!   one recovery per failure streak: a fresh capture and read-before-write.
 //!   A step refused before any exchange records nothing and spends no
 //!   recovery. Success or a lost device resets the latch.
@@ -33,7 +34,10 @@
 //!   follows managed: a fresh 00/84 read of Driver under the owned-Stop
 //!   admission writes Normal once, whoever set it; a read of Normal ends an
 //!   owned claim as a foreign change, within the keyboard's bounded share
-//!   of the drain. The low-power boundary release is a later slice.
+//!   of the drain. The low-power boundary release is a later slice, and so
+//!   is a release admission without a console user: Windows logs users off
+//!   before a system shutdown reaches services, and Fast Startup hibernates
+//!   instead, so the shutdown release is refused or never runs then.
 use super::super::mailbox_read::ReadSource;
 use super::*;
 use crate::discovery::performance::{DeviceModeJob, DeviceModeRead, DeviceModeStep};
@@ -46,20 +50,14 @@ pub(in super::super) use super::super::mailbox_read::DRIVER_MODE_INTERVAL as INT
 /// One acquire job from its start: three exchanges with their settles and
 /// checkpoints.
 const JOB_BUDGET: Duration = Duration::from_secs(2);
-/// How long after a step the next one is due beyond the read job's own
-/// cadence, so the read job, which finds the owner's result stale at
-/// `INTERVAL`, reads first: a fresh Driver result then starts no job. It
-/// exceeds two subscription refreshes, which run the read job.
-pub(in super::super) const READ_LEAD: Duration = Duration::from_secs(5);
-const _: () =
-    assert!(READ_LEAD.as_nanos() > 2 * super::super::subscription::REFRESH_INTERVAL.as_nanos());
 /// The shutdown release's bound for the gate wait and the join of active
 /// work (`ReadSource::drain_active`), from the release's start. A read job
 /// is joined within it; a write job still running exhausts it.
 const ENTRY_BUDGET: Duration = Duration::from_millis(150);
 /// The release job from its start: its baseline read, setter and readback.
-/// A healthy one takes about 0.43-0.57 s: three exchanges, about 22 fresh
-/// admissions at 8-9 ms each and three 30 ms settles. The allowance of twice
+/// By count, a healthy one takes about 0.28 s besides its three exchanges:
+/// about 22 fresh admissions at 8-9 ms each and three 30 ms settles, an
+/// estimate pending an attended timing. The allowance of twice
 /// `FRAME_EXCHANGE` per exchange plus those admissions and settles is about
 /// 1.09 s, which does not fit the share below; the job's measured pace still
 /// refuses the setter when the acknowledgement and readback cannot finish in
@@ -217,8 +215,8 @@ impl Permit for DriverModePermit {
 
 impl Runtime {
     /// One maintenance step on the origin tick, after the power check. It is
-    /// due at the first eligible tick and then `INTERVAL` plus `READ_LEAD`
-    /// after the last. In low power it reads, writes and publishes nothing: no
+    /// due at the first eligible tick and then `INTERVAL` after the last,
+    /// managed's 15 s. In low power it reads, writes and publishes nothing: no
     /// acquire before Windows reports the system active again. A recovery-only
     /// lease never activates a write, so the step never runs there. A tick
     /// that finds a request holding the mutation gate retries at the next
@@ -230,9 +228,10 @@ impl Runtime {
     ///
     /// The shutdown release uses the latest capture, whose admission pins the
     /// lifecycle write epoch. So whenever that epoch moves, a tick re-captures
-    /// with no job, between steps and after an Indeterminate one too, and an
-    /// Indeterminate owner still re-captures at each due step. Only fatal
-    /// admission evidence is an error.
+    /// with no job: between steps, while the device is unverified and after
+    /// an Indeterminate step. Only an epoch move captures for an Indeterminate
+    /// owner. A refused capture is retried only at the next epoch move or due
+    /// step on a verified device. Only fatal admission evidence is an error.
     pub(in super::super) async fn maintain_driver_mode(
         &self,
         mailbox: &MailboxSource,
@@ -259,17 +258,19 @@ impl Runtime {
         };
         verify_retained_failure(&self.fatal)?;
         if keyboard.indeterminate.get() || !due {
-            if due {
-                keyboard.due.set(Some(now + INTERVAL + READ_LEAD));
+            if moved {
+                self.capture_console(reader)?;
             }
-            self.capture_console(reader)?;
             return Ok(());
         }
         if !reader.driver_mode_verified() {
             keyboard.recovered.set(false);
+            if moved {
+                self.capture_console(reader)?;
+            }
             return Ok(());
         }
-        keyboard.due.set(Some(now + INTERVAL + READ_LEAD));
+        keyboard.due.set(Some(now + INTERVAL));
         let Some(first) = self.acquire_once(reader, now).await? else {
             return Ok(());
         };
@@ -341,9 +342,11 @@ impl Runtime {
             return Ok(None);
         };
         let keyboard = &self.keyboard;
-        // The startup call always reads. After it, a read job's own Driver
-        // result under this admission needs no job (managed reads 00/84 and
-        // finds Driver).
+        // The startup call always reads. After it, a Driver result that a
+        // client's ObserveState read job recorded under this admission within
+        // the cadence needs no job (managed reads 00/84 and finds Driver).
+        // Subscription refreshes do not run the read job, so otherwise each
+        // due step on a verified device runs one.
         if keyboard.started.get() && reader.driver_mode_confirmed() == Some(true) {
             return Ok(Some(Acquired::Current));
         }
@@ -526,12 +529,10 @@ impl Runtime {
                     Release::NotDriver
                 }
             }
-            // Nothing was sent, so the attempt is kept. The job ran out of
-            // time if its deadline passed or its pace refused the setter
-            // while owned-Stop admission still held; otherwise admission was
-            // lost.
+            // Nothing was sent. The job ran out of time if its deadline
+            // passed or its pace refused the setter while owned-Stop
+            // admission still held; otherwise admission was lost.
             DeviceModeStep::Pending => {
-                keyboard.released.set(false);
                 if spent || permit.fresh.authorize_owned_stop().is_some() {
                     Release::Exhausted
                 } else {
