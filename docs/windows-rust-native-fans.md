@@ -139,15 +139,14 @@ preflight consumes four IDs. Remaining target-only, Balanced-entry,
 Performance-entry and direct-Automatic budgets are 6, 10, 12 and 6 IDs.
 Before any manual setter, another ten IDs are reserved for normal Stop's fresh
 reads, checks, direct Auto pair and independent final proof. Every ID the
-record names stays pinned for the process once a setter may reach the device,
-so ordinary observations cannot consume them. A request refused before its
-first setter, such as by the pace check, returns them. Other IDs return to the
-pool under the rules in
-[the native development Service](windows-rust-development-service.md). The
-pins still bound the process: about 12 manual set-point changes, or 14
-alternations between manual and Automatic, exhaust the pool for fan requests
-until the Service restarts. Releasing the pins when the owner settles is a
-follow-up in the fan and battery mutation code.
+record names stays pinned once a setter may reach the device, so ordinary
+observations cannot consume them, until a durable row closes the record: its
+own 50 or 51, its 6, or a newer owner's 30 or 50. The next fan or battery
+mutation's Reader then unpins them at its retirement, and a sent ID without a
+correlated reply stays out of the pool. An unresolved or quarantined record
+keeps its pins. A request refused before its first setter, such as by the pace
+check, returns them. Other IDs return to the pool under the rules in
+[the native development Service](windows-rust-development-service.md).
 
 The fan history contract is `service-fan-mutation-v2/rz09-0581-linked-v1`.
 It binds requested intent, complete selected recipe, source, selector, ordinary

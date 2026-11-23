@@ -365,16 +365,23 @@ cannot rule it out. Managed restarts its finite IDs at 1 for every reopened
 session after a poisoned one; native does not, because the mailbox outlives
 the handle.
 
-Unanswered exchanges and pinned records can still exhaust the pool. Measured
-on the in-memory port, one process serves about 12 manual fan set-point
-changes (each pins 20 to 24 IDs), 14 alternations between manual and
-Automatic, or 30 temporary-charge enable and cancellation cycles (8 pinned
-cancellation IDs each), and a read whose exchange keeps failing spends one ID
-per job. A thermal, battery or temporary-charge request then refuses with its
-transaction-capacity reason, even when the baseline read is the first
-reservation to fail; read jobs publish no reading. The follow-up is to release
-a record's pins once its owner settles, in `fan_mutation.rs` and
-`battery_mutation.rs`.
+A read whose exchange keeps failing still spends one ID per job. A thermal,
+battery or temporary-charge request then refuses with its transaction-capacity
+reason, even when the baseline read is the first reservation to fail; read jobs
+publish no reading. Pinned records no longer exhaust the pool. A fan record's
+pins return once a durable row closes it: its own Automatic proof (50 or 51),
+its known-unsubmitted Prepared row (6), or a newer owner's 30 or 50 row. A
+temporary-charge enable's cancellation IDs return once the enable has left
+every owner slot, any source-cancel claim on it is decided and its cancel has
+joined. The settled pins wait in a per-Runtime queue until the next fan or
+battery mutation Reader retires and unpins them, so reads and thermal requests
+do not return them. A sent ID without a correlated reply stays quarantined, and
+an unresolved or quarantined record keeps its pins. Measured on the in-memory
+port, one process used to serve only about 12 manual fan set-point changes
+(each pins 20 to 24 IDs), 14 alternations between manual and Automatic, or 30
+temporary-charge enable and cancellation cycles (8 pinned cancellation IDs
+each). The `pool_pins` readiness tests run longer sequences against a pool
+already reduced below those budgets.
 `Attempt::transfer` is the only path that marks a request sent or answered.
 `transactions.rs` rebuilds the sent request to correlate its reply, which is
 why the encoder guard lists it.

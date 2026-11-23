@@ -200,7 +200,10 @@ replaced. Each retry needs a newer epoch, and only an SCM notice advances one,
 so retries never outnumber notices. A retry reuses the enable's reserved
 cancel IDs, because the journal binds an automatic cancel to them, and the
 pool never issues an ID again once it was sent without a correlated reply: a
-retry after that could accept the first attempt's late reply. So of the 40
+retry after that could accept the first attempt's late reply. The enable
+keeps those IDs pinned until it settles: it has left every owner slot, any
+claim on it is decided and its cancel has joined (`BatteryPermit::settle_pins`).
+So of the 40
 authorizations in each window map, the 7 before the first request (the 07/8C
 power read) are retried and the 21 after it pause. The 2 after the submission
 intent (progress 70) was journaled also pause, even when the setter's pre-send
