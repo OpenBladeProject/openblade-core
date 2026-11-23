@@ -1862,8 +1862,13 @@ unknown is no evidence. OpenBlade's own state is kept per subsystem and only
 as a readback confirmed it: a step's or explicit request's readback of its
 own write, a fan readback that already shows the request and the
 destination it carries, a reconciliation reading that shows the new intent,
-and a reading that settles a resume hold. Saved intent that native cannot
-apply is not OpenBlade's own. A fan intent with no native recipe (Fixed or
+and a reading that settles a resume hold. A performance pair written over
+manual fans also returns them to Automatic, and its readback confirms both
+subsystems (managed `ConfirmedCoupledWrites`,
+`ServiceControlRuntime.cs:14932-14938`). An overwrite whose intent has no
+destination, such as a GPU clock effect, writes no preset and owns the one
+it leaves in place, so a later intent compares with it. Saved intent that
+native cannot apply is not OpenBlade's own. A fan intent with no native recipe (Fixed or
 a curve on battery or under Silent, battery selectors or Custom, and every
 ManualCurve) is projected onto the fans firmware reports, as managed
 `ResolveExperimentalFanHardwareDesired` does
@@ -1883,11 +1888,25 @@ change stays as it is. Either subsystem changed, or an observed HyperBoost,
 excludes both from that reconciliation. The excluded steps write nothing
 and reply with managed's paused or deferred message, and the debt settles.
 
-A pair's startup and a user activation apply over drift (managed
-`preserveObservedExternalChanges: false`). A pair is starting until a debt
-of it settles, including one a competing controller drops, so that drop
-ends startup too. Startup is per pair and is not a debt's own state: only
-the starting pair's reconciliation, or the activation itself, overwrites.
+A user's startup and a user activation apply over drift (managed
+`preserveObservedExternalChanges: false`). Startup is keyed on the SID, as
+managed keys activation, so the same user in a new session is not starting
+again. Managed ends startup after one transition on classified power and
+keeps it pending on unclassified power
+(`ServiceControlRuntime.cs:18218-18233`). Native ends it once a starting
+reconciliation has compared a fresh reading and a debt of that user then
+settles. A debt that settles with nothing compared, such as refusals on an
+adapter not classified yet or saved intent that reads no firmware, leaves
+the user starting, so its next reconciliation still overwrites instead of
+pausing over an intent native never confirmed. A capture that a competing
+controller refuses, at a report, a save or a lifecycle cause, drops the
+pair's debt and ends startup, as managed ends startup after a transition a
+controller kept from writing (`CompleteStartupProfileReconciliation`). With
+nothing of OpenBlade's own confirmed, the next power change then pauses
+unless firmware shows its intent. Managed's transition pauses there too,
+since firmware does not show the startup's desired state; only its
+convergence loop repairs it. Startup is not a debt's own state: only the
+starting user's reconciliation, or the activation itself, overwrites.
 
 A power change within one minute (`RESUME_WINDOW`) after the last gate
 boundary, in low power or after the resume, is a resume change. When its
