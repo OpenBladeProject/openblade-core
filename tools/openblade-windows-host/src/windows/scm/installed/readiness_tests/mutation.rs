@@ -8993,6 +8993,24 @@ async fn frozen<T>(port: &Fixture, work: impl std::future::Future<Output = T>) -
     tokio::time::resume();
     out
 }
+/// Both clocks at one moment, to measure how far a held test clock has fallen
+/// behind the real one.
+#[cfg(feature = "service-temporary-charge-v1")]
+struct ClockMark(std::time::Instant, tokio::time::Instant);
+#[cfg(feature = "service-temporary-charge-v1")]
+impl ClockMark {
+    fn now() -> Self {
+        Self(std::time::Instant::now(), tokio::time::Instant::now())
+    }
+    /// Moves the held test clock forward by the time it has lost since the
+    /// mark, while no job is running. A source cancellation measures its 4 s
+    /// deadline on a job clock that starts at the real instant; measured under
+    /// load, it was refused once the lag reached about 3.7 s.
+    async fn catch_up(&self) {
+        let held = tokio::time::Instant::now() - self.1;
+        tokio::time::advance(self.0.elapsed().saturating_sub(held)).await;
+    }
+}
 /// Runs `case` on a runtime of its own and returns its result.
 ///
 /// A `frozen` section holds the test clock while real time passes, so the
@@ -9137,6 +9155,7 @@ async fn tfc_v1_near_capacity_performance_refuses_before_spending_reserved_sourc
     // One held section: each held section leaves the test clock behind the
     // real one by the real time it took, which a later job's deadline feels.
     frozen(&r.port, async {
+        let mark = ClockMark::now();
         let response = r
             .request(battery_request(801, "setFullChargeOverride", json!(true)))
             .await;
@@ -9158,6 +9177,7 @@ async fn tfc_v1_near_capacity_performance_refuses_before_spending_reserved_sourc
             windows_sys::Win32::System::Services::SERVICE_CONTROL_POWEREVENT,
             10,
         );
+        mark.catch_up().await;
         // The cancellation serves no request, so it takes its budget from here.
         r.port.state.lock().unwrap().arrival = Some(tokio::time::Instant::now());
         r.source.lock().await.process_power_source().await.unwrap();
