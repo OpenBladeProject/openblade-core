@@ -4,6 +4,8 @@
 use super::super::driver_mode_rig::{Custody, status};
 use super::super::*;
 use super::{Capture, Host, map_battery_health, map_battery_power_flow};
+#[cfg(feature = "service-thermal-mutation-v1")]
+use crate::discovery::performance::mutation::Permit;
 use crate::discovery::performance::{
     FanRpmRead,
     fan_rpm_tests::{FanIo, fan_io_worker},
@@ -62,16 +64,46 @@ impl Rig {
     }
 
     fn with(io: Arc<FanIo>, battery: Battery) -> Self {
+        Self::composed(io, battery, |custody, device| {
+            ReadSource::compose(custody, move |lease| {
+                fan_io_worker(device, move || lease.authorize())
+            })
+        })
+    }
+
+    /// A rig whose source also has the production mutation entries. Its
+    /// write factory is never reached: a refused permit registers no worker.
+    #[cfg(feature = "service-thermal-mutation-v1")]
+    fn with_mutation() -> Self {
+        Self::composed(
+            FanIo::new([0x20, 0x1e]),
+            Battery::default(),
+            |custody, device| {
+                ReadSource::injected_mutation(
+                    custody,
+                    MutationFactories {
+                        read: Box::new(move |lease| {
+                            fan_io_worker(device.clone(), move || lease.authorize())
+                        }),
+                        write: Box::new(|_| unreachable!("no mutation worker is registered")),
+                    },
+                )
+            },
+        )
+    }
+
+    fn composed(
+        io: Arc<FanIo>,
+        battery: Battery,
+        compose: impl FnOnce(Arc<dyn ReadCustody>, Arc<FanIo>) -> ReadSource,
+    ) -> Self {
         let custody = Arc::new(Custody {
             live: AtomicBool::new(true),
             generation: AtomicU8::new(7),
         });
         let battery = Rc::new(battery);
-        let device = io.clone();
-        let source = ReadSource::compose(custody.clone(), move |lease| {
-            fan_io_worker(device, move || lease.authorize())
-        })
-        .with_live_capture_for_tests(battery.clone());
+        let source =
+            compose(custody.clone(), io.clone()).with_live_capture_for_tests(battery.clone());
         let publisher = watch::channel(Arc::new(Publication {
             active: status(0),
             inactive: status(1),
@@ -695,4 +727,58 @@ fn a_mutation_drops_the_retained_fan_pair() {
     host.mutating();
     assert_eq!(host.fans(admission, FanRpmRead::NotRequested, now), None);
     assert_eq!(host.fans(admission, read, now), Some([3200, 3000]));
+}
+
+/// Each production mutation entry drops the retained pair as it takes the
+/// serial lock, so a speed read before a write is never published after it,
+/// even when the mutation is then refused. Without a mutation the failed
+/// pair below would publish the retained 3200 RPM.
+#[cfg(feature = "service-thermal-mutation-v1")]
+#[tokio::test]
+async fn each_mutation_entry_drops_the_retained_fan_pair() {
+    for cleanup in [false, true] {
+        let rig = Rig::with_mutation();
+        let first = rig.observe(2).await.unwrap();
+        assert_eq!(readings(&first)[1], &json!(3200), "{cleanup}");
+        rig.io.replies.lock().unwrap()[1] = Some((2, vec![1, 1, 0x1e]));
+        let permit: Arc<dyn Permit> = Arc::new(RefusedFanPermit);
+        let deadline = Instant::now() + Duration::from_secs(2);
+        let result = if cleanup {
+            rig.source.mutate_cleanup(permit, deadline).await
+        } else {
+            rig.source.mutate(permit, deadline).await
+        };
+        assert!(result.is_err(), "{cleanup}");
+        let observed = rig.observe(2).await.unwrap();
+        assert_eq!(observed["confirmedState"]["performance"], 1, "{cleanup}");
+        assert_eq!(readings(&observed)[1], &Value::Null, "{cleanup}");
+        assert_eq!(rig.fan_queries(), 4, "{cleanup}");
+    }
+}
+
+/// A fan permit refused at admission: it authorizes nothing.
+#[cfg(feature = "service-thermal-mutation-v1")]
+struct RefusedFanPermit;
+
+#[cfg(feature = "service-thermal-mutation-v1")]
+impl Permit for RefusedFanPermit {
+    fn authorize(&self) -> Option<ReadAdmission> {
+        None
+    }
+    fn is_fan(&self) -> bool {
+        true
+    }
+    fn cleanup(&self) -> bool {
+        true
+    }
+    fn resolve(
+        &self,
+        _: i32,
+        _: crate::discovery::performance::ObservedPerformance,
+    ) -> io::Result<Option<openblade_domain::thermal_mutation::Destination>> {
+        Err(io::ErrorKind::PermissionDenied.into())
+    }
+    fn record(&self, _: openblade_domain::thermal_mutation::Progress) -> io::Result<()> {
+        Err(io::ErrorKind::PermissionDenied.into())
+    }
 }
