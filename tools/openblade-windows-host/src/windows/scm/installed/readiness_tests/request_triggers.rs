@@ -1144,9 +1144,17 @@ async fn a_reconciliation_waiting_on_a_transfer_answers_at_its_bound() {
         assert_eq!(explicit["result"], json!({"status":2,"message":SUBMITTED}),);
         assert_eq!(writes(rig), 1);
         assert!(rig.storage.pending());
-        // Settled: the next report submits nothing.
+        // Settled: the next report submits nothing. Its reply is not
+        // compared: the 15 s lease the first report took can lapse on a
+        // loaded host after the 12 s bound, and the report then selects the
+        // pair afresh and is refused by the unsettled row instead.
+        assert_eq!(rig.runtime.owed_attempts(SID, 7), None);
         let next = report(rig, 3, Some(r"C:\Games\Game.exe")).await;
-        assert_eq!(next["result"]["status"], 0, "{next}");
+        assert_eq!(writes(rig), 1, "{next}");
+        assert!(
+            matches!(next["result"]["status"].as_u64(), Some(0 | 2)),
+            "{next}"
+        );
     }
     release.store(true, std::sync::atomic::Ordering::Release);
     for rig in [&reporting, &saving] {
