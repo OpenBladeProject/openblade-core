@@ -22,6 +22,7 @@ public sealed partial class ServiceControlRuntimeTests
         + "leaseExpired is ExpireApplicationContextAsync after the 15 s lease; gameReported reports Game again. "
         + "powerUnchanged, powerToBattery and powerToPluggedIn are HandlePowerSourceChangedAsync with the gate clear. "
         + "resumeUnchangedAfterDeferral reports Other.exe with the LowPowerGate entered, exits it, and runs HandlePowerSourceChangedAsync on the unchanged source. It models only that part of resume processing: not the rest of ProcessNativeAsync (lighting invalidation and restore, resume validation) or the later convergence. "
+        + "powerToBatteryWithController runs HandlePowerSourceChangedAsync to battery while Razer Synapse's engine is a potential controller; controllerClosedPowerUnchanged clears it and runs HandlePowerSourceChangedAsync on the unchanged source, as a later notice would. "
         + "userActivatedOnBattery and sameUserReactivated run on a second runtime, initialized on battery with the same profiles and no profile applied: ActivateUserAsync for a user whose saved profiles are those, as its first admitted request runs it, then again for the same user.";
 
     [Fact]
@@ -164,6 +165,16 @@ public sealed partial class ServiceControlRuntimeTests
             Assert.Equal(ControlOperationStatus.Blocked, deferred.Status);
             context.LowPowerGate.Exit();
             await PowerChanged(PowerSource.PluggedIn);
+        });
+        await Record("powerToBatteryWithController", async () =>
+        {
+            context.Monitor.Current = new ControllerPresenceObservation(["RazerAppEngine"], null);
+            await PowerChanged(PowerSource.Battery);
+        });
+        await Record("controllerClosedPowerUnchanged", async () =>
+        {
+            context.Monitor.Current = new ControllerPresenceObservation([], null);
+            await PowerChanged(PowerSource.Battery);
         });
 
         // The native tick activates the console user it first sees; managed
