@@ -6,6 +6,10 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::{io, string::String};
 
+// No release has shipped this contract yet, so `superseded_ids` was added to it
+// without a new name. The first release that ships a temporary-charge reader
+// must include that member in both readers; otherwise adding it needs a new
+// contract and capability (docs/windows-rust-thermal-history.md).
 pub const CONTRACT: &str = "service-temporary-charge-v1/rz09-0581-v1";
 // Source, full flags, optional policy, fresh source, fresh flags, SET,
 // independent flags confirmation, one unused ID (pair allocator). No replay.

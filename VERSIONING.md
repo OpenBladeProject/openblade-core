@@ -186,6 +186,11 @@ must have:
 Never silently reinterpret an old field. Preserve unknown or unset behavior as
 non-destructive `Not set` semantics where applicable.
 
+The native thermal journal's temporary-charge rows (see
+[Windows Rust thermal history](docs/windows-rust-thermal-history.md)) gained an
+additive member without a new contract because no release had shipped their
+reader yet. Once a release ships that reader, this rule applies to them.
+
 Per-user UI preferences are additive JSON. New optional fields require a safe
 default and normalization that repairs missing, duplicate, or invalid values.
 Introduce an explicit preference schema before making a non-additive change.

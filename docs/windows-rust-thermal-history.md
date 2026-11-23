@@ -77,14 +77,25 @@ fresh IDs instead, and its row names the reserved ones in the optional member
   or 73 row. So one enable's cancels send at most two ID sets.
 
 Rows without the member keep their bytes, canonical form and intent digest,
-so `service-thermal-mutation-v1/rows-v1` and the `tfc` contract keep their
-names, and no existing row changes meaning. A reader that predates the member
+and no existing row changes meaning. A reader that predates the member
 refuses a row that carries it: the Rust domain type denies unknown fields, and
-`WindowsNativeTemporaryChargeHistory` admits only its exact member set. A row
-with the member stripped and rehashed is still refused, because its `ids` no
-longer match the enable's `cancel_ids`. The shared vectors in
+`WindowsNativeTemporaryChargeHistory` admits only its exact member set. That
+refusal is permanent for the whole history. Managed recovery stops with
+`NativeRecoveryException` (`FirmwareOwnerUnresolved`), and native
+`Storage::open_with` fails. A row with the member stripped and rehashed is still
+refused, because its `ids` no longer match the enable's `cancel_ids`. The
+shared vectors in
 `tools/openblade-windows-host/tests/data/temporary-charge-history-v1.json`
-cover the valid sequences and each refusal for both readers.
+cover the valid sequences and each refusal for both readers, including a tfc
+row with one unknown or duplicated member and an unchanged intent.
+
+`service-thermal-mutation-v1/rows-v1`, the `tfc` contract
+(`service-temporary-charge-v1/rz09-0581-v1`) and the `service-temporary-charge-v1`
+capability keep their names only because no release has shipped a
+temporary-charge reader yet: it first appeared in a882588c, which no tag or
+`main` contains. The first release that ships the temporary-charge reader must
+include the `superseded_ids` member in both readers. If it does not, adding the
+member later needs a new `tfc` contract and capability.
 
 Handback needs no new record field, since the record carries no transaction
 IDs. A fresh retry is handed back by its progress and desired state like any
@@ -92,6 +103,11 @@ other cancel: a crash after its Prepared is an abandoned Prepared, after its
 70 or 71 a pending temporary-charge write whose target reads the charge off,
 and after its 72 nothing. The enable's charge stays live until the retry
 confirms.
+
+A new process does not seed its transaction pool's quarantine from the
+journal's `ids`, `cancel_ids` or `superseded_ids`, so an ID an earlier process
+sent without a correlated reply can be issued again after a restart; that is
+tracked separately.
 
 ## Publication and metadata recovery
 

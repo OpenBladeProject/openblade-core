@@ -188,18 +188,20 @@ power holds none, claims nothing, and the newer epoch makes the next tick read
 the source again; a suspend is retried after resume. After the claim, the
 worker's own per-write admission can fail the same way. The claim
 (`TemporaryClaim`) takes the owner, which it marks abandoned, and its intent,
-and records the cancellation reservation it leaves in place. It is rolled back
-for the next tick only when the fenced attempt is proven to have sent nothing:
-its worker joined, and either never began the steps that send the cancel's IDs
-or left every one of them held in the transaction pool
-(`Transactions::unsent`). The rollback puts back exactly what the claim took,
-or nothing: not over a newer owner or intent, not after an independent read
-found the charge off since its confirmed positive, not over quarantined or
-unsettled storage, and not once the reservation the claim saw was spent or
-replaced. Each retry needs a newer epoch, and only an SCM notice advances one,
-so retries never outnumber notices. Such a retry reuses the enable's reserved
-cancel IDs. The enable keeps those IDs pinned until it settles: it has left
-every owner slot, any claim on it is decided and its cancel has joined
+and records the cancellation reservation it leaves in place. A fenced attempt
+gives the claim back for the next tick in one of two ways. An attempt proven
+to have sent nothing (its worker joined, and either never began the steps
+that send the cancel's IDs or left every one of them held in the transaction
+pool, `Transactions::unsent`) is rolled back: the rollback puts back exactly
+what the claim took, or nothing. It refuses over a newer owner or intent,
+after an independent read found the charge off since its confirmed positive,
+over quarantined or unsettled storage, and once the reservation the claim saw
+was spent or replaced. An attempt that sent some of the reserved IDs is
+restored for a fresh-ID retry instead, as described next. Each retry needs a
+newer epoch, and only an SCM notice advances one, so retries never outnumber
+notices. A rolled-back retry reuses the enable's reserved cancel IDs. The
+enable keeps those IDs pinned until it settles: it has left every owner slot,
+any claim on it is decided and its cancel has joined
 (`BatteryPermit::settle_pins`).
 
 The pool never issues an ID again once it was sent without a correlated
