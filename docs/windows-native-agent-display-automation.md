@@ -18,8 +18,8 @@ applyProfile composition (`profile_apply::transition`), so each field keeps its
 read-before-write, host fence and readback, and the first refused or ambiguous
 step ends the profile. Nothing is replayed.
 
-Spans below are against the branch head that added this document. Managed
-paths are under `src/`; native paths are under
+Spans below are against the branch head that last updated this document.
+Managed paths are under `src/`; native paths are under
 `tools/openblade-windows-host/src/session_native/`.
 
 ## Managed inventory
@@ -117,24 +117,34 @@ cancels the active transition and waits for it.
 
 | Managed | Native |
 | --- | --- |
-| Loop triggers | `installed_monitor.rs:117-153`: after power admission takes each status, `Automation::observe` (`display_query/automation.rs:140-168`); a reconnect or a failed callback calls `Automation::unavailable` (`:172-175`). |
-| `ResolveTarget` | `display_query/automation/target.rs:23-42`, over `Snapshot::display_automation` members decoded by the profile-set codec. A status managed would refuse withdraws power admission and marks the context unavailable. |
-| `Observe` | `Recovery::observe` (`display_query/recovery/automatic.rs:223-294`). |
-| `MarkUnavailableCore` | `Recovery::mark_unavailable` (`:298-315`). |
-| `BeginManualOperation` | `Recovery::begin` (`display_query/recovery.rs:293-319`) with `begin_manual` (`automatic.rs:191-194`). A manual mutation first calls `preempt` (`automatic.rs:218-220`) through `manual_turn` (`display_query/write.rs:157-166`). |
-| `CompleteManualOperation` | `Recovery::complete_with` (`recovery.rs:335-371`) with `complete_manual` (`automatic.rs:199-204`). |
-| `ResumeAfterSuccessfulExplicitRead` | `Recovery::explicit_read` (`recovery.rs:376-393`) with `resume_latest` (`automatic.rs:208-213`), called from `Writer::query` (`write.rs:247-256`). |
-| `ScheduleTransition` and `CancelActiveTransition` | `schedule` (`automatic.rs:560-578`) fills one slot and wakes the runner; `cancel_active` (`:550-555`). |
-| `RunTransitionAsync` | `run_transition` (`automation.rs:231-303`) with `plan` (`:318-376`), `transition_baseline` / `transition_unavailable` (`automatic.rs:328-345`), `admit_transition` (`:353-387`), `complete_transition` (`:391-448`), `cancel_transition` (`:451-461`) and `fail_transition` (`:465-486`). |
+| Loop triggers | `installed_monitor.rs:117-163`: `Automation::observe` (`display_query/automation.rs:142-172`) resolves each status's display members, then lets power admission take the status and observes it; a reconnect or a failed callback calls `Automation::unavailable` (`:176-179`). |
+| `ResolveTarget` | `display_query/automation/target.rs:27-50`, over `Snapshot::display_automation` members decoded by the profile-set codec. Every power profile's display is decoded and its brightness bounded to 100, as managed `ValidProfileDisplays` checks. A status managed would refuse is never admitted: it withdraws power admission and marks the context unavailable. |
+| `Observe` | `Recovery::observe` (`display_query/recovery/automatic.rs:247-321`). |
+| `MarkUnavailableCore` | `Recovery::mark_unavailable` (`:325-342`). |
+| `BeginManualOperation` | A manual mutation calls `preempt` (`automatic.rs:226-228`) through `manual_turn` (`display_query/write.rs:158-200`) before it waits for the gate: it is pending from there, and the active transition is canceled. Under the gate, `Recovery::begin` (`display_query/recovery.rs:293-319`) with `begin_manual` (`automatic.rs:195-198`) records the rest. The turn ends with `end_manual_turn` (`automatic.rs:232-234`). |
+| `CompleteManualOperation` | `Recovery::complete_with` (`recovery.rs:335-371`) with `complete_manual` (`automatic.rs:203-208`). |
+| `ResumeAfterSuccessfulExplicitRead` | `Recovery::explicit_read` (`recovery.rs:377-399`) with `resume_latest` (`automatic.rs:212-217`) and `resume_gated` (`:240-244`), called from `Writer::query` (`write.rs:281-290`). |
+| `ScheduleTransition` and `CancelActiveTransition` | `schedule` (`automatic.rs:596-615`) fills one slot and wakes the runner; `cancel_active` (`:586-591`). |
+| `RunTransitionAsync` | `run_transition` (`automation.rs:235-307`) with `plan` (`:322-380`), `transition_unavailable` / `transition_baseline` (`automatic.rs:355-372`), `admit_transition` (`:380-415`), `complete_transition` (`:419-476`), `cancel_transition` (`:479-489`) and `fail_transition` (`:493-514`). |
 | `ApplyProfileForTransitionAsync` | `ProfileApplier` (`automation.rs:63-90`) runs `profile_apply::transition` (`display_query/profile_apply.rs:503-539`) under the display operation gate. |
 | Applier operation gate | `Gate` (`write.rs:145-151`) serializes every manual query and write with the transition. |
-| Task scheduling and disposal | `serve` (`automation.rs:182-227`) runs one transition at a time on a blocking thread and waits only for the slot or stop. Stop cancels the running transition and joins it. `run_automated` (`display_query.rs:543-601`) runs it beside the display endpoint as one lifetime. |
-| Retry delay | `Cancel::sleep` (`automatic.rs:63-106`), a condition-variable wait that a cancel ends at once. |
-| Durable record | `Recovery::persist` (`recovery.rs:409-440`), the same members and file. |
+| Task scheduling and disposal | `serve` (`automation.rs:186-231`) runs one transition at a time on a blocking thread and waits only for the slot or stop. Stop cancels the running transition and joins it. `run_automated` (`display_query.rs:543-601`) runs it beside the display endpoint as one lifetime. |
+| Retry delay | `Cancel::sleep` (`automatic.rs:69-106`), a condition-variable wait that a cancel ends at once. |
+| Durable record | `Recovery::persist` (`recovery.rs:415-446`), the same members and file. |
 
 The queue is one slot, so it is bounded, and scheduling replaces the slot just
 as managed replaces the active transition. No loop polls. A transition holds
 the recovery lock only between steps, never during a display call.
+
+The checkpoint is saved synchronously under the recovery lock, as managed
+saves it under `sync`. The status watcher's callback (`Automation::observe`
+and `unavailable`) runs on the runtime thread, so a save there is a small
+atomic file replace on that thread, and the runner's `take_transition`
+(`automation.rs:199`) can wait for the lock while a blocking thread saves.
+This is deliberate: each observation and its durable record are one step in
+the watcher's order, so no later status, manual operation or transition sees
+state that is not yet saved. Transitions and manual operations save on
+blocking threads.
 
 ## Omitted managed behavior
 
@@ -164,20 +174,26 @@ the recovery lock only between steps, never during a display call.
   counter. Only the values differ.
 - The native unresolved-field gate. A transition whose settings touch a field
   with a possibly unresolved native submission is refused at admission
-  (Blocked, `profile_apply::PAUSED`), as a manual write would be. Managed has
-  no such gate.
-- Manual preemption order. A manual mutation cancels the running transition
-  before it waits for the display gate, as managed `BeginManualOperation` runs
-  before the applier's gate. Native begins the manual operation after the
-  canceled transition has recorded its result rather than before. The pause
-  and checkpoint end the same.
-- The active-console fence. Each native profile step also requires the active
-  console session, so a locked or switched session is refused before any
-  submission (Blocked) and retried once like any Blocked attempt. Neither lock
-  nor unlock is a trigger on either side.
-- Unrelated application entries. Native decodes only the active profile's
-  display override. Managed's status codec also refuses a malformed entry that
-  is not active.
+  (Blocked, `profile_apply::PAUSED`), as a manual write would be. The target
+  stays pending, and the explicit read that resolves the field schedules it
+  again unless automation is paused or held. Managed has no such gate and
+  applies the target at once.
+- Manual preemption order. A manual mutation marks itself pending and cancels
+  the running transition before it waits for the display gate, and pauses
+  scheduling from then on, as managed `BeginManualOperation` does before the
+  applier's gate. Native records the rest of the begin under the gate, so the
+  canceled transition may record its result before or after it. Either way the
+  transition records as under a begun manual operation: it neither unpauses
+  nor resumes, and the pause and checkpoint end as in managed. A mutation
+  refused before its begin clears the pending mark when its turn ends.
+- The active-console fence. Each native profile step also requires the Agent's
+  session to be the attached, active console, so a disconnected or
+  switched-away session is refused before any submission (Blocked) and
+  retried once like any Blocked attempt. A locked but active console is not
+  refused, as in managed. A session switch is not a trigger on either side.
+- Unrelated application entries. Native decodes every power profile's display
+  but only the active profile's display override. Managed's status codec also
+  refuses a malformed entry that is not active.
 - Fatal errors. A fatal profile step records the status it reached and ends
   the Agent; a fatal baseline query records Indeterminate, pauses and ends the
   Agent. Managed records an Indeterminate failure and continues.
