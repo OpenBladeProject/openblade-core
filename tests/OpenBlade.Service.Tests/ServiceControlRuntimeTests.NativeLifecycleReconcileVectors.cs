@@ -7,8 +7,9 @@ namespace OpenBlade.Service.Tests;
 
 // The native lifecycle tick's reconciliations are pinned against managed: what
 // ApplyFullTransitionAsync applies after the application lease expires and
-// after a power-source change, and what a resume on an unchanged source
-// applies after a report the LowPowerGate deferred. The Rust readiness tests
+// after a power-source change, what a resume on an unchanged source applies
+// after a report the LowPowerGate deferred, and what a new active user's
+// activation applies. The Rust readiness tests
 // read the same file and assert where native deliberately differs.
 public sealed partial class ServiceControlRuntimeTests
 {
@@ -20,7 +21,8 @@ public sealed partial class ServiceControlRuntimeTests
         + "Each transition row runs in order on that runtime: submitted is whether any device setter was submitted, performance the confirmed preset after it, desired the desired preset and source its source. "
         + "leaseExpired is ExpireApplicationContextAsync after the 15 s lease; gameReported reports Game again. "
         + "powerUnchanged, powerToBattery and powerToPluggedIn are HandlePowerSourceChangedAsync with the gate clear. "
-        + "resumeUnchangedAfterDeferral reports Other.exe with the LowPowerGate entered, exits it, and runs HandlePowerSourceChangedAsync on the unchanged source. It models only that part of resume processing: not the rest of ProcessNativeAsync (lighting invalidation and restore, resume validation) or the later convergence.";
+        + "resumeUnchangedAfterDeferral reports Other.exe with the LowPowerGate entered, exits it, and runs HandlePowerSourceChangedAsync on the unchanged source. It models only that part of resume processing: not the rest of ProcessNativeAsync (lighting invalidation and restore, resume validation) or the later convergence. "
+        + "userActivatedOnBattery and sameUserReactivated run on a second runtime, initialized on battery with the same profiles and no profile applied: ActivateUserAsync for a user whose saved profiles are those, as its first admitted request runs it, then again for the same user.";
 
     [Fact]
     public async Task NativeLifecycleReconcileVectors_MatchManagedTransitions()
@@ -111,15 +113,16 @@ public sealed partial class ServiceControlRuntimeTests
                 CancellationToken.None);
 
         var transitions = new JsonArray();
-        async Task Record(string transition, Func<Task> run)
+        Task Record(string transition, Func<Task> run) => RecordOn(context, transition, run);
+        async Task RecordOn(TestContext on, string transition, Func<Task> run)
         {
-            int before = context.Device.TotalSetterCalls;
+            int before = on.Device.TotalSetterCalls;
             await run();
-            ServiceStatusSnapshot status = runtime.GetStatus();
+            ServiceStatusSnapshot status = on.Runtime.GetStatus();
             transitions.Add(new JsonObject
             {
                 ["transition"] = transition,
-                ["submitted"] = context.Device.TotalSetterCalls > before,
+                ["submitted"] = on.Device.TotalSetterCalls > before,
                 ["performance"] = status.ConfirmedState?.Performance is { } performance ? (int)performance : null,
                 ["source"] = status.DesiredState is { } desired ? (int)desired.Performance.Source : null,
                 ["desired"] = status.DesiredState is { } wanted ? (int)wanted.Performance.Value : null,
@@ -162,6 +165,28 @@ public sealed partial class ServiceControlRuntimeTests
             context.LowPowerGate.Exit();
             await PowerChanged(PowerSource.PluggedIn);
         });
+
+        // The native tick activates the console user it first sees; managed
+        // activates the user of the first admitted request.
+        var user = new System.Security.Principal.SecurityIdentifier("S-1-5-21-111-222-333-1001");
+        var users = new MappedUserConfigurationRepository(
+            new Dictionary<string, BatteryConfiguration> { [user.Value] = loaded },
+            Path.Combine(directory, "users"));
+        TestContext activating = CreateContext(
+            providerAvailable: true,
+            initialPowerSource: PowerSource.Battery,
+            initialize: false,
+            profileValidator: validator,
+            userConfigurationRepository: users);
+        using ServiceControlRuntime activation = activating.Runtime;
+        activating.Device.Capabilities = capabilities;
+        activating.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+        activation.Initialize(loaded, PowerSource.Battery, PersistentOverrideState.Empty);
+        await activation.ObserveAsync(CancellationToken.None);
+        await RecordOn(activating, "userActivatedOnBattery",
+            () => activation.ActivateUserAsync(user, () => true, CancellationToken.None));
+        await RecordOn(activating, "sameUserReactivated",
+            () => activation.ActivateUserAsync(user, () => true, CancellationToken.None));
 
         return new JsonObject
         {
