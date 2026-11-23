@@ -134,9 +134,11 @@ impl FanPermit {
         self.settled.settle(&self.pins);
     }
     /// Drops the earlier owner once this request's 30 or 50 row has replaced
-    /// it, and settles its record.
+    /// it, and settles its record. It no longer owns anything, so owned Stop
+    /// can never select it with cleanup IDs that are about to be unpinned.
     fn supersede_prior(&self) -> io::Result<()> {
         if let Some(prior) = self.prior.lock().map_err(|_| io::ErrorKind::Other)?.take() {
+            prior.owned.store(false, Ordering::Release);
             prior.settle_pins();
         }
         Ok(())

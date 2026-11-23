@@ -202,24 +202,27 @@ impl BatteryPermit {
     fn known_unsubmitted(&self) -> bool {
         self.joined.load(Ordering::Acquire) && self.unsent.load(Ordering::Acquire)
     }
-    /// Queues an enable's source-cancel pins for the next Reader to unpin,
-    /// once this permit has left the owner slots for good. The automatic
-    /// cancel is the only sender of `cancel_ids`, and its fenced rollback
-    /// trusts `Transactions::unsent` on them, which holds only while they
-    /// stay pinned and so are never reissued. Each caller therefore settles
-    /// only after:
+    /// Queues an enable's source-cancel pins for whichever Reader next takes
+    /// the queue (`Permit::settled_pins`), possibly one already running, to
+    /// unpin at its retirement. The automatic cancel is the only sender of
+    /// `cancel_ids`, and its fenced rollback trusts `Transactions::unsent` on
+    /// them, which holds only while they stay pinned. So a caller settles only
+    /// once no request can bear these IDs again:
     ///
-    /// - this permit's last journal row is durable and settled
-    ///   (`storage.pending()` is false), or a newer confirmed row replaced it;
+    /// - the enable's own worker has joined, and the permit has left every
+    ///   owner slot for good: a newer confirmed owner replaced it, its
+    ///   reservation was released, or it joined without a confirmation;
     /// - no claim can put it back: a `TemporaryClaim` lives within one
     ///   `battery_source_event`, which decides its rollback before
     ///   `finish_temporary_release`, and `reconcile_temporary_owner` reaches
     ///   only permits in a slot, which a claimed owner is not;
-    /// - any cancel that sent these IDs has joined.
+    /// - every cancel attempt that could send these IDs has joined.
     ///
-    /// The unpinning itself waits for a later Reader's retirement, so no
-    /// cancel Reader is running then. The pins move to the queue, so a second
-    /// call queues nothing, and a sent ID stays quarantined.
+    /// The journal need not be settled: `NoMatchingReservation` can settle
+    /// while `storage.pending()` holds, which is harmless because the cancel
+    /// has joined, nothing resends its IDs and the pending store is fenced.
+    /// The pins move to the queue, so a second call queues nothing, and a
+    /// sent ID stays quarantined.
     fn settle_pins(&self) {
         self.settled.settle(&self.pins);
     }
