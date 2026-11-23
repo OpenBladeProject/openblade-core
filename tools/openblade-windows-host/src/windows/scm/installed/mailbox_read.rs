@@ -1433,6 +1433,54 @@ impl ReadSource {
     }
 }
 
+/// The keyboard Driver-mode owner's confirmed result, recorded as the read
+/// job's own 00/84 result is (`driver_mode::Cadence`), so a read job under
+/// the same admission publishes it for the interval instead of querying again.
+#[cfg(feature = "service-keyboard-driver-mode-v1")]
+impl ReadSource {
+    pub(super) fn record_driver_mode(
+        &self,
+        admission: ReadAdmission,
+        read: crate::discovery::performance::DeviceModeRead,
+        at: Instant,
+    ) {
+        self.driver_mode.record(admission, read, at);
+    }
+    pub(super) fn forget_driver_mode(&self) {
+        self.driver_mode.forget();
+    }
+    /// Whether the retained read is a fresh exact-device observation, as the
+    /// published status projects it (`decorate_at`): managed
+    /// `TryGetVerifiedDevice` for the Driver-mode owner.
+    pub(super) fn driver_mode_verified(&self) -> bool {
+        self.last
+            .borrow()
+            .as_ref()
+            .is_some_and(|(snapshot, completed)| {
+                Instant::now()
+                    .checked_duration_since(*completed)
+                    .unwrap_or_default()
+                    < RETENTION_WINDOW
+                    && snapshot.device_verified()
+            })
+    }
+}
+
+/// Whether a write may change the fans, so a retained fan speed pair must
+/// not outlive it. A 00/04 keyboard write cannot.
+#[cfg(all(
+    feature = "service-live-readings-v1",
+    feature = "service-thermal-mutation-v1"
+))]
+fn changes_fans(permit: &dyn crate::discovery::performance::mutation::Permit) -> bool {
+    #[cfg(feature = "service-keyboard-driver-mode-v1")]
+    if permit.device_mode().is_some() {
+        return false;
+    }
+    let _ = permit;
+    true
+}
+
 #[cfg(feature = "service-thermal-mutation-v1")]
 pub(super) fn project_private_policy(
     value: Snapshot,
@@ -1592,9 +1640,12 @@ impl ReadSource {
         deadline: Instant,
     ) -> io::Result<Option<crate::discovery::performance::ObservedPerformance>> {
         let _serial = self.operation.lock().await;
-        // No retained fan pair outlives a write that may change the fans.
+        // No retained fan pair outlives a write that may change the fans; a
+        // 00/04 keyboard write cannot (`changes_fans`).
         #[cfg(feature = "service-live-readings-v1")]
-        self.live.mutating();
+        if changes_fans(&*permit) {
+            self.live.mutating();
+        }
         self.lease.verify_integrity()?;
         self.drain_mutation(false).await?;
         self.stop_reader().await?;
@@ -1635,9 +1686,12 @@ impl ReadSource {
     ) -> io::Result<Option<crate::discovery::performance::ObservedPerformance>> {
         let factory = self.factories.as_ref().ok_or_else(deny)?;
         let _serial = self.operation.lock().await;
-        // No retained fan pair outlives a write that may change the fans.
+        // No retained fan pair outlives a write that may change the fans; a
+        // 00/04 keyboard write cannot (`changes_fans`).
         #[cfg(feature = "service-live-readings-v1")]
-        self.live.mutating();
+        if changes_fans(&*permit) {
+            self.live.mutating();
+        }
         #[cfg(test)]
         if self.registration_pause.get() != 0 {
             self.registration_pause.set(2);

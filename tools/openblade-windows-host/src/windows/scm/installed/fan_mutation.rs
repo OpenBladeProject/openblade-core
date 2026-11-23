@@ -1439,6 +1439,19 @@ impl Runtime {
             Err(_) => Ok(Stepped::new(after_write_unreadable(&permit.storage)?, None)),
         }
     }
+    /// Whether a fan write is not settled: a fan job not yet joined, or a fan
+    /// journal row not yet resolved (managed
+    /// `FanStopController.BlocksOrdinaryHardware`). The keyboard Driver-mode
+    /// owner writes nothing then. Fans OpenBlade holds manual and settled do
+    /// not block it.
+    #[cfg(feature = "service-keyboard-driver-mode-v1")]
+    pub(super) fn fan_unsettled(&self) -> bool {
+        self.fan_pending
+            .borrow()
+            .iter()
+            .chain(self.fan_owner.borrow().iter())
+            .any(|p| !p.joined.load(Ordering::Acquire) || p.storage.pending())
+    }
     pub(in super::super) fn refuse_stop_fans(&self) -> io::Result<()> {
         if self
             .fan_pending

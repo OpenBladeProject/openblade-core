@@ -75,6 +75,12 @@ internal sealed record NativeArtifact(string Id, string Role, string Target, str
         bool agentColor = features.Contains("agent-display-color-write-v1", StringComparer.Ordinal);
         bool agentProfile = features.Contains("agent-display-profile-apply-v1", StringComparer.Ordinal);
         bool agentGpu = features.Contains("agent-gpu-v1", StringComparer.Ordinal);
+        // Keyboard Driver-mode ownership writes 00/04, which no admitted composition sends, and its
+        // low-power release and D1 fan handback are a later slice. Refuse its feature and its capability
+        // marker by name, before the read and trigger features it implies, until a packaging stage
+        // admits it (docs/windows-rust-development-service.md).
+        if (features.Contains("service-keyboard-driver-mode-v1", StringComparer.Ordinal) || capabilities.Split(',').Contains("service-keyboard-driver-mode-v1", StringComparer.Ordinal))
+        { throw new InvalidDataException("Keyboard Driver-mode ownership is not admitted for packaging."); }
         // Automatic reconciliation of saved intent is not admitted for packaging. Refuse its
         // feature and its capability marker by name, whatever else the record claims.
         if (features.Contains("service-profile-triggers-v1", StringComparer.Ordinal) || capabilities.Split(',').Contains("service-profile-triggers-v1", StringComparer.Ordinal))

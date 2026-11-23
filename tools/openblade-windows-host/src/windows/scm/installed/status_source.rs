@@ -512,6 +512,21 @@ impl StatusSource for GuardedStatus {
             Ok(())
         }))
     }
+    #[cfg(feature = "service-keyboard-driver-mode-v1")]
+    fn maintain_driver_mode(&mut self) -> Option<super::Reconciling> {
+        let runtime = self.mutation.clone()?;
+        let mailbox = self.mailbox.clone();
+        Some(Box::pin(async move {
+            // A step failure continues the loop (managed `RunStepAsync`); only
+            // fatal admission evidence stops the Service. The step publishes
+            // through the read cadence every status projects
+            // (`ReadSource::record_driver_mode`).
+            match runtime.maintain_driver_mode(&mailbox).await {
+                Err(error) if super::thermal_mutation::is_fatal_admission(&error) => Err(error),
+                _ => Ok(()),
+            }
+        }))
+    }
     fn process_power_source(&mut self) -> Pending<'_, ()> {
         Box::pin(async move {
             #[cfg(feature = "service-temporary-charge-v1")]
@@ -913,6 +928,20 @@ impl StatusSource for GuardedStatus {
             let mut result = self.inner.drain().await;
             #[cfg(feature = "service-thermal-mutation-v1")]
             if let Some(runtime) = &self.mutation {
+                // Managed shutdown order: the keyboard Driver-mode release,
+                // then the fan handback. A keyboard failure or refusal never
+                // skips the fan step; the first error is kept.
+                #[cfg(feature = "service-keyboard-driver-mode-v1")]
+                {
+                    let keyboard = if self.origin.admit_owned_stop().is_ok() {
+                        runtime.release_driver_mode(&self.mailbox).await
+                    } else {
+                        runtime.refuse_release_driver_mode()
+                    };
+                    if result.is_ok() {
+                        result = keyboard;
+                    }
+                }
                 let fans = if self.origin.admit_owned_stop().is_ok() {
                     runtime.stop_fans(&self.mailbox).await
                 } else {

@@ -62,6 +62,12 @@ pub(crate) trait Permit: Send + Sync {
     /// IDs, and again once it stops, with whether the transaction pool proves
     /// that none was sent.
     fn observe_temporary_unsent(&self, _unsent: bool) {}
+    /// The keyboard Driver-mode write job this permit carries, if it is one
+    /// (`Reader::apply_device_mode`). Its result travels through the job.
+    #[cfg(feature = "service-keyboard-driver-mode-v1")]
+    fn device_mode(&self) -> Option<&super::DeviceModeJob> {
+        None
+    }
     fn is_fan(&self) -> bool {
         false
     }
@@ -305,6 +311,12 @@ impl<P: Port> Reader<P, ReadAdmission> {
         permit: &dyn Permit,
         limit: Limit<'_>,
     ) -> Option<ObservedPerformance> {
+        // A 00/04 write runs its own recipe and reads no thermal state.
+        #[cfg(feature = "service-keyboard-driver-mode-v1")]
+        if let Some(job) = permit.device_mode() {
+            self.apply_device_mode(permit, job, limit).await;
+            return None;
+        }
         if let Some(enabled) = permit.temporary_target() {
             self.apply_temporary_charge(permit, enabled, limit).await;
             return None;

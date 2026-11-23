@@ -1031,6 +1031,11 @@ impl Snapshot {
         );
         self
     }
+    /// Whether this status names an exact verified device.
+    #[cfg(all(windows, feature = "service-keyboard-driver-mode-v1"))]
+    pub(crate) fn device_verified(&self) -> bool {
+        self.device_verified
+    }
     /// The v85 power source this status was built with.
     #[cfg(all(windows, feature = "service-live-readings-v1"))]
     pub(crate) fn active_power_source(&self) -> i32 {

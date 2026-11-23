@@ -1,14 +1,15 @@
 //! Exact RZ09-0581 keyboard device mode, C# `DeviceModeProtocol`: the 00/84
-//! query of the reviewed managed admission
-//! `Rz09_0581_02e0_3_01_LightingSemanticAdmission.json` (`deviceMode`). This
-//! codec grants no I/O authority.
+//! query and the 00/04 Normal and Driver setters of the reviewed managed
+//! admission `Rz09_0581_02e0_3_01_LightingSemanticAdmission.json`
+//! (`deviceMode`). This codec grants no I/O authority.
 //!
-//! Only the query is admitted. The reviewed 00/04 Normal and Driver setters
-//! exist only in this module's tests, which pin them against the same
-//! admission. `RazerReport::create` stays a public encoder, so this module
-//! cannot stop other code building 00/04; the host's device-mode guard test
-//! fails when a non-test setter or a new report construction appears.
-//! Acquiring and releasing Driver mode is a later, separately reviewed stage.
+//! The query is always built. The setters exist only with the
+//! `device-mode-setters` feature, which only the host's
+//! `service-keyboard-driver-mode-v1` composition enables, and in this module's
+//! tests, which pin all three against the same admission. `RazerReport::create`
+//! stays a public encoder, so this module cannot stop other code building
+//! 00/04; the host's device-mode guard test fails when a new setter user or a
+//! new report construction appears.
 use crate::RazerReport;
 use openblade_types::ProtocolValidationFailure;
 
@@ -61,6 +62,45 @@ impl DeviceModeQuery {
             .request
             .validate_response(response, Some(PAYLOAD_LENGTH))?;
         DeviceMode::decode(payload.as_slice()).ok_or(ProtocolValidationFailure::PayloadValidator)
+    }
+}
+
+/// The reviewed 00/04 setter for one mode, with its caller-selected
+/// transaction ID: `0000` for Normal and `0300` for Driver.
+#[cfg(any(test, feature = "device-mode-setters"))]
+pub struct DeviceModeSet {
+    request: RazerReport,
+    arguments: [u8; 2],
+}
+
+#[cfg(any(test, feature = "device-mode-setters"))]
+impl DeviceModeSet {
+    const ID: u8 = 0x04;
+
+    pub fn new(transaction: u8, mode: DeviceMode) -> Self {
+        let arguments = [mode as u8, 0];
+        Self {
+            request: RazerReport::create(transaction, CLASS, Self::ID, &arguments)
+                .expect("fixed two-byte device-mode setter"),
+            arguments,
+        }
+    }
+
+    pub fn request(&self) -> &RazerReport {
+        &self.request
+    }
+
+    /// C# `TryDecodeSet`: a correlated success whose two payload bytes echo
+    /// the setter arguments exactly. It is never a mode readback.
+    pub fn acknowledge(&self, response: &[u8]) -> Result<(), ProtocolValidationFailure> {
+        let payload = self
+            .request
+            .validate_response(response, Some(PAYLOAD_LENGTH))?;
+        if payload.as_slice() == self.arguments {
+            Ok(())
+        } else {
+            Err(ProtocolValidationFailure::PayloadValidator)
+        }
     }
 }
 

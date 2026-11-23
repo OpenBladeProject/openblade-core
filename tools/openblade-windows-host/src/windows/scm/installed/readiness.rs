@@ -163,6 +163,13 @@ trait StatusSource {
     fn reconcile_lifecycle(&mut self) -> Option<Reconciling> {
         None
     }
+    // The origin tick's 15 s keyboard Driver-mode step after the power
+    // check (`Runtime::maintain_driver_mode`), taken under the source lock and
+    // awaited after it is released, as a reconciliation is.
+    #[cfg(feature = "service-keyboard-driver-mode-v1")]
+    fn maintain_driver_mode(&mut self) -> Option<Reconciling> {
+        None
+    }
     #[cfg(feature = "service-thermal-mutation-v1")]
     fn mutate(&mut self, _: Caller, _: String, _: StatusRequest, _: Instant) -> Mutation {
         Box::pin(async {
@@ -347,6 +354,19 @@ impl Ports {
                 let mut source = self.source.lock().await;
                 source.verify_origin()?;
                 source.process_power_source().await?;
+                // Managed step order: power-source classification, then the
+                // keyboard Driver-mode step. Its first eligible tick is the
+                // managed startup call; native runs no startup reconciliation
+                // for it to precede. Its own admission refuses in low power.
+                #[cfg(feature = "service-keyboard-driver-mode-v1")]
+                let mut source = {
+                    let maintain = source.maintain_driver_mode();
+                    drop(source);
+                    if let Some(maintain) = maintain {
+                        maintain.await?;
+                    }
+                    self.source.lock().await
+                };
                 // A resume, a gate-clearing DisplayOn, a power-kind change or
                 // an expired lease reconciles what the reporting pair owes.
                 // It is bounded by its own steps and serialized with requests

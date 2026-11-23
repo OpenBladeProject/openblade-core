@@ -701,6 +701,19 @@ fn capabilities(schema: u8, role: &str, features: &str, value: &str) -> io::Resu
     let agent_color = has("agent-display-color-write-v1");
     let agent_profile = has("agent-display-profile-apply-v1");
     let agent_gpu = has("agent-gpu-v1");
+    // Keyboard Driver-mode ownership writes 00/04, which no admitted
+    // composition sends, and its low-power release and D1 fan handback are a
+    // later slice. Refuse its feature and its capability marker by name,
+    // before the read and trigger features it implies, until a stage admits
+    // it (docs/windows-rust-development-service.md).
+    const DRIVER_OWNER: &str = "service-keyboard-driver-mode-v1";
+    if has(DRIVER_OWNER)
+        || value
+            .split(',')
+            .any(|capability| capability == DRIVER_OWNER)
+    {
+        return Err(deny());
+    }
     // Automatic reconciliation of saved intent is not admitted for packaging:
     // refuse its feature and its capability marker by name, whatever else the
     // record claims, until a packaging stage admits it (with the low-power

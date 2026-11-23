@@ -105,12 +105,17 @@ pub(super) use battery::BatteryUpdate;
 #[path = "fan_mutation.rs"]
 mod fan;
 pub(super) use fan::FanRequest;
+#[cfg(feature = "service-keyboard-driver-mode-v1")]
+#[path = "driver_mode_owner.rs"]
+mod keyboard;
 #[cfg(feature = "service-profiles-v1")]
 #[path = "profile_mutation.rs"]
 mod profiles;
 #[cfg(feature = "service-profile-triggers-v1")]
 #[path = "request_triggers.rs"]
 mod triggers;
+#[cfg(all(test, feature = "service-keyboard-driver-mode-v1"))]
+pub(super) use keyboard::INTERVAL;
 #[cfg(all(test, feature = "service-profile-triggers-v1"))]
 pub(super) use triggers::{
     APPLICATION_SESSION_REQUIRED, LOW_POWER_DEFERRED, LOW_POWER_PERFORMANCE, LOW_POWER_STEP,
@@ -311,6 +316,9 @@ pub(super) struct Runtime {
     // Pins of settled fan and temporary-charge records, which the next
     // mutation Reader to retire unpins (`mutation::SettledPins`).
     settled_pins: Arc<SettledPins>,
+    // Keyboard Driver-mode ownership, held in memory (`keyboard`).
+    #[cfg(feature = "service-keyboard-driver-mode-v1")]
+    keyboard: Rc<keyboard::Keyboard>,
     gate: Rc<tokio::sync::Mutex<()>>,
     // Public battery history is bounded independently of request/user intent.
     // Only independent reads update its timestamp; sibling publications cannot.
@@ -505,6 +513,8 @@ impl Runtime {
             temporary_event: Rc::default(),
             fan_pending: Rc::default(),
             settled_pins: Arc::default(),
+            #[cfg(feature = "service-keyboard-driver-mode-v1")]
+            keyboard: Rc::default(),
             gate: Rc::default(),
             battery_observation: Arc::default(),
             battery_source: Arc::new(std::sync::atomic::AtomicU8::new(3)),
@@ -642,6 +652,8 @@ impl Runtime {
             temporary_event: Rc::default(),
             fan_pending: Rc::default(),
             settled_pins: Arc::default(),
+            #[cfg(feature = "service-keyboard-driver-mode-v1")]
+            keyboard: Rc::default(),
             gate: Rc::default(),
             battery_observation: Arc::default(),
             battery_source: Arc::new(std::sync::atomic::AtomicU8::new(3)),

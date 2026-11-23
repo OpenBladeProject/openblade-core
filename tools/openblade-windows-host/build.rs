@@ -178,6 +178,12 @@ fn main() {
         } else {
             capabilities.to_owned()
         };
+        // Nor Driver-mode ownership, which adds the 00/04 setter.
+        let capabilities = if role == "service" && has("service-keyboard-driver-mode-v1") {
+            format!("{capabilities},service-keyboard-driver-mode-v1")
+        } else {
+            capabilities
+        };
         // Nor does any reader admit the live-reading read, whose marker follows
         // the same rule.
         let capabilities = if role == "service" && has("service-live-readings-v1") {

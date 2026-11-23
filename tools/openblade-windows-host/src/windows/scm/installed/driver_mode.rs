@@ -58,6 +58,14 @@ impl Cadence {
         }));
     }
 
+    /// Forgets the last result, so statuses publish null and the next read job
+    /// queries again (the Driver-mode owner's failed step without a read
+    /// admission to record it under).
+    #[cfg(feature = "service-keyboard-driver-mode-v1")]
+    pub(super) fn forget(&self) {
+        self.0.set(None);
+    }
+
     /// The value that a verified status read under `admission` by the job
     /// that started at `now` publishes.
     pub(super) fn active(&self, admission: ReadAdmission, now: Instant) -> Option<bool> {

@@ -26,6 +26,9 @@ pub(crate) mod worker_tests;
 mod device_mode;
 #[cfg(any(test, feature = "service-keyboard-driver-mode-read-v1"))]
 pub(crate) use device_mode::DeviceModeRead;
+#[cfg(feature = "service-keyboard-driver-mode-v1")]
+#[allow(unused_imports)] // Shared with the standalone discovery binary.
+pub(crate) use device_mode::{DeviceModeJob, DeviceModeStep};
 #[cfg(feature = "service-thermal-mutation-v1")]
 mod battery;
 #[cfg(any(test, feature = "service-live-readings-v1"))]
