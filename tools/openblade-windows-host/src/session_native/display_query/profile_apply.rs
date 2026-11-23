@@ -481,6 +481,63 @@ pub(super) fn run<F: CheckpointFile, H: ProfileHost>(
     }
 }
 
+/// One automatic transition's profile operation, which display automation
+/// records itself (managed `ApplyProfileForTransitionAsync`).
+#[cfg(feature = "agent-display-automation-v1")]
+pub(super) struct Applied {
+    pub(super) outcome: ManualWriteOutcome,
+    /// The fields whose submission may be unresolved, as `run` computes them
+    /// for the native write gate.
+    pub(super) unresolved: Fields,
+    /// A fatal reply query or brightness worker failure, returned after the
+    /// transition is recorded.
+    pub(super) fatal: Option<io::Error>,
+}
+
+/// Managed `ApplyProfileForTransitionAsync`: the transition's own admission
+/// must still be the trusted context, unless the profile is unconfigured
+/// (`ValidateExpectedAsync`, refused with one query), and then the same
+/// composition as a manual profile, without the manual checkpoint or the
+/// native write gate, which display automation applies itself.
+#[cfg(feature = "agent-display-automation-v1")]
+pub(super) fn transition<H: ProfileHost>(
+    host: &mut H,
+    brightness: &SharedBrightness,
+    request: &ApplyProfile,
+    admitted: PowerContext,
+    canceled: &AtomicBool,
+) -> Applied {
+    let mut progress = Progress::default();
+    let current = host.power();
+    let ending = if request.settings.configured() && current != Some(admitted) {
+        let (state, fatal) = read(host, brightness, canceled);
+        let error = if current.is_none() {
+            super::write::UNCONFIRMED_POWER
+        } else {
+            super::write::CHANGED_POWER
+        };
+        progress.end(Status::Blocked, Some(Cow::Borrowed(error)), state, fatal)
+    } else {
+        apply(
+            host,
+            brightness,
+            request,
+            Some(admitted),
+            canceled,
+            &mut progress,
+        )
+    };
+    Applied {
+        unresolved: progress.unresolved(&ending.state),
+        outcome: ManualWriteOutcome {
+            status: ending.status,
+            error: ending.error,
+            state: ending.state,
+        },
+        fatal: ending.fatal,
+    }
+}
+
 /// One query: an interrupted read is an unavailable snapshot, and any other
 /// failure is fatal after the operation is recorded.
 fn read(

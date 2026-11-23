@@ -137,15 +137,51 @@ pub(super) fn explicit_read<F: CheckpointFile>(
     Ok(())
 }
 
+/// Managed `DisplayProfileApplier.operationGate`: with display automation,
+/// manual queries and writes and automatic transitions each hold it for one
+/// complete operation. Without automation the endpoint serves one request at
+/// a time, so there is nothing else to serialize with.
+#[cfg(feature = "agent-display-automation-v1")]
+pub(super) type Gate = Arc<Mutex<()>>;
+
+#[cfg(feature = "agent-display-automation-v1")]
+pub(super) fn turn(gate: &Gate) -> io::Result<MutexGuard<'_, ()>> {
+    gate.lock()
+        .map_err(|_| io::Error::other("display operation gate failed"))
+}
+
+/// The display operation gate for one manual operation. A mutation first
+/// cancels the running transition, as managed `BeginManualOperation` runs
+/// before the applier's gate; the mutation's own begin records the rest.
+#[cfg(feature = "agent-display-automation-v1")]
+pub(super) fn manual_turn<'a, F: CheckpointFile>(
+    recovery: &Mutex<Recovery<F>>,
+    gate: &'a Gate,
+    mutation: bool,
+) -> io::Result<MutexGuard<'a, ()>> {
+    if mutation {
+        lock(recovery)?.preempt();
+    }
+    turn(gate)
+}
+
+/// Without display automation the endpoint serves one request at a time, so
+/// a manual operation has no gate to hold.
+#[cfg(not(feature = "agent-display-automation-v1"))]
+struct NoGate;
+
 /// Production state shared by queries and writes on this Display endpoint.
 #[derive(Clone)]
 pub(super) struct Writer {
     recovery: Arc<Mutex<Recovery<WindowsCheckpointFile>>>,
     host: WindowsHost,
+    #[cfg(feature = "agent-display-automation-v1")]
+    gate: Gate,
 }
 
 impl Writer {
     /// Blocking: reads the current user's managed checkpoint once.
+    #[cfg(not(feature = "agent-display-automation-v1"))]
     pub(super) fn load(
         origin: Arc<Origin>,
         power: PowerAdmission,
@@ -163,13 +199,60 @@ impl Writer {
         }
     }
 
-    /// Blocking: a completed explicit query may resume paused recovery.
-    pub(super) fn explicit_read(
+    /// Display automation already loaded the checkpoint that both share.
+    #[cfg(feature = "agent-display-automation-v1")]
+    pub(super) fn new(
+        recovery: Arc<Mutex<Recovery<WindowsCheckpointFile>>>,
+        origin: Arc<Origin>,
+        power: PowerAdmission,
+        stop: watch::Receiver<bool>,
+    ) -> Self {
+        Self {
+            recovery,
+            host: WindowsHost {
+                origin,
+                power,
+                stop,
+            },
+            gate: Gate::default(),
+        }
+    }
+
+    /// The transition applier, on the same host, brightness owner and gate.
+    #[cfg(feature = "agent-display-automation-v1")]
+    pub(super) fn applier(
+        &self,
+        brightness: SharedBrightness,
+    ) -> super::automation::ProfileApplier {
+        super::automation::ProfileApplier {
+            host: self.host.clone(),
+            brightness,
+            gate: self.gate.clone(),
+        }
+    }
+
+    /// `manual_turn` on this endpoint's checkpoint and gate.
+    #[cfg(feature = "agent-display-automation-v1")]
+    fn turn(&self, mutation: bool) -> io::Result<MutexGuard<'_, ()>> {
+        manual_turn(&self.recovery, &self.gate, mutation)
+    }
+
+    #[cfg(not(feature = "agent-display-automation-v1"))]
+    fn turn(&self, _mutation: bool) -> io::Result<NoGate> {
+        Ok(NoGate)
+    }
+
+    /// Blocking: one explicit query; a completed one may resume paused
+    /// recovery (managed `ResumeAfterSuccessfulExplicitRead`).
+    pub(super) fn query(
         &self,
         brightness: &SharedBrightness,
-        state: &Snapshot,
-    ) -> io::Result<()> {
-        explicit_read(brightness, &self.recovery, state)
+        canceled: &std::sync::atomic::AtomicBool,
+    ) -> io::Result<Snapshot> {
+        let _turn = self.turn(false)?;
+        let snapshot = self.host.query(brightness, canceled)?;
+        explicit_read(brightness, &self.recovery, &snapshot)?;
+        Ok(snapshot)
     }
 
     /// Blocking: the complete admitted brightness operation, including its record.
@@ -180,6 +263,7 @@ impl Writer {
         request: super::brightness_write::SetBrightness,
         canceled: &std::sync::atomic::AtomicBool,
     ) -> io::Result<super::brightness_write::WriteOutcome> {
+        let _turn = self.turn(true)?;
         super::brightness_write::set_brightness(
             &mut self.host.clone(),
             brightness,
@@ -197,6 +281,7 @@ impl Writer {
         request: super::hdr_write::SetHdr,
         canceled: &std::sync::atomic::AtomicBool,
     ) -> io::Result<super::manual_write::ManualWriteOutcome> {
+        let _turn = self.turn(true)?;
         super::manual_write::run(
             &mut self.host.hdr_writer(),
             brightness,
@@ -214,6 +299,7 @@ impl Writer {
         request: &super::refresh_write::SetRefreshRate,
         canceled: &std::sync::atomic::AtomicBool,
     ) -> io::Result<super::manual_write::ManualWriteOutcome> {
+        let _turn = self.turn(true)?;
         super::manual_write::run(
             &mut self.host.refresh_writer(),
             brightness,
@@ -231,6 +317,7 @@ impl Writer {
         request: &super::color_write::SetColorProfile,
         canceled: &std::sync::atomic::AtomicBool,
     ) -> io::Result<super::manual_write::ManualWriteOutcome> {
+        let _turn = self.turn(true)?;
         super::manual_write::run(
             &mut self.host.color_writer(),
             brightness,
@@ -248,6 +335,7 @@ impl Writer {
         request: &super::profile_apply::ApplyProfile,
         canceled: &std::sync::atomic::AtomicBool,
     ) -> io::Result<super::manual_write::ManualWriteOutcome> {
+        let _turn = self.turn(true)?;
         super::profile_apply::run(
             &mut self.host.clone(),
             brightness,

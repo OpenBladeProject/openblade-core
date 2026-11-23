@@ -5,8 +5,10 @@
 //! readers (recovery schema 4, then legacy schema 1); any other existing file
 //! is invalid and pauses automation with every field uncertain. Writes encode
 //! the complete schema-4 record with the same atomic temporary-file replace.
-//! Begin/Complete/Resume mirror `DisplayAutomationCoordinator`. The native
-//! Agent has no automation, so no transition is scheduled after a resume.
+//! Begin/Complete/Resume mirror `DisplayAutomationCoordinator`. Its automatic
+//! half (Observe, MarkUnavailable and the transition) is `automatic`, selected
+//! with `agent-display-automation-v1`; without it no transition is scheduled
+//! after a resume.
 use super::observation::Snapshot;
 use crate::session_native::power_admission::EXTERNAL_UNKNOWN;
 use openblade_windows_host::json_object::scan;
@@ -17,19 +19,27 @@ use std::{
     path::PathBuf,
 };
 
+#[cfg(feature = "agent-display-automation-v1")]
+mod automatic;
+#[cfg(feature = "agent-display-automation-v1")]
+pub(super) use automatic::{Cancel, Target, Transition, baseline};
+#[cfg(all(test, feature = "agent-display-automation-v1"))]
+pub(super) use automatic::{DURABILITY, Observation};
+
 const SCHEMA: i64 = 1;
 const RECOVERY_SCHEMA: i64 = 4;
 pub(super) const MAXIMUM_BYTES: usize = 4096;
 
-/// Durable storage boundary. Tests inject failures and restarts here.
-pub(super) trait CheckpointFile: Send {
+/// Durable storage boundary. Tests inject failures and restarts here. Named
+/// in `Automation`, which the status watcher holds.
+pub(in crate::session_native) trait CheckpointFile: Send {
     /// `Ok(None)` only when the file does not exist.
     fn read(&mut self) -> io::Result<Option<Vec<u8>>>;
     /// Replace the file atomically after a flushed temporary write.
     fn replace(&mut self, bytes: &[u8]) -> io::Result<()>;
 }
 
-pub(super) struct WindowsCheckpointFile(Option<PathBuf>);
+pub(in crate::session_native) struct WindowsCheckpointFile(Option<PathBuf>);
 
 impl WindowsCheckpointFile {
     pub(super) fn current_user() -> Self {
@@ -217,6 +227,9 @@ pub(super) struct Recovery<F> {
     /// cleared only by an explicit read that observed its current state
     /// (`Snapshot::observes`). The durable managed pause is separate.
     unresolved: Fields,
+    /// The in-memory automatic state of managed `DisplayAutomationCoordinator`.
+    #[cfg(feature = "agent-display-automation-v1")]
+    automatic: automatic::Automatic,
 }
 
 impl<F: CheckpointFile> Recovery<F> {
@@ -239,6 +252,8 @@ impl<F: CheckpointFile> Recovery<F> {
             inherited: Fields::default(),
             operation: Fields::default(),
             unresolved: Fields::default(),
+            #[cfg(feature = "agent-display-automation-v1")]
+            automatic: automatic::Automatic::default(),
         };
         match loaded {
             Loaded::Absent => {}
@@ -279,8 +294,10 @@ impl<F: CheckpointFile> Recovery<F> {
         if let Some(source @ 0..=2) = source {
             self.last = Some(source);
         }
-        self.inherited_pause = self.paused;
+        self.inherited_pause = self.paused || self.in_flight();
         self.inherited = self.uncertain;
+        #[cfg(feature = "agent-display-automation-v1")]
+        self.begin_manual();
         self.manual_hold = true;
         self.paused = true;
         self.uncertain = self.uncertain.include(fields);
@@ -293,6 +310,8 @@ impl<F: CheckpointFile> Recovery<F> {
             self.uncertain = self.inherited;
             self.inherited = Fields::default();
             self.operation = Fields::default();
+            #[cfg(feature = "agent-display-automation-v1")]
+            self.complete_manual(false);
             self.latch();
             return false;
         }
@@ -318,6 +337,12 @@ impl<F: CheckpointFile> Recovery<F> {
         self.unresolved = self.unresolved.include(unresolved);
         let affected = self.uncertain;
         let confirmed = status == Status::Succeeded && state.confirms(self.uncertain);
+        #[cfg(feature = "agent-display-automation-v1")]
+        self.complete_manual(
+            confirmed
+                || (!matches!(status, Status::Indeterminate | Status::Succeeded)
+                    && !self.inherited_pause),
+        );
         if confirmed {
             self.paused = false;
             self.uncertain = Fields::default();
@@ -362,7 +387,15 @@ impl<F: CheckpointFile> Recovery<F> {
             self.latch();
             return false;
         }
+        #[cfg(feature = "agent-display-automation-v1")]
+        self.resume_latest();
         true
+    }
+
+    /// Managed `automaticWriteInFlight`; never without display automation.
+    #[cfg(not(feature = "agent-display-automation-v1"))]
+    fn in_flight(&self) -> bool {
+        false
     }
 
     fn latch(&mut self) {
@@ -394,7 +427,7 @@ impl<F: CheckpointFile> Recovery<F> {
             "OwnedColorProfile": self.owned.color,
             "OwnedBrightness": self.owned.brightness,
             "ManualHold": self.manual_hold,
-            "AutomaticWritesPaused": self.paused,
+            "AutomaticWritesPaused": self.paused || self.in_flight(),
             "UncertainRefreshRate": self.uncertain.refresh,
             "UncertainHdr": self.uncertain.hdr,
             "UncertainColorProfile": self.uncertain.color,
@@ -567,7 +600,7 @@ fn boolean(object: &Map<String, Value>, name: &str) -> Option<bool> {
     }
 }
 
-fn guid(text: &str) -> bool {
+pub(super) fn guid(text: &str) -> bool {
     text.len() == 36
         && text.bytes().enumerate().all(|(i, b)| {
             if matches!(i, 8 | 13 | 18 | 23) {

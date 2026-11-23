@@ -69,6 +69,17 @@ pub(super) fn run(
         // reconnect, and the role's stop then passes every key through.
         #[cfg(feature = "agent-function-row-v1")]
         let function_row = Arc::new(super::function_row::Admission::default());
+        // Display automation observes the same verified statuses, in order,
+        // after power admission took each one (managed
+        // ServiceDisplayAutomationLoop). Its checkpoint is loaded before the
+        // first status, as managed constructs the coordinator first.
+        #[cfg(feature = "agent-display-automation-v1")]
+        let automation = {
+            let power = power.clone();
+            tokio::task::spawn_blocking(move || super::display_query::Automation::load(power))
+                .await
+                .map_err(|_| io::Error::other("display recovery load failed"))?
+        };
         let canceled = async {
             let result = async {
                 loop {
@@ -114,6 +125,8 @@ pub(super) fn run(
                                 snapshot.display_power_source(),
                                 snapshot.display_manual_external_power(),
                             );
+                            #[cfg(feature = "agent-display-automation-v1")]
+                            automation.observe(&snapshot)?;
                         }
                         service_client::StatusUpdate::Event(value) => {
                             value.require_fresh()?;
@@ -121,14 +134,22 @@ pub(super) fn run(
                                 value.snapshot.display_power_source(),
                                 value.snapshot.display_manual_external_power(),
                             );
+                            #[cfg(feature = "agent-display-automation-v1")]
+                            automation.observe(&value.snapshot)?;
                         }
-                        service_client::StatusUpdate::Reconnecting => power.unavailable(),
+                        service_client::StatusUpdate::Reconnecting => {
+                            power.unavailable();
+                            #[cfg(feature = "agent-display-automation-v1")]
+                            automation.unavailable()?;
+                        }
                     }
                     Ok(())
                 })();
                 #[cfg(openblade_display_write)]
                 if result.is_err() {
                     power.unavailable();
+                    #[cfg(feature = "agent-display-automation-v1")]
+                    let _ = automation.unavailable();
                 }
                 #[cfg(openblade_display_write)]
                 return result;
@@ -152,9 +173,18 @@ pub(super) fn run(
         };
         #[cfg(all(feature = "agent-display-query-v1", not(openblade_display_write)))]
         let display = |feature_stop| super::display_query::run(origin.clone(), feature_stop);
-        #[cfg(openblade_display_write)]
+        #[cfg(all(openblade_display_write, not(feature = "agent-display-automation-v1")))]
         let display =
             |feature_stop| super::display_query::run(origin.clone(), feature_stop, power.clone());
+        #[cfg(feature = "agent-display-automation-v1")]
+        let display = |feature_stop| {
+            super::display_query::run(
+                origin.clone(),
+                feature_stop,
+                power.clone(),
+                automation.clone(),
+            )
+        };
         #[cfg(not(openblade_agent_endpoint))]
         {
             tokio::select! { result = &mut canceled => result, result = watch => result }

@@ -97,6 +97,10 @@ fn main() {
             "agent-display-profile-apply-v1",
             "session-display-profile-apply-partial-v1",
         ),
+        (
+            "agent-display-automation-v1",
+            "session-display-automation-v1",
+        ),
         ("agent-gpu-v1", "session-gpu-apps-v1"),
         ("agent-function-row-v1", "session-function-row-v1"),
     ]

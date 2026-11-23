@@ -35,6 +35,11 @@ agent-display-profile-apply-v1 = [
     "agent-display-refresh-write-v1",
     "agent-display-color-write-v1",
 ]
+# Automatic display profile reconciliation (managed DisplayAutomationCoordinator
+# and ServiceDisplayAutomationLoop) on power-source and application-profile
+# changes in verified Service status. It writes only through the applyProfile
+# composition, so it implies it. Packaging refuses an image that carries it.
+agent-display-automation-v1 = ["agent-display-profile-apply-v1", "openblade-domain/profile-set"]
 agent-battery-report-v1 = ["native-agent-entry-compile-check"]
 # Current-user application-context reporter: the foreground watcher reports the
 # profile-matching executable to the Service as managed ApplicationProfileReporter

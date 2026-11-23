@@ -111,6 +111,16 @@ impl PowerAdmission {
         state.generation += 1;
     }
 
+    /// Managed `DisplayPowerContextState.Update(source, NextGeneration())` from
+    /// display automation: a new generation for the current source, so every
+    /// operation admitted on the older one becomes stale. Returns the new
+    /// confirmed context, if any.
+    #[cfg(feature = "agent-display-automation-v1")]
+    pub(crate) fn advance(&self) -> Option<PowerContext> {
+        self.update(|state| state.generation += 1);
+        self.capture()
+    }
+
     /// The confirmed context only: automation and profile apply.
     #[cfg(any(test, feature = "agent-display-profile-apply-v1"))]
     pub(crate) fn capture(&self) -> Option<PowerContext> {

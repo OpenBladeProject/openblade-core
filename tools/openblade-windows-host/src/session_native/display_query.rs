@@ -24,6 +24,8 @@ use tokio::{
     sync::watch,
     time::{sleep, timeout},
 };
+#[cfg(feature = "agent-display-automation-v1")]
+mod automation;
 #[cfg(feature = "agent-display-brightness-write-v1")]
 mod brightness_write;
 #[cfg(feature = "agent-display-color-write-v1")]
@@ -41,6 +43,8 @@ mod recovery;
 mod refresh_write;
 #[cfg(openblade_display_write)]
 mod write;
+#[cfg(feature = "agent-display-automation-v1")]
+pub(super) use automation::Automation;
 #[cfg(feature = "agent-display-brightness-write-v1")]
 use brightness_write::{SetBrightness, WriteOutcome};
 #[cfg(feature = "agent-display-color-write-v1")]
@@ -407,11 +411,11 @@ impl Supplier for WindowsSupplier {
         #[cfg(openblade_display_write)]
         let writer = self.writer.clone();
         tokio::task::spawn_blocking(move || {
-            let snapshot = observation::query(&canceled, brightness.clone())?;
             // Managed ResumeAfterSuccessfulExplicitRead after every completed query.
             #[cfg(openblade_display_write)]
-            writer.explicit_read(&brightness, &snapshot)?;
-            Ok(snapshot)
+            return writer.query(&brightness, &canceled);
+            #[cfg(not(openblade_display_write))]
+            observation::query(&canceled, brightness)
         })
         .await
         .map_err(|_| io::Error::other("display read worker failed"))?
@@ -493,35 +497,107 @@ impl Drop for Cancellation {
 
 pub(super) async fn run(
     origin: Arc<crate::loaded_origin::Origin>,
-    mut stop: watch::Receiver<bool>,
+    stop: watch::Receiver<bool>,
     #[cfg(openblade_display_write)] power: super::power_admission::PowerAdmission,
+    #[cfg(feature = "agent-display-automation-v1")] automation: Automation,
 ) -> io::Result<()> {
     super::verify_origin(&origin)?;
     let endpoint = Endpoint::current_user_display().map_err(diagnostics::listener)?;
     let _claim = endpoint.claim().map_err(diagnostics::claim)?;
-    let mut supplier = WindowsSupplier {
-        brightness: Default::default(),
-        #[cfg(openblade_display_write)]
-        writer: {
-            let origin = origin.clone();
-            let stop = stop.clone();
-            tokio::task::spawn_blocking(move || write::Writer::load(origin, power, stop))
-                .await
-                .map_err(|_| io::Error::other("display recovery load failed"))?
-        },
+    #[cfg(feature = "agent-display-automation-v1")]
+    return run_automated(&origin, &endpoint, stop, power, automation).await;
+    #[cfg(not(feature = "agent-display-automation-v1"))]
+    {
+        let mut stop = stop;
+        let mut supplier = WindowsSupplier {
+            brightness: Default::default(),
+            #[cfg(openblade_display_write)]
+            writer: {
+                let origin = origin.clone();
+                let stop = stop.clone();
+                tokio::task::spawn_blocking(move || write::Writer::load(origin, power, stop))
+                    .await
+                    .map_err(|_| io::Error::other("display recovery load failed"))?
+            },
+        };
+        run_connections(
+            &mut stop,
+            &mut supplier,
+            || async {
+                let pipe = endpoint.next_listener().await?;
+                pipe.connect().await?;
+                Ok(pipe)
+            },
+            |pipe| endpoint.identity.authorize(pipe),
+            || origin.verify(),
+        )
+        .await
+    }
+}
+
+/// The endpoint beside the display automation runner, as one lifetime:
+/// either ending (Stop, Origin loss, a fatal error) stops the other through
+/// the local stop that every write fence also observes, and the brightness
+/// owner is drained only after both have returned.
+#[cfg(feature = "agent-display-automation-v1")]
+async fn run_automated(
+    origin: &Arc<crate::loaded_origin::Origin>,
+    endpoint: &Endpoint,
+    mut stop: watch::Receiver<bool>,
+    power: super::power_admission::PowerAdmission,
+    automation: Automation,
+) -> io::Result<()> {
+    let (local, local_stop) = watch::channel(false);
+    let brightness = observation::SharedBrightness::default();
+    let writer = write::Writer::new(
+        automation.recovery(),
+        origin.clone(),
+        power,
+        local_stop.clone(),
+    );
+    let applier = writer.applier(brightness.clone());
+    let mut supplier = WindowsSupplier { brightness, writer };
+    let mut serving_stop = local_stop.clone();
+    let mut automation_stop = local_stop;
+    let result = {
+        let work = async {
+            let served = async {
+                let result = serve_connections(
+                    &mut serving_stop,
+                    &mut supplier,
+                    || async {
+                        let pipe = endpoint.next_listener().await?;
+                        pipe.connect().await?;
+                        Ok(pipe)
+                    },
+                    |pipe| endpoint.identity.authorize(pipe),
+                    || origin.verify(),
+                )
+                .await;
+                let _ = local.send(true);
+                result
+            };
+            let automated = async {
+                let result = automation::serve(&automation, applier, &mut automation_stop).await;
+                let _ = local.send(true);
+                result
+            };
+            let (served, automated) = tokio::join!(served, automated);
+            served.and(automated)
+        };
+        tokio::pin!(work);
+        tokio::select! {
+            result = &mut work => result,
+            () = stopped(&mut stop) => {
+                let _ = local.send(true);
+                (&mut work).await
+            }
+        }
     };
-    run_connections(
-        &mut stop,
-        &mut supplier,
-        || async {
-            let pipe = endpoint.next_listener().await?;
-            pipe.connect().await?;
-            Ok(pipe)
-        },
-        |pipe| endpoint.identity.authorize(pipe),
-        || origin.verify(),
-    )
-    .await
+    // Every exit closes and joins persistent WMI ownership while the caller
+    // still holds its claim and Origin, as `run_connections` does.
+    let drained = supplier.drain().await;
+    result.and(drained)
 }
 
 #[derive(Debug)]
@@ -558,6 +634,7 @@ async fn origin_invalid(verify: &impl Fn() -> io::Result<()>) -> io::Error {
         sleep(ORIGIN_POLL).await;
     }
 }
+#[cfg(any(test, not(feature = "agent-display-automation-v1")))]
 async fn run_connections<S, F>(
     stop: &mut watch::Receiver<bool>,
     supplier: &mut impl Supplier,

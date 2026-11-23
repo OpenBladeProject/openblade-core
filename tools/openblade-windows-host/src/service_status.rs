@@ -753,6 +753,15 @@ pub(crate) struct Snapshot {
     feature_fields: FeatureRecord,
 }
 
+/// `Snapshot::display_automation`: borrowed raw status members.
+#[cfg(feature = "agent-display-automation-v1")]
+pub(crate) struct DisplayAutomationFields<'a> {
+    /// The `display` member of the PluggedIn, Battery and UsbC profiles.
+    pub(crate) power: [Option<&'a Value>; 3],
+    pub(crate) applications: Option<&'a Value>,
+    pub(crate) active: Option<&'a Value>,
+}
+
 // In-process evidence only. Never deserialized from a caller or retained status.
 #[derive(Clone)]
 pub(crate) struct ReadConfirmation {
@@ -1213,6 +1222,25 @@ impl Snapshot {
     #[cfg(feature = "agent-application-reporter-v1")]
     pub(crate) fn application_profiles(&self) -> Option<&Value> {
         self.profiles.feature_fields.get("applicationProfiles")
+    }
+    /// The status members managed `DisplayAutomationCoordinator.ResolveTarget`
+    /// reads, as the Service published them: each power profile's `display`
+    /// (PluggedIn, Battery, UsbC), the `applicationProfiles` list and
+    /// `activeApplicationProfileId`. The Agent decodes nothing else from them.
+    #[cfg(feature = "agent-display-automation-v1")]
+    pub(crate) fn display_automation(&self) -> DisplayAutomationFields<'_> {
+        fn display(profile: &PowerProfile) -> Option<&Value> {
+            profile.feature_fields.get("display")
+        }
+        DisplayAutomationFields {
+            power: [
+                display(&self.profiles.plugged_in),
+                display(&self.profiles.battery),
+                display(&self.profiles.usb_c),
+            ],
+            applications: self.profiles.feature_fields.get("applicationProfiles"),
+            active: self.feature_fields.get("activeApplicationProfileId"),
+        }
     }
     /// Managed `KeyboardDriverModeActive`: the Service's confirmed firmware
     /// Driver mode. Only a JSON boolean is knowledge. An absent member, `null`
