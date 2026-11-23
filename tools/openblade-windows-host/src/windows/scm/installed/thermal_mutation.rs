@@ -1019,6 +1019,8 @@ impl Runtime {
             transition,
             #[cfg(feature = "service-profile-triggers-v1")]
             drift: self.drift.clone(),
+            #[cfg(feature = "service-profile-triggers-v1")]
+            baseline: Mutex::new(None),
             application,
             accepted: AtomicBool::new(false),
             destination: Mutex::new(None),
@@ -1347,6 +1349,10 @@ struct RequestPermit {
     // (`record`).
     #[cfg(feature = "service-profile-triggers-v1")]
     drift: Arc<Mutex<thermal_drift::Tracker>>,
+    // The fresh reading the destination is written from, which says
+    // whether its pair also returns manual fans to Automatic (`record`).
+    #[cfg(feature = "service-profile-triggers-v1")]
+    baseline: Mutex<Option<ObservedPerformance>>,
     application: Foreground,
     accepted: AtomicBool,
     destination: Mutex<Option<Destination>>,
@@ -1752,6 +1758,10 @@ impl Permit for RequestPermit {
                 .map_err(|_| io::ErrorKind::Other)? = selection.desired.map(|(_, s)| s);
             let desired = selection.desired.map(|(p, _)| p);
             *self.destination.lock().map_err(|_| io::ErrorKind::Other)? = desired;
+            #[cfg(feature = "service-profile-triggers-v1")]
+            {
+                *self.baseline.lock().map_err(|_| io::ErrorKind::Other)? = Some(baseline);
+            }
             // Before any cause that refuses the write: managed resolves its
             // write exclusions before it tries a subsystem.
             #[cfg(feature = "service-profile-triggers-v1")]
@@ -1822,10 +1832,11 @@ impl Permit for RequestPermit {
         ) && let Some(destination) =
             *self.destination.lock().map_err(|_| io::ErrorKind::Other)?
         {
+            let from = *self.baseline.lock().map_err(|_| io::ErrorKind::Other)?;
             self.drift
                 .lock()
                 .map_err(|_| io::ErrorKind::Other)?
-                .submitted(destination);
+                .submitted_from(destination, from);
         }
         Ok(())
     }

@@ -252,6 +252,23 @@ impl Tracker {
         self.submitted.performance = Some(destination);
     }
 
+    /// A performance setter of `destination` may be submitted from the
+    /// reading `from`. Each of its 0D/02 setters writes the fan mode with the
+    /// selector, so from manual fans the pair also returns them to Automatic:
+    /// a coupled fan write, which the readback that confirms the destination
+    /// confirms as OpenBlade's own too (managed `ConfirmedCoupledWrites`).
+    pub(super) fn submitted_from(
+        &mut self,
+        destination: Destination,
+        from: Option<ObservedPerformance>,
+    ) {
+        if from.and_then(manual) == Some(true) {
+            self.submitted_fans(false, Some(destination));
+        } else {
+            self.submitted(destination);
+        }
+    }
+
     /// A fan setter toward `manual` fans may be submitted, with the
     /// destination a return to Automatic carries: as `submitted`.
     pub(super) fn submitted_fans(&mut self, manual: bool, carried: Option<Destination>) {
@@ -620,6 +637,21 @@ mod tests {
         assert_eq!(tracker.external(), [PERFORMANCE]);
         tracker.observe(O::BalancedAutomatic);
         assert_eq!(tracker.external(), [PERFORMANCE, FANS]);
+        // A performance pair written from manual fans returns them to
+        // Automatic: its readback is OpenBlade's own for both subsystems.
+        // From Automatic fans it expects the destination alone.
+        let mut tracker = baselined(O::SilentManual);
+        tracker.submitted_from(performance, Some(O::SilentManual));
+        tracker.observe(O::PerformanceAutomatic);
+        assert!(tracker.external().is_empty());
+        assert_eq!(tracker.own.manual, Some(false));
+        let mut tracker = baselined(O::SilentAutomatic);
+        tracker.submitted_from(performance, Some(O::SilentAutomatic));
+        assert_eq!(tracker.submitted.manual, None);
+        let mut tracker = baselined(O::SilentAutomatic);
+        tracker.submitted_from(performance, None);
+        assert_eq!(tracker.submitted.manual, None);
+        assert_eq!(tracker.submitted.performance, Some(performance));
         // An own confirmation settles it.
         let mut tracker = baselined(O::BalancedAutomatic);
         tracker.submitted_fans(true, Some(performance));
