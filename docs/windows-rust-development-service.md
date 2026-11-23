@@ -593,12 +593,33 @@ marker by name. A build without the feature still refuses the request with
   - Thunderbolt and the touchpad are read only on the exact RZ09-0581, which
     also carries a `ReadOnly` access for each. Any other model has neither
     read and a null access.
-  - **McuVersion is always `Unavailable`.** Managed reads it with a firmware
-    query over the laptop's control interface (`IBladeDevice.ReadMcuVersionAsync`)
-    after its first verified observation, and a native Service may not send a
-    command without its own reviewed admission. Until one is admitted, the
-    native record is the record of a managed Service that has not yet read the
-    MCU. Windows has no source for it.
+  - **McuVersion** is the one part not read by the capture worker. Managed
+    reads it with `IBladeDevice.ReadMcuVersionAsync` inside each full verified
+    observation while the record's version is `Unavailable` and fewer than
+    three reads were made, and publishes it with that observation. Native
+    sends the same read-only 00/87 query as the last query of the serialized
+    read job (`service-live-readings-v1`), after the thermal read, the device
+    mode and the fan speeds, through the protocol crate's
+    `mcu_version::McuVersionQuery` and the job's transaction matching. Its
+    admission is the read job's exact RZ09-0581 `1532:02E0` identity, and its
+    command is pinned by the captured exchange in
+    `evidence/legacy-captures/decoded/rz09-0581-pid-02e0-bios-3.01-mcu-version-fixture.json`
+    (1.5.0.0). The query has its own 1 s budget and keeps the job's reserve, so
+    a timeout, another transaction, a malformed reply or a failed status costs
+    no other reading and leaves `Unavailable`. Only a version from a reading
+    the source accepted is kept: one read across a device change or Stop is
+    discarded. Once read it is never read again or cleared. Before the record
+    is published the version waits for it; a later version republishes the
+    record, as managed's changed record does. A Service without a firmware
+    source sends no query. The budget is three sent queries per read
+    admission, and a new admission, which resume mints, restores it. Native
+    counts an attempt when its request is sent, so a dropped observation still
+    spends one where managed returns the attempt of a canceled read, and it
+    has no device-loss reset because a lost lease ends the native reader.
+    RZ09-0528 has only summary evidence and no native reader, and the
+    source-reviewed models have no managed MCU read, so their version stays
+    `Unavailable`. The read has not been compared with the managed Service on
+    the device.
 - **Temperatures.** Both stay null. The CPU temperature worker below is
   unchanged, and the Service has no GPU temperature source.
 
@@ -624,7 +645,7 @@ state names no model, so the record is bound to its one producer, the exact
 RZ09-0581 performance Reader: `capability_tests` pins that Reader's identity
 to the record's and fails when another source file publishes an observation.
 
-Still unavailable natively: GPU temperature, the MCU version, and a reply
+Still unavailable natively: GPU temperature and a reply
 for Custom High/High with Automatic fans, which the thermal read does not
 confirm, so that ObserveState has no fresh read and no live readings. A failed
 thermal read refuses the whole ObserveState, where managed still publishes the
@@ -643,7 +664,11 @@ selectors, writes the result through the v85 status codec and is replayed
 through the native capture. The same file pins `Version.TryParse` and
 `Convert.ToInt32`, the two framework parsers the native code mirrors. The managed
 codec decodes the native frames in `firmware-version-native-frames.json`
-(`NativeFirmwareVersionFrames_DecodeThroughTheManagedCodec`).
+(`NativeFirmwareVersionFrames_DecodeThroughTheManagedCodec`). The vectors in
+`tools/openblade-windows-host/tests/data/mcu-version-vectors.json` pin the 00/87
+request and reply codec through managed `McuVersionProtocol` and replay the
+managed three-read budget, with resume, through the native read source
+(`ServiceControlRuntimeTests.NativeFirmwareVersionMcuVectors`).
 
 ### Phase 10n ownership binding
 
