@@ -13,6 +13,8 @@ use tokio::time::{Instant, sleep, timeout_at};
 
 #[cfg(feature = "service-keyboard-driver-mode-read-v1")]
 use super::DeviceModeRead;
+#[cfg(feature = "service-live-readings-v1")]
+use super::FanRpmRead;
 use super::{
     Admission, Limit, MAX_OBSERVATION, ObservationProof, ObservedPerformance, POLL, blocked,
 };
@@ -23,27 +25,41 @@ pub(crate) struct Reading<A = Admission> {
     // Only the installed mailbox reader asks for it.
     #[cfg(feature = "service-keyboard-driver-mode-read-v1")]
     pub(crate) device_mode: DeviceModeRead,
+    // Only the installed mailbox reader asks for it, for a fan-speed request.
+    #[cfg(feature = "service-live-readings-v1")]
+    pub(crate) fan_rpm: FanRpmRead,
 }
 
 impl<A> Reading<A> {
-    /// A thermal reading that carries no device-mode result.
+    /// A thermal reading that carries no query result.
     pub(crate) fn thermal(admission: A, performance: ObservedPerformance) -> Self {
         Self {
             admission,
             performance,
             #[cfg(feature = "service-keyboard-driver-mode-read-v1")]
             device_mode: DeviceModeRead::NotRequested,
+            #[cfg(feature = "service-live-readings-v1")]
+            fan_rpm: FanRpmRead::NotRequested,
         }
     }
+}
+
+/// The read-only queries a job adds after its thermal observation. Each is
+/// sent only after that observation completed, within its own budget, in
+/// field order.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct Queries {
+    #[cfg(feature = "service-keyboard-driver-mode-read-v1")]
+    pub(crate) device_mode: bool,
+    #[cfg(feature = "service-live-readings-v1")]
+    pub(crate) fan_rpm: bool,
 }
 
 pub(super) struct Job {
     deadline: Instant,
     cancelled: Arc<AtomicBool>,
     pub(super) session: Option<u32>,
-    // Also query the keyboard device mode after the thermal observation.
-    #[cfg(feature = "service-keyboard-driver-mode-read-v1")]
-    pub(super) device_mode: bool,
+    pub(super) queries: Queries,
 }
 
 impl Job {
@@ -61,8 +77,7 @@ impl Job {
             deadline,
             cancelled: Arc::default(),
             session: None,
-            #[cfg(feature = "service-keyboard-driver-mode-read-v1")]
-            device_mode: false,
+            queries: Queries::default(),
         }
     }
 }
@@ -156,38 +171,30 @@ impl<A: ObservationProof> Worker<A> {
         session: Option<u32>,
         budget: std::time::Duration,
     ) -> io::Result<Option<Reading<A>>> {
-        self.run_job(
-            deadline,
-            session,
-            budget,
-            #[cfg(feature = "service-keyboard-driver-mode-read-v1")]
-            false,
-        )
-        .await
+        self.run_job(deadline, session, budget, Queries::default())
+            .await
     }
-    /// A thermal observation that also queries the keyboard device mode once.
-    #[cfg(feature = "service-keyboard-driver-mode-read-v1")]
-    pub(crate) async fn observe_with_device_mode(
+    /// A thermal observation that also sends each asked query once.
+    #[cfg(any(
+        feature = "service-keyboard-driver-mode-read-v1",
+        feature = "service-live-readings-v1"
+    ))]
+    pub(crate) async fn observe_with_queries(
         &self,
         deadline: Instant,
+        queries: Queries,
     ) -> io::Result<Option<Reading<A>>> {
-        self.run_job(deadline, None, MAX_OBSERVATION, true).await
+        self.run_job(deadline, None, MAX_OBSERVATION, queries).await
     }
     async fn run_job(
         &self,
         deadline: Instant,
         session: Option<u32>,
         budget: std::time::Duration,
-        #[cfg(feature = "service-keyboard-driver-mode-read-v1")] device_mode: bool,
+        queries: Queries,
     ) -> io::Result<Option<Reading<A>>> {
         let deadline = deadline.min(Instant::now() + budget);
-        let Some(_cancel) = self.start(
-            deadline,
-            session,
-            #[cfg(feature = "service-keyboard-driver-mode-read-v1")]
-            device_mode,
-        )?
-        else {
+        let Some(_cancel) = self.start(deadline, session, queries)? else {
             return Ok(None);
         };
         if timeout_at(deadline, self.wait()).await.is_err() {
@@ -205,7 +212,7 @@ impl<A: ObservationProof> Worker<A> {
         &self,
         deadline: Instant,
         session: Option<u32>,
-        #[cfg(feature = "service-keyboard-driver-mode-read-v1")] device_mode: bool,
+        queries: Queries,
     ) -> io::Result<Option<Cancel>> {
         let mut state = self.state.borrow_mut();
         if state.stopped || state.unconfirmed || Instant::now() >= deadline {
@@ -231,8 +238,7 @@ impl<A: ObservationProof> Worker<A> {
             deadline,
             cancelled: cancel.clone(),
             session,
-            #[cfg(feature = "service-keyboard-driver-mode-read-v1")]
-            device_mode,
+            queries,
         };
         let run = self.run.clone();
         // Use an owned OS thread, outside the Service runtime's blocking pool.

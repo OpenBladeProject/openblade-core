@@ -729,6 +729,18 @@ fn capabilities(schema: u8, role: &str, features: &str, value: &str) -> io::Resu
     if has(DRIVER_MODE) || value.split(',').any(|capability| capability == DRIVER_MODE) {
         return Err(deny());
     }
+    // The live-reading read sends the 0D/88 fan speed queries, which no
+    // admitted composition sends, and adds Windows battery reads. Refuse its
+    // feature and marker by name until a stage admits it
+    // (docs/windows-rust-development-service.md).
+    const LIVE_READINGS: &str = "service-live-readings-v1";
+    if has(LIVE_READINGS)
+        || value
+            .split(',')
+            .any(|capability| capability == LIVE_READINGS)
+    {
+        return Err(deny());
+    }
     // The application-context reporter is not admitted for packaging either:
     // refuse its feature and its capability marker by name, whatever else the
     // record claims, until a packaging stage admits both.
@@ -892,7 +904,13 @@ fn require_submission(epoch: &Epoch, origin: &[u8], submission: &[u8]) -> io::Re
 
 /// The startup reader's policy, for the compiled-identity tests of other
 /// modules.
-#[cfg(all(test, feature = "service-keyboard-driver-mode-read-v1"))]
+#[cfg(all(
+    test,
+    any(
+        feature = "service-keyboard-driver-mode-read-v1",
+        feature = "service-live-readings-v1"
+    )
+))]
 pub(crate) fn startup_policy_for_tests(identity: &[u8]) -> io::Result<&'static str> {
     startup_policy(identity)
 }

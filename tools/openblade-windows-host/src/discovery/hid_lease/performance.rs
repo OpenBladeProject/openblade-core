@@ -28,6 +28,18 @@ mod device_mode;
 pub(crate) use device_mode::DeviceModeRead;
 #[cfg(feature = "service-thermal-mutation-v1")]
 mod battery;
+#[cfg(any(test, feature = "service-live-readings-v1"))]
+mod fan_rpm;
+#[cfg(any(test, feature = "service-live-readings-v1"))]
+pub(crate) use fan_rpm::FanRpmRead;
+#[cfg(test)]
+pub(crate) mod fan_rpm_tests;
+#[cfg(any(
+    feature = "service-keyboard-driver-mode-read-v1",
+    feature = "service-live-readings-v1"
+))]
+#[allow(unused_imports)] // Shared with the standalone discovery binary.
+pub(crate) use worker::Queries;
 #[cfg(test)]
 mod device_mode_guard_tests;
 #[cfg(test)]
@@ -334,12 +346,11 @@ impl<P: Port, A: ObservationProof> Reader<P, A> {
         } else {
             #[cfg(feature = "service-keyboard-driver-mode-read-v1")]
             {
-                self.observe_job(&mut *authorize, limit, job.device_mode)
+                self.observe_job(&mut *authorize, limit, job.queries.device_mode)
                     .await
                     .map(|(performance, device_mode)| worker::Reading {
-                        admission,
-                        performance,
                         device_mode,
+                        ..worker::Reading::thermal(admission, performance)
                     })
             }
             #[cfg(not(feature = "service-keyboard-driver-mode-read-v1"))]
@@ -348,6 +359,16 @@ impl<P: Port, A: ObservationProof> Reader<P, A> {
                     .await
                     .map(|performance| worker::Reading::thermal(admission, performance))
             }
+        };
+        // The fan speed queries follow the thermal read and any device-mode
+        // query, only when that read completed (`FanRpmRead`).
+        #[cfg(feature = "service-live-readings-v1")]
+        let reading = match reading {
+            Some(reading) if job.queries.fan_rpm => Some(worker::Reading {
+                fan_rpm: self.read_fan_rpm(&mut *authorize, limit).await,
+                ..reading
+            }),
+            reading => reading,
         };
         // Caller timeout revokes delivery, but the worker owns the native
         // resources until terminal I/O and callback drain are both confirmed.

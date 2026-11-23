@@ -538,7 +538,7 @@ async fn serve_observation(
             "Another Windows session currently controls OpenBlade hardware.",
             None,
         )
-    } else if request.requests_live_readings() {
+    } else if request.requests_live_readings() && !cfg!(feature = "service-live-readings-v1") {
         StatusResponse::failure(request, "Live readings are unavailable.", None)
     } else {
         let observation = async {
@@ -548,7 +548,7 @@ async fn serve_observation(
                 if caller.access().map_err(Client)? != 0 || Instant::now() >= deadline {
                     return Ok(None);
                 }
-                source.observe_performance(caller, deadline)
+                request.scope_live_readings(|| source.observe_performance(caller, deadline))
             };
             // EOF or another request cancels this single-request connection.
             let mut probe = [0];

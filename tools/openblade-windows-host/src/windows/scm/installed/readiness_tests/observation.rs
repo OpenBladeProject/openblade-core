@@ -15,6 +15,9 @@ struct ReadPort {
     control_session: Rc<Cell<Option<u32>>>,
     retire_session_on_read: bool,
     stall: bool,
+    // The live-reading mask current while the observation was created.
+    #[cfg(feature = "service-live-readings-v1")]
+    mask: Rc<Cell<Option<u8>>>,
 }
 
 impl StatusSource for ReadPort {
@@ -24,6 +27,9 @@ impl StatusSource for ReadPort {
 
     fn observe_performance(&mut self, _: Caller, _: Instant) -> Observation {
         self.reads.set(self.reads.get() + 1);
+        #[cfg(feature = "service-live-readings-v1")]
+        self.mask
+            .set(Some(crate::service_status::requested_live_readings()));
         let answer = self.answer.take();
         let (control_session, retire, stall) = (
             self.control_session.clone(),
@@ -93,6 +99,8 @@ fn port(answer: Option<Value>) -> ReadPort {
         control_session: Rc::new(Cell::new(Some(SETUP.session))),
         retire_session_on_read: false,
         stall: false,
+        #[cfg(feature = "service-live-readings-v1")]
+        mask: Rc::default(),
     }
 }
 
@@ -176,8 +184,19 @@ async fn in_memory_observe_state_rejects_bad_selectors_and_bounds_a_stalled_sour
     let reads = source.reads.clone();
     let (result, reply) = serve(&framed(&legacy), SYSTEM, source).await;
     result.unwrap();
-    refusal(&reply);
-    assert_eq!(reads.get(), 0);
+    #[cfg(not(feature = "service-live-readings-v1"))]
+    {
+        refusal(&reply);
+        assert_eq!(reads.get(), 0);
+    }
+    // With the live-reading read the legacy request is served like any
+    // other observation, with every sensor asked for.
+    #[cfg(feature = "service-live-readings-v1")]
+    {
+        let frame: Value = serde_json::from_slice(&reply[4..]).unwrap();
+        assert_eq!(frame["success"], true);
+        assert_eq!(reads.get(), 1);
+    }
 
     let mut source = port(Some(expected["status"].clone()));
     source.stall = true;
@@ -217,4 +236,34 @@ async fn original_v79_wire_fixtures_are_rejected_before_dispatch() {
         let size = u32::from_le_bytes(tail[..4].try_into().unwrap()) as usize;
         assert!(StatusResponse::verify(&tail[4..size + 4], &request).is_err());
     }
+}
+
+/// The served ObserveState's effective mask is current while the source
+/// creates its observation, and only then; the advisory wire value plays no
+/// part, as admission derives it from the request fields.
+#[cfg(feature = "service-live-readings-v1")]
+#[tokio::test(start_paused = true)]
+async fn in_memory_observe_state_scopes_its_live_reading_mask() {
+    let (managed, expected) = managed_frames();
+    let request: Value = serde_json::from_slice(&managed[4..]).unwrap();
+    assert_eq!(crate::service_status::requested_live_readings(), 0);
+    for (include, requested, effective, mask) in [
+        (false, 0, Some(0), 0),
+        (false, 2, Some(0), 0),
+        (true, 2, Some(2), 2),
+        (true, 3, None, 3),
+        (true, 15, Some(15), 15),
+    ] {
+        let mut live = request.clone();
+        live["includeLiveReadings"] = json!(include);
+        live["requestedLiveReadings"] = json!(requested);
+        live["effectiveLiveReadings"] = json!(effective);
+        let source = port(Some(expected["status"].clone()));
+        let (reads, seen) = (source.reads.clone(), source.mask.clone());
+        let (result, _) = serve(&framed(&live), SETUP, source).await;
+        result.unwrap();
+        assert_eq!(reads.get(), 1, "{live}");
+        assert_eq!(seen.get(), Some(mask), "{live}");
+    }
+    assert_eq!(crate::service_status::requested_live_readings(), 0);
 }

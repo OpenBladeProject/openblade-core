@@ -109,6 +109,29 @@ fn all_live_readings() -> u8 {
     ALL_LIVE_READINGS
 }
 
+#[cfg(feature = "service-live-readings-v1")]
+tokio::task_local! {
+    static LIVE_READINGS: u8;
+}
+
+/// The effective live-reading mask of the ObserveState being served
+/// (`StatusRequest::scope_live_readings`); none for any other read.
+#[cfg(feature = "service-live-readings-v1")]
+pub(crate) fn requested_live_readings() -> u8 {
+    LIVE_READINGS.try_with(|mask| *mask).unwrap_or(0)
+}
+
+/// The capability record of a status with a confirmed thermal read: managed
+/// `DeviceCapabilities.Unavailable()` with HyperBoost observed only. It admits
+/// no control. The managed codec requires a HyperBoost access beside a
+/// confirmed active HyperBoost, so a null record would refuse that status.
+/// Pinned to the managed codec's output by the live-reading vectors.
+#[cfg(all(windows, feature = "service-mailbox-observation-v1"))]
+fn observation_capabilities() -> FeatureRecord {
+    serde_json::from_str(include_str!("service_status/observed_capabilities.json"))
+        .expect("the reviewed observation capability record")
+}
+
 #[cfg(feature = "installed-service-candidate")]
 mod unserved;
 #[cfg(feature = "installed-service-candidate")]
@@ -218,6 +241,37 @@ impl StatusRequest {
 
     pub(crate) fn is_observation(&self) -> bool {
         matches!(self, Self::ObserveState { .. })
+    }
+
+    /// Managed `EffectiveLiveReadings`: the requested sensors when
+    /// `includeLiveReadings` is set, otherwise none. Derived from the request
+    /// fields, never the advisory wire value, as dispatch admission is.
+    #[cfg(feature = "service-live-readings-v1")]
+    pub(crate) fn live_reading_mask(&self) -> u8 {
+        match self {
+            Self::ObserveState {
+                include_live_readings: true,
+                requested_live_readings,
+                ..
+            } => *requested_live_readings & ALL_LIVE_READINGS,
+            _ => 0,
+        }
+    }
+
+    /// Runs `observe` with this request's effective live-reading mask as
+    /// the current one (`requested_live_readings`). A read source reads it
+    /// while its observation is created, so the scope need not cover the
+    /// returned future. Without the live-reading read, it only runs `observe`.
+    #[cfg(feature = "installed-service-candidate")]
+    pub(crate) fn scope_live_readings<R>(&self, observe: impl FnOnce() -> R) -> R {
+        #[cfg(feature = "service-live-readings-v1")]
+        {
+            LIVE_READINGS.sync_scope(self.live_reading_mask(), observe)
+        }
+        #[cfg(not(feature = "service-live-readings-v1"))]
+        {
+            observe()
+        }
     }
 
     #[cfg(feature = "installed-service-candidate")]
@@ -908,10 +962,52 @@ impl Snapshot {
         self.feature_fields
             .insert("keyboardDriverModeActive".into(), Value::Null);
         self.writes_blocked = true;
-        self.capabilities = None;
+        self.capabilities = Some(observation_capabilities());
         self.set_public_message("Thermal settings read. Native controls remain unavailable.");
         self.read_confirmation = Some(confirmation);
         self
+    }
+    /// Managed `LiveReadings` for an observation that asked for `mask`: null
+    /// when it asked for none, otherwise each asked sensor this observation
+    /// confirmed. Fan speeds come in pairs and temperatures are never read here.
+    #[cfg(all(windows, feature = "service-live-readings-v1"))]
+    pub(crate) fn with_live_readings(
+        mut self,
+        mask: u8,
+        battery_power_flow: Option<i32>,
+        fans: Option<[u16; 2]>,
+    ) -> Self {
+        const BATTERY_POWER: u8 = 1;
+        const FAN_SPEEDS: u8 = 2;
+        let fans = fans.filter(|_| mask & FAN_SPEEDS != 0);
+        self.live_readings = (mask != 0).then(|| LiveReadings {
+            battery_power_flow_milliwatts: battery_power_flow.filter(|_| mask & BATTERY_POWER != 0),
+            fan1_rpm: fans.map(|[first, _]| i32::from(first)),
+            fan2_rpm: fans.map(|[_, second]| i32::from(second)),
+            cpu_temperature_celsius: None,
+            gpu_temperature_celsius: None,
+        });
+        self
+    }
+    /// Managed `BatteryHealth`: the summed (design, full charge) capacities in
+    /// mWh, or null while Windows has reported none.
+    #[cfg(all(windows, feature = "service-live-readings-v1"))]
+    pub(crate) fn with_battery_health(mut self, health: Option<(i32, i32)>) -> Self {
+        self.feature_fields.insert(
+            "batteryHealth".into(),
+            health.map_or(Value::Null, |(design, full)| {
+                serde_json::json!({
+                    "designCapacityMilliwattHours": design,
+                    "fullChargeCapacityMilliwattHours": full,
+                })
+            }),
+        );
+        self
+    }
+    /// The v85 power source this status was built with.
+    #[cfg(all(windows, feature = "service-live-readings-v1"))]
+    pub(crate) fn active_power_source(&self) -> i32 {
+        self.active_power_source
     }
     /// Managed `KeyboardDriverModeActive`: the confirmed firmware mode, true for
     /// Driver and false for Normal, whoever set it. Unknown is null, and so is
@@ -998,7 +1094,8 @@ impl Snapshot {
         retained.read_confirmation = None;
         retained.confirmed_state = thermal.confirmed_state.clone();
         retained.writes_blocked = true;
-        retained.capabilities = None;
+        // The record the retained thermal state was confirmed with.
+        retained.capabilities = thermal.capabilities.clone();
         retained.revision = revision;
         retained.append_public_message(
             " Last confirmed thermal settings retained; no fresh read is confirmed.",

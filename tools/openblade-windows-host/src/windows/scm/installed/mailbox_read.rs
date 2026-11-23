@@ -33,6 +33,9 @@ mod driver_mode_absent_tests;
 #[cfg(test)]
 #[path = "driver_mode_rig.rs"]
 mod driver_mode_rig;
+#[cfg(feature = "service-live-readings-v1")]
+#[path = "live_readings.rs"]
+mod live_readings;
 
 struct Resources {
     root: File,
@@ -961,6 +964,8 @@ pub(super) struct ReadSource {
     last: Rc<RefCell<Option<(Snapshot, Instant)>>>,
     #[cfg(feature = "service-keyboard-driver-mode-read-v1")]
     driver_mode: Rc<driver_mode::Cadence>,
+    #[cfg(feature = "service-live-readings-v1")]
+    live: Rc<live_readings::Host>,
     metadata: Rc<RefCell<Option<Arc<Publication>>>>,
 }
 impl ReadSource {
@@ -982,7 +987,20 @@ impl ReadSource {
             }));
             source
         };
+        // Only the acquired production source reads Windows battery state.
+        #[cfg(feature = "service-live-readings-v1")]
+        let source = Self {
+            live: Rc::new(live_readings::Host::new(Rc::new(live_readings::Windows))),
+            ..source
+        };
         Ok(source)
+    }
+    #[cfg(all(test, feature = "service-live-readings-v1"))]
+    fn with_live_capture_for_tests(self, capture: Rc<dyn live_readings::Capture>) -> Self {
+        Self {
+            live: Rc::new(live_readings::Host::new(capture)),
+            ..self
+        }
     }
     pub(super) fn compose(
         lease: Arc<dyn ReadCustody>,
@@ -1024,6 +1042,10 @@ impl ReadSource {
             last: Rc::default(),
             #[cfg(feature = "service-keyboard-driver-mode-read-v1")]
             driver_mode: Rc::default(),
+            #[cfg(feature = "service-live-readings-v1")]
+            live: Rc::new(live_readings::Host::new(Rc::new(
+                live_readings::Unavailable,
+            ))),
             metadata: Rc::default(),
         }
     }
@@ -1086,6 +1108,16 @@ impl ReadSource {
             active: project(&metadata.active)?,
             inactive: project(&metadata.inactive)?,
         };
+        // Managed battery health is device-independent status: the first
+        // status captures it, and a power-source change retries it while null.
+        #[cfg(feature = "service-live-readings-v1")]
+        {
+            self.live
+                .power_source(metadata.active.active_power_source());
+            let health = self.live.battery_health();
+            next.active = next.active.with_battery_health(health);
+            next.inactive = next.inactive.with_battery_health(health);
+        }
         if serde_json::to_vec(&next.active)? == serde_json::to_vec(&current.active)?
             && serde_json::to_vec(&next.inactive)? == serde_json::to_vec(&current.inactive)?
         {
@@ -1172,6 +1204,10 @@ impl ReadSource {
         if self.metadata.borrow().is_none() {
             *self.metadata.borrow_mut() = Some(publisher.borrow().clone());
         }
+        // The ObserveState being served sets this while the observation is
+        // created (`live_readings::scoped`); any other read asks for none.
+        #[cfg(feature = "service-live-readings-v1")]
+        let live = live_readings::requested();
         Box::pin(async move {
             if source.lease.authorize().is_none() {
                 source.decorate(&publisher, None)?;
@@ -1188,7 +1224,19 @@ impl ReadSource {
             #[cfg(feature = "service-thermal-mutation-v1")]
             source.drain_mutation(true).await?;
             let worker = source.worker.borrow().clone();
-            #[cfg(not(feature = "service-keyboard-driver-mode-read-v1"))]
+            // Managed captures battery power before its device read.
+            #[cfg(feature = "service-live-readings-v1")]
+            let battery_power = (live & live_readings::BATTERY_POWER != 0)
+                .then(|| source.live.battery_power_flow())
+                .flatten();
+            // The 0D/88 pair rides this serialized job only for an
+            // ObserveState that asked for fan speeds, after the thermal read.
+            #[cfg(feature = "service-live-readings-v1")]
+            let fan_speeds = live & live_readings::FAN_SPEEDS != 0;
+            #[cfg(not(any(
+                feature = "service-keyboard-driver-mode-read-v1",
+                feature = "service-live-readings-v1"
+            )))]
             let result = worker.observe(deadline, None).await;
             // The 00/84 query rides this serialized job at the managed
             // observation cadence; it adds no HID traffic between those reads.
@@ -1199,9 +1247,23 @@ impl ReadSource {
                 .lease
                 .authorize()
                 .filter(|admission| source.driver_mode.due(*admission, job));
+            #[cfg(any(
+                feature = "service-keyboard-driver-mode-read-v1",
+                feature = "service-live-readings-v1"
+            ))]
+            let result = worker
+                .observe_with_queries(
+                    deadline,
+                    crate::discovery::performance::Queries {
+                        #[cfg(feature = "service-keyboard-driver-mode-read-v1")]
+                        device_mode: asked.is_some(),
+                        #[cfg(feature = "service-live-readings-v1")]
+                        fan_rpm: fan_speeds,
+                    },
+                )
+                .await;
             #[cfg(feature = "service-keyboard-driver-mode-read-v1")]
-            let result = if let Some(asked) = asked {
-                let result = worker.observe_with_device_mode(deadline).await;
+            if let Some(asked) = asked {
                 // A query that was asked for and brought back no result, or a
                 // job that brought back nothing, is unknown until the next
                 // interval: it is never retried in between. One skipped for
@@ -1215,10 +1277,12 @@ impl ReadSource {
                     _ => crate::discovery::performance::DeviceModeRead::Unconfirmed,
                 };
                 source.driver_mode.record(asked, read, job);
-                result
-            } else {
-                worker.observe(deadline, None).await
-            };
+            }
+            // A job that brought back no reading confirmed no fan speed.
+            #[cfg(feature = "service-live-readings-v1")]
+            if fan_speeds && !matches!(result, Ok(Some(_))) {
+                source.live.missed(None, Instant::now());
+            }
             #[cfg(feature = "service-thermal-mutation-v1")]
             source.lease.verify_integrity()?;
             let reading = match result {
@@ -1238,6 +1302,14 @@ impl ReadSource {
             if admission != Some(reading.admission) || Instant::now() >= deadline {
                 return Ok(None);
             }
+            #[cfg(feature = "service-live-readings-v1")]
+            let fans = fan_speeds
+                .then(|| {
+                    source
+                        .live
+                        .fans(reading.admission, reading.fan_rpm, Instant::now())
+                })
+                .flatten();
             let lease = source.lease.clone();
             let proof = reading.admission;
             // Metadata may refresh while the native worker runs outside the
@@ -1253,6 +1325,13 @@ impl ReadSource {
             {
                 observed =
                     observed.with_keyboard_driver_mode(source.driver_mode.active(proof, job));
+            }
+            #[cfg(feature = "service-live-readings-v1")]
+            {
+                source.live.verified();
+                observed = observed
+                    .with_live_readings(live, battery_power, fans)
+                    .with_battery_health(source.live.battery_health());
             }
             *source.last.borrow_mut() = Some((observed.clone(), Instant::now()));
             source.decorate(&publisher, None)?;
@@ -1670,7 +1749,12 @@ mod tests {
         assert_eq!(json["confirmedState"]["fans"], 0);
         assert_eq!(json["activePowerSource"], 1);
         assert_eq!(json["writesBlocked"], true);
-        assert!(json["capabilities"].is_null());
+        // The observation record admits no control; HyperBoost is observed only.
+        assert_eq!(json["capabilities"]["hyperBoostAccess"], 0);
+        assert_eq!(
+            json["capabilities"]["performancePresets"],
+            serde_json::json!([])
+        );
         assert!(json["liveReadings"].is_null());
         assert_eq!(held.submitted.load(Ordering::Acquire), 4); // Two getter envelopes and replies, one port.
         let retained = publisher.borrow().active.clone();

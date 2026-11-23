@@ -178,6 +178,13 @@ fn main() {
         } else {
             capabilities.to_owned()
         };
+        // Nor does any reader admit the live-reading read, whose marker follows
+        // the same rule.
+        let capabilities = if role == "service" && has("service-live-readings-v1") {
+            format!("{capabilities},service-live-readings-v1")
+        } else {
+            capabilities
+        };
         let record = format!(
             "OpenBlade.NativeArtifact.v2\n{id}\n{role}\n{target}\n{source}\n{}\n{}\n{profile}\n{capabilities}\n",
             features.join(","),

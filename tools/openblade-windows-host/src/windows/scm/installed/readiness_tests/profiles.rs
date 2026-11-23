@@ -674,6 +674,9 @@ fn this_composition_declares_profile_serving_in_its_compiled_identity() {
     // The read-only Driver-mode build appends its own refused marker.
     #[cfg(feature = "service-keyboard-driver-mode-read-v1")]
     let expected = format!("{expected},service-keyboard-driver-mode-read-v1");
+    // So does the live-reading build, after it.
+    #[cfg(feature = "service-live-readings-v1")]
+    let expected = format!("{expected},service-live-readings-v1");
     assert_eq!(fields[8], expected);
 }
 
