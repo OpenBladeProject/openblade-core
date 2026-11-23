@@ -781,6 +781,18 @@ fn capabilities(schema: u8, role: &str, features: &str, value: &str) -> io::Resu
     {
         return Err(deny());
     }
+    // Display automation writes without a request, so it is not admitted for
+    // packaging either: refuse its feature and its capability marker by name
+    // until a stage admits it; see docs/windows-native-agent-display-automation.md.
+    const AUTOMATION: &str = "agent-display-automation-v1";
+    const AUTOMATION_MARKER: &str = "session-display-automation-v1";
+    if has(AUTOMATION)
+        || value
+            .split(',')
+            .any(|capability| capability == AUTOMATION || capability == AUTOMATION_MARKER)
+    {
+        return Err(deny());
+    }
     if (agent_write || agent_hdr || agent_refresh || agent_color) && !agent_display {
         return Err(deny());
     }

@@ -953,6 +953,38 @@ fn a_function_row_agent_is_not_admitted_by_feature_or_marker() {
 }
 
 #[test]
+fn a_display_automation_agent_is_not_admitted_by_feature_or_marker() {
+    // The feature and the marker build.rs gives a build with
+    // agent-display-automation-v1. It writes without a request, so packaging
+    // refuses the image by name whatever else the record claims.
+    let features = "agent-display-automation-v1,native-agent-entry-compile-check";
+    for claimed in [
+        "session-display-automation-v1",
+        "agent-display-automation-v1",
+        "none",
+        "agent-battery-report-v1,session-display-automation-v1",
+    ] {
+        assert!(capabilities(2, "agent", features, claimed).is_err());
+        assert!(capabilities(1, "agent", features, claimed).is_err());
+        assert!(capabilities(2, "service", features, claimed).is_err());
+    }
+    // A forged marker without the feature is no better.
+    assert!(
+        capabilities(
+            2,
+            "agent",
+            "native-agent-entry-compile-check",
+            "session-display-automation-v1"
+        )
+        .is_err()
+    );
+    // Beside an admitted contract the automation is still refused.
+    let combined =
+        "agent-battery-report-v1,agent-display-automation-v1,native-agent-entry-compile-check";
+    assert!(capabilities(2, "agent", combined, "agent-battery-report-v1").is_err());
+}
+
+#[test]
 fn legacy_artifact_record_and_compiled_identity_reencode_byte_exact() {
     let v = vector();
     for role in ["service", "agent"] {

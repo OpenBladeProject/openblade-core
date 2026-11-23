@@ -110,6 +110,10 @@ internal sealed record NativeArtifact(string Id, string Role, string Target, str
         // capability marker by name until a stage admits the role (docs/windows-native-agent-function-row.md).
         if (features.Contains("agent-function-row-v1", StringComparer.Ordinal) || capabilities.Split(',').Any(capability => capability is "agent-function-row-v1" or "session-function-row-v1"))
         { throw new InvalidDataException("The function-row hook is not admitted for packaging."); }
+        // Display automation writes without a request. Refuse its feature and its capability marker by
+        // name until a stage admits it (docs/windows-native-agent-display-automation.md).
+        if (features.Contains("agent-display-automation-v1", StringComparer.Ordinal) || capabilities.Split(',').Any(capability => capability is "agent-display-automation-v1" or "session-display-automation-v1"))
+        { throw new InvalidDataException("Display automation is not admitted for packaging."); }
         if (agentWrite && !agentDisplay) { throw new InvalidDataException("Brightness write requires the display query contract."); }
         if (agentHdr && !agentDisplay) { throw new InvalidDataException("HDR write requires the display query contract."); }
         if (agentRefresh && !agentDisplay) { throw new InvalidDataException("Refresh-rate write requires the display query contract."); }

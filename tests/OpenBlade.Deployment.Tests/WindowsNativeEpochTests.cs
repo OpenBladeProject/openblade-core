@@ -709,6 +709,36 @@ public sealed class WindowsNativeEpochTests
     }
 
     [Fact]
+    public void DisplayAutomationAgentIsNotAdmittedUntilPackagingAdmitsIt()
+    {
+        string source = new('a', 40);
+        const string message = "Display automation is not admitted for packaging.";
+        // The feature and the marker build.rs gives a build with agent-display-automation-v1.
+        const string features = "agent-display-automation-v1,native-agent-entry-compile-check";
+        // Refused by name, whatever the record claims: the marker, the feature name,
+        // neither, or the marker beside an admitted contract.
+        foreach (string capabilities in new[]
+        {
+            "session-display-automation-v1",
+            "agent-display-automation-v1",
+            "none",
+            "agent-battery-report-v1,session-display-automation-v1",
+        })
+        {
+            var refused = Assert.Throws<InvalidDataException>(() => NativeArtifact.Inspect(
+                [.. Image("agent", schema: 2, features: features, capabilities: capabilities)], "agent", source));
+            Assert.Equal(message, refused.Message);
+            refused = Assert.Throws<InvalidDataException>(() => NativeArtifact.Inspect(
+                [.. Image("agent", schema: 2, features: "agent-battery-report-v1,agent-display-automation-v1,native-agent-entry-compile-check", capabilities: capabilities)], "agent", source));
+            Assert.Equal(message, refused.Message);
+        }
+        // A forged marker without the feature is no better.
+        var forged = Assert.Throws<InvalidDataException>(() => NativeArtifact.Inspect(
+            [.. Image("agent", schema: 2, features: "native-agent-entry-compile-check", capabilities: "session-display-automation-v1")], "agent", source));
+        Assert.Equal(message, forged.Message);
+    }
+
+    [Fact]
     public void ExplicitThermalMutationRoleRequiresSignedCapabilityAndMailboxCustody()
     {
         var artifact = NativeArtifact.Inspect([.. Image("service", schema: 2, mutation: true)], "service", new string('a', 40));
