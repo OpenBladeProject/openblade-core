@@ -1340,3 +1340,5 @@ impl Applier for HostApplier {
 
 #[path = "automation_status_tests.rs"]
 mod status;
+#[path = "automation_vectors.rs"]
+mod vectors;
