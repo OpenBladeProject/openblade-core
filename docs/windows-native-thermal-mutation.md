@@ -1858,19 +1858,52 @@ Native tracks confirmed thermal drift as managed does (`thermal_drift.rs`;
 managed `ConfirmedStateDriftTracker` and `ResolveAutomaticWriteExclusions`,
 `ServiceControlRuntime.cs:16655-16720`). The baseline is in memory, and the
 first reading after the Service starts only sets it. A value a reading leaves
-unknown is no evidence. OpenBlade's own write readbacks are intentional: a
-match clears the subsystem and a mismatch marks it. Before any write, an
-automatic reconciliation compares its fresh reading with the intent
-OpenBlade last committed and the new one. Either thermal subsystem matching
-neither, or an observed HyperBoost, excludes both from that reconciliation.
-The excluded steps write nothing and reply with managed's paused or deferred
-message, and the debt settles. An activation applies over drift. A resume
-whose reading matches neither holds the change for the one-minute
-observation window, and a fresh status reading of the destination within it
-clears the change (`ServiceControlRuntime.cs:19029-19087`). The status
-publishes `externalChanges` in managed's order. Exclusion only removes
-writes: every remaining write keeps its exact-device, competing-controller,
-power, session and readback admission and stops on ambiguity.
+unknown is no evidence. OpenBlade's own state is kept per subsystem and only
+as a readback confirmed it: a step's or explicit request's readback of its
+own write, a fan readback that already shows the request and the
+destination it carries, a reconciliation reading that shows the new intent,
+and a reading that settles a resume hold. Saved intent that native cannot
+apply is not OpenBlade's own. A fan intent with no native recipe (Fixed or
+a curve on battery or under Silent, battery selectors or Custom, and every
+ManualCurve) is projected onto the fans firmware reports, as managed
+`ResolveExperimentalFanHardwareDesired` does
+(`ServiceControlRuntime.cs:19616-19636`): Automatic fans read as that
+intent, and manual fans still mark the change. A setter whose step was
+dropped at its bound or deadline, or failed after its intent, has no
+readback of its own. The next reading settles it: it is OpenBlade's own
+write if that reading shows what was written, and nothing of OpenBlade's
+otherwise. Its unsettled journal row still fences writes.
+
+Before any write, an automatic reconciliation compares its fresh reading
+with the new intent and with OpenBlade's own confirmed state. A subsystem
+matching either is not a change. With no own state for a subsystem, only
+the new intent is compared; with neither, as for an intent whose GPU clock
+effect leaves it unresolved, the reading is no evidence and the recorded
+change stays as it is. Either subsystem changed, or an observed HyperBoost,
+excludes both from that reconciliation. The excluded steps write nothing
+and reply with managed's paused or deferred message, and the debt settles.
+
+A pair's startup and a user activation apply over drift (managed
+`preserveObservedExternalChanges: false`). A pair is starting until a debt
+of it settles, including one a competing controller drops, so that drop
+ends startup too. Startup is per pair and is not a debt's own state: only
+the starting pair's reconciliation, or the activation itself, overwrites.
+
+A power change within one minute (`RESUME_WINDOW`) after the last gate
+boundary, in low power or after the resume, is a resume change. When its
+reading matches neither the new intent nor OpenBlade's own state, and
+OpenBlade has own state to compare, the change is recorded and held for one
+minute from that reconciliation (managed `PendingResumePerformanceDrift`,
+`ServiceControlRuntime.cs:19029-19087`). Only a fresh device reading clears
+it, and only one that shows the held destination within the window: a
+published status read settles nothing, and a fresh reading of anything
+else leaves the change recorded. The hold compares no competing-controller
+evidence; every write keeps its own admission. The next boundary, a power
+change, low power, a reconciliation toward another intent, or OpenBlade's
+own write ends the hold. The status publishes `externalChanges` in managed's
+order. Exclusion only removes writes: every remaining write keeps its
+exact-device, competing-controller, power, session and readback admission
+and stops on ambiguity.
 
 Native differs from managed in these ways:
 
@@ -1879,15 +1912,19 @@ Native differs from managed in these ways:
   excluded until a reconciliation reads OpenBlade's intent again, an
   explicit request writes it, or the Service restarts. This is the remaining
   divergence from Architecture rule 5.
-- Prior intent. Managed publishes a report's or save's desired state before
-  the transition reads it as the prior one, so a report that leaves a rule
-  pauses over OpenBlade's own preset (`otherReportedWithOwnPreset`). Native
-  keeps the intent it last committed as the prior one and applies. It
-  reproduces the same outcome at lease expiry (`leaseExpired`), where only
-  the new intent counts. A reconciliation deferred or retried before any
-  submission keeps its prior intent, as managed's
-  `PendingTransitionContinuation.PriorDesired` does, and an explicit
-  request's intent becomes the prior one only with its own readback.
+- Own state at a report and at lease expiry. Managed publishes the new
+  desired state before the transition reads it as the prior one, so a
+  report that leaves a rule (`otherReportedWithOwnPreset`) and the lease
+  expiry (`leaseExpired`) both pause over OpenBlade's own preset, and
+  managed's convergence loop repairs that later. Native compares OpenBlade's
+  own confirmed state and applies at once, a deliberate deviation while it
+  has no convergence loop. The vectors keep managed's rows, and
+  `a_report_over_its_own_preset_applies_where_managed_pauses` and
+  `an_expired_lease_applies_the_power_profile_once` pin native's outcome.
+  A reconciliation deferred or retried before any submission keeps its
+  prior state, as managed's `PendingTransitionContinuation.PriorDesired`
+  does, and a destination one confirms before a later step is retried is
+  OpenBlade's own from that readback.
 - Narrower readings. Native reads the selector pair and the manual-fan bit:
   fans compare as manual or Automatic, so Stop and Fixed both read as
   manual, and GPU clock offsets are no evidence. HyperBoost unknown has no
