@@ -352,9 +352,9 @@ jobs:
               ($functionRow + 'service_client::tests::subscription'),
               ($functionRow + 'native_package'),
               ($functionRow + 'feature_lifetime'),
-              ($automation + 'display_query::automation'),
-              ($automation + 'display_query::recovery'),
-              ($automation + 'display_query::profile_apply'),
+              # Every display suite: automation shares the manual writes' gate,
+              # recovery state and checkpoint, so each manual write runs here too.
+              ($automation + 'display_query'),
               ($automation + 'native_package'),
               ($driverMode + 'driver_mode::tests'),
               ($driverMode + 'device_mode'),
