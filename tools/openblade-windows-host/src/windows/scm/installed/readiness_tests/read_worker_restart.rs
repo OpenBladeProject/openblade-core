@@ -32,22 +32,23 @@ fn retired_writes(rig: &Rig) -> usize {
 /// observation: the job stays abandoned on the reader until it is released.
 async fn abandon_held_read(rig: &Rig, held: &Arc<AtomicBool>) {
     rig.reader.expire_for_tests();
-    let opened = rig.port.state.lock().unwrap().opened;
-    rig.port.state.lock().unwrap().held_read = Some(held.clone());
+    let holding = {
+        let mut state = rig.port.state.lock().unwrap();
+        state.held_read = Some(held.clone());
+        state.holding.clone()
+    };
     let observation = rig
         .source
         .lock()
         .await
         .observe_performance(USER, Instant::now() + Duration::from_secs(3));
     tokio::pin!(observation);
-    let entered = async {
-        while rig.port.state.lock().unwrap().opened == opened {
-            tokio::time::sleep(Duration::from_millis(5)).await;
-        }
-    };
+    // The port opening does not show the job reached the hold: under load it
+    // can still fail at its deadline first. The fixture notifies once the read
+    // is parked, so wait for that.
     tokio::select! {
         _ = &mut observation => panic!("the held read returned"),
-        () = entered => {}
+        () = holding.notified() => {}
     }
 }
 
