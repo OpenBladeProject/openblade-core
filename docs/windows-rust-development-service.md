@@ -279,6 +279,55 @@ pin the codec and the published value against managed. Their recorder is
 rows compare Rust with itself; only the payload decode and the status rows are
 independent managed evidence.
 
+#### Live readings (read-only)
+
+A Service built with `service-live-readings-v1` serves an ObserveState that asks
+for live readings instead of refusing it. The feature implies
+`service-mailbox-observation-v1` and adds the capability marker
+`service-live-readings-v1`. Both package readers refuse the feature and the
+marker by name. A build without the feature still refuses the request with
+"Live readings are unavailable."
+
+- **Fan speeds.** The read job sends the two 0D/88 getters of the exact
+  RZ09-0581 capture (`rz09-0581-pid-02e0-bios-3.01-fan-rpm-fixture.json`,
+  `productionWired`) after the thermal getters, only for an ObserveState that
+  asks for `FanSpeeds`. They use the same serialized job, read custody,
+  checkpoints and settle as the thermal read, with their own 1 s budget and
+  never the job's last 500 ms. Both selectors must decode, as managed
+  requires. Managed publishes null after a failed pair. Native keeps the last
+  confirmed pair, under the same read admission, through two consecutive failed
+  jobs within the 5 s retention window, then publishes null. A speed above the
+  managed codec's 20,000 RPM bound counts as a failed read.
+- **Battery power flow.** `CallNtPowerInformation(SystemBatteryState)`, only for
+  an ObserveState that asks for `BatteryPower`, mapped as managed
+  `MapBatteryPowerFlow`. A failure is null.
+- **Battery health.** The battery class IOCTLs, summed as managed
+  `MapBatteryHealth`, published as `batteryHealth` in every status. The first
+  status captures it. While it is null, the first verified observation and each
+  power-source change capture it again. A captured value is never cleared.
+- **Temperatures.** Both stay null. The CPU temperature worker below is
+  unchanged, and the Service has no GPU temperature source.
+
+Live readings appear only in the ObserveState reply, never in the subscription
+feed, as managed does not push a change of live readings alone. A request for no
+sensors publishes `liveReadings: null`. Reads outside an ObserveState, such as a
+trigger's, ask for none. Every status with a confirmed thermal read now carries
+managed `DeviceCapabilities.Unavailable()` with HyperBoost observed only
+(`hyperBoostAccess: 0`), and a retained read carries the record it was read
+with. The managed codec refuses a confirmed active HyperBoost beside a null
+record. This record admits no control. It applies in every mailbox composition.
+
+Still unavailable natively: GPU temperature, firmware versions, and a reply
+for Custom High/High with Automatic fans, which the thermal read does not
+confirm, so that ObserveState has no fresh read and no live readings. A failed
+thermal read refuses the whole ObserveState, where managed still publishes the
+battery power flow. The vectors in
+`tools/openblade-windows-host/tests/data/live-reading-vectors.json` pin the
+codec and the battery mappings against managed
+(`ServiceControlRuntimeTests.NativeLiveReadingVectors`), and the managed codec
+decodes the native frames in `live-reading-native-frames.json`
+(`NativeLiveReadingFrames_DecodeThroughTheManagedCodec`).
+
 ### Phase 10n ownership binding
 
 The installed candidate's conditional firmware factory now requires a private

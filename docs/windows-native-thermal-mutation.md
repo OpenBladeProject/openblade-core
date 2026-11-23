@@ -636,7 +636,8 @@ Native differs from managed here in these ways:
   destination, so it sees a kind change only while one of those samples still
   shows it. Native does not track managed's separate last classified class per
   generation.
-- Native status carries no `externalPowerPresent` or capabilities, and with no
+- Native status carries no `externalPowerPresent`, its capabilities are only the
+  observation record (no control admitted), and with no
   override its desired provenance stays the profile default; managed reports
   the confirmed firmware state.
 - Managed also admits lighting and battery controls on unclassified power;
@@ -2058,12 +2059,14 @@ retirement alone is not firmware reconciliation. Inherited manual-fan ownership
 is reported, not adopted, and an interrupted journal rollover still refuses
 retirement.
 
-A separate read-parity gap remains: native observed HyperBoost combined with a
-null broad capability snapshot does not satisfy the managed decoder's capability
-requirements. This stage does not widen that validator or infer capabilities.
-An explicit Automatic fan request therefore stays refused while HyperBoost is
-observed, since its reply would publish that observation; owned Stop, which
-publishes nothing, closes the owner with 51.
+The read-parity gap for observed HyperBoost is closed in the status: a confirmed
+read carries the observation capability record, managed
+`DeviceCapabilities.Unavailable()` with HyperBoost observed only, which the
+managed decoder accepts beside an active HyperBoost (see
+[live readings](windows-rust-development-service.md#live-readings-read-only)).
+It admits no control and infers no other capability. An explicit Automatic fan
+request still stays refused while HyperBoost is observed; lifting that refusal
+is a separate change. Owned Stop, which publishes nothing, closes the owner with 51.
 Full native-read/managed-codec parity, including that combination, remains future
 work; the confirmed-only Custom correction grants no new write authority.
 
