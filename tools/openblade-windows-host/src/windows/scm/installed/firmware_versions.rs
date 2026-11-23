@@ -509,6 +509,9 @@ impl Host {
     /// Stops listening. A capture not yet started never starts, and a worker
     /// still running ends after the read it is in, since its next report
     /// fails. What it had reported is the record.
+    /// It then publishes that partial record, so Stop relies on the drain
+    /// dropping the publisher before it calls this: nothing may decorate a
+    /// status after it.
     pub(super) fn stop(&self) {
         let mut state = self.state.borrow_mut();
         match &mut *state {

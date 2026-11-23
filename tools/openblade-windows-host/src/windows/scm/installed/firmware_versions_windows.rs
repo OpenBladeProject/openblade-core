@@ -53,7 +53,7 @@ const MAX_KEY_NAME: usize = 256;
 /// Managed enumerates every key; a laptop has a few adapters.
 const MAX_ADAPTERS: u32 = 64;
 const MAX_INSTANCES: u32 = 64;
-/// The USB4 devices of one laptop, and the HID interfaces of a busy one.
+/// The USB4 devices of one laptop.
 const MAX_ROUTERS: u32 = 256;
 const MAX_INSTANCE_ID: usize = 1024;
 const MAX_PROPERTY_BYTES: usize = 8 * 1024;

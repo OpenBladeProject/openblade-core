@@ -587,7 +587,9 @@ marker by name. A build without the feature still refuses the request with
     `HidD_GetPreparsedData` and `HidP_GetCaps` are called. No report is read or
     written. The vendor, product, usage and BCD version checks stay on the
     attributes. Managed opens every HID interface and then filters; native does
-    not, so the laptop's own control collections are never opened.
+    not, so the laptop's own control collections are never opened. Selection is
+    proven against this laptop.s registry; the open, the product ID and the BCD
+    version have not yet been compared with the managed Service on the device.
   - Thunderbolt and the touchpad are read only on the exact RZ09-0581, which
     also carries a `ReadOnly` access for each. Any other model has neither
     read and a null access.

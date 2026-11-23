@@ -246,7 +246,8 @@ impl HostObservation {
 
 #[derive(Clone)]
 struct Interface {
-    // Windows supplies this opaque interface name. It is never parsed or exported.
+    // Windows supplies this opaque interface name. It is never parsed; only the
+    // firmware touchpad read receives it, to open the selected interface.
     path: String,
     hardware_ids: Option<Vec<String>>,
 }
