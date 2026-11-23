@@ -152,7 +152,7 @@ impl SettledPins {
             .unwrap_or_default()
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, feature = "service-fan-mutation-v2"))]
     pub(crate) fn peek(&self) -> Vec<u8> {
         self.0.lock().map(|queue| queue.clone()).unwrap_or_default()
     }

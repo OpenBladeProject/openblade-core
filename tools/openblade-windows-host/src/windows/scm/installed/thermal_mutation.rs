@@ -1568,7 +1568,7 @@ impl Runtime {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "service-fan-mutation-v2"))]
 impl Runtime {
     /// The settled pins waiting for a Reader to unpin them.
     pub(super) fn queued_pins_for_tests(&self) -> Vec<u8> {
