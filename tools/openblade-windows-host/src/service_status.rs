@@ -131,6 +131,11 @@ pub(crate) fn requested_live_readings() -> u8 {
 /// non-nullable `supportsTemporaryFullCharge` is the one member consumers
 /// read differently from a null record, where false means the model has
 /// none. Pinned to the managed codec's output by the live-reading vectors.
+///
+/// A confirmed state names no model, so the record is bound to the one
+/// producer of an active HyperBoost: `with_mailbox_read` over the exact
+/// RZ09-0581 performance Reader (`OBSERVED_CAPABILITIES_MODEL`). A second
+/// model's observation needs its own record and an identity to select it.
 #[cfg(feature = "installed-service-candidate")]
 fn observed_capabilities(confirmed: Option<&FeatureRecord>) -> Option<FeatureRecord> {
     let hyper_boost = confirmed.and_then(|state| state.get("hyperBoostActive"));
@@ -139,6 +144,11 @@ fn observed_capabilities(confirmed: Option<&FeatureRecord>) -> Option<FeatureRec
             .expect("the reviewed observation capability record")
     })
 }
+
+/// The exact model, as (model, vendor ID, product ID), whose observation the
+/// record describes.
+#[cfg(all(windows, feature = "service-mailbox-observation-v1"))]
+pub(crate) const OBSERVED_CAPABILITIES_MODEL: (&str, u16, u16) = ("RZ09-0581", 0x1532, 0x02e0);
 
 #[cfg(feature = "installed-service-candidate")]
 mod unserved;

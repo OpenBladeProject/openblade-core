@@ -87,6 +87,65 @@ mod projections {
         status.capabilities.as_ref()
     }
 
+    /// The source files outside tests that publish an observation through
+    /// `with_mailbox_read`, relative to `src`.
+    fn observation_publishers() -> Vec<String> {
+        fn walk(dir: &std::path::Path, root: &std::path::Path, found: &mut Vec<String>) {
+            for entry in std::fs::read_dir(dir).unwrap() {
+                let path = entry.unwrap().path();
+                let relative = path.strip_prefix(root).unwrap().to_string_lossy();
+                let relative = relative.replace('\\', "/");
+                if relative.contains("test") {
+                    continue;
+                }
+                if path.is_dir() {
+                    walk(&path, root, found);
+                } else if std::fs::read_to_string(&path)
+                    .is_ok_and(|text| text.contains(".with_mailbox_read("))
+                {
+                    found.push(relative);
+                }
+            }
+        }
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut found = Vec::new();
+        walk(&root, &root, &mut found);
+        found.sort();
+        found
+    }
+
+    /// The record is exact RZ09-0581 data and a confirmed state names no
+    /// model, so the record is bound to its producers: the RZ09-0581 Reader
+    /// and its battery evidence share its identity, and only the reviewed
+    /// read and mutation paths over that Reader publish an observation. A
+    /// new publisher fails here until it carries an identity of its own.
+    #[test]
+    fn the_record_is_bound_to_the_one_observation_producer() {
+        assert_eq!(
+            crate::discovery::performance::OBSERVED_IDENTITY,
+            OBSERVED_CAPABILITIES_MODEL
+        );
+        let (model, _, product) = OBSERVED_CAPABILITIES_MODEL;
+        let evidence: Vec<Value> = serde_json::from_str(include_str!(
+            "../../../../src/OpenBlade.Protocol/Fixtures/Rz09_0581_02e0_3_01_BatteryProduction.json"
+        ))
+        .unwrap();
+        assert!(
+            evidence
+                .iter()
+                .all(|entry| entry["device"]["model"] == model
+                    && entry["device"]["productId"] == product)
+        );
+        assert_eq!(
+            observation_publishers(),
+            [
+                "windows/scm/installed/fan_mutation.rs",
+                "windows/scm/installed/mailbox_read.rs",
+                "windows/scm/installed/thermal_mutation.rs",
+            ]
+        );
+    }
+
     #[test]
     fn a_read_and_its_retained_and_unavailable_projections_agree() {
         let hyper_boost = read(ObservedPerformance::HyperBoostObserved, true);

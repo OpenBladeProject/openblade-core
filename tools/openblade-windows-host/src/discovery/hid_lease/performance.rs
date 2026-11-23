@@ -66,6 +66,10 @@ pub(crate) use worker::Worker;
 
 const MODEL: &str = "RZ09-0581";
 const DEVICE: (u16, u16) = (0x1532, 0x02e0);
+/// The exact identity, as (model, vendor ID, product ID), of every
+/// observation this module's Readers produce.
+#[cfg(feature = "service-mailbox-observation-v1")]
+pub(crate) const OBSERVED_IDENTITY: (&str, u16, u16) = (MODEL, DEVICE.0, DEVICE.1);
 const USAGE: (u16, u16) = (1, 2);
 const FRAME_LENGTH: usize = REPORT_LENGTH + 1;
 const CLASS: u8 = 0x0d;

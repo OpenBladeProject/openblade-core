@@ -1336,6 +1336,12 @@ impl ReadSource {
             // Metadata may refresh while the native worker runs outside the
             // source mutex. Never assign its newer revision to an old snapshot.
             let current = publisher.borrow().active.clone();
+            // The status's observation record is exact-model data and the
+            // reading carries no model; its Reader is the one producer.
+            debug_assert_eq!(
+                crate::discovery::performance::OBSERVED_IDENTITY,
+                crate::service_status::OBSERVED_CAPABILITIES_MODEL
+            );
             let mut observed = current.with_mailbox_read(
                 reading.performance,
                 crate::service_status::ReadConfirmation::new(deadline, move || {
