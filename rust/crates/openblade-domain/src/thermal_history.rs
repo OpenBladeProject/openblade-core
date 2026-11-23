@@ -249,13 +249,31 @@ pub fn rows(
     bytes: &[u8],
     visit: impl FnMut(&Entry, &[u8]) -> io::Result<()>,
 ) -> io::Result<(u64, Option<Entry>)> {
+    rows_from(bytes, None, visit).map(|(count, last, _)| (count, last))
+}
+/// The owners still live after a run of rows, as `rows` admits each row
+/// against them.
+#[derive(Default)]
+pub struct Owners {
+    /// The fan record that took manual fans (30) and has not handed them
+    /// back (50 or 51).
+    pub fan: Option<Entry>,
+    /// The temporary-charge enable that settled (72 or 73) with the charge
+    /// enabled, until another temporary-charge request settles.
+    pub temporary: Option<Entry>,
+}
+/// `rows`, with the owners its rows leave live.
+pub fn rows_with_owners(
+    bytes: &[u8],
+    visit: impl FnMut(&Entry, &[u8]) -> io::Result<()>,
+) -> io::Result<(u64, Option<Entry>, Owners)> {
     rows_from(bytes, None, visit)
 }
 fn rows_from(
     bytes: &[u8],
     mut last: Option<Entry>,
     mut visit: impl FnMut(&Entry, &[u8]) -> io::Result<()>,
-) -> io::Result<(u64, Option<Entry>)> {
+) -> io::Result<(u64, Option<Entry>, Owners)> {
     if bytes.len() > SEGMENT || !bytes.is_empty() && !bytes.ends_with(b"\n") {
         return Err(deny());
     }
@@ -488,7 +506,11 @@ fn rows_from(
         count = count.checked_add(1).ok_or_else(deny)?;
         last = Some(entry);
     }
-    Ok((count, last))
+    let owners = Owners {
+        fan: owned,
+        temporary: temporary_owner,
+    };
+    Ok((count, last, owners))
 }
 fn lines(header: &str, fields: &[String]) -> Vec<u8> {
     format!("{}\n{}\n", header, fields.join("\n")).into_bytes()
@@ -693,7 +715,7 @@ pub fn inspect_prefix(
         let bytes = required(b, &name("checkpoint", seq), 2048)?;
         let cp = Checkpoint::parse(&bytes)?;
         let segment = required(b, &name("segment", seq), SEGMENT)?;
-        let (n, last) = rows_from(&segment, prior.take(), &mut join)?;
+        let (n, last, _) = rows_from(&segment, prior.take(), &mut join)?;
         if cp.sequence != seq
             || cp.previous != previous
             || cp.segment != digest(&segment)
@@ -745,18 +767,8 @@ pub fn validate_prepared_retirement(expected: &[u8], bytes: &[u8], owner: &str) 
     Ok(())
 }
 pub fn handback_complete(bytes: &[u8]) -> io::Result<bool> {
-    let mut owned = false;
-    rows(bytes, |e, _| {
-        if e.fan.is_some() {
-            if e.progress == 30 {
-                owned = true;
-            } else if matches!(e.progress, 50 | 51) {
-                owned = false;
-            }
-        }
-        Ok(())
-    })?;
-    Ok(!owned)
+    let (_, _, owners) = rows_with_owners(bytes, |_, _| Ok(()))?;
+    Ok(owners.fan.is_none())
 }
 #[derive(Debug)]
 struct PrepublicationCapacity;

@@ -979,11 +979,7 @@ impl ReadSource {
             native_read_worker(move || custody.authorize())
         });
         #[cfg(feature = "service-thermal-mutation-v1")]
-        let source = source.with_mutation(MutationFactories {
-            read: Box::new(|custody| native_read_worker(move || custody.authorize())),
-            write: Box::new(crate::discovery::performance::mutation::native_mutation_worker),
-            quarantine: Box::new(crate::discovery::performance::mutation::quarantine_native),
-        });
+        let source = source.with_mutation(MutationFactories::native());
         // Only the acquired production source reads Windows battery state.
         #[cfg(feature = "service-live-readings-v1")]
         let source = Self {
@@ -1408,13 +1404,28 @@ pub(super) struct MutationFactories {
 }
 
 #[cfg(feature = "service-thermal-mutation-v1")]
+impl MutationFactories {
+    /// The native workers and the one process pool they share.
+    fn native() -> Self {
+        Self {
+            read: Box::new(|custody| native_read_worker(move || custody.authorize())),
+            write: Box::new(crate::discovery::performance::mutation::native_mutation_worker),
+            quarantine: Box::new(crate::discovery::performance::mutation::quarantine_native),
+        }
+    }
+}
+
+#[cfg(feature = "service-thermal-mutation-v1")]
 impl ReadSource {
-    /// Adds the mutation lanes. Before any worker job can reserve an ID, it
-    /// quarantines the IDs the journal names that an earlier process may
-    /// have sent without reading their reply (`transaction_seed`).
+    /// Adds the mutation lanes. Before any worker job runs, it quarantines
+    /// the IDs whose replies, by the journal, an earlier process may have
+    /// left in the mailbox (`transaction_seed`). It reads the journal as
+    /// release does, authenticating it without recovery, so composing a
+    /// source writes nothing.
     fn with_mutation(mut self, factories: MutationFactories) -> Self {
         super::transaction_seed::quarantine_unanswered(
-            self.lease.journal_read(false),
+            &|| self.lease.journal_read_release(false),
+            &self.fatal,
             &*factories.quarantine,
         );
         self.factories = Some(Rc::new(factories));

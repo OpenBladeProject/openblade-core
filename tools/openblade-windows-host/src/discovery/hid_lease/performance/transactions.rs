@@ -25,9 +25,9 @@
 //! after every other free ID has been issued. The process pool starts its
 //! round at a random ID: every process would otherwise issue the same IDs
 //! first, which a previous process's replies left in the mailbox may bear.
-//! The mailbox also outlives the process, so before its first reservation the
-//! Service quarantines the IDs its journal names that an earlier process may
-//! have sent without reading their reply (`quarantine`).
+//! The mailbox also outlives the process, so before its first job the Service
+//! quarantines the IDs its journal names whose replies, answered or not, an
+//! earlier process may have left there (`quarantine`).
 
 use openblade_protocol::{REPORT_LENGTH, RazerReport};
 use std::{
