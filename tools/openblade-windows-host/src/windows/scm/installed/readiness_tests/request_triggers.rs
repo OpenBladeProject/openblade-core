@@ -757,10 +757,16 @@ const PAUSED: &str = "Automatic performance profile application is paused becaus
 #[tokio::test]
 async fn a_reconciliation_under_an_override_reports_that_override() {
     let rig = rig_at(files_with_game(json!({"pluggedIn":{"performance":2}})), 2);
+    // The session's startup reconciliation, which applies over drift,
+    // settles first.
+    assert_eq!(
+        report(&rig, 1, Some(r"C:\Tools\Other.exe")).await["result"]["status"],
+        1
+    );
     assert_eq!(rig.set(1, value(0, 1)).await["result"]["status"], 1);
     rig.port.state.lock().unwrap().selectors = [2; 2];
     let before = writes(&rig);
-    let paused = report(&rig, 1, Some(r"C:\Games\Game.exe")).await;
+    let paused = report(&rig, 2, Some(r"C:\Games\Game.exe")).await;
     assert_eq!(
         paused["result"],
         json!({"status":2,"message":format!("{RECORDED} {PAUSED}")})
@@ -1366,9 +1372,16 @@ async fn a_fans_first_reconciliation_is_excluded_at_its_fan_step() {
     // Silent, with the Fixed fans OpenBlade owns.
     rig.port.state.lock().unwrap().selectors = [5; 2];
     let before = writes(&rig);
+    let frames = (sent(&rig), rig.port.state.lock().unwrap().power_reads);
     let paused = report(&rig, 2, Some(r"C:\Tools\Other.exe")).await;
     assert_eq!(paused["result"]["status"], 2, "{paused}");
     assert_eq!(writes(&rig), before);
+    // The excluded fan step's reading and power read only: the performance
+    // step after it does not run.
+    assert_eq!(
+        (sent(&rig), rig.port.state.lock().unwrap().power_reads),
+        (frames.0 + 3, frames.1 + 1)
+    );
     assert_eq!(rig.port.state.lock().unwrap().fans, [1; 2]);
     assert_eq!(rig.get().await["status"]["externalChanges"], json!([0]));
     // Firmware changed outside OpenBlade, so the drain's fan handback
@@ -1377,18 +1390,23 @@ async fn a_fans_first_reconciliation_is_excluded_at_its_fan_step() {
     let _ = rig.source.lock().await.drain().await;
 }
 
-/// An explicit fan request's confirmed intent is the prior intent of the
-/// next reconciliation: a report over performance changed outside OpenBlade
-/// is paused, where a startup reconciliation would apply over it.
+/// An explicit fan request's confirmed fans are OpenBlade's own: the next
+/// reconciliation over performance changed outside OpenBlade is paused for
+/// that change alone, where the session's startup reconciliation would
+/// apply over it.
 #[tokio::test]
-async fn an_explicit_fan_intent_is_the_prior_one_of_the_next_reconciliation() {
+async fn an_explicit_fan_write_is_own_state_of_the_next_reconciliation() {
     let rig = rig_at(files_with_game(json!({"pluggedIn":{"performance":2}})), 0);
+    assert_eq!(
+        report(&rig, 1, Some(r"C:\Tools\Other.exe")).await["result"]["status"],
+        1
+    );
     let fixed = rig.request(fan_request(1, Some(1), 3700)).await;
     assert_eq!(fixed["result"]["status"], 1, "{fixed}");
     // Silent, with the Fixed fans.
     rig.port.state.lock().unwrap().selectors = [5; 2];
     let before = writes(&rig);
-    let paused = report(&rig, 1, Some(r"C:\Games\Game.exe")).await;
+    let paused = report(&rig, 2, Some(r"C:\Games\Game.exe")).await;
     assert_eq!(paused["result"]["status"], 2, "{paused}");
     assert_eq!(writes(&rig), before);
     assert_eq!(rig.get().await["status"]["externalChanges"], json!([0]));
@@ -1396,6 +1414,308 @@ async fn an_explicit_fan_intent_is_the_prior_one_of_the_next_reconciliation() {
     // cannot confirm it and retains its evidence.
     rig.origin.stop();
     let _ = rig.source.lock().await.drain().await;
+}
+/// `files_with_game` over a plugged-in power profile of `performance` and
+/// `fans`.
+fn files_with_profile(performance: i32, fans: i32, game: Value) -> MemoryFiles {
+    let files = files_with_game(game);
+    let mut document = files.document("profiles.json");
+    document["profiles"]["pluggedIn"]["performance"] = json!(performance);
+    document["profiles"]["pluggedIn"]["fans"] = json!(fans);
+    files.put("profiles.json", document);
+    files.commit_configuration();
+    files
+}
+/// A fresh exact-device reading (observeState), then the published status.
+async fn observed(rig: &Rig, n: u8) -> Value {
+    let observed = rig
+        .request(json!({"operation":"observeState","version":85,"requestId":format!("eeeeeeee-bbbb-cccc-dddd-{n:012}"),"includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0}))
+        .await;
+    assert_eq!(observed["success"], true, "{observed}");
+    rig.get().await
+}
+fn device(rig: &Rig) -> ([u8; 2], [u8; 2]) {
+    let s = rig.port.state.lock().unwrap();
+    (s.selectors, s.fans)
+}
+
+/// Saved fan intent native cannot apply is not OpenBlade's own. A plugged-in
+/// Silent + Fixed profile has no native fan recipe, so the fans stay
+/// Automatic, which managed `ResolveExperimentalFanHardwareDesired` projects
+/// the intent onto. The Game rule's Performance then applies with the Fixed
+/// fans instead of reading the untouched Automatic fans as drift.
+#[tokio::test]
+async fn unapplied_fan_intent_is_not_own_state_and_the_next_rule_applies() {
+    let rig = rig_at(
+        files_with_profile(0, 1, json!({"pluggedIn":{"performance":2}})),
+        0,
+    );
+    report(&rig, 1, Some(r"C:\Tools\Other.exe")).await;
+    assert_eq!(device(&rig), ([5; 2], [0; 2]));
+    let game = report(&rig, 2, Some(r"C:\Games\Game.exe")).await;
+    assert_eq!(
+        game["result"],
+        json!({"status":1,"message":format!("{RECORDED} {CONFIRMED} {FIXED}")})
+    );
+    assert_eq!(device(&rig), ([2; 2], [1; 2]));
+    assert_eq!(
+        observed(&rig, 1).await["status"]["externalChanges"],
+        json!([])
+    );
+    rig.stop().await;
+}
+
+/// A stored ManualCurve has no native recipe either: the next rule's
+/// performance applies over the Automatic fans it left.
+#[tokio::test]
+async fn a_stored_manual_curve_is_not_own_state() {
+    let rig = rig_at(
+        files_with_profile(1, 2, json!({"pluggedIn":{"performance":2}})),
+        0,
+    );
+    report(&rig, 1, Some(r"C:\Tools\Other.exe")).await;
+    assert_eq!(device(&rig), ([0; 2], [0; 2]));
+    let before = writes(&rig);
+    let game = report(&rig, 2, Some(r"C:\Games\Game.exe")).await;
+    assert!(
+        !game["result"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("changed outside OpenBlade"),
+        "{game}"
+    );
+    assert!(writes(&rig) > before);
+    assert_eq!(device(&rig).0, [2; 2]);
+    assert_eq!(
+        observed(&rig, 1).await["status"]["externalChanges"],
+        json!([])
+    );
+    rig.stop().await;
+}
+
+/// An explicit performance request's readback makes only its destination
+/// OpenBlade's own, not the saved fan intent it did not apply: the next
+/// report applies the Fixed fans.
+#[tokio::test]
+async fn an_explicit_performance_readback_does_not_own_unapplied_fans() {
+    let rig = rig_at(
+        files_with_profile(0, 1, json!({"pluggedIn":{"performance":2}})),
+        0,
+    );
+    report(&rig, 1, Some(r"C:\Tools\Other.exe")).await;
+    // A temporary Balanced, which native can apply Fixed fans under.
+    let set = rig.set(1, value(1, 0)).await;
+    assert_eq!(set["result"]["status"], 1, "{set}");
+    assert_eq!(device(&rig), ([0; 2], [0; 2]));
+    let game = report(&rig, 2, Some(r"C:\Games\Game.exe")).await;
+    assert_eq!(game["result"]["status"], 1, "{game}");
+    assert_eq!(device(&rig), ([0; 2], [1; 2]));
+    rig.stop().await;
+}
+
+/// The inverse: manual fans set outside OpenBlade under an unapplied manual
+/// fan intent are not OpenBlade's own, so the next rule's Automatic fans
+/// are not written over them.
+#[tokio::test]
+async fn manual_fans_set_outside_openblade_are_not_taken_for_unapplied_intent() {
+    let rig = rig_at(
+        files_with_profile(0, 1, json!({"pluggedIn":{"performance":2,"fans":0}})),
+        0,
+    );
+    report(&rig, 1, Some(r"C:\Tools\Other.exe")).await;
+    assert_eq!(device(&rig), ([5; 2], [0; 2]));
+    // Silent with manual fans, outside OpenBlade.
+    rig.port.state.lock().unwrap().fans = [1; 2];
+    let before = writes(&rig);
+    let paused = report(&rig, 2, Some(r"C:\Games\Game.exe")).await;
+    assert_eq!(
+        paused["result"],
+        json!({"status":2,"message":format!("{RECORDED} {PAUSED}")})
+    );
+    assert_eq!(writes(&rig), before);
+    assert_eq!(device(&rig), ([5; 2], [1; 2]));
+    assert_eq!(rig.get().await["status"]["externalChanges"], json!([1]));
+    rig.origin.stop();
+    let _ = rig.source.lock().await.drain().await;
+}
+
+/// A destination confirmed inside a reconciliation that is then retried is
+/// OpenBlade's own at its readback: the Game preset is confirmed, its fan
+/// step is refused for pace, and leaving the rule applies the power profile
+/// instead of reading that preset as drift.
+#[tokio::test]
+async fn a_destination_confirmed_in_a_retried_reconciliation_is_own_state() {
+    let rig = rig_at(
+        files_with_game(serde_json::from_str(PRESET_AND_FIXED).unwrap()),
+        0,
+    );
+    assert_eq!(
+        report(&rig, 1, Some(r"C:\Tools\Other.exe")).await["result"]["status"],
+        1
+    );
+    rig.port.state.lock().unwrap().latency = Some(std::time::Duration::from_millis(250));
+    let paced = report(&rig, 2, Some(r"C:\Games\Game.exe")).await;
+    rig.port.state.lock().unwrap().latency = None;
+    assert_eq!(
+        paced["result"],
+        json!({"status":3,"message":format!("{RECORDED} {CONFIRMED} {FAN_DEADLINE}")})
+    );
+    assert_eq!(device(&rig), ([2; 2], [0; 2]));
+    let left = report(&rig, 3, Some(r"C:\Tools\Other.exe")).await;
+    assert_eq!(
+        left["result"],
+        json!({"status":1,"message":format!("{RECORDED} {CONFIRMED} {AUTOMATIC}")})
+    );
+    assert_eq!(device(&rig), ([0; 2], [0; 2]));
+    rig.stop().await;
+}
+
+/// A save over drift outside OpenBlade is paused as a report is: managed
+/// `UpdateProfilesAsync` preserves observed external changes.
+#[tokio::test]
+async fn a_save_over_drift_is_paused() {
+    let rig = rig_at(files_with_game(json!({"pluggedIn":{"performance":2}})), 0);
+    assert_eq!(
+        report(&rig, 1, Some(r"C:\Games\Game.exe")).await["result"]["status"],
+        1
+    );
+    // Silent, outside OpenBlade.
+    rig.port.state.lock().unwrap().selectors = [5; 2];
+    let before = writes(&rig);
+    let saved = rig
+        .request(update(2, &with_game_performance(&rig.files, 1)))
+        .await;
+    assert_eq!(
+        saved["result"],
+        json!({"status":0,"message":format!("Profiles were stored. {PAUSED}")})
+    );
+    assert_eq!(writes(&rig), before);
+    assert_eq!(device(&rig).0, [5; 2]);
+    rig.stop().await;
+}
+
+/// A fan readback that confirms OpenBlade's fan intent without a write is
+/// OpenBlade's own, as is the carried destination it shows: an explicit
+/// return to Automatic over firmware that already reports the saved
+/// Balanced with Automatic fans clears both changes recorded outside
+/// OpenBlade.
+#[tokio::test]
+async fn an_explicit_fan_no_op_readback_is_own_state() {
+    let rig = rig_at(files_with_game(json!({"pluggedIn":{"performance":2}})), 0);
+    report(&rig, 1, Some(r"C:\Tools\Other.exe")).await;
+    let fixed = rig.request(fan_request(1, Some(1), 3700)).await;
+    assert_eq!(fixed["result"]["status"], 1, "{fixed}");
+    // Silent with manual fans, then Balanced with Automatic fans, outside
+    // OpenBlade.
+    rig.port.state.lock().unwrap().selectors = [5; 2];
+    assert_eq!(
+        observed(&rig, 1).await["status"]["externalChanges"],
+        json!([0])
+    );
+    {
+        let mut s = rig.port.state.lock().unwrap();
+        s.selectors = [0; 2];
+        s.fans = [0; 2];
+    }
+    assert_eq!(
+        observed(&rig, 2).await["status"]["externalChanges"],
+        json!([0, 1])
+    );
+    let before = writes(&rig);
+    let automatic = rig.request(fan_request(2, Some(0), 3700)).await;
+    assert_eq!(automatic["result"]["status"], 1, "{automatic}");
+    assert_eq!(writes(&rig), before);
+    assert_eq!(rig.get().await["status"]["externalChanges"], json!([]));
+    assert_eq!(
+        observed(&rig, 3).await["status"]["externalChanges"],
+        json!([])
+    );
+    rig.stop().await;
+}
+
+/// Each reconciliation's setter count on a fresh rig, then the rig.
+async fn counted(rule: &str, steps: &[&str]) -> (Rig, Vec<usize>) {
+    let rig = rig_at(files_with_game(serde_json::from_str(rule).unwrap()), 0);
+    let mut counts = Vec::new();
+    for (n, path) in steps.iter().enumerate() {
+        let before = writes(&rig);
+        report(&rig, n as i64 + 1, Some(path)).await;
+        counts.push(writes(&rig) - before);
+    }
+    (rig, counts)
+}
+/// Reports `before`, then `dropped` with a blocking host stall before its
+/// last setter, past the real-time bound; the device then shows
+/// `device_after` and a fresh reading reports no change outside OpenBlade.
+async fn dropped_at_bound(
+    rule: &str,
+    before: &[&str],
+    dropped: &str,
+    device_after: ([u8; 2], [u8; 2]),
+) -> Rig {
+    let steps: Vec<&str> = before.iter().copied().chain([dropped]).collect();
+    let (probe, counts) = counted(rule, &steps).await;
+    probe.stop().await;
+    let total = *counts.last().unwrap();
+    assert!(total > 0);
+    let (rig, _) = counted(rule, before).await;
+    let last = writes(&rig) + total;
+    let bound = crate::service_frame::RECONCILE_BUDGET + crate::service_frame::RECONCILE_MARGIN;
+    rig.port.state.lock().unwrap().before_write = Some(Arc::new(move |number| {
+        if number == last {
+            std::thread::sleep(bound + std::time::Duration::from_millis(500));
+        }
+    }));
+    let reply = report(&rig, before.len() as i64 + 1, Some(dropped)).await;
+    assert_eq!(reply["result"]["status"], 3, "{reply}");
+    assert!(
+        reply["result"]["message"]
+            .as_str()
+            .unwrap()
+            .ends_with(&format!("{UNFINISHED} {SUBMITTED}")),
+        "{reply}"
+    );
+    rig.reader.drain_active().await.unwrap();
+    rig.port.state.lock().unwrap().before_write = None;
+    assert_eq!(device(&rig), device_after);
+    // The write landed after the reconciliation answered: a fresh reading
+    // of it is OpenBlade's own. The row the dropped step left unsettled
+    // still fences writes.
+    let read = observed(&rig, 1).await;
+    assert_eq!(
+        read["status"]["externalChanges"],
+        json!([]),
+        "{rule} {dropped}: {read}"
+    );
+    assert!(rig.storage.pending());
+    rig
+}
+/// A step dropped at its bound still confirms its own completed write. A
+/// host stall before its last setter, past the real-time bound, drops the
+/// reconciliation after that setter's journaled intent; the setter then
+/// lands with no readback of the step's own. The next fresh reading that
+/// shows it reads it as OpenBlade's own write, not as drift: a performance
+/// write (`record`), a Fixed fan write and a return to Automatic that
+/// carries the next destination (`record_fan`, the last changing both
+/// subsystems). Real time.
+#[tokio::test]
+async fn a_step_dropped_at_its_bound_records_its_own_completed_write() {
+    const OTHER: &str = r"C:\Tools\Other.exe";
+    const GAME: &str = r"C:\Games\Game.exe";
+    let rigs = tokio::join!(
+        dropped_at_bound(
+            r#"{"pluggedIn":{"performance":2}}"#,
+            &[OTHER],
+            GAME,
+            ([2; 2], [0; 2])
+        ),
+        dropped_at_bound(PRESET_AND_FIXED, &[OTHER], GAME, ([2; 2], [1; 2])),
+        dropped_at_bound(PRESET_AND_FIXED, &[OTHER, GAME], OTHER, ([0; 2], [0; 2])),
+    );
+    for rig in [rigs.0, rigs.1, rigs.2] {
+        rig.origin.stop();
+        let _ = rig.source.lock().await.drain().await;
+    }
 }
 #[path = "request_triggers_low_power.rs"]
 mod low_power;

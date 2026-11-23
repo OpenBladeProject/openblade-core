@@ -136,13 +136,6 @@ async fn reported_game() -> Rig {
     assert_eq!(owed(&rig), None);
     rig
 }
-/// The lease expired and selected the plugged-in power profile, which pauses
-/// over OpenBlade's own Game preset as managed does (`leaseExpired`).
-async fn expired_over_own_preset(rig: &Rig) {
-    let status = rig.get().await;
-    assert_eq!(performance(&status), 2, "{status}");
-    assert_eq!(status["status"]["externalChanges"], json!([0]), "{status}");
-}
 fn vector<'a>(vectors: &'a Value, transition: &str) -> &'a Value {
     vectors["transitions"]
         .as_array()
@@ -313,44 +306,74 @@ async fn a_power_change_in_low_power_is_applied_after_the_resume() {
     rig.stop().await;
 }
 
-/// An expired lease with an application profile active selects the power
-/// profile once (managed `ExpireApplicationContextAsync`) and submits nothing:
-/// `PublishApplicationContextStatus` publishes the new desired state before
-/// `ApplyFullTransitionAsync` takes it as the prior one, so managed reads
-/// OpenBlade's own Game preset as an external change and pauses. Native
-/// reproduces that outcome (`thermal_drift::Mode::NextOnly`); the debt is
-/// settled, and the next report selects the application again over its own
-/// preset.
+/// An expired lease with an application profile active applies the power
+/// profile once (managed `ExpireApplicationContextAsync`); the next report
+/// selects the application again. Managed selects the same desired source
+/// and preset but submits nothing here: `PublishApplicationContextStatus`
+/// publishes the new desired state before `ApplyFullTransitionAsync` takes
+/// it as the prior one, so its drift tracker reads OpenBlade's own Game
+/// preset as an external change and pauses, and its default convergence
+/// loop repairs that later. Native has no convergence loop yet, so it
+/// deliberately compares OpenBlade's own confirmed state at the expiry, as
+/// at every other cause, and applies (`leaseExpired` diverges).
 #[tokio::test]
-async fn an_expired_lease_selects_the_power_profile_and_pauses_over_its_own_preset() {
+async fn an_expired_lease_applies_the_power_profile_once() {
     let vectors: Value = serde_json::from_str(LIFECYCLE_VECTORS).unwrap();
     let rig = applied_game().await;
     let before = writes(&rig);
     rig.runtime.expire_application_lease();
     tick(&rig).await;
-    let expired = vector(&vectors, "leaseExpired");
-    assert_eq!(expired["submitted"], false, "{expired}");
-    assert_eq!(writes(&rig), before);
+    assert!(writes(&rig) > before);
     assert_eq!(owed(&rig), None);
+    let expired = vector(&vectors, "leaseExpired");
+    assert_eq!(expired["source"], 1, "{expired}");
+    // The managed row this deliberately diverges from.
+    assert_eq!(expired["submitted"], false, "{expired}");
+    assert_eq!(expired["externalChanges"], json!([0]), "{expired}");
     let status = rig.get().await;
-    assert_eq!(performance(&status), &expired["performance"]);
-    assert_eq!(
-        status["status"]["externalChanges"],
-        expired["externalChanges"]
-    );
+    assert_eq!(performance(&status), &expired["desired"]);
+    assert_eq!(status["status"]["externalChanges"], json!([]), "{status}");
     // The cleared foreground cannot expire again.
+    let after = sent(&rig);
     tick(&rig).await;
-    assert_eq!(writes(&rig), before);
+    assert_eq!(sent(&rig), after);
     let again = report(&rig, 2, Some(r"C:\Games\Game.exe")).await;
-    let reported = vector(&vectors, "gameReported");
-    assert_eq!(reported["submitted"], false, "{reported}");
-    assert_eq!(writes(&rig), before, "{again}");
-    let status = rig.get().await;
-    assert_eq!(performance(&status), &reported["desired"]);
+    assert_eq!(again["result"]["status"], 1, "{again}");
     assert_eq!(
-        status["status"]["externalChanges"],
-        reported["externalChanges"]
+        performance(&rig.get().await),
+        &vector(&vectors, "gameReported")["desired"]
     );
+    rig.stop().await;
+}
+
+/// The lease expiry hands OpenBlade's own Game state back: the Game rule's
+/// Performance and owned Fixed fans return to the power profile's Balanced
+/// and Automatic fans, so a later unplug does not leave them on battery.
+/// Managed pauses at the expiry and relies on its convergence loop, which
+/// native does not have (`an_expired_lease_applies_the_power_profile_once`).
+#[tokio::test]
+async fn an_expired_lease_hands_back_owned_fixed_fans() {
+    let rig = rig_at(
+        files_with_game(serde_json::from_str(PRESET_AND_FIXED).unwrap()),
+        0,
+    );
+    let applied = report(&rig, 1, Some(r"C:\Games\Game.exe")).await;
+    assert_eq!(applied["result"]["status"], 1, "{applied}");
+    wired(&rig).await;
+    {
+        let s = rig.port.state.lock().unwrap();
+        assert_eq!((s.selectors, s.fans), ([2; 2], [1; 2]));
+    }
+    rig.runtime.expire_application_lease();
+    tick(&rig).await;
+    assert_eq!(owed(&rig), None);
+    {
+        let s = rig.port.state.lock().unwrap();
+        assert_eq!((s.selectors, s.fans), ([0; 2], [0; 2]));
+    }
+    let status = observe(&rig, 1).await;
+    assert_eq!(performance(&status), 1, "{status}");
+    assert_eq!(status["status"]["externalChanges"], json!([]), "{status}");
     rig.stop().await;
 }
 
@@ -374,8 +397,7 @@ async fn a_resume_renews_the_lease_instead_of_expiring_it() {
 
 /// The gate setting during the tick's reconciliation defers it with nothing
 /// submitted: the debt stays owed with no retry spent, and the tick after the
-/// resume applies it once. The cause is a power change, which applies over
-/// OpenBlade's own preset, where a lease expiry pauses.
+/// resume applies it once over OpenBlade's own confirmed preset.
 #[tokio::test]
 async fn a_suspend_during_the_tick_reconciliation_defers_it_to_the_resume() {
     let rig = applied_game().await;
@@ -415,8 +437,8 @@ async fn a_suspend_during_the_tick_reconciliation_defers_it_to_the_resume() {
 /// write with nothing submitted. It is no deferral, but the debt stays owed
 /// with one retry spent, and since the write epoch moved the first tick after
 /// `PACE` runs the cause again under fresh admission (the second debt drop of
-/// the low-power slice). The deferred retry keeps its prior intent
-/// (`thermal_drift::Transition::commit`), so its own preset is not drift.
+/// the low-power slice). The Game preset its first attempt read is still
+/// OpenBlade's own confirmed one, so the retry is no drift.
 #[tokio::test]
 async fn a_fence_without_a_gate_move_is_retried_after_its_pace() {
     let rig = applied_game().await;
@@ -732,7 +754,7 @@ async fn a_gap_in_the_ticks_renews_the_lease_from_its_threshold() {
     rig.runtime.expire_application_lease();
     tick(&rig).await;
     assert!(sent(&rig) > before);
-    expired_over_own_preset(&rig).await;
+    assert_eq!(performance(&rig.get().await), 1);
     rig.stop().await;
 }
 
@@ -768,7 +790,7 @@ async fn a_busy_tick_keeps_its_time_current_but_never_erases_a_gap() {
     rig.runtime.expire_application_lease();
     tick(&rig).await;
     assert!(sent(&rig) > before);
-    expired_over_own_preset(&rig).await;
+    assert_eq!(performance(&rig.get().await), 1);
     rig.stop().await;
 }
 
@@ -1105,10 +1127,12 @@ fn moved(rig: &Rig, selector: u8, fan: u8) {
     state.selectors = [selector; 2];
     state.fans = [fan; 2];
 }
-/// A fresh reading's confirmed preset and the external changes as one
-/// managed vector row records them. The published desired source is not
-/// compared: native status reports the plugged-in power profile's source
-/// on AC even while an application preset is applied, with or without drift.
+/// A fresh reading's confirmed preset and fans and the external changes as
+/// one managed vector row records them, and the desired preset where the
+/// row's desired state is a power profile's. The published desired source
+/// is not compared, nor an application preset's desired value: native
+/// status reports the plugged-in power profile's preset and source on AC
+/// even while an application preset is applied, with or without drift.
 async fn assert_row(rig: &Rig, n: u8, row: &Value) {
     let status = observe(rig, n).await;
     let status = &status["status"];
@@ -1116,6 +1140,13 @@ async fn assert_row(rig: &Rig, n: u8, row: &Value) {
         status["confirmedState"]["performance"], row["performance"],
         "{status}"
     );
+    assert_eq!(status["confirmedState"]["fans"], row["fans"], "{status}");
+    if row["source"] == 1 {
+        assert_eq!(
+            status["desiredState"]["performance"]["value"], row["desired"],
+            "{status}"
+        );
+    }
     assert_eq!(
         status["externalChanges"], row["externalChanges"],
         "{status}"
@@ -1324,6 +1355,286 @@ async fn an_own_write_clears_drift_and_a_restart_forgets_it() {
     assert_eq!(
         observe(&rig, 5).await["status"]["externalChanges"],
         json!([0])
+    );
+    rig.stop().await;
+}
+
+/// A competing controller that drops the console user's first activation
+/// settles it, which ends that pair's startup: a later power change compares
+/// the change recorded outside OpenBlade and is paused.
+#[tokio::test]
+async fn an_activation_dropped_for_a_competing_controller_ends_startup() {
+    let rig = rig_at(files_with_game(json!({"pluggedIn":{"performance":2}})), 0);
+    assert_ne!(saved_battery_performance(&rig), json!(2));
+    rig.get().await;
+    rig.custody.controller.store(true, Ordering::Release);
+    wired(&rig).await;
+    assert_eq!(writes(&rig), 0);
+    assert_eq!(owed(&rig), None);
+    rig.custody.controller.store(false, Ordering::Release);
+    assert_eq!(
+        observe(&rig, 1).await["status"]["externalChanges"],
+        json!([])
+    );
+    // Performance, outside OpenBlade.
+    moved(&rig, 2, 0);
+    assert_eq!(
+        observe(&rig, 2).await["status"]["externalChanges"],
+        json!([0])
+    );
+    unplug(&rig);
+    tick(&rig).await;
+    assert_eq!(writes(&rig), 0);
+    assert_eq!(owed(&rig), None);
+    let status = observe(&rig, 3).await;
+    assert_eq!(status["status"]["externalChanges"], json!([0]), "{status}");
+    assert_eq!(performance(&status), 2);
+    rig.stop().await;
+}
+
+/// A refused activation and a power change merged into one cause keep the
+/// activation's overwrite: once admitted, the tick applies the battery
+/// profile over the change recorded outside OpenBlade.
+#[tokio::test]
+async fn a_merged_cause_keeps_a_refused_activations_overwrite() {
+    let rig = reported_game().await;
+    // Silent, outside OpenBlade.
+    moved(&rig, 5, 0);
+    assert_eq!(
+        observe(&rig, 1).await["status"]["externalChanges"],
+        json!([0])
+    );
+    let before = writes(&rig);
+    rig.custody.fresh_refuse.store(true, Ordering::Release);
+    wired(&rig).await;
+    unplug(&rig);
+    tick(&rig).await;
+    assert_eq!(writes(&rig), before);
+    rig.custody.fresh_refuse.store(false, Ordering::Release);
+    unlock(&rig);
+    tick(&rig).await;
+    assert!(writes(&rig) > before);
+    assert_eq!(owed(&rig), None);
+    let status = observe(&rig, 2).await;
+    assert_eq!(performance(&status), &saved_battery_performance(&rig));
+    assert_eq!(status["status"]["externalChanges"], json!([]), "{status}");
+    rig.stop().await;
+}
+
+/// An observed HyperBoost excludes a report on AC as it does a power change.
+#[tokio::test]
+async fn an_observed_hyperboost_excludes_a_report_on_ac() {
+    let rig = applied_game().await;
+    let before = writes(&rig);
+    moved(&rig, 7, 0);
+    let reply = report(&rig, 2, Some(r"C:\Tools\Other.exe")).await;
+    assert_eq!(reply["result"]["status"], 2, "{reply}");
+    assert!(
+        reply["result"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("HyperBoost remains active"),
+        "{reply}"
+    );
+    assert_eq!(writes(&rig), before);
+    assert_eq!(
+        observe(&rig, 1).await["status"]["externalChanges"],
+        json!([])
+    );
+    rig.stop().await;
+}
+
+/// A power change soon after a resume is held as one during it is: the hold
+/// lasts the whole window from the boundary, whether the change comes in
+/// low power or after the resume, and a status reading of the destination
+/// clears it although the status source reports a production controller
+/// warning (the hold compares no controller evidence; the write path keeps
+/// its own admission). A change after the window is recorded at once.
+#[tokio::test]
+async fn a_power_change_within_the_resume_window_is_held() {
+    use crate::installed::readiness::status_source::PRODUCTION_CONTROLLERS;
+    let vectors: Value = serde_json::from_str(LIFECYCLE_VECTORS).unwrap();
+    for (after_resume, late) in [(false, false), (true, false), (true, true)] {
+        let rig = applied_game().await;
+        let before = writes(&rig);
+        suspend(&rig);
+        if !after_resume {
+            unplug(&rig);
+        }
+        tick(&rig).await;
+        // The firmware battery preset before it settles.
+        moved(&rig, 6, 0);
+        resume(&rig);
+        tick(&rig).await;
+        if after_resume {
+            if late {
+                age(&rig, thermal_drift_window());
+            }
+            unplug(&rig);
+            tick(&rig).await;
+        }
+        assert_eq!(writes(&rig), before, "{after_resume} {late}");
+        assert_eq!(owed(&rig), None);
+        let row = vector(&vectors, "resumePowerToBatteryUnsettled");
+        assert_row(&rig, 1, row).await;
+        rig.metadata
+            .store(1 | PRODUCTION_CONTROLLERS, Ordering::Release);
+        // Battery Saver.
+        moved(&rig, 3, 0);
+        let status = observe(&rig, 2).await;
+        assert!(
+            !status["status"]["controllerDetectionWarning"].is_null(),
+            "{status}"
+        );
+        let expected = if late {
+            json!([0])
+        } else {
+            vector(&vectors, "resumeSettledWithinWindow")["externalChanges"].clone()
+        };
+        assert_eq!(
+            status["status"]["externalChanges"], expected,
+            "{after_resume} {late}: {status}"
+        );
+        assert_eq!(writes(&rig), before);
+        rig.stop().await;
+    }
+}
+
+/// A later boundary ends a resume hold: the destination read after the next
+/// resume stays recorded as a change.
+#[tokio::test]
+async fn a_later_boundary_drops_a_resume_hold() {
+    let rig = applied_game().await;
+    suspend(&rig);
+    unplug(&rig);
+    tick(&rig).await;
+    moved(&rig, 6, 0);
+    resume(&rig);
+    tick(&rig).await;
+    assert_eq!(
+        observe(&rig, 1).await["status"]["externalChanges"],
+        json!([0])
+    );
+    suspend(&rig);
+    tick(&rig).await;
+    resume(&rig);
+    tick(&rig).await;
+    moved(&rig, 3, 0);
+    assert_eq!(
+        observe(&rig, 2).await["status"]["externalChanges"],
+        json!([0])
+    );
+    rig.stop().await;
+}
+fn thermal_drift_window() -> std::time::Duration {
+    crate::installed::readiness::thermal_drift::RESUME_WINDOW
+}
+
+/// `otherReportedWithOwnPreset`: managed pauses a report of Other.exe over
+/// OpenBlade's own Game preset, because it publishes the new desired state
+/// before the transition compares the reading, so its own preset reads as
+/// drift. Native compares OpenBlade's own confirmed state instead and
+/// applies the power profile, the same deliberate divergence as the lease
+/// expiry (`an_expired_lease_applies_the_power_profile_once`). The fans,
+/// desired and source columns agree.
+#[tokio::test]
+async fn a_report_over_its_own_preset_applies_where_managed_pauses() {
+    let vectors: Value = serde_json::from_str(LIFECYCLE_VECTORS).unwrap();
+    let row = vector(&vectors, "otherReportedWithOwnPreset");
+    assert_eq!(
+        (&row["submitted"], &row["externalChanges"]),
+        (&json!(false), &json!([0]))
+    );
+    let rig = applied_game().await;
+    let before = writes(&rig);
+    let reply = report(&rig, 2, Some(r"C:\Tools\Other.exe")).await;
+    assert_eq!(reply["result"]["status"], 1, "{reply}");
+    assert!(writes(&rig) > before);
+    let status = observe(&rig, 1).await;
+    let status = &status["status"];
+    assert_eq!(status["confirmedState"]["performance"], 1);
+    assert_eq!(status["externalChanges"], json!([]));
+    assert_eq!(status["confirmedState"]["fans"], row["fans"]);
+    assert_eq!(
+        status["desiredState"]["performance"]["value"],
+        row["desired"]
+    );
+    assert_eq!(
+        status["desiredState"]["performance"]["source"],
+        row["source"]
+    );
+    rig.stop().await;
+}
+
+/// `powerToBatteryWithStopFanDrift`: native reads only the manual-fan bit,
+/// so Stop fans set outside OpenBlade read as manual fans, as Fixed ones do:
+/// the change to battery submits nothing and records the fan change. The
+/// submitted, desired, source and external-change columns agree. The fans
+/// column is Stop (4) in managed; native publishes every manual-fan reading
+/// as 3 (`ObservedPerformance::projection`), Fixed ones included.
+#[tokio::test]
+async fn stop_fans_set_outside_openblade_read_as_manual_fan_drift() {
+    let vectors: Value = serde_json::from_str(LIFECYCLE_VECTORS).unwrap();
+    let row = vector(&vectors, "powerToBatteryWithStopFanDrift");
+    assert_eq!(
+        (&row["submitted"], &row["fans"]),
+        (&json!(false), &json!(4))
+    );
+    let rig = applied_game().await;
+    let before = writes(&rig);
+    // Performance with the manual-fan bit, as firmware reports Stop.
+    moved(&rig, 2, 1);
+    unplug(&rig);
+    tick(&rig).await;
+    assert_eq!(writes(&rig), before);
+    assert_eq!(owed(&rig), None);
+    let status = observe(&rig, 1).await;
+    let status = &status["status"];
+    assert_eq!(status["confirmedState"]["performance"], row["performance"]);
+    assert_eq!(status["confirmedState"]["fans"], 3);
+    assert_eq!(status["externalChanges"], row["externalChanges"]);
+    assert_eq!(
+        status["desiredState"]["performance"]["value"],
+        row["desired"]
+    );
+    assert_eq!(
+        status["desiredState"]["performance"]["source"],
+        row["source"]
+    );
+    rig.stop().await;
+}
+
+/// `powerToBatteryHyperBoostUnknown`: managed's HyperBoost status read is
+/// unknown. Native has no separate HyperBoost read (selector 7 is
+/// HyperBoost), so its nearest case is an undecodable reading, here a
+/// selector no reviewed preset uses. The change to battery then submits
+/// nothing and records no change, as managed does, but the reading is no
+/// evidence either: the cause stays owed for a retry and the confirmed state
+/// stays the last reading. The desired, source and external-change columns
+/// agree; native has no fans reading to compare.
+#[tokio::test]
+async fn an_undecodable_reading_keeps_a_power_change_owed() {
+    let vectors: Value = serde_json::from_str(LIFECYCLE_VECTORS).unwrap();
+    let row = vector(&vectors, "powerToBatteryHyperBoostUnknown");
+    assert_eq!(row["submitted"], false, "{row}");
+    let rig = applied_game().await;
+    let before = writes(&rig);
+    moved(&rig, 9, 0);
+    unplug(&rig);
+    tick(&rig).await;
+    assert_eq!(writes(&rig), before);
+    assert_eq!(owed(&rig), Some(1));
+    let status = rig.get().await;
+    let status = &status["status"];
+    assert_eq!(status["confirmedState"]["performance"], 2);
+    assert_eq!(status["externalChanges"], row["externalChanges"]);
+    assert_eq!(
+        status["desiredState"]["performance"]["value"],
+        row["desired"]
+    );
+    assert_eq!(
+        status["desiredState"]["performance"]["source"],
+        row["source"]
     );
     rig.stop().await;
 }
