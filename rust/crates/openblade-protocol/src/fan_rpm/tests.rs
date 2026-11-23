@@ -35,6 +35,7 @@ fn queries_and_replies_are_the_captured_rz09_0581_exchanges() {
     assert_eq!(fixture["device"]["vendorId"], "1532");
     assert_eq!(fixture["device"]["productId"], "02E0");
     assert_eq!(fixture["readOnly"], true);
+    assert_eq!(fixture["productionWired"], true);
     assert_eq!(fixture["command"]["classHex"], "0D");
     assert_eq!(fixture["command"]["idHex"], "88");
     assert_eq!(fixture["command"]["payloadLength"], PAYLOAD_LENGTH);
