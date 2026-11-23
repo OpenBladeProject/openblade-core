@@ -6,7 +6,9 @@
 //! `DisplayProfileSettings` rules. The application list is searched for the
 //! first enabled entry whose ID equals the active one, as managed does;
 //! entries before it that are not that profile are skipped without being
-//! decoded, because managed never reads their display members. The managed
+//! decoded, because managed never reads their display members. Every power
+//! profile's display member is decoded and range-checked, as managed
+//! `ValidProfileDisplays` checks all three before any is used. The managed
 //! status codec refuses an active ID without an enabled matching profile, so
 //! that, like a display member managed would refuse, makes the status
 //! unreadable (`None`).
@@ -17,11 +19,17 @@ use serde_json::Value;
 
 /// Managed `ApplicationProfileOverrideSet` member names by `PowerSource`.
 const OVERRIDES: [&str; 3] = ["pluggedIn", "battery", "usbC"];
+/// Managed `ValidDisplay`: the largest admitted `BrightnessPercent`.
+const MAXIMUM_PERCENT: u8 = 100;
 
 /// The target for confirmed `source` (0..=2), or `None` when a member managed
 /// reads is malformed.
 pub(super) fn resolve(fields: DisplayAutomationFields<'_>, source: u8) -> Option<Target> {
-    let base = optional(fields.power[usize::from(source)])?.unwrap_or_default();
+    let mut power = [None, None, None];
+    for (decoded, member) in power.iter_mut().zip(fields.power) {
+        *decoded = optional(member)?;
+    }
+    let base = power[usize::from(source)].take().unwrap_or_default();
     let application = match fields.active {
         None | Some(Value::Null) => None,
         Some(Value::String(id)) if super::super::recovery::guid(id) => {
@@ -92,6 +100,14 @@ fn settings(value: &Value) -> Option<Settings> {
     let bytes = serde_json::to_vec(value).ok()?;
     let parsed = json::parse(&bytes).ok()?;
     let display = decode::display_settings(&parsed).ok()?;
+    // Managed `ValidDisplay` (IpcMessageCodec): a percentage above 100 makes
+    // the whole status invalid.
+    if display
+        .brightness_percent
+        .is_some_and(|percent| percent > MAXIMUM_PERCENT)
+    {
+        return None;
+    }
     Some(Settings {
         refresh_rate_key: display.refresh_rate_key,
         hdr_enabled: display.hdr_enabled,

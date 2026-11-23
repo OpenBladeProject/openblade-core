@@ -135,11 +135,14 @@ impl<F: CheckpointFile> Automation<F> {
 
     /// Managed `ServiceDisplayAutomationLoop` for a verified, fresh status:
     /// `Observe`, or `MarkUnavailable(manual)` for an unconfirmed or retained
-    /// source. A status whose display members managed would refuse to decode
-    /// makes the context unavailable, as the managed watcher's failure does.
+    /// source. The display members are resolved before `admit` lets power
+    /// admission take the status: one managed would refuse to decode is never
+    /// admitted, and makes the context unavailable, as the managed watcher's
+    /// failure does.
     pub(in crate::session_native) fn observe(
         &self,
         status: &service_status::Snapshot,
+        admit: impl FnOnce(),
     ) -> io::Result<()> {
         let source = status.display_power_source();
         let target = match u8::try_from(source) {
@@ -147,11 +150,12 @@ impl<F: CheckpointFile> Automation<F> {
                 Some(target) => Some(target),
                 None => {
                     self.power.unavailable();
-                    None
+                    return self.unavailable();
                 }
             },
             _ => None,
         };
+        admit();
         let mut recovery = lock(&self.recovery)?;
         match target {
             Some(target) => {

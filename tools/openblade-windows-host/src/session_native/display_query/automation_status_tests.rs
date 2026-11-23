@@ -106,7 +106,7 @@ fn the_active_application_override_is_the_first_enabled_match() {
 #[test]
 fn a_status_managed_would_refuse_resolves_no_target() {
     type Case = (&'static str, Box<dyn Fn(&mut Value)>);
-    let cases: [Case; 5] = [
+    let cases: [Case; 8] = [
         (
             "an active ID without an enabled profile",
             Box::new(|status| {
@@ -121,6 +121,28 @@ fn a_status_managed_would_refuse_resolves_no_target() {
             "a malformed power display",
             Box::new(|status| {
                 status["profiles"]["battery"]["display"] = json!({"refreshRateKey": 60});
+            }),
+        ),
+        (
+            "another source's malformed power display",
+            Box::new(|status| {
+                status["profiles"]["usbC"]["display"] = json!({"refreshRateKey": 60});
+            }),
+        ),
+        (
+            "a power brightness above 100",
+            Box::new(|status| {
+                status["profiles"]["pluggedIn"]["display"] = display(None, Some(101));
+            }),
+        ),
+        (
+            "an override brightness above 100",
+            Box::new(|status| {
+                with_game(
+                    status,
+                    vec![game(None, display(None, Some(101)))],
+                    json!(GAME),
+                );
             }),
         ),
         (
@@ -145,20 +167,32 @@ fn a_status_managed_would_refuse_resolves_no_target() {
             "{name}"
         );
     }
+    // The bound is inclusive.
+    let full = status(|status| {
+        status["profiles"]["battery"]["display"] = display(None, Some(100));
+    });
+    assert_eq!(
+        target::resolve(full.display_automation(), 1).unwrap().base,
+        settings(None, None, None, Some(100))
+    );
 }
 
 #[test]
-fn the_watcher_hands_each_status_to_the_coordinator_after_power_admission() {
+fn the_watcher_admits_each_status_it_resolved_before_the_coordinator_observes_it() {
     let rig = Rig::new();
     let battery = status(|status| status["activePowerSource"] = json!(1));
-    rig.power.opened(battery.display_power_source(), false);
-    rig.automation.observe(&battery).unwrap();
+    rig.automation
+        .observe(&battery, || {
+            rig.power.opened(battery.display_power_source(), false)
+        })
+        .unwrap();
     assert_eq!(rig.file.record()["LastReconciledPowerSource"], 1);
 
     // Unconfirmed: ExternalUnknown with manual-external evidence cancels.
     let plugged = status(|status| status["activePowerSource"] = json!(0));
-    rig.power.observed(0, false);
-    rig.automation.observe(&plugged).unwrap();
+    rig.automation
+        .observe(&plugged, || rig.power.observed(0, false))
+        .unwrap();
     let canceled = rig.recovery().scheduled().unwrap().cancel.clone();
     let external = status(|status| {
         status["activePowerSource"] = json!(3);
@@ -166,21 +200,27 @@ fn the_watcher_hands_each_status_to_the_coordinator_after_power_admission() {
         status["deviceVerified"] = json!(true);
         status["controlAccess"] = json!(0);
     });
-    rig.power
-        .observed(3, external.display_manual_external_power());
-    rig.automation.observe(&external).unwrap();
+    rig.automation
+        .observe(&external, || {
+            rig.power
+                .observed(3, external.display_manual_external_power())
+        })
+        .unwrap();
     assert!(canceled.canceled());
 
-    // A refused status also withdraws power admission, as managed's failed
-    // watcher does.
-    rig.power.observed(1, false);
-    rig.automation.observe(&battery).unwrap();
+    // A refused status is never admitted and withdraws power admission, as
+    // managed's failed watcher does.
+    rig.automation
+        .observe(&battery, || rig.power.observed(1, false))
+        .unwrap();
     assert!(rig.power.capture().is_some());
     let malformed = status(|status| {
         status["activePowerSource"] = json!(1);
         status["profiles"]["battery"]["display"] = json!(7);
     });
-    rig.automation.observe(&malformed).unwrap();
+    rig.automation
+        .observe(&malformed, || panic!("a refused status was admitted"))
+        .unwrap();
     assert_eq!(rig.power.capture(), None);
     assert_eq!(
         rig.recovery().mark_unavailable(false),

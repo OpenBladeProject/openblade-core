@@ -69,9 +69,10 @@ pub(super) fn run(
         // reconnect, and the role's stop then passes every key through.
         #[cfg(feature = "agent-function-row-v1")]
         let function_row = Arc::new(super::function_row::Admission::default());
-        // Display automation observes the same verified statuses, in order,
-        // after power admission took each one (managed
-        // ServiceDisplayAutomationLoop). Its checkpoint is loaded before the
+        // Display automation observes the same verified statuses, in order
+        // (managed ServiceDisplayAutomationLoop). It resolves each status's
+        // display members first and only then lets power admission take it,
+        // so a status managed would refuse never admits a write. Its checkpoint is loaded before the
         // first status, as managed constructs the coordinator first.
         #[cfg(feature = "agent-display-automation-v1")]
         let automation = {
@@ -121,21 +122,30 @@ pub(super) fn run(
                         service_client::StatusUpdate::Opened(value) => {
                             value.require_fresh()?;
                             let snapshot = value.into_observation().snapshot;
-                            power.opened(
-                                snapshot.display_power_source(),
-                                snapshot.display_manual_external_power(),
-                            );
+                            let admit = || {
+                                power.opened(
+                                    snapshot.display_power_source(),
+                                    snapshot.display_manual_external_power(),
+                                )
+                            };
                             #[cfg(feature = "agent-display-automation-v1")]
-                            automation.observe(&snapshot)?;
+                            automation.observe(&snapshot, admit)?;
+                            #[cfg(not(feature = "agent-display-automation-v1"))]
+                            admit();
                         }
                         service_client::StatusUpdate::Event(value) => {
                             value.require_fresh()?;
-                            power.observed(
-                                value.snapshot.display_power_source(),
-                                value.snapshot.display_manual_external_power(),
-                            );
+                            let snapshot = &value.snapshot;
+                            let admit = || {
+                                power.observed(
+                                    snapshot.display_power_source(),
+                                    snapshot.display_manual_external_power(),
+                                )
+                            };
                             #[cfg(feature = "agent-display-automation-v1")]
-                            automation.observe(&value.snapshot)?;
+                            automation.observe(snapshot, admit)?;
+                            #[cfg(not(feature = "agent-display-automation-v1"))]
+                            admit();
                         }
                         service_client::StatusUpdate::Reconnecting => {
                             power.unavailable();
