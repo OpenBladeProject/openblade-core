@@ -145,9 +145,20 @@ type Observation = Pin<Box<dyn Future<Output = io::Result<Option<Snapshot>>> + '
 type Mutation = Pin<
     Box<dyn Future<Output = io::Result<(thermal_mutation::Outcome, Option<Snapshot>)>> + 'static>,
 >;
+/// One lifecycle reconciliation, awaited without the source lock.
+#[cfg(feature = "service-profile-triggers-v1")]
+type Reconciling = Pin<Box<dyn Future<Output = io::Result<()>> + 'static>>;
 trait StatusSource {
     fn process_power_source(&mut self) -> Pending<'_, ()> {
         Box::pin(async { Ok(()) })
+    }
+    // The origin tick's reconciliation of what a lifecycle transition left
+    // owed (`Runtime::reconcile_lifecycle`). It is taken under the source
+    // lock and awaited after it is released, as a mutation is, so a
+    // reconciliation never holds status or subscriptions behind its steps.
+    #[cfg(feature = "service-profile-triggers-v1")]
+    fn reconcile_lifecycle(&mut self) -> Option<Reconciling> {
+        None
     }
     #[cfg(feature = "service-thermal-mutation-v1")]
     fn mutate(&mut self, _: Caller, _: String, _: StatusRequest, _: Instant) -> Mutation {
@@ -333,6 +344,19 @@ impl Ports {
                 let mut source = self.source.lock().await;
                 source.verify_origin()?;
                 source.process_power_source().await?;
+                // A resume, a gate-clearing DisplayOn, a power-kind change or
+                // an expired lease reconciles what the reporting pair owes.
+                // It is bounded by its own steps and serialized with requests
+                // by the mutation gate; the tick waits for it, so at most one
+                // runs.
+                #[cfg(feature = "service-profile-triggers-v1")]
+                {
+                    let reconcile = source.reconcile_lifecycle();
+                    drop(source);
+                    if let Some(reconcile) = reconcile {
+                        reconcile.await?;
+                    }
+                }
             }
         };
         tokio::pin!(origin_check);

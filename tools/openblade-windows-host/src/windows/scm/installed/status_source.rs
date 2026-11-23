@@ -468,7 +468,49 @@ impl GuardedStatus {
         Ok(())
     }
 }
+/// Publishes the status a reconciliation of saved intent returned, as a
+/// performance request's is: rebased on the latest publication, projected
+/// with this user's policy, retained by the Reader and given the next
+/// revision.
+#[cfg(feature = "service-profile-triggers-v1")]
+fn publish_reconciled(
+    publisher: &watch::Sender<Arc<Publication>>,
+    mailbox: &super::mailbox_read::MailboxSource,
+    status: Snapshot,
+) -> io::Result<Snapshot> {
+    let mut status = status.rebase_thermal_mutation(&publisher.borrow().active);
+    if let super::mailbox_read::MailboxSource::Reader(reader) = mailbox {
+        status = reader.current_policy(status)?;
+        reader.retain_mutation(&status);
+    }
+    status.set_observation_revision(
+        publisher
+            .borrow()
+            .active
+            .revision()
+            .checked_add(1)
+            .ok_or_else(|| invalid("status revision exhausted"))?,
+    );
+    publisher.send_replace(Arc::new(Publication {
+        inactive: status.inactive_mutation(),
+        active: status.clone(),
+    }));
+    Ok(status)
+}
 impl StatusSource for GuardedStatus {
+    #[cfg(feature = "service-profile-triggers-v1")]
+    fn reconcile_lifecycle(&mut self) -> Option<super::Reconciling> {
+        let runtime = self.mutation.clone()?;
+        let publisher = self.inner.publisher.clone()?;
+        let mailbox = self.mailbox.clone();
+        Some(Box::pin(async move {
+            let status = publisher.borrow().active.clone();
+            if let Some(status) = runtime.reconcile_lifecycle(&mailbox, status).await? {
+                publish_reconciled(&publisher, &mailbox, status)?;
+            }
+            Ok(())
+        }))
+    }
     fn process_power_source(&mut self) -> Pending<'_, ()> {
         Box::pin(async move {
             #[cfg(feature = "service-temporary-charge-v1")]
@@ -659,23 +701,7 @@ impl StatusSource for GuardedStatus {
                     let Some(status) = status else {
                         return Ok((outcome, None));
                     };
-                    let mut status = status.rebase_thermal_mutation(&publisher.borrow().active);
-                    if let super::mailbox_read::MailboxSource::Reader(reader) = &mailbox {
-                        status = reader.current_policy(status)?;
-                        reader.retain_mutation(&status);
-                    }
-                    status.set_observation_revision(
-                        publisher
-                            .borrow()
-                            .active
-                            .revision()
-                            .checked_add(1)
-                            .ok_or_else(|| invalid("status revision exhausted"))?,
-                    );
-                    publisher.send_replace(Arc::new(Publication {
-                        inactive: status.inactive_mutation(),
-                        active: status.clone(),
-                    }));
+                    let status = publish_reconciled(&publisher, &mailbox, status)?;
                     Ok((outcome, Some(status)))
                 }
                 #[cfg(feature = "service-profiles-v1")]

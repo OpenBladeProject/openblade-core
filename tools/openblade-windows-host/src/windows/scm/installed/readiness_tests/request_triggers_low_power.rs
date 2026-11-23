@@ -1992,3 +1992,6 @@ async fn only_a_stored_unconfirmed_request_is_a_deferral() {
     assert_eq!(owed(&rig), None, "{confirmed}");
     rig.stop().await;
 }
+
+#[path = "request_triggers_lifecycle.rs"]
+mod lifecycle;

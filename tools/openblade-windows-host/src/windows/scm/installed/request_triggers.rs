@@ -27,8 +27,8 @@
 //! step, which stops that step itself, and after a trigger's or a step's
 //! refusal, to give managed's reply and keep the debt owed without spending
 //! a retry. A refused step is a deferral when the gate generation moved
-//! during it, even if the gate cleared again. The next report after the
-//! gate clears
+//! during it, even if the gate cleared again. The lifecycle tick after the
+//! boundary that clears the gate (`lifecycle`), or else the next report,
 //! reconciles the debt.
 use super::fan::FanRequest;
 use super::profiles::Updated;
@@ -36,6 +36,9 @@ use super::*;
 use crate::installed::readiness::thermal_storage::ProfileSave;
 use openblade_domain::profile_set::{ProfileSet, update::STORED_MESSAGE};
 use tokio::time::timeout_at;
+
+#[path = "lifecycle_triggers.rs"]
+pub(super) mod lifecycle;
 
 /// Managed `ReportApplicationContextAsync` (Blocked) for a reporter that no
 /// longer controls the active local session.
@@ -783,6 +786,7 @@ impl Runtime {
                 deferred = true;
                 break;
             }
+            let epoch = self.admission_epoch();
             let id = step_request(&request, kind);
             let step = async {
                 match kind {
@@ -834,7 +838,7 @@ impl Runtime {
             let possible = submission_possible(storage, &id);
             match stepped {
                 Ok(stepped) => {
-                    let stepped = stepped?;
+                    let mut stepped = stepped?;
                     // A refusal by the step's own admission: its capture, its
                     // authorization before any firmware read or pair, or a
                     // write's authorization at submission (`epoch_for`).
@@ -851,6 +855,22 @@ impl Runtime {
                     {
                         deferred = true;
                         break;
+                    }
+                    // A refusal by a fence that left the gate generation in
+                    // place, such as a repeated resume or a power-status
+                    // change during the step, lost the step's admission with
+                    // nothing submitted. It is no deferral, since the gate
+                    // never set, but the cause clears by itself: the debt
+                    // stays owed with a retry spent, for the next report or
+                    // lifecycle tick to apply once under fresh admission.
+                    if stepped.outcome.status == 2
+                        && !stepped.unchanged
+                        && !possible
+                        && !storage.pending()
+                        && epoch.is_some()
+                        && self.admission_epoch() != epoch
+                    {
+                        stepped.transient = true;
                     }
                     steps.push((stepped, possible));
                 }
@@ -946,6 +966,13 @@ impl Runtime {
         }
     }
 
+    /// The lifecycle's ordinary write epoch now (`Lifecycle::active`), `None`
+    /// in low power, unreadable or unwired. It only classifies a refusal a
+    /// write's own admission already made; it never admits a write.
+    fn admission_epoch(&self) -> Option<u64> {
+        self.admission_epoch.get().and_then(|read| read())
+    }
+
     /// Whether the gate reads set, unreadable or exhausted now
     /// (`Runtime::gate`). A request that stores intent then takes a storage
     /// capture (`Runtime::capture_intent`); nothing is admitted to write.
@@ -978,8 +1005,9 @@ impl Runtime {
 
     /// An explicit request stored new intent while the gate was set: the
     /// pair owes a reconciliation at every class with no attempt spent, as
-    /// after a save's change, and the first report after the gate clears
-    /// runs it. A persistent override or a clear changes every class.
+    /// after a save's change. The lifecycle tick after the boundary that
+    /// clears the gate runs it for the reporting pair, or else the first
+    /// report after it. A persistent override or a clear changes every class.
     pub(super) fn owe_stored_intent(&self, (sid, session): (&str, u32)) {
         self.debts
             .borrow_mut()

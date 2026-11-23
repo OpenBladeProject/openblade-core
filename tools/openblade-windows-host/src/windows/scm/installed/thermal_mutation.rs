@@ -227,6 +227,10 @@ type ReleaseHook = Rc<dyn Fn()>;
 /// Reads the lifecycle's low-power gate transition (`Lifecycle::low_power`).
 #[cfg(feature = "service-profile-triggers-v1")]
 type LowPowerProbe = Box<dyn Fn() -> Option<openblade_domain::low_power_gate::Transition>>;
+/// Reads the lifecycle's Windows power generation without sampling it
+/// (`Lifecycle::observe_power_kind(None)`); every SCM power notice samples.
+#[cfg(feature = "service-profile-triggers-v1")]
+type PowerProbe = Box<dyn Fn() -> Option<u64>>;
 #[derive(Clone)]
 pub(super) struct Runtime {
     factory: Rc<Factory>,
@@ -243,6 +247,18 @@ pub(super) struct Runtime {
     // which reads clear.
     #[cfg(feature = "service-profile-triggers-v1")]
     low_power: Rc<std::cell::OnceCell<LowPowerProbe>>,
+    // The Windows power generation, for the lifecycle tick's power-change
+    // cause (`triggers::lifecycle`). Unset reads unknown: no power cause.
+    #[cfg(feature = "service-profile-triggers-v1")]
+    power_generation: Rc<std::cell::OnceCell<PowerProbe>>,
+    // What the lifecycle tick last saw, `None` before its first admitted tick.
+    #[cfg(feature = "service-profile-triggers-v1")]
+    lifecycle_mark: Rc<std::cell::Cell<Option<triggers::lifecycle::Mark>>>,
+    // The lifecycle's ordinary write epoch (`Lifecycle::active`), so a step
+    // refused by a fence that left the gate generation in place keeps its
+    // debt (`reconcile_locked`). Unset reads unknown: no such retry.
+    #[cfg(feature = "service-profile-triggers-v1")]
+    admission_epoch: Rc<std::cell::OnceCell<PowerProbe>>,
     fan_owner: Rc<RefCell<Option<Arc<fan::FanPermit>>>>,
     temporary_owner: Rc<RefCell<Option<Arc<battery::BatteryPermit>>>>,
     temporary_pending: Rc<RefCell<Option<Arc<battery::BatteryPermit>>>>,
@@ -431,6 +447,12 @@ impl Runtime {
             debts: Rc::default(),
             #[cfg(feature = "service-profile-triggers-v1")]
             low_power: Rc::default(),
+            #[cfg(feature = "service-profile-triggers-v1")]
+            power_generation: Rc::default(),
+            #[cfg(feature = "service-profile-triggers-v1")]
+            lifecycle_mark: Rc::default(),
+            #[cfg(feature = "service-profile-triggers-v1")]
+            admission_epoch: Rc::default(),
             fan_owner: Rc::default(),
             temporary_owner: Rc::default(),
             temporary_pending: Rc::default(),
@@ -460,6 +482,18 @@ impl Runtime {
     ) {
         assert!(self.low_power.set(Box::new(probe)).is_ok());
     }
+    /// Reads the Windows power generation from `probe`
+    /// (`Runtime::power_generation`); it may be set once.
+    #[cfg(all(test, feature = "service-profile-triggers-v1"))]
+    pub(super) fn read_power_generation(&self, probe: impl Fn() -> Option<u64> + 'static) {
+        assert!(self.power_generation.set(Box::new(probe)).is_ok());
+    }
+    /// Reads the lifecycle's ordinary write epoch from `probe`
+    /// (`Runtime::admission_epoch`); it may be set once.
+    #[cfg(all(test, feature = "service-profile-triggers-v1"))]
+    pub(super) fn read_admission_epoch(&self, probe: impl Fn() -> Option<u64> + 'static) {
+        assert!(self.admission_epoch.set(Box::new(probe)).is_ok());
+    }
     #[cfg(not(test))]
     pub(super) fn native(origin: Arc<Origin>, mailbox: &MailboxSource) -> Self {
         let stores = RefCell::new(None::<(String, Arc<Storage>)>);
@@ -467,6 +501,16 @@ impl Runtime {
         let low_power: LowPowerProbe = {
             let origin = origin.clone();
             Box::new(move || origin.lifecycle.low_power())
+        };
+        #[cfg(feature = "service-profile-triggers-v1")]
+        let power_generation: PowerProbe = {
+            let origin = origin.clone();
+            Box::new(move || origin.lifecycle.observe_power_kind(None))
+        };
+        #[cfg(feature = "service-profile-triggers-v1")]
+        let admission_epoch: PowerProbe = {
+            let origin = origin.clone();
+            Box::new(move || origin.lifecycle.active())
         };
         Self {
             factory: Rc::new(move |sid, session, custody, capture| {
@@ -522,6 +566,12 @@ impl Runtime {
             debts: Rc::default(),
             #[cfg(feature = "service-profile-triggers-v1")]
             low_power: Rc::new(low_power.into()),
+            #[cfg(feature = "service-profile-triggers-v1")]
+            power_generation: Rc::new(power_generation.into()),
+            #[cfg(feature = "service-profile-triggers-v1")]
+            lifecycle_mark: Rc::default(),
+            #[cfg(feature = "service-profile-triggers-v1")]
+            admission_epoch: Rc::new(admission_epoch.into()),
             fan_owner: Rc::default(),
             temporary_owner: Rc::default(),
             temporary_pending: Rc::default(),
