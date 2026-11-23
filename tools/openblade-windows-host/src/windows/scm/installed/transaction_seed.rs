@@ -22,9 +22,12 @@
 //!   owns manual fans, and the cancellation IDs of the temporary-charge
 //!   enable that owns the charge. An attempt that sends them can fail before
 //!   it journals a row;
-//! - those an earlier known-not-submitted (6) request may have sent after
-//!   its Prepared row: no setter was submitted, but a getter may have been,
-//!   without a reply;
+//! - those of an earlier known-not-submitted (6) request (`known_unsent`):
+//!   no setter was submitted, but its preflight was answered and a chain
+//!   getter may have been sent without a reply. Its preflight can hold the
+//!   newest reply of its command, because the newest fan row can belong to
+//!   an older record: an owner's settle-only 51 after a retired request
+//!   sends no 07/8C;
 //! - every `superseded_ids` set, which a cancel names because an earlier
 //!   attempt sent it without a correlated reply.
 //!
@@ -58,18 +61,27 @@ const LIVE: usize = FAN
     + FAN_CLEANUP
     + temporary_charge_history::EXCHANGES;
 
-/// The most IDs reserved at once: a live fan owner's cleanup and a
-/// temporary-charge owner's cancellation, the next request (a fan record is
-/// the largest) and a read pair.
-const DEMAND: usize = FAN_CLEANUP + temporary_charge_history::EXCHANGES + FAN + 2;
+/// The pair a Custom selector reply reserves for its CPU and GPU levels,
+/// beside the pair that read the selector.
+const CUSTOM_LEVELS: usize = 2;
+/// The most IDs reserved at once:
+/// - a live fan owner, which pins its whole record until it settles
+///   (`FanPermit::settle_pins`), and a temporary-charge owner's cancellation;
+/// - the next request: a fan record is the largest, and its preflight
+///   reserves Custom levels beside it;
+/// - a read: a selector pair and its Custom levels.
+const DEMAND: usize =
+    FAN + temporary_charge_history::EXCHANGES + FAN + CUSTOM_LEVELS + 2 + CUSTOM_LEVELS;
 
 /// The most IDs one start quarantines, so the pool never starves. It holds
 /// the largest live set (74), so the live set is always whole, and the rest
-/// holds the newest history. 80 leaves 174 of the 254 IDs: more than three
-/// times the most reserved at once (46), and about 120 failed reads can
-/// still quarantine one ID each.
+/// holds the newest history. 80 leaves 174 of the 254 IDs: twice the most
+/// reserved at once (66), so about 108 IDs can still be quarantined by
+/// exchanges that fail later before that peak could starve. Three peaks
+/// (198) fit beside no limit that holds the live set (254 - 74 = 180), so
+/// the margin is two.
 pub(super) const LIMIT: usize = 80;
-const _: () = assert!(LIMIT >= LIVE && 254 - LIMIT >= 3 * DEMAND);
+const _: () = assert!(LIMIT >= LIVE && 254 - LIMIT >= 2 * DEMAND);
 
 /// Quarantines IDs in one transaction pool (`Transactions::quarantine`).
 pub(super) type Quarantine<'a> = dyn Fn(&[u8]) + 'a;
@@ -114,7 +126,7 @@ fn unanswered(journal: &[u8]) -> io::Result<Vec<u8>> {
             newest[family] = ids;
         }
         if entry.progress == Progress::KnownNotSubmitted as u8 {
-            history.push(after_prepared(entry));
+            history.push(known_unsent(entry));
         } else if let Some(superseded) = entry.tfc.as_ref().and_then(|t| t.superseded_ids) {
             history.push(superseded.to_vec());
         }
@@ -160,12 +172,15 @@ fn sent(entry: &Entry) -> Option<(usize, Vec<u8>)> {
     }
 }
 
-/// The IDs `entry`'s request may send after its Prepared row: all of `sent`
-/// but a fan record's preflight, whose replies were read before that row, and
-/// its cleanup, which only the owner's Stop sends, in rows of its own.
-fn after_prepared(entry: &Entry) -> Vec<u8> {
+/// The IDs a known-not-submitted request may have left a reply under: all of
+/// `sent` but a fan record's cleanup, which only the owner's Stop sends, in
+/// rows of its own.
+fn known_unsent(entry: &Entry) -> Vec<u8> {
     match &entry.fan {
-        Some(fan) => fan.ids.iter().flatten().copied().collect(),
+        Some(fan) => {
+            let pairs = fan.preflight.iter().chain(&fan.ids);
+            pairs.flatten().copied().collect()
+        }
         None => sent(entry).map(|(_, ids)| ids).unwrap_or_default(),
     }
 }
