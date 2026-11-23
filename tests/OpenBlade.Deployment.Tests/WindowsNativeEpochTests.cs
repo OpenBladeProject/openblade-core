@@ -577,6 +577,39 @@ public sealed class WindowsNativeEpochTests
     }
 
     [Fact]
+    public void LiveReadingReadIsNotAdmittedByFeatureOrMarker()
+    {
+        // The features and the marker build.rs gives each admitted Service composition
+        // built with service-live-readings-v1. Packaging has not admitted the 0D/88 read,
+        // so the image is refused by name rather than taken for the composition it extends.
+        const string marker = "service-live-readings-v1";
+        const string refusal = "The live-reading read is not admitted for packaging.";
+        (string Features, string Admitted, string Policy)[] compositions =
+        [
+            ("firmware-performance-compile-check,hid-identity-compile-check,installed-service-candidate,lifecycle-evidence-compile-check,service-hardware-compile-check,service-mailbox-observation-v1,startup-custody-v1",
+                "private-service-custody-v1,service-mailbox-observation-v1", "service-mailbox-observation-v1"),
+            ("controller-admission-compile-check,firmware-performance-compile-check,hid-identity-compile-check,installed-service-candidate,lifecycle-evidence-compile-check,service-battery-policy-v1,service-fan-mutation-v2,service-hardware-compile-check,service-mailbox-observation-v1,service-temporary-charge-v1,service-thermal-mutation-v1,startup-custody-v1",
+                "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1,service-fan-mutation-v2,service-battery-policy-v1,service-temporary-charge-v1", "service-temporary-charge-v1"),
+        ];
+        foreach ((string features, string admitted, string policy) in compositions)
+        {
+            Assert.Equal(policy, NativeArtifact.Inspect(
+                [.. Image("service", schema: 2, features: features, capabilities: admitted)], "service", new string('a', 40)).StartupPolicy);
+            string built = features.Replace("service-mailbox-observation-v1,", marker + ",service-mailbox-observation-v1,", StringComparison.Ordinal);
+            foreach (string claimed in new[] { admitted + "," + marker, admitted })
+            {
+                var refused = Assert.Throws<InvalidDataException>(() => NativeArtifact.Inspect(
+                    [.. Image("service", schema: 2, features: built, capabilities: claimed)], "service", new string('a', 40)));
+                Assert.Equal(refusal, refused.Message);
+            }
+
+            var forged = Assert.Throws<InvalidDataException>(() => NativeArtifact.Inspect(
+                [.. Image("service", schema: 2, features: features, capabilities: admitted + "," + marker)], "service", new string('a', 40)));
+            Assert.Equal(refusal, forged.Message);
+        }
+    }
+
+    [Fact]
     public void ApplicationReporterAgentIsNotAdmittedUntilPackagingAdmitsIt()
     {
         string source = new('a', 40);

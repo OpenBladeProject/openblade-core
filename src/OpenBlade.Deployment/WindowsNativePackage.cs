@@ -89,6 +89,11 @@ internal sealed record NativeArtifact(string Id, string Role, string Target, str
         // its capability marker by name.
         if (features.Contains("service-keyboard-driver-mode-read-v1", StringComparer.Ordinal) || capabilities.Split(',').Contains("service-keyboard-driver-mode-read-v1", StringComparer.Ordinal))
         { throw new InvalidDataException("The keyboard Driver-mode read is not admitted for packaging."); }
+        // The live-reading read sends the 0D/88 fan speed queries no admitted composition sends. Refuse
+        // its feature and its capability marker by name until a packaging stage admits it
+        // (docs/windows-rust-development-service.md).
+        if (features.Contains("service-live-readings-v1", StringComparer.Ordinal) || capabilities.Split(',').Contains("service-live-readings-v1", StringComparer.Ordinal))
+        { throw new InvalidDataException("The live-reading read is not admitted for packaging."); }
         // The application-context reporter is not admitted for packaging either. Refuse its
         // feature and its capability marker by name until a packaging stage admits both.
         // That stage must also pair the reporter with a Service built with service-thermal-mutation-v1,
