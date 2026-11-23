@@ -226,7 +226,8 @@ public sealed partial class ServiceControlRuntimeTests
     }
 
     // Every native frame the Rust tests recorded decodes through the strict v85
-    // codec to the expected record. The MCU version is never read natively.
+    // codec to the expected record, including those whose MCU version the native
+    // read job read.
     [Fact]
     public async Task NativeFirmwareVersionFrames_DecodeThroughTheManagedCodec()
     {
@@ -262,7 +263,9 @@ public sealed partial class ServiceControlRuntimeTests
                 Access("thunderboltFirmwareAccess"),
                 Access("touchpadFirmwareAccess"));
             Assert.Equal(expected, decoded.Status.Firmware);
-            Assert.Equal("Unavailable", decoded.Status.Firmware!.McuVersion);
         }
+
+        Assert.Contains(rows, row => (string)row!["expect"]!["mcuVersion"]! == "1.5.0.0");
+        Assert.Contains(rows, row => (string)row!["expect"]!["mcuVersion"]! == "Unavailable");
     }
 }

@@ -19,19 +19,23 @@
 //!   builds for every top-level collection, `HID\VID_093A&UP:000D_U:0005`, and
 //!   only interfaces with that ID are opened.
 //!
-//! McuVersion is always `Unavailable`. Managed reads it with a firmware query
+//! McuVersion is not a Windows read. Managed reads it with a firmware query
 //! over the laptop's control interface (`IBladeDevice.ReadMcuVersionAsync`),
-//! after its first verified observation, and a Service that holds that
-//! interface may not issue such a command without its own reviewed
-//! admission. A native record therefore carries the managed value of a
-//! Service that has not yet read the MCU.
+//! so it rides the Service's own read job (`mcu_version`), and this record
+//! carries it once a job has confirmed it. Until then it is `Unavailable`.
 //!
 //! A part that cannot be read is the managed text `Unavailable` and does not
 //! affect another part. The record is published once, when the worker is done
 //! or `DEADLINE` has passed; a source that hangs at that point leaves its own
 //! parts `Unavailable`, and its worker keeps only the handles it owns until
 //! the call returns.
-use crate::{discovery::catalog_model, service_status::FirmwareVersions};
+use crate::{
+    discovery::{
+        catalog_model,
+        performance::{McuQuerySends, McuVersionRead, ReadAdmission},
+    },
+    service_status::FirmwareVersions,
+};
 use std::{
     cell::RefCell,
     io,
@@ -49,6 +53,9 @@ use tokio::time::Instant;
 mod windows;
 #[cfg(windows)]
 pub(super) use windows::Windows;
+
+#[path = "mcu_version.rs"]
+mod mcu_version;
 
 pub(super) const UNAVAILABLE: &str = "Unavailable";
 /// Managed `DeviceFeatureAccess.ReadOnly`.
@@ -460,9 +467,11 @@ fn collect(parts: &Receiver<Part>, record: &mut FirmwareVersions) -> bool {
 }
 
 /// The installed read source's firmware versions: one capture for the source,
-/// which the Service acquires once at start, begun by the first poll.
+/// which the Service acquires once at start, begun by the first poll, and the
+/// MCU version its read job reads.
 pub(super) struct Host {
     state: RefCell<State>,
+    mcu: mcu_version::Inventory,
 }
 
 impl Host {
@@ -470,12 +479,14 @@ impl Host {
     pub(super) fn none() -> Self {
         Self {
             state: RefCell::new(State::Absent),
+            mcu: mcu_version::Inventory::default(),
         }
     }
 
     pub(super) fn new(capture: Arc<dyn Capture>) -> Self {
         Self {
             state: RefCell::new(State::Idle(capture)),
+            mcu: mcu_version::Inventory::default(),
         }
     }
 
@@ -501,9 +512,25 @@ impl Host {
             }
         }
         match &*state {
-            State::Done(record) => Some(record.clone()),
+            State::Done(record) => Some(self.mcu.apply(record.clone())),
             _ => None,
         }
+    }
+
+    /// The counter a read job under `admission` passes to the worker to send
+    /// the MCU version query, or None: without a source (managed reads no
+    /// MCU version without a record), once the version is known, or once the
+    /// budget is spent (`mcu_version::Inventory::query`).
+    pub(super) fn mcu_query(&self, admission: ReadAdmission) -> Option<McuQuerySends> {
+        if matches!(*self.state.borrow(), State::Absent) {
+            return None;
+        }
+        self.mcu.query(admission)
+    }
+
+    /// What an accepted reading learned about the MCU version.
+    pub(super) fn mcu_read(&self, read: McuVersionRead) {
+        self.mcu.record(read);
     }
 
     /// Stops listening. A capture not yet started never starts, and a worker

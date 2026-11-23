@@ -1288,6 +1288,14 @@ impl ReadSource {
                 .flatten();
             #[cfg(feature = "service-live-readings-v1")]
             let send_fans = fan_query.is_some();
+            // The 00/87 MCU version query rides this job while the firmware
+            // record lacks it and its budget under this admission lasts, after
+            // the thermal read and every other query.
+            #[cfg(feature = "service-live-readings-v1")]
+            let mcu_query = source
+                .lease
+                .authorize()
+                .and_then(|admission| source.firmware.mcu_query(admission));
             #[cfg(not(any(
                 feature = "service-keyboard-driver-mode-read-v1",
                 feature = "service-live-readings-v1"
@@ -1314,6 +1322,8 @@ impl ReadSource {
                         device_mode: asked.is_some(),
                         #[cfg(feature = "service-live-readings-v1")]
                         fan_rpm: fan_query,
+                        #[cfg(feature = "service-live-readings-v1")]
+                        mcu_version: mcu_query,
                     },
                 )
                 .await;
@@ -1411,6 +1421,9 @@ impl ReadSource {
             #[cfg(feature = "service-live-readings-v1")]
             {
                 source.live.verified();
+                // Only an accepted reading's version is kept; the next
+                // publication carries it.
+                source.firmware.mcu_read(reading.mcu_version);
                 observed = observed
                     .with_live_readings(live, battery_power, fans)
                     .with_battery_health(source.live.battery_health());

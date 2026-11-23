@@ -307,9 +307,10 @@ fn a_healthy_rz09_0581_is_the_managed_record() {
 }
 
 /// McuVersion is managed's firmware query over the control interface, which
-/// this capture never takes: whatever Windows reports, it stays Unavailable.
+/// the read job sends (`firmware_versions_mcu_tests`), never this capture:
+/// whatever Windows reports, the capture leaves it Unavailable.
 #[test]
-fn the_mcu_version_is_never_read() {
+fn the_capture_never_reads_the_mcu_version() {
     let mut fake = Fake::healthy();
     for name in ["MCUVersion", "McuVersion", "MCU"] {
         fake.registry.insert(name, text("1.2.3.4"));
@@ -1029,6 +1030,7 @@ fn a_hang_before_any_part_publishes_the_unavailable_record() {
 
 struct Rig {
     io: Arc<FanIo>,
+    custody: Arc<Custody>,
     source: ReadSource,
     publisher: watch::Sender<Arc<Publication>>,
 }
@@ -1042,7 +1044,7 @@ impl Rig {
         });
         let io = FanIo::new([0x20, 0x1e]);
         let device = io.clone();
-        let source = ReadSource::compose(custody, move |lease| {
+        let source = ReadSource::compose(custody.clone(), move |lease| {
             fan_io_worker(device, move || lease.authorize())
         });
         let source = match fake {
@@ -1056,6 +1058,7 @@ impl Rig {
         .0;
         Self {
             io,
+            custody,
             source,
             publisher,
         }
@@ -1266,8 +1269,9 @@ const REGENERATE: &str = "OPENBLADE_REGENERATE_NATIVE_FIRMWARE_FRAMES";
 
 /// Records production snapshots as v85 status events for the managed codec
 /// test (`NativeFirmwareVersionFrames_DecodeThroughTheManagedCodec`): an
-/// ObserveState reply and the subscription feed with the complete record, and
-/// a feed whose touchpad read hung. A build with the Driver-mode read adds its
+/// ObserveState reply and the subscription feed with the complete record,
+/// both again after the read job read the MCU version, and a feed whose
+/// touchpad read hung. A build with the Driver-mode read adds its
 /// own member, so only this composition records.
 #[cfg(not(feature = "service-keyboard-driver-mode-read-v1"))]
 #[tokio::test]
@@ -1293,6 +1297,22 @@ async fn native_frames_match_the_recorded_managed_codec_input() {
         "subscription",
         &rig.publisher.borrow().clone().active,
         record_json(),
+    );
+
+    let rig = Rig::new(Some(Arc::new(Fake::healthy())));
+    *rig.io.mcu.lock().unwrap() = Some((2, vec![1, 5, 0, 0]));
+    rig.await_firmware();
+    let mut read = record_json();
+    read["mcuVersion"] = json!("1.5.0.0");
+    record(
+        "observe reply that read the MCU version",
+        &rig.snapshot(ALL).await.unwrap(),
+        read.clone(),
+    );
+    record(
+        "subscription after the MCU version was read",
+        &rig.publisher.borrow().clone().active,
+        read,
     );
 
     let (fake, hold) = Fake::healthy().held(Stage::Touchpad);
@@ -1459,3 +1479,6 @@ fn the_capture_matches_the_managed_vectors() {
         );
     }
 }
+
+#[path = "firmware_versions_mcu_tests.rs"]
+mod mcu;
