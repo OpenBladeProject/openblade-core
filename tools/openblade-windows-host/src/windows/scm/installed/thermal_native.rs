@@ -134,12 +134,12 @@ impl Identity {
     /// write's own `authorize` is checked against that custody's reader.
     #[cfg(feature = "service-profile-triggers-v1")]
     fn authorize_storage(&self) -> bool {
-        self.admits(false, || true).is_some() && self.custody.authorize_storage()
+        self.admits(false, || true).is_ok() && self.custody.authorize_storage()
     }
     /// The Windows supplier checks of one admission. `epoch` is its
     /// lifecycle check, run before and after the suppliers: a write compares
     /// its pinned epoch, and storage admits any lifecycle state.
-    fn admits(&self, stop: bool, epoch: impl Fn() -> bool) -> Option<()> {
+    fn admits(&self, stop: bool, epoch: impl Fn() -> bool) -> Result<(), Denial> {
         let verify = || {
             if stop {
                 self.origin.verify_owned_stop()
@@ -147,22 +147,24 @@ impl Identity {
                 self.origin.verify()
             }
         };
-        verify().ok()?;
+        verify().map_err(|_| Denial::Admission)?;
         if !epoch() {
-            return None;
+            return Err(Denial::Admission);
         }
         if !if stop {
-            self.origin.owned_stop_committed().ok()?
+            self.origin
+                .owned_stop_committed()
+                .map_err(|_| Denial::Admission)?
         } else {
-            self.origin.committed().ok()?
+            self.origin.committed().map_err(|_| Denial::Admission)?
         } || crate::console_session::observe() != Some(self.session)
         {
-            return None;
+            return Err(Denial::Admission);
         }
         if !session_unlocked(self.session) {
-            return None;
+            return Err(Denial::Admission);
         }
-        let identity = session_identity(self.session).ok()?;
+        let identity = session_identity(self.session).map_err(|_| Denial::Admission)?;
         if !identity.primary
             || identity.session != self.session
             || identity.sid != self.sid
@@ -171,21 +173,56 @@ impl Identity {
                 identity.authentication.HighPart,
             ) != self.authentication
         {
-            return None;
+            return Err(Denial::Admission);
         }
         let mut status = SYSTEM_POWER_STATUS::default();
         // SAFETY: writable native output. This excludes an unknown coarse source only;
         // typed 07/8C independently decides sufficient versus limited adapter.
         if unsafe { GetSystemPowerStatus(&mut status) } == 0 || status.ACLineStatus > 1 {
-            return None;
+            return Err(Denial::Admission);
         }
-        if !self.controllers.lock().ok()?.confirms_fresh_absence() {
-            return None;
+        // Every check before this one is the session's or the power's; only
+        // this one says another controller may own the device. Detection
+        // that failed or ran too long confirms no absence and is refused the
+        // same way, as managed treats a detection warning as a controller.
+        if !self
+            .controllers
+            .lock()
+            .map_err(|_| Denial::Admission)?
+            .confirms_fresh_absence()
+        {
+            return Err(Denial::CompetingController);
         }
         // Mutable callback fencing cannot revive an earlier operation. A new
         // request captures a fresh epoch and rechecks every Windows supplier.
-        verify().ok()?;
-        epoch().then_some(())
+        verify().map_err(|_| Denial::Admission)?;
+        if epoch() {
+            Ok(())
+        } else {
+            Err(Denial::Admission)
+        }
+    }
+}
+/// Why `Identity::admits` refused.
+#[cfg_attr(test, allow(dead_code))] // Test composition injects its own Fresh; only the native factory builds the guard.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Denial {
+    /// Any check but the competing-controller one: origin trust, the
+    /// lifecycle epoch, the console session, its lock state, the primary
+    /// identity or the AC line status.
+    Admission,
+    /// Fresh competing-controller absence was not confirmed.
+    CompetingController,
+}
+#[cfg_attr(test, allow(dead_code))] // Test composition injects its own Fresh; only the native factory builds the guard.
+impl Denial {
+    /// The capture's error: a typed one for a competing controller, which
+    /// the lifecycle tick asks for (`is_competing_controller`).
+    fn error(self) -> io::Error {
+        match self {
+            Self::Admission => deny(),
+            Self::CompetingController => super::thermal_mutation::competing_controller(),
+        }
     }
 }
 /// A request's read and write admission: its identity at the ordinary
@@ -217,9 +254,9 @@ impl WindowsGuard {
             identity,
             lifecycle,
         });
-        let proof = guard.authorize();
+        let proof = guard.admit_for(false);
         guard.verify_health()?;
-        proof.ok_or_else(deny)?;
+        proof.map_err(Denial::error)?;
         Ok(guard)
     }
     /// A capture that admits storing request intent and nothing else: every
@@ -296,6 +333,10 @@ impl WindowsGuard {
         Ok(Arc::new(guard))
     }
     fn authorize_for(&self, stop: bool) -> Option<ReadAdmission> {
+        self.admit_for(stop).ok()
+    }
+    /// `authorize_for` with the reason for a refusal.
+    fn admit_for(&self, stop: bool) -> Result<ReadAdmission, Denial> {
         // The low-power gate refuses every request and owned-Stop write here.
         // Only the low-power preparation's Automatic fan handback may pin
         // `WriteScope::LowPowerFanAutomatic`, and nothing captures it yet.
@@ -308,6 +349,7 @@ impl WindowsGuard {
         } else {
             identity.custody.authorize()
         }
+        .ok_or(Denial::Admission)
     }
 }
 /// Stop-only admission captured by `WindowsGuard::capture_settle`. It exposes

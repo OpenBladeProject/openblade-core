@@ -22,10 +22,17 @@ const UNLOCK: u32 = 8;
 /// `Runtime::native` does, and runs the tick's first pass, which activates
 /// that user. The returned flag says whether the probe names the user.
 async fn wired(rig: &Rig) -> Rc<Cell<bool>> {
-    let known = Rc::new(Cell::new(true));
+    probed(rig, true).await.0
+}
+/// `wired` with the probe naming the user only once the returned flag is
+/// set, starting from `named`, and a count of the probe's reads.
+async fn probed(rig: &Rig, named: bool) -> (Rc<Cell<bool>>, Rc<Cell<usize>>) {
+    let known = Rc::new(Cell::new(named));
+    let reads = Rc::new(Cell::new(0));
     let custody = rig.custody.clone();
-    let named = known.clone();
+    let (named, counted) = (known.clone(), reads.clone());
     rig.runtime.read_console(move || {
+        counted.set(counted.get() + 1);
         named.get().then(|| {
             (
                 custody.current_sid.lock().unwrap().clone(),
@@ -34,7 +41,16 @@ async fn wired(rig: &Rig) -> Rc<Cell<bool>> {
         })
     });
     unconsoled(rig).await;
-    known
+    (known, reads)
+}
+fn age(rig: &Rig, by: std::time::Duration) {
+    rig.runtime.age_lifecycle_tick(by);
+}
+fn pace() -> std::time::Duration {
+    crate::installed::readiness::thermal_mutation::Runtime::lifecycle_pace()
+}
+fn poll() -> std::time::Duration {
+    crate::installed::readiness::thermal_mutation::Runtime::lifecycle_unnamed_poll()
 }
 /// `wired` without a console probe answer: no console user is known.
 async fn unconsoled(rig: &Rig) {
@@ -379,11 +395,11 @@ async fn a_suspend_during_the_tick_reconciliation_defers_it_to_the_resume() {
 /// A fence that leaves the gate generation in place, here a repeated resume
 /// while the tick's performance step reads the adapter, refuses that step's
 /// write with nothing submitted. It is no deferral, but the debt stays owed
-/// with one retry spent, and since the write epoch moved the next tick runs
-/// the cause again under fresh admission (the second debt drop of the
-/// low-power slice).
+/// with one retry spent, and since the write epoch moved the first tick after
+/// `PACE` runs the cause again under fresh admission (the second debt drop of
+/// the low-power slice).
 #[tokio::test]
-async fn a_fence_without_a_gate_move_is_retried_by_the_next_tick() {
+async fn a_fence_without_a_gate_move_is_retried_after_its_pace() {
     let rig = applied_game().await;
     let before = writes(&rig);
     let generation = rig.custody.lifecycle.low_power().unwrap().generation;
@@ -405,6 +421,9 @@ async fn a_fence_without_a_gate_move_is_retried_by_the_next_tick() {
     assert_eq!(writes(&rig), before);
     assert_eq!(owed(&rig), Some(1));
     rig.port.state.lock().unwrap().on_power = None;
+    tick(&rig).await;
+    assert_eq!(writes(&rig), before);
+    age(&rig, pace());
     tick(&rig).await;
     assert!(writes(&rig) > before);
     assert_eq!(owed(&rig), None);
@@ -538,6 +557,7 @@ async fn an_unclassified_adapter_keeps_the_cause_until_the_epoch_moves() {
     assert_eq!(writes(&rig), written);
     assert_eq!(owed(&rig), Some(1));
     let captured = captures(&rig);
+    age(&rig, pace());
     tick(&rig).await;
     assert_eq!(captures(&rig), captured);
     rig.port.state.lock().unwrap().actual = ac;
@@ -556,6 +576,8 @@ async fn an_unclassified_adapter_keeps_the_cause_until_the_epoch_moves() {
 /// Steps the write epoch overtakes each time spend the debt's own budget,
 /// not a fresh one: the cause's owed classes are recorded once, so the
 /// second attempt finds one retry spent, and the third settles the debt.
+/// Each retry waits `PACE` after the steps before it, although the epoch
+/// has moved: ticks within it take no capture.
 #[tokio::test]
 async fn overtaken_steps_spend_the_debts_own_retries() {
     let rig = applied_game().await;
@@ -570,15 +592,63 @@ async fn overtaken_steps_spend_the_debts_own_retries() {
     replug(&rig, ac);
     tick(&rig).await;
     assert_eq!(owed(&rig), Some(1));
-    tick(&rig).await;
-    assert_eq!(owed(&rig), Some(2));
-    tick(&rig).await;
-    assert_eq!(owed(&rig), None);
+    for spent in [Some(2), None] {
+        let paced = captures(&rig);
+        tick(&rig).await;
+        assert_eq!(captures(&rig), paced);
+        age(&rig, pace() - std::time::Duration::from_millis(100));
+        tick(&rig).await;
+        assert_eq!(captures(&rig), paced);
+        age(&rig, std::time::Duration::from_millis(100));
+        tick(&rig).await;
+        assert!(captures(&rig) > paced);
+        assert_eq!(owed(&rig), spent);
+    }
     assert_eq!(writes(&rig), written);
     let settled = captures(&rig);
+    age(&rig, pace());
     tick(&rig).await;
     assert_eq!(captures(&rig), settled);
     rig.port.state.lock().unwrap().on_power = None;
+    rig.stop().await;
+}
+
+/// A burst of notices, such as battery-level ones in quick succession,
+/// takes one stepped retry per `PACE`, so it cannot settle a debt its steps
+/// could not apply yet: here an adapter that classifies only after the
+/// burst still gets the plugged-in profile.
+#[tokio::test]
+async fn a_burst_of_notices_cannot_spend_the_debts_retries_at_once() {
+    let rig = applied_game().await;
+    let ac = rig.port.state.lock().unwrap().actual;
+    unplug(&rig);
+    tick(&rig).await;
+    let written = writes(&rig);
+    replug(&rig, 0x10);
+    tick(&rig).await;
+    assert_eq!(owed(&rig), Some(1));
+    let captured = captures(&rig);
+    for _ in 0..3 {
+        power_notice(&rig);
+        tick(&rig).await;
+    }
+    assert_eq!((captures(&rig), owed(&rig)), (captured, Some(1)));
+    // The notices marked the cause due: the first tick after the pace runs
+    // one retry with no further notice.
+    age(&rig, pace());
+    tick(&rig).await;
+    assert!(captures(&rig) > captured);
+    assert_eq!(owed(&rig), Some(2));
+    let retried = captures(&rig);
+    rig.port.state.lock().unwrap().actual = ac;
+    power_notice(&rig);
+    tick(&rig).await;
+    assert_eq!(captures(&rig), retried);
+    age(&rig, pace());
+    tick(&rig).await;
+    assert!(writes(&rig) > written);
+    assert_eq!(owed(&rig), None);
+    assert_eq!(performance(&rig.get().await), 2);
     rig.stop().await;
 }
 
@@ -644,23 +714,190 @@ async fn a_gap_in_the_ticks_renews_the_lease_from_its_threshold() {
     rig.stop().await;
 }
 
-/// A request that holds the mutation gate longer than the gap is the Service
-/// running, not sleep: the busy tick keeps its time current, so the lease
-/// still expires at the next free tick.
+/// A request that holds the mutation gate is the Service running, not
+/// sleep: a busy tick within the gap keeps its time current, so a request
+/// longer than the gap still lets the lease expire at the next free tick.
+/// A gap that already reached `SLEPT` is sleep, which a request taking the
+/// gate at the wake does not erase: the next free tick renews the lease.
 #[tokio::test]
-async fn a_long_request_holding_the_gate_is_no_gap() {
+async fn a_busy_tick_keeps_its_time_current_but_never_erases_a_gap() {
+    let gap = crate::installed::readiness::thermal_mutation::Runtime::lifecycle_sleep_gap();
+    let short = gap - std::time::Duration::from_secs(1);
     let rig = applied_game().await;
     let before = sent(&rig);
-    rig.runtime
-        .age_lifecycle_tick(std::time::Duration::from_secs(60));
+    age(&rig, gap);
     {
         let _held = rig.runtime.hold_mutation_gate();
         tick(&rig).await;
     }
     rig.runtime.expire_application_lease();
     tick(&rig).await;
+    assert_eq!(sent(&rig), before);
+    assert_eq!(owed(&rig), None);
+    let renewed = report(&rig, 2, Some(r"C:\Games\Game.exe")).await;
+    assert_eq!(renewed["result"], json!({"status":0,"message":RENEWED}));
+    // Two stalls each short of the gap, with a busy tick between them.
+    age(&rig, short);
+    {
+        let _held = rig.runtime.hold_mutation_gate();
+        tick(&rig).await;
+    }
+    age(&rig, short);
+    rig.runtime.expire_application_lease();
+    tick(&rig).await;
     assert!(sent(&rig) > before);
     assert_eq!(performance(&rig.get().await), 1);
+    rig.stop().await;
+}
+
+/// A cause whose capture meets a competing controller is dropped and owes
+/// nothing: once the controller leaves, neither a later notice nor the
+/// reporter's next renewal applies the profile it would have, as managed
+/// applies nothing at a power change with a controller present and nothing
+/// once it leaves.
+#[tokio::test]
+async fn a_competing_controller_drops_the_cause_and_owes_nothing_after_it_leaves() {
+    let vectors: Value = serde_json::from_str(LIFECYCLE_VECTORS).unwrap();
+    for name in [
+        "powerToBatteryWithController",
+        "controllerClosedPowerUnchanged",
+    ] {
+        let row = vector(&vectors, name);
+        assert_eq!(row["submitted"], false, "{row}");
+    }
+    let rig = applied_game().await;
+    let ac = rig.port.state.lock().unwrap().actual;
+    let (captured, written) = (captures(&rig), writes(&rig));
+    rig.custody.controller.store(true, Ordering::Release);
+    unplug(&rig);
+    tick(&rig).await;
+    assert_eq!((captures(&rig), writes(&rig)), (captured + 1, written));
+    assert_eq!(owed(&rig), None);
+    rig.custody.controller.store(false, Ordering::Release);
+    power_notice(&rig);
+    tick(&rig).await;
+    unlock(&rig);
+    age(&rig, pace());
+    tick(&rig).await;
+    assert_eq!((captures(&rig), writes(&rig)), (captured + 1, written));
+    let renewed = report(&rig, 2, Some(r"C:\Games\Game.exe")).await;
+    assert_eq!(renewed["result"], json!({"status":0,"message":RENEWED}));
+    assert_eq!(writes(&rig), written);
+    assert_eq!(
+        performance(&rig.get().await),
+        &vector(&vectors, "controllerClosedPowerUnchanged")["performance"]
+    );
+    // The next cause owes afresh.
+    replug(&rig, ac);
+    tick(&rig).await;
+    unplug(&rig);
+    tick(&rig).await;
+    assert!(writes(&rig) > written);
+    assert_eq!(
+        performance(&rig.get().await),
+        &saved_battery_performance(&rig)
+    );
+    rig.stop().await;
+}
+
+/// The console user is read again once the write epoch moves, so another
+/// user is activated and owed every class; the first user returning after
+/// it is activated again with every class owed, although its own debt was
+/// settled.
+#[tokio::test]
+async fn a_returning_console_user_is_activated_again_with_every_class_owed() {
+    const OTHER: &str = "S-1-5-21-111-222-333-1002";
+    let rig = applied_game().await;
+    assert_eq!(owed(&rig), None);
+    *rig.custody.current_sid.lock().unwrap() = OTHER.to_owned();
+    // WTS_SESSION_LOGON.
+    rig.custody.lifecycle.ingress(SESSION_CHANGE, 5);
+    tick(&rig).await;
+    assert_eq!(rig.runtime.owed_attempts(OTHER, 7), Some(0));
+    let captured = captures(&rig);
+    *rig.custody.current_sid.lock().unwrap() = SID.to_owned();
+    rig.custody.lifecycle.ingress(SESSION_CHANGE, 5);
+    tick(&rig).await;
+    assert!(captures(&rig) > captured);
+    assert_eq!(owed(&rig), None);
+    rig.stop().await;
+}
+
+/// A named console user is read once per write epoch, not at every tick.
+#[tokio::test]
+async fn a_known_console_user_is_read_once_per_epoch() {
+    let rig = reported_game().await;
+    let (_, reads) = probed(&rig, true).await;
+    // The first tick also read it for its activation's pair.
+    let first = reads.get();
+    for _ in 0..3 {
+        age(&rig, poll());
+        tick(&rig).await;
+    }
+    assert_eq!(reads.get(), first);
+    power_notice(&rig);
+    tick(&rig).await;
+    tick(&rig).await;
+    assert_eq!(reads.get(), first + 1);
+    rig.stop().await;
+}
+
+/// While no console user is named, the probe is read every `UNNAMED_POLL`
+/// at an unmoved epoch, so a logon is seen and activated without a notice.
+#[tokio::test]
+async fn an_unnamed_console_user_is_polled_until_named() {
+    let rig = rig_at(files_with_game(json!({"pluggedIn":{"performance":2}})), 0);
+    rig.port.state.lock().unwrap().actual = 0;
+    rig.metadata.store(1, Ordering::Release);
+    // A tick publishes into the status feed, which the first status read opens.
+    rig.get().await;
+    let (known, reads) = probed(&rig, false).await;
+    assert_eq!(reads.get(), 1);
+    tick(&rig).await;
+    age(&rig, poll() - std::time::Duration::from_millis(100));
+    tick(&rig).await;
+    assert_eq!(reads.get(), 1);
+    age(&rig, std::time::Duration::from_millis(100));
+    tick(&rig).await;
+    assert_eq!(reads.get(), 2);
+    assert_eq!(captures(&rig), 0);
+    known.set(true);
+    age(&rig, poll());
+    tick(&rig).await;
+    assert!(writes(&rig) > 0);
+    assert_eq!(owed(&rig), None);
+    assert_eq!(
+        performance(&rig.get().await),
+        &saved_battery_performance(&rig)
+    );
+    rig.stop().await;
+}
+
+/// In low power the probe is not read, however long no user is named; the
+/// resume moves the write epoch, so its tick reads the user named meanwhile
+/// and activates it.
+#[tokio::test]
+async fn a_console_user_named_in_low_power_is_activated_after_the_resume() {
+    let rig = rig_at(files_with_game(json!({"pluggedIn":{"performance":2}})), 0);
+    rig.port.state.lock().unwrap().actual = 0;
+    rig.metadata.store(1, Ordering::Release);
+    rig.get().await;
+    let (known, reads) = probed(&rig, false).await;
+    suspend(&rig);
+    known.set(true);
+    for _ in 0..3 {
+        age(&rig, poll());
+        tick(&rig).await;
+    }
+    assert_eq!((reads.get(), captures(&rig)), (1, 0));
+    resume(&rig);
+    tick(&rig).await;
+    assert!(writes(&rig) > 0);
+    assert_eq!(owed(&rig), None);
+    assert_eq!(
+        performance(&rig.get().await),
+        &saved_battery_performance(&rig)
+    );
     rig.stop().await;
 }
 

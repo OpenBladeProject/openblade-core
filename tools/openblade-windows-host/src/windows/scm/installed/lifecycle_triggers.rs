@@ -41,17 +41,34 @@
 //! a step with nothing possibly submitted can leave owed. Either is retried
 //! once the ordinary write epoch has moved, as an unlock or a later notice
 //! moves it, so the tick takes at most one capture per epoch move and never
-//! polls an unmoved epoch. A newer cause supersedes a pending one.
+//! polls an unmoved epoch; a retry after steps also waits `PACE` after them,
+//! so a burst of notices cannot spend the budget at once. A newer cause
+//! supersedes a pending one.
+//!
+//! A capture refused because fresh competing-controller absence is not
+//! confirmed drops the cause and settles the pair's debt: strict thermal
+//! control stays advisory and never queues behind another controller
+//! (Architecture rule 5), as managed's transition applies nothing then and
+//! keeps nothing for later. The next lifecycle cause or changed report owes
+//! afresh.
 use super::*;
 use std::sync::atomic::AtomicU64;
 
 /// An inter-tick gap this long is time the Service did not run, such as
 /// Modern Standby without a suspend notice: the reporter could not renew
 /// then either, so the lease is renewed as at a gate boundary. Every tick
-/// stamps its time, after its attempt and also when a request holds the
-/// mutation gate, so neither an attempt nor a long request is a gap; only a
-/// stall of the tick itself this long renews early.
+/// stamps its time after its attempt, so an attempt is no gap. A tick that
+/// finds a request holding the mutation gate stamps it too, so a long
+/// request is no gap, unless the gap is already this long: a request that
+/// takes the gate at a wake must not erase the sleep before it.
 const SLEPT: std::time::Duration = std::time::Duration::from_secs(5);
+/// The least time between two attempts of one cause whose steps ran and
+/// left the debt owed. Epoch moves within it only mark the cause due, so a
+/// burst of notices, such as battery-level ones, takes one retry.
+const PACE: std::time::Duration = std::time::Duration::from_secs(2);
+/// How often the tick reads the console probe at an unmoved write epoch
+/// while it names no user, so a logon is seen without a further notice.
+const UNNAMED_POLL: std::time::Duration = std::time::Duration::from_secs(3);
 
 /// What the lifecycle tick saw: the gate generation and the Windows power
 /// generation, each `None` while unreadable.
@@ -66,8 +83,6 @@ pub(in super::super) struct Tick {
     mark: Mark,
     /// When the tick last ran, for the gap that renews the lease.
     at: Instant,
-    /// The ordinary write epoch the tick last read.
-    epoch: Option<u64>,
     console: Console,
     /// The cause it still owes an attempt.
     pending: Option<Pending>,
@@ -75,11 +90,14 @@ pub(in super::super) struct Tick {
 /// What the tick knows of the console user.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 struct Console {
-    /// The last read named a console user. While none is known, every tick
-    /// reads again, so a logon is seen without a further notice.
+    /// The last read named a console user.
     known: bool,
     /// The last console user activated, as managed's `activeUserSid`.
     activated: Option<String>,
+    /// The write epoch and the time of the last read. A known user is read
+    /// again once that epoch moves (every session notice fences it); while
+    /// none is known, also every `UNNAMED_POLL`.
+    read: Option<(Option<u64>, Instant)>,
 }
 /// A lifecycle cause whose reconciliation has not settled.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -90,25 +108,45 @@ struct Pending {
     /// The ordinary write epoch at the last attempt that left the cause
     /// pending; `None` until one ran. A retry waits for that epoch to move.
     tried: Option<Option<u64>>,
+    /// When the last attempt whose steps ran left the debt owed. A retry
+    /// waits `PACE` after it.
+    stepped: Option<Instant>,
 }
 impl Pending {
     fn new(owe: bool) -> Self {
-        Self { owe, tried: None }
-    }
-    /// Whether an attempt runs at write epoch `epoch` now.
-    fn due(&self, epoch: Option<u64>) -> bool {
-        match self.tried {
-            None => true,
-            Some(tried) => epoch.is_some() && epoch != tried,
+        Self {
+            owe,
+            tried: None,
+            stepped: None,
         }
     }
-    /// The cause after an attempt at `epoch` that left it pending: it waits
-    /// for that epoch to move. It spends nothing itself: a refusal before
-    /// any step read no firmware, and the debt counts its steps' retries.
+    /// Whether an attempt runs at write epoch `epoch` at `now`.
+    fn due(&self, epoch: Option<u64>, now: Instant) -> bool {
+        let moved = match self.tried {
+            None => true,
+            Some(tried) => epoch.is_some() && epoch != tried,
+        };
+        moved
+            && self
+                .stepped
+                .is_none_or(|at| now.saturating_duration_since(at) >= PACE)
+    }
+    /// The cause after an attempt at `epoch` refused before any step: it
+    /// waits for that epoch to move. It spends nothing: the refusal read no
+    /// firmware.
     fn wait(self, epoch: Option<u64>) -> Self {
         Self {
             tried: Some(epoch),
             ..self
+        }
+    }
+    /// The cause after an attempt at `epoch` whose steps left the debt owed
+    /// at `at`: it waits for that epoch to move and for `PACE`. The debt
+    /// counts the retry (`Reconciled::after`).
+    fn stepped(self, epoch: Option<u64>, at: Instant) -> Self {
+        Self {
+            stepped: Some(at),
+            ..self.wait(epoch)
         }
     }
 }
@@ -138,11 +176,14 @@ struct Pair {
 }
 /// How one attempt ended.
 enum Attempt {
-    /// Its steps ran and left nothing owed, or nothing was owed.
+    /// Its steps ran and left nothing owed, nothing was owed, or a competing
+    /// controller dropped the cause.
     Done(Option<Snapshot>),
-    /// Refused before any step, or its steps left the debt owed with
-    /// nothing possibly submitted: retried once the write epoch has moved.
-    Retry(Option<Snapshot>),
+    /// Refused before any step: retried once the write epoch has moved.
+    Refused,
+    /// Its steps left the debt owed with nothing possibly submitted:
+    /// retried once the write epoch has moved and `PACE` has passed.
+    Owed(Option<Snapshot>),
 }
 
 impl Runtime {
@@ -163,9 +204,13 @@ impl Runtime {
         status: impl FnOnce() -> Snapshot,
     ) -> io::Result<Option<Snapshot>> {
         let Ok(_serial) = self.gate.try_lock() else {
-            // The Service is running while a request holds the gate: no gap.
+            // The Service is running while a request holds the gate: no gap,
+            // unless the gap before it already is one.
             if let Some(tick) = self.lifecycle.borrow_mut().as_mut() {
-                tick.at = Instant::now();
+                let now = Instant::now();
+                if now.saturating_duration_since(tick.at) < SLEPT {
+                    tick.at = now;
+                }
             }
             return Ok(None);
         };
@@ -178,16 +223,18 @@ impl Runtime {
             power: self.power_generation.get().and_then(|read| read()),
         };
         let epoch = self.admission_epoch();
-        let prior = self.lifecycle.borrow().clone();
-        let (console, activation) = self.observe_console(prior.as_ref(), epoch);
         let low = self.gate() == Gate::Low;
+        let now = Instant::now();
+        let prior = self.lifecycle.borrow().clone();
+        let (console, activation) =
+            self.observe_console(prior.as_ref().map(|tick| &tick.console), epoch, low, now);
         let (causes, expired, mut pending) = match &prior {
             // The first tick has no transition to compare, only the console
             // user's activation.
             None => (Causes::default(), false, None),
             Some(prior) => {
                 let causes = Causes::between(prior.mark, mark);
-                let slept = Instant::now().saturating_duration_since(prior.at) >= SLEPT;
+                let slept = now.saturating_duration_since(prior.at) >= SLEPT;
                 let expired = self.renew_or_expire_lease(causes.boundary || slept || low);
                 (causes, expired, prior.pending)
             }
@@ -196,12 +243,12 @@ impl Runtime {
             let owe = causes.power || activation || pending.is_some_and(|p| p.owe);
             pending = Some(Pending::new(owe));
         }
-        let Some(mut cause) = pending.filter(|p| !low && p.due(epoch)) else {
-            self.stamp(mark, epoch, console, pending);
+        let Some(mut cause) = pending.filter(|p| !low && p.due(epoch, now)) else {
+            self.stamp(mark, console, pending);
             return Ok(None);
         };
         let attempt = match self.lifecycle_pair() {
-            None => Attempt::Retry(None),
+            None => Attempt::Refused,
             Some(pair) => {
                 if std::mem::take(&mut cause.owe) {
                     // A new change at every class, as a changed report owes.
@@ -214,41 +261,54 @@ impl Runtime {
         };
         let (pending, snapshot) = match attempt {
             Attempt::Done(snapshot) => (None, snapshot),
-            Attempt::Retry(snapshot) => (Some(cause.wait(epoch)), snapshot),
+            Attempt::Refused => (Some(cause.wait(epoch)), None),
+            Attempt::Owed(snapshot) => (Some(cause.stepped(epoch, Instant::now())), snapshot),
         };
-        self.stamp(mark, epoch, console, pending);
+        self.stamp(mark, console, pending);
         Ok(snapshot)
     }
 
     /// Records the tick's state, stamped now: after any attempt, so the
     /// attempt's own time is no gap.
-    fn stamp(&self, mark: Mark, epoch: Option<u64>, console: Console, pending: Option<Pending>) {
+    fn stamp(&self, mark: Mark, console: Console, pending: Option<Pending>) {
         *self.lifecycle.borrow_mut() = Some(Tick {
             mark,
             at: Instant::now(),
-            epoch,
             console,
             pending,
         });
     }
 
     /// Reads the console user when it may have changed: at the first tick,
-    /// after the write epoch moved (every session notice fences it), and
-    /// while none is known. Says whether a user other than the last one
-    /// activated is now the console user. Test composition without a console
-    /// probe activates no one.
-    fn observe_console(&self, prior: Option<&Tick>, epoch: Option<u64>) -> (Console, bool) {
-        let last = prior.map(|tick| tick.console.clone()).unwrap_or_default();
+    /// after the write epoch moved, and every `UNNAMED_POLL` while none is
+    /// known. Says whether a user other than the last one activated is now
+    /// the console user. In low power it reads nothing: no attempt runs
+    /// there, and the notice that clears the gate also moves the epoch, so
+    /// the first clear tick reads. Test composition without a console probe
+    /// activates no one.
+    fn observe_console(
+        &self,
+        prior: Option<&Console>,
+        epoch: Option<u64>,
+        low: bool,
+        now: Instant,
+    ) -> (Console, bool) {
+        let last = prior.cloned().unwrap_or_default();
         let Some(read) = self.console.get() else {
             return (last, false);
         };
-        if prior.is_some_and(|tick| tick.console.known && tick.epoch == epoch) {
+        let current = last.read.is_some_and(|(read, at)| {
+            read == epoch && (last.known || now.saturating_duration_since(at) < UNNAMED_POLL)
+        });
+        if low || current {
             return (last, false);
         }
+        let read_at = Some((epoch, now));
         let Some((sid, _)) = read() else {
             return (
                 Console {
                     known: false,
+                    read: read_at,
                     ..last
                 },
                 false,
@@ -259,6 +319,7 @@ impl Runtime {
             Console {
                 known: true,
                 activated: Some(sid),
+                read: read_at,
             },
             activation,
         )
@@ -280,7 +341,7 @@ impl Runtime {
             return Ok(Attempt::Done(None));
         };
         let MailboxSource::Reader(reader) = mailbox else {
-            return Ok(Attempt::Retry(None));
+            return Ok(Attempt::Refused);
         };
         reader.custody().verify_integrity()?;
         // A reconciliation writes, so it takes the write capture, which
@@ -289,15 +350,32 @@ impl Runtime {
         let (storage, fresh) = match self.capture(&sid, session, reader.custody()) {
             Ok(captured) => captured,
             Err(error) if is_fatal_admission(&error) => return Err(error),
-            Err(_) => return Ok(Attempt::Retry(None)),
+            // Another controller may own the device: the cause is dropped
+            // and nothing is kept owed for after it leaves, which would
+            // overwrite what the user chose there (module comment).
+            Err(error) if is_competing_controller(&error) => {
+                self.debts.borrow_mut().insert(key, Debt::Settled);
+                return Ok(Attempt::Done(None));
+            }
+            // A locked or switched session, an unknown AC line status, or a
+            // per-user store that cannot be opened. These are the session's
+            // own state, which the user's next unlock or notice resolves and
+            // which claims nothing for another controller, so the cause is
+            // kept. A store directory that does not exist stays missing: the
+            // native Service never creates it, so only a Service switch,
+            // which starts a new runtime, provides one, and meanwhile each
+            // epoch move costs one refused capture and no firmware read.
+            Err(_) => return Ok(Attempt::Refused),
         };
         // As a report's: a fenced store or unclassified power runs nothing
-        // and leaves the debt as it was. A fenced store stays fenced until
-        // read-only reconciliation settles its row, so a possibly submitted
-        // step never runs again.
+        // and leaves the debt as it was. The cause is kept, as for a refused
+        // session: the fence is OpenBlade's own unsettled journal row or a
+        // document changed outside the Service, not another controller, and
+        // it stays fenced until read-only reconciliation settles that row, so
+        // a possibly submitted step never runs again (`admit_trigger`).
         let TriggerAdmission::Admitted(classes) = admit_trigger(&storage, fresh.as_ref(), owed)?
         else {
-            return Ok(Attempt::Retry(None));
+            return Ok(Attempt::Refused);
         };
         let reconciled = self
             .reconcile_locked(
@@ -330,7 +408,7 @@ impl Runtime {
         // overtook, or one refused transiently at an unmoved epoch, such as
         // an adapter not classified yet. It runs again once the epoch moves.
         Ok(if matches!(debt, Debt::Owed { .. }) {
-            Attempt::Retry(reconciled.snapshot)
+            Attempt::Owed(reconciled.snapshot)
         } else {
             Attempt::Done(reconciled.snapshot)
         })
@@ -399,11 +477,18 @@ impl Runtime {
         }
     }
 
-    /// Dates the last tick `by` earlier, as a stall of the Service would.
+    /// Dates the last tick, its console read and its last attempt whose
+    /// steps ran `by` earlier, as that much time without a tick would.
     #[cfg(test)]
     pub(in super::super::super) fn age_lifecycle_tick(&self, by: std::time::Duration) {
         if let Some(tick) = self.lifecycle.borrow_mut().as_mut() {
             tick.at -= by;
+            if let Some((_, at)) = tick.console.read.as_mut() {
+                *at -= by;
+            }
+            if let Some(at) = tick.pending.as_mut().and_then(|p| p.stepped.as_mut()) {
+                *at -= by;
+            }
         }
     }
 
@@ -411,6 +496,18 @@ impl Runtime {
     #[cfg(test)]
     pub(in super::super::super) fn lifecycle_sleep_gap() -> std::time::Duration {
         SLEPT
+    }
+
+    /// The least time between two stepped attempts of one cause (`PACE`).
+    #[cfg(test)]
+    pub(in super::super::super) fn lifecycle_pace() -> std::time::Duration {
+        PACE
+    }
+
+    /// How often an unnamed console user is read again (`UNNAMED_POLL`).
+    #[cfg(test)]
+    pub(in super::super::super) fn lifecycle_unnamed_poll() -> std::time::Duration {
+        UNNAMED_POLL
     }
 
     /// Holds the mutation gate, as a request in flight does.
@@ -494,21 +591,49 @@ mod tests {
 
     #[test]
     fn a_pending_cause_waits_for_a_moved_known_epoch_without_a_budget_of_its_own() {
+        let now = Instant::now();
         let fresh = Pending::new(true);
-        assert!(fresh.due(None) && fresh.due(Some(4)));
+        assert!(fresh.due(None, now) && fresh.due(Some(4), now));
         let mut cause = fresh.wait(Some(4));
         assert!(cause.owe);
-        assert!(!cause.due(Some(4)));
-        assert!(!cause.due(None));
-        assert!(cause.due(Some(5)));
-        // Refusals before any step spend nothing: the cause outlasts any
-        // number of epoch moves until an attempt settles it.
+        assert!(!cause.due(Some(4), now));
+        assert!(!cause.due(None, now));
+        assert!(cause.due(Some(5), now));
+        // Refusals before any step spend nothing and wait no `PACE`: the
+        // cause outlasts any number of epoch moves until an attempt settles
+        // it.
         for epoch in 5..50 {
             cause = cause.wait(Some(epoch));
-            assert!(cause.due(Some(epoch + 1)));
+            assert!(cause.due(Some(epoch + 1), now));
         }
         // A refusal at an unknown epoch waits for a known one.
         let unknown = Pending::new(false).wait(None);
-        assert!(!unknown.due(None) && unknown.due(Some(1)));
+        assert!(!unknown.due(None, now) && unknown.due(Some(1), now));
+    }
+
+    /// After steps that left the debt owed, a retry needs both a moved epoch
+    /// and `PACE`; epoch moves within it only mark the cause due. A later
+    /// refusal before any step keeps the pace.
+    #[test]
+    fn a_stepped_cause_waits_for_its_pace_as_well_as_a_moved_epoch() {
+        let at = Instant::now();
+        let cause = Pending::new(false).stepped(Some(4), at);
+        assert!(!cause.due(Some(4), at + PACE));
+        for moved in [Some(5), Some(9)] {
+            assert!(!cause.due(moved, at));
+            assert!(!cause.due(moved, at + PACE - std::time::Duration::from_millis(1)));
+            assert!(cause.due(moved, at + PACE));
+        }
+        let refused = cause.wait(Some(5));
+        assert!(!refused.due(Some(6), at));
+        assert!(refused.due(Some(6), at + PACE));
+    }
+
+    /// The tick's three intervals.
+    #[test]
+    fn the_lifecycle_intervals_are_pinned() {
+        assert_eq!(SLEPT, std::time::Duration::from_secs(5));
+        assert_eq!(PACE, std::time::Duration::from_secs(2));
+        assert_eq!(UNNAMED_POLL, std::time::Duration::from_secs(3));
     }
 }

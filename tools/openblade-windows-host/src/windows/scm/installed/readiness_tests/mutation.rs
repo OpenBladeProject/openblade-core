@@ -524,6 +524,10 @@ struct Custody {
     origin_for_fan: StdMutex<Option<Arc<crate::origin_lifetime::Lifetime>>>,
     authority_for_fan: AtomicU8,
     fresh_refuse: AtomicBool,
+    // A competing controller present at the next write captures: the factory
+    // refuses them with the typed `competing_controller` error, as
+    // `WindowsGuard::capture` does, and every fresh authorization refuses.
+    controller: AtomicBool,
     fatal_health: AtomicBool,
     integrity_lost: AtomicBool,
     activation_refusal: AtomicU8,
@@ -562,6 +566,7 @@ impl Custody {
             origin_for_fan: StdMutex::new(None),
             authority_for_fan: AtomicU8::new(0),
             fresh_refuse: AtomicBool::new(false),
+            controller: AtomicBool::new(false),
             fatal_health: AtomicBool::new(false),
             integrity_lost: AtomicBool::new(false),
             activation_refusal: AtomicU8::new(0),
@@ -703,7 +708,7 @@ impl Fresh for Custody {
     }
     fn authorize_owned_stop(&self) -> Option<ReadAdmission> {
         self.verify_health().ok()?;
-        if self.fresh_refuse.load(Ordering::Acquire) {
+        if self.fresh_refuse.load(Ordering::Acquire) || self.controller.load(Ordering::Acquire) {
             return None;
         }
         ReadCustody::authorize_owned_stop(self)
@@ -738,7 +743,10 @@ impl Fresh for Custody {
         if counted == Ok(1) {
             self.fresh_refuse.store(true, Ordering::Release);
         }
-        if self.fresh_refuse.load(Ordering::Acquire) || self.fatal_health.load(Ordering::Acquire) {
+        if self.fresh_refuse.load(Ordering::Acquire)
+            || self.controller.load(Ordering::Acquire)
+            || self.fatal_health.load(Ordering::Acquire)
+        {
             return None;
         }
         ReadCustody::authorize(self)
@@ -749,6 +757,7 @@ impl Fresh for Custody {
     #[cfg(feature = "service-profile-triggers-v1")]
     fn authorize_storage(&self) -> bool {
         !self.fresh_refuse.load(Ordering::Acquire)
+            && !self.controller.load(Ordering::Acquire)
             && !self.fatal_health.load(Ordering::Acquire)
             && Fresh::on_battery(self).is_some()
             && ReadCustody::authorize_storage(self)
@@ -992,6 +1001,9 @@ impl Rig {
                 return Ok((storage.clone(), Arc::new(proof)));
             }
             let _ = admission;
+            if fresh.controller.load(Ordering::Acquire) {
+                return Err(crate::installed::readiness::thermal_mutation::competing_controller());
+            }
             let proof: Arc<dyn Fresh> = if fresh.scoped_fresh.load(Ordering::Acquire) {
                 if !fresh.current_console.load(Ordering::Acquire) {
                     return Err(io::ErrorKind::PermissionDenied.into());

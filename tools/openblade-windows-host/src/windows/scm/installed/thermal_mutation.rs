@@ -53,6 +53,31 @@ pub(super) fn is_fatal_admission(error: &io::Error) -> bool {
         .is_some_and(|cause| cause.is::<FatalAdmission>())
 }
 
+/// A write capture refused only because fresh competing-controller absence
+/// was not confirmed: a controller is present, or detection failed or ran
+/// too long (`ReadOnlyAdmission::confirms_fresh_absence`). It is
+/// `PermissionDenied` with the ordinary refusal message, so a caller that
+/// does not ask for it treats it as any other refusal.
+#[derive(Debug)]
+struct CompetingController;
+impl std::fmt::Display for CompetingController {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("fresh installed mutation admission is unavailable")
+    }
+}
+impl std::error::Error for CompetingController {}
+// Built by the native guard, and by the trigger rig in tests.
+#[cfg_attr(test, allow(dead_code))]
+pub(super) fn competing_controller() -> io::Error {
+    io::Error::new(io::ErrorKind::PermissionDenied, CompetingController)
+}
+#[cfg(feature = "service-profile-triggers-v1")]
+pub(super) fn is_competing_controller(error: &io::Error) -> bool {
+    error
+        .get_ref()
+        .is_some_and(|cause| cause.is::<CompetingController>())
+}
+
 pub(super) fn verify_retained_failure(fatal: &Mutex<Option<&'static str>>) -> io::Result<()> {
     match *fatal
         .lock()
