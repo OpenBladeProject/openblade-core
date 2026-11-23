@@ -626,6 +626,25 @@ mod tests {
         tracker.observe(O::SilentManual);
         assert_eq!(tracker.external(), [PERFORMANCE]);
         assert_eq!(tracker.own.manual, Some(true));
+        // A fan write that did not land settles nothing of OpenBlade's: the
+        // manual fans read instead are no own state, so a reconciliation
+        // toward Automatic fans compares them as a change.
+        let mut tracker = baselined(O::PerformanceAutomatic);
+        tracker.submitted_fans(false, None);
+        tracker.observe(O::PerformanceManual);
+        assert_eq!(tracker.own.manual, None);
+        assert_eq!(tracker.submitted.manual, None);
+        assert_eq!(
+            tracker.decide(
+                O::PerformanceManual,
+                desired(Preset::Performance, Fans::Automatic),
+                Mode::WithPrior,
+                false,
+                Instant::now()
+            ),
+            Some(Exclusion::External)
+        );
+        assert_eq!(tracker.external(), [FANS]);
         // A fan write and the destination its return to Automatic carries.
         let mut tracker = baselined(O::PerformanceManual);
         tracker.submitted_fans(false, Some(Destination::Preset(Preset::Balanced)));

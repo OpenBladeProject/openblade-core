@@ -7,6 +7,9 @@
 use super::*;
 use openblade_domain::power_setting::{PBT_POWERSETTINGCHANGE, PowerSetting};
 
+#[path = "request_triggers_startup.rs"]
+mod startup;
+
 /// The managed `ApplyFullTransitionAsync` outcomes after each lifecycle
 /// transition (`ServiceControlRuntimeTests.NativeLifecycleReconcileVectors`).
 const LIFECYCLE_VECTORS: &str =
@@ -1360,7 +1363,7 @@ async fn an_own_write_clears_drift_and_a_restart_forgets_it() {
 }
 
 /// A competing controller that drops the console user's first activation
-/// settles it, which ends that pair's startup: a later power change compares
+/// settles it, which ends that user's startup: a later power change compares
 /// the change recorded outside OpenBlade and is paused.
 #[tokio::test]
 async fn an_activation_dropped_for_a_competing_controller_ends_startup() {
