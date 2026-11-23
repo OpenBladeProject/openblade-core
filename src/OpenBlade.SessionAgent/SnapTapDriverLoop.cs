@@ -90,6 +90,8 @@ internal static class SnapTapDriverLoop
             }
             if (shouldStop())
             {
+                // No hook or output exists yet; report the clean stop for this worker.
+                publisher.Publish(SnapTapRuntimeState.Off);
                 return 0;
             }
             stage = "HookSetup";
