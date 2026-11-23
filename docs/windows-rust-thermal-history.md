@@ -104,10 +104,18 @@ other cancel: a crash after its Prepared is an abandoned Prepared, after its
 and after its 72 nothing. The enable's charge stays live until the retry
 confirms.
 
-A new process does not seed its transaction pool's quarantine from the
-journal's `ids`, `cancel_ids` or `superseded_ids`, so an ID an earlier process
-sent without a correlated reply can be issued again after a restart; that is
-tracked separately.
+Before its first Reader, a new Service process quarantines in its transaction
+pool the journal IDs an earlier process may have sent without reading their
+reply (`transaction_seed`). It reads the active tail through the read custody
+and changes no journal format. The IDs are those of a final request whose last
+row is unsettled, of every known-not-submitted (6) request, every
+`superseded_ids` set, and the reservations of the owners still live at the
+end of the journal: a manual fan owner's `cleanup` and a temporary-charge
+owner's `cancel_ids`. Confirmed requests, the reservations of replaced owners
+and performance rows add none. At most 48 are taken, the live ones first and
+then the newest, which leaves 206 of the 254 IDs. A journal that cannot be read
+or validated adds none, which is the window before this seed, and an absent
+one does not delay startup.
 
 ## Publication and metadata recovery
 

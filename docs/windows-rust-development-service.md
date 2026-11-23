@@ -262,7 +262,8 @@ the same command is answered, so while their exchanges are answered, read
 jobs, with or without the query, keep at most one answered ID per command out
 of the pool and never exhaust it at any interval (`transaction_tests`). A read
 whose exchange keeps failing quarantines one ID each time: about 253 failed
-reads exhaust the pool, 8.5 minutes at the 2 s subscription poll or 21 minutes
+reads exhaust the pool (about 205 after a start whose journal seeds the full
+48 IDs, see below), 8.5 minutes at the 2 s subscription poll or 21 minutes
 at 5 s. Before reclamation the pool ran out after
 about 15 minutes 45 seconds of one job every 15 seconds. The packaging refusal
 is unchanged.
@@ -449,9 +450,16 @@ Issue is round-robin, so a returned ID comes back only after every other free
 ID. The process pool starts its round at a random ID; a fixed start would
 issue first the IDs a previous process also issued first, whose replies may
 still be in the mailbox. A random start makes such a collision unlikely but
-cannot rule it out. Managed restarts its finite IDs at 1 for every reopened
+cannot rule it out. So before the first job, the Service also quarantines up
+to 48 IDs its thermal journal names that an earlier process may have sent
+without reading their reply: those of an unsettled final request, of
+known-not-submitted requests and superseded sets, and the live fan and
+temporary-charge owners' reservations (see
+[thermal history](windows-rust-thermal-history.md)). IDs that only reads or
+performance setters sent are not journaled, so for them the random start is
+the only protection. Managed restarts its finite IDs at 1 for every reopened
 session after a poisoned one; native does not, because the mailbox outlives
-the handle.
+the handle and the process.
 
 A read whose exchange keeps failing still spends one ID per job. A thermal,
 battery or temporary-charge request then refuses with its transaction-capacity
