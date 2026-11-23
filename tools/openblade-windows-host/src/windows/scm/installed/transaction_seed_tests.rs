@@ -110,7 +110,7 @@ fn the_largest_fan_record_names_the_derived_maximum() {
     assert_eq!(sent(&entry), Some((0, range(1..=26))));
     assert_eq!(FAN_CLEANUP, entry.fan.unwrap().cleanup.len() * 2);
     // The sizes the limit's notes and the thermal history guide state.
-    assert_eq!((FAN, LIVE, DEMAND, LIMIT), (26, 74, 46, 80));
+    assert_eq!((FAN, LIVE, DEMAND, LIMIT), (26, 74, 66, 80));
 }
 
 #[test]
@@ -214,11 +214,35 @@ fn known_unsent_and_superseded_sets_are_quarantined_newest_first() {
         &concat(&[journal("tfc", "source-cancel-fresh-ids-first"), later]),
         &concat(&[range(140..=147), range(108..=115)]),
     );
-    // A fan request retired at 6 before the newest: its chain IDs, not its
-    // preflight, whose replies it read, or the cleanup it reserved.
+    // A fan request retired at 6 before the newest: its preflight, whose
+    // replies it read, and its chain IDs, but not the cleanup it reserved.
     let mut fans = request(fan(100), 1, &[0, 6]);
     fans.extend(request(fan(150), 2, &[0, 6]));
-    seeds(&fans, &concat(&[range(151..=176), range(105..=116)]));
+    seeds(&fans, &concat(&[range(151..=176), range(101..=116)]));
+    // The owner's settle-only 51 is the newest fan row but sends no 07/8C,
+    // so the newest 07/8C reply is the retired request's preflight.
+    let owned = journal("fan", "retiredThenObservedAutomatic");
+    let rows: Vec<&[u8]> = owned.split_inclusive(|b| *b == b'\n').collect();
+    let retired = concat(&[
+        rows[..10].concat(),
+        request(fan(100), 2, &[0, 6]),
+        rows[12].to_vec(),
+    ]);
+    seeds(&retired, &concat(&[range(1..=26), range(101..=116)]));
+    // A superseded set newest in its family stays live, ahead of newer
+    // known-not-submitted battery history that fills the limit.
+    let mut crowded = journal("tfc", "source-cancel-fresh-ids-first");
+    for k in 0..6u8 {
+        crowded.extend(battery_rows(
+            200 + u32::from(k),
+            ids_from(1 + 14 * k),
+            &[0, 6],
+        ));
+    }
+    crate::thermal_history::rows(&crowded, |_, _| Ok(())).unwrap();
+    let seeded = unanswered(&crowded).unwrap();
+    assert_eq!(seeded.len(), LIMIT);
+    assert!(range(108..=115).iter().all(|id| seeded.contains(id)));
 }
 
 #[test]
