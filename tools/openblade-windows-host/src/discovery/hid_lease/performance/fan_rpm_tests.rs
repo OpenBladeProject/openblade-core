@@ -3,7 +3,12 @@
 //! checkpoints, budget and sealing.
 #[cfg(feature = "service-live-readings-v1")]
 use super::worker::Queries;
-use super::{FanRpmRead, worker::Worker, *};
+use super::{
+    FanRpmRead,
+    fan_rpm::{EXCHANGE, QUERY_RESERVE},
+    worker::Worker,
+    *,
+};
 use std::sync::{
     Arc, Mutex,
     atomic::{AtomicU8, AtomicUsize, Ordering},
@@ -16,7 +21,8 @@ type Reply = Option<(u8, Vec<u8>)>;
 /// default, with Automatic fans) and each 0D/88
 /// query with a whole managed report: status 2 and `[1, selector, units]`,
 /// or the selector's entry in `replies` when present. `stall` never completes
-/// a fan query's GET. Verification fails at the 1-based `fail_verify` call
+/// a fan query's GET, and `first_get_delay` delays the first one's reply.
+/// Verification fails at the 1-based `fail_verify` call
 /// (0 never). Every submitted report is recorded as (class, ID, payload),
 /// each fan query's transaction ID in `query_ids` and the time from its send
 /// to its GET in `settles`.
@@ -26,6 +32,7 @@ pub(crate) struct FanIo {
     pub(crate) thermal: AtomicU8,
     pub(crate) replies: Mutex<[Reply; 2]>,
     pub(crate) stall: AtomicBool,
+    pub(crate) first_get_delay: Mutex<Option<Duration>>,
     pub(crate) fail_verify: AtomicUsize,
     pub(crate) verifies: AtomicUsize,
     pub(crate) sent: Mutex<Vec<(u8, u8, Vec<u8>)>>,
@@ -40,6 +47,7 @@ impl FanIo {
             thermal: AtomicU8::new(0),
             replies: Mutex::default(),
             stall: AtomicBool::new(false),
+            first_get_delay: Mutex::default(),
             fail_verify: AtomicUsize::new(0),
             verifies: AtomicUsize::new(0),
             sent: Mutex::default(),
@@ -60,6 +68,7 @@ struct FanPort {
     reply: Option<(usize, Frame)>,
     pending: Option<io::Result<(usize, Frame)>>,
     query_sent: Option<Instant>,
+    ready_at: Option<Instant>,
 }
 impl Port for FanPort {
     fn transactions(&self) -> &Transactions {
@@ -125,6 +134,11 @@ impl Port for FanPort {
                 if let Some(sent) = self.query_sent {
                     self.io.settles.lock().unwrap().push(sent.elapsed());
                 }
+                if self.query_sent.is_some()
+                    && let Some(delay) = self.io.first_get_delay.lock().unwrap().take()
+                {
+                    self.ready_at = Some(Instant::now() + delay);
+                }
                 if self.query_sent.is_some() && self.io.stall.load(Ordering::Acquire) {
                     // Outstanding until the exchange's deadline ends the wait.
                     None
@@ -140,6 +154,10 @@ impl Port for FanPort {
         Ok(())
     }
     fn poll(&mut self) -> Option<io::Result<(usize, Frame)>> {
+        if self.ready_at.is_some_and(|ready| Instant::now() < ready) {
+            return None;
+        }
+        self.ready_at = None;
         self.pending.take()
     }
     fn cancel(&mut self) {}
@@ -154,6 +172,7 @@ fn port(io: &Arc<FanIo>) -> FanPort {
         reply: None,
         pending: None,
         query_sent: None,
+        ready_at: None,
     }
 }
 
@@ -355,6 +374,60 @@ fn a_job_without_time_or_on_a_sealed_reader_sends_no_query() {
         ));
     assert_eq!(fans, FanRpmRead::NotRequested);
     assert!(sealed.sent.lock().unwrap().is_empty());
+}
+
+/// The pair alone on a fresh Reader with `budget` beyond the reserve.
+fn fan_pair(io: &Arc<FanIo>, budget: Duration) -> FanRpmRead {
+    let cancelled = AtomicBool::new(false);
+    let mut reader = Reader::new(port(io), ADMISSION);
+    tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .start_paused(true)
+        .build()
+        .unwrap()
+        .block_on(async {
+            let limit = Limit {
+                deadline: Instant::now() + QUERY_RESERVE + budget,
+                cancelled: &cancelled,
+            };
+            reader.read_fan_rpm(&mut || Some(ADMISSION), limit).await
+        })
+}
+
+/// No SET goes out unless the pair's budget covers both exchanges, each a
+/// SET, the settle and a GET: a SET without that time would likely time out
+/// and quarantine its ID for the process.
+#[test]
+fn the_pair_is_sent_only_when_its_budget_covers_both_exchanges() {
+    let pair = EXCHANGE.saturating_mul(2);
+    let io = FanIo::new([0x20, 0x1e]);
+    assert_eq!(
+        fan_pair(&io, pair - Duration::from_millis(1)),
+        FanRpmRead::NotRequested
+    );
+    assert!(io.sent.lock().unwrap().is_empty());
+    let io = FanIo::new([0x20, 0x1e]);
+    assert_eq!(fan_pair(&io, pair), FanRpmRead::Confirmed([3200, 3000]));
+    assert_eq!(io.queries().len(), 2);
+}
+
+/// A first exchange that leaves less than one exchange of budget leaves the
+/// second selector unsent and its ID free; the pair confirms nothing.
+#[test]
+fn a_long_first_exchange_leaves_the_second_query_unsent() {
+    let pair = EXCHANGE.saturating_mul(2);
+    // The first exchange spends the settle and this delay.
+    let spare = pair - EXCHANGE - SETTLE;
+    for (delay, expected, queries) in [
+        (spare, FanRpmRead::Confirmed([3200, 3000]), 2),
+        (spare + Duration::from_millis(5), FanRpmRead::Unconfirmed, 1),
+    ] {
+        let io = FanIo::new([0x20, 0x1e]);
+        *io.first_get_delay.lock().unwrap() = Some(delay);
+        assert_eq!(fan_pair(&io, pair), expected, "{delay:?}");
+        assert_eq!(io.queries().len(), queries, "{delay:?}");
+        assert_eq!(io.queries()[0][1], 1);
+    }
 }
 
 /// Through the shared job body: only a job that asks sends the pair, after

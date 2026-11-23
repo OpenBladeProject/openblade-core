@@ -4,11 +4,25 @@
 //! Fan speeds are the capture-backed exact RZ09-0581 0D/88 pair
 //! (`FanRpmRead`), sent only by a read job whose ObserveState asked for
 //! `FanSpeeds`, on the same serialized, freshly admitted job and custody as
-//! the thermal read. Managed publishes null after one failed pair. Here the
-//! last confirmed pair under the same read admission stays published through
-//! `RETAINED_MISSES` consecutive unconfirmed jobs within `RETENTION_WINDOW` of
-//! its read; after that, or under another admission, the speeds are null. An
-//! unreadable pair is never published as confirmed.
+//! the thermal read.
+//!
+//! An unconfirmed pair quarantines the transaction ID it sent for the rest of
+//! the process, and the pool is shared with every thermal read and mutation.
+//! So after one, or after an asked-for job that brought back nothing, the
+//! pair is not sent again for `FIRST_BACKOFF`, doubling per consecutive
+//! failure up to `MAX_BACKOFF`; a confirmed pair ends the back-off. A job
+//! that sends nothing (too little time, or a sealed Reader) changes nothing.
+//!
+//! Managed publishes null after one failed pair. Here the last confirmed pair
+//! under the same read admission stays published through `RETAINED_MISSES`
+//! consecutive jobs that confirmed none (failed, backing off or not sent)
+//! within `RETENTION_WINDOW` of its read. A pair seconds old is still the
+//! last confirmed speed, and blanking it for one transient miss at the tray's
+//! 2 s cadence would show a failure rather than the laptop (AGENTS.md rule 4).
+//! A retained pair is that earlier confirmation, not a fresh one: it never
+//! outlives the thermal read it was confirmed beside, never crosses another
+//! admission, and any mutation drops it (`mutating`), because a write may
+//! change the fans. An unreadable pair is never published as confirmed.
 //!
 //! Battery power flow and battery health are Windows reads with managed
 //! semantics (`WindowsPowerStateProvider`): power flow is captured for an
@@ -25,6 +39,7 @@ use std::{
     cell::{Cell, RefCell},
     io,
     rc::Rc,
+    time::Duration,
 };
 use tokio::time::Instant;
 
@@ -40,6 +55,11 @@ pub(super) const FAN_SPEEDS: u8 = 2;
 const MAXIMUM_RPM: u16 = 20_000;
 /// Consecutive unconfirmed fan reads that still publish the last pair.
 const RETAINED_MISSES: u8 = 2;
+/// The pause after an unconfirmed pair: the Driver-mode query's interval.
+const FIRST_BACKOFF: Duration = Duration::from_secs(15);
+/// The longest pause, so a pair that never answers costs one transaction ID
+/// per five minutes: the 253-ID pool then lasts about 21 hours.
+const MAX_BACKOFF: Duration = Duration::from_secs(300);
 /// Managed `MaximumReasonableBatteryPowerMilliwatts`.
 const MAXIMUM_BATTERY_POWER: i32 = 1_000_000;
 /// The managed codec's battery capacity bound, in mWh.
@@ -106,6 +126,26 @@ struct Fans {
     misses: u8,
 }
 
+/// Consecutive unconfirmed pairs and the instant the next may be sent.
+#[derive(Clone, Copy, Default)]
+struct Backoff {
+    failures: u32,
+    until: Option<Instant>,
+}
+
+impl Backoff {
+    fn after(failures: u32, now: Instant) -> Self {
+        let doublings = failures.saturating_sub(1).min(16);
+        let pause = FIRST_BACKOFF
+            .saturating_mul(1 << doublings)
+            .min(MAX_BACKOFF);
+        Self {
+            failures,
+            until: Some(now + pause),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Default)]
 struct Health {
     started: bool,
@@ -118,6 +158,7 @@ struct Health {
 pub(super) struct Host {
     capture: Rc<dyn Capture>,
     fans: Cell<Option<Fans>>,
+    backoff: Cell<Backoff>,
     health: RefCell<Health>,
 }
 
@@ -126,6 +167,7 @@ impl Host {
         Self {
             capture,
             fans: Cell::default(),
+            backoff: Cell::default(),
             health: RefCell::default(),
         }
     }
@@ -136,8 +178,42 @@ impl Host {
         map_battery_power_flow(present, rate)
     }
 
+    /// Whether an asked-for job may send the pair at `now`: false while an
+    /// earlier unconfirmed pair's back-off lasts.
+    pub(super) fn fans_due(&self, now: Instant) -> bool {
+        self.backoff.get().until.is_none_or(|until| now >= until)
+    }
+
+    /// Records the outcome of a job that was allowed to send the pair. A job
+    /// that brought back no reading passes `Unconfirmed`: it may have sent it.
+    pub(super) fn attempted(&self, read: FanRpmRead, now: Instant) {
+        match read {
+            FanRpmRead::NotRequested => {}
+            FanRpmRead::Confirmed(_) => self.backoff.set(Backoff::default()),
+            FanRpmRead::Unconfirmed => {
+                let failures = self.backoff.get().failures.saturating_add(1);
+                self.backoff.set(Backoff::after(failures, now));
+            }
+        }
+    }
+
+    #[cfg(test)]
+    pub(super) fn end_backoff_for_tests(&self) {
+        self.backoff.set(Backoff {
+            until: None,
+            ..self.backoff.get()
+        });
+    }
+
+    /// A mutation is about to submit: a pair read before it no longer
+    /// describes the fans.
+    #[cfg(feature = "service-thermal-mutation-v1")]
+    pub(super) fn mutating(&self) {
+        self.fans.set(None);
+    }
+
     /// The fan speeds to publish for a job under `admission` that asked for
-    /// them and read `read`.
+    /// them and read `read` (`NotRequested` when it did not send the pair).
     pub(super) fn fans(
         &self,
         admission: ReadAdmission,

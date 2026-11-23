@@ -1205,7 +1205,8 @@ impl ReadSource {
             *self.metadata.borrow_mut() = Some(publisher.borrow().clone());
         }
         // The ObserveState being served sets this while the observation is
-        // created (`live_readings::scoped`); any other read asks for none.
+        // created (`StatusRequest::scope_live_readings`); any other read asks
+        // for none.
         #[cfg(feature = "service-live-readings-v1")]
         let live = live_readings::requested();
         Box::pin(async move {
@@ -1230,9 +1231,12 @@ impl ReadSource {
                 .then(|| source.live.battery_power_flow())
                 .flatten();
             // The 0D/88 pair rides this serialized job only for an
-            // ObserveState that asked for fan speeds, after the thermal read.
+            // ObserveState that asked for fan speeds, after the thermal read,
+            // and not while an unconfirmed pair's back-off lasts.
             #[cfg(feature = "service-live-readings-v1")]
             let fan_speeds = live & live_readings::FAN_SPEEDS != 0;
+            #[cfg(feature = "service-live-readings-v1")]
+            let send_fans = fan_speeds && source.live.fans_due(Instant::now());
             #[cfg(not(any(
                 feature = "service-keyboard-driver-mode-read-v1",
                 feature = "service-live-readings-v1"
@@ -1258,7 +1262,7 @@ impl ReadSource {
                         #[cfg(feature = "service-keyboard-driver-mode-read-v1")]
                         device_mode: asked.is_some(),
                         #[cfg(feature = "service-live-readings-v1")]
-                        fan_rpm: fan_speeds,
+                        fan_rpm: send_fans,
                     },
                 )
                 .await;
@@ -1278,7 +1282,19 @@ impl ReadSource {
                 };
                 source.driver_mode.record(asked, read, job);
             }
-            // A job that brought back no reading confirmed no fan speed.
+            // A job allowed to send the pair records its outcome before any
+            // admission check, so an unconfirmed pair backs off even when this
+            // job publishes nothing. One that brought back no reading may
+            // have sent it, so it backs off too, as the Driver-mode query
+            // fails closed; it also confirmed no fan speed.
+            #[cfg(feature = "service-live-readings-v1")]
+            if send_fans {
+                let read = match &result {
+                    Ok(Some(reading)) => reading.fan_rpm,
+                    _ => crate::discovery::performance::FanRpmRead::Unconfirmed,
+                };
+                source.live.attempted(read, Instant::now());
+            }
             #[cfg(feature = "service-live-readings-v1")]
             if fan_speeds && !matches!(result, Ok(Some(_))) {
                 source.live.missed(None, Instant::now());
@@ -1542,6 +1558,9 @@ impl ReadSource {
         deadline: Instant,
     ) -> io::Result<Option<crate::discovery::performance::ObservedPerformance>> {
         let _serial = self.operation.lock().await;
+        // No retained fan pair outlives a write that may change the fans.
+        #[cfg(feature = "service-live-readings-v1")]
+        self.live.mutating();
         self.lease.verify_integrity()?;
         self.drain_mutation(false).await?;
         self.stop_reader().await?;
@@ -1582,6 +1601,9 @@ impl ReadSource {
     ) -> io::Result<Option<crate::discovery::performance::ObservedPerformance>> {
         let factory = self.factories.as_ref().ok_or_else(deny)?;
         let _serial = self.operation.lock().await;
+        // No retained fan pair outlives a write that may change the fans.
+        #[cfg(feature = "service-live-readings-v1")]
+        self.live.mutating();
         #[cfg(test)]
         if self.registration_pause.get() != 0 {
             self.registration_pause.set(2);

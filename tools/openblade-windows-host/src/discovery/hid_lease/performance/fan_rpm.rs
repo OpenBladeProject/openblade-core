@@ -11,13 +11,19 @@ use openblade_protocol::fan_rpm::{FanRpmQuery, FanRpmSelector};
 const QUERY_BUDGET: Duration = Duration::from_secs(1);
 /// Job time the queries never take, kept for retirement, the final admission
 /// check and publication, so a timed-out query cannot cost the thermal read.
-const QUERY_RESERVE: Duration = Duration::from_millis(500);
+pub(super) const QUERY_RESERVE: Duration = Duration::from_millis(500);
+/// The time one SET or one GET is allowed when deciding whether to send.
+const TRANSFER: Duration = Duration::from_millis(50);
+/// What one exchange needs to complete: its SET, the settle and its GET. A
+/// SET sent without it is likely to time out, which quarantines its ID for
+/// the rest of the process, so no SET is sent with less.
+pub(super) const EXCHANGE: Duration = TRANSFER.saturating_mul(2).saturating_add(SETTLE);
 
 /// What one read job learned about the two fan speeds.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) enum FanRpmRead {
-    /// Not queried: not asked, the Reader was already sealed, or too little
-    /// job time remained to send the first query.
+    /// Not queried: not asked, the Reader was already sealed, or the pair's
+    /// budget could not cover both exchanges.
     #[default]
     NotRequested,
     /// Sent, but the pair was not confirmed within its budget. Unknown,
@@ -29,8 +35,9 @@ pub(crate) enum FanRpmRead {
 
 impl<P: Port, A: ObservationProof> Reader<P, A> {
     /// Both fan speed queries within their own budget, ending `QUERY_RESERVE`
-    /// before the job deadline. An incomplete pair seals this Reader like any
-    /// incomplete exchange, so it sends nothing more.
+    /// before the job deadline, and only when that budget covers both
+    /// exchanges. An incomplete pair seals this Reader like any incomplete
+    /// exchange, so it sends nothing more.
     pub(super) async fn read_fan_rpm(
         &mut self,
         authorize: Authorize<'_, A>,
@@ -44,7 +51,9 @@ impl<P: Port, A: ObservationProof> Reader<P, A> {
             .deadline
             .checked_sub(QUERY_RESERVE)
             .map(|deadline| deadline.min(now + QUERY_BUDGET))
-            .filter(|deadline| *deadline > now)
+            .filter(|deadline| {
+                deadline.saturating_duration_since(now) >= EXCHANGE.saturating_mul(2)
+            })
         else {
             return FanRpmRead::NotRequested;
         };
@@ -75,6 +84,11 @@ impl<P: Port, A: ObservationProof> Attempt<'_, P, A> {
             .zip([FanRpmSelector::First, FanRpmSelector::Second])
             .enumerate()
         {
+            // A first exchange that ran long leaves the second unsent, and
+            // its unsent ID free, rather than quarantined by a timeout.
+            if limit.deadline.saturating_duration_since(Instant::now()) < EXCHANGE {
+                return None;
+            }
             let query = FanRpmQuery::new(transaction, selector);
             let mut frame = [0; FRAME_LENGTH];
             frame[1..].copy_from_slice(&query.request().encode());

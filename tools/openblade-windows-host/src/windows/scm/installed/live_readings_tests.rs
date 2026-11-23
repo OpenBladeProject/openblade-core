@@ -123,6 +123,11 @@ impl Rig {
         self.io.queries().len()
     }
 
+    /// Ends the current fan back-off, as its interval passing would.
+    fn end_backoff(&self) {
+        self.source.live.end_backoff_for_tests();
+    }
+
     /// A fresh metadata publication, as the metadata observer sends one.
     fn metadata(&self, on_battery: bool) {
         let status = |access| {
@@ -294,8 +299,9 @@ async fn an_unavailable_battery_power_read_is_null() {
 }
 
 /// A transient fan failure keeps the last confirmed pair for two jobs, the
-/// third publishes null, and the next confirmed pair recovers. The thermal
-/// read is fresh throughout, and no reading is invented.
+/// third publishes null, and no reading is invented. The failed pair backs
+/// off: no job sends it again until the interval passes, after which the
+/// next confirmed pair recovers. The thermal read is fresh throughout.
 #[tokio::test]
 async fn transient_fan_failures_retain_the_last_pair_for_two_jobs_then_recover() {
     let rig = Rig::new();
@@ -304,14 +310,71 @@ async fn transient_fan_failures_retain_the_last_pair_for_two_jobs_then_recover()
     assert_eq!(fans(&first), [json!(3200), json!(3000)]);
     // The second selector echoes the first: the pair confirms neither.
     rig.io.replies.lock().unwrap()[1] = Some((2, vec![1, 1, 0x1e]));
-    for expect in [json!(3200), json!(3200), Value::Null, Value::Null] {
+    for (expect, queries) in [
+        (json!(3200), 4),
+        (json!(3200), 4),
+        (Value::Null, 4),
+        (Value::Null, 4),
+    ] {
         let observed = rig.observe(2).await.unwrap();
         assert_eq!(observed["confirmedState"]["performance"], 1);
         assert_eq!(fans(&observed)[0], expect);
+        assert_eq!(rig.fan_queries(), queries);
     }
     *rig.io.replies.lock().unwrap() = [None, Some((2, vec![1, 2, 0x10]))];
+    let backing_off = rig.observe(2).await.unwrap();
+    assert_eq!(fans(&backing_off), [Value::Null, Value::Null]);
+    assert_eq!(rig.fan_queries(), 4);
+    rig.end_backoff();
     let recovered = rig.observe(2).await.unwrap();
     assert_eq!(fans(&recovered), [json!(3200), json!(1600)]);
+    assert_eq!(rig.fan_queries(), 6);
+}
+
+/// A job that asked for fan speeds and brought back no reading may have
+/// sent the pair, so it backs off too and fails closed.
+#[tokio::test]
+async fn an_asked_job_that_returns_nothing_backs_the_pair_off() {
+    let rig = Rig::new();
+    // No admitted thermal mode decodes, so the job confirms nothing.
+    rig.io.thermal.store(0xff, Ordering::Release);
+    assert!(rig.snapshot(2).await.is_none());
+    assert_eq!(rig.fan_queries(), 0);
+    rig.io.thermal.store(0, Ordering::Release);
+    let observed = rig.observe(2).await.unwrap();
+    assert_eq!(observed["confirmedState"]["performance"], 1);
+    assert_eq!(readings(&observed)[1], &Value::Null);
+    assert_eq!(rig.fan_queries(), 0);
+    rig.end_backoff();
+    let observed = rig.observe(2).await.unwrap();
+    assert_eq!(readings(&observed)[1], &json!(3200));
+}
+
+/// The back-off starts at the Driver-mode interval, doubles per consecutive
+/// unconfirmed pair up to five minutes, ignores a job that sent nothing and
+/// ends at the next confirmed pair.
+#[test]
+fn the_fan_backoff_doubles_to_its_bound_and_a_confirmed_pair_ends_it() {
+    let host = Host::new(Rc::new(Battery::default()));
+    let start = Instant::now();
+    assert!(host.fans_due(start));
+    let mut now = start;
+    for seconds in [15, 30, 60, 120, 240, 300, 300] {
+        host.attempted(FanRpmRead::Unconfirmed, now);
+        let pause = Duration::from_secs(seconds);
+        assert!(
+            !host.fans_due(now + pause - Duration::from_millis(1)),
+            "{seconds}"
+        );
+        host.attempted(FanRpmRead::NotRequested, now);
+        assert!(host.fans_due(now + pause), "{seconds}");
+        now += pause;
+    }
+    host.attempted(FanRpmRead::Confirmed([3200, 3000]), now);
+    assert!(host.fans_due(now));
+    host.attempted(FanRpmRead::Unconfirmed, now);
+    assert!(!host.fans_due(now + Duration::from_secs(15) - Duration::from_millis(1)));
+    assert!(host.fans_due(now + Duration::from_secs(15)));
 }
 
 /// A speed the managed codec would refuse is not confirmed; it counts as a
@@ -558,4 +621,22 @@ fn the_compiled_identity_ends_with_the_refused_marker() {
     assert!(
         crate::native_package::startup_policy_for_tests(&crate::NATIVE_ARTIFACT_IDENTITY).is_err()
     );
+}
+
+/// A mutation drops the retained pair, so a speed read before a write is
+/// never published after it; the next confirmed pair is published again.
+#[cfg(feature = "service-thermal-mutation-v1")]
+#[test]
+fn a_mutation_drops_the_retained_fan_pair() {
+    let admission = ReadAdmission {
+        lifecycle: 1,
+        generation: [7; 32],
+    };
+    let now = Instant::now();
+    let host = Host::new(Rc::new(Battery::default()));
+    let read = FanRpmRead::Confirmed([3200, 3000]);
+    assert_eq!(host.fans(admission, read, now), Some([3200, 3000]));
+    host.mutating();
+    assert_eq!(host.fans(admission, FanRpmRead::NotRequested, now), None);
+    assert_eq!(host.fans(admission, read, now), Some([3200, 3000]));
 }
