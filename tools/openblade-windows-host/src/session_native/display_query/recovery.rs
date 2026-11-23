@@ -371,11 +371,17 @@ impl<F: CheckpointFile> Recovery<F> {
     }
 
     /// `ResumeAfterSuccessfulExplicitRead`, plus the native per-field gate:
-    /// the read clears exactly the unresolved fields whose state it observed.
-    /// The managed pause still resumes only on a complete readback.
+    /// the read clears exactly the unresolved fields whose state it observed,
+    /// and a target that gate refused is then scheduled again. The managed
+    /// pause still resumes only on a complete readback.
     pub(super) fn explicit_read(&mut self, state: &Snapshot) -> bool {
-        self.unresolved = self.unresolved.without(self.unresolved.observed_by(state));
+        let resolved = self.unresolved.observed_by(state);
+        self.unresolved = self.unresolved.without(resolved);
         if !self.paused || self.last.is_none() || !state.confirms(self.uncertain) {
+            #[cfg(feature = "agent-display-automation-v1")]
+            if resolved != Fields::default() {
+                self.resume_gated();
+            }
             return false;
         }
         let reconciled = self.uncertain;

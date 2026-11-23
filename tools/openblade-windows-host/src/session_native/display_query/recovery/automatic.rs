@@ -149,6 +149,10 @@ pub(super) struct Automatic {
     generation: u64,
     /// Managed `transitionCancellation`.
     active: Option<Arc<Cancel>>,
+    /// Native unresolved-field gate: the latest target was refused at
+    /// admission because it touches a field whose submission may be
+    /// unresolved. An explicit read that resolves a field schedules it again.
+    gated: bool,
     /// The one transition waiting for the runner. Scheduling replaces it, as
     /// managed `ScheduleTransition` cancels the one before.
     scheduled: Option<Transition>,
@@ -227,6 +231,16 @@ impl<F: CheckpointFile> Recovery<F> {
     /// request at a time, so no manual operation is pending after it.
     pub(in super::super) fn end_manual_turn(&mut self) {
         self.automatic.manual_pending = false;
+    }
+
+    /// Native unresolved-field gate: an explicit read resolved a field, so a
+    /// target refused at admission for one is scheduled again (managed, which
+    /// has no such gate, applied it then). A paused or held target waits as
+    /// any other does.
+    pub(super) fn resume_gated(&mut self) {
+        if self.automatic.gated && !self.writes_paused() && !self.manual_hold {
+            self.resume_latest();
+        }
     }
 
     /// Managed `Observe` for a confirmed source.
@@ -374,7 +388,8 @@ impl<F: CheckpointFile> Recovery<F> {
         }
         let fields = settings.fields();
         if self.unresolved.overlaps(fields) {
-            self.automatic.pending = None;
+            // The target stays pending until a read resolves the field.
+            self.automatic.gated = true;
             self.record(
                 transition,
                 Status::Blocked,
@@ -580,6 +595,7 @@ impl<F: CheckpointFile> Recovery<F> {
     /// the next confirmed observation of that source schedules it.
     fn schedule(&mut self, target: Target, admitted: Option<PowerContext>) {
         self.cancel_active();
+        self.automatic.gated = false;
         self.automatic.pending = Some(target.source);
         let Some(admitted) = admitted else {
             self.automatic.context = Context::default();

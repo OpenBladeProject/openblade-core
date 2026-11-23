@@ -1033,6 +1033,95 @@ fn a_manual_turn_holds_scheduling_until_it_ends() {
     );
 }
 
+/// Managed has no unresolved-field gate and applies the target; native keeps
+/// it pending and applies it once an explicit read resolves the field.
+#[test]
+fn a_target_refused_for_an_unresolved_field_applies_after_a_resolving_read() {
+    let rig = Rig::new();
+    rig.observe(target(1, None));
+    assert!(rig.recovery().begin(Fields::REFRESH, Some(1)));
+    rig.recovery()
+        .complete(Status::Indeterminate, &Snapshot::unavailable("unknown"));
+    // A later manual write with a full readback unpauses; refresh stays
+    // unresolved for the native gate.
+    assert!(rig.recovery().begin(Fields::HDR, Some(1)));
+    rig.recovery()
+        .complete(Status::Succeeded, &Panel::default().snapshot());
+    assert!(!rig.paused());
+    let mut plugged = target(0, None);
+    plugged.base = settings(Some("fixed-60"), None, None, None);
+    assert_eq!(rig.observe(plugged), Observation::TransitionScheduled);
+    let mut applier = Scripted::default();
+    rig.run(&mut applier).unwrap().0.unwrap();
+    assert!(applier.applied.is_empty());
+    assert_eq!(rig.last(), (Status::Blocked, Some(PAUSED.to_owned())));
+    assert_eq!(rig.flags().1.3, Some(0), "the target stays pending");
+    // An unavailable read resolves nothing.
+    assert!(
+        !rig.recovery()
+            .explicit_read(&Snapshot::unavailable("unread"))
+    );
+    assert!(rig.recovery().scheduled().is_none());
+    assert!(!rig.recovery().explicit_read(&Panel::default().snapshot()));
+    rig.run(&mut applier).unwrap().0.unwrap();
+    assert_eq!(
+        applier.applied[0].0,
+        settings(Some("fixed-60"), None, None, None)
+    );
+    assert_eq!(rig.last(), (Status::Succeeded, None));
+    // Applied, so a further read schedules nothing.
+    assert!(!rig.recovery().explicit_read(&Panel::default().snapshot()));
+    assert!(rig.recovery().scheduled().is_none());
+}
+
+#[test]
+fn a_resolving_read_reschedules_only_a_target_the_gate_still_refuses() {
+    let rig = Rig::new();
+    rig.observe(target(1, None));
+    assert!(rig.recovery().begin(Fields::REFRESH, Some(1)));
+    rig.recovery().complete_with(
+        Status::Failed,
+        &Panel::default().snapshot(),
+        Fields::REFRESH,
+    );
+    let mut plugged = target(0, None);
+    plugged.base = settings(Some("fixed-60"), None, None, None);
+    rig.observe(plugged);
+    let mut applier = Scripted::default();
+    rig.run(&mut applier).unwrap().0.unwrap();
+    assert_eq!(rig.last(), (Status::Blocked, Some(PAUSED.to_owned())));
+    // A later target that the gate admits supersedes the refused one.
+    assert_eq!(
+        rig.observe(target(2, None)),
+        Observation::TransitionScheduled
+    );
+    rig.run(&mut applier).unwrap().0.unwrap();
+    assert_eq!(rig.last(), (Status::Succeeded, None));
+    // The read that resolves refresh then has nothing to reschedule.
+    assert!(!rig.recovery().explicit_read(&Panel::default().snapshot()));
+    assert!(rig.recovery().scheduled().is_none());
+
+    // A manual operation after the refusal holds it, as any target is held.
+    let rig = Rig::new();
+    rig.observe(target(1, None));
+    assert!(rig.recovery().begin(Fields::REFRESH, Some(1)));
+    rig.recovery().complete_with(
+        Status::Failed,
+        &Panel::default().snapshot(),
+        Fields::REFRESH,
+    );
+    let mut plugged = target(0, None);
+    plugged.base = settings(Some("fixed-60"), None, None, None);
+    rig.observe(plugged);
+    rig.run(&mut applier).unwrap().0.unwrap();
+    assert!(rig.recovery().begin(Fields::HDR, Some(0)));
+    rig.recovery()
+        .complete(Status::Succeeded, &Panel::default().snapshot());
+    assert!(!rig.paused());
+    assert!(!rig.recovery().explicit_read(&Panel::default().snapshot()));
+    assert!(rig.recovery().scheduled().is_none());
+}
+
 #[test]
 fn an_already_matching_display_submits_nothing() {
     let rig = Rig::new();
