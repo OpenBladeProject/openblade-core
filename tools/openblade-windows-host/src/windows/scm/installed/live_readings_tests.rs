@@ -86,6 +86,8 @@ impl Rig {
                             fan_io_worker(device.clone(), move || lease.authorize())
                         }),
                         write: Box::new(|_| unreachable!("no mutation worker is registered")),
+                        // The pool seed has its own tests; this rig ignores it.
+                        quarantine: Box::new(|_| {}),
                     },
                 )
             },
