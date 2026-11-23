@@ -9,7 +9,8 @@ namespace OpenBlade.Service.Tests;
 // ApplyFullTransitionAsync applies after the application lease expires and
 // after a power-source change, what a resume on an unchanged source applies
 // after a report the LowPowerGate deferred, and what a new active user's
-// activation applies. The Rust readiness tests
+// activation applies, and how confirmed drift outside OpenBlade and an
+// observed HyperBoost change those outcomes. The Rust readiness tests
 // read the same file and assert where native deliberately differs.
 public sealed partial class ServiceControlRuntimeTests
 {
@@ -23,7 +24,15 @@ public sealed partial class ServiceControlRuntimeTests
         + "powerUnchanged, powerToBattery and powerToPluggedIn are HandlePowerSourceChangedAsync with the gate clear. "
         + "resumeUnchangedAfterDeferral reports Other.exe with the LowPowerGate entered, exits it, and runs HandlePowerSourceChangedAsync on the unchanged source. It models only that part of resume processing: not the rest of ProcessNativeAsync (lighting invalidation and restore, resume validation) or the later convergence. "
         + "powerToBatteryWithController runs HandlePowerSourceChangedAsync to battery while Razer Synapse's engine is a potential controller; controllerClosedPowerUnchanged clears it and runs HandlePowerSourceChangedAsync on the unchanged source, as a later notice would. "
-        + "userActivatedOnBattery and sameUserReactivated run on a second runtime, initialized on battery with the same profiles and no profile applied: ActivateUserAsync for a user whose saved profiles are those, as its first admitted request runs it, then again for the same user.";
+        + "userActivatedOnBattery and sameUserReactivated run on a second runtime, initialized on battery with the same profiles and no profile applied: ActivateUserAsync for a user whose saved profiles are those, as its first admitted request runs it, then again for the same user. "
+        + "Every row also records fans, the confirmed fan mode, and externalChanges, the published external changes in DeviceSubsystem order. "
+        + "The drift groups below each run on their own runtime with Game reported and applied on AC. "
+        + "performanceDriftObserved sets Silent outside OpenBlade and observes it; powerToBatteryWithPerformanceDrift, powerToPluggedInWithPerformanceDrift, leaseExpiredWithPerformanceDrift and gameReportedWithPerformanceDrift then run those triggers over it. "
+        + "otherReportedWithOwnPreset reports Other.exe while firmware holds OpenBlade's own Game preset. "
+        + "powerToBatteryWithManualFanDrift sets Fixed fans outside OpenBlade before the change to battery, and powerToPluggedInAfterFansReturnedToAutomatic returns them to Automatic before the change back; powerToBatteryWithStopFanDrift sets Stop instead. "
+        + "powerToBatteryHyperBoostActive and powerToBatteryHyperBoostUnknown report HyperBoost active or unknown before the change to battery. "
+        + "resumePowerToBatteryUnsettled enters and leaves low power, begins resume validation and changes to battery while firmware reports Battery Balanced; resumeSettledWithinWindow then observes Battery Saver inside the observation window. "
+        + "performanceDriftObservedBeforeActivation runs on a battery runtime with no profile applied that observed Battery Saver and then observes Silent; userActivatedWithPerformanceDrift then runs ActivateUserAsync.";
 
     [Fact]
     public async Task NativeLifecycleReconcileVectors_MatchManagedTransitions()
@@ -127,6 +136,9 @@ public sealed partial class ServiceControlRuntimeTests
                 ["performance"] = status.ConfirmedState?.Performance is { } performance ? (int)performance : null,
                 ["source"] = status.DesiredState is { } desired ? (int)desired.Performance.Source : null,
                 ["desired"] = status.DesiredState is { } wanted ? (int)wanted.Performance.Value : null,
+                ["fans"] = status.ConfirmedState?.Fans is { } fans ? (int)fans : null,
+                ["externalChanges"] = new JsonArray(
+                    status.ExternalChanges.Select(change => (JsonNode)(int)change).ToArray()),
             });
         }
 
@@ -198,6 +210,155 @@ public sealed partial class ServiceControlRuntimeTests
             () => activation.ActivateUserAsync(user, () => true, CancellationToken.None));
         await RecordOn(activating, "sameUserReactivated",
             () => activation.ActivateUserAsync(user, () => true, CancellationToken.None));
+
+        // Each drift group below starts its own runtime as the first one
+        // started: Game reported and applied on AC. Its confirmed state is
+        // then changed outside OpenBlade, on the scripted device only.
+        async Task<TestContext> AppliedGameAsync(TimeProvider? time = null)
+        {
+            TestContext started = CreateContext(
+                providerAvailable: true,
+                initialize: false,
+                profileValidator: validator,
+                timeProvider: time);
+            started.Device.Capabilities = capabilities;
+            started.Runtime.Initialize(loaded, PowerSource.PluggedIn, PersistentOverrideState.Empty);
+            await started.Runtime.ObserveAsync(CancellationToken.None);
+            ControlOperationResult game = await ReportOn(started, @"C:\Games\Game.exe");
+            Assert.StartsWith(NativeRecordedPrefix, game.Message, StringComparison.Ordinal);
+            Assert.Equal(PerformancePreset.Performance, started.Runtime.GetStatus().ConfirmedState?.Performance);
+            return started;
+        }
+
+        Task<ControlOperationResult> ReportOn(TestContext on, string? path) =>
+            on.Runtime.ReportApplicationContextAsync(
+                new ReportApplicationContextRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), instance, ++sequence, path),
+                () => true,
+                CancellationToken.None);
+
+        async Task PowerChangedOn(TestContext on, PowerSource power)
+        {
+            on.Telemetry.Current = CreateTelemetry(power);
+            await on.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+        }
+
+        void Drift(TestContext on, Func<ConfirmedDeviceState, ConfirmedDeviceState> change) =>
+            on.Device.ConfirmedState = change(on.Device.ConfirmedState);
+
+        // Performance drift, observed and then met by both power changes, the
+        // lease expiry and a report of the same application.
+        var leases = new HeldLeaseTimeProvider();
+        TestContext performanceDrift = await AppliedGameAsync(leases);
+        using ServiceControlRuntime performanceRuntime = performanceDrift.Runtime;
+        await RecordOn(performanceDrift, "performanceDriftObserved", async () =>
+        {
+            Drift(performanceDrift, state => state with { Performance = PerformancePreset.Silent });
+            await performanceRuntime.ObserveAsync(CancellationToken.None);
+        });
+        await RecordOn(performanceDrift, "powerToBatteryWithPerformanceDrift",
+            () => PowerChangedOn(performanceDrift, PowerSource.Battery));
+        await RecordOn(performanceDrift, "powerToPluggedInWithPerformanceDrift",
+            () => PowerChangedOn(performanceDrift, PowerSource.PluggedIn));
+        await RecordOn(performanceDrift, "leaseExpiredWithPerformanceDrift", async () =>
+        {
+            leases.ExpireLeases();
+            using var bounded = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            while (performanceRuntime.GetStatus().DesiredState?.Performance.Source != SettingValueSource.PowerProfile)
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(5), bounded.Token);
+            }
+
+            await performanceRuntime.ObserveAsync(CancellationToken.None);
+        });
+        await RecordOn(performanceDrift, "gameReportedWithPerformanceDrift",
+            () => ReportOn(performanceDrift, @"C:\Games\Game.exe"));
+
+        // A report that leaves the rule while firmware holds OpenBlade's own
+        // Game preset: the new desired state is published before the
+        // transition reads it as the prior one, as at the lease expiry.
+        TestContext leaving = await AppliedGameAsync();
+        using ServiceControlRuntime leavingRuntime = leaving.Runtime;
+        await RecordOn(leaving, "otherReportedWithOwnPreset",
+            () => ReportOn(leaving, @"C:\Tools\Other.exe"));
+
+        // Fan-only drift: manual fans set outside OpenBlade, then firmware
+        // returning to Automatic before the next power change.
+        TestContext fanDrift = await AppliedGameAsync();
+        using ServiceControlRuntime fanRuntime = fanDrift.Runtime;
+        await RecordOn(fanDrift, "powerToBatteryWithManualFanDrift", async () =>
+        {
+            Drift(fanDrift, state => state with { Fans = FanMode.Fixed });
+            await PowerChangedOn(fanDrift, PowerSource.Battery);
+        });
+        await RecordOn(fanDrift, "powerToPluggedInAfterFansReturnedToAutomatic", async () =>
+        {
+            Drift(fanDrift, state => state with { Fans = FanMode.Automatic });
+            await PowerChangedOn(fanDrift, PowerSource.PluggedIn);
+        });
+        TestContext stopDrift = await AppliedGameAsync();
+        using ServiceControlRuntime stopRuntime = stopDrift.Runtime;
+        await RecordOn(stopDrift, "powerToBatteryWithStopFanDrift", async () =>
+        {
+            Drift(stopDrift, state => state with { Fans = FanMode.Stop });
+            await PowerChangedOn(stopDrift, PowerSource.Battery);
+        });
+
+        // HyperBoost that OpenBlade does not own, active or unknown, preserves
+        // both thermal subsystems.
+        TestContext hyperBoost = await AppliedGameAsync();
+        using ServiceControlRuntime hyperBoostRuntime = hyperBoost.Runtime;
+        await RecordOn(hyperBoost, "powerToBatteryHyperBoostActive", async () =>
+        {
+            Drift(hyperBoost, state => state with { HyperBoostActive = true });
+            await PowerChangedOn(hyperBoost, PowerSource.Battery);
+        });
+        TestContext hyperBoostUnknown = await AppliedGameAsync();
+        using ServiceControlRuntime hyperBoostUnknownRuntime = hyperBoostUnknown.Runtime;
+        await RecordOn(hyperBoostUnknown, "powerToBatteryHyperBoostUnknown", async () =>
+        {
+            Drift(hyperBoostUnknown, state => state with { HyperBoostActive = null });
+            await PowerChangedOn(hyperBoostUnknown, PowerSource.Battery);
+        });
+
+        // A power change observed during resume validation while firmware
+        // still reports an intermediate mode, then the destination read
+        // inside the observation window.
+        TestContext resuming = await AppliedGameAsync();
+        using ServiceControlRuntime resumingRuntime = resuming.Runtime;
+        await resumingRuntime.PrepareForLowPowerAsync(CancellationToken.None);
+        await resumingRuntime.BeginResumeValidationAsync(CancellationToken.None);
+        await RecordOn(resuming, "resumePowerToBatteryUnsettled", async () =>
+        {
+            Drift(resuming, state => state with { Performance = PerformancePreset.BatteryBalanced });
+            await PowerChangedOn(resuming, PowerSource.Battery);
+        });
+        await RecordOn(resuming, "resumeSettledWithinWindow", async () =>
+        {
+            Drift(resuming, state => state with { Performance = PerformancePreset.BatterySaver });
+            await resumingRuntime.ObserveAsync(CancellationToken.None);
+        });
+
+        // Activation overwrites a drift observed before it (managed
+        // preserveObservedExternalChanges: false).
+        TestContext overwriting = CreateContext(
+            providerAvailable: true,
+            initialPowerSource: PowerSource.Battery,
+            initialize: false,
+            profileValidator: validator,
+            userConfigurationRepository: users);
+        using ServiceControlRuntime overwritingRuntime = overwriting.Runtime;
+        overwriting.Device.Capabilities = capabilities;
+        overwriting.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+        overwritingRuntime.Initialize(loaded, PowerSource.Battery, PersistentOverrideState.Empty);
+        Drift(overwriting, state => state with { Performance = PerformancePreset.BatterySaver, Fans = FanMode.Automatic });
+        await overwritingRuntime.ObserveAsync(CancellationToken.None);
+        await RecordOn(overwriting, "performanceDriftObservedBeforeActivation", async () =>
+        {
+            Drift(overwriting, state => state with { Performance = PerformancePreset.Silent });
+            await overwritingRuntime.ObserveAsync(CancellationToken.None);
+        });
+        await RecordOn(overwriting, "userActivatedWithPerformanceDrift",
+            () => overwritingRuntime.ActivateUserAsync(user, () => true, CancellationToken.None));
 
         return new JsonObject
         {
