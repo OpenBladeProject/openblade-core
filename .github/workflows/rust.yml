@@ -305,6 +305,10 @@ jobs:
           # The lanes without it pin that ObserveState still refuses them.
           $liveReadings = @('openblade-windows-service-candidate', 'service-live-readings-v1')
           $liveReadingsProfiles = @('openblade-windows-service-candidate', 'service-live-readings-v1,service-profiles-v1')
+          # Beside the Driver-mode read, which shares the job, and beside a fan
+          # write, which drops a retained fan pair.
+          $liveReadingsDriverMode = @('openblade-windows-service-candidate', 'service-keyboard-driver-mode-read-v1,service-live-readings-v1,service-profiles-v1')
+          $liveReadingsFans = @('openblade-windows-service-candidate', 'service-live-readings-v1,service-fan-mutation-v2')
           # One run per filter, so a filter that matches no test fails the step.
           foreach ($run in @(
               @('openblade-windows-service-candidate', 'service-temporary-charge-v1', 'service_status::object_tests'),
@@ -346,10 +350,17 @@ jobs:
               ($driverMode + 'native_package'),
               ($driverModeProfiles + 'driver_mode::tests'),
               ($liveReadings + 'live_readings::tests'),
+              ($liveReadings + 'live_readings::windows::tests'),
               ($liveReadings + 'fan_rpm'),
               ($liveReadings + 'readiness::tests::observation'),
               ($liveReadings + 'native_package'),
               ($liveReadingsProfiles + 'live_readings::tests'),
+              ($liveReadingsDriverMode + 'live_readings::tests'),
+              ($liveReadingsDriverMode + 'fan_rpm'),
+              ($liveReadingsDriverMode + 'driver_mode::tests'),
+              ($liveReadingsFans + 'live_readings::tests'),
+              ($liveReadingsFans + 'capability_tests'),
+              @('openblade-windows-service-candidate', 'service-mailbox-observation-v1', 'capability_tests'),
               @('openblade-windows-service-candidate', 'service-mailbox-observation-v1', 'readiness::tests::observation'),
               @('openblade-windows-service-candidate', 'service-mailbox-observation-v1', 'driver_mode_absent'),
               @('openblade-windows-service-candidate', 'service-profiles-v1', 'driver_mode_absent'),
@@ -401,6 +412,7 @@ jobs:
               # The live readings for the same reason, also beside the Driver-mode read.
               @('openblade-windows-service-candidate', 'service-live-readings-v1,service-profiles-v1'),
               @('openblade-windows-service-candidate', 'service-keyboard-driver-mode-read-v1,service-live-readings-v1,service-profiles-v1'),
+              @('openblade-windows-service-candidate', 'service-live-readings-v1,service-fan-mutation-v2'),
               @('openblade-windows-service-candidate', 'service-profile-triggers-v1'),
               @('openblade-windows-agent-candidate', 'agent-display-brightness-write-v1'),
               @('openblade-windows-agent-candidate', 'agent-display-profile-apply-v1'),
