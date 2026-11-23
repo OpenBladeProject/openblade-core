@@ -1031,6 +1031,10 @@ fn a_hang_before_any_part_publishes_the_unavailable_record() {
 struct Rig {
     io: Arc<FanIo>,
     custody: Arc<Custody>,
+    /// While set, the admission the worker sees in place of the custody's:
+    /// a device change after the worker's last check and before the source
+    /// accepts its reading.
+    worker_admission: Arc<Mutex<Option<ReadAdmission>>>,
     source: ReadSource,
     publisher: watch::Sender<Arc<Publication>>,
 }
@@ -1042,10 +1046,15 @@ impl Rig {
             live: AtomicBool::new(true),
             generation: AtomicU8::new(7),
         });
+        let worker_admission = Arc::new(Mutex::new(None));
         let io = FanIo::new([0x20, 0x1e]);
         let device = io.clone();
+        let pinned = worker_admission.clone();
         let source = ReadSource::compose(custody.clone(), move |lease| {
-            fan_io_worker(device, move || lease.authorize())
+            fan_io_worker(device, move || {
+                let pinned = *pinned.lock().unwrap();
+                pinned.or_else(|| lease.authorize())
+            })
         });
         let source = match fake {
             Some(fake) => source.with_firmware_capture_for_tests(fake),
@@ -1059,6 +1068,7 @@ impl Rig {
         Self {
             io,
             custody,
+            worker_admission,
             source,
             publisher,
         }

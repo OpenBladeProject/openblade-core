@@ -15,6 +15,18 @@ fn with_mcu(version: &str) -> Json {
     record
 }
 
+/// Waits for the job to send the query, and fails rather than hangs when it
+/// sends none.
+async fn until_queried(rig: &Rig) {
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while rig.io.mcu_queries() == 0 {
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+    })
+    .await
+    .expect("the job sends the MCU version query");
+}
+
 /// A version read after the record was published arrives in the reply of the
 /// observation that read it and in a new publication of both projections, as
 /// managed publishes the changed record; it is then never read again.
@@ -129,14 +141,34 @@ async fn a_version_read_across_an_admission_change_is_discarded() {
     let (release, held) = channel();
     *rig.io.hold_mcu.lock().unwrap() = Some(held);
     let control = async {
-        while rig.io.mcu_queries() == 0 {
-            tokio::time::sleep(Duration::from_millis(1)).await;
-        }
+        until_queried(&rig).await;
         rig.custody.generation.store(8, Ordering::Release);
         release.send(()).unwrap();
     };
     let (observed, ()) = tokio::join!(rig.snapshot(0), control);
     assert!(observed.is_none());
+    for published in rig.published() {
+        assert_eq!(published["firmware"], record_json());
+    }
+    assert_eq!(rig.observe(0).await["firmware"], with_mcu("1.5.0.0"));
+    assert_eq!(rig.io.mcu_queries(), 2);
+}
+
+/// The source keeps a version only from a reading it accepts. Here the
+/// worker confirms the version under the admission it was started with while
+/// the device has changed: the window between the worker's last check and the
+/// source's acceptance. The reading is discarded with its version, and the
+/// next query, under the new admission, reads it.
+#[tokio::test]
+async fn a_version_the_source_does_not_accept_is_not_kept() {
+    let rig = Rig::new(Some(Arc::new(Fake::healthy())));
+    rig.await_firmware();
+    answer(&rig, Some(VERSION));
+    *rig.worker_admission.lock().unwrap() = rig.custody.authorize();
+    rig.custody.generation.store(8, Ordering::Release);
+    assert!(rig.snapshot(0).await.is_none());
+    assert_eq!(rig.io.mcu_queries(), 1);
+    *rig.worker_admission.lock().unwrap() = None;
     for published in rig.published() {
         assert_eq!(published["firmware"], record_json());
     }
@@ -154,9 +186,7 @@ async fn stop_with_an_outstanding_query_keeps_no_version() {
     let (release, held) = channel();
     *rig.io.hold_mcu.lock().unwrap() = Some(held);
     let control = async {
-        while rig.io.mcu_queries() == 0 {
-            tokio::time::sleep(Duration::from_millis(1)).await;
-        }
+        until_queried(&rig).await;
         // Stop is polled first: it fences the worker before the SET returns.
         let release = async { release.send(()).unwrap() };
         let (stopped, ()) = tokio::join!(rig.source.stop(), release);
