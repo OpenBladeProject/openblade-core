@@ -1663,7 +1663,7 @@ async fn dropped_at_bound(
     let bound = crate::service_frame::RECONCILE_BUDGET + crate::service_frame::RECONCILE_MARGIN;
     rig.port.state.lock().unwrap().before_write = Some(Arc::new(move |number| {
         if number == last {
-            std::thread::sleep(bound + std::time::Duration::from_millis(500));
+            std::thread::sleep(bound + std::time::Duration::from_secs(3));
         }
     }));
     let reply = report(&rig, before.len() as i64 + 1, Some(dropped)).await;
@@ -1716,6 +1716,26 @@ async fn a_step_dropped_at_its_bound_records_its_own_completed_write() {
         rig.origin.stop();
         let _ = rig.source.lock().await.drain().await;
     }
+}
+/// An explicit request whose readback already shows its destination writes
+/// nothing, and that readback is OpenBlade's own (managed
+/// `ConfirmIntentional`): a change recorded outside OpenBlade clears.
+#[tokio::test]
+async fn an_explicit_no_op_readback_is_own_state() {
+    let rig = rig_at(files_with_game(json!({"pluggedIn":{"performance":2}})), 0);
+    report(&rig, 1, Some(r"C:\Games\Game.exe")).await;
+    // Balanced, outside OpenBlade.
+    rig.port.state.lock().unwrap().selectors = [0; 2];
+    assert_eq!(
+        observed(&rig, 1).await["status"]["externalChanges"],
+        json!([0])
+    );
+    let before = writes(&rig);
+    let set = rig.set(2, value(1, 0)).await;
+    assert_eq!(set["result"]["status"], 1, "{set}");
+    assert_eq!(writes(&rig), before);
+    assert_eq!(rig.get().await["status"]["externalChanges"], json!([]));
+    rig.stop().await;
 }
 #[path = "request_triggers_low_power.rs"]
 mod low_power;
