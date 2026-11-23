@@ -1846,29 +1846,60 @@ battery and back to AC, the gate's Enter and Exit around a deferred report
 followed by `HandlePowerSourceChangedAsync` on the unchanged source, a
 change to battery with Razer Synapse's engine present followed by the same
 source once it has gone, and a user's activation on battery followed by the
-same user's again. The resume
+same user's again. Drift rows add a performance or fan change outside
+OpenBlade met by each trigger, an observed HyperBoost, a resume whose
+firmware settles within the observation window, and an activation over
+drift. Every row records the confirmed fans and `externalChanges`. The resume
 row models only that part of managed's resume. It does not run the full
 `ProcessNativeAsync` (lighting invalidation and restore, resume validation)
 or the later convergence. `request_triggers_lifecycle.rs` replays the rows.
-Native differs from managed in four ways:
 
-- Lease expiry. Both select the power profile's Balanced. Managed submits
-  nothing: `PublishApplicationContextStatus` publishes the new desired state
-  before `ApplyFullTransitionAsync` reads it as the prior one, so its drift
-  tracker reads OpenBlade's own Game preset as an external change and pauses
-  automatic performance and fans. Native has no drift tracker and applies, as
-  its report that leaves a rule already does.
+Native tracks confirmed thermal drift as managed does (`thermal_drift.rs`;
+managed `ConfirmedStateDriftTracker` and `ResolveAutomaticWriteExclusions`,
+`ServiceControlRuntime.cs:16655-16720`). The baseline is in memory, and the
+first reading after the Service starts only sets it. A value a reading leaves
+unknown is no evidence. OpenBlade's own write readbacks are intentional: a
+match clears the subsystem and a mismatch marks it. Before any write, an
+automatic reconciliation compares its fresh reading with the intent
+OpenBlade last committed and the new one. Either thermal subsystem matching
+neither, or an observed HyperBoost, excludes both from that reconciliation.
+The excluded steps write nothing and reply with managed's paused or deferred
+message, and the debt settles. An activation applies over drift. A resume
+whose reading matches neither holds the change for the one-minute
+observation window, and a fresh status reading of the destination within it
+clears the change (`ServiceControlRuntime.cs:19029-19087`). The status
+publishes `externalChanges` in managed's order. Exclusion only removes
+writes: every remaining write keeps its exact-device, competing-controller,
+power, session and readback admission and stops on ambiguity.
+
+Native differs from managed in these ways:
+
+- Convergence. Managed's convergence loop reconverges confirmed drift under
+  MaintainDesiredState (above). Native has none, so a subsystem stays
+  excluded until a reconciliation reads OpenBlade's intent again, an
+  explicit request writes it, or the Service restarts. This is the remaining
+  divergence from Architecture rule 5.
+- Prior intent. Managed publishes a report's or save's desired state before
+  the transition reads it as the prior one, so a report that leaves a rule
+  pauses over OpenBlade's own preset (`otherReportedWithOwnPreset`). Native
+  keeps the intent it last committed as the prior one and applies. It
+  reproduces the same outcome at lease expiry (`leaseExpired`), where only
+  the new intent counts. A reconciliation deferred or retried before any
+  submission keeps its prior intent, as managed's
+  `PendingTransitionContinuation.PriorDesired` does, and an explicit
+  request's intent becomes the prior one only with its own readback.
+- Narrower readings. Native reads the selector pair and the manual-fan bit:
+  fans compare as manual or Automatic, so Stop and Fixed both read as
+  manual, and GPU clock offsets are no evidence. HyperBoost unknown has no
+  native reading; an undecodable reading resolves nothing and writes
+  nothing. A competing controller refuses the capture before any reading,
+  so native records no external change there where managed does
+  (`powerToBatteryWithController`). An excluded step's own reading reaches
+  `confirmedState` only at the next status reading.
 - Resume on an unchanged source after a deferral. Managed's
   `HandlePowerSourceChangedAsync` submits nothing then; its convergence loop
   reconverges later under MaintainDesiredState. Native applies the deferred
   debt at the tick after the boundary.
-- External changes. Managed excludes a subsystem its drift tracker found
-  changed outside OpenBlade from automatic writes
-  (`ResolveAutomaticWriteExclusions`, `ServiceControlRuntime.cs:16655-16694`).
-  Native has no drift tracker, so a power-kind change, lease expiry or
-  activation overwrites an out-of-band performance or fan change with the
-  saved intent. This conflicts with Architecture rule 5 and must be resolved
-  before the feature is admitted for packaging.
 - Activation timing. Managed activates a user at its first admitted request.
   Native activates the console user at the first tick that reads it, and
   only the console session's user, whose capture must prove it unlocked.
