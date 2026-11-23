@@ -85,6 +85,22 @@ pub(crate) struct State {
     /// clock. A recipe on paused time takes its deadline as that request's
     /// budget from its own start (see `worker`).
     pub(crate) arrival: Option<Instant>,
+    /// The keyboard device mode a 00/84 query reports (0 Normal, 3 Driver),
+    /// which an accepted 00/04 setter changes.
+    pub(crate) device_mode: u8,
+    pub(crate) device_mode_queries: usize,
+    pub(crate) device_mode_sets: usize,
+    /// Called with each 00/84 query's number (1-based) as it is sent, with
+    /// the fixture state locked.
+    pub(crate) device_mode_on_query: Option<Arc<dyn Fn(usize) + Send + Sync>>,
+    /// That 00/84 query (1-based) completes with a receive timeout.
+    pub(crate) device_mode_timeout: Option<usize>,
+    /// The 00/04 setter fails at submission, applying nothing.
+    pub(crate) device_mode_fail_set: bool,
+    /// The 00/04 setter is acknowledged without changing the mode.
+    pub(crate) device_mode_ignore_set: bool,
+    /// The 00/04 acknowledgement echoes another mode.
+    pub(crate) device_mode_bad_ack: bool,
 }
 #[derive(Clone)]
 pub(crate) struct Fixture {
@@ -490,6 +506,32 @@ impl Port for MemoryPort {
                             s.windows_on_battery = Some(windows);
                         }
                         vec![s.actual, s.recommended]
+                    }
+                    (0, 0x84) => {
+                        assert_eq!(payload, [0, 0]);
+                        s.device_mode_queries += 1;
+                        if let Some(hook) = &s.device_mode_on_query {
+                            hook(s.device_mode_queries);
+                        }
+                        if s.device_mode_timeout == Some(s.device_mode_queries) {
+                            self.reply_timeout = true;
+                        }
+                        vec![s.device_mode, 0]
+                    }
+                    (0, 0x04) => {
+                        assert!(matches!(payload, [0 | 3, 0]), "{payload:?}");
+                        s.device_mode_sets += 1;
+                        if s.device_mode_fail_set {
+                            return Err(io::ErrorKind::Other.into());
+                        }
+                        if !s.device_mode_ignore_set {
+                            s.device_mode = payload[0];
+                        }
+                        let mut ack = payload.to_vec();
+                        if s.device_mode_bad_ack {
+                            ack[0] ^= 3;
+                        }
+                        ack
                     }
                     _ => panic!("unexpected typed fixture command {class:x}/{command:x}"),
                 };

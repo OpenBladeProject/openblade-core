@@ -547,6 +547,37 @@ public sealed class WindowsNativeEpochTests
     }
 
     [Fact]
+    public void KeyboardDriverModeOwnerIsNotAdmittedByFeatureOrMarker()
+    {
+        // Driver-mode ownership writes 00/04. The image is refused by its own name, before the
+        // read and trigger features it implies, even in a record that drops them and claims only
+        // the admitted composition it would extend.
+        string source = new('a', 40);
+        const string owner = "service-keyboard-driver-mode-v1";
+        const string refusal = "Keyboard Driver-mode ownership is not admitted for packaging.";
+        const string features = "controller-admission-compile-check,firmware-performance-compile-check,hid-identity-compile-check,installed-service-candidate,lifecycle-evidence-compile-check,service-battery-policy-v1,service-fan-mutation-v2,service-hardware-compile-check,service-mailbox-observation-v1,service-temporary-charge-v1,service-thermal-mutation-v1,startup-custody-v1";
+        const string admitted = "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1,service-fan-mutation-v2,service-battery-policy-v1,service-temporary-charge-v1";
+        Assert.Equal("service-temporary-charge-v1", NativeArtifact.Inspect(
+            [.. Image("service", schema: 2, features: features, capabilities: admitted)], "service", source).StartupPolicy);
+        string forged = features.Replace("service-mailbox-observation-v1,", owner + ",service-mailbox-observation-v1,", StringComparison.Ordinal);
+        string built = features.Replace("service-mailbox-observation-v1,", "service-keyboard-driver-mode-read-v1," + owner + ",service-mailbox-observation-v1,service-profile-triggers-v1,service-profiles-v1,", StringComparison.Ordinal);
+        string marked = admitted + ",service-keyboard-driver-mode-read-v1," + owner;
+        foreach (string withFeature in new[] { forged, built })
+        {
+            foreach (string claimed in new[] { marked, admitted })
+            {
+                var refused = Assert.Throws<InvalidDataException>(() => NativeArtifact.Inspect(
+                    [.. Image("service", schema: 2, features: withFeature, capabilities: claimed)], "service", source));
+                Assert.Equal(refusal, refused.Message);
+            }
+        }
+        // A forged marker without the feature is no better.
+        var marker = Assert.Throws<InvalidDataException>(() => NativeArtifact.Inspect(
+            [.. Image("service", schema: 2, features: features, capabilities: admitted + "," + owner)], "service", source));
+        Assert.Equal(refusal, marker.Message);
+    }
+
+    [Fact]
     public void ProfileTriggerServiceIsNotAdmittedByFeatureOrMarker()
     {
         string source = new('a', 40);

@@ -380,10 +380,14 @@ fn the_compiled_identity_ends_with_the_refused_marker() {
     let identity = std::str::from_utf8(&crate::NATIVE_ARTIFACT_IDENTITY).unwrap();
     let fields: Vec<&str> = identity.split('\n').collect();
     assert_eq!(fields[2], "service");
-    // A live-reading build appends its own refused marker after it.
+    // An ownership build, then a live-reading build, append their own
+    // refused markers after it.
     let marked = fields[8]
         .strip_suffix(",service-live-readings-v1")
         .unwrap_or(fields[8]);
+    let marked = marked
+        .strip_suffix(",service-keyboard-driver-mode-v1")
+        .unwrap_or(marked);
     assert!(
         marked.ends_with(",service-keyboard-driver-mode-read-v1"),
         "{}",

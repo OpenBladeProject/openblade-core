@@ -1,6 +1,9 @@
 //! Prelisted fake-I/O installed dispatcher tests. Every root, SID, authority,
 //! metadata sample and native port is injected before a default resolver exists.
 use super::*;
+#[cfg(feature = "service-keyboard-driver-mode-v1")]
+#[path = "driver_mode_owner.rs"]
+mod driver_mode_owner;
 #[cfg(feature = "service-fan-mutation-v2")]
 #[path = "pool_pins.rs"]
 mod pool_pins;

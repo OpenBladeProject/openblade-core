@@ -1,10 +1,13 @@
-//! The reviewed 00/04 keyboard device-mode setters exist only in the protocol
-//! crate's tests. `RazerReport::create` and `encode_report` are public
-//! encoders, so no type stops other code building 00/04. This guard is a
-//! textual allowlist: it fails when non-test source in the native Service's
-//! crates names the setter, renames an encoder on import, or adds a call to
-//! either encoder, so each new one is reviewed against the admitted commands.
-//! It does not see an encoder reached through a glob import or a macro.
+//! The reviewed 00/04 keyboard device-mode setters exist only behind the
+//! protocol crate's `device-mode-setters` feature, which only the host's
+//! `service-keyboard-driver-mode-v1` composition enables, and in its tests.
+//! `RazerReport::create` and `encode_report` are public encoders, so no type
+//! stops other code building 00/04. This guard is a textual allowlist: it
+//! fails when non-test source in the native Service's crates names the setter
+//! outside the codec and the one Driver-mode write recipe, renames an encoder
+//! on import, or adds a call to either encoder, so each new one is reviewed
+//! against the admitted commands. It does not see an encoder reached through
+//! a glob import or a macro.
 use std::{
     collections::BTreeMap,
     fs,
@@ -20,8 +23,8 @@ const CONSTRUCTIONS: &[(&str, usize)] = &[
         "rust/crates/openblade-protocol/src/custom_performance.rs",
         2,
     ),
-    // The 00/84 query alone.
-    ("rust/crates/openblade-protocol/src/device_mode.rs", 1),
+    // The 00/84 query and the feature-gated 00/04 setter.
+    ("rust/crates/openblade-protocol/src/device_mode.rs", 2),
     ("rust/crates/openblade-protocol/src/fan.rs", 1),
     // The 0D/88 fan speed query alone.
     ("rust/crates/openblade-protocol/src/fan_rpm.rs", 1),
@@ -57,6 +60,13 @@ const CONSTRUCTIONS: &[(&str, usize)] = &[
         "tools/openblade-windows-host/src/performance_runtime/device.rs",
         2,
     ),
+];
+
+/// The only non-test files that may name the 00/04 setter: its codec and the
+/// Driver-mode write recipe (`Reader::apply_device_mode`).
+const SETTER_USERS: &[&str] = &[
+    "rust/crates/openblade-protocol/src/device_mode.rs",
+    "tools/openblade-windows-host/src/discovery/hid_lease/performance/device_mode.rs",
 ];
 
 fn root() -> PathBuf {
@@ -108,7 +118,10 @@ fn no_non_test_source_names_the_setter_or_adds_an_encoder_call() {
             .to_str()
             .unwrap()
             .replace('\\', "/");
-        assert!(!text.contains("DeviceModeSet"), "{name} names the setter");
+        assert!(
+            !text.contains("DeviceModeSet") || SETTER_USERS.contains(&name.as_str()),
+            "{name} names the setter"
+        );
         for encoder in ["RazerReport as ", "encode_report as "] {
             assert!(!text.contains(encoder), "{name} renames an encoder");
         }
@@ -125,16 +138,49 @@ fn no_non_test_source_names_the_setter_or_adds_an_encoder_call() {
     assert_eq!(constructions, expected);
 }
 
-/// The protocol module builds the query from fixed constants and names no
-/// setter ID; the setter and its acknowledgement live in its tests.
+/// The protocol module builds the query from fixed constants. The setter
+/// names its one ID, and both its type and its methods exist only with the
+/// `device-mode-setters` feature or in the module's tests.
 #[test]
-fn the_device_mode_codec_builds_only_the_query() {
+fn the_device_mode_setter_is_gated_behind_its_feature() {
     let codec =
         fs::read_to_string(root().join("rust/crates/openblade-protocol/src/device_mode.rs"))
             .unwrap();
-    assert!(!codec.contains("0x04"));
     assert!(codec.contains("const QUERY: u8 = 0x84;"));
     assert!(codec.contains("RazerReport::create(transaction, CLASS, QUERY, &QUERY_ARGUMENTS)"));
+    assert_eq!(codec.matches("0x04").count(), 1);
+    assert!(codec.contains("    const ID: u8 = 0x04;"));
+    let gate = "#[cfg(any(test, feature = \"device-mode-setters\"))]\n";
+    assert_eq!(codec.matches(gate).count(), 2);
+    assert!(codec.contains(&format!("{gate}pub struct DeviceModeSet {{")));
+    assert!(codec.contains(&format!("{gate}impl DeviceModeSet {{")));
+    assert!(codec.contains("RazerReport::create(transaction, CLASS, Self::ID, &arguments)"));
     let tests = codec.split("#[cfg(test)]").skip(1).collect::<Vec<_>>();
     assert_eq!(tests, ["\nmod tests;\n"]);
+}
+
+/// Only the host's Driver-mode ownership feature enables the setters, and
+/// only the Driver-mode write recipe imports them, under that feature.
+#[test]
+fn only_the_driver_mode_owner_enables_the_setters() {
+    let root = root();
+    let protocol =
+        fs::read_to_string(root.join("rust/crates/openblade-protocol/Cargo.toml")).unwrap();
+    assert!(protocol.contains("\ndevice-mode-setters = []\n"));
+    let host = fs::read_to_string(root.join("tools/openblade-windows-host/Cargo.toml")).unwrap();
+    let enabling = host
+        .lines()
+        .filter(|line| line.contains("device-mode-setters"))
+        .collect::<Vec<_>>();
+    assert_eq!(enabling.len(), 1, "{enabling:?}");
+    assert!(enabling[0].starts_with("service-keyboard-driver-mode-v1 = ["));
+    let recipe =
+        fs::read_to_string(root.join(
+            "tools/openblade-windows-host/src/discovery/hid_lease/performance/device_mode.rs",
+        ))
+        .unwrap();
+    assert!(recipe.contains(
+        "#[cfg(feature = \"service-keyboard-driver-mode-v1\")]\nuse openblade_protocol::device_mode::DeviceModeSet;\n"
+    ));
+    assert_eq!(recipe.matches("DeviceModeSet").count(), 2);
 }

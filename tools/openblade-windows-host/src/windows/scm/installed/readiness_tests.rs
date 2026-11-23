@@ -1011,3 +1011,114 @@ async fn a_serving_loop_tick_runs_the_lifecycle_reconciliation() {
     }
     drive.await.unwrap();
 }
+
+/// The lifecycle source with a keyboard Driver-mode step that records where
+/// the tick runs it.
+#[cfg(feature = "service-keyboard-driver-mode-v1")]
+struct DriverModeSource {
+    inner: LifecycleSource,
+    maintained: Rc<Cell<usize>>,
+    unlocked: Rc<Cell<usize>>,
+}
+#[cfg(feature = "service-keyboard-driver-mode-v1")]
+impl StatusSource for DriverModeSource {
+    fn snapshot(&mut self, caller: Caller, at: Instant) -> Pending<'_, Snapshot> {
+        self.inner.snapshot(caller, at)
+    }
+    fn verify_origin(&self) -> io::Result<()> {
+        self.inner.verify_origin()
+    }
+    fn process_power_source(&mut self) -> Pending<'_, ()> {
+        self.inner.process_power_source()
+    }
+    fn drain(&mut self) -> Pending<'_, ()> {
+        self.inner.drain()
+    }
+    fn reconcile_lifecycle(&mut self) -> Option<Reconciling> {
+        // This tick's keyboard step already ran.
+        assert_eq!(self.maintained.get(), self.inner.reconciled.get() + 1);
+        self.inner.reconcile_lifecycle()
+    }
+    fn maintain_driver_mode(&mut self) -> Option<Reconciling> {
+        let power = self.inner.inner.power_checks.get();
+        let reconciled = self.inner.reconciled.get();
+        let source = self.inner.source.borrow().clone();
+        let (maintained, unlocked) = (self.maintained.clone(), self.unlocked.clone());
+        Some(Box::pin(async move {
+            // After this tick's power check, before its reconciliation.
+            assert_eq!(
+                (power, reconciled),
+                (maintained.get() + 1, maintained.get())
+            );
+            if source.is_some_and(|source| source.try_lock().is_ok()) {
+                unlocked.set(unlocked.get() + 1);
+            }
+            maintained.set(maintained.get() + 1);
+            Ok(())
+        }))
+    }
+}
+
+/// Managed step order on every tick: the power-source classification, the
+/// keyboard Driver-mode step, then the lifecycle reconciliation. The step is
+/// awaited with the source lock released.
+#[cfg(feature = "service-keyboard-driver-mode-v1")]
+#[tokio::test(start_paused = true)]
+async fn a_serving_loop_tick_runs_the_driver_mode_step_after_the_power_check() {
+    let events = Events::default();
+    let (ports, _tx) = ports(Fault::None, &events);
+    let power_checks = Rc::new(Cell::new(0));
+    let reconciled = Rc::new(Cell::new(0));
+    let maintained = Rc::new(Cell::new(0));
+    let unlocked = Rc::new(Cell::new(0));
+    let source = Rc::new(RefCell::new(None));
+    *ports.source.lock().await = Box::new(DriverModeSource {
+        inner: LifecycleSource {
+            inner: CountingSource {
+                inner: TestSource {
+                    fault: Fault::None,
+                    events: events.clone(),
+                    publications: None,
+                },
+                origin_checks: Rc::default(),
+                power_checks: power_checks.clone(),
+            },
+            source: source.clone(),
+            reconciled: reconciled.clone(),
+            unlocked: Rc::default(),
+        },
+        maintained: maintained.clone(),
+        unlocked: unlocked.clone(),
+    });
+    *source.borrow_mut() = Some(ports.source.clone());
+    let (shutdown, receiver) = oneshot::channel();
+    let (failed, _notified) = oneshot::channel();
+    let drive = ports.drive(receiver, failed);
+    tokio::pin!(drive);
+    let settle = || async {
+        for _ in 0..5_000 {
+            tokio::task::yield_now().await;
+        }
+    };
+    let script = async {
+        settle().await;
+        for ticks in 1..=4 {
+            if ticks > 1 {
+                tokio::time::advance(Duration::from_millis(500)).await;
+                settle().await;
+            }
+            assert_eq!(
+                (power_checks.get(), maintained.get(), reconciled.get()),
+                (ticks, ticks, ticks)
+            );
+        }
+        assert_eq!(unlocked.get(), maintained.get());
+        shutdown.send(()).unwrap();
+    };
+    tokio::select! {
+        biased;
+        result = &mut drive => panic!("drive ended early: {result:?}"),
+        () = script => {}
+    }
+    drive.await.unwrap();
+}

@@ -760,6 +760,38 @@ fn a_keyboard_driver_mode_reader_is_not_admitted_by_feature_or_marker() {
 }
 
 #[test]
+fn a_keyboard_driver_mode_owner_is_not_admitted_by_feature_or_marker() {
+    // Driver-mode ownership writes 00/04. The reader refuses it by its own
+    // name, even in a record that drops the read and trigger features it
+    // implies and claims only the admitted composition it would extend.
+    const OWNER: &str = "service-keyboard-driver-mode-v1";
+    let temporary = "controller-admission-compile-check,firmware-performance-compile-check,hid-identity-compile-check,installed-service-candidate,lifecycle-evidence-compile-check,service-battery-policy-v1,service-fan-mutation-v2,service-hardware-compile-check,service-mailbox-observation-v1,service-temporary-charge-v1,service-thermal-mutation-v1,startup-custody-v1";
+    let admitted = "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1,service-fan-mutation-v2,service-battery-policy-v1,service-temporary-charge-v1";
+    assert!(capabilities(2, "service", temporary, admitted).is_ok());
+    let forged = temporary.replace(
+        "service-mailbox-observation-v1,",
+        &format!("{OWNER},service-mailbox-observation-v1,"),
+    );
+    let built = temporary.replace(
+        "service-mailbox-observation-v1,",
+        &format!(
+            "{OWNER},service-keyboard-driver-mode-read-v1,service-mailbox-observation-v1,service-profile-triggers-v1,service-profiles-v1,"
+        ),
+    );
+    let marked = format!("{admitted},service-keyboard-driver-mode-read-v1,{OWNER}");
+    for features in [forged.as_str(), built.as_str()] {
+        for claimed in [marked.as_str(), admitted, "none"] {
+            for role in ["service", "agent"] {
+                assert!(capabilities(2, role, features, claimed).is_err());
+                assert!(capabilities(1, role, features, claimed).is_err());
+            }
+        }
+    }
+    // A forged marker without the feature is no better.
+    assert!(capabilities(2, "service", temporary, &format!("{admitted},{OWNER}")).is_err());
+}
+
+#[test]
 fn a_live_reading_service_is_not_admitted_by_feature_or_marker() {
     // The features and the marker build.rs gives each admitted Service
     // composition built with service-live-readings-v1. Packaging has not
