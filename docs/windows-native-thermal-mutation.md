@@ -1718,9 +1718,12 @@ refused, as a remote-interactive request is. The probe names a candidate
 only. The attempt's `WindowsGuard::capture` proves it afresh before any read
 or write: the same console session unlocked, the same primary SID and logon
 LUID, known Windows power and competing-controller absence. The tick reads
-the console user only at its first pass, after the write epoch moved (every
-session notice fences it) and while no user is known, so it queries no token
-on most ticks and still sees a logon without a further notice.
+the console user at its first pass, after the write epoch moved (every
+session notice fences it), and every 3 s (`UNNAMED_POLL`) while no user is
+known, so it queries no token on most ticks and still sees a logon without a
+further notice. In low power it reads none: no attempt runs there, and the
+notice that clears the gate also moves the epoch, so the first tick after it
+reads the console user.
 
 The tick takes the mutation gate only when it is free. Otherwise it keeps
 its state, updating only its time, for the next tick. An attempt runs
@@ -1732,16 +1735,32 @@ records the cause, renews the lease and takes no capture. The tick's
 reconciliation id is a fresh `OpenBlade.LifecycleReconcile` string, and each
 step journals under its own `step_request` id as a report's does.
 
-A cause stays pending until an attempt's steps leave nothing owed, or a
-newer cause replaces it. The retry budget is the debt's own, as a report's
-is:
+A cause stays pending until an attempt's steps leave nothing owed, a
+competing controller drops it, or a newer cause replaces it. The retry
+budget is the debt's own, as a report's is:
 
-- An attempt refused before any step spends nothing. Causes include no
-  console user, a refused capture (such as a locked session at resume), a
+- A capture refused because fresh competing-controller absence is not
+  confirmed drops the cause and settles the pair's debt. `Identity::admits`
+  reports that refusal as its own typed error (`competing_controller`), and
+  only its controller check returns it. A detection warning or an inventory
+  slower than 1 s confirms no absence and is treated the same, as managed
+  treats a detection warning as a controller. Strict thermal control stays
+  advisory (Architecture rule 5): nothing is queued for after the controller
+  leaves, which would overwrite what the user chose in it. Managed matches:
+  its power change applies nothing with a controller present and nothing on
+  a later unchanged source once it leaves. The next cause or changed report
+  owes afresh.
+- An attempt refused before any step for any other reason spends nothing.
+  Causes include no console user, a refused capture (such as a locked
+  session at resume, or a per-user store the native Service cannot open), a
   fenced store and unknown Windows power. Such an attempt reads no firmware
   and takes at most one capture per epoch move. Unrelated notices, such as a
   battery-level power notice or another session's notice, therefore cannot
-  use the cause up before an unlock.
+  use the cause up before an unlock. A fenced store keeps the cause because
+  the fence is OpenBlade's own unsettled journal row or a document changed
+  outside the Service, not another controller. A missing per-user store
+  directory keeps it because the native Service never creates one: only a
+  Service switch, which starts a new runtime, provides it.
 - An attempt whose steps leave the debt owed has spent the debt's budget
   through `Reconciled::after`: a deferral spends nothing, a transient
   refusal spends one of `RETRIES`, and every other outcome settles the
@@ -1751,7 +1770,10 @@ is:
   yet.
 - Either kind is retried only once the ordinary write epoch has moved, as
   an unlock's session notice or a later power notice moves it. Ticks at an
-  unmoved epoch take no capture.
+  unmoved epoch take no capture. A retry after steps also waits 2 s
+  (`PACE`) after them, and epoch moves within that time only mark the cause
+  due, so a burst of notices takes one retry and cannot use up the debt's
+  budget before an adapter classifies.
 - A fenced store stays fenced across those retries until read-only
   reconciliation settles its row, so a possibly submitted step never runs
   again.
@@ -1761,15 +1783,19 @@ A boundary, low power, or a gap of at least 5 s since the last tick
 time asleep, which is not reporter absence, and Modern Standby on this host
 can sleep without a suspend notice, so only the gap shows it. A reporter
 that stops while the ticks keep running expires as before. The tick stamps
-its time after an attempt and also when it finds the gate held, so neither
-an attempt nor a long request is a gap.
+its time after an attempt, so an attempt is no gap. A tick that finds the
+gate held stamps it too, so a long request is no gap, unless the gap since
+the last stamp already reached `SLEPT`: a request that takes the gate at a
+wake does not erase the sleep before it.
 
 `lifecycle-reconcile-vectors.json` pins managed's outcomes, recorded by
 `NativeLifecycleReconcileVectors` over the native fixture's saved
 performance: lease expiry, a renewed Game report, an unchanged power source,
 battery and back to AC, the gate's Enter and Exit around a deferred report
-followed by `HandlePowerSourceChangedAsync` on the unchanged source, and a
-user's activation on battery followed by the same user's again. The resume
+followed by `HandlePowerSourceChangedAsync` on the unchanged source, a
+change to battery with Razer Synapse's engine present followed by the same
+source once it has gone, and a user's activation on battery followed by the
+same user's again. The resume
 row models only that part of managed's resume. It does not run the full
 `ProcessNativeAsync` (lighting invalidation and restore, resume validation)
 or the later convergence. `request_triggers_lifecycle.rs` replays the rows.
@@ -1798,21 +1824,30 @@ Native differs from managed in four ways:
 
 Offline evidence covers the tick's logic through injected probes only. The
 native wiring is compile-only, and no offline test reaches it:
-`Runtime::native`'s start-up power-kind sample and the
-`thermal_native::console_user` probe with its token classification. They
-need a physical logon, lock, unlock and sleep/resume validation.
+`Runtime::native`'s start-up power-kind sample, the
+`thermal_native::console_user` probe with its token classification, and
+`WindowsGuard::capture`'s typed competing-controller refusal, which the rig
+models with its own flag. They need a physical logon, lock, unlock,
+Synapse and sleep/resume validation.
 
 Remaining residuals:
 
-- A cause refused before its steps is retried at every epoch move for as
-  long as it stays refused, one capture each time, until a newer cause
-  replaces it. There is no separate ceiling, since such a refusal reads no
-  firmware.
+- A cause refused before its steps for a reason other than a competing
+  controller is retried at every epoch move for as long as it stays
+  refused, one capture each time, until a newer cause replaces it. There is
+  no separate ceiling, since such a refusal reads no firmware.
+- A controller that appears after the attempt's capture refuses a step's
+  own authorization instead. That step spends one of the debt's `RETRIES`,
+  and the next attempt's capture drops the cause if the controller is still
+  present.
 - Steps from the console pair record the Service's own process as their
   caller.
-- A tick reconciles nothing until the status feed has a publisher, which the
-  first status read creates; in production the Tray's subscription creates
-  it.
+- The first tick after the Service reports RUNNING can write. The readiness
+  self-probe's status read creates the status feed's publisher before the
+  serving loop starts (`readiness.rs` `Ports::probe`, `StatusSource`
+  `observe_since`), so no client is needed, and that tick activates the
+  console user. Managed also writes at start
+  (`ReconcileStartupProfileAsync`).
 - The gap heuristic does not help if the Service keeps ticking through
   standby.
 
