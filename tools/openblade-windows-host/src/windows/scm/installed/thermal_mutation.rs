@@ -290,6 +290,11 @@ pub(super) struct Runtime {
     // intent (`triggers::Debt`); a pair without an entry owes its startup one.
     #[cfg(feature = "service-profile-triggers-v1")]
     debts: Rc<RefCell<std::collections::HashMap<(String, u32), triggers::Debt>>>,
+    // The pairs whose startup reconciliation has ended: a debt of theirs
+    // settled once, however (`triggers::Runtime::owe`). Until then their
+    // reconciliation applies over confirmed drift (`thermal_drift::Mode`).
+    #[cfg(feature = "service-profile-triggers-v1")]
+    started: Rc<RefCell<std::collections::HashSet<(String, u32)>>>,
     // The lifecycle's low-power gate transition, `None` while the lifecycle
     // is unreadable or exhausted. A reconciliation reads it to stop before a
     // step and to classify a step's refusal (`triggers::Gate`); every write
@@ -528,6 +533,8 @@ impl Runtime {
             application: Rc::default(),
             #[cfg(feature = "service-profile-triggers-v1")]
             debts: Rc::default(),
+            #[cfg(feature = "service-profile-triggers-v1")]
+            started: Rc::default(),
             #[cfg(any(
                 feature = "service-profile-triggers-v1",
                 feature = "service-keyboard-driver-mode-v1"
@@ -700,6 +707,8 @@ impl Runtime {
             application: Rc::default(),
             #[cfg(feature = "service-profile-triggers-v1")]
             debts: Rc::default(),
+            #[cfg(feature = "service-profile-triggers-v1")]
+            started: Rc::default(),
             #[cfg(any(
                 feature = "service-profile-triggers-v1",
                 feature = "service-keyboard-driver-mode-v1"
@@ -1008,7 +1017,7 @@ impl Runtime {
             #[cfg(feature = "service-profile-triggers-v1")]
             transition,
             #[cfg(feature = "service-profile-triggers-v1")]
-            drift_intent: Mutex::new(None),
+            drift: self.drift.clone(),
             application,
             accepted: AtomicBool::new(false),
             destination: Mutex::new(None),
@@ -1025,7 +1034,9 @@ impl Runtime {
         };
         // A readback of this step is OpenBlade's own (managed
         // `ConfirmIntentional`), whatever admission the reply keeps below.
-        // The Reader returns one only for a destination it confirms.
+        // The Reader returns one only for a destination it confirms: one it
+        // wrote, which `record(Confirmed)` already recorded, or one firmware
+        // already reported.
         #[cfg(feature = "service-profile-triggers-v1")]
         if let (Ok(Some(readback)), Some(destination)) = (
             &result,
@@ -1035,15 +1046,8 @@ impl Runtime {
                 .map_err(|_| io::ErrorKind::Other)?,
         ) {
             let mut drift = self.drift.lock().map_err(|_| io::ErrorKind::Other)?;
-            drift.confirm(*readback, false, confirms(*readback, destination));
-            if let Some(intent) = permit
-                .drift_intent
-                .lock()
-                .map_err(|_| io::ErrorKind::Other)?
-                .take()
-            {
-                drift.resolved(intent);
-            }
+            drift.observe(*readback);
+            drift.own_performance(destination);
         }
         permit.fresh.verify_health()?;
         let final_proof = if Instant::now() < deadline {
@@ -1337,9 +1341,11 @@ struct RequestPermit {
     // A reconciliation's drift decision (`thermal_drift`).
     #[cfg(feature = "service-profile-triggers-v1")]
     transition: Option<Arc<thermal_drift::Transition>>,
-    // An explicit request's intent, the prior one once its readback returns.
+    // Confirmed thermal drift: this step's confirmed write is OpenBlade's
+    // own, and a possibly submitted one is settled by the next reading
+    // (`record`).
     #[cfg(feature = "service-profile-triggers-v1")]
-    drift_intent: Mutex<Option<thermal_drift::Desired>>,
+    drift: Arc<Mutex<thermal_drift::Tracker>>,
     application: Foreground,
     accepted: AtomicBool,
     destination: Mutex<Option<Destination>>,
@@ -1748,24 +1754,14 @@ impl Permit for RequestPermit {
             // Before any cause that refuses the write: managed resolves its
             // write exclusions before it tries a subsystem.
             #[cfg(feature = "service-profile-triggers-v1")]
+            if let Some(transition) = &self.transition
+                && let Some(exclusion) = transition.decide(
+                    baseline,
+                    drift_intent(&self.storage, power, profile.as_ref())?,
+                )?
             {
-                let next = thermal_drift::Desired {
-                    performance: desired,
-                    manual_fans: self.storage.desired_manual_fans(power, profile.as_ref())?,
-                };
-                match &self.transition {
-                    Some(transition) => {
-                        if let Some(exclusion) = transition.decide(baseline, next)? {
-                            self.set_cause(Cause::Excluded(exclusion));
-                            return Ok(None);
-                        }
-                    }
-                    // An explicit request's intent becomes the prior one only
-                    // with its own readback, after the write (`drift_intent`).
-                    None => {
-                        *self.drift_intent.lock().map_err(|_| io::ErrorKind::Other)? = Some(next)
-                    }
-                }
+                self.set_cause(Cause::Excluded(exclusion));
+                return Ok(None);
             }
             if let Some(cause) = selection.blocked {
                 self.set_cause(cause);
@@ -1810,8 +1806,54 @@ impl Permit for RequestPermit {
         self.verify_failure()?;
         self.authorize().ok_or(io::ErrorKind::PermissionDenied)?;
         self.record_progress(progress)
-            .inspect_err(|e| self.set_cause(Cause::Storage(e.to_string())))
+            .inspect_err(|e| self.set_cause(Cause::Storage(e.to_string())))?;
+        // A journaled intent precedes its setter. A step dropped at its bound
+        // or deadline, or failed after it, has no readback of its own, so the
+        // next reading decides whether the write landed (`submitted`); the
+        // row it leaves unsettled still fences writes.
+        #[cfg(feature = "service-profile-triggers-v1")]
+        if matches!(
+            progress,
+            Progress::FirstIntent
+                | Progress::SecondIntent
+                | Progress::ThirdIntent
+                | Progress::FourthIntent
+        ) && let Some(destination) =
+            *self.destination.lock().map_err(|_| io::ErrorKind::Other)?
+        {
+            self.drift
+                .lock()
+                .map_err(|_| io::ErrorKind::Other)?
+                .submitted(destination);
+        }
+        Ok(())
     }
+}
+/// The thermal intent a reconciliation's drift decision compares at class
+/// `power` (`thermal_drift::Desired`): the destination `select` resolves,
+/// none for an incomplete GPU clock policy, and the saved fan mode toward
+/// it. Both steps compare the same intent, whichever reads first.
+#[cfg(feature = "service-profile-triggers-v1")]
+pub(super) fn drift_intent(
+    storage: &Storage,
+    power: i32,
+    profile: Option<&Resolution<'_>>,
+) -> io::Result<thermal_drift::Desired> {
+    let performance = if storage.gpu_incomplete(power, profile)? {
+        None
+    } else {
+        storage
+            .desired(power, profile)?
+            .map(|(destination, _)| destination)
+    };
+    Ok(thermal_drift::Desired {
+        performance,
+        fans: thermal_drift::Fans::of(
+            storage.desired_fan_mode(power, profile)?,
+            power,
+            performance,
+        ),
+    })
 }
 impl RequestPermit {
     fn record_progress(&self, progress: Progress) -> io::Result<()> {

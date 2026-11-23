@@ -529,7 +529,7 @@ impl Runtime {
         // Managed publishes the new application's desired state before its
         // transition reads the prior one, so its own preset under the old
         // application reads as drift and pauses the change. Native compares
-        // with the intent it last resolved as well, as managed's resolver
+        // with OpenBlade's own confirmed state as well, as managed's resolver
         // intends (`thermal_drift::Mode`).
         let mode = thermal_drift::Mode::WithPrior;
         // A changed pair owes a new reconciliation at every class.
@@ -538,7 +538,7 @@ impl Runtime {
         } else {
             self.debt(&key)
         };
-        self.debts.borrow_mut().insert(key.clone(), debt);
+        self.owe(key.clone(), debt);
         let Debt::Owed {
             classes: owed,
             attempts,
@@ -589,9 +589,7 @@ impl Runtime {
                 },
             )
             .await?;
-        self.debts
-            .borrow_mut()
-            .insert(key, reconciled.after(owed, attempts));
+        self.owe(key, reconciled.after(owed, attempts));
         if reconciled.unchanged {
             return stored(unapplied);
         }
@@ -703,9 +701,7 @@ impl Runtime {
             Debt::Owed { classes, .. } => classes.union(changed),
             Debt::Settled => changed,
         };
-        self.debts
-            .borrow_mut()
-            .insert(key.clone(), Debt::owed(combined));
+        self.owe(key.clone(), Debt::owed(combined));
         // Managed also needs a verified device with writes not blocked; every
         // write still passes its own admission. A refusal here reads no
         // firmware and leaves the change owed to the next report.
@@ -768,7 +764,7 @@ impl Runtime {
                 _ => Debt::Settled,
             }
         };
-        self.debts.borrow_mut().insert(key, debt);
+        self.owe(key, debt);
         if reconciled.unchanged {
             return stored();
         }
@@ -802,11 +798,20 @@ impl Runtime {
             resume,
         } = step;
         // One drift decision for both steps, from the first step's own
-        // fresh reading (`thermal_drift::Transition`).
+        // fresh reading (`thermal_drift::Transition`). The pair's startup
+        // reconciliation applies over drift, whatever its cause; any resume
+        // hold is stamped on this runtime's clock, which the status reading
+        // that settles it reads too.
+        let mode = if self.starting(&(sid.clone(), caller.session)) {
+            thermal_drift::Mode::Overwrite
+        } else {
+            mode
+        };
         let transition = Arc::new(thermal_drift::Transition::new(
             self.drift.clone(),
             mode,
             resume,
+            Instant::now(),
         ));
         // The confirmed fans are the retained thermal observation's: the
         // published status is rebuilt from observed metadata and carries no
@@ -1014,11 +1019,6 @@ impl Runtime {
             && needed
                 .iter()
                 .all(|(s, possible)| s.outcome.status == 1 || (s.transient && !possible));
-        // A deferred or retried reconciliation keeps its prior intent for the
-        // attempt that replaces it (`thermal_drift::Transition::commit`).
-        if !deferred && !retry {
-            transition.commit();
-        }
         let read = Classes::of(needed.iter().filter_map(|(s, _)| s.class));
         // Both steps can refuse for one cause, which is said once.
         let mut said: Vec<&str> = Vec::with_capacity(steps.len());
@@ -1103,9 +1103,7 @@ impl Runtime {
     /// clears the gate runs it for the reporting pair, or else the first
     /// report after it. A persistent override or a clear changes every class.
     pub(super) fn owe_stored_intent(&self, (sid, session): (&str, u32)) {
-        self.debts
-            .borrow_mut()
-            .insert((sid.to_owned(), session), Debt::owed(Classes::ALL));
+        self.owe((sid.to_owned(), session), Debt::owed(Classes::ALL));
     }
 
     /// The retries the pair has spent while it owes a reconciliation, or
@@ -1116,6 +1114,24 @@ impl Runtime {
             Debt::Owed { attempts, .. } => Some(attempts),
             Debt::Settled => None,
         }
+    }
+
+    /// Records what the pair `key` owes. A settled debt ends the pair's
+    /// startup reconciliation, however it settled: applied, out of retries,
+    /// or dropped for a competing controller.
+    pub(super) fn owe(&self, key: (String, u32), debt: Debt) {
+        if debt == Debt::Settled {
+            self.started.borrow_mut().insert(key.clone());
+        }
+        self.debts.borrow_mut().insert(key, debt);
+    }
+
+    /// Whether the pair `key` still owes its startup reconciliation, which
+    /// applies over confirmed drift as managed `ReconcileStartupProfileAsync`
+    /// does (`thermal_drift::Mode::Overwrite`). A report, save or lifecycle
+    /// cause that replaces its debt before it settled is part of it.
+    fn starting(&self, key: &(String, u32)) -> bool {
+        !self.started.borrow().contains(key)
     }
 
     /// What the pair `key` owes; startup is owed until it is settled.

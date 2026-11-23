@@ -1136,13 +1136,6 @@ impl Snapshot {
         self.external_changes = changes;
         self
     }
-    /// Whether a potential competing controller or a detection warning is
-    /// published (managed `PotentialControllers` and
-    /// `ControllerDetectionWarning`).
-    #[cfg(feature = "service-profile-triggers-v1")]
-    pub(crate) fn controllers_reported(&self) -> bool {
-        !self.potential_controllers.is_empty() || self.controller_detection_warning.is_some()
-    }
     pub(crate) fn has_fresh_mailbox_read(&self) -> bool {
         self.read_confirmation
             .as_ref()

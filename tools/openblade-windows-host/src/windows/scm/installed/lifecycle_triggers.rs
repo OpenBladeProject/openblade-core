@@ -50,7 +50,8 @@
 //! control stays advisory and never queues behind another controller
 //! (Architecture rule 5), as managed's transition applies nothing then and
 //! keeps nothing for later. The next lifecycle cause or changed report owes
-//! afresh.
+//! afresh. Settling ends the pair's startup reconciliation too, so that
+//! cause compares confirmed drift rather than applying over it.
 use super::*;
 use std::sync::atomic::AtomicU64;
 
@@ -86,6 +87,9 @@ pub(in super::super) struct Tick {
     console: Console,
     /// The cause it still owes an attempt.
     pending: Option<Pending>,
+    /// When the last gate boundary moved: a power change within
+    /// `thermal_drift::RESUME_WINDOW` after it is applied as the resume's.
+    boundary: Option<Instant>,
 }
 /// What the tick knows of the console user.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -112,15 +116,16 @@ struct Pending {
     /// waits `PACE` after it.
     stepped: Option<Instant>,
     /// How its reconciliation treats confirmed drift: an activation applies
-    /// over it, the lease expiry compares only the new intent, and any other
-    /// cause compares the intent OpenBlade last resolved as well
-    /// (`thermal_drift::Mode`). A merged cause keeps the strongest.
+    /// over it, and any other cause, the lease expiry included, compares
+    /// OpenBlade's own confirmed state as well (`thermal_drift::Mode`). A
+    /// merged cause keeps the strongest.
     mode: thermal_drift::Mode,
     /// A power-kind change is among its causes.
     power: bool,
-    /// That power change is applied after a gate boundary, where firmware
-    /// may still settle into the destination (managed applies it during
-    /// resume validation, `resumePowerSourceTransitionGeneration`).
+    /// That power change is applied within the resume window after a gate
+    /// boundary, where firmware may still settle into the destination
+    /// (managed applies it during resume validation,
+    /// `resumePowerSourceTransitionGeneration`).
     resume: bool,
 }
 impl Pending {
@@ -253,6 +258,15 @@ impl Runtime {
                 (causes, expired, prior.pending)
             }
         };
+        // The last gate boundary, for the resume window of a later power
+        // change (`Pending::resume`).
+        let boundary = if causes.boundary {
+            Some(now)
+        } else {
+            prior.as_ref().and_then(|tick| tick.boundary)
+        };
+        let resumed = boundary
+            .is_some_and(|at| now.saturating_duration_since(at) < thermal_drift::RESUME_WINDOW);
         // A new resume, a power change or low power ends a resume hold, as
         // managed clears it then or drops it at its next observation.
         if causes.boundary || causes.power || low {
@@ -263,10 +277,15 @@ impl Runtime {
         }
         if causes.boundary || causes.power || expired || activation {
             let owe = causes.power || activation || pending.is_some_and(|p| p.owe);
+            // Managed publishes the power profile's desired state before the
+            // lease expiry's transition reads the prior one, so OpenBlade's
+            // own application preset reads as drift and pauses there, and
+            // managed's default convergence loop later repairs it. Native has
+            // no such loop yet, so the expiry compares OpenBlade's own
+            // confirmed state as every other cause does and hands that state
+            // back (`leaseExpired` in the lifecycle vectors).
             let mode = if activation {
                 thermal_drift::Mode::Overwrite
-            } else if expired {
-                thermal_drift::Mode::NextOnly
             } else {
                 thermal_drift::Mode::WithPrior
             };
@@ -274,12 +293,12 @@ impl Runtime {
             pending = Some(Pending {
                 mode: pending.map_or(mode, |p| p.mode.max(mode)),
                 power,
-                resume: power && (causes.boundary || pending.is_some_and(|p| p.resume)),
+                resume: power && (resumed || pending.is_some_and(|p| p.resume)),
                 ..Pending::new(owe)
             });
         }
         let Some(mut cause) = pending.filter(|p| !low && p.due(epoch, now)) else {
-            self.stamp(mark, console, pending);
+            self.stamp(mark, console, pending, boundary);
             return Ok(None);
         };
         let attempt = match self.lifecycle_pair() {
@@ -287,9 +306,7 @@ impl Runtime {
             Some(pair) => {
                 if std::mem::take(&mut cause.owe) {
                     // A new change at every class, as a changed report owes.
-                    self.debts
-                        .borrow_mut()
-                        .insert((pair.sid.clone(), pair.session), Debt::owed(Classes::ALL));
+                    self.owe((pair.sid.clone(), pair.session), Debt::owed(Classes::ALL));
                 }
                 self.attempt(mailbox, pair, status, (cause.mode, cause.resume))
                     .await?
@@ -300,18 +317,25 @@ impl Runtime {
             Attempt::Refused => (Some(cause.wait(epoch)), None),
             Attempt::Owed(snapshot) => (Some(cause.stepped(epoch, Instant::now())), snapshot),
         };
-        self.stamp(mark, console, pending);
+        self.stamp(mark, console, pending, boundary);
         Ok(snapshot)
     }
 
     /// Records the tick's state, stamped now: after any attempt, so the
     /// attempt's own time is no gap.
-    fn stamp(&self, mark: Mark, console: Console, pending: Option<Pending>) {
+    fn stamp(
+        &self,
+        mark: Mark,
+        console: Console,
+        pending: Option<Pending>,
+        boundary: Option<Instant>,
+    ) {
         *self.lifecycle.borrow_mut() = Some(Tick {
             mark,
             at: Instant::now(),
             console,
             pending,
+            boundary,
         });
     }
 
@@ -392,7 +416,7 @@ impl Runtime {
             // and nothing is kept owed for after it leaves, which would
             // overwrite what the user chose there (module comment).
             Err(error) if is_competing_controller(&error) => {
-                self.debts.borrow_mut().insert(key, Debt::Settled);
+                self.owe(key, Debt::Settled);
                 return Ok(Attempt::Done(None));
             }
             // A locked or switched session, an unknown AC line status, or a
@@ -442,7 +466,7 @@ impl Runtime {
             )
             .await?;
         let debt = reconciled.after(owed, attempts);
-        self.debts.borrow_mut().insert(key, debt);
+        self.owe(key, debt);
         // A debt left owed ran nothing possibly submitted and has retries
         // left, or was deferred (`Reconciled::after`): a step the write epoch
         // overtook, or one refused transiently at an unmoved epoch, such as
@@ -502,7 +526,7 @@ impl Runtime {
             return false;
         }
         application.foreground = Foreground::default();
-        self.debts.borrow_mut().insert(
+        self.owe(
             (application.sid.clone(), application.session),
             Debt::owed(Classes::ALL),
         );
@@ -529,6 +553,9 @@ impl Runtime {
             if let Some(at) = tick.pending.as_mut().and_then(|p| p.stepped.as_mut()) {
                 *at -= by;
             }
+            if let Some(at) = tick.boundary.as_mut() {
+                *at -= by;
+            }
         }
     }
 
@@ -538,11 +565,14 @@ impl Runtime {
         self.drift.lock().unwrap().age_hold(by);
     }
 
-    /// Forgets every drift latch and resolved intent, as a Service restart
-    /// does: the next reading only sets the baseline.
+    /// Forgets every drift latch, OpenBlade's own confirmed state and each
+    /// pair's ended startup reconciliation, as a Service restart does: the
+    /// next reading only sets the baseline, and the next reconciliation
+    /// applies over drift.
     #[cfg(test)]
     pub(in super::super::super) fn restart_drift(&self) {
         *self.drift.lock().unwrap() = Default::default();
+        self.started.borrow_mut().clear();
     }
 
     /// The inter-tick gap that renews the lease (`SLEPT`).

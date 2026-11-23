@@ -1510,17 +1510,31 @@ impl Storage {
         power: i32,
         profile: Option<&Resolution<'_>>,
     ) -> io::Result<bool> {
+        Ok(self.desired_fan_mode(power, profile)? != FanMode::AUTOMATIC)
+    }
+    /// The saved fan mode at class `power`, in `desired_manual_fans`'s
+    /// order. A temporary override without a numeric mode names no defined
+    /// mode, so it is manual with no native recipe.
+    pub(super) fn desired_fan_mode(
+        &self,
+        power: i32,
+        profile: Option<&Resolution<'_>>,
+    ) -> io::Result<FanMode> {
+        let undefined = FanMode(-1);
         let s = self.state.lock().map_err(|_| denied())?;
         if let Some((v, p)) = &s.temporary_fan
             && !temporary_expired(*p, power)
         {
-            return Ok(v["mode"] != 0);
+            return Ok(v["mode"]
+                .as_i64()
+                .and_then(|mode| i32::try_from(mode).ok())
+                .map_or(undefined, FanMode));
         }
         if let Some(mode) = s.document["overrides"]["fans"].as_i64() {
-            return Ok(mode != 0);
+            return Ok(i32::try_from(mode).map_or(undefined, FanMode));
         }
         drop(s);
-        Ok(profile_layer(profile, power).is_some_and(|r| r.profile.fans != FanMode::AUTOMATIC))
+        Ok(profile_layer(profile, power).map_or(FanMode::AUTOMATIC, |r| r.profile.fans))
     }
     pub(super) fn profiles(&self) -> io::Result<Option<Value>> {
         Ok(aggregate(self.files.as_ref(), self.same_path)?.map(|v| v["profiles"].clone()))

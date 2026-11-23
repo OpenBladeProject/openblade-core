@@ -55,9 +55,11 @@ pub(super) struct FanPermit {
     // (`thermal_drift`).
     #[cfg(feature = "service-profile-triggers-v1")]
     transition: Option<Arc<thermal_drift::Transition>>,
-    // An explicit request's intent, the prior one once its readback returns.
+    // Confirmed thermal drift: this request's confirmed fan write is
+    // OpenBlade's own, and a possibly submitted one is settled by the next
+    // reading (`record_fan`).
     #[cfg(feature = "service-profile-triggers-v1")]
-    drift_intent: Mutex<Option<thermal_drift::Desired>>,
+    drift: Arc<Mutex<thermal_drift::Tracker>>,
     #[cfg(feature = "service-profile-triggers-v1")]
     excluded: Mutex<Option<thermal_drift::Exclusion>>,
     application: Foreground,
@@ -572,22 +574,12 @@ impl Permit for FanPermit {
         // Before the plan: managed resolves its write exclusions before it
         // tries a subsystem.
         #[cfg(feature = "service-profile-triggers-v1")]
+        if let Some(transition) = &self.transition
+            && let Some(exclusion) =
+                transition.decide(baseline, drift_intent(&self.storage, power, profile)?)?
         {
-            let next = thermal_drift::Desired {
-                performance: self.storage.desired(power, profile)?.map(|(p, _)| p),
-                manual_fans: self.storage.desired_manual_fans(power, profile)?,
-            };
-            match &self.transition {
-                Some(transition) => {
-                    if let Some(exclusion) = transition.decide(baseline, next)? {
-                        *self.excluded.lock().map_err(|_| io::ErrorKind::Other)? = Some(exclusion);
-                        return Ok(None);
-                    }
-                }
-                // An explicit request's intent becomes the prior one only
-                // with its own readback, after the write (`drift_intent`).
-                None => *self.drift_intent.lock().map_err(|_| io::ErrorKind::Other)? = Some(next),
-            }
+            *self.excluded.lock().map_err(|_| io::ErrorKind::Other)? = Some(exclusion);
+            return Ok(None);
         }
         let Some(settings) = settings else {
             return Ok(None);
@@ -701,6 +693,28 @@ impl Permit for FanPermit {
     fn record_fan(&self, progress: u8) -> io::Result<()> {
         self.authorize().ok_or(io::ErrorKind::PermissionDenied)?;
         self.write(progress)?;
+        // A journaled setter intent (10, 12, ...; 30 and 50 are the
+        // confirmations) precedes its setter. A request dropped at its bound
+        // or deadline, or failed after it, has no readback of its own, so the
+        // next reading decides whether the write landed (`submitted_fans`);
+        // the row it leaves unsettled still fences writes. Owned Stop
+        // cleanup (40 and up) hands fans back and leaves drift alone.
+        #[cfg(feature = "service-profile-triggers-v1")]
+        if (10..30).contains(&progress) && progress.is_multiple_of(2) {
+            let manual = self
+                .record
+                .lock()
+                .map_err(|_| io::ErrorKind::Other)?
+                .as_ref()
+                .map(|record| record.intent.manual());
+            let carried = *self.performance.lock().map_err(|_| io::ErrorKind::Other)?;
+            if let Some(manual) = manual {
+                self.drift
+                    .lock()
+                    .map_err(|_| io::ErrorKind::Other)?
+                    .submitted_fans(manual, carried);
+            }
+        }
         if progress == 0 {
             self.prepared.store(true, Ordering::Release);
         }
@@ -1128,7 +1142,7 @@ impl Runtime {
             #[cfg(feature = "service-profile-triggers-v1")]
             transition,
             #[cfg(feature = "service-profile-triggers-v1")]
-            drift_intent: Mutex::new(None),
+            drift: self.drift.clone(),
             #[cfg(feature = "service-profile-triggers-v1")]
             excluded: Mutex::new(None),
             application,
@@ -1305,23 +1319,17 @@ impl Runtime {
         let matched = performance.filter(|p| {
             observed.is_some_and(|o| openblade_domain::thermal_mutation::confirms(o, *p))
         });
-        // The Reader returns a readback only once it confirms the fan intent:
-        // OpenBlade's own (managed `ConfirmIntentional`), as is a carried
-        // destination it wrote.
+        // The Reader returns a readback only once it confirms the fan intent,
+        // written or already reported: OpenBlade's own fans (managed
+        // `ConfirmIntentional`), and its carried destination when the
+        // readback confirms that too. A write without a readback is settled
+        // by the next reading (`record_fan`).
         #[cfg(feature = "service-profile-triggers-v1")]
         if let Some(readback) = observed {
             let mut drift = self.drift.lock().map_err(|_| io::ErrorKind::Other)?;
-            drift.confirm(readback, true, true);
-            if performance.is_some() && permit.prepared.load(Ordering::Acquire) {
-                drift.confirm(readback, false, matched.is_some());
-            }
-            if let Some(intent) = permit
-                .drift_intent
-                .lock()
-                .map_err(|_| io::ErrorKind::Other)?
-                .take()
-            {
-                drift.resolved(intent);
+            drift.own_fans_read(readback);
+            if let Some(destination) = matched {
+                drift.own_performance(destination);
             }
         }
         let mut message = match (status, permit.prepared.load(Ordering::Acquire), performance) {

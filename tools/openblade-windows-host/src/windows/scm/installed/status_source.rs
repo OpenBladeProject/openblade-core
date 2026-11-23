@@ -1046,6 +1046,11 @@ pub(super) use tests::{in_memory_source, in_memory_source_with_firmware};
 #[cfg(all(test, feature = "service-mailbox-observation-v1"))]
 pub(super) use tests::in_memory_guarded_no_reader;
 
+/// The injected source's metadata bit for production-like controller
+/// evidence: no SCM scan, so a detection warning is always published.
+#[cfg(all(test, feature = "service-thermal-mutation-v1"))]
+pub(super) const PRODUCTION_CONTROLLERS: u8 = 0x10;
+
 #[cfg(all(test, feature = "service-thermal-mutation-v1"))]
 pub(super) fn injected_mutation_source(
     origin: Arc<dyn StatusOrigin>,
@@ -1061,8 +1066,11 @@ pub(super) fn injected_mutation_source(
         mutation: Some(runtime),
         inner: ObservedStatus::new(move |_| {
             observer();
+            // The low bits select the metadata; `PRODUCTION_CONTROLLERS`
+            // adds the detection warning production evidence always carries.
+            let metadata = metadata.load(std::sync::atomic::Ordering::Acquire);
             Evidence {
-                device: if metadata.load(std::sync::atomic::Ordering::Acquire) == 3 {
+                device: if metadata & !PRODUCTION_CONTROLLERS == 3 {
                     DeviceMetadata::Unavailable
                 } else {
                     DeviceMetadata::MatchedHost {
@@ -1070,13 +1078,14 @@ pub(super) fn injected_mutation_source(
                         hid: HidMetadata::Candidate,
                     }
                 },
-                power: match metadata.load(std::sync::atomic::Ordering::Acquire) {
+                power: match metadata & !PRODUCTION_CONTROLLERS {
                     1 => Power::Battery,
                     4 => Power::Unknown,
                     _ => Power::ExternalUnknown,
                 },
                 controllers: vec![],
-                controller_warning: None,
+                controller_warning: (metadata & PRODUCTION_CONTROLLERS != 0)
+                    .then_some(CONTROLLER_UNKNOWN),
             }
         }),
     })
