@@ -23,9 +23,12 @@ when **If settings change outside OpenBlade** is set to **Restore them**.
 While OpenBlade controls the pad, it reads the pad every few seconds. If its fan
 mode, lighting effect or brightness changes elsewhere, such as in Synapse or
 with the pad's own controls, **Restore them** applies your settings again, up to
-three times in ten minutes. **Notify me**, or a fourth change, releases control
-instead: the changed part stays as it is, the parts OpenBlade changed return to
-the pad's own settings, and control stays off until you choose a setting.
+three times in ten minutes. Lighting is restored only when **Override external
+lighting changes** is on. OpenBlade releases control instead under **Notify me**,
+after a fourth change, for a lighting change without that setting, or when your
+settings cannot be applied again. The
+changed part stays as it is, the parts OpenBlade changed return to the pad's
+own settings, and control stays off until you choose a setting.
 
 A change the service refuses before sending it, for example while Windows
 settles after waking, is tried again a few times. An unconfirmed change pauses
@@ -82,14 +85,19 @@ attempt that reached the pad and was refused. Shutdown cleanup is never undone.
 
 An Apply refused before submission saves nothing: the saved request, resume
 record and restoration journal stay as they were, so maintenance and resumption
-cannot later apply a change the page reported as not accepted. A native
-submission that proves admission closed before the first write is also a
-refusal. Outside-change detection compares the fan record of the running owner,
+cannot later apply a change the page reported as not accepted. Once the request
+is saved, a native deferral before the first write is a failure that leaves
+writes available. Outside-change detection compares the fan record of the running owner,
 both effect records, raw brightness and device mode with the read taken after
 the last confirmed write; the fan demand and ramping speed are not compared.
 A fan write in maintenance runs only after a fresh comparison, because selecting
 a preset would otherwise hide the change. A failed comparison read defers that
-tick without stopping control. The firmware cannot report which owner's fan
+tick, up to three in a row; a further failure, or a refusal such as a competing
+controller, stops control as a failed operation. Checks run every five seconds,
+each one full configuration read. The restore allowance is held in memory and
+starts again after a service restart or an accepted Apply. A policy upgraded from
+an earlier version restores nothing, and does not resume, until its disclosure
+has been seen. The firmware cannot report which owner's fan
 record is running, so a change written under the other owner is not detected.
 
 A failed or ambiguous submission pauses control. Read the current state before
