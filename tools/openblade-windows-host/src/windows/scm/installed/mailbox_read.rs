@@ -1749,12 +1749,7 @@ mod tests {
         assert_eq!(json["confirmedState"]["fans"], 0);
         assert_eq!(json["activePowerSource"], 1);
         assert_eq!(json["writesBlocked"], true);
-        // The observation record admits no control; HyperBoost is observed only.
-        assert_eq!(json["capabilities"]["hyperBoostAccess"], 0);
-        assert_eq!(
-            json["capabilities"]["performancePresets"],
-            serde_json::json!([])
-        );
+        assert!(json["capabilities"].is_null());
         assert!(json["liveReadings"].is_null());
         assert_eq!(held.submitted.load(Ordering::Acquire), 4); // Two getter envelopes and replies, one port.
         let retained = publisher.borrow().active.clone();

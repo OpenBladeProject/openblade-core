@@ -593,10 +593,11 @@ impl Permit for FanPermit {
     }
     fn confirm_fan_noop(&self, _source: i32, baseline: ObservedPerformance) -> io::Result<()> {
         self.authorize().ok_or(io::ErrorKind::PermissionDenied)?;
-        // An explicit reply publishes this observation, and native HyperBoost
-        // with no broad capability snapshot is outside the managed decoder's
-        // read parity (docs/windows-native-thermal-mutation.md). The explicit
-        // path stays fenced, as before; owned Stop settles it and replies nothing.
+        // An explicit reply publishes this observation. Its HyperBoost state now
+        // decodes beside the observation-only capability record, but Automatic
+        // under an observed HyperBoost is not admitted natively
+        // (docs/windows-native-thermal-mutation.md), so the explicit path stays
+        // fenced, as before; owned Stop settles it and replies nothing.
         if baseline == ObservedPerformance::HyperBoostObserved {
             return Err(io::ErrorKind::PermissionDenied.into());
         }

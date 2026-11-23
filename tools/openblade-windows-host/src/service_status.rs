@@ -121,15 +121,23 @@ pub(crate) fn requested_live_readings() -> u8 {
     LIVE_READINGS.try_with(|mask| *mask).unwrap_or(0)
 }
 
-/// The capability record of a status with a confirmed thermal read: managed
-/// `DeviceCapabilities.Unavailable()` with HyperBoost observed only. It admits
-/// no control. The managed codec requires a HyperBoost access beside a
-/// confirmed active HyperBoost, so a null record would refuse that status.
-/// Pinned to the managed codec's output by the live-reading vectors.
-#[cfg(all(windows, feature = "service-mailbox-observation-v1"))]
-fn observation_capabilities() -> FeatureRecord {
-    serde_json::from_str(include_str!("service_status/observed_capabilities.json"))
-        .expect("the reviewed observation capability record")
+/// The capability record a confirmed state needs, or null. Native publishes
+/// no capability set, because managed's exact-model set would claim controls
+/// this Service does not admit, and a null record claims nothing. The managed
+/// codec refuses a confirmed active HyperBoost without a HyperBoost access,
+/// so that state alone carries a record: managed
+/// `DeviceCapabilities.Unavailable()` with HyperBoost observed only and the
+/// exact RZ09-0581 temporary full charge, which admits no control. The
+/// non-nullable `supportsTemporaryFullCharge` is the one member consumers
+/// read differently from a null record, where false means the model has
+/// none. Pinned to the managed codec's output by the live-reading vectors.
+#[cfg(feature = "installed-service-candidate")]
+fn observed_capabilities(confirmed: Option<&FeatureRecord>) -> Option<FeatureRecord> {
+    let hyper_boost = confirmed.and_then(|state| state.get("hyperBoostActive"));
+    (hyper_boost == Some(&Value::Bool(true))).then(|| {
+        serde_json::from_str(include_str!("service_status/observed_capabilities.json"))
+            .expect("the reviewed observation capability record")
+    })
 }
 
 #[cfg(feature = "installed-service-candidate")]
@@ -927,17 +935,25 @@ impl Snapshot {
         if self.active_power_source != 0 || !matches!(preset, 1 | 2) {
             return None;
         }
-        self.confirmed_state = Some(Map::from_iter([
+        self.confirm(Some(Map::from_iter([
             ("performance".into(), json!(preset)),
             ("fans".into(), json!(0)),
             ("battery".into(), Value::Null),
             ("lighting".into(), Value::Null),
             ("hyperBoostActive".into(), Value::Null),
-        ]));
+        ])));
         self.confirmed_performance()?;
         Some(self)
     }
 
+    /// Publishes `state` as the confirmed state with the capability record it
+    /// needs (`observed_capabilities`), so every publication of one confirmed
+    /// state, from a read, a retained read or a mutation, carries one record.
+    #[cfg(feature = "installed-service-candidate")]
+    fn confirm(&mut self, state: Option<FeatureRecord>) {
+        self.capabilities = observed_capabilities(state.as_ref());
+        self.confirmed_state = state;
+    }
     #[cfg(all(windows, feature = "service-mailbox-observation-v1"))]
     pub(crate) fn with_mailbox_read(
         mut self,
@@ -946,7 +962,7 @@ impl Snapshot {
     ) -> Self {
         // The shared Agent status module does not own Service discovery types.
         let (performance, fans, hyper_boost) = observation.projection();
-        self.confirmed_state = Some(Map::from_iter([
+        self.confirm(Some(Map::from_iter([
             ("performance".into(), serde_json::json!(performance)),
             ("fans".into(), serde_json::json!(fans)),
             ("battery".into(), Value::Null),
@@ -955,21 +971,22 @@ impl Snapshot {
             ("customPerformance".into(), observation.custom_levels().map_or(Value::Null, |levels| {
                 serde_json::json!({ "cpu": levels.cpu as u8, "gpu": levels.gpu as u8, "maximumFans": false })
             })),
-        ]));
+        ])));
         self.device_verified = true; // Real opened exact host/HID validation preceded this result.
         // Only a mode this read job confirmed may follow (`with_keyboard_driver_mode`).
         #[cfg(feature = "service-keyboard-driver-mode-read-v1")]
         self.feature_fields
             .insert("keyboardDriverModeActive".into(), Value::Null);
         self.writes_blocked = true;
-        self.capabilities = Some(observation_capabilities());
         self.set_public_message("Thermal settings read. Native controls remain unavailable.");
         self.read_confirmation = Some(confirmation);
         self
     }
     /// Managed `LiveReadings` for an observation that asked for `mask`: null
-    /// when it asked for none, otherwise each asked sensor this observation
-    /// confirmed. Fan speeds come in pairs and temperatures are never read here.
+    /// when it asked for none, otherwise each asked sensor. Battery power is
+    /// this observation's read. `fans` is this job's confirmed pair or the
+    /// pair `live_readings::Host` still retains from an earlier job under the
+    /// same admission. Temperatures are never read here.
     #[cfg(all(windows, feature = "service-live-readings-v1"))]
     pub(crate) fn with_live_readings(
         mut self,
@@ -1092,10 +1109,8 @@ impl Snapshot {
     pub(crate) fn retained_mailbox(&self, thermal: &Self, revision: i64) -> Self {
         let mut retained = self.clone();
         retained.read_confirmation = None;
-        retained.confirmed_state = thermal.confirmed_state.clone();
+        retained.confirm(thermal.confirmed_state.clone());
         retained.writes_blocked = true;
-        // The record the retained thermal state was confirmed with.
-        retained.capabilities = thermal.capabilities.clone();
         retained.revision = revision;
         retained.append_public_message(
             " Last confirmed thermal settings retained; no fresh read is confirmed.",
@@ -1106,9 +1121,8 @@ impl Snapshot {
     pub(crate) fn unavailable_mailbox(&self, revision: i64, reason: &str) -> Self {
         let mut unavailable = self.clone();
         unavailable.read_confirmation = None;
-        unavailable.confirmed_state = None;
+        unavailable.confirm(None);
         unavailable.writes_blocked = true;
-        unavailable.capabilities = None;
         unavailable.revision = revision;
         unavailable.append_public_message(reason);
         unavailable
@@ -1679,7 +1693,7 @@ impl Snapshot {
         if self.has_fresh_mailbox_read() {
             result.diagnostics.public = self.diagnostics.public.clone();
             result.render_message();
-            result.confirmed_state = self.confirmed_state.clone();
+            result.confirm(self.confirmed_state.clone());
             result.read_confirmation = self.read_confirmation.clone();
             result.device_verified = self.device_verified;
             // Managed copies the mode only with a verified device.
@@ -1707,5 +1721,8 @@ impl Snapshot {
     }
 }
 
+#[cfg(all(test, feature = "installed-service-candidate"))]
+#[path = "service_status/capability_tests.rs"]
+mod capability_tests;
 #[cfg(test)]
 mod object_tests;

@@ -196,12 +196,15 @@ fn battery_mappings_match_the_managed_vectors() {
     }
 }
 
-/// A confirmed read carries the managed observation record; a retained read
-/// carries the record it was confirmed with and an expired read none. The
-/// managed codec otherwise refuses a confirmed active HyperBoost.
+/// A confirmed HyperBoost read carries the managed observation record, as do
+/// its publications, and an expired read none. The managed codec otherwise
+/// refuses a confirmed active HyperBoost. Any other read carries no record.
 #[tokio::test]
 async fn a_confirmed_hyper_boost_read_carries_the_managed_observation_record() {
     let rig = Rig::new();
+    let observed = rig.observe(0).await.unwrap();
+    assert_eq!(observed["confirmedState"]["hyperBoostActive"], false);
+    assert_eq!(observed["capabilities"], Value::Null);
     rig.io.thermal.store(HYPER_BOOST, Ordering::Release);
     let observed = rig.observe(0).await.unwrap();
     let expected = &vectors()["capabilities"][0]["capabilities"];
@@ -481,7 +484,7 @@ async fn native_frames_match_the_recorded_managed_codec_input() {
         "balanced reply with every reading",
         &observed,
         json!({
-            "hyperBoostActive": false, "hyperBoostObservedOnly": true,
+            "hyperBoostActive": false, "hyperBoostObservedOnly": false,
             "fan1Rpm": 3200, "fan2Rpm": 3000, "batteryPowerFlowMilliwatts": 25000,
             "designCapacityMilliwattHours": 90000, "fullChargeCapacityMilliwattHours": 85000,
         }),

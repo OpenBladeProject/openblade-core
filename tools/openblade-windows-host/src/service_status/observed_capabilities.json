@@ -4,7 +4,7 @@
   "lightingEffects": [],
   "chargeLimits": [],
   "supportsBatteryProtectionOff": false,
-  "supportsTemporaryFullCharge": false,
+  "supportsTemporaryFullCharge": true,
   "supportsDirectManualFanTransitions": false,
   "supportsBatterySaverFanStop": false,
   "hasFanStopTrialEvidence": false,

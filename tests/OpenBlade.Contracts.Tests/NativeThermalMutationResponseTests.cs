@@ -58,6 +58,9 @@ public sealed class NativeThermalMutationResponseTests
             if (response.Status is { } status)
             {
                 Assert.Null(response.Result);
+                // Native publishes no capability set. Only a confirmed HyperBoost
+                // state carries the observation record the codec requires there.
+                Assert.Equal(status.ConfirmedState?.HyperBoostActive == true, status.Capabilities is not null);
                 Assert.Null(response.Archive);
                 if (status.ConfirmedState is { Performance: PerformancePreset.Custom, CustomPerformance: null } partial)
                 {

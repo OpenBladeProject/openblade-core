@@ -9,9 +9,10 @@ namespace OpenBlade.Service.Tests;
 // The native Service's live readings are pinned against managed. Fan rows replay
 // FanRpmProtocol through the managed RazerReport codec with the three-byte
 // payload length FanRpmQueryPort gives the 0D/88 getter. Battery rows replay the
-// WindowsPowerStateProvider mappings. The capability row is the observation-only
-// HyperBoost record written through the real v85 status codec. Native frames are
-// recorded by the Rust tests and decoded here through the same codec.
+// WindowsPowerStateProvider mappings. The capability row is the record native
+// publishes only beside a confirmed HyperBoost state, written through the real v85
+// status codec. Native frames are recorded by the Rust tests and decoded here
+// through the same codec.
 public sealed partial class ServiceControlRuntimeTests
 {
     private const string NativeLiveReadingVectors = "live-reading-vectors.json";
@@ -27,7 +28,8 @@ public sealed partial class ServiceControlRuntimeTests
         + "Its expect is the decoded RPM or the managed validation failure. A battery-health row is "
         + "WindowsPowerStateProvider.MapBatteryHealth over its (design, full charge) capacities; a power-flow "
         + "row is MapBatteryPowerFlow. The capability row is DeviceCapabilities.Unavailable() with "
-        + "HyperBoostAccess ObservedOnly as the v85 status codec writes it beside a confirmed HyperBoost state.";
+        + "HyperBoostAccess ObservedOnly and the exact RZ09-0581 SupportsTemporaryFullCharge as the v85 "
+        + "status codec writes it beside a confirmed HyperBoost state.";
 
     private static readonly string[] NativeLiveReadingSections =
         ["requests", "replies", "batteryHealth", "batteryPowerFlow", "capabilities"];
@@ -147,6 +149,9 @@ public sealed partial class ServiceControlRuntimeTests
 
     // The real codec must accept the record beside a confirmed HyperBoost state:
     // it requires an ObservedOnly, ReadOnly or ReadWrite HyperBoost access there.
+    // The non-nullable SupportsTemporaryFullCharge keeps the exact RZ09-0581 value:
+    // false would tell the tray the model has no temporary full charge, which its
+    // battery evidence refutes, where a null record leaves that unknown.
     private async Task<JsonNode> ObservedHyperBoostCapabilitiesAsync()
     {
         TestContext context = CreateContext(providerAvailable: true);
@@ -156,6 +161,7 @@ public sealed partial class ServiceControlRuntimeTests
             Capabilities = DeviceCapabilities.Unavailable() with
             {
                 HyperBoostAccess = DeviceFeatureAccess.ObservedOnly,
+                SupportsTemporaryFullCharge = true,
             },
             ConfirmedState = new ConfirmedDeviceState(null, FanMode.Automatic, null, null)
             {
@@ -177,7 +183,8 @@ public sealed partial class ServiceControlRuntimeTests
     }
 
     // Every native frame the Rust tests recorded decodes through the strict
-    // v85 codec; a confirmed HyperBoost frame carries its observed-only access.
+    // v85 codec. Only a confirmed HyperBoost frame carries a capability record,
+    // and no record denies the exact model's temporary full charge.
     [Fact]
     public async Task NativeLiveReadingFrames_DecodeThroughTheManagedCodec()
     {
@@ -203,6 +210,8 @@ public sealed partial class ServiceControlRuntimeTests
             Assert.Equal(
                 (bool)expected["hyperBoostObservedOnly"]!,
                 status.Capabilities?.HyperBoostAccess == DeviceFeatureAccess.ObservedOnly);
+            Assert.Equal(status.ConfirmedState?.HyperBoostActive == true, status.Capabilities is not null);
+            Assert.NotEqual(false, status.Capabilities?.SupportsTemporaryFullCharge);
             Assert.Equal((int?)expected["fan1Rpm"], status.LiveReadings?.Fan1Rpm);
             Assert.Equal((int?)expected["fan2Rpm"], status.LiveReadings?.Fan2Rpm);
             Assert.Equal(

@@ -687,12 +687,7 @@ async fn guarded_sticky_read_loss_retains_current_metadata_and_expires_both_proj
         let value = to_value(status).unwrap();
         assert!(value["message"].as_str().unwrap().contains("retained"));
         assert_eq!(value["deviceVerified"], false);
-        // The record the retained read was confirmed with, which admits no control.
-        assert_eq!(value["capabilities"]["hyperBoostAccess"], 0);
-        assert_eq!(
-            value["capabilities"]["performancePresets"],
-            serde_json::json!([])
-        );
+        assert!(value["capabilities"].is_null());
     }
     reader.expire_for_tests();
     source.refresh_publications().await.unwrap();
