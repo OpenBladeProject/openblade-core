@@ -33,6 +33,7 @@
     <None Include="../../tools/openblade-windows-host/tests/data/power-setting-vectors.json" Link="power-setting-vectors.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../tools/openblade-windows-host/tests/data/request-trigger-vectors.json" Link="request-trigger-vectors.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../tools/openblade-windows-host/tests/data/low-power-trigger-vectors.json" Link="low-power-trigger-vectors.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../tools/openblade-windows-host/tests/data/lifecycle-reconcile-vectors.json" Link="lifecycle-reconcile-vectors.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>
