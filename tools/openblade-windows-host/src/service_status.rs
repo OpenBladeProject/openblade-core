@@ -1129,6 +1129,20 @@ impl Snapshot {
         self.diagnostics.private = Some(message.into());
         self.render_message();
     }
+    /// Managed `ExternalChanges`: the confirmed subsystems that changed
+    /// outside OpenBlade, as `DeviceSubsystem` values in their order.
+    #[cfg(feature = "service-profile-triggers-v1")]
+    pub(crate) fn with_external_changes(mut self, changes: Vec<i32>) -> Self {
+        self.external_changes = changes;
+        self
+    }
+    /// Whether a potential competing controller or a detection warning is
+    /// published (managed `PotentialControllers` and
+    /// `ControllerDetectionWarning`).
+    #[cfg(feature = "service-profile-triggers-v1")]
+    pub(crate) fn controllers_reported(&self) -> bool {
+        !self.potential_controllers.is_empty() || self.controller_detection_warning.is_some()
+    }
     pub(crate) fn has_fresh_mailbox_read(&self) -> bool {
         self.read_confirmation
             .as_ref()

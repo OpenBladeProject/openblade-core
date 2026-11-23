@@ -1,5 +1,7 @@
 //! One installed request composition. No fake or scenario transport is imported.
 #[cfg(feature = "service-profile-triggers-v1")]
+use super::thermal_drift;
+#[cfg(feature = "service-profile-triggers-v1")]
 use super::thermal_native::StorageGuard;
 #[cfg(not(test))]
 use super::thermal_native::{CustodialFiles, ProtectedFiles};
@@ -325,6 +327,10 @@ pub(super) struct Runtime {
         feature = "service-keyboard-driver-mode-v1"
     ))]
     admission_epoch: Rc<std::cell::OnceCell<PowerProbe>>,
+    // Confirmed thermal drift, shared with the reader that observes it
+    // (`thermal_drift`).
+    #[cfg(feature = "service-profile-triggers-v1")]
+    drift: Arc<Mutex<thermal_drift::Tracker>>,
     fan_owner: Rc<RefCell<Option<Arc<fan::FanPermit>>>>,
     temporary_owner: Rc<RefCell<Option<Arc<battery::BatteryPermit>>>>,
     temporary_pending: Rc<RefCell<Option<Arc<battery::BatteryPermit>>>>,
@@ -371,6 +377,9 @@ struct ThermalStep {
     value: Option<Override>,
     // `Some` for a reconciliation of saved intent: the classes it applies at.
     reconcile: Option<Classes>,
+    // A reconciliation's drift decision, shared by its steps.
+    #[cfg(feature = "service-profile-triggers-v1")]
+    transition: Option<Arc<thermal_drift::Transition>>,
     deadline: Instant,
     status: Snapshot,
 }
@@ -404,6 +413,10 @@ pub(super) struct Stepped {
     // The classified class the step's reading found inside its classes.
     #[cfg_attr(not(feature = "service-profile-triggers-v1"), allow(dead_code))]
     pub(super) class: Option<i32>,
+    // A reconciliation's drift decision excluded both thermal subsystems
+    // (`thermal_drift`): nothing was written, and the other step does not run.
+    #[cfg_attr(not(feature = "service-profile-triggers-v1"), allow(dead_code))]
+    pub(super) excluded: bool,
 }
 impl Stepped {
     fn new(outcome: Outcome, snapshot: Option<Snapshot>) -> Self {
@@ -413,6 +426,7 @@ impl Stepped {
             unchanged: false,
             transient: false,
             class: None,
+            excluded: false,
         }
     }
     /// A refusal before any firmware access that may clear by itself.
@@ -533,6 +547,8 @@ impl Runtime {
                 feature = "service-keyboard-driver-mode-v1"
             ))]
             admission_epoch: Rc::default(),
+            #[cfg(feature = "service-profile-triggers-v1")]
+            drift: mailbox.drift(),
             fan_owner: Rc::default(),
             temporary_owner: Rc::default(),
             temporary_pending: Rc::default(),
@@ -705,6 +721,8 @@ impl Runtime {
                 feature = "service-keyboard-driver-mode-v1"
             ))]
             admission_epoch: Rc::new(admission_epoch.into()),
+            #[cfg(feature = "service-profile-triggers-v1")]
+            drift: mailbox.drift(),
             fan_owner: Rc::default(),
             temporary_owner: Rc::default(),
             temporary_pending: Rc::default(),
@@ -863,6 +881,8 @@ impl Runtime {
                 request,
                 value,
                 reconcile: None,
+                #[cfg(feature = "service-profile-triggers-v1")]
+                transition: None,
                 deadline,
                 status,
             },
@@ -881,6 +901,8 @@ impl Runtime {
             request,
             value,
             reconcile,
+            #[cfg(feature = "service-profile-triggers-v1")]
+            transition,
             deadline,
             status,
         } = step;
@@ -983,6 +1005,10 @@ impl Runtime {
             intent,
             value,
             reconcile,
+            #[cfg(feature = "service-profile-triggers-v1")]
+            transition,
+            #[cfg(feature = "service-profile-triggers-v1")]
+            drift_intent: Mutex::new(None),
             application,
             accepted: AtomicBool::new(false),
             destination: Mutex::new(None),
@@ -997,6 +1023,28 @@ impl Runtime {
             Err(error) if is_fatal_admission(&error) => return Err(error),
             result => result,
         };
+        // A readback of this step is OpenBlade's own (managed
+        // `ConfirmIntentional`), whatever admission the reply keeps below.
+        // The Reader returns one only for a destination it confirms.
+        #[cfg(feature = "service-profile-triggers-v1")]
+        if let (Ok(Some(readback)), Some(destination)) = (
+            &result,
+            *permit
+                .destination
+                .lock()
+                .map_err(|_| io::ErrorKind::Other)?,
+        ) {
+            let mut drift = self.drift.lock().map_err(|_| io::ErrorKind::Other)?;
+            drift.confirm(*readback, false, confirms(*readback, destination));
+            if let Some(intent) = permit
+                .drift_intent
+                .lock()
+                .map_err(|_| io::ErrorKind::Other)?
+                .take()
+            {
+                drift.resolved(intent);
+            }
+        }
         permit.fresh.verify_health()?;
         let final_proof = if Instant::now() < deadline {
             permit.fresh.authorize()
@@ -1117,6 +1165,13 @@ impl Runtime {
                 *permit.cause.lock().map_err(|_| io::ErrorKind::Other)?,
                 Cause::Deadline | Cause::UnclassifiedBlocked | Cause::CurrentAdmission
             );
+        #[cfg(feature = "service-profile-triggers-v1")]
+        let excluded = matches!(
+            *permit.cause.lock().map_err(|_| io::ErrorKind::Other)?,
+            Cause::Excluded(_)
+        );
+        #[cfg(not(feature = "service-profile-triggers-v1"))]
+        let excluded = false;
         let selected_source = *permit
             .selected_source
             .lock()
@@ -1153,6 +1208,7 @@ impl Runtime {
             Ok(snapshot) => Ok(Stepped {
                 transient,
                 class: power,
+                excluded,
                 ..Stepped::new(outcome, snapshot)
             }),
             Err(error) if reconcile.is_none() || is_fatal_admission(&error) => Err(error),
@@ -1278,6 +1334,12 @@ struct RequestPermit {
     // `Some` applies saved intent at those classes without storing any
     // (`Runtime::reconcile_locked`); `value` is then None.
     reconcile: Option<Classes>,
+    // A reconciliation's drift decision (`thermal_drift`).
+    #[cfg(feature = "service-profile-triggers-v1")]
+    transition: Option<Arc<thermal_drift::Transition>>,
+    // An explicit request's intent, the prior one once its readback returns.
+    #[cfg(feature = "service-profile-triggers-v1")]
+    drift_intent: Mutex<Option<thermal_drift::Desired>>,
     application: Foreground,
     accepted: AtomicBool,
     destination: Mutex<Option<Destination>>,
@@ -1309,6 +1371,10 @@ enum Cause {
     /// Managed `ValidateThermalOverrideCombination` on classified power, as
     /// `RecordRejectedIntent` reports it (Failed); nothing is stored.
     Rejected(String),
+    /// A reconciliation excluded both thermal subsystems for confirmed
+    /// drift or an observed HyperBoost (`thermal_drift`).
+    #[cfg(feature = "service-profile-triggers-v1")]
+    Excluded(thermal_drift::Exclusion),
 }
 impl Cause {
     fn message(&self) -> String {
@@ -1333,6 +1399,8 @@ impl Cause {
             Self::UnclassifiedCustomRejected => UNCLASSIFIED_CUSTOM_REJECTED.into(),
             Self::Unchanged => UNCHANGED_CLASS.into(),
             Self::Rejected(message) => format!("The requested intent was rejected: {message}"),
+            #[cfg(feature = "service-profile-triggers-v1")]
+            Self::Excluded(exclusion) => exclusion.message("Performance"),
         }
     }
 }
@@ -1677,6 +1745,28 @@ impl Permit for RequestPermit {
                 .map_err(|_| io::ErrorKind::Other)? = selection.desired.map(|(_, s)| s);
             let desired = selection.desired.map(|(p, _)| p);
             *self.destination.lock().map_err(|_| io::ErrorKind::Other)? = desired;
+            // Before any cause that refuses the write: managed resolves its
+            // write exclusions before it tries a subsystem.
+            #[cfg(feature = "service-profile-triggers-v1")]
+            {
+                let next = thermal_drift::Desired {
+                    performance: desired,
+                    manual_fans: self.storage.desired_manual_fans(power, profile.as_ref())?,
+                };
+                match &self.transition {
+                    Some(transition) => {
+                        if let Some(exclusion) = transition.decide(baseline, next)? {
+                            self.set_cause(Cause::Excluded(exclusion));
+                            return Ok(None);
+                        }
+                    }
+                    // An explicit request's intent becomes the prior one only
+                    // with its own readback, after the write (`drift_intent`).
+                    None => {
+                        *self.drift_intent.lock().map_err(|_| io::ErrorKind::Other)? = Some(next)
+                    }
+                }
+            }
             if let Some(cause) = selection.blocked {
                 self.set_cause(cause);
                 return Ok(None);

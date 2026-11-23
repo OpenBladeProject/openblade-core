@@ -821,6 +821,15 @@ impl MailboxSource {
     pub(super) fn confirmed_manual_fans(&self) -> bool {
         matches!(self, Self::Reader(reader) if reader.confirmed_manual_fans())
     }
+    /// The reader's confirmed thermal drift (`thermal_drift`); without a
+    /// reader, a tracker nothing observes.
+    #[cfg(feature = "service-profile-triggers-v1")]
+    pub(super) fn drift(&self) -> Arc<Mutex<super::thermal_drift::Tracker>> {
+        match self {
+            Self::Reader(reader) => reader.drift.clone(),
+            Self::NoReader { .. } => Arc::default(),
+        }
+    }
     #[cfg(feature = "service-thermal-mutation-v1")]
     pub(super) fn fatal_evidence(&self) -> Arc<Mutex<Option<&'static str>>> {
         match self {
@@ -981,6 +990,10 @@ pub(super) struct ReadSource {
     #[cfg(feature = "service-thermal-mutation-v1")]
     battery_expiry: Rc<RefCell<Option<ExpiryFn>>>,
     last: Rc<RefCell<Option<(Snapshot, Instant)>>>,
+    // Confirmed thermal drift (`thermal_drift`), shared with the runtime's
+    // permits, which decide on the worker thread.
+    #[cfg(feature = "service-profile-triggers-v1")]
+    drift: Arc<Mutex<super::thermal_drift::Tracker>>,
     #[cfg(feature = "service-keyboard-driver-mode-read-v1")]
     driver_mode: Rc<driver_mode::Cadence>,
     #[cfg(feature = "service-live-readings-v1")]
@@ -1065,6 +1078,8 @@ impl ReadSource {
             #[cfg(feature = "service-thermal-mutation-v1")]
             battery_expiry: Rc::default(),
             last: Rc::default(),
+            #[cfg(feature = "service-profile-triggers-v1")]
+            drift: Arc::default(),
             #[cfg(feature = "service-keyboard-driver-mode-read-v1")]
             driver_mode: Rc::default(),
             #[cfg(feature = "service-live-readings-v1")]
@@ -1368,6 +1383,18 @@ impl ReadSource {
             // Metadata may refresh while the native worker runs outside the
             // source mutex. Never assign its newer revision to an old snapshot.
             let current = publisher.borrow().active.clone();
+            // A fresh exact-device reading is drift evidence, and may settle
+            // a resume hold (managed periodic `ObserveAutomaticState`, then
+            // `ReconcileResumePerformanceDrift`).
+            #[cfg(feature = "service-profile-triggers-v1")]
+            if let Ok(mut drift) = source.drift.lock() {
+                drift.observe(reading.performance);
+                drift.settle(
+                    reading.performance,
+                    current.controllers_reported(),
+                    Instant::now(),
+                );
+            }
             // The status's observation record is exact-model data and the
             // reading carries no model; its Reader is the one producer.
             debug_assert_eq!(
@@ -1604,6 +1631,17 @@ impl ReadSource {
     pub(super) fn retain_policy(&self, policy: Rc<dyn Fn(Snapshot) -> io::Result<Snapshot>>) {
         *self.intent.borrow_mut() = Some(policy);
     }
+    /// Publishes the confirmed drift as managed `ExternalChanges`. Every
+    /// published status is projected here or through `current_policy`.
+    #[cfg(feature = "service-profile-triggers-v1")]
+    pub(super) fn with_drift(&self, value: Snapshot) -> io::Result<Snapshot> {
+        let external = self
+            .drift
+            .lock()
+            .map_err(|_| io::ErrorKind::Other)?
+            .external();
+        Ok(value.with_external_changes(external))
+    }
     pub(super) fn retain_mutation(&self, snapshot: &Snapshot) {
         if snapshot.has_fresh_mailbox_read() {
             *self.last.borrow_mut() = Some((snapshot.clone(), Instant::now()));
@@ -1624,7 +1662,7 @@ impl ReadSource {
                     .map_or(Ok(base.clone()), |policy| policy(base))
             },
         )?;
-        project_private_policy(
+        let value = project_private_policy(
             value,
             crate::service_status::PrivatePolicyFamily::Battery,
             |base| {
@@ -1633,7 +1671,10 @@ impl ReadSource {
                     .as_ref()
                     .map_or(Ok(base.clone()), |policy| policy(base))
             },
-        )
+        )?;
+        #[cfg(feature = "service-profile-triggers-v1")]
+        let value = self.with_drift(value)?;
+        Ok(value)
     }
     async fn drain_mutation(&self, reconstruct: bool) -> io::Result<()> {
         let active = self.mutation.borrow().clone();

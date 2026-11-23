@@ -111,6 +111,17 @@ struct Pending {
     /// When the last attempt whose steps ran left the debt owed. A retry
     /// waits `PACE` after it.
     stepped: Option<Instant>,
+    /// How its reconciliation treats confirmed drift: an activation applies
+    /// over it, the lease expiry compares only the new intent, and any other
+    /// cause compares the intent OpenBlade last resolved as well
+    /// (`thermal_drift::Mode`). A merged cause keeps the strongest.
+    mode: thermal_drift::Mode,
+    /// A power-kind change is among its causes.
+    power: bool,
+    /// That power change is applied after a gate boundary, where firmware
+    /// may still settle into the destination (managed applies it during
+    /// resume validation, `resumePowerSourceTransitionGeneration`).
+    resume: bool,
 }
 impl Pending {
     fn new(owe: bool) -> Self {
@@ -118,6 +129,9 @@ impl Pending {
             owe,
             tried: None,
             stepped: None,
+            mode: thermal_drift::Mode::WithPrior,
+            power: false,
+            resume: false,
         }
     }
     /// Whether an attempt runs at write epoch `epoch` at `now`.
@@ -239,9 +253,30 @@ impl Runtime {
                 (causes, expired, prior.pending)
             }
         };
+        // A new resume, a power change or low power ends a resume hold, as
+        // managed clears it then or drops it at its next observation.
+        if causes.boundary || causes.power || low {
+            self.drift
+                .lock()
+                .map_err(|_| io::ErrorKind::Other)?
+                .drop_hold();
+        }
         if causes.boundary || causes.power || expired || activation {
             let owe = causes.power || activation || pending.is_some_and(|p| p.owe);
-            pending = Some(Pending::new(owe));
+            let mode = if activation {
+                thermal_drift::Mode::Overwrite
+            } else if expired {
+                thermal_drift::Mode::NextOnly
+            } else {
+                thermal_drift::Mode::WithPrior
+            };
+            let power = causes.power || pending.is_some_and(|p| p.power);
+            pending = Some(Pending {
+                mode: pending.map_or(mode, |p| p.mode.max(mode)),
+                power,
+                resume: power && (causes.boundary || pending.is_some_and(|p| p.resume)),
+                ..Pending::new(owe)
+            });
         }
         let Some(mut cause) = pending.filter(|p| !low && p.due(epoch, now)) else {
             self.stamp(mark, console, pending);
@@ -256,7 +291,8 @@ impl Runtime {
                         .borrow_mut()
                         .insert((pair.sid.clone(), pair.session), Debt::owed(Classes::ALL));
                 }
-                self.attempt(mailbox, pair, status).await?
+                self.attempt(mailbox, pair, status, (cause.mode, cause.resume))
+                    .await?
             }
         };
         let (pending, snapshot) = match attempt {
@@ -325,12 +361,14 @@ impl Runtime {
         )
     }
 
-    /// One attempt for `pair`'s debt.
+    /// One attempt for `pair`'s debt, with how it treats confirmed drift and
+    /// whether it applies a power change seen at a resume (`Pending`).
     async fn attempt(
         &self,
         mailbox: &MailboxSource,
         Pair { sid, session, pid }: Pair,
         status: impl FnOnce() -> Snapshot,
+        (mode, resume): (thermal_drift::Mode, bool),
     ) -> io::Result<Attempt> {
         let key = (sid.clone(), session);
         let Debt::Owed {
@@ -398,6 +436,8 @@ impl Runtime {
                     classes,
                     deadline: Instant::now() + crate::service_frame::RECONCILE_BUDGET,
                     status: status(),
+                    mode,
+                    resume,
                 },
             )
             .await?;
@@ -490,6 +530,19 @@ impl Runtime {
                 *at -= by;
             }
         }
+    }
+
+    /// Dates a resume hold `by` earlier, as that much time would.
+    #[cfg(test)]
+    pub(in super::super::super) fn age_drift_hold(&self, by: std::time::Duration) {
+        self.drift.lock().unwrap().age_hold(by);
+    }
+
+    /// Forgets every drift latch and resolved intent, as a Service restart
+    /// does: the next reading only sets the baseline.
+    #[cfg(test)]
+    pub(in super::super::super) fn restart_drift(&self) {
+        *self.drift.lock().unwrap() = Default::default();
     }
 
     /// The inter-tick gap that renews the lease (`SLEPT`).

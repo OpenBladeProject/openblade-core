@@ -17,6 +17,10 @@ pub(in super::super) struct FanRequest {
     pub(in super::super) settings: Option<Value>,
     pub(in super::super) deadline: Instant,
     pub(in super::super) status: Snapshot,
+    // A reconciliation's drift decision, shared by its steps; `None` for
+    // an explicit request.
+    #[cfg(feature = "service-profile-triggers-v1")]
+    pub(in super::super) transition: Option<Arc<thermal_drift::Transition>>,
 }
 /// A fan request refused by `Refusal::Deadline` after its intent was saved.
 const FAN_DEADLINE_STORED: &str = "Fan override intent was stored. Hardware result: The remaining request time cannot cover this recipe at the measured device pace; no fan setter was submitted.";
@@ -47,6 +51,15 @@ pub(super) struct FanPermit {
     unchanged: AtomicBool,
     // The classified class a reconciliation's reading found inside its classes.
     class: Mutex<Option<i32>>,
+    // A reconciliation's drift decision and the exclusion it made
+    // (`thermal_drift`).
+    #[cfg(feature = "service-profile-triggers-v1")]
+    transition: Option<Arc<thermal_drift::Transition>>,
+    // An explicit request's intent, the prior one once its readback returns.
+    #[cfg(feature = "service-profile-triggers-v1")]
+    drift_intent: Mutex<Option<thermal_drift::Desired>>,
+    #[cfg(feature = "service-profile-triggers-v1")]
+    excluded: Mutex<Option<thermal_drift::Exclusion>>,
     application: Foreground,
     proof: ReadAdmission,
     selected: Mutex<Option<(i32, Value)>>,
@@ -556,6 +569,26 @@ impl Permit for FanPermit {
             Some(settings) => settings,
             None => self.storage.desired_fan(power, profile)?,
         };
+        // Before the plan: managed resolves its write exclusions before it
+        // tries a subsystem.
+        #[cfg(feature = "service-profile-triggers-v1")]
+        {
+            let next = thermal_drift::Desired {
+                performance: self.storage.desired(power, profile)?.map(|(p, _)| p),
+                manual_fans: self.storage.desired_manual_fans(power, profile)?,
+            };
+            match &self.transition {
+                Some(transition) => {
+                    if let Some(exclusion) = transition.decide(baseline, next)? {
+                        *self.excluded.lock().map_err(|_| io::ErrorKind::Other)? = Some(exclusion);
+                        return Ok(None);
+                    }
+                }
+                // An explicit request's intent becomes the prior one only
+                // with its own readback, after the write (`drift_intent`).
+                None => *self.drift_intent.lock().map_err(|_| io::ErrorKind::Other)? = Some(next),
+            }
+        }
         let Some(settings) = settings else {
             return Ok(None);
         };
@@ -953,6 +986,8 @@ impl Runtime {
             settings,
             deadline,
             status: status_snapshot,
+            #[cfg(feature = "service-profile-triggers-v1")]
+            transition,
         } = fan;
         verify_retained_failure(&self.fatal)?;
         if caller.logon != Logon::Interactive
@@ -1090,6 +1125,12 @@ impl Runtime {
             reconcile,
             unchanged: AtomicBool::new(false),
             class: Mutex::new(None),
+            #[cfg(feature = "service-profile-triggers-v1")]
+            transition,
+            #[cfg(feature = "service-profile-triggers-v1")]
+            drift_intent: Mutex::new(None),
+            #[cfg(feature = "service-profile-triggers-v1")]
+            excluded: Mutex::new(None),
             application,
             proof,
             selected: Mutex::new(None),
@@ -1227,6 +1268,17 @@ impl Runtime {
             // Nothing was accepted or written; the reconciliation replies.
             return Ok(Stepped::unchanged());
         }
+        // The reconciliation's drift decision wrote nothing of either thermal
+        // subsystem (managed `ExternalChangePreserved` or
+        // `PreservedForHyperBoost`).
+        #[cfg(feature = "service-profile-triggers-v1")]
+        if let Some(exclusion) = *permit.excluded.lock().map_err(|_| io::ErrorKind::Other)? {
+            return Ok(Stepped {
+                class: *permit.class.lock().map_err(|_| io::ErrorKind::Other)?,
+                excluded: true,
+                ..Stepped::new(Outcome::blocked(exclusion.message("Fans")), None)
+            });
+        }
         // A job that ended before its intent was accepted, which journals
         // nothing (an adapter not classified yet, or time or admission that ran
         // out while reading; a reconciliation is never rejected), a pace
@@ -1253,6 +1305,25 @@ impl Runtime {
         let matched = performance.filter(|p| {
             observed.is_some_and(|o| openblade_domain::thermal_mutation::confirms(o, *p))
         });
+        // The Reader returns a readback only once it confirms the fan intent:
+        // OpenBlade's own (managed `ConfirmIntentional`), as is a carried
+        // destination it wrote.
+        #[cfg(feature = "service-profile-triggers-v1")]
+        if let Some(readback) = observed {
+            let mut drift = self.drift.lock().map_err(|_| io::ErrorKind::Other)?;
+            drift.confirm(readback, true, true);
+            if performance.is_some() && permit.prepared.load(Ordering::Acquire) {
+                drift.confirm(readback, false, matched.is_some());
+            }
+            if let Some(intent) = permit
+                .drift_intent
+                .lock()
+                .map_err(|_| io::ErrorKind::Other)?
+                .take()
+            {
+                drift.resolved(intent);
+            }
+        }
         let mut message = match (status, permit.prepared.load(Ordering::Acquire), performance) {
             (1, false, Some(preset)) if matched.is_some() => format!(
                 "Fans and {} performance already matched the requested state; no fan setter was submitted and no ownership was established.",

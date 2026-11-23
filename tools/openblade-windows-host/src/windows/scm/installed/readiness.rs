@@ -46,6 +46,9 @@ pub(super) mod ownership;
 
 #[path = "status_source.rs"]
 mod status_source;
+#[cfg(feature = "service-profile-triggers-v1")]
+#[path = "thermal_drift.rs"]
+mod thermal_drift;
 #[cfg(feature = "service-thermal-mutation-v1")]
 #[path = "thermal_mutation.rs"]
 mod thermal_mutation;

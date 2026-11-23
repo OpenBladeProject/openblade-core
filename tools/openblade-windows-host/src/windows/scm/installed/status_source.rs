@@ -652,12 +652,21 @@ impl StatusSource for GuardedStatus {
                                 settings,
                                 deadline,
                                 status,
+                                #[cfg(feature = "service-profile-triggers-v1")]
+                                transition: None,
                             },
                         )
                         .await?;
                     if let Some(status) = status {
                         let mut status = status.rebase_thermal_mutation(&publisher.borrow().active);
                         if let super::mailbox_read::MailboxSource::Reader(reader) = &mailbox {
+                            // The fan step projected its own policy; the drift
+                            // its readback confirmed is published as every
+                            // other status's is.
+                            #[cfg(feature = "service-profile-triggers-v1")]
+                            {
+                                status = reader.with_drift(status)?;
+                            }
                             reader.retain_mutation(&status);
                         }
                         status.set_observation_revision(

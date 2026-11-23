@@ -320,6 +320,11 @@ struct Reconcile<'a> {
     classes: Classes,
     deadline: Instant,
     status: Snapshot,
+    // How the reconciliation treats confirmed drift, and whether it applies
+    // a power change seen at a resume, whose firmware may still settle
+    // (`thermal_drift`).
+    mode: thermal_drift::Mode,
+    resume: bool,
 }
 /// What one reconciliation did, managed `ServiceTransitionApplicationOutcome`.
 struct Reconciled {
@@ -521,6 +526,12 @@ impl Runtime {
         record(next);
         let key = (sid.clone(), caller.session);
         let idle = if active { RENEWED } else { INACTIVE };
+        // Managed publishes the new application's desired state before its
+        // transition reads the prior one, so its own preset under the old
+        // application reads as drift and pauses the change. Native compares
+        // with the intent it last resolved as well, as managed's resolver
+        // intends (`thermal_drift::Mode`).
+        let mode = thermal_drift::Mode::WithPrior;
         // A changed pair owes a new reconciliation at every class.
         let debt = if changed {
             Debt::owed(Classes::ALL)
@@ -573,6 +584,8 @@ impl Runtime {
                     classes,
                     deadline,
                     status,
+                    mode,
+                    resume: false,
                 },
             )
             .await?;
@@ -681,6 +694,9 @@ impl Runtime {
             return stored();
         }
         let key = (sid.clone(), caller.session);
+        // As a report's: managed `UpdateProfilesAsync` also publishes the
+        // saved set before its transition reads the prior desired state.
+        let mode = thermal_drift::Mode::WithPrior;
         let prior = self.debt(&key);
         // The save's change, with what the pair owed before it.
         let combined = match prior {
@@ -723,6 +739,8 @@ impl Runtime {
                     classes: changed,
                     deadline,
                     status,
+                    mode,
+                    resume: false,
                 },
             )
             .await?;
@@ -780,7 +798,16 @@ impl Runtime {
             classes,
             deadline,
             status,
+            mode,
+            resume,
         } = step;
+        // One drift decision for both steps, from the first step's own
+        // fresh reading (`thermal_drift::Transition`).
+        let transition = Arc::new(thermal_drift::Transition::new(
+            self.drift.clone(),
+            mode,
+            resume,
+        ));
         // The confirmed fans are the retained thermal observation's: the
         // published status is rebuilt from observed metadata and carries no
         // firmware fans. An owned fan change not yet handed back is manual
@@ -831,6 +858,7 @@ impl Runtime {
                                 request: id.clone(),
                                 value: None,
                                 reconcile: Some(classes),
+                                transition: Some(transition.clone()),
                                 deadline,
                                 status: status.clone(),
                             },
@@ -848,6 +876,7 @@ impl Runtime {
                                 settings: None,
                                 deadline,
                                 status: status.clone(),
+                                transition: Some(transition.clone()),
                             },
                             Some(classes),
                         )
@@ -871,6 +900,32 @@ impl Runtime {
             match stepped {
                 Ok(stepped) => {
                     let mut stepped = stepped?;
+                    // The drift decision excluded both thermal subsystems
+                    // before any write: the other step does not run, and
+                    // replies as managed's excluded subsystem does. Nothing
+                    // is owed for later (managed attempts a transition once).
+                    if stepped.excluded {
+                        let class = stepped.class;
+                        let rest = steps.len() + 1;
+                        steps.push((stepped, possible));
+                        if let Some(exclusion) = transition.exclusion() {
+                            for kind in &order[rest..] {
+                                let message = exclusion.message(match kind {
+                                    Step::Performance => "Performance",
+                                    Step::Fans => "Fans",
+                                });
+                                steps.push((
+                                    Stepped {
+                                        class,
+                                        excluded: true,
+                                        ..Stepped::new(Outcome::blocked(message), None)
+                                    },
+                                    false,
+                                ));
+                            }
+                        }
+                        break;
+                    }
                     // A refusal by the step's own admission: its capture, its
                     // authorization before any firmware read or pair, or a
                     // write's authorization at submission (`epoch_for`).
@@ -959,6 +1014,11 @@ impl Runtime {
             && needed
                 .iter()
                 .all(|(s, possible)| s.outcome.status == 1 || (s.transient && !possible));
+        // A deferred or retried reconciliation keeps its prior intent for the
+        // attempt that replaces it (`thermal_drift::Transition::commit`).
+        if !deferred && !retry {
+            transition.commit();
+        }
         let read = Classes::of(needed.iter().filter_map(|(s, _)| s.class));
         // Both steps can refuse for one cause, which is said once.
         let mut said: Vec<&str> = Vec::with_capacity(steps.len());
