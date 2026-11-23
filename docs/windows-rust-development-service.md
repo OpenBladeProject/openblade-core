@@ -294,10 +294,31 @@ marker by name. A build without the feature still refuses the request with
   asks for `FanSpeeds`. They use the same serialized job, read custody,
   checkpoints and settle as the thermal read, with their own 1 s budget and
   never the job's last 500 ms. Both selectors must decode, as managed
-  requires. Managed publishes null after a failed pair. Native keeps the last
-  confirmed pair, under the same read admission, through two consecutive failed
-  jobs within the 5 s retention window, then publishes null. A speed above the
-  managed codec's 20,000 RPM bound counts as a failed read.
+  requires. A speed above the managed codec's 20,000 RPM bound counts as a
+  failed read.
+- **Fan speed budget and back-off.** No 0D/88 SET is sent unless the remaining
+  budget covers that exchange's SET, settle and GET (130 ms: 50 ms for each
+  transfer and the 30 ms settle), and the pair starts only when the budget
+  covers both. A pair that cannot start sends nothing and stays due. An
+  unconfirmed pair, or an asked-for job that brought back nothing, pauses the
+  pair: no job sends it for 15 s, as the Driver-mode query waits, doubling
+  per consecutive failure to 5 minutes. A confirmed pair ends the pause.
+  Each unconfirmed pair quarantines at most one transaction ID (an answered
+  first query's ID is reclaimed and an unsent second ID stays free), and the
+  pool of about 253 IDs is shared with every thermal read and mutation.
+  Without the pause, a pair that never answers would exhaust it in about
+  8.5 minutes at the 2 s poll. With it, the first hour costs about 16 IDs
+  and each later hour 12, so the pool lasts about 21 hours, as long as the
+  thermal read's own exchanges are answered.
+- **Fan speed retention.** Managed publishes null after a failed pair. Native
+  keeps the last confirmed pair, under the same read admission, through two
+  consecutive jobs that confirmed none (failed, paused or unable to start)
+  within the 5 s retention window, then publishes null. A pair seconds old is
+  still the last confirmed speed, and blanking it for one transient miss at
+  the 2 s poll would show a failure rather than the laptop (rule 4). A
+  retained pair is that earlier confirmation, never a fresh one: it never
+  outlives the window or crosses another admission, and every mutation
+  drops it, since a write may change the fans.
 - **Battery power flow.** `CallNtPowerInformation(SystemBatteryState)`, only for
   an ObserveState that asks for `BatteryPower`, mapped as managed
   `MapBatteryPowerFlow`. A failure is null.
@@ -311,11 +332,21 @@ marker by name. A build without the feature still refuses the request with
 Live readings appear only in the ObserveState reply, never in the subscription
 feed, as managed does not push a change of live readings alone. A request for no
 sensors publishes `liveReadings: null`. Reads outside an ObserveState, such as a
-trigger's, ask for none. Every status with a confirmed thermal read now carries
-managed `DeviceCapabilities.Unavailable()` with HyperBoost observed only
-(`hyperBoostAccess: 0`), and a retained read carries the record it was read
-with. The managed codec refuses a confirmed active HyperBoost beside a null
-record. This record admits no control. It applies in every mailbox composition.
+trigger's, ask for none.
+
+Native publishes no capability set: managed's exact-model set would claim
+controls this Service does not admit, and `capabilities: null` claims nothing.
+The managed codec refuses a confirmed active HyperBoost without a HyperBoost
+access, so a status whose confirmed state has an active HyperBoost, and only
+that status, carries an observation record: managed
+`DeviceCapabilities.Unavailable()` with `hyperBoostAccess: 0` (observed only)
+and the exact RZ09-0581 `supportsTemporaryFullCharge: true`. That member is
+not nullable, and the tray reads false as "this model has no temporary full
+charge", which the model's battery evidence refutes; true only keeps the
+tray's charge-limit actions waiting for the temporary state. The record admits
+no control. The record follows the published confirmed state in every
+projection: a fresh read, a retained read, an unavailable read and a
+mutation's own read. It applies in every mailbox composition.
 
 Still unavailable natively: GPU temperature, firmware versions, and a reply
 for Custom High/High with Automatic fans, which the thermal read does not
