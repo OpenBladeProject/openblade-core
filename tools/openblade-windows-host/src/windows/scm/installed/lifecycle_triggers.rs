@@ -1,7 +1,7 @@
 //! Lifecycle-driven reconciliation of owed intent (`service-profile-triggers-v1`):
 //! the Service's own 500 ms tick (`Runtime::reconcile_lifecycle`) applies what
-//! the console pair owes after three lifecycle transitions, as managed runs
-//! `ApplyFullTransitionAsync` after them without any request:
+//! the console pair owes after four lifecycle transitions, as managed runs
+//! `ApplyFullTransitionAsync` after them without any explicit request:
 //!
 //! - A gate boundary: a resume, a DisplayOn that cleared a set gate, or a new
 //!   resume (managed `ProcessNativeAsync(suspending: false)`, which a DisplayOn
@@ -19,6 +19,11 @@
 //!   (managed `ExpireApplicationContextAsync`): the reporter's foreground is
 //!   cleared and its pair owes a reconciliation at every class, so the power
 //!   profile applies.
+//! - A console user other than the last one activated, including the first
+//!   one after the Service starts (managed `ActivateUserAsync`, which applies
+//!   a new active user's profile at its first admitted request): its pair
+//!   owes a reconciliation at every class. Managed keys this on the SID, so
+//!   the same user returning after a logoff or a switch owes nothing new.
 //!
 //! The pair is the console session's interactive user: the latest admitted
 //! reporter when it reported from that session, else the console user
@@ -26,19 +31,26 @@
 //! tick reconciles it under the mutation gate through the request path's own
 //! `reconcile_locked`: every step captures fresh exact-device, power,
 //! session, ownership and lifecycle admission, writes under its own journal
-//! id, and stops on ambiguity. A cause stays pending until an attempt passes
-//! the trigger's admission and runs its steps. A refused attempt (a locked
-//! session after resume, a fenced store, unclassified power) and one whose
-//! steps the write epoch overtook are retried once that epoch has moved, as
-//! an unlock or a later notice moves it, at most `RETRIES` times; the tick
-//! never polls an unmoved epoch.
+//! id, and stops on ambiguity.
+//!
+//! A cause stays pending until an attempt's steps leave nothing owed. An
+//! attempt refused before any step (no console user, a refused capture such
+//! as a locked session after resume, a fenced store, unclassified power)
+//! reads no firmware and spends nothing; one whose steps leave the debt owed
+//! spends the debt's own `RETRIES` budget (`Reconciled::after`), which only
+//! a step with nothing possibly submitted can leave owed. Either is retried
+//! once the ordinary write epoch has moved, as an unlock or a later notice
+//! moves it, so the tick takes at most one capture per epoch move and never
+//! polls an unmoved epoch. A newer cause supersedes a pending one.
 use super::*;
 use std::sync::atomic::AtomicU64;
 
 /// An inter-tick gap this long is time the Service did not run, such as
 /// Modern Standby without a suspend notice: the reporter could not renew
-/// then either, so the lease is renewed as at a gate boundary. The tick runs
-/// every 500 ms and stamps its end, so only a stall this long renews early.
+/// then either, so the lease is renewed as at a gate boundary. Every tick
+/// stamps its time, after its attempt and also when a request holds the
+/// mutation gate, so neither an attempt nor a long request is a gap; only a
+/// stall of the tick itself this long renews early.
 const SLEPT: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// What the lifecycle tick saw: the gate generation and the Windows power
@@ -48,33 +60,40 @@ struct Mark {
     gate: Option<u64>,
     power: Option<u64>,
 }
-/// The lifecycle tick's state between ticks: its last mark, when it ended,
-/// and the cause it still owes an attempt.
-#[derive(Clone, Copy, Debug)]
+/// The lifecycle tick's state between ticks.
+#[derive(Clone, Debug)]
 pub(in super::super) struct Tick {
     mark: Mark,
+    /// When the tick last ran, for the gap that renews the lease.
     at: Instant,
+    /// The ordinary write epoch the tick last read.
+    epoch: Option<u64>,
+    console: Console,
+    /// The cause it still owes an attempt.
     pending: Option<Pending>,
 }
-/// A lifecycle cause no admitted attempt has run yet.
+/// What the tick knows of the console user.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+struct Console {
+    /// The last read named a console user. While none is known, every tick
+    /// reads again, so a logon is seen without a further notice.
+    known: bool,
+    /// The last console user activated, as managed's `activeUserSid`.
+    activated: Option<String>,
+}
+/// A lifecycle cause whose reconciliation has not settled.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Pending {
-    /// A power-kind change owes every class to the pair its first resolved
-    /// attempt reconciles.
+    /// A power-kind change or an activation owes every class to the pair
+    /// its first resolved attempt reconciles.
     owe: bool,
-    /// The ordinary write epoch at the last refused or overtaken attempt;
-    /// `None` until one ran. A retry waits for that epoch to move.
+    /// The ordinary write epoch at the last attempt that left the cause
+    /// pending; `None` until one ran. A retry waits for that epoch to move.
     tried: Option<Option<u64>>,
-    /// Attempts that did not complete; at most `1 + RETRIES` run.
-    attempts: u8,
 }
 impl Pending {
     fn new(owe: bool) -> Self {
-        Self {
-            owe,
-            tried: None,
-            attempts: 0,
-        }
+        Self { owe, tried: None }
     }
     /// Whether an attempt runs at write epoch `epoch` now.
     fn due(&self, epoch: Option<u64>) -> bool {
@@ -83,15 +102,14 @@ impl Pending {
             Some(tried) => epoch.is_some() && epoch != tried,
         }
     }
-    /// The cause after an attempt at `epoch` that did not complete, or
-    /// `None` once its retries are spent.
-    fn retry(self, epoch: Option<u64>) -> Option<Self> {
-        let attempts = self.attempts + 1;
-        (attempts <= RETRIES).then_some(Self {
-            owe: self.owe,
+    /// The cause after an attempt at `epoch` that left it pending: it waits
+    /// for that epoch to move. It spends nothing itself: a refusal before
+    /// any step read no firmware, and the debt counts its steps' retries.
+    fn wait(self, epoch: Option<u64>) -> Self {
+        Self {
             tried: Some(epoch),
-            attempts,
-        })
+            ..self
+        }
     }
 }
 /// The lifecycle transitions between two ticks.
@@ -120,31 +138,35 @@ struct Pair {
 }
 /// How one attempt ended.
 enum Attempt {
-    /// Its steps ran and left nothing to retry, or nothing was owed.
+    /// Its steps ran and left nothing owed, or nothing was owed.
     Done(Option<Snapshot>),
-    /// Refused before any step, or overtaken by the write epoch with the
-    /// debt still owed: retried once that epoch has moved.
+    /// Refused before any step, or its steps left the debt owed with
+    /// nothing possibly submitted: retried once the write epoch has moved.
     Retry(Option<Snapshot>),
 }
 
 impl Runtime {
-    /// One lifecycle tick: reads the gate and power generations, records any
-    /// transition since the last tick as a pending cause, and while the gate
-    /// is clear runs one attempt for that cause from `status`, which is read
-    /// only then. Returns the reconciliation's status, to publish as a
-    /// report's is.
+    /// One lifecycle tick: reads the gate and power generations and, when it
+    /// may have changed, the console user; records any transition since the
+    /// last tick as a pending cause; and while the gate is clear runs one
+    /// attempt for that cause from `status`, which is read only then. Returns
+    /// the reconciliation's status, to publish as a report's is.
     ///
     /// A tick that finds the mutation gate held reads nothing and keeps its
-    /// state, so the transition is seen by a later tick; the request holding
-    /// the gate may have settled the debt by then. Debts change only under
-    /// the gate, so a request's own settlement cannot overwrite a debt this
-    /// tick owed, or the reverse.
+    /// state but its time, so the transition is seen by a later tick; the
+    /// request holding the gate may have settled the debt by then. Debts
+    /// change only under the gate, so a request's own settlement cannot
+    /// overwrite a debt this tick owed, or the reverse.
     pub(in super::super::super) async fn reconcile_lifecycle(
         &self,
         mailbox: &MailboxSource,
         status: impl FnOnce() -> Snapshot,
     ) -> io::Result<Option<Snapshot>> {
         let Ok(_serial) = self.gate.try_lock() else {
+            // The Service is running while a request holds the gate: no gap.
+            if let Some(tick) = self.lifecycle.borrow_mut().as_mut() {
+                tick.at = Instant::now();
+            }
             return Ok(None);
         };
         verify_retained_failure(&self.fatal)?;
@@ -155,22 +177,27 @@ impl Runtime {
                 .map_or(Some(0), |read| read().map(|t| t.generation)),
             power: self.power_generation.get().and_then(|read| read()),
         };
-        let Some(prior) = self.lifecycle.get() else {
-            self.stamp(mark, None);
-            return Ok(None);
-        };
-        let causes = Causes::between(prior.mark, mark);
+        let epoch = self.admission_epoch();
+        let prior = self.lifecycle.borrow().clone();
+        let (console, activation) = self.observe_console(prior.as_ref(), epoch);
         let low = self.gate() == Gate::Low;
-        let slept = Instant::now().saturating_duration_since(prior.at) >= SLEPT;
-        let expired = self.renew_or_expire_lease(causes.boundary || slept || low);
-        let mut pending = prior.pending;
-        if causes.boundary || causes.power || expired {
-            let owe = causes.power || pending.is_some_and(|p| p.owe);
+        let (causes, expired, mut pending) = match &prior {
+            // The first tick has no transition to compare, only the console
+            // user's activation.
+            None => (Causes::default(), false, None),
+            Some(prior) => {
+                let causes = Causes::between(prior.mark, mark);
+                let slept = Instant::now().saturating_duration_since(prior.at) >= SLEPT;
+                let expired = self.renew_or_expire_lease(causes.boundary || slept || low);
+                (causes, expired, prior.pending)
+            }
+        };
+        if causes.boundary || causes.power || expired || activation {
+            let owe = causes.power || activation || pending.is_some_and(|p| p.owe);
             pending = Some(Pending::new(owe));
         }
-        let epoch = self.admission_epoch();
         let Some(mut cause) = pending.filter(|p| !low && p.due(epoch)) else {
-            self.stamp(mark, pending);
+            self.stamp(mark, epoch, console, pending);
             return Ok(None);
         };
         let attempt = match self.lifecycle_pair() {
@@ -182,33 +209,66 @@ impl Runtime {
                         .borrow_mut()
                         .insert((pair.sid.clone(), pair.session), Debt::owed(Classes::ALL));
                 }
-                self.attempt(mailbox, pair, epoch, status).await?
+                self.attempt(mailbox, pair, status).await?
             }
         };
         let (pending, snapshot) = match attempt {
             Attempt::Done(snapshot) => (None, snapshot),
-            Attempt::Retry(snapshot) => (cause.retry(epoch), snapshot),
+            Attempt::Retry(snapshot) => (Some(cause.wait(epoch)), snapshot),
         };
-        self.stamp(mark, pending);
+        self.stamp(mark, epoch, console, pending);
         Ok(snapshot)
     }
 
-    /// Records the tick's mark and pending cause, stamped now: after any
-    /// attempt, so the attempt's own time is no gap.
-    fn stamp(&self, mark: Mark, pending: Option<Pending>) {
-        self.lifecycle.set(Some(Tick {
+    /// Records the tick's state, stamped now: after any attempt, so the
+    /// attempt's own time is no gap.
+    fn stamp(&self, mark: Mark, epoch: Option<u64>, console: Console, pending: Option<Pending>) {
+        *self.lifecycle.borrow_mut() = Some(Tick {
             mark,
             at: Instant::now(),
+            epoch,
+            console,
             pending,
-        }));
+        });
     }
 
-    /// One attempt for `pair`'s debt at write epoch `epoch`.
+    /// Reads the console user when it may have changed: at the first tick,
+    /// after the write epoch moved (every session notice fences it), and
+    /// while none is known. Says whether a user other than the last one
+    /// activated is now the console user. Test composition without a console
+    /// probe activates no one.
+    fn observe_console(&self, prior: Option<&Tick>, epoch: Option<u64>) -> (Console, bool) {
+        let last = prior.map(|tick| tick.console.clone()).unwrap_or_default();
+        let Some(read) = self.console.get() else {
+            return (last, false);
+        };
+        if prior.is_some_and(|tick| tick.console.known && tick.epoch == epoch) {
+            return (last, false);
+        }
+        let Some((sid, _)) = read() else {
+            return (
+                Console {
+                    known: false,
+                    ..last
+                },
+                false,
+            );
+        };
+        let activation = last.activated.as_deref() != Some(sid.as_str());
+        (
+            Console {
+                known: true,
+                activated: Some(sid),
+            },
+            activation,
+        )
+    }
+
+    /// One attempt for `pair`'s debt.
     async fn attempt(
         &self,
         mailbox: &MailboxSource,
         Pair { sid, session, pid }: Pair,
-        epoch: Option<u64>,
         status: impl FnOnce() -> Snapshot,
     ) -> io::Result<Attempt> {
         let key = (sid.clone(), session);
@@ -232,7 +292,9 @@ impl Runtime {
             Err(_) => return Ok(Attempt::Retry(None)),
         };
         // As a report's: a fenced store or unclassified power runs nothing
-        // and leaves the debt as it was.
+        // and leaves the debt as it was. A fenced store stays fenced until
+        // read-only reconciliation settles its row, so a possibly submitted
+        // step never runs again.
         let TriggerAdmission::Admitted(classes) = admit_trigger(&storage, fresh.as_ref(), owed)?
         else {
             return Ok(Attempt::Retry(None));
@@ -242,7 +304,8 @@ impl Runtime {
                 mailbox,
                 Reconcile {
                     // An interactive user controlling `session`: the reporter
-                    // as its last report was admitted, or the console user.
+                    // as its last report was admitted, or the console user,
+                    // whose token `console_user` classified as interactive.
                     // It submits nothing itself; each step's capture and every
                     // write's authorization re-check that session and user.
                     caller: Caller {
@@ -262,11 +325,11 @@ impl Runtime {
             .await?;
         let debt = reconciled.after(owed, attempts);
         self.debts.borrow_mut().insert(key, debt);
-        // A step the write epoch overtook keeps the debt owed with nothing
-        // of it submitted (`reconcile_locked`); it runs again once the epoch
-        // has moved. Any other outcome is the report path's to retry.
-        let overtaken = matches!(debt, Debt::Owed { .. }) && self.admission_epoch() != epoch;
-        Ok(if overtaken {
+        // A debt left owed ran nothing possibly submitted and has retries
+        // left, or was deferred (`Reconciled::after`): a step the write epoch
+        // overtook, or one refused transiently at an unmoved epoch, such as
+        // an adapter not classified yet. It runs again once the epoch moves.
+        Ok(if matches!(debt, Debt::Owed { .. }) {
             Attempt::Retry(reconciled.snapshot)
         } else {
             Attempt::Done(reconciled.snapshot)
@@ -339,10 +402,15 @@ impl Runtime {
     /// Dates the last tick `by` earlier, as a stall of the Service would.
     #[cfg(test)]
     pub(in super::super::super) fn age_lifecycle_tick(&self, by: std::time::Duration) {
-        if let Some(mut tick) = self.lifecycle.get() {
+        if let Some(tick) = self.lifecycle.borrow_mut().as_mut() {
             tick.at -= by;
-            self.lifecycle.set(Some(tick));
         }
+    }
+
+    /// The inter-tick gap that renews the lease (`SLEPT`).
+    #[cfg(test)]
+    pub(in super::super::super) fn lifecycle_sleep_gap() -> std::time::Duration {
+        SLEPT
     }
 
     /// Holds the mutation gate, as a request in flight does.
@@ -425,21 +493,22 @@ mod tests {
     }
 
     #[test]
-    fn a_pending_cause_retries_only_at_a_moved_known_epoch_and_at_most_retries_times() {
+    fn a_pending_cause_waits_for_a_moved_known_epoch_without_a_budget_of_its_own() {
         let fresh = Pending::new(true);
         assert!(fresh.due(None) && fresh.due(Some(4)));
-        let mut cause = fresh.retry(Some(4)).unwrap();
+        let mut cause = fresh.wait(Some(4));
         assert!(cause.owe);
         assert!(!cause.due(Some(4)));
         assert!(!cause.due(None));
         assert!(cause.due(Some(5)));
-        for attempt in 2..=RETRIES {
-            cause = cause.retry(Some(4 + u64::from(attempt))).unwrap();
+        // Refusals before any step spend nothing: the cause outlasts any
+        // number of epoch moves until an attempt settles it.
+        for epoch in 5..50 {
+            cause = cause.wait(Some(epoch));
+            assert!(cause.due(Some(epoch + 1)));
         }
-        assert_eq!(cause.attempts, RETRIES);
-        assert!(cause.retry(Some(99)).is_none());
         // A refusal at an unknown epoch waits for a known one.
-        let unknown = Pending::new(false).retry(None).unwrap();
+        let unknown = Pending::new(false).wait(None);
         assert!(!unknown.due(None) && unknown.due(Some(1)));
     }
 }

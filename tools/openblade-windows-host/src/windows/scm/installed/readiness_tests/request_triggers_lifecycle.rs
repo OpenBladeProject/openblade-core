@@ -19,16 +19,22 @@ const UNLOCK: u32 = 8;
 
 /// Wires the rig's lifecycle in as the runtime's gate, write epoch and power
 /// generation, and the rig's console user as its console probe, as
-/// `Runtime::native` does, and takes the tick's first mark.
-async fn wired(rig: &Rig) {
+/// `Runtime::native` does, and runs the tick's first pass, which activates
+/// that user. The returned flag says whether the probe names the user.
+async fn wired(rig: &Rig) -> Rc<Cell<bool>> {
+    let known = Rc::new(Cell::new(true));
     let custody = rig.custody.clone();
+    let named = known.clone();
     rig.runtime.read_console(move || {
-        Some((
-            custody.current_sid.lock().unwrap().clone(),
-            custody.current_session.load(Ordering::Acquire) as u32,
-        ))
+        named.get().then(|| {
+            (
+                custody.current_sid.lock().unwrap().clone(),
+                custody.current_session.load(Ordering::Acquire) as u32,
+            )
+        })
     });
     unconsoled(rig).await;
+    known
 }
 /// `wired` without a console probe answer: no console user is known.
 async fn unconsoled(rig: &Rig) {
@@ -87,9 +93,16 @@ fn unlock(rig: &Rig) {
 fn saved_battery_performance(rig: &Rig) -> Value {
     rig.files.document("profiles.json")["profiles"]["battery"]["performance"].clone()
 }
-/// A rig whose Game rule is applied on AC, with the tick wired and marked.
-/// Its saved performance is the managed recorder's.
+/// A rig whose Game rule is applied on AC, with the tick wired, marked and
+/// its console user activated. Its saved performance is the managed
+/// recorder's.
 async fn applied_game() -> Rig {
+    let rig = reported_game().await;
+    wired(&rig).await;
+    rig
+}
+/// `applied_game` before the tick is wired.
+async fn reported_game() -> Rig {
     let vectors: Value = serde_json::from_str(LIFECYCLE_VECTORS).unwrap();
     let rig = rig_at(files_with_game(json!({"pluggedIn":{"performance":2}})), 0);
     let saved = &rig.files.document("profiles.json")["profiles"];
@@ -105,7 +118,6 @@ async fn applied_game() -> Rig {
     assert_eq!(applied["result"]["status"], 1, "{applied}");
     assert_eq!(performance(&rig.get().await), 2);
     assert_eq!(owed(&rig), None);
-    wired(&rig).await;
     rig
 }
 fn vector<'a>(vectors: &'a Value, transition: &str) -> &'a Value {
@@ -462,11 +474,13 @@ async fn a_cause_refused_at_a_locked_resume_applies_after_the_unlock() {
     rig.stop().await;
 }
 
-/// A refused trigger capture keeps the cause, and its retries are bounded:
-/// one attempt and at most `RETRIES` more, each only after the write epoch
-/// moved. The debt is then left to the next report.
+/// A refused trigger capture reads no firmware and spends nothing, so
+/// unrelated epoch moves while it is refused, such as a battery-level power
+/// notice or another session's notice, cannot use the cause up: each takes
+/// one capture, and once the capture is admitted the tick applies the
+/// battery profile the unplug owed, with no report.
 #[tokio::test]
-async fn a_refused_capture_is_retried_at_most_twice_on_epoch_moves() {
+async fn a_refused_capture_spends_nothing_and_applies_once_admitted() {
     let rig = applied_game().await;
     rig.custody.scoped_fresh.store(true, Ordering::Release);
     rig.custody.current_console.store(false, Ordering::Release);
@@ -477,18 +491,94 @@ async fn a_refused_capture_is_retried_at_most_twice_on_epoch_moves() {
     assert_eq!(captures(&rig), captured + 1);
     tick(&rig).await;
     assert_eq!(captures(&rig), captured + 1);
-    for _ in 0..4 {
-        unlock(&rig);
+    for moves in 1..=6 {
+        if moves % 2 == 0 {
+            power_notice(&rig);
+        } else {
+            // WTS_SESSION_LOGON for another session fences as well.
+            rig.custody.lifecycle.ingress(SESSION_CHANGE, 5);
+        }
         tick(&rig).await;
+        assert_eq!(captures(&rig), captured + 1 + moves);
     }
-    assert_eq!(captures(&rig), captured + 3);
     assert_eq!(writes(&rig), written);
     assert_eq!(owed(&rig), Some(0));
-    // The next admitted report applies the debt.
     rig.custody.current_console.store(true, Ordering::Release);
-    let renewed = report(&rig, 2, Some(r"C:\Games\Game.exe")).await;
-    assert_eq!(renewed["result"]["status"], 1, "{renewed}");
+    unlock(&rig);
+    tick(&rig).await;
+    assert!(writes(&rig) > written);
     assert_eq!(owed(&rig), None);
+    assert_eq!(
+        performance(&rig.get().await),
+        &saved_battery_performance(&rig)
+    );
+    rig.stop().await;
+}
+
+/// A step refused transiently at an unmoved write epoch, here a USB-C
+/// adapter whose class is not settled yet, leaves the debt owed with a retry
+/// spent. The cause is kept: ticks at that epoch read nothing, and the next
+/// power notice after the adapter classifies applies the plugged-in profile.
+#[tokio::test]
+async fn an_unclassified_adapter_keeps_the_cause_until_the_epoch_moves() {
+    let rig = applied_game().await;
+    let ac = rig.port.state.lock().unwrap().actual;
+    unplug(&rig);
+    tick(&rig).await;
+    assert_eq!(
+        performance(&rig.get().await),
+        &saved_battery_performance(&rig)
+    );
+    let written = writes(&rig);
+    // 0x10 is an unmapped level: a completed reading that classifies nothing.
+    replug(&rig, 0x10);
+    let epoch = rig.custody.lifecycle.active();
+    tick(&rig).await;
+    assert_eq!(rig.custody.lifecycle.active(), epoch);
+    assert_eq!(writes(&rig), written);
+    assert_eq!(owed(&rig), Some(1));
+    let captured = captures(&rig);
+    tick(&rig).await;
+    assert_eq!(captures(&rig), captured);
+    rig.port.state.lock().unwrap().actual = ac;
+    power_notice(&rig);
+    tick(&rig).await;
+    assert!(writes(&rig) > written);
+    assert_eq!(owed(&rig), None);
+    assert_eq!(performance(&rig.get().await), 2);
+    let settled = captures(&rig);
+    power_notice(&rig);
+    tick(&rig).await;
+    assert_eq!(captures(&rig), settled);
+    rig.stop().await;
+}
+
+/// Steps the write epoch overtakes each time spend the debt's own budget,
+/// not a fresh one: the cause's owed classes are recorded once, so the
+/// second attempt finds one retry spent, and the third settles the debt.
+#[tokio::test]
+async fn overtaken_steps_spend_the_debts_own_retries() {
+    let rig = applied_game().await;
+    let ac = rig.port.state.lock().unwrap().actual;
+    unplug(&rig);
+    tick(&rig).await;
+    let written = writes(&rig);
+    let custody = rig.custody.clone();
+    rig.port.state.lock().unwrap().on_power = Some(Arc::new(move |_| {
+        custody.lifecycle.ingress(POWER, RESUME);
+    }));
+    replug(&rig, ac);
+    tick(&rig).await;
+    assert_eq!(owed(&rig), Some(1));
+    tick(&rig).await;
+    assert_eq!(owed(&rig), Some(2));
+    tick(&rig).await;
+    assert_eq!(owed(&rig), None);
+    assert_eq!(writes(&rig), written);
+    let settled = captures(&rig);
+    tick(&rig).await;
+    assert_eq!(captures(&rig), settled);
+    rig.port.state.lock().unwrap().on_power = None;
     rig.stop().await;
 }
 
@@ -528,15 +618,16 @@ async fn a_lease_in_low_power_is_renewed_not_expired() {
     rig.stop().await;
 }
 
-/// Modern Standby can sleep without a suspend notice: a gap in the ticks is
-/// time the reporter could not renew in, so it renews the lease. A reporter
-/// that stops while the ticks keep running still expires.
+/// Modern Standby can sleep without a suspend notice: a gap in the ticks as
+/// long as `SLEPT` is time the reporter could not renew in, so it renews the
+/// lease. A reporter that stops while the ticks keep running still expires,
+/// even after a stall just short of the gap.
 #[tokio::test]
-async fn a_gap_in_the_ticks_renews_the_lease() {
+async fn a_gap_in_the_ticks_renews_the_lease_from_its_threshold() {
+    let gap = crate::installed::readiness::thermal_mutation::Runtime::lifecycle_sleep_gap();
     let rig = applied_game().await;
     let before = sent(&rig);
-    rig.runtime
-        .age_lifecycle_tick(std::time::Duration::from_secs(60));
+    rig.runtime.age_lifecycle_tick(gap);
     rig.runtime.expire_application_lease();
     tick(&rig).await;
     assert_eq!(sent(&rig), before);
@@ -545,11 +636,76 @@ async fn a_gap_in_the_ticks_renews_the_lease() {
     assert_eq!(renewed["result"], json!({"status":0,"message":RENEWED}));
     // A stall short of the gap is not sleep: the lease expires.
     rig.runtime
-        .age_lifecycle_tick(std::time::Duration::from_secs(1));
+        .age_lifecycle_tick(gap - std::time::Duration::from_secs(1));
     rig.runtime.expire_application_lease();
     tick(&rig).await;
     assert!(sent(&rig) > before);
     assert_eq!(performance(&rig.get().await), 1);
+    rig.stop().await;
+}
+
+/// A request that holds the mutation gate longer than the gap is the Service
+/// running, not sleep: the busy tick keeps its time current, so the lease
+/// still expires at the next free tick.
+#[tokio::test]
+async fn a_long_request_holding_the_gate_is_no_gap() {
+    let rig = applied_game().await;
+    let before = sent(&rig);
+    rig.runtime
+        .age_lifecycle_tick(std::time::Duration::from_secs(60));
+    {
+        let _held = rig.runtime.hold_mutation_gate();
+        tick(&rig).await;
+    }
+    rig.runtime.expire_application_lease();
+    tick(&rig).await;
+    assert!(sent(&rig) > before);
+    assert_eq!(performance(&rig.get().await), 1);
+    rig.stop().await;
+}
+
+/// A console user the probe cannot name for a while is no pair, and the
+/// reporter is not taken in its place: the cause reads nothing and stays
+/// pending. Once the same user is named again it is no new activation, and
+/// the next epoch move applies the battery profile the unplug owed.
+#[tokio::test]
+async fn an_unnamed_console_user_keeps_the_cause_and_is_not_the_reporter() {
+    let rig = reported_game().await;
+    let known = wired(&rig).await;
+    known.set(false);
+    let (captured, written) = (captures(&rig), writes(&rig));
+    unplug(&rig);
+    tick(&rig).await;
+    assert_eq!((captures(&rig), writes(&rig)), (captured, written));
+    known.set(true);
+    tick(&rig).await;
+    assert_eq!((captures(&rig), writes(&rig)), (captured, written));
+    unlock(&rig);
+    tick(&rig).await;
+    assert!(writes(&rig) > written);
+    assert_eq!(owed(&rig), None);
+    assert_eq!(
+        performance(&rig.get().await),
+        &saved_battery_performance(&rig)
+    );
+    rig.stop().await;
+}
+
+/// A reporter of another user in the console session is not the console
+/// pair: the pair is the console user's, whose capture the rig refuses, so
+/// nothing is written for the reporter.
+#[tokio::test]
+async fn a_reporter_of_another_user_in_the_console_session_is_not_the_pair() {
+    const OTHER: &str = "S-1-5-21-111-222-333-1002";
+    let rig = applied_game().await;
+    *rig.custody.current_sid.lock().unwrap() = OTHER.to_owned();
+    let (captured, written) = (captures(&rig), writes(&rig));
+    unplug(&rig);
+    tick(&rig).await;
+    assert_eq!(captures(&rig), captured + 1);
+    assert_eq!(writes(&rig), written);
+    assert_eq!(rig.runtime.owed_attempts(OTHER, 7), Some(0));
+    assert_eq!(performance(&rig.get().await), 2);
     rig.stop().await;
 }
 
@@ -589,7 +745,9 @@ async fn a_power_change_without_a_reporter_applies_the_console_users_profile() {
     // A tick publishes into the status feed, which the first status read opens.
     rig.get().await;
     wired(&rig).await;
-    assert_eq!(captures(&rig), 0);
+    // The first tick activated the console user on AC.
+    assert!(captures(&rig) > 0);
+    assert_eq!(owed(&rig), None);
     unplug(&rig);
     tick(&rig).await;
     assert!(writes(&rig) > 0);
@@ -637,5 +795,36 @@ async fn a_tick_without_a_console_user_reads_nothing() {
     assert_eq!(captures(&rig), 0);
     assert_eq!(sent(&rig), 0);
     assert_eq!(rig.port.state.lock().unwrap().opened, 0);
+    rig.stop().await;
+}
+
+/// The first console user after start is activated, as managed
+/// `ActivateUserAsync` applies a new active user's profile: here on battery,
+/// with no report and no other cause. The same user in a new session, as
+/// after a logoff and logon, is no new activation and reads nothing.
+#[tokio::test]
+async fn the_console_users_activation_applies_its_profile_once() {
+    let vectors: Value = serde_json::from_str(LIFECYCLE_VECTORS).unwrap();
+    let rig = rig_at(files_with_game(json!({"pluggedIn":{"performance":2}})), 0);
+    rig.port.state.lock().unwrap().actual = 0;
+    rig.metadata.store(1, Ordering::Release);
+    // A tick publishes into the status feed, which the first status read opens.
+    rig.get().await;
+    wired(&rig).await;
+    let activated = vector(&vectors, "userActivatedOnBattery");
+    assert_eq!(activated["submitted"], true, "{activated}");
+    assert_eq!(activated["source"], 1, "{activated}");
+    assert!(writes(&rig) > 0);
+    assert_eq!(owed(&rig), None);
+    assert_eq!(performance(&rig.get().await), &activated["desired"]);
+    assert_eq!(saved_battery_performance(&rig), activated["desired"]);
+    let again = vector(&vectors, "sameUserReactivated");
+    assert_eq!(again["submitted"], false, "{again}");
+    let (captured, written) = (captures(&rig), writes(&rig));
+    rig.custody.current_session.store(8, Ordering::Release);
+    // WTS_SESSION_LOGON.
+    rig.custody.lifecycle.ingress(SESSION_CHANGE, 5);
+    tick(&rig).await;
+    assert_eq!((captures(&rig), writes(&rig)), (captured, written));
     rig.stop().await;
 }

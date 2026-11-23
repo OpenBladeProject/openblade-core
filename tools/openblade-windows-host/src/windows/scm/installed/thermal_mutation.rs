@@ -258,12 +258,14 @@ pub(super) struct Runtime {
     // cause (`triggers::lifecycle`). Unset reads unknown: no power cause.
     #[cfg(feature = "service-profile-triggers-v1")]
     power_generation: Rc<std::cell::OnceCell<PowerProbe>>,
-    // What the lifecycle tick last saw and the cause it still owes an
-    // attempt, `None` before its first tick (`triggers::lifecycle`).
+    // What the lifecycle tick last saw, the console user it last activated
+    // and the cause it still owes an attempt, `None` before its first tick
+    // (`triggers::lifecycle`).
     #[cfg(feature = "service-profile-triggers-v1")]
-    lifecycle: Rc<std::cell::Cell<Option<triggers::lifecycle::Tick>>>,
+    lifecycle: Rc<RefCell<Option<triggers::lifecycle::Tick>>>,
     // The console session's interactive user, for the lifecycle tick's pair
-    // when no report of that session was admitted. Unset reads the reporter.
+    // when no report of that session was admitted and for its activation.
+    // Unset reads the reporter and activates no one.
     #[cfg(feature = "service-profile-triggers-v1")]
     console: Rc<std::cell::OnceCell<ConsoleProbe>>,
     // The lifecycle's ordinary write epoch (`Lifecycle::active`), so a step
