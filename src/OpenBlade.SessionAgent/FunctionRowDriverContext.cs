@@ -89,6 +89,7 @@ internal sealed class FunctionRowDriverContext : IDisposable, IReactiveKeyboardS
             IsBlade18FnInputAdmitted = value.IsBlade18DriverFunctionRowAdmitted,
             ResetFunctionRowInput = pump.Reset,
             ObserveKeyboardInput = DeliveryFeed.Post,
+            ObserveKeyboardInputCaughtUp = DeliveryFeed.MarkCaughtUp,
         });
         Volatile.Write(ref source, metadata);
         return metadata;

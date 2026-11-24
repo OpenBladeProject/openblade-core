@@ -50,6 +50,19 @@ internal sealed class SnapTapDeliveryTracker
 
     internal void Pumped() => pumps++;
 
+    // A worker pass this far apart from the previous one means the process, or
+    // the system, was frozen; keys sent before it get a fresh deadline.
+    internal static readonly TimeSpan FreezeGap = TimeSpan.FromMilliseconds(500);
+
+    /// <summary>Restarts the deadline and pump count of every pending key.</summary>
+    internal void Rebase(TimeSpan now)
+    {
+        for (int index = 0; index < pending.Count; index++)
+        {
+            pending[index] = pending[index] with { SentAt = now, Pump = pumps };
+        }
+    }
+
     /// <summary>Drops pending keys whose delivery cannot be observed, such as input to an elevated window.</summary>
     internal void Clear() => pending.Clear();
 

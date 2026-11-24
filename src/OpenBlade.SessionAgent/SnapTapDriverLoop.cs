@@ -32,6 +32,7 @@ internal static class SnapTapDriverLoop
         var deliveryTracker = new SnapTapDeliveryTracker();
         var deliveryClock = Stopwatch.StartNew();
         bool deliveryObservable = false;
+        TimeSpan lastDeliveryPass = TimeSpan.Zero;
         try
         {
             if (!admission.TryGetEndpointWithFailure(out endpoint, out _, out DiagnosticFailure? admissionFailure))
@@ -173,6 +174,12 @@ internal static class SnapTapDriverLoop
                     confirmedInput = true;
                 }
                 processor.RepeatRestoredWinner();
+                TimeSpan deliveryPass = deliveryClock.Elapsed;
+                if (deliveryPass - lastDeliveryPass > SnapTapDeliveryTracker.FreezeGap)
+                {
+                    deliveryTracker.Rebase(deliveryPass);
+                }
+                lastDeliveryPass = deliveryPass;
                 delivery.Pump(deliveryTracker);
                 if (deliveryTracker.Check(deliveryClock.Elapsed) is { } lost)
                 {

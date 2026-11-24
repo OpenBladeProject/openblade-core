@@ -97,6 +97,27 @@ public sealed class SnapTapDeliveryTrackerTests
     }
 
     [Fact]
+    public void AFreezeGivesPendingKeysAFreshDeadline()
+    {
+        var tracker = new SnapTapDeliveryTracker();
+        tracker.Expect(ADown, TimeSpan.Zero);
+        Pump(tracker, SnapTapDeliveryTracker.MinimumPumps);
+        TimeSpan resumed = TimeSpan.FromSeconds(3);
+        tracker.Rebase(resumed);
+        Pump(tracker, SnapTapDeliveryTracker.MinimumPumps);
+
+        Assert.Null(tracker.Check(resumed + TimeSpan.FromSeconds(1)));
+        Assert.NotNull(tracker.Check(resumed + SnapTapDeliveryTracker.Deadline));
+
+        var starved = new SnapTapDeliveryTracker();
+        starved.Expect(ADown, TimeSpan.Zero);
+        Pump(starved, SnapTapDeliveryTracker.MinimumPumps);
+        starved.Rebase(resumed);
+        Pump(starved, SnapTapDeliveryTracker.MinimumPumps - 1);
+        Assert.Null(starved.Check(resumed + SnapTapDeliveryTracker.Deadline));
+    }
+
+    [Fact]
     public void ClearingUnobservableKeysPreventsALoss()
     {
         var tracker = new SnapTapDeliveryTracker();

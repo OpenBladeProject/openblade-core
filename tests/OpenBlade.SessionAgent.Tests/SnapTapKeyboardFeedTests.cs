@@ -20,7 +20,7 @@ public sealed class SnapTapKeyboardFeedTests
     }
 
     [Fact]
-    public void EachDrainCountsAsAPump()
+    public void DrainCountsAsAPumpOnlyAfterTheObserverCatchesUp()
     {
         var feed = new SnapTapKeyboardFeed();
         var tracker = new SnapTapDeliveryTracker();
@@ -30,7 +30,35 @@ public sealed class SnapTapKeyboardFeedTests
             feed.Drain(tracker);
         }
 
-        Assert.NotNull(tracker.Check(SnapTapDeliveryTracker.Deadline));
+        // An observer that has not processed its queue cannot let a delivered key look lost.
+        Assert.Null(tracker.Check(TimeSpan.FromSeconds(10)));
+
+        for (int index = 0; index < SnapTapDeliveryTracker.MinimumPumps; index++)
+        {
+            feed.MarkCaughtUp();
+            feed.Drain(tracker);
+            // Repeated drains without a new catch-up add no pumps.
+            feed.Drain(tracker);
+        }
+
+        Assert.NotNull(tracker.Check(TimeSpan.FromSeconds(10)));
+    }
+
+    [Fact]
+    public void ALatePacketFromALaggingObserverStillMatches()
+    {
+        var feed = new SnapTapKeyboardFeed();
+        var tracker = new SnapTapDeliveryTracker();
+        tracker.Expect(new(0x20, true), TimeSpan.Zero);
+        for (int index = 0; index < 10; index++)
+        {
+            feed.Drain(tracker);
+        }
+        feed.Post(0x20, 0);
+        feed.MarkCaughtUp();
+        feed.Drain(tracker);
+
+        Assert.Equal(0, tracker.PendingCount);
     }
 
     [Fact]
