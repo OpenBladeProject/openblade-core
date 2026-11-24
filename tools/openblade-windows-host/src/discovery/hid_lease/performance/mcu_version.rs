@@ -110,6 +110,12 @@ impl<P: Port, A: ObservationProof> Attempt<'_, P, A> {
         // never sent, so no reply can be attributed to it, and retirement
         // frees it.
         let [transaction, _] = self.reader.reserve_pair()?;
+        // A slow entry checkpoint can spend the time the budget check found:
+        // the SET then stays unsent and its ID free, rather than quarantined
+        // by a timeout (as `fan_rpm` checks before each of its SETs).
+        if limit.deadline.saturating_duration_since(Instant::now()) < EXCHANGE {
+            return None;
+        }
         let query = McuVersionQuery::new(transaction);
         let mut frame = [0; FRAME_LENGTH];
         frame[1..].copy_from_slice(&query.request().encode());

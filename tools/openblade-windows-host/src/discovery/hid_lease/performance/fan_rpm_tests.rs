@@ -16,6 +16,8 @@ use std::sync::{
 
 /// A scripted (status, payload) reply to one selector.
 type Reply = Option<(u8, Vec<u8>)>;
+/// The report checksum's offset in the 91-byte frame: report byte 88.
+pub(super) const CHECKSUM: usize = 1 + 88;
 
 /// Answers the paired thermal getters (the `thermal` mode byte, Balanced by
 /// default, with Automatic fans) and each 0D/88
@@ -29,8 +31,12 @@ type Reply = Option<(u8, Vec<u8>)>;
 /// each fan query's transaction ID in `query_ids` and the time from its send
 /// to its GET in `settles`.
 ///
+/// `slow_verify` sleeps the worker thread for its duration at its 1-based
+/// verify call, on the wall clock.
+///
 /// The 00/87 MCU version query is answered with `mcu` (status, payload),
-/// then the `mcu_edit` (offset into the 91-byte frame, byte), and with no
+/// then the `mcu_edit` (offset into the 91-byte frame, byte) with the report
+/// checksum recomputed unless the edit is the checksum itself, and with no
 /// reply when `mcu` is None. `stall_mcu` never completes its GET, and
 /// `hold_mcu` blocks the worker thread inside its SET like `hold_query`.
 pub(crate) struct FanIo {
@@ -43,6 +49,7 @@ pub(crate) struct FanIo {
     pub(crate) hold_query: Mutex<Option<std::sync::mpsc::Receiver<()>>>,
     pub(crate) fail_verify: AtomicUsize,
     pub(crate) verifies: AtomicUsize,
+    pub(crate) slow_verify: Mutex<Option<(usize, Duration)>>,
     pub(crate) sent: Mutex<Vec<(u8, u8, Vec<u8>)>>,
     pub(crate) query_ids: Mutex<Vec<u8>>,
     pub(crate) settles: Mutex<Vec<Duration>>,
@@ -63,6 +70,7 @@ impl FanIo {
             hold_query: Mutex::default(),
             fail_verify: AtomicUsize::new(0),
             verifies: AtomicUsize::new(0),
+            slow_verify: Mutex::default(),
             sent: Mutex::default(),
             query_ids: Mutex::default(),
             settles: Mutex::default(),
@@ -102,6 +110,11 @@ impl Port for FanPort {
     fn verify(&mut self, limit: Limit<'_>) -> io::Result<()> {
         limit.check()?;
         let call = self.io.verifies.fetch_add(1, Ordering::AcqRel) + 1;
+        if let Some((slow, pause)) = *self.io.slow_verify.lock().unwrap()
+            && call == slow
+        {
+            std::thread::sleep(pause);
+        }
         if call == self.io.fail_verify.load(Ordering::Acquire) {
             return Err(blocked("the opened HID identity no longer verifies"));
         }
@@ -159,6 +172,11 @@ impl Port for FanPort {
                             reply[1] = status;
                             if let Some((offset, byte)) = *self.io.mcu_edit.lock().unwrap() {
                                 reply[offset] = byte;
+                                if offset != CHECKSUM {
+                                    reply[CHECKSUM] =
+                                        openblade_protocol::calculate_checksum(&reply[1..])
+                                            .unwrap();
+                                }
                             }
                             (FRAME_LENGTH, reply)
                         })

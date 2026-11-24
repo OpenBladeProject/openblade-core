@@ -8,7 +8,7 @@ use super::worker::Queries;
 use super::{
     McuQuerySends, McuVersionRead,
     fan_rpm::{EXCHANGE, QUERY_RESERVE},
-    fan_rpm_tests::{ADMISSION, FanIo, port},
+    fan_rpm_tests::{ADMISSION, CHECKSUM, FanIo, port},
     *,
 };
 use openblade_protocol::mcu_version::McuVersion;
@@ -102,14 +102,16 @@ fn a_confirmed_reply_is_the_version_and_leaves_the_reader_open() {
 #[test]
 fn every_unconfirmed_reply_seals_the_reader_and_confirms_no_version() {
     // (name, scripted reply, frame edit, stalled GET)
-    let cases: [(&str, Scripted, Edit, bool); 9] = [
+    let cases: [(&str, Scripted, Edit, bool); 10] = [
         ("no reply", None, None, false),
         ("timeout", Some((2, vec![1, 5, 0, 0])), None, true),
         ("failed status", Some((3, vec![1, 5, 0, 0])), None, false),
         ("busy status", Some((1, vec![1, 5, 0, 0])), None, false),
         ("short payload", Some((2, vec![1, 5, 0])), None, false),
         ("long payload", Some((2, vec![1, 5, 0, 0, 0])), None, false),
-        // Offsets are into the 91-byte frame: the report starts at 1.
+        // Offsets are into the 91-byte frame: the report starts at 1. The fake
+        // recomputes the checksum after any other edit, so each case fails on
+        // its own field.
         (
             "transaction mismatch",
             Some((2, vec![1, 5, 0, 0])),
@@ -126,6 +128,13 @@ fn every_unconfirmed_reply_seals_the_reader_and_confirms_no_version() {
             "report ID",
             Some((2, vec![1, 5, 0, 0])),
             Some((0, 1)),
+            false,
+        ),
+        // The correct checksum of this reply is 0x87.
+        (
+            "checksum",
+            Some((2, vec![1, 5, 0, 0])),
+            Some((CHECKSUM, 0x5a)),
             false,
         ),
     ];
@@ -253,6 +262,40 @@ fn the_query_is_sent_only_with_an_exchange_of_budget_on_an_open_reader() {
         (McuVersionRead::Confirmed(VERSION), 1)
     );
     assert_eq!(io.mcu_queries(), 1);
+}
+
+/// The budget is checked again after the pair is reserved: an entry
+/// checkpoint slow enough to leave less than one exchange sends no SET, so
+/// its ID stays free instead of being quarantined by a timeout. This runs on
+/// the wall clock, since the fake's checkpoint is slow on the worker thread.
+#[test]
+fn a_slow_entry_checkpoint_that_spends_the_exchange_sends_no_set() {
+    let io = controller();
+    // The query alone on a fresh Reader: its entry checkpoint is the first
+    // verify. It leaves 100 ms of the query's 1 s, below one exchange, so
+    // that checkpoint itself still passes.
+    *io.slow_verify.lock().unwrap() = Some((1, Duration::from_millis(900)));
+    assert!(EXCHANGE > Duration::from_millis(100));
+    let cancelled = AtomicBool::new(false);
+    let sends = McuQuerySends::default();
+    let mut reader = Reader::new(port(&io), ADMISSION);
+    let read = tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .build()
+        .unwrap()
+        .block_on(async {
+            let limit = Limit {
+                deadline: Instant::now() + QUERY_RESERVE + Duration::from_secs(2),
+                cancelled: &cancelled,
+            };
+            reader
+                .read_mcu_version(&mut || Some(ADMISSION), limit, &sends)
+                .await
+        });
+    assert_eq!(io.verifies.load(Ordering::Acquire), 1);
+    assert_eq!(read, McuVersionRead::Unconfirmed);
+    assert_eq!(sends.count(), 0);
+    assert!(io.sent.lock().unwrap().is_empty());
 }
 
 /// The query is admitted only on the Reader's exact identity, and that
