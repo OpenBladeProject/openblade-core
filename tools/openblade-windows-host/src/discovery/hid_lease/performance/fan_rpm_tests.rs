@@ -16,6 +16,8 @@ use std::sync::{
 
 /// A scripted (status, payload) reply to one selector.
 type Reply = Option<(u8, Vec<u8>)>;
+/// The report checksum's offset in the 91-byte frame: report byte 88.
+pub(super) const CHECKSUM: usize = 1 + 88;
 
 /// Answers the paired thermal getters (the `thermal` mode byte, Balanced by
 /// default, with Automatic fans) and each 0D/88
@@ -28,6 +30,15 @@ type Reply = Option<(u8, Vec<u8>)>;
 /// (0 never). Every submitted report is recorded as (class, ID, payload),
 /// each fan query's transaction ID in `query_ids` and the time from its send
 /// to its GET in `settles`.
+///
+/// `slow_verify` sleeps the worker thread for its duration at its 1-based
+/// verify call, on the wall clock.
+///
+/// The 00/87 MCU version query is answered with `mcu` (status, payload),
+/// then the `mcu_edit` (offset into the 91-byte frame, byte) with the report
+/// checksum recomputed unless the edit is the checksum itself, and with no
+/// reply when `mcu` is None. `stall_mcu` never completes its GET, and
+/// `hold_mcu` blocks the worker thread inside its SET like `hold_query`.
 pub(crate) struct FanIo {
     transactions: Transactions,
     pub(crate) units: [u8; 2],
@@ -38,9 +49,14 @@ pub(crate) struct FanIo {
     pub(crate) hold_query: Mutex<Option<std::sync::mpsc::Receiver<()>>>,
     pub(crate) fail_verify: AtomicUsize,
     pub(crate) verifies: AtomicUsize,
+    pub(crate) slow_verify: Mutex<Option<(usize, Duration)>>,
     pub(crate) sent: Mutex<Vec<(u8, u8, Vec<u8>)>>,
     pub(crate) query_ids: Mutex<Vec<u8>>,
     pub(crate) settles: Mutex<Vec<Duration>>,
+    pub(crate) mcu: Mutex<Reply>,
+    pub(crate) mcu_edit: Mutex<Option<(usize, u8)>>,
+    pub(crate) stall_mcu: AtomicBool,
+    pub(crate) hold_mcu: Mutex<Option<std::sync::mpsc::Receiver<()>>>,
 }
 impl FanIo {
     pub(crate) fn new(units: [u8; 2]) -> Arc<Self> {
@@ -54,9 +70,14 @@ impl FanIo {
             hold_query: Mutex::default(),
             fail_verify: AtomicUsize::new(0),
             verifies: AtomicUsize::new(0),
+            slow_verify: Mutex::default(),
             sent: Mutex::default(),
             query_ids: Mutex::default(),
             settles: Mutex::default(),
+            mcu: Mutex::default(),
+            mcu_edit: Mutex::default(),
+            stall_mcu: AtomicBool::new(false),
+            hold_mcu: Mutex::default(),
         })
     }
     pub(crate) fn queries(&self) -> Vec<Vec<u8>> {
@@ -66,8 +87,16 @@ impl FanIo {
             .map(|(.., payload)| payload.clone())
             .collect()
     }
+    /// How many 00/87 queries were submitted.
+    pub(crate) fn mcu_queries(&self) -> usize {
+        let sent = self.sent.lock().unwrap();
+        sent.iter()
+            .filter(|(class, id, _)| (*class, *id) == (0, 0x87))
+            .count()
+    }
 }
-struct FanPort {
+pub(super) struct FanPort {
+    mcu_sent: bool,
     io: Arc<FanIo>,
     reply: Option<(usize, Frame)>,
     pending: Option<io::Result<(usize, Frame)>>,
@@ -81,6 +110,11 @@ impl Port for FanPort {
     fn verify(&mut self, limit: Limit<'_>) -> io::Result<()> {
         limit.check()?;
         let call = self.io.verifies.fetch_add(1, Ordering::AcqRel) + 1;
+        if let Some((slow, pause)) = *self.io.slow_verify.lock().unwrap()
+            && call == slow
+        {
+            std::thread::sleep(pause);
+        }
         if call == self.io.fail_verify.load(Ordering::Acquire) {
             return Err(blocked("the opened HID identity no longer verifies"));
         }
@@ -99,6 +133,7 @@ impl Port for FanPort {
                     .unwrap()
                     .push((class, id, payload.clone()));
                 self.query_sent = None;
+                self.mcu_sent = false;
                 self.reply = match (class, id) {
                     (CLASS, GET_THERMAL) => Some((
                         FRAME_LENGTH,
@@ -124,6 +159,28 @@ impl Port for FanPort {
                         reply[1] = status;
                         Some((FRAME_LENGTH, reply))
                     }
+                    (0, 0x87) => {
+                        let hold = self.io.hold_mcu.lock().unwrap().take();
+                        if let Some(hold) = hold {
+                            let _ = hold.recv();
+                        }
+                        self.mcu_sent = true;
+                        self.io.mcu.lock().unwrap().clone().map(|(status, body)| {
+                            let mut reply = [0; FRAME_LENGTH];
+                            let report = RazerReport::create(transaction, 0, 0x87, &body).unwrap();
+                            reply[1..].copy_from_slice(&report.encode());
+                            reply[1] = status;
+                            if let Some((offset, byte)) = *self.io.mcu_edit.lock().unwrap() {
+                                reply[offset] = byte;
+                                if offset != CHECKSUM {
+                                    reply[CHECKSUM] =
+                                        openblade_protocol::calculate_checksum(&reply[1..])
+                                            .unwrap();
+                                }
+                            }
+                            (FRAME_LENGTH, reply)
+                        })
+                    }
                     // Normal mode, for a job that also asks the Driver mode.
                     (0, 0x84) => {
                         let mut reply = [0; FRAME_LENGTH];
@@ -147,7 +204,9 @@ impl Port for FanPort {
                 {
                     self.ready_at = Some(Instant::now() + delay);
                 }
-                if self.query_sent.is_some() && self.io.stall.load(Ordering::Acquire) {
+                if self.query_sent.is_some() && self.io.stall.load(Ordering::Acquire)
+                    || self.mcu_sent && self.io.stall_mcu.load(Ordering::Acquire)
+                {
                     // Outstanding until the exchange's deadline ends the wait.
                     None
                 } else {
@@ -174,9 +233,10 @@ impl Port for FanPort {
         Ok(true)
     }
 }
-fn port(io: &Arc<FanIo>) -> FanPort {
+pub(super) fn port(io: &Arc<FanIo>) -> FanPort {
     FanPort {
         io: io.clone(),
+        mcu_sent: false,
         reply: None,
         pending: None,
         query_sent: None,
@@ -208,7 +268,7 @@ pub(crate) fn fan_io_worker(
     )
 }
 
-const ADMISSION: ReadAdmission = ReadAdmission {
+pub(super) const ADMISSION: ReadAdmission = ReadAdmission {
     lifecycle: 1,
     generation: [7; 32],
 };
@@ -471,6 +531,7 @@ fn the_shared_job_sends_the_pair_only_when_asked() {
         let worker = fan_io_worker(io.clone(), || Some(ADMISSION));
         let queries = Queries {
             fan_rpm: fan_rpm.then(FanPairSends::default),
+            mcu_version: None,
             #[cfg(feature = "service-keyboard-driver-mode-read-v1")]
             device_mode: false,
         };

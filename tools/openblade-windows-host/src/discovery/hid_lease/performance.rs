@@ -37,6 +37,12 @@ mod fan_rpm;
 pub(crate) use fan_rpm::{FanPairSends, FanRpmRead};
 #[cfg(test)]
 pub(crate) mod fan_rpm_tests;
+#[cfg(any(test, feature = "service-live-readings-v1"))]
+mod mcu_version;
+#[cfg(any(test, feature = "service-live-readings-v1"))]
+pub(crate) use mcu_version::{McuQuerySends, McuVersionRead};
+#[cfg(test)]
+mod mcu_version_tests;
 #[cfg(any(
     feature = "service-keyboard-driver-mode-read-v1",
     feature = "service-live-readings-v1"
@@ -373,6 +379,17 @@ impl<P: Port, A: ObservationProof> Reader<P, A> {
         let reading = match (reading, &job.queries.fan_rpm) {
             (Some(reading), Some(sends)) => Some(worker::Reading {
                 fan_rpm: self.read_fan_rpm(&mut *authorize, limit, sends).await,
+                ..reading
+            }),
+            (reading, _) => reading,
+        };
+        // The MCU version query comes last, only when the thermal read
+        // completed and no earlier query sealed the Reader
+        // (`McuVersionRead`): a failed query then costs no other reading.
+        #[cfg(feature = "service-live-readings-v1")]
+        let reading = match (reading, &job.queries.mcu_version) {
+            (Some(reading), Some(sends)) => Some(worker::Reading {
+                mcu_version: self.read_mcu_version(&mut *authorize, limit, sends).await,
                 ..reading
             }),
             (reading, _) => reading,

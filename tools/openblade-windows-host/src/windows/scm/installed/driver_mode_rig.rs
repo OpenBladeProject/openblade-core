@@ -9,7 +9,11 @@
 use super::*;
 use crate::discovery::performance::device_mode_tests::{KeyboardIo, keyboard_io_worker};
 use serde_json::Value;
-use std::{cell::Cell, sync::atomic::AtomicBool, time::Duration};
+use std::{
+    cell::Cell,
+    sync::atomic::{AtomicBool, AtomicU64},
+    time::Duration,
+};
 
 pub(super) const DRIVER: (u8, [u8; 2]) = (2, [3, 0]);
 pub(super) const NORMAL: (u8, [u8; 2]) = (2, [0, 0]);
@@ -18,14 +22,37 @@ pub(super) const FAILED: (u8, [u8; 2]) = (3, [3, 0]);
 
 pub(super) struct Custody {
     pub(super) live: AtomicBool,
+    /// The device proof.
     pub(super) generation: AtomicU8,
+    /// The lifecycle epoch, which every session or power notice advances.
+    pub(super) lifecycle: AtomicU64,
+    /// The low-power gate's generation, which only a resume advances.
+    #[cfg(feature = "service-live-readings-v1")]
+    pub(super) resume: AtomicU64,
+}
+impl Custody {
+    /// A live custody of device proof 7, at lifecycle epoch 1, after no
+    /// resume.
+    pub(super) fn new() -> Self {
+        Self {
+            live: AtomicBool::new(true),
+            generation: AtomicU8::new(7),
+            lifecycle: AtomicU64::new(1),
+            #[cfg(feature = "service-live-readings-v1")]
+            resume: AtomicU64::new(0),
+        }
+    }
 }
 impl ReadCustody for Custody {
     fn authorize(&self) -> Option<ReadAdmission> {
         self.live.load(Ordering::Acquire).then(|| ReadAdmission {
-            lifecycle: 1,
+            lifecycle: self.lifecycle.load(Ordering::Acquire),
             generation: [self.generation.load(Ordering::Acquire); 32],
         })
+    }
+    #[cfg(feature = "service-live-readings-v1")]
+    fn resume_generation(&self) -> Option<u64> {
+        Some(self.resume.load(Ordering::Acquire))
     }
     fn revoke(&self) {}
     fn retire(&self) -> io::Result<()> {
@@ -53,10 +80,7 @@ pub(super) struct Rig {
 impl Rig {
     pub(super) fn new() -> Self {
         let io = KeyboardIo::new(None);
-        let custody = Arc::new(Custody {
-            live: AtomicBool::new(true),
-            generation: AtomicU8::new(7),
-        });
+        let custody = Arc::new(Custody::new());
         let device = io.clone();
         let source = ReadSource::compose(custody.clone(), move |lease| {
             keyboard_io_worker(device, move || lease.authorize())

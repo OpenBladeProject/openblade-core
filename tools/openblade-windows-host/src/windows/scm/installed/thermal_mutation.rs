@@ -109,12 +109,18 @@ pub(super) use battery::BatteryUpdate;
 #[path = "fan_mutation.rs"]
 mod fan;
 pub(super) use fan::FanRequest;
+#[cfg(feature = "service-profile-triggers-v1")]
+#[path = "thermal_convergence.rs"]
+mod convergence;
 #[cfg(feature = "service-keyboard-driver-mode-v1")]
 #[path = "driver_mode_owner.rs"]
 mod keyboard;
 #[cfg(feature = "service-keyboard-driver-mode-v1")]
 #[path = "low_power_cleanup.rs"]
 mod low_power;
+#[cfg(feature = "service-profile-triggers-v1")]
+#[path = "thermal_policy_mutation.rs"]
+mod policy;
 #[cfg(feature = "service-profiles-v1")]
 #[path = "profile_mutation.rs"]
 mod profiles;
@@ -563,6 +569,32 @@ pub(super) fn status_query_power(base: i32, fresh: &dyn Fresh) -> i32 {
         _ => -1,
     }
 }
+/// The class `thermalConvergence` is derived at from a status projection's
+/// `query` (`status_query_power`). Status reports any external power as the
+/// coarse class 3, and the projection's own saved intent stays there: coarse
+/// metadata claims no resolved application policy. Under fresh AC presence
+/// the class this user's last step classified from its own adapter reading
+/// (`Storage::observed_power`) stands in for it while the Windows power
+/// generation is unchanged, so the member classifies on PluggedIn or USB-C
+/// as that step did. No firmware is read here; managed reads the adapter
+/// periodically instead (a later slice).
+#[cfg(feature = "service-profile-triggers-v1")]
+pub(super) fn convergence_power(
+    query: i32,
+    fresh: &dyn Fresh,
+    storage: &Storage,
+) -> io::Result<i32> {
+    if matches!(query, 1 | -1) || fresh.on_battery() != Some(false) {
+        return Ok(query);
+    }
+    Ok(match fresh.power_generation() {
+        Some(generation) => storage
+            .observed_power(generation)?
+            .filter(|class| matches!(class, 0 | 2))
+            .unwrap_or(query),
+        None => query,
+    })
+}
 #[derive(Clone, serde::Serialize)]
 pub(super) struct Outcome {
     pub(super) status: u8,
@@ -936,7 +968,19 @@ impl Runtime {
             let layer = store.profile_layer(&runtime.foreground(&policy_sid, session))?;
             let profile = layer.at(query)?;
             let desired = store.desired(query, profile.as_ref())?;
-            Ok(base
+            #[cfg(feature = "service-profile-triggers-v1")]
+            let convergence = {
+                let class = convergence_power(query, fresh.as_ref(), &store)?;
+                runtime.thermal_convergence(
+                    &base,
+                    &store,
+                    &policy_sid,
+                    session,
+                    class,
+                    layer.at(class)?.as_ref(),
+                )?
+            };
+            let projected = base
                 .thermal_profiles(store.profiles()?)?
                 .thermal_intent(
                     value.as_ref(),
@@ -951,7 +995,10 @@ impl Runtime {
                     power,
                     "Saved thermal policy; firmware mode is reported independently.",
                 )
-                .bind_private_user(&policy_sid))
+                .bind_private_user(&policy_sid);
+            #[cfg(feature = "service-profile-triggers-v1")]
+            let projected = projected.with_thermal_convergence(convergence);
+            Ok(projected)
         })
     }
     // Every caller, including the shared mutation tests, passes the admitted request fields individually.

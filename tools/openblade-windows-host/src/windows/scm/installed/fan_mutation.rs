@@ -1083,6 +1083,36 @@ impl Runtime {
     }
 }
 impl Runtime {
+    /// Managed `IsExactFanIntentOwned` for the saved fan `desired` settings
+    /// of `sid` at class `power`: this user's fan owner has not handed its
+    /// manual fans back, it wrote exactly those settings at that class, and
+    /// a reading confirmed them as OpenBlade's own with no fan change since.
+    #[cfg(feature = "service-profile-triggers-v1")]
+    pub(in super::super) fn owns_exact_fans(
+        &self,
+        sid: &str,
+        session: u32,
+        power: i32,
+        desired: Option<&Value>,
+    ) -> bool {
+        let Some(desired) = desired else {
+            return false;
+        };
+        let owner = self.fan_owner.borrow().clone();
+        owner.is_some_and(|permit| {
+            permit.sid == sid
+                && permit.session == session
+                && permit.storage.outstanding_fan()
+                && permit.selected.lock().is_ok_and(|selected| {
+                    selected
+                        .as_ref()
+                        .is_some_and(|(written, settings)| *written == power && settings == desired)
+                })
+        }) && self
+            .drift
+            .lock()
+            .is_ok_and(|tracker| tracker.owns_manual_fans())
+    }
     // Shared by explicit fan/performance requests and retained policy refresh.
     // Do not evict the sole original per-user Storage cache while its positive
     // in-process fan owner still owes a release. No stale proof is renewed.
@@ -1384,8 +1414,20 @@ impl Runtime {
             let profile = layer.at(query)?;
             let perf = store.desired(query, profile.as_ref())?;
             let fan_value = store.current_fan_override(query)?;
-            Ok(base
-                .without_private_policy()
+            let base = base.without_private_policy();
+            #[cfg(feature = "service-profile-triggers-v1")]
+            let convergence = {
+                let class = convergence_power(query, policy_fresh.as_ref(), &store)?;
+                policy_runtime.thermal_convergence(
+                    &base,
+                    &store,
+                    &policy_sid,
+                    caller.session,
+                    class,
+                    layer.at(class)?.as_ref(),
+                )?
+            };
+            let projected = base
                 .thermal_profiles(store.profiles()?)?
                 .thermal_intent(
                     value.as_ref(),
@@ -1400,7 +1442,10 @@ impl Runtime {
                     power,
                     "Saved fan intent; target RPM remains unreadable.",
                 )
-                .bind_private_user(&policy_sid))
+                .bind_private_user(&policy_sid);
+            #[cfg(feature = "service-profile-triggers-v1")]
+            let projected = projected.with_thermal_convergence(convergence);
+            Ok(projected)
         }));
         // Retain before awaiting: cancellation cannot discard an owned Stop obligation.
         *self.fan_pending.borrow_mut() = Some(permit.clone());
@@ -1673,6 +1718,21 @@ impl Runtime {
             let perf_override = permit.storage.current_override(power)?;
             let layer = permit.storage.profile_layer(&permit.application)?;
             let perf = permit.storage.desired(power, layer.at(power)?.as_ref())?;
+            // From this step's own readback; the fan publication keeps it
+            // (`Snapshot::rebase_thermal_mutation`).
+            #[cfg(feature = "service-profile-triggers-v1")]
+            let convergence = self.thermal_convergence(
+                &base,
+                &permit.storage,
+                &sid,
+                caller.session,
+                power,
+                layer.at(power)?.as_ref(),
+            )?;
+            #[cfg(feature = "service-profile-triggers-v1")]
+            {
+                base = base.with_thermal_convergence(convergence);
+            }
             base = base
                 .thermal_profiles(permit.storage.profiles()?)?
                 .thermal_intent(

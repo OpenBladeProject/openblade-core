@@ -13,7 +13,6 @@ use crate::discovery::performance::{
 use serde_json::{Value, json};
 use std::{
     cell::{Cell, RefCell},
-    sync::atomic::AtomicBool,
     time::Duration,
 };
 
@@ -99,10 +98,7 @@ impl Rig {
         battery: Battery,
         compose: impl FnOnce(Arc<dyn ReadCustody>, Arc<FanIo>) -> ReadSource,
     ) -> Self {
-        let custody = Arc::new(Custody {
-            live: AtomicBool::new(true),
-            generation: AtomicU8::new(7),
-        });
+        let custody = Arc::new(Custody::new());
         let battery = Rc::new(battery);
         let source =
             compose(custody.clone(), io.clone()).with_live_capture_for_tests(battery.clone());

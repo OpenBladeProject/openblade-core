@@ -794,6 +794,46 @@ impl StatusSource for GuardedStatus {
                     }));
                     Ok((outcome, Some(status)))
                 }
+                #[cfg(feature = "service-profile-triggers-v1")]
+                crate::service_status::StatusRequest::SetThermalControlPolicy { .. }
+                | crate::service_status::StatusRequest::AcknowledgeThermalPolicyUpgradeDisclosure {
+                    ..
+                } => {
+                    use super::thermal_storage::PolicyChange;
+                    let change = match request {
+                        crate::service_status::StatusRequest::SetThermalControlPolicy {
+                            policy,
+                            ..
+                        } => PolicyChange::Set(policy),
+                        _ => PolicyChange::Acknowledge,
+                    };
+                    let (outcome, stored) = runtime
+                        .set_thermal_policy(mailbox.clone(), caller, sid, change)
+                        .await?;
+                    if !stored {
+                        return Ok((outcome, None));
+                    }
+                    // Managed publishes the new convergence status with its
+                    // Stored reply: project this user again on the latest.
+                    let mut status = publisher.borrow().active.clone();
+                    if let super::mailbox_read::MailboxSource::Reader(reader) = &mailbox {
+                        status = reader.current_policy(status)?;
+                        reader.retain_mutation(&status);
+                    }
+                    status.set_observation_revision(
+                        publisher
+                            .borrow()
+                            .active
+                            .revision()
+                            .checked_add(1)
+                            .ok_or_else(|| invalid("status revision exhausted"))?,
+                    );
+                    publisher.send_replace(Arc::new(Publication {
+                        inactive: status.inactive_mutation(),
+                        active: status.clone(),
+                    }));
+                    Ok((outcome, Some(status)))
+                }
                 crate::service_status::StatusRequest::SetPerformanceOverride {
                     request_id,
                     value,

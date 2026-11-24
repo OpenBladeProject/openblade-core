@@ -331,6 +331,11 @@ jobs:
               @('openblade-windows-service-candidate', 'service-profiles-v1', 'profiles::'),
               # Automatic reconciliation of saved intent: the request triggers.
               @('openblade-windows-service-candidate', 'service-profile-triggers-v1', 'request_triggers'),
+              # The thermal control policy: its store, requests and the
+              # convergence status member with the managed vector replays.
+              @('openblade-windows-service-candidate', 'service-profile-triggers-v1', 'convergence'),
+              @('openblade-windows-service-candidate', 'service-profile-triggers-v1', 'thermal_policy'),
+              @('openblade-windows-service-candidate', 'service-profile-triggers-v1', 'profiles::tests::policy::'),
               @('openblade-windows-service-candidate', 'service-fan-mutation-v2', 'unserved'),
               @('openblade-windows-service-candidate', 'service-thermal-mutation-v1', 'unserved'),
               @('openblade-windows-service-candidate', 'service-metadata-only-v1', 'unserved'),
@@ -383,6 +388,7 @@ jobs:
               ($liveReadings + 'live_readings::windows::tests'),
               ($liveReadings + 'firmware_versions'),
               ($liveReadings + 'fan_rpm'),
+              ($liveReadings + 'mcu_version'),
               ($liveReadings + 'readiness::tests::observation'),
               ($liveReadings + 'native_package'),
               ($liveReadingsProfiles + 'live_readings::tests'),
@@ -390,6 +396,7 @@ jobs:
               ($liveReadingsDriverMode + 'live_readings::tests'),
               ($liveReadingsDriverMode + 'firmware_versions'),
               ($liveReadingsDriverMode + 'fan_rpm'),
+              ($liveReadingsDriverMode + 'mcu_version'),
               ($liveReadingsDriverMode + 'driver_mode::tests'),
               ($liveReadingsFans + 'live_readings::tests'),
               ($liveReadingsFans + 'firmware_versions'),

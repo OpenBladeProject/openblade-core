@@ -92,8 +92,9 @@ service-keyboard-driver-mode-v1 = ["service-keyboard-driver-mode-read-v1", "serv
 # on the installed mailbox read job, Windows battery power flow and battery
 # health, and the managed liveReadings and batteryHealth members. It also
 # publishes the managed firmware versions from Windows metadata reads on a
-# worker thread. It sends no setter and reads no temperature. Packaging
-# refuses an image that carries it.
+# worker thread, and their MCU version from the capture-backed 00/87 query,
+# the read job's last. It sends no setter and reads no temperature.
+# Packaging refuses an image that carries it.
 service-live-readings-v1 = ["service-mailbox-observation-v1"]
 service-hardware-compile-check = ["installed-service-candidate", "firmware-performance-compile-check"]
 installed-service-candidate = [

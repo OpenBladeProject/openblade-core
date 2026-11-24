@@ -43,6 +43,10 @@ const RECOVERY_REQUIRED: &str = "The requested intent was rejected: Configuratio
 const STAGE_BLOCKED: &str = "The requested intent was rejected: A staging file left by an earlier configuration save could not be removed. The saved configuration is unchanged.";
 /// The set is valid, but this service's own reader would refuse it once stored.
 const UNREADABLE: &str = "The requested intent was rejected: This service cannot read the profile set back once it is stored. The saved configuration is unchanged.";
+/// The staged preferences are valid, but this service's own reader would
+/// refuse the aggregate once stored.
+#[cfg(feature = "service-profile-triggers-v1")]
+const POLICY_UNREADABLE: &str = "The requested intent was rejected: This service cannot read the configuration back once it is stored. The saved configuration is unchanged.";
 /// A migration at open that left the stored aggregate as it was. The next
 /// open tries again, and a failed open is not kept, so that is the next
 /// request. A stage that cannot be removed, or another file under one of the
@@ -603,17 +607,155 @@ impl Storage {
         );
         Ok(match transaction.run() {
             Ok(()) => ProfileSave::Stored,
-            Err(Failure::StageBlocked) => ProfileSave::Rejected(STAGE_BLOCKED.into()),
-            Err(Failure::Unchanged | Failure::Restored | Failure::Mismatched) => {
-                ProfileSave::Rejected(RESTORED.into())
-            }
-            Err(Failure::RecoveryRequired) => {
-                state.quarantined = true;
-                state.configuration_failed = true;
-                ProfileSave::Rejected(RECOVERY_REQUIRED.into())
-            }
+            Err(failure) => ProfileSave::Rejected(settle_failure(&mut state, failure).into()),
         })
     }
+
+    /// The saved thermal control policy and disclosure state, as managed
+    /// `PublishThermalConvergenceStatus` reports them. A preserved aggregate,
+    /// or a configuration this service failed to replace or saw change, is
+    /// quarantined, as managed quarantines its configuration; an absent one
+    /// is managed's safe defaults. A journal or battery fence leaves the
+    /// saved policy standing: it is pending reconciliation (`pending`), as
+    /// managed's pending write confirmations are.
+    #[cfg(feature = "service-profile-triggers-v1")]
+    pub(in super::super) fn thermal_policy(&self) -> io::Result<SavedPolicy> {
+        let state = self.state.lock().map_err(|_| denied())?;
+        if configuration_quarantined(&state) {
+            return Ok(SavedPolicy::Quarantined);
+        }
+        let (_, validator) = validator();
+        Ok(match committed(self.files.as_ref(), &validator)? {
+            None => SavedPolicy::Quarantined,
+            Some(saved) => SavedPolicy::Admitted {
+                policy: saved.preferences.thermal_control_policy,
+                disclosure: saved.preferences.thermal_policy_upgrade_disclosure,
+            },
+        })
+    }
+
+    /// Managed `SetThermalControlPolicyAsync` and
+    /// `AcknowledgeThermalPolicyUpgradeDisclosureAsync` from the stored
+    /// preferences to the store: a change that leaves them as they are is
+    /// not written; otherwise the staged preferences and the saved profiles
+    /// are committed as one aggregate, as managed `SaveConfigurationAsync`
+    /// writes them, and read back before the change counts. Managed admits
+    /// the change with an admitted configuration only, so a journal or
+    /// battery fence does not refuse it (`configuration_quarantined`).
+    #[cfg(feature = "service-profile-triggers-v1")]
+    pub(in super::super) fn save_thermal_policy(
+        &self,
+        change: PolicyChange,
+    ) -> io::Result<PolicySave> {
+        let mut state = self.state.lock().map_err(|_| denied())?;
+        if configuration_quarantined(&state) {
+            return Ok(PolicySave::Quarantined);
+        }
+        let (_, validator) = validator();
+        let Some(saved) = committed(self.files.as_ref(), &validator)? else {
+            return Ok(PolicySave::Quarantined);
+        };
+        let mut staged = saved.preferences.clone();
+        match change {
+            PolicyChange::Set(policy) if staged.thermal_control_policy == policy => {
+                return Ok(PolicySave::Unchanged(staged));
+            }
+            PolicyChange::Set(policy) => staged.thermal_control_policy = policy,
+            PolicyChange::Acknowledge
+                if staged.thermal_policy_upgrade_disclosure
+                    != crate::service_status::thermal_convergence::DISCLOSURE_PENDING =>
+            {
+                return Ok(PolicySave::Unchanged(staged));
+            }
+            PolicyChange::Acknowledge => {
+                staged.thermal_policy_upgrade_disclosure =
+                    crate::service_status::thermal_convergence::DISCLOSURE_ACKNOWLEDGED;
+            }
+        }
+        let profile = encode::profile_document(profile_set::CURRENT_SCHEMA, &saved.profiles);
+        let preferences = preferences_document(profile_set::CURRENT_SCHEMA, &staged);
+        let marker = commit_marker(
+            profile_set::CURRENT_SCHEMA,
+            &sha256(&profile),
+            &sha256(&preferences),
+        );
+        let intended = [profile, preferences, marker];
+        // Managed `ValidatePreferences` and this service's own reader: the
+        // staged aggregate must read back before anything is written.
+        if !reopens(&intended, self.same_path) {
+            return Ok(PolicySave::Rejected(POLICY_UNREADABLE.into()));
+        }
+        let transaction = Transaction::new(
+            self.files.as_ref(),
+            &saved.documents,
+            intended,
+            &saved.profiles,
+            &staged,
+            &validator,
+        );
+        Ok(match transaction.run() {
+            Ok(()) => PolicySave::Stored(staged),
+            Err(failure) => PolicySave::Rejected(settle_failure(&mut state, failure).into()),
+        })
+    }
+}
+
+/// Whether this service failed to replace the configuration or saw it
+/// change: managed's configuration quarantine. A journal or battery fence
+/// fences thermal writes only; the configuration itself stays admitted.
+#[cfg(feature = "service-profile-triggers-v1")]
+fn configuration_quarantined(state: &State) -> bool {
+    state.configuration_failed || state.configuration_changed
+}
+
+/// The reply for a failed transaction. One whose restore could not be
+/// confirmed quarantines the aggregate, as managed's does.
+fn settle_failure(state: &mut State, failure: Failure) -> &'static str {
+    match failure {
+        Failure::StageBlocked => STAGE_BLOCKED,
+        Failure::Unchanged | Failure::Restored | Failure::Mismatched => RESTORED,
+        Failure::RecoveryRequired => {
+            state.quarantined = true;
+            state.configuration_failed = true;
+            RECOVERY_REQUIRED
+        }
+    }
+}
+
+/// `Storage::thermal_policy`.
+#[cfg(feature = "service-profile-triggers-v1")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(in super::super) enum SavedPolicy {
+    /// The aggregate is preserved: managed reports Strict with no
+    /// disclosure (`BatteryConfigurationStore` quarantine preferences).
+    Quarantined,
+    /// Managed `ThermalControlPolicy` and
+    /// `ThermalPolicyUpgradeDisclosureState` values.
+    Admitted { policy: i32, disclosure: i32 },
+}
+
+/// What a thermal policy request changes.
+#[cfg(feature = "service-profile-triggers-v1")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(in super::super) enum PolicyChange {
+    /// Managed `SetThermalControlPolicyAsync` with a defined policy.
+    Set(i32),
+    /// Managed `AcknowledgeThermalPolicyUpgradeDisclosureAsync`.
+    Acknowledge,
+}
+
+/// What `Storage::save_thermal_policy` did.
+#[cfg(feature = "service-profile-triggers-v1")]
+#[derive(Debug, PartialEq)]
+pub(in super::super) enum PolicySave {
+    /// The stored preferences already hold the change; nothing was written.
+    Unchanged(Preferences),
+    /// The change was committed and read back.
+    Stored(Preferences),
+    /// The store refused it; the message says whether anything is owed.
+    Rejected(String),
+    /// The aggregate is preserved, so nothing may change it.
+    Quarantined,
 }
 
 #[cfg(test)]

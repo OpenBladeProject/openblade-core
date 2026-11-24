@@ -118,6 +118,15 @@ pub(super) trait ReadCustody: Send + Sync {
             CleanupScope::LowPower { .. } => None,
         }
     }
+    /// The low-power gate's generation (`Lifecycle::resume_generation`). It
+    /// advances only at a suspend and a resume, whereas the lifecycle epoch
+    /// in `ReadAdmission` advances at every session or power notice, so two
+    /// admitted reads see different values only across a resume. None when
+    /// the gate is unreadable, or for a custody without one.
+    #[cfg(feature = "service-live-readings-v1")]
+    fn resume_generation(&self) -> Option<u64> {
+        None
+    }
     /// Whether this custody admits everything `authorize` checks but the
     /// lifecycle epoch. It admits storing request intent only
     /// (`WindowsGuard::capture_storage`), never a read or a write, so the
@@ -195,6 +204,11 @@ impl ReadCustody for GuardedReadCustody {
     fn authorize(&self) -> Option<ReadAdmission> {
         self.verify_integrity().ok()?;
         self.original.authorize()
+    }
+    // A gate read admits nothing; the job it sizes authorizes itself.
+    #[cfg(feature = "service-live-readings-v1")]
+    fn resume_generation(&self) -> Option<u64> {
+        self.original.resume_generation()
     }
     #[cfg(feature = "service-profile-triggers-v1")]
     fn authorize_storage(&self) -> bool {
@@ -765,6 +779,10 @@ impl ReadCustody for ReadLease {
             self.origin.lifecycle.fence_for(write),
             self.proof,
         )
+    }
+    #[cfg(feature = "service-live-readings-v1")]
+    fn resume_generation(&self) -> Option<u64> {
+        self.origin.lifecycle.resume_generation()
     }
     #[cfg(feature = "service-thermal-mutation-v1")]
     fn journal_replace_cleanup(
@@ -1391,6 +1409,14 @@ impl ReadSource {
                 .flatten();
             #[cfg(feature = "service-live-readings-v1")]
             let send_fans = fan_query.is_some();
+            // The 00/87 MCU version query rides this job, after the thermal
+            // read and every other query, while the firmware record lacks it
+            // and its budget since the last resume lasts. The gate is read
+            // only while the query may still be sent.
+            #[cfg(feature = "service-live-readings-v1")]
+            let mcu_query = source
+                .firmware
+                .mcu_query(|| source.lease.resume_generation());
             #[cfg(not(any(
                 feature = "service-keyboard-driver-mode-read-v1",
                 feature = "service-live-readings-v1"
@@ -1417,6 +1443,8 @@ impl ReadSource {
                         device_mode: asked.is_some(),
                         #[cfg(feature = "service-live-readings-v1")]
                         fan_rpm: fan_query,
+                        #[cfg(feature = "service-live-readings-v1")]
+                        mcu_version: mcu_query,
                     },
                 )
                 .await;
@@ -1514,6 +1542,9 @@ impl ReadSource {
             #[cfg(feature = "service-live-readings-v1")]
             {
                 source.live.verified();
+                // Only an accepted reading's version is kept; the next
+                // publication carries it.
+                source.firmware.mcu_read(reading.mcu_version);
                 observed = observed
                     .with_live_readings(live, battery_power, fans)
                     .with_battery_health(source.live.battery_health());

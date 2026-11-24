@@ -69,7 +69,13 @@ const CUSTOM_LEVELS: usize = 2;
 ///   (`FanPermit::settle_pins`), and a temporary-charge owner's cancellation;
 /// - the next request: a fan record is the largest, and its preflight
 ///   reserves Custom levels beside it;
-/// - a read: a selector pair and its Custom levels.
+/// - a read: a selector pair and its Custom levels, which this counts.
+///
+/// A read job can hold more: with live readings and the Driver-mode read it
+/// also holds its 00/84, 0D/88 and 00/87 pairs until it retires, 10 IDs in
+/// all. That peak, 72, still fits twice in the 174 IDs `LIMIT` leaves, so the
+/// assertion below holds, but the 66 and the margin in `LIMIT`'s note count a
+/// read as 4.
 const DEMAND: usize =
     FAN + temporary_charge_history::EXCHANGES + FAN + CUSTOM_LEVELS + 2 + CUSTOM_LEVELS;
 

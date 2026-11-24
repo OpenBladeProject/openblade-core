@@ -38,6 +38,8 @@ pub(super) use battery::TemporaryTaken;
 mod profiles;
 #[cfg(feature = "service-profiles-v1")]
 pub(super) use profiles::ProfileSave;
+#[cfg(feature = "service-profile-triggers-v1")]
+pub(super) use profiles::{PolicyChange, PolicySave, SavedPolicy};
 
 pub(super) const RELEASE_PAUSED: &str = "Temporary charge journal release is deferred.";
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -650,6 +652,10 @@ struct State {
     // Windows power generations for `automation::temporary_after`: the latest
     // fresh power reading's, and each temporary's at its save.
     generation: Option<u64>,
+    // The class that latest reading classified (`Storage::observe_power`),
+    // current only while the Windows power generation stays `generation`.
+    #[cfg(feature = "service-profile-triggers-v1")]
+    power: Option<i32>,
     temporary_generation: Option<u64>,
     temporary_fan_generation: Option<u64>,
     battery_limit: Option<u8>,
@@ -760,6 +766,8 @@ impl Storage {
                 temporary: None,
                 temporary_fan: None,
                 generation: None,
+                #[cfg(feature = "service-profile-triggers-v1")]
+                power: None,
                 temporary_generation: None,
                 temporary_fan_generation: None,
                 battery_limit: None,
@@ -837,6 +845,10 @@ impl Storage {
     pub(super) fn observe_power(&self, power: i32, generation: u64) -> io::Result<()> {
         let mut s = self.state.lock().map_err(|_| denied())?;
         s.generation = Some(generation);
+        #[cfg(feature = "service-profile-triggers-v1")]
+        {
+            s.power = Some(power);
+        }
         let s = &mut *s;
         s.temporary = s.temporary.take().and_then(|(value, saved)| {
             temporary_after(saved, s.temporary_generation, power, generation)
@@ -847,6 +859,15 @@ impl Storage {
                 .map(|next| (value, next))
         });
         Ok(())
+    }
+    /// The power class the latest step classified (`observe_power`) while
+    /// Windows power is still at that reading's `generation`. A kind change
+    /// advances the generation and retires it; a swap between external
+    /// classes under unchanged AC presence is not seen here.
+    #[cfg(feature = "service-profile-triggers-v1")]
+    pub(super) fn observed_power(&self, generation: u64) -> io::Result<Option<i32>> {
+        let s = self.state.lock().map_err(|_| denied())?;
+        Ok(s.power.filter(|_| s.generation == Some(generation)))
     }
     /// One read of the saved profiles with `foreground` selected in them, for
     /// one request step: every class the step reads resolves from it

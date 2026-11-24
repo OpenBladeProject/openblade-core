@@ -17,7 +17,7 @@ use super::{
     Admission, Limit, MAX_OBSERVATION, ObservationProof, ObservedPerformance, POLL, blocked,
 };
 #[cfg(feature = "service-live-readings-v1")]
-use super::{FanPairSends, FanRpmRead};
+use super::{FanPairSends, FanRpmRead, McuQuerySends, McuVersionRead};
 
 pub(crate) struct Reading<A = Admission> {
     pub(crate) admission: A,
@@ -28,6 +28,10 @@ pub(crate) struct Reading<A = Admission> {
     // Only the installed mailbox reader asks for it, for a fan-speed request.
     #[cfg(feature = "service-live-readings-v1")]
     pub(crate) fan_rpm: FanRpmRead,
+    // Only the installed mailbox reader asks for it, while the firmware
+    // record lacks the MCU version.
+    #[cfg(feature = "service-live-readings-v1")]
+    pub(crate) mcu_version: McuVersionRead,
 }
 
 impl<A> Reading<A> {
@@ -40,6 +44,8 @@ impl<A> Reading<A> {
             device_mode: DeviceModeRead::NotRequested,
             #[cfg(feature = "service-live-readings-v1")]
             fan_rpm: FanRpmRead::NotRequested,
+            #[cfg(feature = "service-live-readings-v1")]
+            mcu_version: McuVersionRead::NotRequested,
         }
     }
 }
@@ -54,6 +60,9 @@ pub(crate) struct Queries {
     /// The fan speed pair, counted where it is sent.
     #[cfg(feature = "service-live-readings-v1")]
     pub(crate) fan_rpm: Option<FanPairSends>,
+    /// The MCU version query, counted where it is sent.
+    #[cfg(feature = "service-live-readings-v1")]
+    pub(crate) mcu_version: Option<McuQuerySends>,
 }
 
 pub(super) struct Job {

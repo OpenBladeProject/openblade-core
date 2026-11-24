@@ -261,6 +261,15 @@ impl Lifecycle {
         let state = self.0.lock().ok()?;
         (state.epoch != 0).then(|| state.gate.transition())
     }
+    /// The gate's generation, which advances at each suspend and each resume
+    /// (a display-on that recovers a missed resume counts as one), and never
+    /// at another session or power notice, unlike the epoch. Two reads the
+    /// gate admitted see different values only if a resume came between
+    /// them. `None` when the lifecycle is unreadable or exhausted.
+    #[cfg(any(test, feature = "service-live-readings-v1"))]
+    pub(crate) fn resume_generation(&self) -> Option<u64> {
+        self.low_power().map(|transition| transition.generation)
+    }
     /// Whether a timer must not arm or must stop now: the gate is set, or
     /// the lifecycle is unreadable or exhausted. This is the fail-closed
     /// form of `low_power()` for callers that need only the answer.
@@ -478,6 +487,32 @@ mod lifecycle_tests {
     const SECOND: i64 = 10_000_000;
     fn generation(lifecycle: &Lifecycle) -> u64 {
         lifecycle.low_power().unwrap().generation
+    }
+    /// Lock, unlock, a power status change and a power-setting read fence
+    /// the epoch (or not) but leave the resume generation; a suspend and
+    /// resume advance it, and an exhausted lifecycle has none.
+    #[test]
+    fn only_suspend_and_resume_advance_the_resume_generation() {
+        use windows_sys::Win32::System::Services::SERVICE_CONTROL_SESSIONCHANGE;
+        let lifecycle = Lifecycle::default();
+        assert_eq!(lifecycle.resume_generation(), Some(0));
+        for (code, event) in [
+            (SERVICE_CONTROL_SESSIONCHANGE, 7),
+            (SERVICE_CONTROL_SESSIONCHANGE, 8),
+            (POWER, 10),
+            (POWER, 32787),
+        ] {
+            lifecycle.ingress(code, event);
+            assert_eq!(lifecycle.resume_generation(), Some(0), "{code}/{event}");
+        }
+        assert_eq!(lifecycle.active(), Some(4));
+        lifecycle.ingress(POWER, 4);
+        lifecycle.ingress(POWER, 7);
+        assert_eq!(lifecycle.resume_generation(), Some(2));
+        assert!(lifecycle.active().is_some());
+        let exhausted = Lifecycle::default();
+        exhausted.0.lock().unwrap().epoch = 0;
+        assert_eq!(exhausted.resume_generation(), None);
     }
     #[test]
     fn scm_suspend_and_resume_drive_the_one_gate_and_other_notices_carry_no_signal() {

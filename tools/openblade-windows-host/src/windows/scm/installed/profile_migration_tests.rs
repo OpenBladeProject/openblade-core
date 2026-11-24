@@ -762,3 +762,20 @@ fn a_migrated_legacy_profile_saves_like_any_aggregate() {
         migrated(&source.files)[NAMES[1]]
     );
 }
+
+/// Every vector's name, its schema and the files it stores, for the
+/// thermal policy each opened aggregate reports (`policy`).
+#[cfg(feature = "service-profile-triggers-v1")]
+pub(super) fn cases_for_policy() -> Vec<(String, i64, BTreeMap<String, Vec<u8>>)> {
+    cases()
+        .into_iter()
+        .filter_map(|case| {
+            let schema = case
+                .files
+                .get(NAMES[2])
+                .and_then(|marker| serde_json::from_slice::<Value>(marker).ok())
+                .and_then(|marker| marker["schemaVersion"].as_i64())?;
+            Some((case.name, schema, case.files))
+        })
+        .collect()
+}
