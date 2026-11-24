@@ -971,6 +971,49 @@ public sealed partial class IpcMessageCodecTests
         Assert.Equal(profilesRequest, await RoundTripRequestAsync(profilesRequest));
     }
 
+    // Protocol 90: firmware can confirm Custom without reporting its levels,
+    // so confirmed Custom may omit them. Desired Custom is intent and must
+    // still carry levels, on both write and read.
+    [Fact]
+    public async Task ConfirmedCustomWithUnreportedLevels_RoundTripsButDesiredCustomStaysStrict()
+    {
+        ServiceStatusSnapshot baseline = CreateStatus();
+        ServiceStatusSnapshot decoded = await RoundTripStatusAsync(baseline with
+        {
+            ConfirmedState = new ConfirmedDeviceState(PerformancePreset.Custom, FanMode.Automatic, null, null),
+        });
+        Assert.Equal(PerformancePreset.Custom, decoded.ConfirmedState!.Performance);
+        Assert.Null(decoded.ConfirmedState.CustomPerformance);
+
+        ServiceStatusSnapshot desiredCustom = baseline with
+        {
+            DesiredState = baseline.DesiredState with
+            {
+                Performance = new ResolvedSetting<PerformancePreset>(
+                    PerformancePreset.Custom, SettingValueSource.PowerProfile),
+                CustomPerformance = new CustomPerformanceSettings(
+                    CustomPerformanceLevel.Medium, CustomPerformanceLevel.Medium),
+            },
+        };
+        await AssertStatusWriteRejectedAsync(desiredCustom with
+        {
+            DesiredState = desiredCustom.DesiredState with { CustomPerformance = null },
+        });
+
+        using MemoryStream encoded = new();
+        await IpcMessageCodec.WriteServerFrameAsync(
+            encoded,
+            new ServiceStatusEvent(OpenBladeIpc.ProtocolVersion, desiredCustom),
+            CancellationToken.None);
+        JsonObject json = FramedJsonObject(encoded);
+        JsonObject desired = Assert.IsType<JsonObject>(json["status"]!["desiredState"]);
+        Assert.NotNull(desired["customPerformance"]);
+        desired["customPerformance"] = null;
+        using MemoryStream projected = FrameJson(json.ToJsonString());
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.ReadServerFrameAsync(projected, CancellationToken.None));
+    }
+
     [Fact]
     public async Task NewWindowsPowerModeAssociations_OmittedByOlderWriterDefaultToNull()
     {
