@@ -456,7 +456,7 @@ async fn installed_update_profiles_waits_for_a_mutation_in_flight() {
     };
     tokio::select! {
         _ = &mut thermal => panic!("the held mutation completed"),
-        result = tokio::time::timeout(std::time::Duration::from_secs(2), held) => result.unwrap(),
+        result = tokio::time::timeout(HANG_GUARD, held) => result.unwrap(),
     }
 
     // The save neither answers nor stores while that mutation is in flight.

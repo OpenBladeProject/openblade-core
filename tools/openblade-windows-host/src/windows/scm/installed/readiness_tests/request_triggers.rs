@@ -1099,6 +1099,7 @@ async fn a_fan_step_refused_at_its_pace_is_retried_on_the_next_report() {
 /// real clock.
 #[tokio::test]
 async fn a_reconciliation_waiting_on_a_transfer_answers_at_its_bound() {
+    keep_real_clock();
     use std::time::Instant;
     let reporting = rig_at(files_with_game(json!({"pluggedIn":{"performance":2}})), 0);
     let saving = rig_at(files_with_game(json!({"pluggedIn":{"performance":1}})), 0);
@@ -1708,6 +1709,7 @@ async fn dropped_at_bound(
 /// subsystems). Real time.
 #[tokio::test]
 async fn a_step_dropped_at_its_bound_records_its_own_completed_write() {
+    keep_real_clock();
     const OTHER: &str = r"C:\Tools\Other.exe";
     const GAME: &str = r"C:\Games\Game.exe";
     let rigs = tokio::join!(

@@ -16,7 +16,7 @@ use tokio::{
     time::{Instant, sleep, timeout},
 };
 
-use super::tests::{open_pipe, runtime, test_id};
+use super::tests::{HANG_GUARD, open_pipe, runtime, test_id};
 use super::{PREFIX, Phase, Session, fixture, prepare_integrated, run_prepared};
 
 const STATUS_ID: &str = "11111111-2222-4333-8444-555555555555";
@@ -120,7 +120,7 @@ fn wait_status<'a>(
 ) -> impl Future<Output = Value> + 'a {
     let location = std::panic::Location::caller();
     async move {
-        let deadline = Instant::now() + Duration::from_secs(6);
+        let deadline = Instant::now() + HANG_GUARD;
         loop {
             let current = status(path).await;
             if ready(&current) {
@@ -224,12 +224,10 @@ fn reporter_drives_unified_application_replay_over_private_v85_pipe() {
             release.send(()).unwrap();
             Ok(())
         };
-        timeout(Duration::from_secs(45), async {
-            tokio::try_join!(host, caller)
-        })
-        .await
-        .expect("unified reporter test timed out")
-        .unwrap();
+        timeout(HANG_GUARD, async { tokio::try_join!(host, caller) })
+            .await
+            .expect("unified reporter test timed out")
+            .unwrap();
     });
 }
 
@@ -441,7 +439,7 @@ async fn exercise_session_and_write_fence(
     let mut watcher = script
         .start(VERSION, Guid([0xA3; 16]), Default::default())
         .unwrap();
-    watcher.wait_ready(Duration::from_secs(2)).unwrap();
+    watcher.wait_ready(HANG_GUARD).unwrap();
     watcher.observe_profiles(vec![profile]);
 
     // A callback delivered during identity resolution supersedes the first

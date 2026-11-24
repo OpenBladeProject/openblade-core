@@ -89,12 +89,20 @@ async fn observe(rig: &Rig) {
 async fn tick(rig: &Rig) {
     try_tick(rig).await.unwrap();
 }
+/// One maintenance step, run as a request's exchange is (`Rig::held`): its job
+/// takes its budget from the step's start and a loaded host spends none of it.
 async fn try_tick(rig: &Rig) -> io::Result<()> {
-    let maintain = rig.source.lock().await.maintain_driver_mode();
-    match maintain {
-        Some(maintain) => maintain.await,
-        None => Ok(()),
-    }
+    rig.held(
+        HeldClock::CatchUp,
+        Box::pin(async {
+            let maintain = rig.source.lock().await.maintain_driver_mode();
+            match maintain {
+                Some(maintain) => maintain.await,
+                None => Ok(()),
+            }
+        }),
+    )
+    .await
 }
 /// A due step while the recorded mode is still current, so a step after a
 /// confirmed Driver finds it and starts no job (managed reads and finds it).
@@ -159,10 +167,16 @@ fn record(rig: &Rig, mode: DeviceMode) {
 }
 /// The shutdown release on its own, and its outcome.
 async fn release(rig: &Rig) -> Option<Release> {
-    rig.runtime
-        .release_driver_mode(&mailbox(rig))
-        .await
-        .unwrap();
+    rig.held(
+        HeldClock::CatchUp,
+        Box::pin(async {
+            rig.runtime
+                .release_driver_mode(&mailbox(rig))
+                .await
+                .unwrap();
+        }),
+    )
+    .await;
     rig.runtime.driver_mode_release()
 }
 /// Arms a competing controller from the `nth` fresh authorization after

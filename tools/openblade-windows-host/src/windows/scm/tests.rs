@@ -1,4 +1,4 @@
-use std::{cell::Cell, time::Duration};
+use std::cell::Cell;
 
 use openblade_windows_host::configuration_writer::fixture;
 use tokio::{
@@ -23,7 +23,7 @@ use crate::windows::{
     PREFIX,
     pipe::Endpoint,
     prepare_battery_profiles, prepare_integrated, prepare_protected,
-    tests::{assert_closed, open_pipe, read_status, runtime, test_id},
+    tests::{HANG_GUARD, assert_closed, open_pipe, read_status, runtime, test_id},
 };
 
 // Spelled out instead of reusing scm_host's mask, so a production change fails here.
@@ -188,7 +188,7 @@ fn scripted_controls_wait_for_both_the_accepted_save_and_owned_renderer() {
                 .await
                 .unwrap();
         };
-        let (result, ()) = timeout(Duration::from_secs(5), async { tokio::join!(host, client) })
+        let (result, ()) = timeout(HANG_GUARD, async { tokio::join!(host, client) })
             .await
             .unwrap();
         result.unwrap();
