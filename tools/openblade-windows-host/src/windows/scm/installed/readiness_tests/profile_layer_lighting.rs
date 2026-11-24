@@ -120,9 +120,9 @@ fn every_managed_admitted_aggregate_resolves_through_the_profile_layer() {
     // lane resolves them too; every lane resolves the schema 25-27 aggregates.
     println!("resolved={resolved} refused_by_managed={refused_by_managed}");
     let expected = if cfg!(feature = "service-profiles-v1") {
-        93
+        95
     } else {
-        16
+        17
     };
     assert_eq!(resolved, expected);
 }

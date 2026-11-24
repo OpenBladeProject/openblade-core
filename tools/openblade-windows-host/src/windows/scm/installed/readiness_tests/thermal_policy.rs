@@ -74,6 +74,20 @@ fn no_hardware(rig: &Rig) {
 
 /// One framed exchange; empty when the Service closes without answering.
 async fn exchange_as(rig: &Rig, request: &Value, caller: Caller) -> Vec<u8> {
+    let (reply, served) = exchange(rig, request, caller).await;
+    assert!(
+        !matches!(served, Err(ExchangeError::Runtime(_))),
+        "a client fault never fails the Service"
+    );
+    reply
+}
+
+/// One framed exchange and how the connection ended.
+async fn exchange(
+    rig: &Rig,
+    request: &Value,
+    caller: Caller,
+) -> (Vec<u8>, Result<(), ExchangeError>) {
     let (mut client, server) = duplex(65536);
     let source = rig.source.clone();
     let publications = source.lock().await.publications();
@@ -98,11 +112,7 @@ async fn exchange_as(rig: &Rig, request: &Value, caller: Caller) -> Vec<u8> {
         reply
     };
     let (served, reply) = tokio::join!(served, exchange);
-    assert!(
-        !matches!(served, Err(ExchangeError::Runtime(_))),
-        "a client fault never fails the Service"
-    );
-    reply
+    (reply, served)
 }
 
 async fn convergence(rig: &Rig) -> Value {
@@ -280,6 +290,29 @@ async fn a_pending_disclosure_pauses_maintain_until_acknowledged() {
     rig.stop().await;
 }
 
+/// Only the owner's view carries the member, so the views that do not carry
+/// it skip its store reads (`Snapshot::carries_thermal_convergence`).
+#[tokio::test]
+async fn only_the_owners_view_reads_the_saved_policy() {
+    let files = files_with(0, 0);
+    let rig = Rig::new(files.clone());
+    assert_eq!(
+        rig.request(set_policy(1, json!(1))).await["result"]["status"],
+        0
+    );
+    let publications = rig.source.lock().await.publications().unwrap();
+    let before = files.preferences_reads.load(Ordering::Acquire);
+    assert_eq!(convergence(&rig).await, paused(1, 0, 1));
+    let reads = files.preferences_reads.load(Ordering::Acquire) - before;
+    let publication = publications.borrow().clone();
+    let inactive = serde_json::to_value(&publication.inactive).unwrap();
+    assert!(inactive.get("thermalConvergence").is_none(), "{inactive}");
+    // The owner's projection alone: each other view that derived the
+    // member would read the saved policy once more.
+    assert_eq!(reads, 5, "preferences reads for one publication");
+    rig.stop().await;
+}
+
 #[tokio::test]
 async fn a_saved_drift_is_published_without_a_write_under_either_policy() {
     // Saved Battery Saver against a Balanced reading.
@@ -317,32 +350,247 @@ async fn a_competing_controller_is_published_as_managed_reports_it() {
     rig.stop().await;
 }
 
-/// Low power is read from the lifecycle's write epoch, never from the gate
-/// probe, whose reads belong to the reconciliation and are counted there.
+const POWER: u32 = 13;
+const POWER_STATUS: u32 = 10;
+const SUSPEND: u32 = 4;
+const RESUME: u32 = 18;
+
+/// Windows reports `battery` (or AC), with the SCM power notice that samples
+/// the Windows power kind before the lifecycle sees it (`native::entry`).
+fn power_notice(rig: &Rig, battery: bool) {
+    rig.port.state.lock().unwrap().windows_on_battery = Some(Some(battery));
+    rig.metadata
+        .store(if battery { 1 } else { 0 }, Ordering::Release);
+    Fresh::power_generation(rig.custody.as_ref());
+    rig.custody.lifecycle.ingress(POWER, POWER_STATUS);
+}
+
+/// The projection needs a write capture, which low power refuses, so the
+/// member is absent there; it never reads the reconciliation's gate probe,
+/// whose reads the trigger tests count.
 #[tokio::test]
-async fn low_power_is_published_without_reading_the_reconciliation_gate() {
+async fn low_power_leaves_the_member_absent_without_reading_the_gate() {
     let files = files_with(0, 0);
     let rig = Rig::new(files.clone());
     let gate_reads = Rc::new(std::cell::Cell::new(0u32));
     let counted = gate_reads.clone();
+    let lifecycle = rig.custody.clone();
     rig.runtime.read_low_power(move || {
         counted.set(counted.get() + 1);
-        None
+        lifecycle.lifecycle.low_power()
     });
-    let epoch = Rc::new(std::cell::Cell::new(Some(1u64)));
-    let read = epoch.clone();
-    rig.runtime.read_admission_epoch(move || read.get());
+    let epoch = rig.custody.clone();
+    rig.runtime
+        .read_admission_epoch(move || epoch.lifecycle.active());
     on_battery(&rig, 3);
     rig.request(set_policy(1, json!(0))).await;
     assert_eq!(observed(&rig, 1).await, status_of(0, &[], 0, false));
 
-    epoch.set(None);
+    rig.custody.lifecycle.ingress(POWER, SUSPEND);
 
-    assert_eq!(convergence(&rig).await, paused(0, 0, 11));
-    epoch.set(Some(2));
+    assert!(convergence(&rig).await.is_null());
+    rig.custody.lifecycle.ingress(POWER, RESUME);
     assert_eq!(convergence(&rig).await, status_of(0, &[], 0, false));
     assert_eq!(gate_reads.get(), 0);
     no_hardware(&rig);
+    rig.stop().await;
+}
+
+/// Status reports AC as the coarse class 3. The class this user's own step
+/// classified stands in for it until the Windows power kind changes.
+#[tokio::test]
+async fn ac_is_classified_by_the_last_step_until_the_power_kind_changes() {
+    let files = files_with(0, 0);
+    let rig = Rig::new(files.clone());
+    rig.request(set_policy(1, json!(0))).await;
+    assert_eq!(convergence(&rig).await, paused(0, 0, 10));
+
+    let applied = rig.set(2, value(2, 1)).await;
+
+    assert_eq!(applied["result"]["status"], 1, "{applied}");
+    assert_eq!(convergence(&rig).await, status_of(0, &[], 0, false));
+    assert_eq!(observed(&rig, 1).await, status_of(0, &[], 0, false));
+    // A notice that keeps the Windows kind keeps the class.
+    power_notice(&rig, false);
+    assert_eq!(convergence(&rig).await, status_of(0, &[], 0, false));
+    // Battery: the battery class is the status's own, and the saved Battery
+    // Saver differs from the confirmed override.
+    power_notice(&rig, true);
+    assert_eq!(convergence(&rig).await, paused(0, 0, 21));
+    // Back on AC, the class read before the battery switch is stale.
+    power_notice(&rig, false);
+    assert_eq!(convergence(&rig).await, paused(0, 0, 10));
+    assert_eq!(observed(&rig, 2).await, paused(0, 0, 10));
+    rig.stop().await;
+}
+
+/// The member is derived at the class this user's step classified at the
+/// current Windows power generation (`convergence_power`): PluggedIn or
+/// USB-C. An unclassified or battery reading kept at that generation, an
+/// older generation, no generation, or no fresh AC presence keeps the
+/// status's class, as battery and an unknown class do.
+#[test]
+fn the_member_uses_only_a_class_classified_at_this_generation() {
+    use crate::installed::readiness::thermal_mutation::convergence_power;
+    struct Windows(Option<bool>, Option<u64>);
+    impl Fresh for Windows {
+        fn on_battery(&self) -> Option<bool> {
+            self.0
+        }
+        fn power_generation(&self) -> Option<u64> {
+            self.1
+        }
+        fn authorize(&self) -> Option<ReadAdmission> {
+            None
+        }
+    }
+    let files = MemoryFiles::default();
+    files.profiles(1);
+    let storage = Storage::open(Box::new(files), SID).unwrap();
+    let class = |query, battery, generation| {
+        convergence_power(query, &Windows(battery, generation), &storage).unwrap()
+    };
+    assert_eq!(class(3, Some(false), Some(7)), 3);
+    for (observed, expected) in [(0, 0), (2, 2), (3, 3), (1, 3)] {
+        storage.observe_power(observed, 7).unwrap();
+        assert_eq!(class(3, Some(false), Some(7)), expected, "{observed}");
+        assert_eq!(class(3, Some(false), Some(8)), 3, "{observed}");
+        assert_eq!(class(3, Some(false), None), 3, "{observed}");
+        assert_eq!(class(3, None, Some(7)), 3, "{observed}");
+    }
+    storage.observe_power(2, 7).unwrap();
+    assert_eq!(class(1, Some(true), Some(7)), 1);
+    assert_eq!(class(-1, Some(false), Some(7)), -1);
+}
+
+/// The fan request's own publication and the projection it retains read
+/// the same classified power, so the member does not flip between them, and
+/// manual fans OpenBlade wrote match while fans it did not write are
+/// ambiguous.
+#[tokio::test]
+async fn a_fan_request_publishes_the_member_its_projection_keeps() {
+    let rig = fan_rig(0, 0);
+    rig.request(set_policy(1, json!(0))).await;
+    assert_eq!(convergence(&rig).await, paused(0, 0, 10));
+    let publications = rig.source.lock().await.publications().unwrap();
+
+    let result = rig.request(fan_request(2, Some(1), 3700)).await;
+
+    assert_eq!(result["result"]["status"], 1, "{result}");
+    let published = serde_json::to_value(&publications.borrow().active).unwrap();
+    let matched = status_of(0, &[], 0, false);
+    assert_eq!(published["thermalConvergence"], matched, "{published}");
+    assert_eq!(convergence(&rig).await, matched);
+    assert_eq!(observed(&rig, 1).await, matched);
+    // A fan change outside OpenBlade ends the ownership; manual fans that
+    // return are no longer OpenBlade's own.
+    rig.port.state.lock().unwrap().fans = [0; 2];
+    assert_eq!(
+        observed(&rig, 2).await,
+        status_of(3, &[], 21, false),
+        "Automatic against saved manual fans would converge"
+    );
+    rig.port.state.lock().unwrap().fans = [1; 2];
+    assert_eq!(observed(&rig, 3).await, status_of(3, &[1], 16, true));
+    rig.stop().await;
+}
+
+/// A journal fence leaves the saved policy standing and pauses for
+/// reconciliation, as managed's pending write confirmations do; only a
+/// configuration fence reports the quarantine.
+#[tokio::test]
+async fn a_journal_fence_pauses_for_reconciliation_under_the_saved_policy() {
+    let files = files_with(0, 0);
+    files.fail_prepared.store(1, Ordering::Release);
+    let rig = Rig::new(files.clone());
+    on_battery(&rig, 3);
+    rig.request(set_policy(1, json!(0))).await;
+    assert_eq!(observed(&rig, 1).await, status_of(0, &[], 0, false));
+
+    let refused = rig.set(2, value(4, 1)).await;
+
+    let message = refused["result"]["message"].as_str().unwrap();
+    assert!(
+        message.contains("journal preparation could not be confirmed"),
+        "{refused}"
+    );
+    assert_eq!(convergence(&rig).await, paused(0, 0, 17));
+    // The configuration is still admitted, so the policy can change.
+    assert_eq!(
+        rig.request(set_policy(3, json!(1))).await,
+        result(0, STRICT_STORED, 3)
+    );
+    assert_eq!(convergence(&rig).await, paused(1, 0, 1));
+    assert_eq!(stored(&files), (1, 0));
+    rig.stop().await;
+}
+
+/// A store read that fails before the transaction replies Failed and the
+/// Service keeps serving; fatal evidence still ends it.
+#[tokio::test]
+async fn a_store_read_error_fails_the_change_and_fatal_evidence_stays_fatal() {
+    let files = files_with(0, 1);
+    let rig = Rig::new(files.clone());
+    rig.get().await;
+    let prior = files.bytes.lock().unwrap().clone();
+    files.fail_preferences_read.store(1, Ordering::Release);
+
+    let response = rig.request(set_policy(1, json!(1))).await;
+
+    assert_eq!(response["result"]["status"], 3, "{response}");
+    let message = response["result"]["message"].as_str().unwrap();
+    assert!(
+        message.starts_with(
+            "The requested intent was rejected: The saved configuration could not be read: "
+        ) && message.ends_with(". The saved configuration is unchanged."),
+        "{message}"
+    );
+    assert_eq!(*files.bytes.lock().unwrap(), prior);
+    assert_eq!(
+        rig.request(acknowledge(2)).await["result"]["status"],
+        0,
+        "the Service still serves"
+    );
+
+    no_hardware(&rig);
+    rig.stop().await;
+
+    // A fresh Service, so the save's own read is the first one: nothing
+    // projects this user's policy before the request.
+    let files = files_with(0, 1);
+    let rig = Rig::new(files.clone());
+    rig.get().await;
+    let prior = files.bytes.lock().unwrap().clone();
+    files.fail_preferences_read.store(2, Ordering::Release);
+    let (reply, served) = exchange(&rig, &set_policy(3, json!(1)), USER).await;
+    assert!(reply.is_empty(), "fatal evidence is not answered");
+    assert!(
+        matches!(served, Err(ExchangeError::Runtime(_))),
+        "fatal evidence ends the Service"
+    );
+    assert_eq!(files.fail_preferences_read.load(Ordering::Acquire), 0);
+    assert_eq!(*files.bytes.lock().unwrap(), prior);
+    no_hardware(&rig);
+    rig.stop().await;
+}
+
+/// A policy request waits behind a held operation gate for up to a
+/// thermal request's budget and is answered.
+#[tokio::test]
+async fn a_policy_request_behind_a_held_gate_is_answered() {
+    let files = files_with(0, 0);
+    let rig = Rig::new(files.clone());
+    rig.get().await;
+    let gate = rig.runtime.operation_gate_for_tests();
+    let held = gate.lock().await;
+    let release = async {
+        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+        drop(held);
+    };
+
+    let (response, ()) = tokio::join!(rig.request(set_policy(1, json!(1))), release);
+
+    assert_eq!(response, result(0, STRICT_STORED, 1));
     rig.stop().await;
 }
 

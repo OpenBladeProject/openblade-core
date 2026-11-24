@@ -85,6 +85,13 @@ struct MemoryFiles {
     reserve_uncertain: Arc<AtomicBool>,
     roll_settled: Arc<AtomicBool>,
     fail_quota_read: Arc<AtomicBool>,
+    // Fails the next read of the saved preferences once: 1 with an
+    // ordinary I/O error, 2 with fatal admission evidence.
+    #[cfg(feature = "service-profile-triggers-v1")]
+    fail_preferences_read: Arc<AtomicU8>,
+    // Counts the reads of the saved preferences.
+    #[cfg(feature = "service-profile-triggers-v1")]
+    preferences_reads: Arc<AtomicUsize>,
     release_fault: Arc<AtomicU8>,
     release_reads: Arc<AtomicUsize>,
     release_read_notify: Arc<tokio::sync::Notify>,
@@ -245,6 +252,21 @@ impl Files for MemoryFiles {
             && self.fail_quota_read.load(Ordering::Acquire)
         {
             return Err(io::Error::other("injected quota read failure"));
+        }
+        #[cfg(feature = "service-profile-triggers-v1")]
+        if name == "battery-preferences.json" {
+            self.preferences_reads.fetch_add(1, Ordering::AcqRel);
+            match self.fail_preferences_read.swap(0, Ordering::AcqRel) {
+                0 => {}
+                1 => return Err(io::Error::other("injected preferences read failure")),
+                _ => {
+                    return Err(
+                        crate::installed::readiness::thermal_mutation::fatal_admission(
+                            "injected fatal preferences read",
+                        ),
+                    );
+                }
+            }
         }
         Ok(self.bytes.lock().unwrap().get(name).cloned())
     }

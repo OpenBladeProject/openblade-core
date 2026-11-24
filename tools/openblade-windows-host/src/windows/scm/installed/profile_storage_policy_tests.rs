@@ -289,6 +289,51 @@ fn a_failed_restore_closes_the_store_with_its_record() {
     );
 }
 
+/// A thermal-journal fence (`quarantine_settlement`) leaves the configuration
+/// admitted: the saved policy reads as saved, pending reconciliation, and a
+/// change is stored. A configuration fence is the quarantine.
+#[test]
+fn only_a_configuration_fence_quarantines_the_saved_policy() {
+    let model = Model::seeded(with_policy(MAINTAIN, DISCLOSURE_NOT_REQUIRED));
+    let storage = model.storage();
+
+    storage.quarantine_settlement().unwrap();
+
+    assert!(storage.pending());
+    assert_eq!(
+        storage.thermal_policy().unwrap(),
+        saved(MAINTAIN, DISCLOSURE_NOT_REQUIRED)
+    );
+    assert!(matches!(
+        storage.save_thermal_policy(SET_STRICT).unwrap(),
+        PolicySave::Stored(_)
+    ));
+    assert_eq!(
+        storage.thermal_policy().unwrap(),
+        saved(STRICT, DISCLOSURE_NOT_REQUIRED)
+    );
+
+    for fence in [
+        |state: &mut State| state.configuration_failed = true,
+        |state: &mut State| state.configuration_changed = true,
+    ] {
+        let model = Model::seeded(with_policy(MAINTAIN, DISCLOSURE_NOT_REQUIRED));
+        let storage = model.storage();
+        let before = model.snapshot();
+        {
+            let mut state = storage.state.lock().unwrap();
+            state.quarantined = true;
+            fence(&mut state);
+        }
+        assert_eq!(storage.thermal_policy().unwrap(), SavedPolicy::Quarantined);
+        assert_eq!(
+            storage.save_thermal_policy(SET_STRICT).unwrap(),
+            PolicySave::Quarantined
+        );
+        assert_eq!(model.snapshot(), before);
+    }
+}
+
 #[test]
 fn a_preserved_aggregate_reports_strict_and_takes_no_change() {
     type Tamper = fn(&mut BTreeMap<String, Vec<u8>>);
@@ -442,6 +487,7 @@ fn an_aggregate_the_service_reader_would_refuse_is_not_changed() {
 #[test]
 fn an_aggregate_below_schema_16_migrates_to_maintain_with_the_disclosure_pending() {
     let mut checked = 0;
+    let mut survived = 0;
     for case in migration::cases_for_policy() {
         let (name, schema, files) = case;
         let model = Model::default();
@@ -460,6 +506,20 @@ fn an_aggregate_below_schema_16_migrates_to_maintain_with_the_disclosure_pending
                 "{name}"
             );
         } else {
+            // Managed keeps a saved policy and disclosure from schema 16 on.
+            let kept = match name.as_str() {
+                "schema 16 Strict thermal policy survives migration" => {
+                    Some((STRICT, DISCLOSURE_NOT_REQUIRED))
+                }
+                "schema 26 acknowledged thermal policy disclosure survives migration" => {
+                    Some((MAINTAIN, DISCLOSURE_ACKNOWLEDGED))
+                }
+                _ => None,
+            };
+            if let Some(kept) = kept {
+                survived += 1;
+                assert_eq!((policy, disclosure), kept, "{name}");
+            }
             let document = preferences_of(&model);
             assert_eq!(document["thermalControlPolicy"], json!(policy), "{name}");
             assert_eq!(
@@ -473,4 +533,5 @@ fn an_aggregate_below_schema_16_migrates_to_maintain_with_the_disclosure_pending
         checked >= 10,
         "{checked} migrated aggregates below schema 16"
     );
+    assert_eq!(survived, 2, "the managed rows that keep a saved policy");
 }
