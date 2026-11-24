@@ -1114,6 +1114,10 @@ pub(super) struct ReadSource {
     #[cfg(feature = "service-thermal-mutation-v1")]
     battery_expiry: Rc<RefCell<Option<ExpiryFn>>>,
     last: Rc<RefCell<Option<(Snapshot, Instant)>>>,
+    /// When the job behind `last` started. Observations finish out of job
+    /// order while one waits for its GPU sample, so a reading from an
+    /// earlier job is never stored over it.
+    newest_job: Rc<std::cell::Cell<Option<Instant>>>,
     // Confirmed thermal drift (`thermal_drift`), shared with the runtime's
     // permits, which decide on the worker thread.
     #[cfg(feature = "service-profile-triggers-v1")]
@@ -1214,6 +1218,7 @@ impl ReadSource {
             #[cfg(feature = "service-thermal-mutation-v1")]
             battery_expiry: Rc::default(),
             last: Rc::default(),
+            newest_job: Rc::default(),
             #[cfg(feature = "service-profile-triggers-v1")]
             drift: Arc::default(),
             #[cfg(feature = "service-keyboard-driver-mode-read-v1")]
@@ -1442,6 +1447,8 @@ impl ReadSource {
             let mcu_query = source
                 .firmware
                 .mcu_query(|| source.lease.resume_generation());
+            // The worker runs one job at a time, so this orders the readings.
+            let started = Instant::now();
             #[cfg(not(any(
                 feature = "service-keyboard-driver-mode-read-v1",
                 feature = "service-live-readings-v1"
@@ -1534,6 +1541,11 @@ impl ReadSource {
             if admission != Some(reading.admission) || Instant::now() >= deadline {
                 return Ok(None);
             }
+            // A later job finished first while this one waited for its GPU
+            // sample: this reading is older than the one already published.
+            if source.superseded(started) {
+                return Ok(None);
+            }
             #[cfg(feature = "service-live-readings-v1")]
             let fans = fan_speeds
                 .then(|| {
@@ -1582,7 +1594,7 @@ impl ReadSource {
                     .with_live_readings(live, battery_power, fans, gpu)
                     .with_battery_health(source.live.battery_health());
             }
-            *source.last.borrow_mut() = Some((observed.clone(), Instant::now()));
+            source.retain(&observed, started);
             source.decorate(&publisher, None)?;
             // The reply at revision N carries what publication N carries.
             #[cfg(feature = "service-live-readings-v1")]
@@ -1633,6 +1645,15 @@ impl ReadSource {
     }
     pub(super) fn confirm_drained(&self) -> io::Result<()> {
         self.lease.confirm_drained()
+    }
+    /// Stores the reading of the job started at `job` as the last one.
+    fn retain(&self, snapshot: &Snapshot, job: Instant) {
+        self.newest_job.set(Some(job));
+        *self.last.borrow_mut() = Some((snapshot.clone(), Instant::now()));
+    }
+    /// Whether a job started after `job` already stored its reading.
+    fn superseded(&self, job: Instant) -> bool {
+        self.newest_job.get().is_some_and(|newest| newest > job)
     }
 }
 
@@ -1818,7 +1839,7 @@ impl ReadSource {
     }
     pub(super) fn retain_mutation(&self, snapshot: &Snapshot) {
         if snapshot.has_fresh_mailbox_read() {
-            *self.last.borrow_mut() = Some((snapshot.clone(), Instant::now()));
+            self.retain(snapshot, Instant::now());
         }
     }
     pub(super) fn custody(&self) -> Arc<dyn ReadCustody> {

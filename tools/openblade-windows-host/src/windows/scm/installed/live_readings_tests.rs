@@ -758,6 +758,51 @@ async fn gpu_temperature_of_a_dropped_or_unaccepted_observation_is_not_published
     }
 }
 
+/// An observation that waits for its GPU sample publishes nothing once a
+/// later job has published: its reading is the older one. With thermal
+/// mutation the later observation is refused instead while it waits.
+#[tokio::test]
+async fn an_observation_waiting_for_its_gpu_sample_never_overwrites_a_later_reading() {
+    let gpu = Gpu::default();
+    let (release, hold) = std::sync::mpsc::channel();
+    let rig = Rig::new().with_gpu(gpu.factory(50, Some(hold)));
+    let earlier = rig.snapshot(8);
+    tokio::pin!(earlier);
+    // Until the earlier job has sent its reads, then a little longer for
+    // its reading to arrive: the held sample keeps it waiting after that.
+    let mut polls = 0;
+    while gpu.workloads() == 0 || rig.io.sent.lock().unwrap().is_empty() || polls < 5 {
+        polls += usize::from(gpu.workloads() > 0);
+        tokio::select! {
+            _ = &mut earlier => panic!("the held observation completed"),
+            () = tokio::time::sleep(Duration::from_millis(1)) => {}
+        }
+    }
+    rig.io.thermal.store(HYPER_BOOST, Ordering::Release);
+    if cfg!(feature = "service-thermal-mutation-v1") {
+        assert!(rig.observe(0).await.is_none());
+        drop(release);
+        assert!(earlier.await.is_some());
+        return;
+    }
+    let until = Instant::now() + Duration::from_secs(5);
+    let later = loop {
+        if let Some(later) = rig.observe(0).await {
+            break later;
+        }
+        assert!(Instant::now() < until, "no later observation was accepted");
+        tokio::time::sleep(Duration::from_millis(1)).await;
+    };
+    assert_eq!(later["confirmedState"]["hyperBoostActive"], true);
+    let published = rig.published();
+    drop(release);
+    assert!(earlier.await.is_none());
+    assert_eq!(rig.published(), published);
+    for published in published {
+        assert_eq!(published["confirmedState"]["hyperBoostActive"], true);
+    }
+}
+
 const FRAMES: &str = "live-reading-native-frames.json";
 const REGENERATE: &str = "OPENBLADE_REGENERATE_NATIVE_LIVE_READING_FRAMES";
 
