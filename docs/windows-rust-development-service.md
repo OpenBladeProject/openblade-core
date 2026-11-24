@@ -1687,19 +1687,13 @@ managed vector:
 
 | Managed commits | Behavior | Native area |
 |---|---|---|
-| 85182893 | A pending write block is released on a power change | thermal mutation, drift |
-| e481be77, ea5bd41e, 70cbb567 | Raw 6 off battery is a transitional DC Balanced, limited to transitions from battery, and Custom can be entered from it | thermal decode and mutation |
-| 06577e09 | A firmware-only lost acknowledgement is judged from the preset | thermal confirmation |
+| 85182893 | A pending write block is released on a power change | thermal mutation, drift. Native holds no published write block for a power change to release: admission never reads `writesBlocked`, and the pending-confirmation fence (`Storage::pending`, which makes `admit_trigger` return Fenced) deliberately outlasts a power change until read-only reconciliation, so porting this would mean releasing that fence |
 | 3b692b95, 445f17b7, 2b141ccd | HyperBoost journal handoff retirement and exit submission | thermal history store, thermal mutation |
 | 374e4847, 66c6e902, 72137077, 26db283c, cc2dea76 | GPU clock offset confirmation, resend and NVML submission recovery | no native GPU clock offset writer; stored offsets are only validated |
 | 24966354, c91181b8 | GPU clock offsets and the NVIDIA laptop form on RZ09-0529 and RZ09-0530 | no native GPU clock offset writer; stored offsets are only validated |
-| a63f884c, 262c543c, 561c43bb, 927c2e18, b872ba70, ac6b1215 | Deferred presets under manual fans and their reconciliation | fan mutation, thermal drift |
 | a26e1519 | A HyperBoost exit whose Maximum Fans restore was refused and whose journal cannot be retired reports the restore failure and blocked writes | HyperBoost exit reporting |
-| 0cf60756, 1aee2bd6, acdb3bf2, e22d97ac, 185c145a, d4249eca | Maximum fans in Custom, its restore, exit, refusal and RZ09-0482 handling | fan mutation, Custom capability |
-| cc9b97ff, 363805c9 | Product 669 Power Mode Control acknowledgements | power-mode decode |
-| db536537, b5a3aa6f | Temporary full charge on RZ09-0530 and RZ09-0529 | temporary full charge model admission |
+| 0cf60756 | Writes stay open after a refused Maximum Fans restore | HyperBoost exit, Custom capability |
 | d379614f, 677608a4, 4570d54c, 5b2b549d | SnapTap driver keyboard admission, rearm and retry | Agent function row |
-| 0426e6a4, a4bc0874 | HyperBoost entry by SKU with a Balanced handoff, and the RZ09-0510 Turbo base | thermal mutation |
 | 4afe8fe2 and the cooling-pad series | Cooling-pad Auto mode and profile | no native cooling-pad backend |
 | 5dec9093, a1728389 | Windows Dynamic Lighting advisory | no native backend |
 | 7c56a32c, 4cca8813, 8bb17a4d, 736f6d8a, b82a614d, 5e74b33f | Observed CPU power, Intel ranges, GPU overclocking and local dimming | no native backend |
@@ -1718,6 +1712,18 @@ admits:
 | Managed commits | Behavior | Why no native port |
 |---|---|---|
 | e4f19946, b3b2b5ae | The limiter stays off while the override was last on; an unreadable 07/8F blocks only override enable and cancel | Both change the experimental 0x02A0, 0x02C5 and 0x02C7 backends (`ExperimentalBladeModels`, `ExperimentalBladePort`) and their `ChargePolicyIndependentOfTemporaryFullCharge` capability, and admit temporary full charge on ExternalUnknown power. Native admits battery commands only on exact RZ09-0581 (`02E0`), where battery policy and temporary full charge need classified power. The shared read that reports protection off with bit 04 as an unknown override is already an unavailable native battery group (`BatteryObservation::projection`), with thermal reads independent of it. The `ResolveExplicitBatteryBaseline` fallback runs only on ExternalUnknown, which native refuses for battery |
+| e481be77 | Raw 6 off battery is a transitional DC Balanced only after a transition from battery | The service rule needs a capability table with writable HyperBoost that lists Balanced but not Battery Balanced (`ReadsRawSixAsTransitionalDcBalanced`), which only the RZ09-0483 and RZ09-0482 experimental backends have; 02A0 never matches. Native admits thermal writes only on RZ09-0581, whose table lists Battery Balanced and whose HyperBoost is observed only. Native decodes 0581 raw 6 as Battery Balanced on any power |
+| ea5bd41e | Raw 6 off battery reads as transitional DC Balanced | `ExperimentalBladePort` only, gated by `UsesRaw6AsBatteryBalanced` (029F and 029D, Synapse products 671 and 669) |
+| 70cbb567 | Custom can be entered from raw 6 off battery | `ExperimentalBladePort.Custom` only, for 029F, 029D and 02B7 |
+| 06577e09 | A firmware-only lost acknowledgement is judged from the preset | The fix stops the unresolved-NVML predicate from judging writes without GPU tuning. Native has no GPU clock writer, so a native lost acknowledgement is only ever judged from the preset readback |
+| a63f884c, 262c543c, 561c43bb, 927c2e18, b872ba70, ac6b1215 | Deferred presets under manual fans and their reconciliation | Each targets backends whose capabilities set `ReportsPerformanceWithManualFans`, which only `ExperimentalBladePort` sets, or the preset-ranged fan restore, which needs the experimental `FanSpeedRangesByPerformancePreset`. Managed runs RZ09-0581 on the shared-selector shape, where Balanced under manual fans reads as Maximum with no preset, and the commits leave that shape unchanged. Native matches it: a preset chosen under manual fans is stored with the `ManualDeferred` reply, and a fan return to Automatic applies the saved destination |
+| 1aee2bd6 | The fan exit on preset-reporting backends skips an undeclared Performance restore | Only backends that set `ReportsPerformanceWithManualFans` (experimental) are affected. Native fan recipes have no declared-component step runner |
+| acdb3bf2, 185c145a | HyperBoost stops report cleared Maximum Fans, and an unrepresentable flag keeps the refusal | `ExperimentalBladePort.HyperBoost` only. Native submits no HyperBoost entry or exit |
+| e22d97ac | Custom matches compare the confirmed Maximum Fans flag | It is gated by `SupportsMaximumFans` (029F, 029D and 02A0). Native never admits the flag on RZ09-0581: `Destination::custom` names no destination when `maximumFans` is true, and native publishes `maximumFans: false`, so a flag-only change cannot reach a native comparison |
+| d4249eca | Custom Maximum Fans on RZ09-0482 | Experimental RZ09-0482 admission only |
+| cc9b97ff, 363805c9 | Product 669 Power Mode Control acknowledgements | `ExperimentalBladePort` and `ExperimentalBladeModels` only (RZ09-0482). Native has no RZ09-0482 backend |
+| db536537, b5a3aa6f | Temporary full charge on RZ09-0530 and RZ09-0529 | `ExperimentalBladeModels` admission only. Native temporary full charge is exact RZ09-0581 |
+| 0426e6a4, a4bc0874 | HyperBoost entry by SKU with a Balanced handoff, and the RZ09-0510 Turbo base | Native submits no HyperBoost entry. The contract members they add are protocol 86 shapes that native already writes as managed defaults at protocol 90: `hyperBoostEntryRestriction` is null and `hyperBoostBaseModes` is null, so there is no Turbo slot. Native publishes a confirmed HyperBoost only with Automatic fans, which the widened check still accepts. Managed's RZ09-0581 production port is unchanged |
 
 ## Native SCM gate
 
