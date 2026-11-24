@@ -63,8 +63,9 @@ const JOB_BUDGET: Duration = Duration::from_secs(2);
 const ENTRY_BUDGET: Duration = Duration::from_millis(150);
 /// The release job from its start: its baseline read, setter and readback.
 /// By count, a healthy one takes about 0.28 s besides its three exchanges:
-/// about 22 fresh admissions at 8-9 ms each and three 30 ms settles, an
-/// estimate pending an attended timing. The allowance of twice
+/// 20 cleanup authorizations, counted in the test rig, at an unmeasured
+/// 8-9 ms each, and three 30 ms settles, an estimate pending an attended
+/// timing. The allowance of twice
 /// `FRAME_EXCHANGE` per exchange plus those admissions and settles is about
 /// 1.09 s, which does not fit the share below; the job's measured pace still
 /// refuses the setter when the acknowledgement and readback cannot finish in

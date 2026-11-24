@@ -288,8 +288,7 @@ independent managed evidence.
 
 A Service built with `service-keyboard-driver-mode-v1` acquires and maintains
 RZ09-0581 keyboard Driver mode and restores Normal at a confirmed suspend and
-at shutdown, and hands owned manual fans back to Automatic at a confirmed
-suspend. The feature
+at shutdown. The feature
 implies `service-keyboard-driver-mode-read-v1`, `service-fan-mutation-v2` (the
 fan guardian and the fan handback it runs before) and the protocol crate's
 `device-mode-setters`, and adds the capability marker
@@ -393,9 +392,11 @@ durable owned-or-uncertain record and crash recovery are stage 6a-5.
 
 ##### Cleanup admission
 
-Every release and every Service fan handback holds the Service's own cleanup
-admission (`thermal_mutation::Cleanup`, built by `CleanupGuard::capture`),
-captured fresh for its boundary. It names no console session, SID or logon:
+Every release and every Service fan handback at Stop holds the Service's own
+cleanup admission (`thermal_mutation::Cleanup`, built by
+`CleanupGuard::capture`), captured fresh for its boundary. Fan mutation
+composes it for the owned-Stop handback without the keyboard owner
+(`service-fan-mutation-v2`); the low-power scope needs the keyboard owner. It names no console session, SID or logon:
 Windows logs every user off before a system shutdown reaches services, and a
 suspend may start from the lock screen. Managed releases with nobody signed in
 too: `ReleaseDriverModeCoreAsync` checks the fan guardian, a pending
@@ -403,16 +404,18 @@ reconciliation, controller presence and its detection warning, then the device
 provider's `FreshLightingCleanupAdmission` (exact-device probe and owned
 renderer access), and never a user (`ServiceControlRuntime.cs:13398-13520`,
 `WindowsVerifiedBladeDeviceProvider.cs:398-420`). Each authorization checks,
-fresh:
+fresh, in this order (`thermal_native::admit_cleanup`, which the test model
+shares):
 
 - origin and package trust for its scope: owned-Stop trust for Stop and
   shutdown, ordinary trust for a suspend generation;
-- the lifecycle epoch its scope pinned, before and after the Windows checks.
-  `CleanupScope::OwnedStop` pins `WriteScope::Ordinary`, so the gate refuses
-  it in low power; `CleanupScope::LowPower` pins
-  `WriteScope::LowPowerCleanup { generation }`, which the gate admits only
-  while that exact suspend generation is current, so a resume, a DisplayOn,
-  another suspend or any later power or session notice ends it;
+- the lifecycle fence its scope pinned (`Lifecycle::fence_for`), with origin
+  commitment, before and after the Windows checks.
+  `CleanupScope::OwnedStop` pins the ordinary epoch, so the gate refuses it in
+  low power and any later power or session notice ends it.
+  `CleanupScope::LowPower` pins its suspend generation only, as managed's
+  `IsActiveForGeneration` does: a lock or unlock during the suspend leaves it
+  admitted, and a resume, a DisplayOn or another suspend ends it;
 - a known Windows AC line status, then fresh competing-controller absence
   (a typed denial at capture, as the console admission reports it);
 - the exact original mailbox custody and generation through
@@ -442,8 +445,11 @@ managed order (`ServiceControlRuntime.cs:12925-12950`,
 - It joins active work first (`ReadSource::drain_active`), as the fan handback
   does.
 - The managed skip reasons the native Service can observe leave the mode
-  unchanged: an unsettled fan row, an unsettled journal row of the last
-  console capture, and no cleanup admission. The last covers a competing
+  unchanged: an unsettled fan row, an unsettled journal row, and no cleanup
+  admission. The journal row is read from the latest capture's store, of any
+  user (`Runtime::captured_store`): the captures are serialized and every
+  store recovers the one custody journal's last row when it opens, so that
+  store has seen every row. The last covers a competing
   controller, unknown Windows power, lost origin or custody trust, low power
   and a write lease that never activated
   (`ServiceControlRuntime.cs:13399-13520`). After origin loss the release is
@@ -451,7 +457,16 @@ managed order (`ServiceControlRuntime.cs:12925-12950`,
 - The fan handback tries the owner's own capture first, then the Service's
   cleanup admission with `FanHandbackPermit`, which runs the owner's full
   cleanup recipe with nobody signed in, and only then the settle permit
-  (`Fresh::capture_settle`), which reads and appends 51 on Automatic.
+  (`Fresh::capture_settle`), which reads and appends 51 on Automatic. A job
+  that registered may already have sent the owner's reserved cleanup IDs,
+  its baseline read's among them, so no later admission of the same Stop
+  runs the recipe again. Before row 31 the recipe is paced against the Stop
+  deadline, charging every exchange and row left at the slowest measured
+  exchange; when they do not fit it ends with no row and no setter. A job
+  that ends after 31 or 40-43 leaves a tail that cannot be closed in the
+  process (51 follows only 30), so Stop reports the handback unconfirmed and
+  the next start's read-only recovery reconciles it. That predates the
+  low-power slice.
 - A fresh `00/84` read of Driver writes `00/04:0000` once, whoever set it, as
   managed does, and requires the exact acknowledgement and an independent
   `00/84` readback of Normal. A read of Normal ends an owned claim as a
@@ -461,8 +476,12 @@ managed order (`ServiceControlRuntime.cs:12925-12950`,
   acknowledgement and the readback in its time sends nothing and reports
   `Exhausted`; a lane refusal before the job registered keeps the attempt.
 - A release that may have submitted Normal without confirming it
-  (`Submitted` or `Acknowledged`) ends every later release, acquire and
-  maintain write in the process; later releases report `Uncertain` and send
+  (`Submitted` or `Acknowledged`) stops every later release, acquire and
+  maintain write until a confirmed `00/84` read under the current read
+  admission, by a job that started after that release, shows the mode
+  (`ReadSource::driver_mode_confirmed_since`). Driver keeps the claim and
+  any other mode clears it; the next due step then acquires through the
+  normal cadence. Until then later releases report `Uncertain` and send
   nothing. The uncertain write is never replayed.
 - A release job whose caller was dropped, as by a Stop during the low-power
   release, stays registered. The next release joins it with the active work
@@ -482,8 +501,10 @@ its own 2 s. Inside the share, the gate wait and the join of active work have
 before the share does so the lane can retire it. The share also ends the
 release when the job's worker has not retired by then, and the fan handback
 joins that worker within its own time. By count, a healthy release takes
-about 0.28 s besides its three exchanges: about 22 fresh admissions at 8-9 ms
-each and three 30 ms settles. That is an estimate pending an attended timing.
+about 0.28 s besides its three exchanges, if each of its 20 cleanup
+authorizations (counted in the test rig) takes 8-9 ms, plus three 30 ms
+settles. The per-authorization cost is not measured on RZ09-0581, so that is
+an estimate pending an attended timing.
 Twice the per-exchange allowance plus those admissions is
 about 1.09 s, which does not fit; the job's measured pace refuses the setter
 instead when it cannot finish. Native accepts SERVICE_CONTROL_SHUTDOWN, not
@@ -516,30 +537,38 @@ named the target mode.
 A write port that fails to open is known not applied for every mutation job
 (`windows::mutation_worker`): the lane and owned Stop keep working.
 
-##### Low-power release and fan handback
+##### Low-power release
 
 A confirmed suspend runs managed `PrepareForLowPowerCoreAsync` as
 `ServiceSessionPowerTransitionCoordinator` does
 (`ServiceControlRuntime.cs:12993`): once per suspend generation, within
 1.5 s of the notice's QPC timestamp (`SessionPowerTransition.MaximumAgeMilliseconds`,
-`low_power_cleanup::MAXIMUM_AGE`), the keyboard release and then the owned fan
-handback, each under `CleanupScope::LowPower` for that generation. A new
-suspend generation wakes the origin tick at once (`Lifecycle::suspended`), so
-the 500 ms interval does not spend the window. A notice older than the window
-prepares nothing. A keyboard failure never skips the fans. Saved intent is
-unchanged: the next active reconciliation or request applies it.
+`low_power_cleanup::MAXIMUM_AGE`), the keyboard release under
+`CleanupScope::LowPower` for that generation. A new suspend generation wakes
+the origin tick at once (`Lifecycle::suspended`), so the 500 ms interval does
+not spend the window. A notice older than the window prepares nothing. Saved
+intent is unchanged: the next active reconciliation or request applies it.
 
-- The keyboard gets at most its shutdown share, 0.9 s, and leaves the fans at
-  least 0.6 s of the window. The fan handback joins active work and the gate
-  by the window's end, hands back only a positively established owner, and
-  runs the owner's cleanup recipe under fresh Windows AC. Battery or unknown
-  power, a refused admission, or a deadline before the job registered sends
-  nothing and keeps the owner's one cleanup attempt for Stop. A job that
-  registered and did not confirm Automatic keeps its rows, which fence every
-  later fan write until reconciled.
-- A request in flight at the boundary is refused at its next authorization,
-  because the suspend fenced its epoch. The keyboard's 150 ms entry may be
-  exhausted while it ends, and the fan handback then runs.
+- The fans are not touched. AGENTS.md rule 1 names only the keyboard's
+  Normal release at a low-power boundary, and managed restores fans there
+  only for a Battery Saver fan stop it owns (`OwnsBatterySaverFanStop`,
+  `ServiceControlRuntime.cs:13069-13087`, property at `:21049`). Native has
+  no Fan Stop yet (`openblade_domain::profile_set::policy`), so owned manual
+  fans stay as OpenBlade applied them, no reading after the resume is an
+  external change, and owned Stop still hands them back. When Fan Stop
+  lands, restore an owned Battery Saver fan stop here, after the keyboard and
+  under the same generation's cleanup admission, as managed does. Managed's
+  restore has no Windows-AC-only pre-check; do not copy the one owned Stop's
+  handback recipe needs (`fan_mutation.rs`).
+- The keyboard gets the rest of the window, at most its 0.9 s shutdown
+  share. Unlike the shutdown release's 150 ms entry, it waits on the gate and
+  the join of active work for that whole share, as managed's
+  `ReleaseDriverModeAsync` waits on its operation gate
+  (`ServiceControlRuntime.cs:13318-13327`), so a request in flight at the
+  boundary does not cost the release: the request is refused at its next
+  authorization, because the suspend fenced its epoch.
+- A lock or unlock during the release does not end it (see Cleanup
+  admission), so it neither loses the release nor leaves it in doubt.
 - In low power the 15 s step reads and writes nothing, so nothing is
   reacquired until Windows reports the system active again (a resume, or a
   DisplayOn that clears the gate); the cadence then reacquires.
@@ -547,22 +576,18 @@ unchanged: the next active reconciliation or request applies it.
   so its PBT_APMSUSPEND runs this path, not the shutdown release. Windows
   logs users off first, which the cleanup admission does not depend on.
 
-Divergence from managed: managed's low-power fan stop restores only a Battery
-Saver fan stop it owns (`OwnsBatterySaverFanStop`,
-`ServiceControlRuntime.cs:13086-13101`); it does not hand ordinary owned
-manual fans back at suspend. Native hands them back, as this slice specifies,
-under the same exact-device, controller, power and ownership admission.
-
-By count, the release takes about 0.28 s besides its three exchanges and the
-fan handback about 0.55-0.6 s with its nine exchanges, about 25 fresh
-admissions and six journal writes: about 0.9 s of the 1.5 s window when
-healthy. The SCM handler returns at once, as managed's does, so the window
-bounds staleness, not time Windows waits for; a system that sleeps first
-ends the work at its next authorization after resume. These figures are
-estimates.
+The preparation's healthy release has three exchanges and 20 cleanup
+authorizations, counted in the test rig. Each authorization reads the
+Windows AC line status and competing-controller presence; their cost on
+RZ09-0581 is not measured, so the preparation's time is unknown until an
+attended timing. For comparison, the owned fan handback recipe counted 60
+authorizations with its nine exchanges and six journal writes when it still
+ran at suspend. The SCM handler returns at once, as managed's does, so the
+window bounds staleness, not time Windows waits for; a system that sleeps
+first ends the work at its next authorization after resume.
 
 Remaining before packaging admission: an attended timing of a real release
-and handback at suspend and at shutdown on RZ09-0581, observation that Fast
+at suspend and at shutdown and of the fan handback at shutdown on RZ09-0581, observation that Fast
 Startup delivers PBT_APMSUSPEND to the native Service, the durable owned and
 uncertain record and journaled IDs of stage 6a-5, and physical validation.
 

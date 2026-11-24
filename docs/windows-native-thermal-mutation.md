@@ -85,19 +85,20 @@ power. `WindowsGuard::authorize_for` compares the pinned epoch with
 `epoch_for(WriteScope::Ordinary)` before and after its Windows checks, so
 per-write admission stays authoritative. `WriteScope::LowPowerCleanup` is
 managed's `PriorAuthorityCleanup` exception for the low-power preparation: the
-keyboard's Normal release and the owned fan Automatic handback. The gate admits
-it only while the exact suspend generation it captured is current
+keyboard's Normal release. Native has no Fan Stop, so no fan cleanup runs
+there. The gate admits it only while the exact suspend generation it captured
+is current
 (`IsActiveForGeneration`), so the next resume, DisplayOn or suspend ends it.
 Only the Service's cleanup admission captures it (`CleanupGuard`, with
 `CleanupScope::LowPower`; see Keyboard Driver mode ownership in
 [the Service guide](windows-rust-development-service.md)). Owned Stop and
 shutdown handback stay Ordinary, because managed blocks them in low power too.
-D1 decision, recorded: `epoch_for(WriteScope::LowPowerCleanup)` also pins the
-epoch, and the stricter fence is kept. Each cleanup job captures its own
-admission, so the fan handback after the keyboard release pins the epoch
-current then, but a power-status or session notice during one job, such as a
-lock, ends that job at its next authorization; it is not recaptured. Managed
-admits the cleanup on the generation and ownership only. `low_power()` returns
+D1 decision, revised: a low-power cleanup pins its suspend generation only
+(`Lifecycle::fence_for`), as managed admits it on the generation and
+ownership. The earlier epoch fence let a lock between the release setter's
+acknowledgement and its readback turn a good release into uncertainty for the
+rest of the process. Owned Stop and the shutdown handback keep the ordinary
+epoch, which every notice moves. `low_power()` returns
 the current transition for timers that ask outside a write, and `None`
 (unreadable or exhausted) means low power. Timers that need only the answer
 use `low_power_or_unknown()`, which is true for `None`. Request-driven
