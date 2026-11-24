@@ -676,6 +676,98 @@ request and reply codec through managed `McuVersionProtocol` and replay the
 managed three-read budget, with resume, through the native read source
 (`ServiceControlRuntimeTests.NativeFirmwareVersionMcuVectors`).
 
+#### Diagnostic export (read-only)
+
+A Service built with `service-diagnostics-export-v1` serves `exportDiagnostics`
+instead of replying that the operation is unsupported. The feature implies
+`service-mailbox-observation-v1` and adds the capability marker
+`service-diagnostics-export-v1`, last. Both package readers refuse the feature
+and the marker by name ("The diagnostic export is not admitted for packaging."),
+so no packaged image carries it.
+
+The archive is managed `DiagnosticArchiveProvider` and
+`DiagnosticBundleExporter` over evidence the Service already holds: the status a
+GET would answer the caller with, the diagnostic history and the host metadata.
+No firmware, device or storage read runs on the export path. Entries keep
+managed's names, order and text: `versions.json`, `device.json`,
+`device-verification.json`, `capabilities.json`, `configuration.json`,
+`command-results.json`, `service-history.json`, `firmware-queries.json`,
+`hyperboost-ownership.json` and `logs.jsonl`, UTF-8 without a BOM, indented
+with CRLF and escaped as `JavaScriptEncoder.Default` does. Redaction is
+managed's: the sensitive-token plan (longest first, ordinal and case-insensitive)
+over the same entries and members, and `DiagnosticText.Redact` with the
+Service's own profile, local data, machine and user names on every history
+value. The tokens are managed `ReadSensitiveTokens`, in its order: the
+authorized users' SIDs, accounts and profile paths, the Service user and
+machine, the profile and the program, common and local data folders with their
+`OpenBlade` subfolders, and the image directory. An archive over 16 MiB fails
+with managed's message, and the response frame has managed's 24 MiB bound.
+
+| Entry | Native source |
+| --- | --- |
+| `versions.json` | The status `serviceVersion`, the RtlGetVersion text managed `Environment.OSVersion` prints, and the status `firmware` record (live-reading builds); `Unavailable` otherwise. No fresh firmware read runs. |
+| `device.json`, `capabilities.json` | The status `firmware.modelNumber` against the contract's model catalog, and the status capabilities, as managed's status-only runtime. |
+| `configuration.json` | The status members managed prints. The `capability.rz09-0581.*` keys, `hyperBoostBase` and the fan speed ranges are `Unavailable`: no native status carries them. |
+| `command-results.json`, `service-history.json` | The bounded history below. |
+| `device-verification.json` | Managed's `NotObserved` record: native has no device verification cache. |
+| `firmware-queries.json` | `[]`: native keeps no firmware query cache. |
+| `hyperboost-ownership.json` | Managed's `Missing` record: native has no HyperBoost ownership store. |
+| `experimental-support.json` | Absent, as managed omits it without an experimental model. |
+| `logs.jsonl` | Empty: native has no `ILogger` or trace producer. |
+
+A status capability member that no native summary prints
+(`customPerformance`, `cpuPowerLimit`, `cpuVoltageOptimizer`, `gpuOverclock`,
+`hyperBoostBaseModes`, a non-empty `fanSpeedRangesByPerformancePreset` or
+`observedPowerSourceBehaviors`) fails the export instead of omitting it. No
+native composition publishes one today.
+
+The history is managed `DiagnosticHistory`: 2048 entries, 4 Mi characters and
+4096 characters a line, each value redacted, put on one line and truncated
+with `...[truncated]`, oldest first evicted and an oversized entry dropped. Like
+managed it lives only in process memory, so a restart starts empty and there is
+no file or ACL. The profile store is its one producer: each stored
+`updateProfiles` save records managed's `Service`/`Reconcile` `Stored`
+summary. Managed's reconciliation summaries have no native producer yet, and a
+composition without the profile store exports an empty history. A history
+poisoned by a panicking producer is unreadable and fails the export with
+"Diagnostic history is unavailable."
+
+Admission is managed's default control admission: SYSTEM and the console
+session's interactive caller export, and an inactive or remote interactive
+caller gets "Another Windows session currently controls OpenBlade hardware."
+A non-interactive caller closes the connection, the endpoint-wide native
+convention, where managed replies "OpenBlade accepts control requests only
+from an interactive Windows session." Native activates no user, so managed's
+activation failures and its session-changed `Blocked` result have no native
+step. The archive carries the caller's private status projection, so a caller
+that no longer controls the session when the archive is ready gets no reply.
+Any other failure is managed's "Diagnostic export failed: {message}".
+
+One export builds at a time; a second waits. Managed serializes the export
+with every finite request through its user gate; native reads only published
+status, so only exports wait. The archive is built on the blocking pool with a
+20 s bound, which managed lacks, so a stalled build cannot hold the export
+gate. A requester that disconnects, the bound and Stop (which aborts each
+connection task) cancel the build at its next check, and the build checks at
+each entry and every 64 KiB of compression.
+
+Native writes its own deflate, so its compressed bytes and the exact content
+size at which the 16 MiB bound is reached differ from managed's; entry text is
+identical. Managed truncation counts UTF-16 units and can cut a surrogate
+pair; native keeps whole characters. Native's user-path redaction matches
+letters by Unicode alphabetic class where managed uses `\p{L}`.
+
+The managed vectors in
+`tools/openblade-windows-host/tests/data/diagnostic-export-vectors.json` and
+the contract in `diagnostic-export-contract.json` pin the redaction, history
+retention and truncation, entry text for typed bundles and the refusal replies
+(`NativeDiagnosticExportVectorTests`). The native tests replay them, and the
+managed reader decodes the native responses recorded in
+`diagnostic-export-native.json` through the v85 codec and compares each entry
+with the archive the managed provider builds from the same status and history
+(`NativeDiagnosticArchive_ReadsThroughTheManagedCodecAndMatchesTheManagedProvider`).
+Set `OPENBLADE_REGENERATE_NATIVE_DIAGNOSTIC_ARCHIVES` to rerecord them.
+
 ### Phase 10n ownership binding
 
 The installed candidate's conditional firmware factory now requires a private
