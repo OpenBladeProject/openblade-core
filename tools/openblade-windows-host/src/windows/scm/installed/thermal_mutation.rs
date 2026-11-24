@@ -107,9 +107,15 @@ pub(super) use battery::BatteryUpdate;
 #[path = "fan_mutation.rs"]
 mod fan;
 pub(super) use fan::FanRequest;
+#[cfg(feature = "service-profile-triggers-v1")]
+#[path = "thermal_convergence.rs"]
+mod convergence;
 #[cfg(feature = "service-keyboard-driver-mode-v1")]
 #[path = "driver_mode_owner.rs"]
 mod keyboard;
+#[cfg(feature = "service-profile-triggers-v1")]
+#[path = "thermal_policy_mutation.rs"]
+mod policy;
 #[cfg(feature = "service-profiles-v1")]
 #[path = "profile_mutation.rs"]
 mod profiles;
@@ -850,7 +856,16 @@ impl Runtime {
             let layer = store.profile_layer(&runtime.foreground(&policy_sid, session))?;
             let profile = layer.at(query)?;
             let desired = store.desired(query, profile.as_ref())?;
-            Ok(base
+            #[cfg(feature = "service-profile-triggers-v1")]
+            let convergence = runtime.thermal_convergence(
+                &base,
+                &store,
+                &policy_sid,
+                session,
+                query,
+                profile.as_ref(),
+            )?;
+            let projected = base
                 .thermal_profiles(store.profiles()?)?
                 .thermal_intent(
                     value.as_ref(),
@@ -865,7 +880,10 @@ impl Runtime {
                     power,
                     "Saved thermal policy; firmware mode is reported independently.",
                 )
-                .bind_private_user(&policy_sid))
+                .bind_private_user(&policy_sid);
+            #[cfg(feature = "service-profile-triggers-v1")]
+            let projected = projected.with_thermal_convergence(Some(convergence));
+            Ok(projected)
         })
     }
     // Every caller, including the shared mutation tests, passes the admitted request fields individually.

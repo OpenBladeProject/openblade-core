@@ -9435,3 +9435,7 @@ mod profiles;
 #[cfg(feature = "service-profile-triggers-v1")]
 #[path = "request_triggers.rs"]
 mod request_triggers;
+
+#[cfg(feature = "service-profile-triggers-v1")]
+#[path = "thermal_policy.rs"]
+mod thermal_policy;

@@ -1016,3 +1016,7 @@ mod real;
 
 #[path = "profile_migration_tests.rs"]
 mod migration;
+
+#[cfg(feature = "service-profile-triggers-v1")]
+#[path = "profile_storage_policy_tests.rs"]
+mod policy;

@@ -337,6 +337,13 @@ impl Tracker {
         }
     }
 
+    /// Whether a reading confirmed manual fans as OpenBlade's own and no
+    /// fan change outside OpenBlade has been seen since: the tracker's part
+    /// of managed `IsExactFanIntentOwned` (`Runtime::owns_exact_fans`).
+    pub(super) fn owns_manual_fans(&self) -> bool {
+        self.own.manual == Some(true) && !self.fans
+    }
+
     /// The changed subsystems as managed publishes `ExternalChanges`: sorted
     /// by `DeviceSubsystem`.
     pub(super) fn external(&self) -> Vec<i32> {
@@ -1119,5 +1126,29 @@ mod tests {
         assert_eq!(tracker.hold.unwrap().expires, start + RESUME_WINDOW);
         tracker.settle(O::BalancedAutomatic, start + RESUME_WINDOW);
         assert_eq!(tracker.external(), [PERFORMANCE]);
+    }
+
+    #[test]
+    fn only_confirmed_own_manual_fans_with_no_change_since_are_owned() {
+        let mut tracker = Tracker::default();
+        assert!(!tracker.owns_manual_fans());
+        // A reading alone is not OpenBlade's own.
+        tracker.observe(O::PerformanceManual);
+        assert!(!tracker.owns_manual_fans());
+        tracker.own_fans_read(O::PerformanceManual);
+        assert!(tracker.owns_manual_fans());
+        // A performance change keeps the fans; a fan change ends them.
+        tracker.observe(O::SilentManual);
+        assert!(tracker.owns_manual_fans());
+        tracker.observe(O::SilentAutomatic);
+        assert!(!tracker.owns_manual_fans());
+        // Back to manual outside OpenBlade is still not its own.
+        tracker.observe(O::SilentManual);
+        assert!(!tracker.owns_manual_fans());
+        // Own Automatic fans are not manual ownership.
+        tracker.own_fans(false);
+        assert!(!tracker.owns_manual_fans());
+        tracker.own_fans(true);
+        assert!(tracker.owns_manual_fans());
     }
 }

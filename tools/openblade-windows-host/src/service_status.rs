@@ -9,6 +9,9 @@ pub(crate) use fan_request::FanOverride;
 #[path = "service_status/profiles.rs"]
 mod profiles;
 pub(crate) use profiles::ProfilesBody;
+#[path = "service_status/thermal_convergence.rs"]
+pub(crate) mod thermal_convergence;
+use thermal_convergence::ThermalConvergence;
 
 use openblade_windows_host::json_object::{self, nullable_object, object};
 use serde::{Deserialize, Serialize};
@@ -85,6 +88,17 @@ pub(crate) enum StatusRequest {
         // Bound from the frame bytes by `decode`, not by serde.
         profiles: ProfilesBody,
     },
+    /// Managed `SetThermalControlPolicyRequest`; `policy` is the managed
+    /// `ThermalControlPolicy` value, which the codec requires to be defined.
+    SetThermalControlPolicy {
+        version: i32,
+        request_id: String,
+        policy: i32,
+    },
+    AcknowledgeThermalPolicyUpgradeDisclosure {
+        version: i32,
+        request_id: String,
+    },
     GetStatus {
         version: i32,
         request_id: String,
@@ -159,7 +173,7 @@ impl StatusRequest {
     /// The discriminator of every variant. `operation` maps each variant to
     /// its entry, so a new variant cannot be added without listing it here.
     #[cfg(feature = "installed-service-candidate")]
-    pub(crate) const OPERATIONS: [&'static str; 10] = [
+    pub(crate) const OPERATIONS: [&'static str; 12] = [
         "setBatteryPolicy",
         "setBatteryProtection",
         "setFullChargeOverride",
@@ -170,6 +184,8 @@ impl StatusRequest {
         "subscribeStatus",
         "observeState",
         "updateProfiles",
+        "setThermalControlPolicy",
+        "acknowledgeThermalPolicyUpgradeDisclosure",
     ];
 
     #[cfg(all(test, feature = "installed-service-candidate"))]
@@ -185,6 +201,8 @@ impl StatusRequest {
             Self::SubscribeStatus { .. } => 7,
             Self::ObserveState { .. } => 8,
             Self::UpdateProfiles { .. } => 9,
+            Self::SetThermalControlPolicy { .. } => 10,
+            Self::AcknowledgeThermalPolicyUpgradeDisclosure { .. } => 11,
         }]
     }
 
@@ -198,8 +216,10 @@ impl StatusRequest {
         const FAN: bool = cfg!(feature = "service-fan-mutation-v2");
         const BATTERY: bool = cfg!(feature = "service-battery-policy-v1");
         const PROFILES: bool = cfg!(feature = "service-profiles-v1");
-        const COMPILED: [bool; 10] = [
-            BATTERY, BATTERY, BATTERY, FAN, THERMAL, THERMAL, true, true, true, PROFILES,
+        const POLICY: bool = cfg!(feature = "service-profile-triggers-v1");
+        const COMPILED: [bool; 12] = [
+            BATTERY, BATTERY, BATTERY, FAN, THERMAL, THERMAL, true, true, true, PROFILES, POLICY,
+            POLICY,
         ];
         Self::OPERATIONS
             .iter()
@@ -340,8 +360,17 @@ impl StatusRequest {
                 version,
                 request_id,
                 ..
+            }
+            | Self::SetThermalControlPolicy {
+                version,
+                request_id,
+                ..
             } => (*version, request_id),
-            Self::GetStatus {
+            Self::AcknowledgeThermalPolicyUpgradeDisclosure {
+                version,
+                request_id,
+            }
+            | Self::GetStatus {
                 version,
                 request_id,
             }
@@ -390,6 +419,23 @@ impl StatusRequest {
         }
         if matches!(self, Self::UpdateProfiles { .. }) && !cfg!(feature = "service-profiles-v1") {
             return Err(invalid("signed profile composition is unavailable"));
+        }
+        if matches!(
+            self,
+            Self::SetThermalControlPolicy { .. }
+                | Self::AcknowledgeThermalPolicyUpgradeDisclosure { .. }
+        ) && !cfg!(feature = "service-profile-triggers-v1")
+        {
+            return Err(invalid("signed thermal policy composition is unavailable"));
+        }
+        // Managed `IpcMessageCodec`: `Enum.IsDefined(set.Policy)`.
+        if let Self::SetThermalControlPolicy { policy, .. } = self
+            && !matches!(
+                *policy,
+                thermal_convergence::MAINTAIN | thermal_convergence::STRICT
+            )
+        {
+            return Err(invalid("thermal control policy is undefined"));
         }
         if let Self::SetPerformanceOverride {
             value: Some(value), ..
@@ -790,6 +836,18 @@ pub(crate) struct ConfirmedPerformance {
     pub(crate) active_power_source: i32,
 }
 
+/// `Snapshot::confirmed_thermal`: managed `ConfirmedDeviceState`'s thermal
+/// members as wire values, `None` when unknown. Custom levels are the CPU
+/// and GPU wire values.
+#[cfg(feature = "service-profile-triggers-v1")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct ConfirmedThermal {
+    pub(crate) performance: Option<i32>,
+    pub(crate) fans: Option<i32>,
+    pub(crate) custom: Option<(u8, u8)>,
+    pub(crate) hyper_boost: Option<bool>,
+}
+
 impl Snapshot {
     #[cfg(feature = "installed-service-candidate")]
     pub(crate) fn revision(&self) -> i64 {
@@ -1136,6 +1194,65 @@ impl Snapshot {
         self.external_changes = changes;
         self
     }
+    /// Managed `ThermalConvergence`, which only the active client sees
+    /// (`ControlRequestHandler`): set for an active status, removed otherwise.
+    #[cfg(feature = "service-profile-triggers-v1")]
+    pub(crate) fn with_thermal_convergence(mut self, value: Option<ThermalConvergence>) -> Self {
+        match value.filter(|_| self.control_access == 0) {
+            Some(value) => {
+                self.feature_fields.insert(
+                    "thermalConvergence".into(),
+                    serde_json::to_value(value).expect("a plain record serializes"),
+                );
+            }
+            None => {
+                self.feature_fields.remove("thermalConvergence");
+            }
+        }
+        self
+    }
+    /// The published `thermalConvergence`, when it is a well-formed record.
+    #[cfg(all(test, feature = "service-profile-triggers-v1"))]
+    pub(crate) fn thermal_convergence(&self) -> Option<ThermalConvergence> {
+        ThermalConvergence::decode(self.feature_fields.get("thermalConvergence"))
+            .ok()
+            .flatten()
+    }
+    /// Possible competing controllers this status names, which managed
+    /// `FanControllerAdmissionUnsafe` treats as present.
+    #[cfg(feature = "service-profile-triggers-v1")]
+    pub(crate) fn names_potential_controllers(&self) -> bool {
+        !self.potential_controllers.is_empty()
+    }
+    /// The confirmed thermal members managed `ThermalConvergenceClassifier`
+    /// reads: performance, fans, Custom levels and HyperBoost. A missing,
+    /// null or mistyped member is unknown.
+    #[cfg(feature = "service-profile-triggers-v1")]
+    pub(crate) fn confirmed_thermal(&self) -> ConfirmedThermal {
+        let state = self.confirmed_state.as_ref();
+        let int = |member: &str| {
+            state
+                .and_then(|state| state.get(member))
+                .and_then(Value::as_i64)
+                .and_then(|value| i32::try_from(value).ok())
+        };
+        let level = |custom: &Value, member: &str| {
+            custom
+                .get(member)
+                .and_then(Value::as_u64)
+                .and_then(|value| u8::try_from(value).ok())
+        };
+        ConfirmedThermal {
+            performance: int("performance"),
+            fans: int("fans"),
+            custom: state
+                .and_then(|state| state.get("customPerformance"))
+                .and_then(|custom| Some((level(custom, "cpu")?, level(custom, "gpu")?))),
+            hyper_boost: state
+                .and_then(|state| state.get("hyperBoostActive"))
+                .and_then(Value::as_bool),
+        }
+    }
     pub(crate) fn has_fresh_mailbox_read(&self) -> bool {
         self.read_confirmation
             .as_ref()
@@ -1347,6 +1464,7 @@ impl Snapshot {
         {
             return Err(invalid("invalid v85 status snapshot"));
         }
+        ThermalConvergence::decode(self.feature_fields.get("thermalConvergence"))?;
         Ok(())
     }
 }
@@ -1629,6 +1747,9 @@ impl Snapshot {
         result.performance_override = None;
         result.fan_override = None;
         result.feature_fields.remove("fanControlOverride");
+        // The saved policy is the user's, as managed reports it only to the
+        // active client.
+        result.feature_fields.remove("thermalConvergence");
         result.lighting_override = None;
         result.full_charge_override = false;
         result.writes_blocked = true;
@@ -1757,10 +1878,10 @@ impl Snapshot {
         result.performance_override = self.performance_override.clone();
         result.fan_override = self.fan_override.clone();
         result.desired_state.fans = self.desired_state.fans.clone();
-        if let Some(v) = self.feature_fields.get("fanControlOverride") {
-            result
-                .feature_fields
-                .insert("fanControlOverride".into(), v.clone());
+        for member in ["fanControlOverride", "thermalConvergence"] {
+            if let Some(v) = self.feature_fields.get(member) {
+                result.feature_fields.insert(member.into(), v.clone());
+            }
         }
         if let Some(v) = self.desired_state.feature_fields.get("fanControl") {
             result

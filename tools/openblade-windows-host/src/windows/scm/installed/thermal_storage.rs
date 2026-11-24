@@ -37,6 +37,8 @@ pub(super) use battery::TemporaryTaken;
 mod profiles;
 #[cfg(feature = "service-profiles-v1")]
 pub(super) use profiles::ProfileSave;
+#[cfg(feature = "service-profile-triggers-v1")]
+pub(super) use profiles::{PolicyChange, PolicySave, SavedPolicy};
 
 pub(super) const RELEASE_PAUSED: &str = "Temporary charge journal release is deferred.";
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
