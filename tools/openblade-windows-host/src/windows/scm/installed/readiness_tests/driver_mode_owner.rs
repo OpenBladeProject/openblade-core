@@ -2039,7 +2039,11 @@ async fn each_release_fatal_backstop_holds_on_its_own() {
     let rig = fan_owner_rig().await;
     rig.origin.stop();
     rig.port.state.lock().unwrap().mutation_worker_error = Some(fatal());
-    let error = rig.runtime.stop_fans(&mailbox(&rig)).await.unwrap_err();
+    let error = rig
+        .runtime
+        .stop_fans(&mailbox(&rig), Instant::now() + Duration::from_secs(3))
+        .await
+        .unwrap_err();
     assert!(
         crate::installed::readiness::thermal_mutation::is_fatal_admission(&error),
         "{error}"

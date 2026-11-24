@@ -1745,7 +1745,15 @@ impl Runtime {
             Ok(())
         }
     }
-    pub(in super::super) async fn stop_fans(&self, mailbox: &MailboxSource) -> io::Result<()> {
+    /// Owned Stop's fan handback, paced to `deadline`: what is left of the
+    /// source drain, whose timeout would otherwise cancel a handback that
+    /// has written its 31 (`StatusSource::drain_by`). Each cleanup job also
+    /// keeps its own 3 s observation bound (`MAX_OBSERVATION`).
+    pub(in super::super) async fn stop_fans(
+        &self,
+        mailbox: &MailboxSource,
+        deadline: Instant,
+    ) -> io::Result<()> {
         let _serial = self.gate.lock().await;
         let MailboxSource::Reader(reader) = mailbox else {
             return Ok(());
@@ -1775,7 +1783,7 @@ impl Runtime {
                 "Owned Stop cleanup was already attempted; reserved IDs will not be reused.",
             ));
         }
-        let result = self.run_owned_stop(reader, &permit).await;
+        let result = self.run_owned_stop(reader, &permit, deadline).await;
         if !matches!(permit.storage.progress(), Some(50 | 51)) || result?.is_none() {
             return Err(io::Error::other(
                 "Automatic fan handback was not independently confirmed; evidence is retained.",
@@ -1807,8 +1815,8 @@ impl Runtime {
         &self,
         reader: &super::super::mailbox_read::ReadSource,
         permit: &Arc<FanPermit>,
+        deadline: Instant,
     ) -> io::Result<Option<ObservedPerformance>> {
-        let deadline = Instant::now() + std::time::Duration::from_secs(3);
         let ran = |result: &io::Result<_>| {
             permit.cleanup_registered.load(Ordering::Acquire)
                 || result.as_ref().is_err_and(is_fatal_admission)

@@ -5071,6 +5071,67 @@ async fn fan_v2_owned_stop_cleanup_after_one_stall_hands_fans_back() {
     assert_eq!(rows.last().unwrap()["progress"], 50, "{rows:?}");
 }
 
+/// Owned Stop's fan handback is paced to what is left of the source drain
+/// (`StatusSource::drain_by`), not only to its job's own 3 s. At 100 ms per
+/// exchange (35 ms each way and the 30 ms settle) it needs about 1.5 s: with
+/// 4 s of drain left it completes inside its job's 3 s, but with 1 s left it
+/// writes no row and sends no setter, where the job's 3 s alone would have
+/// let the drain's timeout cancel it after its 31. The job's 3 s are counted
+/// from before its worker starts, so the 1.5 s leaves room for a slow host.
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn fan_v2_owned_stop_cleanup_is_paced_to_the_drain() {
+    for (window, handed_back) in [(1000, false), (4000, true)] {
+        let r = fan_rig(0, 0);
+        r.get().await;
+        let applied = r.request(fan_request(143, Some(1), 3700)).await;
+        assert_eq!(applied["result"]["status"], 1, "{applied}");
+        let rows = fan_rows(&r).len();
+        r.origin.stop();
+        r.port.state.lock().unwrap().latency = Some(Duration::from_millis(35));
+        let sent = r.port.state.lock().unwrap().sent.len();
+        let deadline = Instant::now() + Duration::from_millis(window);
+        let stopped = r.source.lock().await.drain_by(deadline).await;
+        assert_eq!(stopped.is_ok(), handed_back, "{window}");
+        let state = r.port.state.lock().unwrap();
+        let setters = state.sent[sent..]
+            .iter()
+            .filter(|(class, command, ..)| *class == 13 && *command & 0x80 == 0)
+            .count();
+        assert_eq!(setters > 0, handed_back, "{window}");
+        assert_eq!(state.fans, if handed_back { [0, 0] } else { [1, 1] });
+        drop(state);
+        let after = fan_rows(&r);
+        if handed_back {
+            assert_eq!(after.last().unwrap()["progress"], 50, "{after:?}");
+        } else {
+            assert_eq!(after.len(), rows, "{after:?}");
+        }
+    }
+}
+
+/// The fan handback gets the fans' share of the source drain's own bound
+/// (`SOURCE_DRAIN_TIMEOUT`, 2 s without the keyboard owner): at 150 ms per
+/// exchange the handback needs about 2.25 s, which the job's own 3 s would
+/// admit, so a plain drain refuses it with no row and no setter.
+#[cfg(all(
+    feature = "service-fan-mutation-v2",
+    not(feature = "service-keyboard-driver-mode-v1")
+))]
+#[tokio::test]
+async fn fan_v2_owned_stop_cleanup_gets_the_drain_bound() {
+    let r = fan_rig(0, 0);
+    r.get().await;
+    let applied = r.request(fan_request(144, Some(1), 3700)).await;
+    assert_eq!(applied["result"]["status"], 1, "{applied}");
+    let rows = fan_rows(&r).len();
+    r.origin.stop();
+    r.port.state.lock().unwrap().latency = Some(Duration::from_millis(60));
+    assert!(r.source.lock().await.drain().await.is_err());
+    assert_eq!(r.port.state.lock().unwrap().fans, [1, 1]);
+    assert_eq!(fan_rows(&r).len(), rows);
+}
+
 #[cfg(feature = "service-fan-mutation-v2")]
 #[tokio::test]
 async fn fan_v2_actual_read_stop_race_retains_only_expected_cleanup_custody() {

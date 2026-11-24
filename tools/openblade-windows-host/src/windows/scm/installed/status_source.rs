@@ -941,6 +941,10 @@ impl StatusSource for GuardedStatus {
         })
     }
     fn drain(&mut self) -> Pending<'_, ()> {
+        self.drain_by(Instant::now() + super::SOURCE_DRAIN_TIMEOUT)
+    }
+    #[cfg_attr(not(feature = "service-thermal-mutation-v1"), allow(unused_variables))]
+    fn drain_by(&mut self, deadline: Instant) -> Pending<'_, ()> {
         // Cleanup remains possible after revocation; retained origin and package
         // guards outlive listener/worker drain. It grants no firmware authority.
         Box::pin(async move {
@@ -952,7 +956,8 @@ impl StatusSource for GuardedStatus {
                 // then the fan handback. The keyboard's outcome is a diagnostic
                 // (`Runtime::driver_mode_release`): only fatal admission
                 // evidence fails the Stop, and nothing it does skips the fan
-                // step. The first error is kept.
+                // step. The first error is kept. The fan handback is paced to
+                // what is left of the drain (`deadline`), whose end cancels it.
                 #[cfg(feature = "service-keyboard-driver-mode-v1")]
                 {
                     let keyboard = if self.origin.admit_owned_stop().is_ok() {
@@ -966,7 +971,7 @@ impl StatusSource for GuardedStatus {
                     }
                 }
                 let fans = if self.origin.admit_owned_stop().is_ok() {
-                    runtime.stop_fans(&self.mailbox).await
+                    runtime.stop_fans(&self.mailbox, deadline).await
                 } else {
                     runtime.refuse_stop_fans()
                 };

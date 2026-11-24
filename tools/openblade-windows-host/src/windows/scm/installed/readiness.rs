@@ -235,6 +235,11 @@ trait StatusSource {
         Rc::new(|| Ok(()))
     }
     fn drain(&mut self) -> Pending<'_, ()>;
+    /// `drain` under `deadline`, the bound `Ports::retire` puts on it, so
+    /// work that must end inside the drain can pace itself to the time left.
+    fn drain_by(&mut self, _deadline: Instant) -> Pending<'_, ()> {
+        self.drain()
+    }
 }
 
 struct Ports {
@@ -461,8 +466,9 @@ impl Ports {
         // listener ownership or retirement cannot be confirmed.
         let owned = self.endpoint.listener().and_then(Listener::verify);
         let listener = timeout(DRAIN_TIMEOUT, self.endpoint.retire()).await;
-        let runtime = timeout(SOURCE_DRAIN_TIMEOUT, async {
-            self.source.lock().await.drain().await
+        let deadline = Instant::now() + SOURCE_DRAIN_TIMEOUT;
+        let runtime = timeout_at(deadline, async {
+            self.source.lock().await.drain_by(deadline).await
         })
         .await;
         owned.and(listener?).and(runtime?)?;
