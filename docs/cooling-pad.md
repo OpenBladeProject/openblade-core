@@ -106,7 +106,9 @@ never resends the change. OpenBlade retains a write-ahead recovery
 record across service restarts; it does not replay the last demand or erase an
 unresolved operation. User changes restore the original protected baseline
 before binding the new user; unresolved restoration remains visible.
-Power/session transitions revoke queued writes. This
+Power/session transitions revoke queued writes. A power transition is a Windows
+AC/battery notification; every write also checks the current Windows power source.
+The laptop's periodic adapter classification does not revoke pad writes. This
 implementation has simulated validation; new physical acceptance is separate.
 
 ## Source review
