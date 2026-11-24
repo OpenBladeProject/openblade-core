@@ -723,8 +723,55 @@ marker by name. A build without the feature still refuses the request with
     and no native reader, and the source-reviewed models have no managed MCU
     read, so their version stays `Unavailable`. The read has not been
     compared with the managed Service on the device.
-- **Temperatures.** Both stay null. The CPU temperature worker below is
-  unchanged, and the Service has no GPU temperature source.
+- **Temperatures.** The CPU temperature stays null; the CPU temperature
+  worker below is unchanged. The GPU temperature is managed's live-readings
+  read (`ReadOptionalLiveSensorsAsync`, then
+  `SafeWindowsFanTemperatureSource.ReadAsync` with idle sampling off): the
+  same user-mode `nvml.dll` behind the same two Windows reads, neither of
+  which opens a GPU device or calls an NVIDIA API.
+  - The workload: the NVIDIA adapter's WDDM
+    `\GPU Engine(*)\Utilization Percentage` counters, opened fresh, primed and
+    read again 150 ms later (`WindowsGpuActivitySource`). A process other than
+    System (PID 4) above 0.1 % is a workload; unavailable counters are none.
+    The counter query is the platform crate's
+    `gpu_apps::NvidiaActivityQuery`, over the GPU-app sampler's reviewed PDH
+    and DXGI reads.
+  - The D-state: SetupAPI `SPDRP_DEVICE_POWER_DATA` of the one present
+    display-class `PCI\VEN_10DE&` device (`WindowsNvidiaGpuPowerState`). None,
+    several, a failed step or a property that is not a complete
+    `CM_POWER_DATA` is unknown.
+
+  NVML is loaded, started and read only for a workload on a D0 adapter, and a
+  D-state other than D0 read right after the read discards the value. The
+  session (`nvmlInit_v2` to `nvmlShutdown`) stays open across consecutive
+  valid samples of an active D0 GPU and at most 5 s after the last one; an
+  idle, powered-down, unknown or failed sample, a sample cancelled after its
+  workload read and Stop end it. A missing driver, adapter or library, a
+  failed call and a value outside 10..=125 C are null, as in managed. A value
+  above the codec's 115 C bound is null where managed would refuse the reply.
+  `nvml.dll` is loaded with `LOAD_LIBRARY_SEARCH_SYSTEM32`, so neither the
+  search path nor the current directory is searched for it or its
+  dependencies, and it stays loaded for the process. Like managed's
+  `[DllImport]`, the load checks no signature.
+
+  The sample runs on its own worker thread, started by the first request,
+  never on the read job. It starts beside the job, and the observation waits
+  for it only until 500 ms before its deadline, after the job's reading and
+  before the admission check; a sample whose reading is not accepted is
+  dropped. One request may wait behind a running sample and any other gets
+  none; a waiting request whose observation went is skipped. Stop does not
+  wait: a call in progress ends the session when it returns, and the worker
+  exits. Managed reads the GPU only after a successful device read; native
+  samples before the job ends, so a job that then fails may still have read
+  an active D0 GPU and renewed its session for up to 5 s. It never starts
+  NVML for an idle, powered-down or unknown GPU.
+  `gpu-temperature-vectors.json` pins the activity decision, the power
+  classification, the sampler's gate, session use and lease step by step,
+  and the codec bound against managed
+  (`ServiceControlRuntimeTests.NativeGpuTemperatureVectors`). The image
+  imports `pdh.dll` and `dxgi.dll`, which the package import allowlist does
+  not admit; the live-readings image stays refused by its marker. The read
+  has not been compared with the managed Service on the device.
 
 Live readings appear only in the ObserveState reply, never in the subscription
 feed, as managed does not push a change of live readings alone. A request for no
@@ -748,7 +795,7 @@ state names no model, so the record is bound to its one producer, the exact
 RZ09-0581 performance Reader: `capability_tests` pins that Reader's identity
 to the record's and fails when another source file publishes an observation.
 
-Still unavailable natively: GPU temperature and a reply
+Still unavailable natively: a reply
 for Custom High/High with Automatic fans, which the thermal read does not
 confirm, so that ObserveState has no fresh read and no live readings. A failed
 thermal read refuses the whole ObserveState, where managed still publishes the
