@@ -49,6 +49,8 @@ internal sealed class CoolingPadControlRuntime(
     // Consecutive comparison reads that may fail before the failure stops control.
     internal const int OutsideReadFailureLimit = 3;
     private int outsideReadFailures;
+    // Set when the session used for the last confirmed write was replaced during control.
+    private bool connectionLost;
     // Restoring a change made elsewhere is bounded so OpenBlade never fights another controller.
     internal const int OutsideRestorationLimit = 3;
     internal static readonly TimeSpan OutsideRestorationWindow = TimeSpan.FromMinutes(10);
@@ -254,6 +256,7 @@ internal sealed class CoolingPadControlRuntime(
             controlled = status.Active ? applied : null;
             nextOutsideCheck = clock.GetUtcNow() + OutsideChangeCheckInterval;
             outsideReadFailures = 0;
+            connectionLost = false;
             nextCurveRead = clock.GetUtcNow().AddSeconds(1);
             mirroredSequence = -1;
             return Result(fan || lighting ? ControlOperationStatus.Applied : ControlOperationStatus.Stored);
@@ -375,15 +378,30 @@ internal sealed class CoolingPadControlRuntime(
             if (controlled is { } expected && (fanTarget is not null || clock.GetUtcNow() >= nextOutsideCheck))
             {
                 nextOutsideCheck = clock.GetUtcNow() + OutsideChangeCheckInterval;
+                if (connectionLost || device is { Usable: false })
+                {
+                    await RecoverLostConnectionAsync(expected, settings, restoreOutsideChanges, restoreOutsideLighting,
+                        admission, token).ConfigureAwait(false);
+                    return;
+                }
                 CoolingPadDeviceSnapshot current;
                 try { current = FreezeSnapshot(await ReadDeviceAsync(token).ConfigureAwait(false)); }
-                catch (Exception exception) when (exception is TimeoutException
+                catch (Exception exception) when ((exception is TimeoutException
                     or IOException and not CoolingPadOperationException
+                    // The session retired itself without a submission; the next check reconnects.
+                    || exception is CoolingPadOperationException { SubmissionUnknown: false } && device is { Usable: false })
                     && ++outsideReadFailures < OutsideReadFailureLimit)
                 {
                     // A transient read failure is not a change and submitted nothing. Keep control
                     // and defer this tick's write; repeated failures or a refusal stop control.
                     DiagnosticTrace.TraceException(nameof(CoolingPadControlRuntime), nameof(MaintainAsync), exception);
+                    return;
+                }
+                if (connectionLost)
+                {
+                    // The read reopened the session, so it cannot be compared with the old one's.
+                    await RecoverLostConnectionAsync(expected, settings, restoreOutsideChanges, restoreOutsideLighting,
+                        admission, token).ConfigureAwait(false);
                     return;
                 }
                 outsideReadFailures = 0;
@@ -412,7 +430,8 @@ internal sealed class CoolingPadControlRuntime(
                     { controlled = controlled with { FanConfiguration = record with { ConfiguredRpm = demand } }; }
                 }
             }
-            if (settings.LightingMode == CoolingPadLightingMode.KeyboardMirror
+            // A lost session waits for the next check to reconnect and reapply.
+            if (settings.LightingMode == CoolingPadLightingMode.KeyboardMirror && !connectionLost && device is { Usable: true }
                 && KeyboardLightingFrameStream.Latest is { } frame && frame.Sequence != mirroredSequence)
             {
                 submitted = true;
@@ -472,6 +491,62 @@ internal sealed class CoolingPadControlRuntime(
             ? "Another app keeps changing the cooling pad. OpenBlade stopped controlling it."
             : "Cooling pad settings changed outside OpenBlade. OpenBlade stopped controlling it.",
             admission, token).ConfigureAwait(false);
+    }
+
+    // Runs under the serial gate from maintenance after the session used for the last confirmed
+    // write retired itself. A new session cannot tell which fan owner or effect record the old one
+    // confirmed, so the fan record and the showing effect cannot be compared. Restore them applies
+    // the saved settings again within the restore allowance; Notify me stops control.
+    private async Task RecoverLostConnectionAsync(CoolingPadDeviceSnapshot expected, CoolingPadSettings settings,
+        bool restore, bool restoreLighting, Func<bool> admission, CancellationToken token)
+    {
+        connectionLost = true;
+        if (device is { Usable: false }) { await CloseDeviceAsync(token).ConfigureAwait(false); }
+        DateTimeOffset now = clock.GetUtcNow();
+        while (outsideRestorations.Count != 0 && now - outsideRestorations.Peek() >= OutsideRestorationWindow)
+        { outsideRestorations.Dequeue(); }
+        if (!restore || outsideRestorations.Count >= OutsideRestorationLimit)
+        {
+            await CloseDeviceAsync(token).ConfigureAwait(false);
+            Fail(new IOException(restore
+                ? "The connection to the cooling pad keeps failing. OpenBlade stopped controlling it."
+                : "The connection to the cooling pad was lost. OpenBlade stopped controlling it; apply settings again to continue."), false);
+            return;
+        }
+        device ??= await provider.OpenAsync(token).ConfigureAwait(false);
+        if (device is null)
+        {
+            // Native retirement of the old session can hold the pad briefly; try at the next check.
+            if (++outsideReadFailures < OutsideReadFailureLimit) { return; }
+            Fail(new IOException("The cooling pad connection could not be reopened. OpenBlade stopped controlling it."), false);
+            return;
+        }
+        if (settings.LightingMode != CoolingPadLightingMode.Keep && !restoreLighting)
+        {
+            // The stored effect, brightness and device mode read the same through any session.
+            // Without the lighting opt-in, a change there releases control instead of being rewritten.
+            CoolingPadDeviceSnapshot current = FreezeSnapshot(await ReadDeviceAsync(token).ConfigureAwait(false));
+            if (!SameEffect(expected.LightingConfiguration, current.LightingConfiguration)
+                || expected.BrightnessRaw != current.BrightnessRaw || expected.DeviceMode != current.DeviceMode)
+            {
+                await HandleOutsideChangeAsync(current, false, true, false, admission, token).ConfigureAwait(false);
+                return;
+            }
+        }
+        ControlOperationResult result = await ApplyCoreAsync(status.Requested, admission, token, authority).ConfigureAwait(false);
+        if (result.Status == ControlOperationStatus.Applied)
+        {
+            outsideRestorations.Enqueue(now);
+            UpdateStatus(previous => previous with { Message = "The cooling pad connection was reopened and its settings were applied again." });
+        }
+        // A curve waiting for a temperature reading submitted nothing; try again at the next check.
+        else if (status.Active && status.Message == TemperatureUnavailableException.Text) { }
+        else if (status.Active)
+        {
+            // A refused reapply would otherwise repeat at every check.
+            Revoke();
+            UpdateStatus(previous => previous with { Message = "The cooling pad connection was reopened, but its settings could not be applied again. OpenBlade stopped controlling it." });
+        }
     }
 
     // Release control without overwriting the change: restore the original settings only for
@@ -663,6 +738,13 @@ internal sealed class CoolingPadControlRuntime(
 
     private async Task<CoolingPadDeviceSnapshot> ReadDeviceAsync(CancellationToken token)
     {
+        if (device is { Usable: false })
+        {
+            // A timed-out exchange retires the session, and its later commands fail as Disposed
+            // without reaching the pad. Reads, Apply and Release open a fresh exact-device session.
+            connectionLost |= controlled is not null && status.Active;
+            await CloseDeviceAsync(token).ConfigureAwait(false);
+        }
         device ??= await provider.OpenAsync(token).ConfigureAwait(false);
         if (device is null)
         {

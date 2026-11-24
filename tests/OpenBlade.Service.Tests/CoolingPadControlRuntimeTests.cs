@@ -1112,6 +1112,131 @@ public sealed class CoolingPadControlRuntimeTests
     }
 
     [Fact]
+    public async Task RestoreThemReopensARetiredSessionAndAppliesTheSettingsAgainWithinTheAllowance()
+    {
+        var clock = new Clock();
+        var provider = new Provider { Connection = CoolingPadConnectionState.PresentExact };
+        var runtime = new CoolingPadControlRuntime(provider, new CoolingPadStateStore(), new Temperatures(), clock);
+        await runtime.SetUserAsync("owner", default);
+        Assert.Equal(ControlOperationStatus.Applied, (await runtime.ApplyAsync(Fixed, () => true, default)).Status);
+        int opens = provider.Opens;
+
+        for (int reconnect = 1; reconnect <= CoolingPadControlRuntime.OutsideRestorationLimit; reconnect++)
+        {
+            // A timed-out exchange retired the session; its commands now fail without reaching the pad.
+            provider.Pad.Unusable = true;
+            clock.Now += CoolingPadControlRuntime.OutsideChangeCheckInterval;
+            await runtime.MaintainAsync(() => true, default, restoreOutsideChanges: true);
+            Assert.True(runtime.Status.Active);
+            Assert.False(runtime.Status.RecoveryRequired);
+            Assert.Equal("The cooling pad connection was reopened and its settings were applied again.", runtime.Status.Message);
+            Assert.Equal(reconnect + 1, provider.Pad.Writes.Count);
+            Assert.Equal(opens + reconnect, provider.Opens);
+            Assert.Equal(reconnect, provider.Pad.DisposeCalls);
+
+            // The next check compares through the new session and finds nothing changed.
+            clock.Now += CoolingPadControlRuntime.OutsideChangeCheckInterval;
+            await runtime.MaintainAsync(() => true, default, restoreOutsideChanges: true);
+            Assert.True(runtime.Status.Active);
+            Assert.Equal(reconnect + 1, provider.Pad.Writes.Count);
+        }
+
+        // A connection that keeps failing stops control instead of writing again.
+        provider.Pad.Unusable = true;
+        clock.Now += CoolingPadControlRuntime.OutsideChangeCheckInterval;
+        await runtime.MaintainAsync(() => true, default, restoreOutsideChanges: true);
+        Assert.False(runtime.Status.Active);
+        Assert.Equal("The connection to the cooling pad keeps failing. OpenBlade stopped controlling it.", runtime.Status.Message);
+        Assert.Equal(CoolingPadControlRuntime.OutsideRestorationLimit + 1, provider.Pad.Writes.Count);
+
+        // Apply opens a fresh session instead of reusing the retired one.
+        Assert.Equal(ControlOperationStatus.Applied, (await runtime.ApplyAsync(Fixed, () => true, default)).Status);
+        Assert.True(runtime.Status.Active);
+    }
+
+    [Fact]
+    public async Task NotifyMeStopsControlWhenTheSessionRetiresAndApplyOrReadReopensIt()
+    {
+        var clock = new Clock();
+        var provider = new Provider { Connection = CoolingPadConnectionState.PresentExact };
+        var runtime = new CoolingPadControlRuntime(provider, new CoolingPadStateStore(), new Temperatures(), clock);
+        await runtime.SetUserAsync("owner", default);
+        Assert.Equal(ControlOperationStatus.Applied, (await runtime.ApplyAsync(Fixed, () => true, default)).Status);
+
+        provider.Pad.Unusable = true;
+        clock.Now += CoolingPadControlRuntime.OutsideChangeCheckInterval;
+        await runtime.MaintainAsync(() => true, default, restoreOutsideChanges: false);
+        Assert.False(runtime.Status.Active);
+        Assert.Single(provider.Pad.Writes);
+        Assert.Equal("The connection to the cooling pad was lost. OpenBlade stopped controlling it; apply settings again to continue.",
+            runtime.Status.Message);
+
+        // A read and an Apply each work through a fresh session.
+        provider.Pad.Unusable = true;
+        Assert.Equal(ControlOperationStatus.Stored, (await runtime.ReadAsync(default)).Status);
+        provider.Pad.Unusable = true;
+        Assert.Equal(ControlOperationStatus.Applied, (await runtime.ApplyAsync(Fixed, () => true, default)).Status);
+        Assert.True(runtime.Status.Active);
+        Assert.Equal(2, provider.Pad.Writes.Count);
+    }
+
+    [Fact]
+    public async Task ReconnectWithoutTheLightingOptInRewritesOnlyUnchangedLighting()
+    {
+        var both = Fixed with { LightingMode = CoolingPadLightingMode.Static, BrightnessPercent = 80 };
+        var clock = new Clock();
+        var provider = new Provider { Connection = CoolingPadConnectionState.PresentExact };
+        var runtime = new CoolingPadControlRuntime(provider, new CoolingPadStateStore(), new Temperatures(), clock);
+        await runtime.SetUserAsync("owner", default);
+        Assert.Equal(ControlOperationStatus.Applied, (await runtime.ApplyAsync(both, () => true, default)).Status);
+        Assert.Equal(2, provider.Pad.Writes.Count);
+
+        // The stored lighting still matches: applying again rewrites the same values.
+        provider.Pad.Unusable = true;
+        clock.Now += CoolingPadControlRuntime.OutsideChangeCheckInterval;
+        await runtime.MaintainAsync(() => true, default, restoreOutsideChanges: true, restoreOutsideLighting: false);
+        Assert.True(runtime.Status.Active);
+        Assert.Equal(4, provider.Pad.Writes.Count);
+
+        // Brightness changed while the session was lost: release control and keep that change.
+        provider.Pad.Unusable = true;
+        provider.Pad.Snapshot = provider.Pad.Snapshot with { BrightnessRaw = 10 };
+        clock.Now += CoolingPadControlRuntime.OutsideChangeCheckInterval;
+        await runtime.MaintainAsync(() => true, default, restoreOutsideChanges: true, restoreOutsideLighting: false);
+        Assert.False(runtime.Status.Active);
+        Assert.Equal(4, provider.Pad.Writes.Count);
+        Assert.True(provider.Pad.RestoredFan);
+        Assert.False(provider.Pad.RestoredLighting);
+        Assert.Equal("Cooling pad settings changed outside OpenBlade. OpenBlade stopped controlling it.", runtime.Status.Message);
+    }
+
+    [Fact]
+    public async Task ASessionThatRetiresDuringAComparisonReadIsDeferredThenReconnected()
+    {
+        var clock = new Clock();
+        var provider = new Provider { Connection = CoolingPadConnectionState.PresentExact };
+        var runtime = new CoolingPadControlRuntime(provider, new CoolingPadStateStore(), new Temperatures(), clock);
+        await runtime.SetUserAsync("owner", default);
+        Assert.Equal(ControlOperationStatus.Applied, (await runtime.ApplyAsync(Fixed, () => true, default)).Status);
+
+        // The read times out and the session retires only afterwards.
+        provider.Pad.ReadFailure = new TimeoutException("No reply.");
+        provider.Pad.RetireOnRead = true;
+        clock.Now += CoolingPadControlRuntime.OutsideChangeCheckInterval;
+        await runtime.MaintainAsync(() => true, default, restoreOutsideChanges: true);
+        Assert.True(runtime.Status.Active);
+        Assert.False(provider.Pad.Usable);
+
+        provider.Pad.ReadFailure = null;
+        provider.Pad.RetireOnRead = false;
+        clock.Now += CoolingPadControlRuntime.OutsideChangeCheckInterval;
+        await runtime.MaintainAsync(() => true, default, restoreOutsideChanges: true);
+        Assert.True(runtime.Status.Active);
+        Assert.Equal("The cooling pad connection was reopened and its settings were applied again.", runtime.Status.Message);
+        Assert.Equal(2, provider.Pad.Writes.Count);
+    }
+
+    [Fact]
     public async Task OutsideChangeReadsCompareOnlyTheControlledParts()
     {
         var expected = new CoolingPadDeviceSnapshot("pad")
@@ -1183,7 +1308,7 @@ public sealed class CoolingPadControlRuntimeTests
         internal bool ReturnNull;
         internal CoolingPadConnectionState Connection = CoolingPadConnectionState.Unavailable;
         public CoolingPadConnectionState ObserveConnection() => Connection;
-        public Task<ICoolingPadDevice?> OpenAsync(CancellationToken token) { Opens++; return Task.FromResult<ICoolingPadDevice?>(ReturnNull ? null : Pad); }
+        public Task<ICoolingPadDevice?> OpenAsync(CancellationToken token) { Opens++; Pad.Unusable = false; return Task.FromResult<ICoolingPadDevice?>(ReturnNull ? null : Pad); }
     }
     private sealed class Pad : ICoolingPadDevice
     {
@@ -1199,6 +1324,10 @@ public sealed class CoolingPadControlRuntimeTests
         internal List<string> Writes = [];
         internal bool FailWrite;
         internal Exception? ReadFailure;
+        // A retired session: its commands fail without reaching the pad until it is reopened.
+        internal bool Unusable;
+        internal bool RetireOnRead;
+        public bool Usable => !Unusable;
         internal bool MarkLocalAdmissionDeferral;
         internal int DisposeCalls;
         internal int ReadCalls;
@@ -1208,6 +1337,8 @@ public sealed class CoolingPadControlRuntimeTests
         public Task<CoolingPadDeviceSnapshot> ReadSnapshotAsync(CancellationToken token)
         {
             ReadCalls++;
+            if (Unusable) { return Task.FromException<CoolingPadDeviceSnapshot>(new CoolingPadOperationException("Cooling-pad operation failed: Disposed (0D/90).", false)); }
+            if (RetireOnRead) { Unusable = true; }
             return ReadFailure is { } failure ? Task.FromException<CoolingPadDeviceSnapshot>(failure) : Task.FromResult(Snapshot);
         }
         public Task SetFanAsync(CoolingPadFanMode mode, int? rpm, Func<bool> allowed, CancellationToken token,

@@ -23,6 +23,7 @@ internal sealed class SourceBackedCoolingPadDevice(
     // effect written, so it identifies the showing record while that record still holds it.
     private CoolingPadLightingConfiguration? lastConfirmedEffect;
     public string Identity { get; } = identity;
+    public bool Usable => !disposed && actor.Session.Disposition == RazerCommandSessionDisposition.Healthy;
 
     public void BindLightingBaseline(CoolingPadDeviceSnapshot baseline)
     {
