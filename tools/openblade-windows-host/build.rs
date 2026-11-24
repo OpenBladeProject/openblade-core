@@ -195,6 +195,12 @@ fn main() {
         } else {
             capabilities
         };
+        // Nor the diagnostic export, under the same rule.
+        let capabilities = if role == "service" && has("service-diagnostics-export-v1") {
+            format!("{capabilities},service-diagnostics-export-v1")
+        } else {
+            capabilities
+        };
         let record = format!(
             "OpenBlade.NativeArtifact.v2\n{id}\n{role}\n{target}\n{source}\n{}\n{}\n{profile}\n{capabilities}\n",
             features.join(","),

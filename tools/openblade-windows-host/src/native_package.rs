@@ -754,6 +754,18 @@ fn capabilities(schema: u8, role: &str, features: &str, value: &str) -> io::Resu
     {
         return Err(deny());
     }
+    // The diagnostic export answers with an archive of the caller-projected
+    // status, no admitted composition serves it, and admitting it is a
+    // separate packaging decision. Refuse its feature and marker by name
+    // (docs/windows-rust-development-service.md).
+    const DIAGNOSTICS_EXPORT: &str = "service-diagnostics-export-v1";
+    if has(DIAGNOSTICS_EXPORT)
+        || value
+            .split(',')
+            .any(|capability| capability == DIAGNOSTICS_EXPORT)
+    {
+        return Err(deny());
+    }
     // The application-context reporter is not admitted for packaging either:
     // refuse its feature and its capability marker by name, whatever else the
     // record claims, until a packaging stage admits both.
@@ -933,7 +945,8 @@ fn require_submission(epoch: &Epoch, origin: &[u8], submission: &[u8]) -> io::Re
     test,
     any(
         feature = "service-keyboard-driver-mode-read-v1",
-        feature = "service-live-readings-v1"
+        feature = "service-live-readings-v1",
+        feature = "service-diagnostics-export-v1"
     )
 ))]
 pub(crate) fn startup_policy_for_tests(identity: &[u8]) -> io::Result<&'static str> {

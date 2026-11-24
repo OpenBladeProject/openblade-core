@@ -1,0 +1,587 @@
+//! Replays the managed vectors (`NativeDiagnosticExportVectorTests`): the
+//! `DiagnosticText` redaction, `DiagnosticHistory` retention and truncation,
+//! and the exporter's entry text, plus the contract bounds and the archive's
+//! failure paths.
+
+use std::{collections::VecDeque, sync::Mutex};
+
+use serde_json::{Value, json};
+
+use super::{
+    archive::{Bundle, Request, build_bounded, entries, file_name},
+    history::{CommandResult, History, Limits, Snapshot},
+    json::Json,
+    redact::redact_text,
+    zip::{OVERSIZED, deflate, read},
+    *,
+};
+
+const VECTORS: &str = include_str!("../../tests/data/diagnostic-export-vectors.json");
+const CONTRACT: &str = include_str!("../../tests/data/diagnostic-export-contract.json");
+
+fn vectors() -> Value {
+    serde_json::from_str(VECTORS).unwrap()
+}
+
+fn strings(value: &Value) -> Vec<String> {
+    value
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| item.as_str().unwrap().to_owned())
+        .collect()
+}
+
+pub(crate) fn sequence(times: Vec<Timestamp>) -> Box<dyn Fn() -> Timestamp + Send + Sync> {
+    let times = Mutex::new(VecDeque::from(times));
+    Box::new(move || times.lock().unwrap().pop_front().expect("a recorded time"))
+}
+
+fn at(text: &str) -> Timestamp {
+    Timestamp::parse(text).unwrap_or_else(|| panic!("{text}"))
+}
+
+fn bundle(versions: Json, history: Snapshot, tokens: Vec<String>) -> Bundle {
+    Bundle {
+        versions,
+        device: Json::object([
+            ("model", Json::str("Unavailable")),
+            ("vendorId", Json::str("Unavailable")),
+            ("productId", Json::str("Unavailable")),
+            ("serialNumber", Json::Null),
+        ]),
+        capabilities: Vec::new(),
+        configuration: Vec::new(),
+        history,
+        tokens,
+    }
+}
+
+fn versions(input: &Value) -> Json {
+    Json::Object(
+        [
+            "openBladeVersion",
+            "windowsVersion",
+            "biosVersion",
+            "ecVersion",
+            "mcuVersion",
+            "vbiosVersion",
+            "vbiosGpuName",
+            "thunderboltFirmwareVersion",
+            "touchpadFirmwareVersion",
+            "thunderboltFirmwareAccess",
+            "touchpadFirmwareAccess",
+        ]
+        .iter()
+        .map(|name| {
+            (
+                (*name).to_owned(),
+                Json::nullable(input[*name].as_str().map(str::to_owned)),
+            )
+        })
+        .collect(),
+    )
+}
+
+fn texts(entries: Vec<(&'static str, String)>) -> Value {
+    Value::Array(
+        entries
+            .into_iter()
+            .map(|(name, text)| json!([name, text]))
+            .collect(),
+    )
+}
+
+#[test]
+fn redaction_matches_the_managed_vectors() {
+    for row in vectors()["redact"].as_array().unwrap() {
+        let observed = redact_text(row["input"].as_str().unwrap(), &strings(&row["tokens"]));
+        assert_eq!(observed, row["expect"].as_str().unwrap(), "{}", row["name"]);
+    }
+}
+
+#[test]
+fn history_retention_and_truncation_match_the_managed_vectors() {
+    for row in vectors()["history"].as_array().unwrap() {
+        let limits = &row["limits"];
+        let records = row["records"].as_array().unwrap();
+        let history = History::new(
+            Limits {
+                entries: limits["entries"].as_u64().unwrap() as usize,
+                characters: limits["characters"].as_u64().unwrap() as usize,
+                line: limits["line"].as_u64().unwrap() as usize,
+            },
+            Vec::new(),
+            sequence(
+                records
+                    .iter()
+                    .map(|record| at(record["at"].as_str().unwrap()))
+                    .collect(),
+            ),
+        );
+        for record in records {
+            history.record_summary(
+                record["status"].as_str().unwrap(),
+                record["summary"].as_str().unwrap(),
+            );
+        }
+        let versions = Json::object([
+            ("openBladeVersion", Json::str("1.0.0")),
+            ("windowsVersion", Json::str("Windows")),
+            ("biosVersion", Json::str("Unavailable")),
+        ]);
+        let entries = entries(
+            &bundle(versions, history.snapshot().unwrap(), Vec::new()),
+            &Cancel::default(),
+        )
+        .unwrap();
+        let text = |name: &str| {
+            entries
+                .iter()
+                .find(|(entry, _)| *entry == name)
+                .unwrap()
+                .1
+                .clone()
+        };
+        assert_eq!(
+            json!({
+                "commandResults": text("command-results.json"),
+                "serviceHistory": text("service-history.json"),
+            }),
+            row["expect"],
+            "{}",
+            row["name"]
+        );
+    }
+}
+
+fn read_bundle(input: &Value) -> Bundle {
+    let results: Vec<CommandResult> = input["commandResults"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|result| CommandResult {
+            timestamp: at(result["timestamp"].as_str().unwrap()),
+            subsystem: result["subsystem"].as_str().unwrap().into(),
+            action: result["action"].as_str().unwrap().into(),
+            status: result["status"].as_str().unwrap().into(),
+            detail: result["detail"].as_str().map(str::to_owned),
+        })
+        .collect();
+    let log_lines = strings(&input["logLines"]);
+    let device = &input["device"];
+    let sorted = |value: &Value| -> Vec<(String, Value)> {
+        let mut members: Vec<(String, Value)> = value
+            .as_object()
+            .unwrap()
+            .iter()
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .collect();
+        members.sort_by(|left, right| left.0.cmp(&right.0));
+        members
+    };
+    Bundle {
+        versions: versions(&input["versions"]),
+        device: Json::object([
+            ("model", Json::str(device["model"].as_str().unwrap())),
+            ("vendorId", Json::str(device["vendorId"].as_str().unwrap())),
+            (
+                "productId",
+                Json::str(device["productId"].as_str().unwrap()),
+            ),
+            ("serialNumber", Json::Null),
+        ]),
+        capabilities: sorted(&input["capabilities"])
+            .into_iter()
+            .map(|(key, value)| (key, value.as_bool().unwrap()))
+            .collect(),
+        configuration: sorted(&input["configuration"])
+            .into_iter()
+            .map(|(key, value)| (key, value.as_str().unwrap().to_owned()))
+            .collect(),
+        history: Snapshot {
+            retained_entries: results.len() + log_lines.len(),
+            results,
+            log_lines,
+            evicted: input["evicted"].as_u64().unwrap(),
+            dropped: input["dropped"].as_u64().unwrap(),
+            truncated: input["truncated"].as_u64().unwrap(),
+            retained_characters: input["characters"].as_u64().unwrap() as usize,
+        },
+        tokens: strings(&input["tokens"]),
+    }
+}
+
+#[test]
+fn entry_text_and_redaction_match_the_managed_exporter() {
+    for row in vectors()["bundles"].as_array().unwrap() {
+        let observed = entries(&read_bundle(&row["input"]), &Cancel::default()).unwrap();
+        assert_eq!(texts(observed), row["expect"], "{}", row["name"]);
+    }
+}
+
+#[test]
+fn the_contract_bounds_are_the_native_bounds() {
+    let contract: Value = serde_json::from_str(CONTRACT).unwrap();
+    assert_eq!(
+        contract["history"],
+        json!({
+            "maximumEntries": Limits::DEFAULT.entries,
+            "maximumTotalCharacters": Limits::DEFAULT.characters,
+            "maximumLineCharacters": Limits::DEFAULT.line,
+        })
+    );
+    assert_eq!(
+        contract["maximumArchiveBytes"],
+        json!(MAXIMUM_ARCHIVE_BYTES)
+    );
+    assert_eq!(
+        contract["maximumResponseBytes"],
+        json!(MAXIMUM_RESPONSE_BYTES)
+    );
+    // Every enum the sections name is recorded.
+    for name in contract["enums"].as_object().unwrap().keys() {
+        assert!(!sections::enum_name(name, 0).is_empty());
+    }
+    assert_eq!(sections::enum_name("SpecialKeySlotSet", 0), "None");
+    assert_eq!(sections::enum_name("SpecialKeySlotSet", 5), "M1, M3");
+    assert_eq!(sections::enum_name("SpecialKeySlotSet", 31), "All");
+    assert_eq!(sections::enum_name("SpecialKeySlotSet", 64), "64");
+    assert_eq!(sections::enum_name("PerformancePreset", 42), "42");
+}
+
+#[test]
+fn models_are_found_by_prefix_ignoring_case() {
+    assert_eq!(
+        sections::find_model(Some("  rz09-0581xyz "))
+            .unwrap()
+            .model_number,
+        "RZ09-0581"
+    );
+    assert!(sections::find_model(Some("RZ09-05")).is_none());
+    assert!(sections::find_model(Some("   ")).is_none());
+    assert!(sections::find_model(None).is_none());
+}
+
+#[test]
+fn timestamps_and_file_names_use_the_managed_text() {
+    let instant = at("2026-11-23T10:00:01.1200000+00:00");
+    assert_eq!(json::timestamp(instant), "2026-11-23T10:00:01.12+00:00");
+    assert_eq!(
+        json::timestamp(at("2026-02-28T23:59:59+00:00")),
+        "2026-02-28T23:59:59+00:00"
+    );
+    assert_eq!(
+        file_name(instant),
+        "OpenBlade-diagnostics-20261123-100001Z.zip"
+    );
+    assert_eq!(at("2024-02-29T00:00:00+00:00").compact(), "20240229-000000");
+    let (time, date) = at("2026-11-23T10:00:03+00:00").dos();
+    assert_eq!(
+        (time, date),
+        ((10 << 11) | 1, ((2026 - 1980) << 9 | 11 << 5 | 23) as u16)
+    );
+}
+
+#[test]
+fn base64_matches_rfc_4648() {
+    for (bytes, text) in [
+        (&b""[..], ""),
+        (b"f", "Zg=="),
+        (b"fo", "Zm8="),
+        (b"foo", "Zm9v"),
+        (b"foobar", "Zm9vYmFy"),
+        (&[0xfb, 0xff], "+/8="),
+    ] {
+        assert_eq!(base64(bytes), text);
+    }
+}
+
+#[test]
+fn deflate_round_trips_and_compresses_repetition() {
+    let mut inputs: Vec<Vec<u8>> = vec![
+        Vec::new(),
+        b"a".to_vec(),
+        b"abcabcabcabcabcabc".to_vec(),
+        (0..=255u8).collect(),
+    ];
+    let mut noisy = Vec::new();
+    let mut state = 0x1234_5678u32;
+    for _ in 0..200_000 {
+        state = state.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+        noisy.push(b"{}\":, abcdefghij\r\n"[(state >> 16) as usize % 18]);
+    }
+    inputs.push(noisy);
+    inputs.push(vec![b'x'; 100_000]);
+    for input in inputs {
+        let deflated = deflate(&input, &Cancel::default()).unwrap();
+        assert_eq!(read::inflate(&deflated), input);
+    }
+    assert!(deflate(&[b'x'; 100_000], &Cancel::default()).unwrap().len() < 1_000);
+}
+
+fn metadata(tokens: Vec<String>) -> HostMetadata {
+    HostMetadata {
+        windows_version: "Microsoft Windows NT 10.0.26300.0".into(),
+        tokens,
+        captured_at: at("2026-11-23T10:00:00+00:00"),
+        local_time: at("2026-11-23T11:00:00+00:00"),
+    }
+}
+
+fn native_status() -> Value {
+    json!({
+        "revision": 4, "deviceVerified": false, "writesBlocked": true,
+        "potentialControllers": ["Synapse"], "controllerDetectionWarning": null,
+        "externalChanges": [0, 3], "message": "Device unavailable.", "capabilities": null,
+        "confirmedState": null,
+        "profiles": {
+            "pluggedIn": {"performance": 1, "fans": 0, "lighting": {"effect": 0}},
+            "battery": {"performance": 3, "fans": 0, "lighting": {"effect": 0}},
+            "usbC": {"performance": 1, "fans": 0, "lighting": {"effect": 0}},
+            "batteryPolicy": {"chargeLimitPercent": 80},
+        },
+        "desiredState": {
+            "performance": {"value": 1, "source": 1}, "fans": {"value": 0, "source": 1},
+            "lighting": {"value": {"effect": 0}, "source": 1},
+            "battery": {"protectionEnabled": true},
+        },
+        "activePowerSource": 3, "liveReadings": null, "performanceOverride": null,
+        "fanOverride": null, "lightingOverride": null, "fullChargeOverride": false,
+        "controlAccess": 0, "serviceVersion": "0.0.0",
+    })
+}
+
+fn request(status: Value, history: Snapshot) -> Request {
+    Request {
+        status,
+        history,
+        metadata: metadata(Vec::new()),
+        live_readings_enabled: false,
+    }
+}
+
+#[test]
+fn an_archive_reads_back_with_the_managed_entry_order() {
+    let archive = build(
+        request(native_status(), Snapshot::default()),
+        &Cancel::default(),
+    )
+    .unwrap();
+    assert_eq!(
+        archive.file_name,
+        "OpenBlade-diagnostics-20261123-100000Z.zip"
+    );
+    assert_eq!(archive.bytes[..4], [0x50, 0x4b, 0x03, 0x04]);
+    let names: Vec<String> = read::entries(&archive.bytes)
+        .into_iter()
+        .map(|(name, _)| name)
+        .collect();
+    assert_eq!(
+        names,
+        [
+            "versions.json",
+            "device.json",
+            "device-verification.json",
+            "capabilities.json",
+            "configuration.json",
+            "command-results.json",
+            "service-history.json",
+            "firmware-queries.json",
+            "hyperboost-ownership.json",
+            "logs.jsonl",
+        ]
+    );
+}
+
+#[test]
+fn an_archive_past_the_bound_is_refused_with_the_managed_message() {
+    // A xorshift stream: text deflate cannot shrink below about 4.7 bits
+    // a letter, so the bound is reached by content.
+    let mut state = 0x9E37_79B9_7F4A_7C15u64;
+    let mut letter = move || {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        char::from(b'a' + (state % 26) as u8)
+    };
+    let results = (0..64)
+        .map(|_| CommandResult {
+            timestamp: at("2026-11-23T10:00:00+00:00"),
+            subsystem: "Service".into(),
+            action: "Reconcile".into(),
+            status: "Stored".into(),
+            detail: Some((0..512).map(|_| letter()).collect()),
+        })
+        .collect();
+    let history = Snapshot {
+        results,
+        ..Snapshot::default()
+    };
+    let small = build_bounded(
+        request(native_status(), history.clone()),
+        &Cancel::default(),
+        8_192,
+    );
+    assert_eq!(small.unwrap_err(), Failure::new(OVERSIZED));
+    assert_eq!(
+        Failure::new(OVERSIZED).reply(),
+        "Diagnostic export failed: Diagnostic archive exceeds the 16 MiB limit."
+    );
+    build_bounded(
+        request(native_status(), history),
+        &Cancel::default(),
+        1 << 20,
+    )
+    .unwrap();
+}
+
+#[test]
+fn a_canceled_build_stops_without_an_archive() {
+    let cancel = Cancel::default();
+    cancel.cancel();
+    let failure = build(request(native_status(), Snapshot::default()), &cancel).unwrap_err();
+    assert_eq!(
+        failure.reply(),
+        "Diagnostic export failed: The diagnostic export was canceled."
+    );
+    let cancel = Cancel::default();
+    drop(CancelOnDrop(cancel.clone()));
+    assert!(cancel.check().is_err());
+}
+
+#[test]
+fn a_poisoned_history_is_unreadable() {
+    let history = History::new(
+        Limits::DEFAULT,
+        Vec::new(),
+        Box::new(|| Timestamp::from_ticks(0)),
+    );
+    history.record_summary("Stored", "kept");
+    history.poison();
+    assert_eq!(
+        history.snapshot().unwrap_err().reply(),
+        "Diagnostic export failed: Diagnostic history is unavailable."
+    );
+    // Recording continues into a poisoned history.
+    history.record_summary("Stored", "after");
+}
+
+#[test]
+fn capability_members_without_a_native_summary_refuse_the_export() {
+    for (member, value) in [
+        ("customPerformance", json!({"cpu": 1})),
+        ("cpuPowerLimit", json!({})),
+        ("cpuVoltageOptimizer", json!({})),
+        ("gpuOverclock", json!({})),
+        ("hyperBoostBaseModes", json!({"balanced": true})),
+        ("fanSpeedRangesByPerformancePreset", json!({"1": {}})),
+        ("observedPowerSourceBehaviors", json!([{}])),
+    ] {
+        let mut status = native_status();
+        status["capabilities"] = json!({"performancePresets": [], member: value});
+        let failure = build(request(status, Snapshot::default()), &Cancel::default()).unwrap_err();
+        assert!(failure.0.contains(member), "{member}");
+    }
+    let mut status = native_status();
+    status["capabilities"] = json!({
+        "performancePresets": [1, 2], "fanSpeedRangesByPerformancePreset": {},
+        "observedPowerSourceBehaviors": [], "customPerformance": null,
+    });
+    build(request(status, Snapshot::default()), &Cancel::default()).unwrap();
+}
+
+/// An archive's entries as text.
+pub(crate) fn archive_texts(bytes: &[u8]) -> Vec<(String, String)> {
+    read::entries(bytes)
+        .into_iter()
+        .map(|(name, content)| (name, String::from_utf8(content).unwrap()))
+        .collect()
+}
+
+#[test]
+fn configuration_reads_absent_members_as_managed_defaults() {
+    let configuration = sections::configuration(&native_status(), true).unwrap();
+    let value = |key: &str| configuration[key].as_str();
+    assert_eq!(value("status.potentialControllers"), "Synapse");
+    assert_eq!(value("status.externalChanges"), "Performance, Lighting");
+    assert_eq!(value("status.unconfirmedWrites"), "");
+    assert_eq!(value("status.hyperBoostBlockingControllers"), "Unavailable");
+    assert_eq!(value("laptop.keyboardDriverModeActive"), "Unavailable");
+    assert_eq!(value("power.source"), "ExternalUnknown");
+    assert_eq!(value("liveReadings.enabled"), "True");
+    assert_eq!(value("profile.battery.performance"), "BatterySaver");
+    assert_eq!(value("lighting.refreshRate"), "ThirtyHz");
+    assert_eq!(value("support.status"), "NotEstablished");
+    assert_eq!(value("confirmed.hyperBoostActive"), "Unavailable");
+    assert_eq!(value("capability.supportsTemporaryFullCharge"), "False");
+    assert_eq!(value("capability.hyperBoostAccess"), "Unavailable");
+    let mut status = native_status();
+    status["firmware"] = json!({"modelNumber": "RZ09-0581"});
+    status["confirmedState"] =
+        json!({"performance": 1, "fans": 0, "battery": null, "lighting": null});
+    status["capabilities"] =
+        serde_json::from_str(include_str!("../service_status/observed_capabilities.json")).unwrap();
+    let configuration = sections::configuration(&status, false).unwrap();
+    let value = |key: &str| configuration[key].as_str();
+    assert_eq!(value("support.basis"), "PhysicallyValidated");
+    assert_eq!(value("support.physicalValidation"), "Validated");
+    assert_eq!(value("confirmed.hyperBoostActive"), "False");
+    assert_eq!(value("confirmed.performance"), "Balanced");
+    assert_eq!(value("capability.hyperBoostAccess"), "ObservedOnly");
+    assert_eq!(value("capability.writableSpecialKeySlots"), "None");
+    let capabilities = sections::capabilities(&status).unwrap();
+    assert!(capabilities["performance.hyperBoost.observed"]);
+    assert!(!capabilities["performance.hyperBoost.write"]);
+    assert!(capabilities["performance.hyperBoost.withoutCoolingPad.gate.crashRecovery"]);
+    assert!(capabilities["lighting.breathingColorMode.Dual"]);
+    assert!(capabilities["battery.temporaryFullCharge"]);
+}
+
+#[test]
+fn an_archive_exactly_at_the_bound_is_kept_and_one_byte_over_is_refused() {
+    let request = || request(native_status(), Snapshot::default());
+    let size = build_bounded(request(), &Cancel::default(), usize::MAX)
+        .unwrap()
+        .bytes
+        .len();
+    let at = build_bounded(request(), &Cancel::default(), size).unwrap();
+    assert_eq!(at.bytes.len(), size);
+    assert_eq!(
+        build_bounded(request(), &Cancel::default(), size - 1).unwrap_err(),
+        Failure::new(OVERSIZED)
+    );
+}
+
+/// Managed `Add` drops an entry only when it alone exceeds the total and
+/// evicts only while the new total would exceed it: an entry, or a pair of
+/// entries, exactly at the bound is kept.
+#[test]
+fn history_entries_exactly_at_the_character_bound_are_kept() {
+    // "Service", "Reconcile" and "Stored" are 22 characters; "abc" makes 25.
+    for (characters, entries) in [(25, 1), (50, 2)] {
+        let limits = Limits {
+            characters,
+            ..Limits::DEFAULT
+        };
+        let history = History::new(limits, Vec::new(), Box::new(|| Timestamp::from_ticks(0)));
+        for _ in 0..entries {
+            history.record_summary("Stored", "abc");
+        }
+        let snapshot = history.snapshot().unwrap();
+        assert_eq!(snapshot.retained_entries, entries);
+        assert_eq!(snapshot.retained_characters, characters);
+        assert_eq!((snapshot.dropped, snapshot.evicted), (0, 0));
+    }
+}
+
+/// `DiagnosticText.Redact` orders the distinct tokens longest first, so a
+/// token inside a longer one never splits it.
+#[test]
+fn redaction_replaces_the_longer_of_two_nested_tokens() {
+    let tokens = ["CONTOSO".to_owned(), "contoso-pc".to_owned()];
+    assert_eq!(
+        redact_text("on CONTOSO-PC now", &tokens),
+        "on [REDACTED] now"
+    );
+}
