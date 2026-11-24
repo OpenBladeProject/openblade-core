@@ -399,6 +399,30 @@ pub(super) fn authorize_original(
         }
     }
 }
+/// `ReadLease`'s low-power cleanup admission: `authorize_original` at the
+/// suspend generation's lifecycle fence (`Lifecycle::fence_for`) instead of
+/// the ordinary epoch, with the same live origin trust, original custody and
+/// generation. No fence refuses before origin trust is read, so a resumed
+/// generation never latches the custody unavailable.
+#[cfg(feature = "service-keyboard-driver-mode-v1")]
+fn low_power_admission(
+    state: &AtomicU8,
+    committed: io::Result<bool>,
+    mapping: impl FnOnce() -> io::Result<()>,
+    fence: Option<u64>,
+    proof: ReadAdmission,
+) -> Option<ReadAdmission> {
+    if state.load(Ordering::Acquire) != 0 {
+        return None;
+    }
+    let lifecycle = fence?;
+    authorize_original(
+        state,
+        committed,
+        mapping,
+        ReadAdmission { lifecycle, ..proof },
+    )
+}
 fn record(root: &File, name: &str, held: &mut Vec<File>) -> io::Result<Vec<u8>> {
     let mut file = paths::open_relative(
         root,
@@ -730,18 +754,13 @@ impl ReadCustody for ReadLease {
         let CleanupScope::LowPower { generation } = scope else {
             return self.authorize_owned_stop();
         };
-        if self.state.load(Ordering::Acquire) != 0 {
-            return None;
-        }
         let write = openblade_domain::low_power_gate::WriteScope::LowPowerCleanup { generation };
-        authorize_original(
+        low_power_admission(
             &self.state,
             self.origin.committed(),
             || self.origin.mailbox_mapping().map(drop),
-            ReadAdmission {
-                lifecycle: self.origin.lifecycle.epoch_for(write)?,
-                ..self.proof
-            },
+            self.origin.lifecycle.fence_for(write),
+            self.proof,
         )
     }
     #[cfg(feature = "service-thermal-mutation-v1")]
@@ -1604,6 +1623,13 @@ impl ReadSource {
         let admission = self.lease.authorize()?;
         self.driver_mode.active(admission, Instant::now())
     }
+    /// `driver_mode_confirmed` for a job that started after `since`.
+    #[cfg(feature = "service-keyboard-driver-mode-v1")]
+    pub(super) fn driver_mode_confirmed_since(&self, since: Instant) -> Option<bool> {
+        let admission = self.lease.authorize()?;
+        self.driver_mode
+            .active_since(admission, Instant::now(), since)
+    }
     /// Whether this source can never activate a mutation: a recovery-only
     /// lease, whose every write would only stop and rebuild the reader.
     pub(super) fn recovery_only(&self) -> bool {
@@ -2211,6 +2237,43 @@ mod tests {
         );
         assert!(authorize_original(&state, Err(deny()), || Ok(()), proof).is_none());
         assert!(authorize_original(&state, Ok(true), || Ok(()), proof).is_none());
+    }
+
+    /// The low-power admission carries the generation's fence, not the
+    /// proof's epoch; without a fence it refuses before origin trust, so a
+    /// lost origin is not latched; with one it is `authorize_original`.
+    #[cfg(feature = "service-keyboard-driver-mode-v1")]
+    #[test]
+    fn the_low_power_admission_carries_the_generation_fence() {
+        let state = AtomicU8::new(0);
+        let proof = ReadAdmission {
+            lifecycle: 1,
+            generation: [1; 32],
+        };
+        let fenced = ReadAdmission {
+            lifecycle: 9,
+            ..proof
+        };
+        assert_eq!(
+            low_power_admission(&state, Ok(true), || Ok(()), Some(9), proof),
+            Some(fenced)
+        );
+        assert!(
+            low_power_admission(
+                &state,
+                Err(deny()),
+                || panic!("no mapping without a fence"),
+                None,
+                proof
+            )
+            .is_none()
+        );
+        assert_eq!(state.load(Ordering::Acquire), 0);
+        assert!(low_power_admission(&state, Ok(false), || Ok(()), Some(9), proof).is_none());
+        assert_eq!(state.load(Ordering::Acquire), 0);
+        assert!(low_power_admission(&state, Err(deny()), || Ok(()), Some(9), proof).is_none());
+        assert_eq!(state.load(Ordering::Acquire), 1);
+        assert!(low_power_admission(&state, Ok(true), || Ok(()), Some(9), proof).is_none());
     }
 
     #[tokio::test]

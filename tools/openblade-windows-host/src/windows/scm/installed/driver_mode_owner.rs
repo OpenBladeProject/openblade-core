@@ -165,9 +165,10 @@ pub(super) struct Keyboard {
     /// An acquire setter may have been submitted unconfirmed: no further
     /// acquire or maintain exchange in this process.
     indeterminate: Cell<bool>,
-    /// A release setter may have been submitted unconfirmed: no further
-    /// release, acquire or maintain exchange in this process.
-    uncertain: Cell<bool>,
+    /// When a release setter may have been submitted unconfirmed. Until a
+    /// later read resolves it (`maintain_driver_mode`), no release, acquire
+    /// or maintain exchange runs.
+    uncertain: Cell<Option<Instant>>,
     /// The recovery of the current failure streak has run.
     recovered: Cell<bool>,
     /// The startup call's job has run.
@@ -318,8 +319,22 @@ impl Runtime {
             return Ok(());
         };
         verify_retained_failure(&self.fatal)?;
-        if keyboard.indeterminate.get() || keyboard.uncertain.get() {
+        if keyboard.indeterminate.get() {
             return Ok(());
+        }
+        // A release that may have applied Normal unconfirmed is resolved
+        // read-only, never replayed: a confirmed 00/84 read under the current
+        // read admission, by a job that started after that release, says which
+        // mode the keyboard is in. Driver keeps the claim and any other mode
+        // clears it; the step then acquires through the normal cadence. A
+        // low-power release's doubt can only be resolved after the resume,
+        // whose epoch every such read admission carries.
+        if let Some(since) = keyboard.uncertain.get() {
+            let Some(driver) = reader.driver_mode_confirmed_since(since) else {
+                return Ok(());
+            };
+            keyboard.ownership.owns.store(driver, Ordering::Release);
+            keyboard.uncertain.set(None);
         }
         if !reader.driver_mode_verified() {
             keyboard.recovered.set(false);
@@ -527,7 +542,7 @@ impl Runtime {
         if let Some(earlier) = keyboard.inflight.borrow_mut().take() {
             self.released(&earlier, false)?;
         }
-        if keyboard.uncertain.get() {
+        if keyboard.uncertain.get().is_some() {
             return Ok(Release::Uncertain);
         }
         let attempted = match boundary {
@@ -623,7 +638,7 @@ impl Runtime {
             // sent: nothing is in doubt.
             DeviceModeStep::Unread | DeviceModeStep::Claimed => Release::Unconfirmed,
             DeviceModeStep::Submitted | DeviceModeStep::Acknowledged => {
-                keyboard.uncertain.set(true);
+                keyboard.uncertain.set(Some(Instant::now()));
                 Release::Unconfirmed
             }
         })
@@ -656,7 +671,7 @@ impl Runtime {
     }
     /// Whether a release may have submitted Normal unconfirmed.
     pub(in super::super) fn driver_mode_uncertain_for_tests(&self) -> bool {
-        self.keyboard.uncertain.get()
+        self.keyboard.uncertain.get().is_some()
     }
     /// The last release's outcome.
     pub(in super::super) fn driver_mode_release(&self) -> Option<Release> {

@@ -89,6 +89,10 @@ mod tests {
 /// resume; fresh device/session/controller proof is still required.
 #[derive(Default)]
 pub(crate) struct Lifecycle(Mutex<LifecycleState>, Arc<tokio::sync::Notify>);
+/// Marks a low-power cleanup's fence (`Lifecycle::fence_for`): epochs count
+/// up from 1 and are exhausted long before they reach it.
+#[cfg_attr(not(feature = "service-keyboard-driver-mode-v1"), allow(dead_code))]
+const CLEANUP_GENERATION: u64 = 1 << 63;
 struct LifecycleState {
     epoch: u64,
     gate: LowPowerGate,
@@ -218,6 +222,25 @@ impl Lifecycle {
     pub(crate) fn epoch_for(&self, write: WriteScope) -> Option<u64> {
         let state = self.0.lock().ok()?;
         (state.epoch != 0 && state.gate.admits(write)).then_some(state.epoch)
+    }
+    /// What an owned cleanup of this scope pins now, or `None` while the
+    /// gate refuses it. Owned Stop pins the ordinary epoch (`epoch_for`), so
+    /// any later notice fences it. A low-power cleanup pins its suspend
+    /// generation only, as managed's `IsActiveForGeneration` does: a session
+    /// notice during the suspend moves the epoch and leaves the cleanup
+    /// admitted, and the generation's end (a resume, DisplayOn or another
+    /// suspend) refuses it. `CLEANUP_GENERATION` keeps that value apart from
+    /// every epoch, so it never equals an ordinary admission.
+    #[cfg_attr(not(feature = "service-keyboard-driver-mode-v1"), allow(dead_code))]
+    pub(crate) fn fence_for(&self, write: WriteScope) -> Option<u64> {
+        let state = self.0.lock().ok()?;
+        if state.epoch == 0 || !state.gate.admits(write) {
+            return None;
+        }
+        Some(match write {
+            WriteScope::Ordinary => state.epoch,
+            WriteScope::LowPowerCleanup { generation } => generation | CLEANUP_GENERATION,
+        })
     }
     /// The epoch an ordinary operation pins, or `None` in low power.
     pub(crate) fn active(&self) -> Option<u64> {
@@ -388,6 +411,40 @@ mod lifecycle_tests {
         assert_eq!(lifecycle.active(), None);
         lifecycle.ingress(SERVICE_CONTROL_POWEREVENT, 18);
         assert_eq!(lifecycle.active(), None);
+    }
+    /// A low-power cleanup's fence is its suspend generation: a lock or
+    /// unlock during the suspend moves the epoch, which fences owned Stop,
+    /// and leaves the cleanup admitted; the resume refuses it.
+    #[test]
+    fn a_low_power_cleanup_fences_on_its_generation_only() {
+        use windows_sys::Win32::System::Services::{
+            SERVICE_CONTROL_POWEREVENT, SERVICE_CONTROL_SESSIONCHANGE,
+        };
+        let lifecycle = Lifecycle::default();
+        let ordinary = lifecycle.fence_for(WriteScope::Ordinary);
+        assert_eq!(ordinary, lifecycle.active());
+        lifecycle.ingress(SERVICE_CONTROL_SESSIONCHANGE, 7);
+        assert_ne!(lifecycle.fence_for(WriteScope::Ordinary), ordinary);
+        lifecycle.ingress(SERVICE_CONTROL_POWEREVENT, 4);
+        let generation = lifecycle.low_power().unwrap().generation;
+        let cleanup = WriteScope::LowPowerCleanup { generation };
+        let epoch = lifecycle.epoch_for(cleanup);
+        let fence = lifecycle.fence_for(cleanup);
+        assert_eq!(fence, Some(generation | CLEANUP_GENERATION));
+        assert_eq!(lifecycle.fence_for(WriteScope::Ordinary), None);
+        lifecycle.ingress(SERVICE_CONTROL_SESSIONCHANGE, 8);
+        lifecycle.ingress(SERVICE_CONTROL_SESSIONCHANGE, 7);
+        assert_ne!(lifecycle.epoch_for(cleanup), epoch);
+        assert_eq!(lifecycle.fence_for(cleanup), fence);
+        assert_eq!(
+            lifecycle.fence_for(WriteScope::LowPowerCleanup {
+                generation: generation + 2
+            }),
+            None
+        );
+        lifecycle.ingress(SERVICE_CONTROL_POWEREVENT, 18);
+        assert_eq!(lifecycle.fence_for(cleanup), None);
+        assert!(lifecycle.fence_for(WriteScope::Ordinary).is_some());
     }
     #[test]
     fn power_generation_advances_only_on_a_changed_kind() {

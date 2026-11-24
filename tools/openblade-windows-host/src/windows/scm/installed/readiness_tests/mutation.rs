@@ -638,8 +638,8 @@ impl ReadCustody for Custody {
             generation: [self.generation.load(Ordering::Acquire); 32],
         })
     }
-    // `ReadLease`'s low-power scope: `authorize` at the epoch the gate
-    // admits for that suspend generation.
+    // `ReadLease`'s low-power scope: `authorize` at the suspend generation's
+    // lifecycle fence (`Lifecycle::fence_for`).
     #[cfg(feature = "service-keyboard-driver-mode-v1")]
     fn authorize_cleanup(&self, scope: CleanupScope) -> Option<ReadAdmission> {
         let CleanupScope::LowPower { generation } = scope else {
@@ -654,7 +654,7 @@ impl ReadCustody for Custody {
         }
         let write = openblade_domain::low_power_gate::WriteScope::LowPowerCleanup { generation };
         Some(ReadAdmission {
-            lifecycle: self.lifecycle.epoch_for(write)?,
+            lifecycle: self.lifecycle.fence_for(write)?,
             generation: [self.generation.load(Ordering::Acquire); 32],
         })
     }
@@ -962,10 +962,14 @@ impl Custody {
     }
 }
 /// Test model of `CleanupGuard`: the Service's cleanup admission, with no
-/// console session, SID or logon, at the epoch its scope pinned. Every
-/// authorization checks fresh health, `fresh_refuse` (every refused Windows
-/// supplier) and `controller`, a known Windows AC line status, the pinned
-/// epoch and the passed custody's cleanup admission of the scope.
+/// console session, SID or logon, at the lifecycle fence its scope pinned.
+/// Every authorization runs the native order (`thermal_native::admit_cleanup`)
+/// over the model's suppliers: fresh health for origin trust, the pinned
+/// fence, a known Windows AC line status, `fresh_refuse` (every refused
+/// Windows supplier) and `controller` for power and controllers, and the
+/// passed custody's cleanup admission of the scope.
+#[cfg(feature = "service-keyboard-driver-mode-v1")]
+use crate::installed::readiness::thermal_native::{Denial, admit_cleanup};
 #[cfg(feature = "service-keyboard-driver-mode-v1")]
 struct CleanupFresh {
     custody: Arc<Custody>,
@@ -983,9 +987,8 @@ impl CleanupFresh {
         Fresh::verify_health(custody.as_ref())?;
         let epoch = custody
             .lifecycle
-            .epoch_for(scope.write_scope())
+            .fence_for(scope.write_scope())
             .ok_or(io::ErrorKind::PermissionDenied)?;
-        let controller = custody.controller.load(Ordering::Acquire);
         let fresh = Self {
             custody,
             passed,
@@ -994,16 +997,29 @@ impl CleanupFresh {
         };
         // As `CleanupGuard::capture`: a refusal whose cause is fatal is
         // reported as fatal by the health check after it.
-        let proof = fresh.authorize();
+        let proof = fresh.admit();
         Fresh::verify_health(fresh.custody.as_ref())?;
-        if proof.is_none() {
-            return Err(if controller {
-                crate::installed::readiness::thermal_mutation::competing_controller()
-            } else {
-                io::ErrorKind::PermissionDenied.into()
-            });
-        }
+        proof.map_err(Denial::error)?;
         Ok(Arc::new(fresh))
+    }
+    fn admit(&self) -> Result<ReadAdmission, Denial> {
+        let c = &self.custody;
+        c.stall_owned_stop();
+        admit_cleanup(
+            || Fresh::verify_health(c.as_ref()).is_ok(),
+            || Some(true),
+            || c.lifecycle.fence_for(self.scope.write_scope()) == Some(self.epoch),
+            || {
+                if c.fresh_refuse.load(Ordering::Acquire) || c.on_battery().is_none() {
+                    Err(Denial::Admission)
+                } else if c.controller.load(Ordering::Acquire) {
+                    Err(Denial::CompetingController)
+                } else {
+                    Ok(())
+                }
+            },
+            || self.passed.authorize_cleanup(self.scope),
+        )
     }
 }
 #[cfg(feature = "service-keyboard-driver-mode-v1")]
@@ -1018,17 +1034,7 @@ impl Cleanup for CleanupFresh {
         Fresh::verify_health(self.custody.as_ref())
     }
     fn authorize(&self) -> Option<ReadAdmission> {
-        let c = &self.custody;
-        c.stall_owned_stop();
-        Fresh::verify_health(c.as_ref()).ok()?;
-        if c.fresh_refuse.load(Ordering::Acquire)
-            || c.controller.load(Ordering::Acquire)
-            || c.on_battery().is_none()
-            || c.lifecycle.epoch_for(self.scope.write_scope()) != Some(self.epoch)
-        {
-            return None;
-        }
-        self.passed.authorize_cleanup(self.scope)
+        self.admit().ok()
     }
 }
 struct Origin(Arc<crate::loaded_origin::lifetime::Lifetime>, Arc<Custody>);

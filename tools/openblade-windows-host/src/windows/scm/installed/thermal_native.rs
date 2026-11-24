@@ -225,7 +225,7 @@ fn power_and_controllers(
 /// Why `Identity::admits` refused.
 #[cfg_attr(test, allow(dead_code))] // Test composition injects its own Fresh; only the native factory builds the guard.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Denial {
+pub(super) enum Denial {
     /// Any check but the competing-controller one: origin trust, the
     /// lifecycle epoch, the console session, its lock state, the primary
     /// identity or the AC line status.
@@ -237,7 +237,7 @@ enum Denial {
 impl Denial {
     /// The capture's error: a typed one for a competing controller, which
     /// the lifecycle tick asks for (`is_competing_controller`).
-    fn error(self) -> io::Error {
+    pub(super) fn error(self) -> io::Error {
         match self {
             Self::Admission => deny(),
             Self::CompetingController => super::thermal_mutation::competing_controller(),
@@ -410,10 +410,11 @@ pub(super) struct CleanupGuard {
 #[cfg(feature = "service-keyboard-driver-mode-v1")]
 #[cfg_attr(test, allow(dead_code))] // Test composition injects its own Cleanup; only the native factory builds the guard.
 impl CleanupGuard {
-    /// Pins the lifecycle epoch `scope` is admitted at: the ordinary one for
-    /// Stop and shutdown, and the exact suspend generation's for low power.
-    /// The gate admits neither while the other holds, so a Stop capture
-    /// refuses while suspending and a low-power capture refuses once resumed.
+    /// Pins the lifecycle fence `scope` is admitted at (`Lifecycle::fence_for`):
+    /// the ordinary epoch for Stop and shutdown, and the exact suspend
+    /// generation for low power. The gate admits neither while the other
+    /// holds, so a Stop capture refuses while suspending and a low-power
+    /// capture refuses once resumed.
     pub(super) fn capture(
         origin: Arc<Origin>,
         custody: Arc<dyn ReadCustody>,
@@ -425,7 +426,7 @@ impl CleanupGuard {
         origin.mutation_artifact()?;
         let lifecycle = origin
             .lifecycle
-            .epoch_for(scope.write_scope())
+            .fence_for(scope.write_scope())
             .ok_or_else(deny)?;
         let guard = Arc::new(Self {
             origin,
@@ -462,33 +463,51 @@ impl CleanupGuard {
     /// `authorize` with the reason for a refusal.
     fn admit(&self) -> Result<ReadAdmission, Denial> {
         let stop = self.scope == CleanupScope::OwnedStop;
-        let verify = || {
-            if stop {
-                self.origin.verify_owned_stop()
-            } else {
-                self.origin.verify()
-            }
-        };
-        let epoch =
-            || self.origin.lifecycle.epoch_for(self.scope.write_scope()) == Some(self.lifecycle);
-        verify().map_err(|_| Denial::Admission)?;
-        let committed = if stop {
-            self.origin.owned_stop_committed()
-        } else {
-            self.origin.committed()
-        };
-        if !epoch() || !committed.map_err(|_| Denial::Admission)? {
-            return Err(Denial::Admission);
-        }
-        power_and_controllers(&self.controllers)?;
-        verify().map_err(|_| Denial::Admission)?;
-        if !epoch() {
-            return Err(Denial::Admission);
-        }
-        self.custody
-            .authorize_cleanup(self.scope)
-            .ok_or(Denial::Admission)
+        admit_cleanup(
+            || {
+                if stop {
+                    self.origin.verify_owned_stop().is_ok()
+                } else {
+                    self.origin.verify().is_ok()
+                }
+            },
+            || {
+                if stop {
+                    self.origin.owned_stop_committed().ok()
+                } else {
+                    self.origin.committed().ok()
+                }
+            },
+            || self.origin.lifecycle.fence_for(self.scope.write_scope()) == Some(self.lifecycle),
+            || power_and_controllers(&self.controllers),
+            || self.custody.authorize_cleanup(self.scope),
+        )
     }
+}
+/// The Service's cleanup admission over its suppliers, in order
+/// (`CleanupGuard::admit`): origin trust, the scope's pinned lifecycle fence
+/// and origin commitment (`None` when unreadable), a known AC line status and
+/// fresh competing-controller absence, origin trust and the fence again, and
+/// last the exact original custody's admission of the scope, which names the
+/// admitted device. Each refusal stops the checks after it. Only a competing
+/// controller is a typed refusal. The test model (`CleanupFresh`) runs the
+/// same function over its own suppliers.
+#[cfg(feature = "service-keyboard-driver-mode-v1")]
+pub(super) fn admit_cleanup(
+    verify: impl Fn() -> bool,
+    committed: impl FnOnce() -> Option<bool>,
+    fence: impl Fn() -> bool,
+    power_and_controllers: impl FnOnce() -> Result<(), Denial>,
+    custody: impl FnOnce() -> Option<ReadAdmission>,
+) -> Result<ReadAdmission, Denial> {
+    if !verify() || !fence() || committed() != Some(true) {
+        return Err(Denial::Admission);
+    }
+    power_and_controllers()?;
+    if !verify() || !fence() {
+        return Err(Denial::Admission);
+    }
+    custody().ok_or(Denial::Admission)
 }
 /// Storage-only admission captured by `WindowsGuard::capture_storage`: an
 /// identity with no lifecycle epoch. It exposes the storage admission and the

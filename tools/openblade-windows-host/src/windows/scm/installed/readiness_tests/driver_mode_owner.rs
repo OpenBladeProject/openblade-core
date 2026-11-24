@@ -15,6 +15,8 @@ const SUSPEND: u32 = 4;
 const RESUME: u32 = 18;
 /// PBT_APMPOWERSTATUSCHANGE: a power notice that advances the lifecycle epoch.
 const SETTING: u32 = 10;
+const SESSION_CHANGE: u32 = 14;
+const WTS_SESSION_LOCK: u32 = 7;
 const NORMAL: u8 = 0;
 const DRIVER: u8 = 3;
 /// The release's owned-Stop fresh authorization at the job's checkpoint
@@ -1021,6 +1023,7 @@ async fn a_late_suspend_on_a_slow_device_leaves_the_fan_owner_whole() {
 
 /// An observeState request with request number `n`, as a client's status
 /// read; its reply.
+#[cfg(feature = "service-profile-triggers-v1")]
 async fn observed(rig: &Rig, n: u32) -> Value {
     rig.request(json!({"operation":"observeState","version":85,"requestId":format!("dddddddd-bbbb-cccc-dddd-{n:012}"),"includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0}))
         .await
@@ -1260,6 +1263,145 @@ async fn an_ambiguous_low_power_release_stops_later_keyboard_writes() {
     shutdown(&rig).await.unwrap();
     assert_eq!(rig.port.state.lock().unwrap().device_mode_sets, sets);
     assert_eq!(rig.runtime.driver_mode_release(), Some(Release::Uncertain));
+}
+
+/// A release whose Normal may have applied unconfirmed is resolved by a later
+/// confirmed read, never replayed: a read from a job that started before the
+/// release leaves it in doubt, one after the resume resolves it, and the next
+/// due step acquires Driver through the normal cadence.
+#[tokio::test]
+async fn a_later_read_resolves_an_ambiguous_release() {
+    let rig = fan_owner_rig().await;
+    let before = Instant::now();
+    rig.port.state.lock().unwrap().device_mode_bad_ack = true;
+    suspend(&rig);
+    tick(&rig).await;
+    assert_eq!(prepared(&rig), Some(Release::Unconfirmed));
+    assert!(rig.runtime.driver_mode_uncertain_for_tests());
+    rig.port.state.lock().unwrap().device_mode_bad_ack = false;
+    assert_eq!(mode(&rig), NORMAL);
+    let sets = sets(&rig);
+    rig.custody.lifecycle.ingress(POWER, RESUME);
+    let admission = ReadCustody::authorize(rig.custody.as_ref()).unwrap();
+    rig.reader.record_driver_mode(
+        admission,
+        DeviceModeRead::Confirmed(DeviceMode::Normal),
+        before,
+    );
+    step(&rig).await;
+    assert!(rig.runtime.driver_mode_uncertain_for_tests());
+    assert_eq!(self::sets(&rig), sets);
+    record(&rig, DeviceMode::Normal);
+    step(&rig).await;
+    assert!(!rig.runtime.driver_mode_uncertain_for_tests());
+    assert_eq!((self::sets(&rig), mode(&rig)), (sets + 1, DRIVER));
+    assert!(owner(&rig).0);
+    shutdown(&rig).await.unwrap();
+    assert_eq!(rig.runtime.driver_mode_release(), Some(Release::Restored));
+}
+
+/// A session notice during the low-power release, at its baseline read or
+/// between the setter's acknowledgement and its readback (reviewer R2, R3),
+/// moves the lifecycle epoch but not the suspend generation, so the release
+/// still restores Normal and nothing is left in doubt. After the resume
+/// requests apply, the keyboard is acquired again, and Stop succeeds.
+#[tokio::test]
+async fn a_lock_notice_during_the_low_power_release_keeps_its_admission() {
+    for at in [1, 2] {
+        let rig = fan_owner_rig().await;
+        assert_eq!(mode(&rig), DRIVER);
+        let custody = Arc::downgrade(&rig.custody);
+        let query = rig.port.state.lock().unwrap().device_mode_queries + at;
+        rig.port.state.lock().unwrap().device_mode_on_query = Some(Arc::new(move |sent| {
+            if sent == query {
+                custody
+                    .upgrade()
+                    .unwrap()
+                    .lifecycle
+                    .ingress(SESSION_CHANGE, WTS_SESSION_LOCK);
+            }
+        }));
+        suspend(&rig);
+        tick(&rig).await;
+        rig.port.state.lock().unwrap().device_mode_on_query = None;
+        assert_eq!(prepared(&rig), Some(Release::Restored), "{at}");
+        assert!(!rig.runtime.driver_mode_uncertain_for_tests(), "{at}");
+        assert_eq!(mode(&rig), NORMAL, "{at}");
+        rig.custody.lifecycle.ingress(POWER, RESUME);
+        let manual = rig.request(fan_request(102, Some(1), 3600)).await;
+        assert_eq!(manual["result"]["status"], 1, "{at}: {manual}");
+        let sets = sets(&rig);
+        later(&rig).await;
+        assert_eq!((self::sets(&rig), mode(&rig)), (sets + 1, DRIVER), "{at}");
+        shutdown(&rig).await.unwrap();
+        assert_eq!(mode(&rig), NORMAL, "{at}");
+        assert_eq!(rig.port.state.lock().unwrap().fans, [0, 0], "{at}");
+    }
+}
+
+/// The cleanup admission's order (`thermal_native::admit_cleanup`), which
+/// `CleanupGuard` and its test model share: origin trust, the pinned fence,
+/// origin commitment, power and controllers, origin trust and the fence
+/// again, then the custody. Each refusal stops the checks after it, an
+/// unreadable commitment refuses, and only a competing controller is typed.
+#[test]
+fn the_cleanup_admission_checks_in_order_and_stops_at_each_refusal() {
+    use crate::installed::readiness::thermal_native::{Denial, admit_cleanup};
+    const ORDER: [&str; 7] = [
+        "verify",
+        "fence",
+        "committed",
+        "power",
+        "verify",
+        "fence",
+        "custody",
+    ];
+    let proof = ReadAdmission {
+        lifecycle: 9,
+        generation: [7; 32],
+    };
+    // Runs the admission with the call at `refuse` failing: a refused
+    // commitment reads as `unreadable` or false, and refused power as a
+    // competing controller or another refusal.
+    let run = |refuse: Option<usize>, unreadable: bool, competing: bool| {
+        let calls = std::cell::RefCell::new(Vec::new());
+        let passes = |name: &'static str| {
+            let mut calls = calls.borrow_mut();
+            calls.push(name);
+            refuse != Some(calls.len() - 1)
+        };
+        let result = admit_cleanup(
+            || passes("verify"),
+            || match passes("committed") {
+                false if unreadable => None,
+                passed => Some(passed),
+            },
+            || passes("fence"),
+            || match passes("power") {
+                true => Ok(()),
+                false if competing => Err(Denial::CompetingController),
+                false => Err(Denial::Admission),
+            },
+            || passes("custody").then_some(proof),
+        );
+        (result, calls.into_inner())
+    };
+    assert_eq!(run(None, false, false), (Ok(proof), ORDER.to_vec()));
+    for at in 0..ORDER.len() {
+        assert_eq!(
+            run(Some(at), false, false),
+            (Err(Denial::Admission), ORDER[..=at].to_vec()),
+            "{at}"
+        );
+    }
+    assert_eq!(
+        run(Some(2), true, false),
+        (Err(Denial::Admission), ORDER[..=2].to_vec())
+    );
+    assert_eq!(
+        run(Some(3), false, true),
+        (Err(Denial::CompetingController), ORDER[..=3].to_vec())
+    );
 }
 
 /// A boundary while a request holds the gate: the keyboard waits on the gate
