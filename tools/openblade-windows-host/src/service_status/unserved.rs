@@ -50,8 +50,9 @@ impl UnservedRequest {
                 if managed_operations().contains(&name) && !StatusRequest::serves(&name) => {}
             _ => return Err(refused()),
         }
-        // An exact Int32 90, as the served decoder reads it: `85.0`, a string
-        // or an out-of-range integer is not this protocol.
+        // An exact Int32 `PROTOCOL_VERSION`, as the served decoder reads it:
+        // its float form, a string or an out-of-range integer is not this
+        // protocol.
         let version = match members.remove("version") {
             Some(Value::Number(number)) => number.as_i64(),
             _ => None,
@@ -247,8 +248,12 @@ mod tests {
         for served in StatusRequest::OPERATIONS {
             assert!(operations.contains(served), "{served}");
         }
+        let previous = format!(
+            r#"{{"protocol":{{"version":{}}},"operationFamilies":{{"a":["x"]}}}}"#,
+            PROTOCOL_VERSION - 1
+        );
         for broken in [
-            r#"{"protocol":{"version":84},"operationFamilies":{"a":["x"]}}"#,
+            previous.as_str(),
             r#"{"protocol":{"version":90},"operationFamilies":{"a":["x"],"b":["x"]}}"#,
             r#"{"protocol":{"version":90},"operationFamilies":{"a":[""]}}"#,
             r#"{"protocol":{"version":90}}"#,
@@ -302,10 +307,17 @@ mod tests {
             header(json!(7), json!(90), json!(ID)),
             header(Value::Null, json!(90), json!(ID)),
             header(json!("updateProfiles"), json!(51), json!(ID)),
-            header(json!("updateProfiles"), json!(84), json!(ID)),
-            header(json!("updateProfiles"), json!("90"), json!(ID)),
-            header(json!("updateProfiles"), json!(85.0), json!(ID)),
-            header(json!("updateProfiles"), json!(4_294_967_381_i64), json!(ID)),
+            // The neighbouring protocols, then the current one as a string, a
+            // float and an Int64 that wraps to it as an Int32.
+            header(json!("updateProfiles"), json!(PROTOCOL_VERSION - 1), json!(ID)),
+            header(json!("updateProfiles"), json!(PROTOCOL_VERSION + 1), json!(ID)),
+            header(json!("updateProfiles"), json!(PROTOCOL_VERSION.to_string()), json!(ID)),
+            header(json!("updateProfiles"), json!(f64::from(PROTOCOL_VERSION)), json!(ID)),
+            header(
+                json!("updateProfiles"),
+                json!((1_i64 << 32) + i64::from(PROTOCOL_VERSION)),
+                json!(ID),
+            ),
             header(json!("updateProfiles"), json!(90), json!("not-a-guid")),
             header(
                 json!("updateProfiles"),

@@ -148,7 +148,10 @@ async fn unknown_malformed_and_refused_requests_still_close_without_a_reply() {
     let mut payloads = vec![
         json!({"operation": "notAManagedOperation", "version": 90, "requestId": ID}).to_string(),
         json!({"operation": operation, "version": 51, "requestId": ID}).to_string(),
-        json!({"operation": operation, "version": 86, "requestId": ID}).to_string(),
+        json!({"operation": operation, "version": PROTOCOL_VERSION - 1, "requestId": ID})
+            .to_string(),
+        json!({"operation": operation, "version": PROTOCOL_VERSION + 1, "requestId": ID})
+            .to_string(),
         json!({"operation": operation, "version": 90, "requestId": "not-a-guid"}).to_string(),
         json!({"operation": operation, "version": 90}).to_string(),
         json!([operation, 90, ID]).to_string(),

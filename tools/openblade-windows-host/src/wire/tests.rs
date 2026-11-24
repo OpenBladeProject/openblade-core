@@ -157,6 +157,61 @@ async fn rejects_frozen_ipc79_ipc80_and_ipc85_requests_without_reply() {
 }
 
 #[tokio::test]
+async fn rejects_current_requests_at_the_neighbouring_protocols_without_reply() {
+    // The previous protocol is main's last before the merge (89); its frames
+    // keep the current shape, so only the version can turn them away.
+    let runtime: Value = serde_json::from_str(RUNTIME).unwrap();
+    let replay: Value = serde_json::from_str(REPLAY).unwrap();
+    let status = Arc::new(Status::fixture().unwrap());
+    let slots = Arc::new(Semaphore::new(1));
+    let reads = runtime["dispatch"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|entry| {
+            matches!(
+                entry["input"]["operation"].as_str(),
+                Some("getStatus" | "subscribeStatus")
+            )
+        });
+    let accepted = replay["requests"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|entry| entry.get("output").is_some());
+    let mut checked = 0;
+    for entry in reads.chain(accepted) {
+        assert_eq!(
+            entry["input"]["version"], CURRENT_VERSION,
+            "{}",
+            entry["id"]
+        );
+        for version in [CURRENT_VERSION - 1, CURRENT_VERSION + 1] {
+            let mut request = entry["input"].clone();
+            request["version"] = version.into();
+            let (mut client, server) = connect(status.clone(), slots.clone(), Session::Active, 128);
+            send(&mut client, &serde_json::to_vec(&request).unwrap()).await;
+            assert_eq!(
+                client.read(&mut [0]).await.unwrap(),
+                0,
+                "{} at {version}",
+                entry["id"]
+            );
+            let error = server.await.unwrap().unwrap_err();
+            assert_eq!(
+                error.kind(),
+                ErrorKind::InvalidData,
+                "{} at {version}",
+                entry["id"]
+            );
+            assert_eq!(slots.available_permits(), 1);
+            checked += 1;
+        }
+    }
+    assert!(checked > 0);
+}
+
+#[tokio::test]
 async fn performance_mutation_requires_explicit_mode_active_session_and_strict_fields() {
     let (_advance, input) = tokio::sync::mpsc::channel(1);
     let (performance, _drive) = Status::fixture().unwrap().with_performance(input).unwrap();

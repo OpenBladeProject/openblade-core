@@ -280,7 +280,7 @@ async fn installed_update_profiles_closes_on_a_frame_managed_refuses() {
         frame(&|r| r["profiles"]["windowsPowerModes"]["silent"] = json!(3)),
         frame(&|r| r["profiles"]["applicationProfiles"][0]["executablePath"] = json!("Game.exe")),
         frame(&|r| r["extra"] = json!(1)),
-        frame(&|r| r["version"] = json!(84)),
+        frame(&|r| r["version"] = json!(PROTOCOL_VERSION - 1)),
         frame(&|r| r["requestId"] = json!("not-a-guid")),
     ];
     // The discriminator of lighting parameters must come first, which only

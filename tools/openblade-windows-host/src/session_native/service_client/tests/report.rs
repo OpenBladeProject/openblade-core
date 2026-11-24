@@ -155,7 +155,7 @@ async fn refused_malformed_or_uncorrelated_replies_never_acknowledge() {
     let wrong_id = reply("99999999-9999-9999-9999-999999999999", |_| {});
     let unknown_status = ok_reply(9);
     let wrong_version = reply("11111111-1111-1111-1111-111111111111", |frame| {
-        frame["version"] = 84.into();
+        frame["version"] = (crate::service_status::PROTOCOL_VERSION - 1).into();
     });
     let garbage = [4i32.to_le_bytes().as_slice(), b"nope"].concat();
     let oversized = [(70_000i32).to_le_bytes().as_slice(), &[0; 8]].concat();

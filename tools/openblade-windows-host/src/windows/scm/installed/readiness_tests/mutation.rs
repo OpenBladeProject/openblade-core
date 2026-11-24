@@ -4834,7 +4834,7 @@ fn fan_v2_strict_managed_shapes_and_target_validation() {
     let valid = fan_request(1, Some(1), 3700);
     for (key, value) in [
         ("version", json!(80)),
-        ("version", json!(84)),
+        ("version", json!(PROTOCOL_VERSION - 1)),
         ("requestId", json!("bad")),
         ("extra", json!(1)),
     ] {
@@ -7663,7 +7663,7 @@ fn battery_v1_strict_existing_requests_no_raw_or_lifetime_escape() {
     for (k, v) in [
         ("lifetime", json!(1)),
         ("version", json!(80)),
-        ("version", json!(84)),
+        ("version", json!(PROTOCOL_VERSION - 1)),
         ("raw", json!(198)),
         ("requestId", json!("bad")),
     ] {

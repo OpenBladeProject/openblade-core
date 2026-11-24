@@ -771,7 +771,7 @@ async fn a_frame_managed_refuses_is_closed_without_a_change() {
     let mut acknowledged = acknowledge(1);
     acknowledged["policy"] = json!(1);
     let mut old = set_policy(1, json!(1));
-    old["version"] = json!(84);
+    old["version"] = json!(PROTOCOL_VERSION - 1);
     for request in [
         set_policy(1, json!(2)),
         set_policy(1, json!(-1)),

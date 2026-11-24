@@ -714,9 +714,9 @@ pub(crate) async fn read_status_event(
     }
 
     // With `arbitrary_precision` a `Number` keeps the exact text, so this reads
-    // an Int32 as managed `TryGetInt32` does: `-0` is 0, while `-0.0`, `85.0`
-    // and out-of-range integers are refused. A visitor would see `-0` and
-    // `-0.0` as the same float. The scan refuses a private-token object first.
+    // an Int32 as managed `TryGetInt32` does: `-0` is 0, while `-0.0`, a
+    // float such as `90.0` and out-of-range integers are refused. A visitor
+    // would see `-0` and `-0.0` as the same float. The scan refuses a private-token object first.
     fn event_version<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<i32, D::Error> {
         serde_json::Number::deserialize(deserializer)?
             .as_i64()
