@@ -282,10 +282,11 @@ impl Runtime {
             // Managed publishes the power profile's desired state before the
             // lease expiry's transition reads the prior one, so OpenBlade's
             // own application preset reads as drift and pauses there, and
-            // managed's default convergence loop later repairs it. Native has
-            // no such loop yet, so the expiry compares OpenBlade's own
-            // confirmed state as every other cause does and hands that state
-            // back (`leaseExpired` in the lifecycle vectors).
+            // managed's default convergence loop later repairs it. Native
+            // compares OpenBlade's own confirmed state at the expiry, as at
+            // every other cause, and hands that state back itself, so no
+            // convergence claim is spent on it (`leaseExpired` in the
+            // lifecycle vectors).
             let mode = if activation {
                 thermal_drift::Mode::Overwrite
             } else {
@@ -482,12 +483,6 @@ impl Runtime {
         })
     }
 
-    /// The console session's interactive user: the latest admitted reporter
-    /// when it reported from the console session, with its process, else the
-    /// console user with this Service's process as the steps' recorded
-    /// caller. It is a candidate only: the attempt's capture proves the
-    /// session, its unlocked state, the primary SID and logon afresh. Test
-    /// composition without a console probe reads the reporter.
     /// Whether a lifecycle cause still owes an attempt, which runs before
     /// any convergence (`convergence_loop`).
     #[cfg(feature = "service-thermal-convergence-v1")]
@@ -498,6 +493,12 @@ impl Runtime {
             .is_some_and(|tick| tick.pending.is_some())
     }
 
+    /// The console session's interactive user: the latest admitted reporter
+    /// when it reported from the console session, with its process, else the
+    /// console user with this Service's process as the steps' recorded
+    /// caller. It is a candidate only: the attempt's capture proves the
+    /// session, its unlocked state, the primary SID and logon afresh. Test
+    /// composition without a console probe reads the reporter.
     pub(super) fn lifecycle_pair(&self) -> Option<Pair> {
         let reporter = self.application.borrow().as_ref().map(|a| Pair {
             sid: a.sid.clone(),

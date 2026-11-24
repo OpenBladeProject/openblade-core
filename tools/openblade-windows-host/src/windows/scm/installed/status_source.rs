@@ -531,9 +531,16 @@ impl StatusSource for GuardedStatus {
                     let deadline =
                         Instant::now() + super::thermal_mutation::CONVERGENCE_OBSERVE_BUDGET;
                     let current = publisher.borrow().active.clone();
-                    mailbox
-                        .observe(current, deadline, publisher.clone())
-                        .await?;
+                    let observe = mailbox.observe(current, deadline, publisher.clone());
+                    // As an ObserveState's read: bounded by its deadline, and
+                    // a failed or late read is no reading, so the tick goes on
+                    // carrying low-power and lifecycle work. Only fatal
+                    // admission evidence ends the Service.
+                    if let Ok(Err(error)) = timeout_at(deadline, observe).await
+                        && super::thermal_mutation::is_fatal_admission(&error)
+                    {
+                        return Err(error);
+                    }
                 }
             }
             Ok(())

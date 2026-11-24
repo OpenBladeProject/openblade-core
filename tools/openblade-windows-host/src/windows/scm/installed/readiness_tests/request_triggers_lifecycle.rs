@@ -319,9 +319,9 @@ async fn a_power_change_in_low_power_is_applied_after_the_resume() {
 /// publishes the new desired state before `ApplyFullTransitionAsync` takes
 /// it as the prior one, so its drift tracker reads OpenBlade's own Game
 /// preset as an external change and pauses, and its default convergence
-/// loop repairs that later. Native has no convergence loop yet, so it
-/// deliberately compares OpenBlade's own confirmed state at the expiry, as
-/// at every other cause, and applies (`leaseExpired` diverges).
+/// loop repairs that later. Native deliberately compares OpenBlade's own
+/// confirmed state at the expiry, as at every other cause, and applies, so
+/// no convergence claim is spent on it (`leaseExpired` diverges).
 #[tokio::test]
 async fn an_expired_lease_applies_the_power_profile_once() {
     let vectors: Value = serde_json::from_str(LIFECYCLE_VECTORS).unwrap();

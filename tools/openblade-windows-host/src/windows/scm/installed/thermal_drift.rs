@@ -158,10 +158,17 @@ pub(super) struct Tracker {
     /// step dropped at its bound or deadline, or failed after an intent.
     /// The next reading that reports the subsystem settles it.
     submitted: Own,
-    /// How many readings it has observed, so the convergence loop evaluates
-    /// each new one once (`convergence_loop`).
+    /// How many published readings it has observed
+    /// (`Tracker::observe_published`).
     #[cfg(feature = "service-thermal-convergence-v1")]
-    readings: u64,
+    published: u64,
+    /// The published reading the status still carries, by its number:
+    /// `None` once a step reads the device after it, since a
+    /// reconciliation publishes only its last step's snapshot, which need
+    /// not carry an earlier step's reading. The convergence loop evaluates
+    /// each such reading once (`convergence_loop`).
+    #[cfg(feature = "service-thermal-convergence-v1")]
+    evidence: Option<u64>,
 }
 
 /// The reading's preset and Custom levels, `None` when unknown: a HyperBoost
@@ -206,7 +213,7 @@ impl Tracker {
     pub(super) fn observe(&mut self, reading: ObservedPerformance) {
         #[cfg(feature = "service-thermal-convergence-v1")]
         {
-            self.readings = self.readings.wrapping_add(1);
+            self.evidence = None;
         }
         // The first reading after a possible submission shows whether it
         // landed: OpenBlade's own write if it shows what was written, else
@@ -345,14 +352,26 @@ impl Tracker {
         }
     }
 
+    /// `observe` for a reading the status publishes as it is
+    /// (`MailboxSource::observe`): the evidence a convergence evaluation
+    /// reads.
+    pub(super) fn observe_published(&mut self, reading: ObservedPerformance) {
+        self.observe(reading);
+        #[cfg(feature = "service-thermal-convergence-v1")]
+        {
+            self.published = self.published.wrapping_add(1);
+            self.evidence = Some(self.published);
+        }
+    }
+    /// The published reading the status still carries, by its number
+    /// (`Tracker::observe_published`); `None` after a later step's read.
+    #[cfg(feature = "service-thermal-convergence-v1")]
+    pub(super) fn evidence(&self) -> Option<u64> {
+        self.evidence
+    }
     /// Whether a reading confirmed manual fans as OpenBlade's own and no
     /// fan change outside OpenBlade has been seen since: the tracker's part
     /// of managed `IsExactFanIntentOwned` (`Runtime::owns_exact_fans`).
-    /// The readings observed so far (`Tracker::observe`).
-    #[cfg(feature = "service-thermal-convergence-v1")]
-    pub(super) fn readings(&self) -> u64 {
-        self.readings
-    }
     pub(super) fn owns_manual_fans(&self) -> bool {
         self.own.manual == Some(true) && !self.fans
     }
@@ -443,11 +462,6 @@ impl Tracker {
     }
 }
 
-/// One reconciliation's drift decision, shared by its steps: the first step
-/// to read firmware decides for both subsystems, and a later step reuses it.
-/// `now` is the reconciliation's start on the runtime's clock, which stamps
-/// any resume hold that a status reading later compares; a step's worker
-/// keeps its own clock.
 /// A convergence attempt's write scope (`convergence_loop::Guard`): which
 /// subsystems it declared and whether its reservation still admits a write.
 /// A reconciliation without one is unscoped.
@@ -462,6 +476,11 @@ pub(super) trait Scope: Send + Sync {
     fn admits(&self, fans: bool) -> bool;
 }
 
+/// One reconciliation's drift decision, shared by its steps: the first step
+/// to read firmware decides for both subsystems, and a later step reuses it.
+/// `now` is the reconciliation's start on the runtime's clock, which stamps
+/// any resume hold that a status reading later compares; a step's worker
+/// keeps its own clock.
 pub(super) struct Transition {
     tracker: Arc<Mutex<Tracker>>,
     mode: Mode,

@@ -1519,7 +1519,7 @@ impl ReadSource {
             // `ReconcileResumePerformanceDrift`).
             #[cfg(feature = "service-profile-triggers-v1")]
             if let Ok(mut drift) = source.drift.lock() {
-                drift.observe(reading.performance);
+                drift.observe_published(reading.performance);
                 drift.settle(reading.performance, Instant::now());
             }
             // The status's observation record is exact-model data and the

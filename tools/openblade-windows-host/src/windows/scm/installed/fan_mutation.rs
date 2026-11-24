@@ -1099,6 +1099,20 @@ impl Runtime {
         }
     }
 }
+#[cfg(feature = "service-thermal-convergence-v1")]
+impl Runtime {
+    /// Whether a live owner of the outstanding fan row holds it for `sid`
+    /// in `session`: the part of the fan step's continuity check a
+    /// convergence attempt can know before it reserves.
+    pub(super) fn holds_live_fan_owner(&self, sid: &str, session: u32) -> bool {
+        self.fan_owner.borrow().as_ref().is_some_and(|owner| {
+            owner.owned.load(Ordering::Acquire)
+                && !owner.release.load(Ordering::Acquire)
+                && owner.sid == sid
+                && owner.session == session
+        })
+    }
+}
 impl Runtime {
     /// Managed `IsExactFanIntentOwned` for the saved fan `desired` settings
     /// of `sid` at class `power`: this user's fan owner has not handed its

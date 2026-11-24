@@ -1948,10 +1948,11 @@ and stops on ambiguity.
 Native differs from managed in these ways:
 
 - Convergence. Managed's convergence loop reconverges confirmed drift under
-  MaintainDesiredState (above). Native has none, so a subsystem stays
-  excluded until a reconciliation reads OpenBlade's intent again, an
-  explicit request writes it, or the Service restarts. This is the remaining
-  divergence from Architecture rule 5.
+  MaintainDesiredState (above). Without `service-thermal-convergence-v1`
+  native has none, so a subsystem stays excluded until a reconciliation
+  reads OpenBlade's intent again, an explicit request writes it, or the
+  Service restarts. With it, the loop reconverges it
+  ([Convergence loop](#convergence-loop)).
 - Own state at a report and at lease expiry. Managed publishes the new
   desired state before the transition reads it as the prior one, so a
   report that leaves a rule (`otherReportedWithOwnPreset`) and the lease
@@ -2222,20 +2223,30 @@ Native differs from managed in these ways:
 `thermal_convergence_loop.rs` ports managed's observer and executor
 (`EvaluateThermalConvergenceObservationAsync`,
 `ExecuteThermalConvergenceAsync`). It runs after the lifecycle tick, under
-the mutation gate, and evaluates only a reading newer than the last one it
-evaluated, as managed evaluates an observation. Every 15 s while Maintain is
-admitted it asks for its own reading through the same admitted read path,
-with no optional reading (D5). A due D7 retry asks for one too.
+the mutation gate, and evaluates each reading the mailbox published once, as
+managed evaluates an observation. A reconciliation step's own baseline read
+or readback is no evidence, so a status that publishes a step's snapshot is
+not evaluated again. Every 15 s while Maintain is admitted the loop asks for
+its own reading through the same admitted read path, with no optional
+reading (D5); Strict reads nothing. That read is bounded by its deadline,
+and a failed or late read is no reading: the tick goes on with its low-power
+and lifecycle work. A due D7 retry asks for a reading once per 5 s until one
+is evaluated. A tick with none of these reads no console user and captures
+nothing.
 
 An evaluation needs an authoritative ledger, the console user's settled pair
-with no lifecycle cause owed, no low power, settled power, no possible
+with no lifecycle cause owed or pending, no low power, settled power, no possible
 competing controller, no unsettled journal row, Maintain with no pending
 disclosure, and a safe HyperBoost journal. Managed's journal,
 `ProgramData\OpenBlade\hyperboost-ownership.json`, is read read-only through
 the protected path checks. It is safe when it is absent, or Relinquished in a
 schema managed recognizes with the members that schema requires. Anything
 else, including a read that fails, publishes RestorePending with
-`HyperBoostPending` and spends no claim (D8).
+`HyperBoostPending` and spends no claim (D8). While the user is starting or
+a lifecycle cause is owed or pending, the status shows Awaiting with
+`AwaitingFreshObservation` rather than Converging, since the lifecycle's
+reconciliation runs first. Each status projection reads the journal again,
+a small protected-path read, so the status never shows a stale journal.
 
 A contradiction refreshes the ledger to current intent. Its tombstone or a
 spent budget suppresses it; otherwise it reserves one claim, persisted before
@@ -2250,7 +2261,8 @@ attempt is admitted.
 | --- | --- |
 | Every step confirmed by readback | Tombstoned Confirmed |
 | A possible submission whose journal row still fences the store | Tombstoned ReconciliationUnavailable |
-| A possible submission settled without a match | Tombstoned External |
+| Every submission settled, and the last step was refused before submitting | Tombstoned Blocked |
+| Every submission settled, and a readback showed another state | Tombstoned External |
 | Refused before any submission, for a cause that may clear | Reserved for one retry (D7) |
 | Any other refusal, or a retry refused or changed | Tombstoned Blocked |
 | Stop during the attempt | Reserved, reconciled read-only |
@@ -2258,7 +2270,9 @@ attempt is admitted.
 A reservation this runtime did not make, or one a stop left, is reconciled
 read-only from the next reading: a match retires it Confirmed and a confirmed
 contradiction External. An unknown HyperBoost state or an incomplete reading
-keeps it, and so does a journal row that fences the store.
+keeps it. A journal row that still fences the store keeps it too, also after
+a restart: the reservation stays until that row settles, its claim stays
+spent, and nothing is replayed.
 
 Native differs from managed in these ways:
 
@@ -2270,15 +2284,21 @@ Native differs from managed in these ways:
   Managed attempts once.
 - D9. A contradiction native has no recipe for is refused before reserving,
   with no claim spent: for performance, no saved destination, an incomplete
-  GPU clock policy or an owned fan change still to hand back; for either, no
-  saved fan intent. A return to Automatic carries the saved preset in its
-  0D/02 pair, as managed's fan setter carries a performance selector, so a
-  fans-only attempt may write that preset.
+  GPU clock policy or an owned fan change still to hand back; for fans, fan
+  intent native has no recipe for (ManualCurve, Stop, or Fixed and Maximum on
+  battery or under a destination other than Balanced or Performance) or an
+  owned fan row no live owner holds; for either, no saved fan intent. Managed
+  projects unsupported fan intent onto a confirmed Automatic reading, and so
+  does native, so such intent contradicts nothing then and a performance
+  drift still converges. A return to Automatic carries the saved preset in
+  its 0D/02 pair, as managed's fan setter carries a performance selector, so
+  a fans-only attempt may write that preset.
 - The no-settle ambiguity. Native's steps cannot tell a possible submission
   that did not settle by readback any further than its journal row does:
-  ReconciliationUnavailable while the row fences the store, External once it
-  settled without a match. Nothing is replayed, by the running Service or a
-  restarted one.
+  ReconciliationUnavailable while the row fences the store. Once every
+  submission settled, the attempt takes its last step's disposition, as
+  managed's does. Nothing is replayed, by the running Service or a restarted
+  one.
 - A reservation whose persistence fails closes the ledger, so the status
   reports `ConfigurationQuarantined` where managed reports
   `InternalStateUnavailable`.
@@ -2292,7 +2312,16 @@ competing controller and Strict arriving between two writes; Stop before and
 after a submission with a restart; a suspend and a lock refusing an attempt,
 then its retry, including one an external change resolved; an ambiguous
 submission and a restart with its row outstanding; a spent budget; and a
-damaged and a newer ledger, running and restarted.
+damaged and a newer ledger, running and restarted. It also pins the review
+fixes: ManualCurve on AC and Fixed on battery projected onto Automatic while
+a performance drift converges; no evaluation from a reconciliation's own
+readings; the console probe, captures and frames over idle ticks under
+Strict and Maintain; a due retry asking once per interval, a retry refused
+again, and Strict retiring one unread; an unsettled row, a refused admission,
+a ledger changed between writes and one refusal refusing every later step;
+the fan step's convergence, mid-step refusal and Stop; the drain stopping
+the loop; a left reservation retired Confirmed; a tombstone holding without
+its budget; and a failed and a stalled periodic read.
 
 ## Submission, ambiguity and finite transport lifetime
 

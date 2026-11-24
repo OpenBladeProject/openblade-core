@@ -34,6 +34,7 @@
 //! its next observation; native publishes what that observation would give
 //! from the confirmed state the status already carries.
 use super::{Runtime, drift_intent};
+use crate::installed::readiness::thermal_drift::Fans;
 use crate::{
     installed::readiness::thermal_storage::{SavedPolicy, Storage},
     service_status::{
@@ -168,9 +169,11 @@ pub(super) enum Nomination {
     /// A tombstone or a spent budget suppresses it (`Reason::Tombstoned`,
     /// `Reason::BudgetExhausted`).
     Suppressed(Reason),
-    /// No convergence intent can be held for it: no saved destination, a
-    /// blocked selection or an undeclared carried preset (D9).
+    /// No convergence intent can be held for it (D9).
     Unavailable,
+    /// The loop does not evaluate yet: the user is starting, a lifecycle
+    /// cause is owed or pending, and its reconciliation runs first.
+    Waiting,
 }
 
 /// The status managed would publish for `admission`, classifying the
@@ -296,6 +299,12 @@ pub(super) fn derive(
                 Nomination::Converging => {
                     publish(State::Converging, &components, Reason::None, false)
                 }
+                Nomination::Waiting => publish(
+                    State::AwaitingObservation,
+                    &components,
+                    Reason::AwaitingFreshObservation,
+                    false,
+                ),
                 // Until native serves `reapplyChangedSettings`, a suppression
                 // whose only exit is that explicit reapply is published as a
                 // contradiction native cannot hold.
@@ -423,7 +432,11 @@ impl Runtime {
     }
     /// What the classifier compares for the user `sid` at class `query`:
     /// the status's confirmed state, saved intent there and whether this
-    /// runtime owns the exact manual fan intent.
+    /// runtime owns the exact manual fan intent. Fan intent native has no
+    /// recipe for is Automatic over a confirmed Automatic reading, as
+    /// managed `ResolveExperimentalFanHardwareDesired` projects unsupported
+    /// fan intent (`thermal_drift::Fans::Unplanned`); over a manual reading
+    /// it is kept, and still contradicts.
     pub(super) fn convergence_observation(
         &self,
         base: &Snapshot,
@@ -433,9 +446,17 @@ impl Runtime {
         query: i32,
         profile: Option<&Resolution<'_>>,
     ) -> io::Result<Observation> {
+        let confirmed = base.confirmed_thermal();
+        let intent = drift_intent(storage, query, profile)?;
+        let projected =
+            intent.fans == Fans::Unplanned && confirmed.fans == Some(FanMode::AUTOMATIC.0);
         let desired = Intent {
-            performance: drift_intent(storage, query, profile)?.performance,
-            fans: storage.desired_fan_mode(query, profile)?,
+            performance: intent.performance,
+            fans: if projected {
+                FanMode::AUTOMATIC
+            } else {
+                storage.desired_fan_mode(query, profile)?
+            },
         };
         let owns_manual_fans = manual(desired.fans.0)
             && self.owns_exact_fans(
@@ -445,7 +466,7 @@ impl Runtime {
                 storage.desired_fan(query, profile)?.as_ref(),
             );
         Ok(Observation {
-            confirmed: base.confirmed_thermal(),
+            confirmed,
             desired,
             owns_manual_fans,
         })

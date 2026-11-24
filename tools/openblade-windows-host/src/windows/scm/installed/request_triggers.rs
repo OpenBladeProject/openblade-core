@@ -381,6 +381,12 @@ struct Reconciled {
     // A step had not finished at the bound (`RECONCILE_MARGIN`) and was not
     // a deferral: its worker may still submit.
     unfinished: bool,
+    // The last step that needed a change was refused with nothing of it
+    // possibly submitted, as managed's last attempt is KnownNotApplied
+    // (`ThermalTransitionExecutor.Disposition`): the convergence loop's
+    // Blocked.
+    #[cfg(feature = "service-thermal-convergence-v1")]
+    refused_last: bool,
     message: String,
     snapshot: Option<Snapshot>,
 }
@@ -1070,6 +1076,10 @@ impl Runtime {
                 .iter()
                 .all(|(s, possible)| s.outcome.status == 1 || (s.transient && !possible));
         let read = Classes::of(needed.iter().filter_map(|(s, _)| s.class));
+        #[cfg(feature = "service-thermal-convergence-v1")]
+        let refused_last = needed
+            .last()
+            .is_some_and(|(s, possible)| s.outcome.status != 1 && !possible);
         // Both steps can refuse for one cause, which is said once.
         let mut said: Vec<&str> = Vec::with_capacity(steps.len());
         for (stepped, _) in if needed.is_empty() {
@@ -1090,6 +1100,8 @@ impl Runtime {
             deferred,
             read,
             unfinished,
+            #[cfg(feature = "service-thermal-convergence-v1")]
+            refused_last,
             message,
             snapshot: steps.into_iter().rev().find_map(|(s, _)| s.snapshot),
         })
