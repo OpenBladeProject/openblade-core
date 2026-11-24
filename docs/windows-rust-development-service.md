@@ -309,14 +309,14 @@ Acquire and maintain follow managed `ProductionLightingPort.MaintainDriverModeAs
 
 - One mutation job reads `00/84` first. A keyboard already in Driver mode is
   reported `true` with no write and no claim.
-- From Normal, ownership is claimed before the setter can be submitted. A
-  refusal before submission (managed `KnownNotApplied`) clears the claim; any
-  later failure keeps it.
+- From Normal, ownership is claimed before the setter can be submitted, as
+  the durable `AcquireIntent` described below. A refusal before submission
+  (managed `KnownNotApplied`) reverts the claim; any later failure keeps it.
 - The job has a 2 s budget from its own start, after the lane wait. The
   setter is sent only when that budget still covers its acknowledgement and
   the readback, each charged at the baseline exchange's measured length
-  (`mutation::Pace::covers`). Too little time is known not applied, before any
-  claim.
+  (`mutation::Pace::covers`), and the claim's record write is charged too.
+  Too little time is known not applied, before any claim.
 - The setter's reply must correlate and echo `0300` byte for byte
   (`DeviceModeSet::acknowledge`), and an independent `00/84` readback on its
   own transaction ID must read Driver.
@@ -398,9 +398,61 @@ The step publishes through the read cadence that every fresh status projects
 or Indeterminate step. It never edits the subscription feed, so an unchanged
 status is never republished. The feed stays unverified as described above.
 
-Ownership lives in memory, as it does in managed. It decides only whether a
-release's read of Normal is a foreign change; a restart reads `00/84` again. A
-durable owned-or-uncertain record and crash recovery are stage 6a-5.
+Ownership is durable, a deliberate deviation from managed, which keeps
+`ownsDriverMode` and `driverModeReleaseUncertain` in memory
+(`ProductionLightingPort.cs:68`). A restart, a crash or a handback must not
+lose an owned claim or a write that may have applied unconfirmed: Setup's
+handback assumes every firmware write is journaled, and a doubt must stop
+writes across processes too. The record is its own file in the original
+owner custody, `owner\keyboard-driver-mode.bin`
+(`openblade_domain::driver_mode_history`): `Clear`, `Owned`, `AcquireIntent`
+or `ReleaseIntent`, an intent's prior settled state, and the four IDs of the
+job that wrote it. Only this process's own Active owner, once its write lease
+has activated, replaces it, by compare-and-swap along the domain's edges
+(`Store::driver_mode_record_replace`). The owner's flags are derived from the
+record its ledger holds (`driver_mode_ledger`) and change only after a
+replace returned `Ok`, so memory never runs ahead of the file.
+
+- Each job that may write claims before its setter can be sent. An acquire
+  whose baseline reads Normal writes an `AcquireIntent` under the custody's
+  ordinary admission. A release whose baseline reads Driver writes a
+  `ReleaseIntent` under its boundary's cleanup scope, Owned Stop or the
+  suspend generation. A release that finds an acquire in doubt first records
+  what its own baseline read, `AcquireIntent -> Owned`, so an intent never
+  follows an intent. A claim that cannot be written sends no setter; a
+  release then reports `Unrecorded`.
+- After the job the owner settles the claim. Confirmed, an acquire becomes
+  `Owned` and a release `Clear`; known not submitted, the intent reverts to
+  its prior; otherwise it stays in doubt. A release settles only while its
+  share still has room for one record write, and so does `Owned -> Clear`
+  after a release reads Normal. Otherwise the record keeps what it holds for
+  a later read to resolve.
+- The job's pace charges its claim's record writes, each at the longer of a
+  25 ms floor and the last measured replace. The floor is an estimate pending
+  an attended timing on RZ09-0581. The keyboard's share is unchanged.
+- Any failed record write closes the record for the process, and nothing
+  reopens it: after an error the file may hold the old record or the new one.
+  A record that cannot be read or is refused (corrupt, another version, a
+  leftover stage) closes it at load and is kept byte for byte; startup does
+  not fail. A closed owner runs no acquire, maintain or release write, and
+  the status projects confirmed reads only. A settle whose custody admission
+  is refused before anything is written leaves the record, and its doubt, as
+  they are without closing it.
+- An intent is resolved read-only, never replayed. An intent a later process
+  loads is resolved by that process's first due step with one `00/84` read
+  and no `00/04` (`resolve_indeterminate`), and that job also activates the
+  write lease the record write needs. Driver records `Owned` for an acquire
+  intent and the prior for a release intent; Normal records `Clear`, and any
+  acquire waits for the next tick, on fresh IDs. A release doubt this process
+  left is resolved from the read cadence, as below. While a release intent
+  stands, every release reports `Uncertain` and sends nothing.
+
+Setup refuses to retire the custody or hand back while an intent record is
+present, and keeps its bytes; an `Owned` record is only reported. Letting
+managed resolve an intent at handback, a v2 handback item with a managed
+read-before-write, is a separate follow-up because it changes the managed
+Service and needs a versioned header. Until then an intent left by the last
+native Stop blocks retirement until a native Service resolves it.
 
 ##### Cleanup admission
 
@@ -484,20 +536,22 @@ managed order (`ServiceControlRuntime.cs:12925-12950`,
   low-power slice.
 - A fresh `00/84` read of Driver writes `00/04:0000` once, whoever set it, as
   managed does, and requires the exact acknowledgement and an independent
-  `00/84` readback of Normal. A read of Normal ends an owned claim as a
-  foreign change and writes nothing.
+  `00/84` readback of Normal, after its `ReleaseIntent` is written. A read of
+  Normal ends an owned claim as a foreign change and sends no setter.
 - Each boundary releases at most once: the shutdown, and each suspend
   generation. A job whose measured pace could not fit the setter, its
   acknowledgement and the readback in its time sends nothing and reports
   `Exhausted`; a lane refusal before the job registered keeps the attempt.
 - A release that may have submitted Normal without confirming it
-  (`Submitted` or `Acknowledged`) stops every later release, acquire and
-  maintain write until a confirmed `00/84` read under the current read
-  admission, by a job that started after that release, shows the mode
-  (`ReadSource::driver_mode_confirmed_since`). Driver keeps the claim and
-  any other mode clears it; the next due step then acquires through the
-  normal cadence. Until then later releases report `Uncertain` and send
-  nothing. The uncertain write is never replayed.
+  (`Submitted` or `Acknowledged`) leaves its `ReleaseIntent` on disk. It
+  stops every later release, acquire and maintain write until a confirmed
+  `00/84` read under the current read admission, by a job that started after
+  that release, shows the mode (`ReadSource::driver_mode_confirmed_since`).
+  Driver records the intent's prior, the claim there was before the release,
+  and any other mode records `Clear`; the next due step then acquires through
+  the normal cadence. Until then later releases report `Uncertain` and send
+  nothing, in this process and in a later one, which resolves the intent with
+  its own read-only step. The uncertain write is never replayed.
 - A release job whose caller was dropped, as by a Stop during the low-power
   release, stays registered. The next release joins it with the active work
   and reads how far it got before it decides anything.
@@ -537,17 +591,18 @@ lost custody integrity, before it is reported as `Unadmitted`. The Service
 has no diagnostics sink yet, so the outcome is dropped at process exit, as an
 unregistration failure is.
 
-The setter and readback IDs are not journaled until 6a-5, so none is pinned.
-The job reserves both pairs before its first send. A sent ID stays quarantined
-until a correlated reply is read, and retirement frees the unsent one, so long
-runs keep at most one answered ID per command out of the pool
-(`driver_mode_owner` tests). A stale reply across a restart fails closed: the
+The record's claim names the job's baseline, setter, readback and spare IDs
+before the setter is sent, and a settled record keeps them, so the newest
+`00/04` reply always belongs to the IDs on disk. The next process quarantines
+them in its transaction pool beside the journal's (`transaction_seed`);
+managed restarts its IDs at 1 per port. No ID is pinned: the job reserves
+both pairs before its first send, and the pool skips the seeded ones. A sent
+ID stays quarantined until a correlated reply is read, and retirement frees
+the unsent one, so long runs keep at most one answered ID per command out of
+the pool (`driver_mode_owner` tests). A stale reply still fails closed: the
 acknowledgement must match the request's ID, class, command, status and
 checksum and echo the arguments byte for byte, and the independent readback
-uses a different ID and must read the target. The residual is that the
-journal seed does not cover these IDs. A late reply to an earlier process's
-exchange on a reused ID could pass one check, but not both unless it also
-named the target mode.
+uses a different ID and must read the target.
 
 A write port that fails to open is known not applied for every mutation job
 (`windows::mutation_worker`): the lane and owned Stop keep working.
@@ -603,8 +658,8 @@ first ends the work at its next authorization after resume.
 
 Remaining before packaging admission: an attended timing of a real release
 at suspend and at shutdown and of the fan handback at shutdown on RZ09-0581, observation that Fast
-Startup delivers PBT_APMSUSPEND to the native Service, the durable owned and
-uncertain record and journaled IDs of stage 6a-5, and physical validation.
+Startup delivers PBT_APMSUSPEND to the native Service, an attended timing of
+the Driver-mode record write against its 25 ms floor, and physical validation.
 
 #### Live readings (read-only)
 
