@@ -1307,6 +1307,125 @@ async fn a_late_suspend_on_a_slow_device_leaves_the_fan_owner_whole() {
     shutdown(&rig).await.unwrap();
 }
 
+/// The suspend notice as the SCM dispatcher thread delivers it, after the
+/// rig's preparation armed the hold on this, the runtime's, thread: the
+/// notice's hold, which only another thread can wait on.
+fn held_suspend(rig: &Rig) -> crate::origin_lifetime::PendingHold {
+    rig.custody
+        .lifecycle
+        .notice(POWER, SUSPEND, None)
+        .expect("a new suspend generation is held")
+}
+/// Waits on `hold` from a thread that is not the runtime's, as the SCM
+/// dispatcher does: whether the preparation recorded its generation, and
+/// how long the wait took.
+fn wait_elsewhere(hold: crate::origin_lifetime::PendingHold) -> (bool, Duration) {
+    std::thread::spawn(move || {
+        let at = Instant::now();
+        (hold.wait(), at.elapsed())
+    })
+    .join()
+    .unwrap()
+}
+
+/// The SCM callback that delivered a suspend is held, on its own thread,
+/// until the preparation running on the runtime's thread has released the
+/// keyboard and recorded the generation, well within `MAXIMUM_AGE`. The
+/// hold sends nothing and changes no admission: the release is the same
+/// three exchanges under the same cleanup scope.
+#[tokio::test]
+async fn a_held_suspend_callback_ends_when_the_preparation_records_it() {
+    let (rig, _) = owner_rig(NORMAL).await;
+    tick(&rig).await;
+    rig.runtime.hold_suspend_for_tests(&rig.custody.lifecycle);
+    let sent = keyboard(&rig).len();
+    let runtime_thread = std::thread::current().id();
+    let custody = rig.custody.clone();
+    let (accepted, delivered) = std::sync::mpsc::channel();
+    let dispatcher = std::thread::spawn(move || {
+        assert_ne!(std::thread::current().id(), runtime_thread);
+        let hold = custody.lifecycle.notice(POWER, SUSPEND, None).unwrap();
+        accepted.send(()).unwrap();
+        let at = Instant::now();
+        (hold.wait(), at.elapsed())
+    });
+    delivered.recv().unwrap();
+    std::thread::sleep(Duration::from_millis(50));
+    assert!(!dispatcher.is_finished(), "held until the preparation runs");
+    tick(&rig).await;
+    let (recorded, waited) = dispatcher.join().unwrap();
+    assert!(recorded);
+    assert!(
+        waited >= Duration::from_millis(50)
+            && waited < crate::installed::readiness::thermal_mutation::LOW_POWER_MAXIMUM_AGE,
+        "{waited:?}"
+    );
+    assert_eq!(prepared(&rig), Some(Release::Restored));
+    assert_eq!(
+        keyboard(&rig)[sent..]
+            .iter()
+            .map(|(command, ..)| *command)
+            .collect::<Vec<_>>(),
+        [0x84, 0x04, 0x84]
+    );
+    assert_eq!(mode(&rig), NORMAL);
+    rig.custody.lifecycle.ingress(POWER, RESUME);
+    rig.stop().await;
+}
+
+/// Every exit of the preparation records its generation, so the held
+/// callback returns at once: a notice too old to prepare, a refused
+/// release, fatal admission evidence and a preparation dropped mid-release.
+#[tokio::test]
+async fn every_exit_of_the_preparation_ends_the_hold() {
+    let fast =
+        |(recorded, waited): (bool, Duration)| recorded && waited < Duration::from_millis(100);
+    // Aged out.
+    let (rig, _) = owner_rig(NORMAL).await;
+    tick(&rig).await;
+    rig.runtime.read_notice_age(|_| {
+        Some(crate::installed::readiness::thermal_mutation::LOW_POWER_MAXIMUM_AGE)
+    });
+    rig.runtime.hold_suspend_for_tests(&rig.custody.lifecycle);
+    let hold = held_suspend(&rig);
+    tick(&rig).await;
+    assert_eq!(prepared(&rig), Some(Release::Exhausted));
+    assert!(fast(wait_elsewhere(hold)), "aged");
+    // Refused by the cleanup admission.
+    let (rig, _) = owner_rig(NORMAL).await;
+    tick(&rig).await;
+    rig.runtime.hold_suspend_for_tests(&rig.custody.lifecycle);
+    rig.custody.controller.store(true, Ordering::Release);
+    let hold = held_suspend(&rig);
+    tick(&rig).await;
+    assert_eq!(prepared(&rig), Some(Release::Unadmitted));
+    assert!(fast(wait_elsewhere(hold)), "unadmitted");
+    assert_eq!(mode(&rig), DRIVER);
+    rig.custody.controller.store(false, Ordering::Release);
+    // Fatal admission evidence fails the step after recording.
+    let (rig, _) = owner_rig(NORMAL).await;
+    tick(&rig).await;
+    rig.runtime.hold_suspend_for_tests(&rig.custody.lifecycle);
+    rig.port.state.lock().unwrap().mutation_worker_error = Some(Arc::new(|| {
+        crate::installed::readiness::thermal_mutation::fatal_admission("injected")
+    }));
+    let hold = held_suspend(&rig);
+    assert!(try_tick(&rig).await.is_err());
+    assert_eq!(prepared(&rig), None, "the error records no outcome");
+    assert!(fast(wait_elsewhere(hold)), "error");
+    rig.port.state.lock().unwrap().mutation_worker_error = None;
+    // A preparation dropped while its release runs.
+    let (rig, _) = owner_rig(NORMAL).await;
+    tick(&rig).await;
+    rig.runtime.hold_suspend_for_tests(&rig.custody.lifecycle);
+    rig.port.state.lock().unwrap().device_mode_retire_delay = Some(Duration::from_millis(300));
+    let hold = held_suspend(&rig);
+    let dropped = tokio::time::timeout(Duration::from_millis(100), tick(&rig)).await;
+    assert!(dropped.is_err(), "the release was still running");
+    assert!(fast(wait_elsewhere(hold)), "dropped");
+    rig.port.state.lock().unwrap().device_mode_retire_delay = None;
+}
+
 /// An observeState request with request number `n`, as a client's status
 /// read; its reply.
 #[cfg(feature = "service-profile-triggers-v1")]

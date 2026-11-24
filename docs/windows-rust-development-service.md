@@ -656,9 +656,37 @@ Windows AC line status and competing-controller presence; their cost on
 RZ09-0581 is not measured, so the preparation's time is unknown until an
 attended timing. For comparison, the owned fan handback recipe counted 60
 authorizations with its nine exchanges and six journal writes when it still
-ran at suspend. The SCM handler returns at once, as managed's does, so the
-window bounds staleness, not time Windows waits for; a system that sleeps
-first ends the work at its next authorization after resume.
+ran at suspend.
+
+The SCM control callback that delivered the suspend is held until the
+preparation has recorded an outcome for that generation, and never past the
+notice's QPC stamp plus `MAXIMUM_AGE` (`origin_lifetime::suspend_hold`).
+Windows suspends once the callback returns, so without the hold the release
+raced the suspend. This deviates from the managed Service, whose callback
+returns at once (`WindowsServiceLifecycleEventSource.cs:678-689`), and
+matches the managed Session Agent relay, which waits for the Service the
+same way (`SessionPowerTransitionRelay.cs:101-108`). The native Agent serves
+no `reportSessionPowerTransition`, so before the hold native held nothing on
+any suspend, and managed holds nothing on Fast Startup, where no Agent runs.
+
+- Only `SERVICE_CONTROL_POWEREVENT` with PBT_APMSUSPEND that starts a new
+  suspend generation waits, and only while the preparation has armed the
+  hold (`Runtime::native`). STOP, SHUTDOWN, SESSIONCHANGE, a resume, a
+  power-setting read and a repeated or stale suspend return at once.
+- Every exit of the preparation records its generation through a drop
+  guard: a release with any outcome, a notice too old to prepare, a
+  generation already prepared, fatal admission evidence and a preparation
+  dropped mid-release.
+- The callback runs on the SCM dispatcher thread, and the preparation on the
+  runtime that the ServiceMain thread runs (`scm_host::registered_service`),
+  so the wait cannot block the work it waits for. A wait on the preparer's
+  own thread returns at once. The wait holds neither the ingress slot's lock
+  nor the lifecycle's.
+- The hold changes no write admission, fence or budget and sends nothing.
+  The SCM serializes controls, so a STOP that arrives during the hold is
+  delivered after it, at most 1.5 s later.
+- A preparation still running when the cap ends goes on; a system that
+  sleeps first ends the work at its next authorization after resume.
 
 Remaining before packaging admission: an attended timing of a real release
 at suspend and at shutdown and of the fan handback at shutdown on RZ09-0581, observation that Fast

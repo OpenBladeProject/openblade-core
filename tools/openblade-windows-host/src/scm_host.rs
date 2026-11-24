@@ -29,9 +29,12 @@ pub(crate) enum Phase {
 }
 
 pub(crate) static CONTROLS: Controls = Controls::new();
-/// Code, event and the decoded `PBT_POWERSETTINGCHANGE` payload, if any.
-type IngressHook = fn(u32, u32, Option<PowerSetting>);
-static INGRESS: Mutex<Option<IngressHook>> = Mutex::new(None);
+/// Code, event and the decoded `PBT_POWERSETTINGCHANGE` payload, if any. It
+/// returns the hold of a new suspend generation (`Lifecycle::notice`), which
+/// `control` waits on after the hook and this slot's lock are released.
+type IngressHook = fn(u32, u32, Option<PowerSetting>) -> Option<PendingHold>;
+type IngressSlot = Mutex<Option<IngressHook>>;
+static INGRESS: IngressSlot = Mutex::new(None);
 // The installed entry that binds the ingress is compiled out of test builds.
 #[cfg_attr(test, allow(dead_code))]
 pub(crate) fn set_ingress(hook: IngressHook) -> io::Result<()> {
@@ -146,6 +149,9 @@ pub(crate) fn registered_service(
         return;
     }
 
+    // The runtime runs on this ServiceMain thread, which the SCM starts apart
+    // from the dispatcher thread that runs `control`. A suspend hold in
+    // `control` therefore never blocks the preparation it waits for.
     match Builder::new_current_thread().enable_all().build() {
         Ok(runtime) => run(&runtime, handle, receiver),
         Err(_) => {
@@ -161,14 +167,43 @@ pub(crate) unsafe extern "system" fn control(
     event_data: *mut c_void,
     _: *mut c_void,
 ) -> u32 {
+    deliver(
+        &INGRESS,
+        &CONTROLS,
+        code,
+        event,
+        // SAFETY: SCM passes this control's own event data, live for the call.
+        || unsafe { power_setting_of(code, event, event_data) },
+        PendingHold::wait,
+    )
+}
+
+/// One SCM control on the dispatcher thread: forward it to the bound
+/// ingress, wait on the hold it returns, if any, then handle it.
+///
+/// Only a PBT_APMSUSPEND that starts a new suspend generation, while a
+/// preparer has armed the hold, returns one (`Lifecycle::notice`); STOP,
+/// SHUTDOWN and SESSIONCHANGE never do (`installed_notice`). The wait
+/// starts after the hook has returned and the slot's lock is released, so
+/// it holds neither that lock nor the lifecycle's, and it ends by the
+/// notice's QPC stamp plus the preparer's cap at the latest. It changes no
+/// admission or fence and sends nothing. The result is the control's own,
+/// whatever the wait returned.
+fn deliver(
+    slot: &IngressSlot,
+    controls: &Controls,
+    code: u32,
+    event: u32,
+    setting: impl FnOnce() -> Option<PowerSetting>,
+    wait: impl FnOnce(PendingHold) -> bool,
+) -> u32 {
     // Latch before forwarding/coalescing. Unknown callback/registration loss
     // cannot revive an epoch after a later clear sample.
-    if let Some(hook) = *INGRESS.lock().unwrap_or_else(|e| e.into_inner()) {
-        // SAFETY: SCM passes this control's own event data, live for the call.
-        let setting = unsafe { power_setting_of(code, event, event_data) };
-        hook(code, event, setting);
+    let hook = *slot.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(hold) = hook.and_then(|hook| hook(code, event, setting())) {
+        wait(hold);
     }
-    CONTROLS.handle(code)
+    controls.handle(code)
 }
 
 /// The decoded `POWERBROADCAST_SETTING` of a power-setting change, or `None`
@@ -322,28 +357,30 @@ pub(crate) fn startup_stopped() -> io::Error {
 /// `installed_notice` without a power-setting payload, for injected services.
 #[cfg(test)]
 pub(crate) fn installed_ingress(lifecycle: &Lifecycle, code: u32, event: u32, stop: impl FnOnce()) {
-    installed_notice(lifecycle, code, event, None, stop);
+    let _ = installed_notice(lifecycle, code, event, None, stop);
 }
 
 /// The installed entry callback and injected outer service use this same action.
 /// Only terminal controls revoke loaded-build custody; routine events reach the
-/// lifecycle, which decides what they fence.
+/// lifecycle, which decides what they fence. A terminal control never holds
+/// the callback; a new suspend generation may (`Lifecycle::notice`).
 pub(crate) fn installed_notice(
     lifecycle: &Lifecycle,
     code: u32,
     event: u32,
     setting: Option<PowerSetting>,
     stop: impl FnOnce(),
-) {
+) -> Option<PendingHold> {
     use windows_sys::Win32::System::Services::{SERVICE_CONTROL_SHUTDOWN, SERVICE_CONTROL_STOP};
     if matches!(code, SERVICE_CONTROL_STOP | SERVICE_CONTROL_SHUTDOWN) {
         stop();
+        None
     } else {
-        lifecycle.notice(code, event, setting);
+        lifecycle.notice(code, event, setting)
     }
 }
 
-pub(crate) use crate::origin_lifetime::Lifecycle;
+pub(crate) use crate::origin_lifetime::{Lifecycle, PendingHold};
 
 #[cfg(test)]
 mod power_setting_tests {
@@ -596,10 +633,11 @@ mod control_tests {
 
     /// Runs inside the `extern "system"` handler, where a panic aborts the
     /// process: it tolerates a lock poisoned by a failed assertion elsewhere.
-    fn record(code: u32, event: u32, setting: Option<PowerSetting>) {
+    fn record(code: u32, event: u32, setting: Option<PowerSetting>) -> Option<super::PendingHold> {
         SEEN.lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .push((code, event, setting));
+        None
     }
 
     #[test]
@@ -684,6 +722,162 @@ mod installed_notice_tests {
             lifecycle.active(),
             Some(epoch),
             "a terminal control does not fence"
+        );
+    }
+}
+
+/// `control` through `deliver` with a test-bound slot and controls and an
+/// injected waiter: only a new suspend generation reaches the waiter, and
+/// the real wait holds no ingress lock. The native `control` adds only the
+/// payload decode and the process statics, and is compile-only here.
+#[cfg(test)]
+mod suspend_hold_tests {
+    use std::{
+        cell::RefCell,
+        sync::{LazyLock, Mutex, atomic::AtomicUsize, atomic::Ordering, mpsc},
+        thread,
+        time::{Duration, Instant},
+    };
+
+    use openblade_domain::power_setting::{PBT_POWERSETTINGCHANGE, PowerSetting};
+    use windows_sys::Win32::System::Services::{
+        SERVICE_CONTROL_INTERROGATE, SERVICE_CONTROL_POWEREVENT as POWER,
+        SERVICE_CONTROL_SESSIONCHANGE as SESSION, SERVICE_CONTROL_SHUTDOWN, SERVICE_CONTROL_STOP,
+    };
+
+    use super::{Controls, IngressSlot, Lifecycle, PendingHold, deliver, installed_notice};
+
+    const CAP: Duration = Duration::from_millis(1500);
+
+    static WAITER_LIFECYCLE: LazyLock<Lifecycle> = LazyLock::new(Lifecycle::default);
+    static WAITER_STOPS: AtomicUsize = AtomicUsize::new(0);
+    fn waiter_hook(code: u32, event: u32, setting: Option<PowerSetting>) -> Option<PendingHold> {
+        installed_notice(&WAITER_LIFECYCLE, code, event, setting, || {
+            WAITER_STOPS.fetch_add(1, Ordering::AcqRel);
+        })
+    }
+
+    #[test]
+    fn only_a_new_suspend_generation_reaches_the_waiter() {
+        let slot: IngressSlot = Mutex::new(Some(waiter_hook));
+        let controls = Controls::new();
+        let _stop = controls.arm();
+        let waited = RefCell::new(Vec::new());
+        let send = |code: u32, event: u32, setting: Option<PowerSetting>| {
+            deliver(
+                &slot,
+                &controls,
+                code,
+                event,
+                || setting,
+                |hold| {
+                    waited.borrow_mut().push((code, event, hold.generation()));
+                    false
+                },
+            )
+        };
+        // Unarmed: a suspend is not held.
+        send(POWER, 4, None);
+        send(POWER, 18, None);
+        assert!(waited.borrow().is_empty());
+        let arm = thread::spawn(|| WAITER_LIFECYCLE.arm_suspend_hold(CAP))
+            .join()
+            .unwrap()
+            .unwrap();
+        for (code, event, setting) in [
+            (SERVICE_CONTROL_INTERROGATE, 0, None),
+            (SESSION, 4, None),
+            (SESSION, 6, None),
+            (POWER, 10, None),
+            (POWER, 7, None),
+            (POWER, 18, None),
+            (
+                POWER,
+                PBT_POWERSETTINGCHANGE,
+                Some(PowerSetting::ConsoleDisplay(0)),
+            ),
+            (POWER, 4, None),
+            (POWER, 4, None),
+            (
+                POWER,
+                PBT_POWERSETTINGCHANGE,
+                Some(PowerSetting::ConsoleDisplay(1)),
+            ),
+            (POWER, 4, None),
+            // Terminal controls on a clear gate: a suspend now would be held.
+            (POWER, 18, None),
+            (SERVICE_CONTROL_STOP, 4, None),
+            (SERVICE_CONTROL_SHUTDOWN, 4, None),
+        ] {
+            send(code, event, setting);
+        }
+        // The repeated suspend is the same generation; the DisplayOn
+        // ended it, so the next suspend is held again.
+        assert_eq!(*waited.borrow(), [(POWER, 4, 3), (POWER, 4, 5)]);
+        assert_eq!(WAITER_STOPS.load(Ordering::Acquire), 2);
+        assert!(controls.stop_requested(), "STOP is handled after no wait");
+        drop(arm);
+    }
+
+    static CROSS_LIFECYCLE: LazyLock<Lifecycle> = LazyLock::new(Lifecycle::default);
+    fn cross_hook(code: u32, event: u32, setting: Option<PowerSetting>) -> Option<PendingHold> {
+        installed_notice(&CROSS_LIFECYCLE, code, event, setting, || {})
+    }
+    static CROSS_SLOT: IngressSlot = Mutex::new(Some(cross_hook));
+    static CROSS_CONTROLS: Controls = Controls::new();
+
+    /// The held dispatcher thread holds no ingress lock: a control from
+    /// another thread is forwarded and handled during the wait, and the
+    /// preparer's record ends the wait well before the cap.
+    #[test]
+    fn a_held_callback_waits_outside_the_ingress_lock() {
+        let arm = CROSS_LIFECYCLE.arm_suspend_hold(CAP).unwrap();
+        let (accepted, held) = mpsc::channel();
+        let dispatcher = thread::spawn(move || {
+            let at = Instant::now();
+            let result = deliver(
+                &CROSS_SLOT,
+                &CROSS_CONTROLS,
+                POWER,
+                4,
+                || None,
+                |hold| {
+                    accepted.send(hold.generation()).unwrap();
+                    hold.wait()
+                },
+            );
+            (result, at.elapsed())
+        });
+        let generation = held.recv().unwrap();
+        thread::sleep(Duration::from_millis(50));
+        assert!(!dispatcher.is_finished(), "the suspend is held");
+        let (done, finished) = mpsc::channel();
+        let other = thread::spawn(move || {
+            done.send(deliver(
+                &CROSS_SLOT,
+                &CROSS_CONTROLS,
+                SESSION,
+                7,
+                || None,
+                |_| unreachable!("a session notice is never held"),
+            ))
+            .unwrap();
+        });
+        assert_eq!(
+            finished.recv_timeout(Duration::from_millis(500)),
+            Ok(CROSS_CONTROLS.handle(SESSION))
+        );
+        other.join().unwrap();
+        assert!(
+            !dispatcher.is_finished(),
+            "still held after the session notice"
+        );
+        arm.prepared(generation);
+        let (result, waited) = dispatcher.join().unwrap();
+        assert_eq!(result, CROSS_CONTROLS.handle(POWER));
+        assert!(
+            waited >= Duration::from_millis(50) && waited < CAP,
+            "{waited:?}"
         );
     }
 }

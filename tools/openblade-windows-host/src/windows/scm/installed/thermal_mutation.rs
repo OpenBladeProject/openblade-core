@@ -771,6 +771,11 @@ impl Runtime {
             let origin = origin.clone();
             Box::new(move |timestamp| origin.lifecycle.age(timestamp))
         };
+        // The preparation runs on this thread's runtime, which the hold never
+        // waits on (`origin_lifetime::suspend_hold`).
+        #[cfg(feature = "service-keyboard-driver-mode-v1")]
+        let low_power_prepared =
+            low_power::Prepared::holding(origin.lifecycle.arm_suspend_hold(low_power::MAXIMUM_AGE));
         Self {
             factory: Rc::new(move |sid, session, custody, capture| {
                 let guard: Arc<dyn Fresh> = match capture {
@@ -848,7 +853,7 @@ impl Runtime {
             #[cfg(feature = "service-keyboard-driver-mode-v1")]
             notice_age: Rc::new(notice_age.into()),
             #[cfg(feature = "service-keyboard-driver-mode-v1")]
-            low_power_prepared: Rc::default(),
+            low_power_prepared: Rc::new(low_power_prepared),
             #[cfg(feature = "service-profile-triggers-v1")]
             drift: mailbox.drift(),
             fan_owner: Rc::default(),

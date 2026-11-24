@@ -87,8 +87,19 @@ mod tests {
 /// write admission, capture and timer reads it here, under the same lock as
 /// the epoch. Unknown events fence old operations but never establish
 /// resume; fresh device/session/controller proof is still required.
+///
+/// The fields are the state, the wake of each new suspend generation
+/// (`suspended`) and the hold of that generation's SCM callback
+/// (`arm_suspend_hold`).
 #[derive(Default)]
-pub(crate) struct Lifecycle(Mutex<LifecycleState>, Arc<tokio::sync::Notify>);
+pub(crate) struct Lifecycle(
+    Mutex<LifecycleState>,
+    Arc<tokio::sync::Notify>,
+    Arc<SuspendHold>,
+);
+mod suspend_hold;
+use suspend_hold::SuspendHold;
+pub(crate) use suspend_hold::{HoldArm, PendingHold};
 /// Marks a low-power cleanup's fence (`Lifecycle::fence_for`). Epochs count
 /// up from 1 and are exhausted only at `u64::MAX` (`checked_add`), so an
 /// epoch could carry this bit only after 2^63 notices, which no process
@@ -126,10 +137,11 @@ impl Lifecycle {
             .map(|_| ())
             .map_err(|_| io::Error::other("lifecycle state lock poisoned"))
     }
-    /// An SCM control without a power-setting payload, at the callback's QPC time.
+    /// An SCM control without a power-setting payload, at the callback's QPC
+    /// time. It never waits on a hold.
     #[cfg(test)]
     pub(crate) fn ingress(&self, code: u32, event: u32) {
-        self.notice(code, event, None);
+        let _ = self.notice(code, event, None);
     }
     /// The SCM control callback with its decoded power-setting payload, if
     /// any, at the callback's QPC time. A console display read updates the
@@ -137,17 +149,37 @@ impl Lifecycle {
     /// (managed `ClassifyConsoleDisplayTransition`). A power-setting read
     /// never fences (see `fences`). The display state and the gate share this
     /// lock, so a display read classifies against the read the gate saw
-    /// before it.
-    pub(crate) fn notice(&self, code: u32, event: u32, setting: Option<PowerSetting>) {
+    /// before it. A PBT_APMSUSPEND that starts a new suspend generation
+    /// returns that generation's hold while a preparer has armed it
+    /// (`arm_suspend_hold`); the caller waits on it after releasing every
+    /// lock it holds. No other notice returns one.
+    pub(crate) fn notice(
+        &self,
+        code: u32,
+        event: u32,
+        setting: Option<PowerSetting>,
+    ) -> Option<PendingHold> {
         self.apply(code, qpc::now(), fences(code, event), |display| {
             signal_for(code, event, display, setting)
-        });
+        })
     }
     /// One power or session notice with an already classified gate signal:
     /// advance the epoch, then apply the signal, if any, at `timestamp`.
     #[cfg(test)]
     pub(crate) fn record(&self, code: u32, signal: Option<Signal>, timestamp: i64) {
-        self.apply(code, timestamp, true, |_| signal);
+        let _ = self.apply(code, timestamp, true, |_| signal);
+    }
+    /// Arms the hold of each new suspend generation's SCM callback for the
+    /// preparer on this thread: until it records an outcome for that
+    /// generation (`HoldArm::prepared`), at most `cap` from the notice's QPC
+    /// stamp. `None` when another preparer armed it. Dropping the arm
+    /// disarms it.
+    #[cfg_attr(
+        not(any(test, feature = "service-keyboard-driver-mode-v1")),
+        allow(dead_code)
+    )]
+    pub(crate) fn arm_suspend_hold(&self, cap: std::time::Duration) -> Option<HoldArm> {
+        self.2.arm(cap)
     }
     /// Exhausts the epoch, as `u64::MAX` fencing notices would: the gate then
     /// reads unknown (`low_power() == None`) and nothing is admitted again.
@@ -163,7 +195,7 @@ impl Lifecycle {
         timestamp: i64,
         fences: bool,
         signal: impl FnOnce(&mut ConsoleDisplay) -> Option<Signal>,
-    ) {
+    ) -> Option<PendingHold> {
         use windows_sys::Win32::System::Services::{
             SERVICE_CONTROL_POWEREVENT, SERVICE_CONTROL_SESSIONCHANGE,
         };
@@ -171,31 +203,31 @@ impl Lifecycle {
             code,
             SERVICE_CONTROL_POWEREVENT | SERVICE_CONTROL_SESSIONCHANGE
         ) {
-            return;
+            return None;
         }
-        let Ok(mut state) = self.0.lock() else {
-            return;
-        };
+        let mut state = self.0.lock().ok()?;
         if state.epoch == 0 {
-            return;
+            return None;
         } // Exhaustion is sticky; never revive epoch one.
         if fences {
             state.epoch = state.epoch.checked_add(1).unwrap_or(0);
         }
-        if let Some(signal) = signal(&mut state.display) {
-            // A stale signal changes nothing but may have fenced. A new
-            // suspend generation wakes the low-power cleanup after this lock
-            // is released, as managed raises TransitionChanged to its
-            // coordinator (`ServiceSessionPowerTransitionCoordinator`).
-            let accepted = state.gate.apply(signal, timestamp);
-            drop(state);
-            if accepted.is_some_and(|accepted| accepted.changed && accepted.transition.suspending())
-            {
-                // One stored permit: a suspend while the waiter is busy is
-                // seen at its next wait, never lost.
-                self.1.notify_one();
-            }
-        }
+        // A stale signal changes nothing but may have fenced. A new suspend
+        // generation wakes the low-power cleanup after this lock is
+        // released, as managed raises TransitionChanged to its coordinator
+        // (`ServiceSessionPowerTransitionCoordinator`), and is held from
+        // the notice's stamp, the same QPC stamp the preparation ages.
+        let signal = signal(&mut state.display)?;
+        let accepted = state.gate.apply(signal, timestamp);
+        drop(state);
+        let transition = accepted
+            .filter(|accepted| accepted.changed && accepted.transition.suspending())?
+            .transition;
+        // One stored permit: a suspend while the waiter is busy is seen at
+        // its next wait, never lost.
+        self.1.notify_one();
+        self.2
+            .accept(transition.generation, self.age(transition.timestamp))
     }
     /// Notified once for each new suspend generation (`apply`). Its waiter
     /// reads the transition itself (`low_power`), so a stale or coalesced
@@ -208,7 +240,6 @@ impl Lifecycle {
     /// same clock every notice stamps with. `None` for a timestamp in the
     /// future. Managed measures a transition's age the same way
     /// (`ServiceSessionPowerTransitionCoordinator`, `TimeProvider.GetElapsedTime`).
-    #[cfg_attr(not(feature = "service-keyboard-driver-mode-v1"), allow(dead_code))]
     pub(crate) fn age(&self, timestamp: i64) -> Option<std::time::Duration> {
         let ticks = u128::try_from(i128::from(qpc::now()) - i128::from(timestamp)).ok()?;
         let nanos = ticks * 1_000_000_000 / u128::from(qpc::frequency().get());
@@ -774,5 +805,121 @@ mod lifecycle_tests {
             "{age:?}"
         );
         assert_eq!(lifecycle.age(i64::MAX), None);
+    }
+    /// Only a PBT_APMSUSPEND that starts a new suspend generation is held,
+    /// and only while a preparer has armed the hold: never a resume, a
+    /// power status change, a power-setting read (even a DisplayOn), a
+    /// session notice (even one numbered 4), another control, a repeated or
+    /// stale suspend, or any notice after exhaustion.
+    #[test]
+    fn only_a_new_suspend_generation_is_held_while_armed() {
+        use windows_sys::Win32::System::Services::{
+            SERVICE_CONTROL_SESSIONCHANGE, SERVICE_CONTROL_STOP,
+        };
+        let held = |lifecycle: &Lifecycle, code, event, setting| {
+            lifecycle
+                .notice(code, event, setting)
+                .map(|hold| hold.generation())
+        };
+        let lifecycle = std::sync::Arc::new(Lifecycle::default());
+        assert_eq!(held(&lifecycle, POWER, 4, None), None, "unarmed");
+        lifecycle.ingress(POWER, 18);
+        // Armed on another thread, as the preparer's runtime thread is.
+        let arm = {
+            let lifecycle = lifecycle.clone();
+            std::thread::spawn(move || {
+                lifecycle.arm_suspend_hold(std::time::Duration::from_millis(1500))
+            })
+            .join()
+            .unwrap()
+            .unwrap()
+        };
+        assert!(
+            lifecycle
+                .arm_suspend_hold(std::time::Duration::from_millis(1500))
+                .is_none()
+        );
+        for (code, event, setting) in [
+            (POWER, 10, None),
+            (POWER, SETTING, display(0)),
+            (POWER, SETTING, Some(PowerSetting::PowerSource(1))),
+            (SERVICE_CONTROL_SESSIONCHANGE, 4, None),
+            (SERVICE_CONTROL_SESSIONCHANGE, 6, None),
+            (SERVICE_CONTROL_STOP, 4, None),
+            (1, 4, None),
+        ] {
+            assert_eq!(
+                held(&lifecycle, code, event, setting),
+                None,
+                "{code}/{event}"
+            );
+        }
+        assert_eq!(held(&lifecycle, POWER, 4, None), Some(3));
+        assert_eq!(
+            held(&lifecycle, POWER, 4, None),
+            None,
+            "the same generation"
+        );
+        for (code, event, setting) in [
+            (POWER, 10, None),
+            (SERVICE_CONTROL_SESSIONCHANGE, 7, None),
+            (POWER, 7, None),
+            (POWER, 4, None),
+            (POWER, 18, None),
+            (POWER, SETTING, display(0)),
+            (POWER, 4, None),
+            (POWER, SETTING, display(1)),
+        ] {
+            // Resumes, a DisplayOn and the suspends between them: each
+            // suspend is a new generation and only those are held.
+            let generation = held(&lifecycle, code, event, setting);
+            assert_eq!(
+                generation.is_some(),
+                code == POWER && event == 4,
+                "{code}/{event}"
+            );
+        }
+        // A stale suspend changes no generation.
+        lifecycle.record(POWER, Some(Signal::Suspend), 1);
+        assert_eq!(generation(&lifecycle), 8);
+        // A generation the preparer has recorded is not held.
+        arm.prepared(9);
+        assert_eq!(held(&lifecycle, POWER, 4, None), None);
+        assert_eq!(generation(&lifecycle), 9);
+        lifecycle.ingress(POWER, 18);
+        assert_eq!(held(&lifecycle, POWER, 4, None), Some(11));
+        lifecycle.0.lock().unwrap().epoch = 0;
+        lifecycle.ingress(POWER, 18);
+        assert_eq!(held(&lifecycle, POWER, 4, None), None, "exhausted");
+        // Disarmed, a new generation is not held.
+        let lifecycle = Lifecycle::default();
+        drop(lifecycle.arm_suspend_hold(std::time::Duration::from_millis(1500)));
+        assert_eq!(held(&lifecycle, POWER, 4, None), None, "disarmed");
+    }
+    /// The hold lasts from the notice's stamp: a suspend whose notice is
+    /// older than the cap is not held at all.
+    #[test]
+    fn a_suspend_older_than_the_cap_is_not_held() {
+        let lifecycle = std::sync::Arc::new(Lifecycle::default());
+        let _arm = {
+            let lifecycle = lifecycle.clone();
+            std::thread::spawn(move || {
+                lifecycle.arm_suspend_hold(std::time::Duration::from_micros(1))
+            })
+            .join()
+            .unwrap()
+            .unwrap()
+        };
+        // Advance the notice clock past the stamp by more than the cap.
+        let stamp = qpc::now();
+        for _ in 0..20 {
+            qpc::now();
+        }
+        assert!(
+            lifecycle
+                .apply(POWER, stamp, true, |_| Some(Signal::Suspend))
+                .is_none()
+        );
+        assert_eq!(generation(&lifecycle), 1);
     }
 }

@@ -24,22 +24,22 @@ pub(crate) fn entry(origin: Arc<Origin>) -> io::Result<()> {
     *slot = Some(origin);
     drop(slot);
     crate::scm_host::set_ingress(|code, event, setting| {
-        if let Ok(slot) = ENTRY_ORIGIN.lock()
-            && let Some(origin) = &*slot
-        {
-            // Managed samples the Windows power kind at every control capture;
-            // a power notice is native's capture between requests, so an
-            // unplug and replug between them still advances the generation.
-            #[cfg(feature = "service-thermal-mutation-v1")]
-            if code == windows_sys::Win32::System::Services::SERVICE_CONTROL_POWEREVENT {
-                origin
-                    .lifecycle
-                    .observe_power_kind(crate::origin_lifetime::sample_power_kind());
-            }
-            crate::scm_host::installed_notice(&origin.lifecycle, code, event, setting, || {
-                origin.revoke_for_stop()
-            });
+        let slot = ENTRY_ORIGIN.lock().ok()?;
+        let origin = slot.as_ref()?;
+        // Managed samples the Windows power kind at every control capture;
+        // a power notice is native's capture between requests, so an
+        // unplug and replug between them still advances the generation.
+        #[cfg(feature = "service-thermal-mutation-v1")]
+        if code == windows_sys::Win32::System::Services::SERVICE_CONTROL_POWEREVENT {
+            origin
+                .lifecycle
+                .observe_power_kind(crate::origin_lifetime::sample_power_kind());
         }
+        // A suspend hold is returned and waited on by `scm_host::control`
+        // after this slot's lock is released.
+        crate::scm_host::installed_notice(&origin.lifecycle, code, event, setting, || {
+            origin.revoke_for_stop()
+        })
     })?;
     dispatch_candidate(process_evidence, || dispatch_named(NAME, service_main))
 }
