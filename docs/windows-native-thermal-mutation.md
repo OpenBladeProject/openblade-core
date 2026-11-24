@@ -2041,8 +2041,12 @@ The policy and its upgrade disclosure are the managed preferences members
 and `thermalPolicyUpgradeDisclosure` (not required 0, pending 1,
 acknowledged 2). Migration below schema 16 stores Maintain with the
 disclosure pending, as `BatteryConfigurationStore.ReadPreferences` does, and
-a preserved aggregate reads as quarantined. `Storage::thermal_policy` reads
-them and `Storage::save_thermal_policy` changes them.
+keeps both from schema 16 on. `Storage::thermal_policy` reads them and
+`Storage::save_thermal_policy` changes them. A preserved aggregate, or a
+configuration this service failed to replace or saw change, is quarantined
+(`configuration_quarantined`), as managed quarantines its configuration. A
+thermal-journal or battery fence leaves the configuration admitted: the
+policy reads as saved and is pending reconciliation, and a change is stored.
 
 `setThermalControlPolicy` and `acknowledgeThermalPolicyUpgradeDisclosure`
 (`thermal_policy_mutation.rs`) follow managed `SetThermalControlPolicyAsync`
@@ -2054,35 +2058,56 @@ preferences and the saved profiles are committed as one aggregate through the
 recorded transaction above, after the staged documents reopen through this
 service's reader, and the reply follows the readback. A failed write that is
 restored replies with the restored text, one whose restore cannot be
-confirmed quarantines the aggregate, and a preserved aggregate refuses both
-requests with managed's recovery texts. No IPC protocol member changes.
+confirmed quarantines the aggregate, and a quarantined configuration refuses
+both requests with managed's recovery texts. Each request runs under the
+thermal recipe budget (`mutation_budget`), since it waits for the operation
+gate a thermal request holds. No IPC protocol member changes.
 
 `thermalConvergence` (`service_status/thermal_convergence.rs`) is published
-in the owner's private projection only. `thermal_mutation::convergence`
-derives it at each publication from the saved policy, the admission facts
-managed's evaluation reads, and the confirmed state against saved intent,
-in managed's order (`ResolveThermalConvergenceClosureReason`, then
+in the owner's private projection only; other views skip the store reads.
+`thermal_mutation::convergence` derives it at each publication from the
+saved policy, the admission facts managed's evaluation reads, and the
+confirmed state against saved intent, in managed's order
+(`ResolveThermalConvergenceClosureReason`, then
 `ThermalConvergenceClassifier`):
 
 | Condition | State | Reason |
 | --- | --- | --- |
+| Configuration quarantined | Paused | ConfigurationQuarantined |
 | Strict | Paused | StrictPolicy |
 | Maintain with the disclosure pending | Paused | UpgradeDisclosurePending |
 | Low power, or the lifecycle unreadable | Paused | LowPower |
 | No settled power class | Paused | PowerUnsettled |
 | A possible competing controller named | Paused | CompetingControllerPresent |
-| A journaled thermal write not settled | Paused | PendingReconciliation |
+| A thermal write not settled, or a journal or battery fence | Paused | PendingReconciliation |
 | HyperBoost confirmed active | External, both components | HyperBoostActive |
 | A contradiction managed would converge | Paused | InternalStateUnavailable |
 | Manual fans on both sides, not OpenBlade's own | Paused, Fans, explicit reapply | ManualFanReadbackAmbiguous |
 | A reading or saved intent native cannot resolve | AwaitingObservation | AwaitingFreshObservation |
 | Confirmed state matches saved intent | Matched | None |
 
-Low power is read from the lifecycle's ordinary write epoch
-(`Lifecycle::active`), which is absent exactly when the gate reads low. The
-gate probe itself belongs to the reconciliation, whose checks the trigger
-tests count. Manual fans are OpenBlade's own only when this user's exact
-fan write was confirmed and nothing changed since (`thermal_drift`).
+The projection that carries the member needs a write capture, which needs
+the lifecycle's ordinary epoch (`WindowsGuard::capture`). So the LowPower
+row follows managed's order but is not published natively: the member is
+absent instead (below). Low power is
+read from that epoch (`Lifecycle::active`), never from the gate probe, which
+belongs to the reconciliation and whose checks the trigger tests count.
+Managed's CompetingControllerUncertain reason has no row: the fresh capture
+the projection takes has already confirmed controller absence, or refused.
+Manual fans are OpenBlade's own only when this user's exact fan write was
+confirmed and nothing changed since (`thermal_drift`).
+
+Status reports any external power as the coarse class 3, and the status's
+own saved intent stays at that class. For the member only, under AC
+presence, the class this user's own last step classified from its adapter
+reading (`Storage::observe_power`) stands in for it while the Windows power
+generation is unchanged (`convergence_power`). So the member classifies on
+PluggedIn and USB-C as that step read them, and a fan request's own
+publication and the projection it retains agree. Before any such step, and
+after a change of the Windows power kind, AC is PowerUnsettled. A swap
+between full and limited adapters under unchanged AC presence is not seen
+until the next step. Full parity needs managed's periodic 07/8C adapter
+read in the status read job, a separate slice.
 
 Native differs from managed in these ways:
 
@@ -2092,13 +2117,17 @@ Native differs from managed in these ways:
   RestorePending and ReconciliationUnavailable states, and its budget,
   tombstone and HyperBoost-journal reasons, need that loop and are never
   published. Strict stays advisory either way.
-- Power. Native status reports every external class as the coarse class 3,
-  so on AC the member reports `PowerUnsettled`; only battery is classified.
-- Absent member. The member is absent until a thermal request or startup
-  retains this user's policy, when a competing controller refuses the
-  capture, and when the aggregate is preserved, since the saved-intent
-  reads before it fail. Managed then publishes Paused with
-  `ConfigurationQuarantined` or its controller reason.
+- Power. AC is classified only from this user's last step, as described
+  above; managed reads the adapter itself.
+- Absent member. The member is absent, where managed publishes a Paused
+  row, whenever the projection's write capture is refused or no longer
+  current: in low power, under a locked session, an unknown AC line, a
+  competing controller or a fence held by another user, and for a
+  preserved aggregate, since the saved-intent reads before it fail.
+  The projection a fan request retains pins its capture's epoch, so it is
+  absent from the next power or session notice until another request
+  retains a projection. The member is also absent until a thermal request
+  or startup retains this user's policy.
 - AwaitingObservation. Managed publishes it after a policy change until its
   next observation; native derives what that observation would give from
   the confirmed state the status already carries.
@@ -2106,11 +2135,12 @@ Native differs from managed in these ways:
   does, so a competing controller, a locked session or an unknown AC status
   refuses it with the saved-configuration text, and in low power the
   storage capture stores it; managed admits the active session and an
-  admitted configuration only. A caller outside the control
-  session is closed without a reply, where managed replies Blocked; a SYSTEM
-  caller receives the session text. A store failure replies Failed with the
-  store's reason, where managed's exception ends the request without a
-  result.
+  admitted configuration only. A caller outside the control session is
+  closed without a reply, where managed replies Blocked; a SYSTEM caller
+  receives the session text. A store failure, including a store read
+  before the transaction, replies Failed with the store's reason, where
+  managed's exception ends the request without a result; fatal evidence
+  still ends the Service.
 
 `tests/data/thermal-convergence-vectors.json` holds managed's statuses and
 replies, recorded by
@@ -2118,7 +2148,8 @@ replies, recorded by
 `thermal_convergence_tests.rs` replays each status through the strict codec
 and checks that native classifies the same components where managed
 converges. `readiness_tests/thermal_policy.rs` replays the replies through
-the framed dispatcher.
+the framed dispatcher. `tests/data/profile-migration-vectors.json` carries
+managed's Strict and Acknowledged rows that survive migration.
 
 ## Submission, ambiguity and finite transport lifetime
 
