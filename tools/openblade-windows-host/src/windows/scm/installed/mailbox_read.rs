@@ -747,9 +747,11 @@ impl ReadCustody for ReadLease {
             },
         )
     }
-    /// The low-power scope is `authorize` at the epoch the gate admits for
-    /// that suspend generation instead of the ordinary one: the same live
-    /// origin trust, original custody and generation.
+    /// The low-power scope is `authorize` at that suspend generation's own
+    /// fence (`Lifecycle::fence_for`, through `low_power_admission`) instead
+    /// of the ordinary epoch, so a lock or unlock during the suspend leaves
+    /// it admitted: the same live origin trust, original custody and
+    /// generation.
     #[cfg(feature = "service-keyboard-driver-mode-v1")]
     fn authorize_cleanup(&self, scope: CleanupScope) -> Option<ReadAdmission> {
         let CleanupScope::LowPower { generation } = scope else {

@@ -89,8 +89,10 @@ mod tests {
 /// resume; fresh device/session/controller proof is still required.
 #[derive(Default)]
 pub(crate) struct Lifecycle(Mutex<LifecycleState>, Arc<tokio::sync::Notify>);
-/// Marks a low-power cleanup's fence (`Lifecycle::fence_for`): epochs count
-/// up from 1 and are exhausted long before they reach it.
+/// Marks a low-power cleanup's fence (`Lifecycle::fence_for`). Epochs count
+/// up from 1 and are exhausted only at `u64::MAX` (`checked_add`), so an
+/// epoch could carry this bit only after 2^63 notices, which no process
+/// receives. Each admission compares a fence with its own scope's fence.
 #[cfg_attr(not(feature = "service-keyboard-driver-mode-v1"), allow(dead_code))]
 const CLEANUP_GENERATION: u64 = 1 << 63;
 struct LifecycleState {
