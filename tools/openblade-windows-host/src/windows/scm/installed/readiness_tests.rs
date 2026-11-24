@@ -1,3 +1,6 @@
+#[cfg(feature = "service-diagnostics-export-v1")]
+#[path = "readiness_tests/export.rs"]
+mod export;
 #[path = "readiness_tests/observation.rs"]
 mod observation;
 #[path = "readiness_tests/unserved.rs"]

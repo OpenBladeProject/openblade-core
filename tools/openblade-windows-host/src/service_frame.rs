@@ -81,6 +81,31 @@ fn frame_length(payload: &[u8]) -> io::Result<i32> {
         .ok_or_else(|| invalid("invalid frame length"))
 }
 
+/// Writes the one response that may carry a diagnostic archive, under
+/// managed `MaximumDiagnosticResponseBytes` instead of the 64 KiB bound and
+/// with the same write timeout as every frame.
+#[cfg(feature = "service-diagnostics-export-v1")]
+// The wire fixture binary includes this module too and serves no export.
+#[allow(dead_code)]
+pub(crate) async fn write_archive_frame(
+    io: &mut (impl AsyncWrite + Unpin + ?Sized),
+    frame: &impl Serialize,
+) -> io::Result<()> {
+    let payload = serde_json::to_vec(frame)?;
+    // Managed `OpenBladeIpc.MaximumDiagnosticResponseBytes`.
+    const MAX_ARCHIVE_RESPONSE_BYTES: i32 = 24 * 1024 * 1024;
+    let length = i32::try_from(payload.len())
+        .ok()
+        .filter(|length| (1..=MAX_ARCHIVE_RESPONSE_BYTES).contains(length))
+        .ok_or_else(|| invalid("invalid frame length"))?;
+    timeout(FRAME_TIMEOUT, async {
+        io.write_i32_le(length).await?;
+        io.write_all(&payload).await?;
+        io.flush().await
+    })
+    .await?
+}
+
 pub(crate) fn invalid(message: &'static str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, message)
 }

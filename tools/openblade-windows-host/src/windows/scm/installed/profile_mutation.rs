@@ -89,14 +89,17 @@ impl Runtime {
             // Only a reconciliation reads these, and none is composed.
             let _ = (request, fresh, deadline, status);
             Ok(match storage.save_profiles(profiles)? {
-                ProfileSave::Stored => (
-                    Outcome {
-                        status: 0,
-                        message: STORED_MESSAGE.into(),
-                    },
-                    true,
-                    None,
-                ),
+                ProfileSave::Stored => {
+                    self.record_stored_profiles();
+                    (
+                        Outcome {
+                            status: 0,
+                            message: STORED_MESSAGE.into(),
+                        },
+                        true,
+                        None,
+                    )
+                }
                 // Managed `Failed`.
                 ProfileSave::Rejected(message) => (Outcome { status: 3, message }, false, None),
                 ProfileSave::Blocked(message) => (Outcome::blocked(message), false, None),

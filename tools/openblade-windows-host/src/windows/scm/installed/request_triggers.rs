@@ -665,7 +665,7 @@ impl Runtime {
             None
         };
         match storage.save_profiles(profiles)? {
-            ProfileSave::Stored => {}
+            ProfileSave::Stored => self.record_stored_profiles(),
             // Managed `Failed`.
             ProfileSave::Rejected(message) => {
                 return Ok((Outcome { status: 3, message }, false, None));

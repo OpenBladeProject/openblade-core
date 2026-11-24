@@ -107,6 +107,13 @@ pub(crate) enum StatusRequest {
         version: i32,
         request_id: String,
     },
+    /// Managed `ExportDiagnosticsRequest`. `liveReadingsEnabled` is a
+    /// required constructor member.
+    ExportDiagnostics {
+        version: i32,
+        request_id: String,
+        live_readings_enabled: bool,
+    },
     ObserveState {
         include_live_readings: bool,
         #[serde(default = "all_live_readings")]
@@ -173,7 +180,7 @@ impl StatusRequest {
     /// The discriminator of every variant. `operation` maps each variant to
     /// its entry, so a new variant cannot be added without listing it here.
     #[cfg(feature = "installed-service-candidate")]
-    pub(crate) const OPERATIONS: [&'static str; 12] = [
+    pub(crate) const OPERATIONS: [&'static str; 13] = [
         "setBatteryPolicy",
         "setBatteryProtection",
         "setFullChargeOverride",
@@ -186,6 +193,7 @@ impl StatusRequest {
         "updateProfiles",
         "setThermalControlPolicy",
         "acknowledgeThermalPolicyUpgradeDisclosure",
+        "exportDiagnostics",
     ];
 
     #[cfg(all(test, feature = "installed-service-candidate"))]
@@ -203,6 +211,7 @@ impl StatusRequest {
             Self::UpdateProfiles { .. } => 9,
             Self::SetThermalControlPolicy { .. } => 10,
             Self::AcknowledgeThermalPolicyUpgradeDisclosure { .. } => 11,
+            Self::ExportDiagnostics { .. } => 12,
         }]
     }
 
@@ -216,10 +225,11 @@ impl StatusRequest {
         const FAN: bool = cfg!(feature = "service-fan-mutation-v2");
         const BATTERY: bool = cfg!(feature = "service-battery-policy-v1");
         const PROFILES: bool = cfg!(feature = "service-profiles-v1");
+        const EXPORT: bool = cfg!(feature = "service-diagnostics-export-v1");
         const POLICY: bool = cfg!(feature = "service-profile-triggers-v1");
-        const COMPILED: [bool; 12] = [
+        const COMPILED: [bool; 13] = [
             BATTERY, BATTERY, BATTERY, FAN, THERMAL, THERMAL, true, true, true, PROFILES, POLICY,
-            POLICY,
+            POLICY, EXPORT,
         ];
         Self::OPERATIONS
             .iter()
@@ -279,6 +289,10 @@ impl StatusRequest {
 
     pub(crate) fn is_observation(&self) -> bool {
         matches!(self, Self::ObserveState { .. })
+    }
+
+    pub(crate) fn is_export(&self) -> bool {
+        matches!(self, Self::ExportDiagnostics { .. })
     }
 
     /// Managed `EffectiveLiveReadings`: the requested sensors when
@@ -366,7 +380,12 @@ impl StatusRequest {
                 request_id,
                 ..
             } => (*version, request_id),
-            Self::AcknowledgeThermalPolicyUpgradeDisclosure {
+            Self::ExportDiagnostics {
+                version,
+                request_id,
+                ..
+            }
+            | Self::AcknowledgeThermalPolicyUpgradeDisclosure {
                 version,
                 request_id,
             }
@@ -419,6 +438,13 @@ impl StatusRequest {
         }
         if matches!(self, Self::UpdateProfiles { .. }) && !cfg!(feature = "service-profiles-v1") {
             return Err(invalid("signed profile composition is unavailable"));
+        }
+        if matches!(self, Self::ExportDiagnostics { .. })
+            && !cfg!(feature = "service-diagnostics-export-v1")
+        {
+            return Err(invalid(
+                "signed diagnostic export composition is unavailable",
+            ));
         }
         if matches!(
             self,
@@ -573,6 +599,25 @@ impl StatusResponse {
             status: Some(status),
             result: None,
             archive: None,
+            error_code: None,
+        }
+    }
+
+    /// Managed `Success(requestId, archive)`: the archive is the one body.
+    #[cfg(feature = "service-diagnostics-export-v1")]
+    pub(crate) fn archive(request: &StatusRequest, file_name: String, zip_bytes: String) -> Self {
+        Self {
+            frame: Frame::Response,
+            version: PROTOCOL_VERSION,
+            request_id: request.header().1.to_ascii_lowercase(),
+            success: true,
+            error: None,
+            status: None,
+            result: None,
+            archive: Some(serde_json::json!({
+                "suggestedFileName": file_name,
+                "zipBytes": zip_bytes,
+            })),
             error_code: None,
         }
     }

@@ -360,6 +360,9 @@ pub(super) struct Runtime {
     #[cfg(feature = "service-keyboard-driver-mode-v1")]
     keyboard: Rc<keyboard::Keyboard>,
     gate: Rc<tokio::sync::Mutex<()>>,
+    // Managed `DiagnosticHistory`: what an export reports of this runtime.
+    #[cfg(feature = "service-diagnostics-export-v1")]
+    diagnostic_history: Arc<crate::diagnostic_export::History>,
     // Public battery history is bounded independently of request/user intent.
     // Only independent reads update its timestamp; sibling publications cannot.
     battery_observation: Arc<Mutex<battery::BatteryObservation>>,
@@ -550,6 +553,23 @@ impl Outcome {
     }
 }
 impl Runtime {
+    /// The history this runtime records into, for the export port.
+    #[cfg(feature = "service-diagnostics-export-v1")]
+    pub(super) fn diagnostic_history(&self) -> Arc<crate::diagnostic_export::History> {
+        Arc::clone(&self.diagnostic_history)
+    }
+
+    /// Managed `UpdateProfilesAsync` records each stored save.
+    #[cfg(feature = "service-profiles-v1")]
+    pub(super) fn record_stored_profiles(&self) {
+        #[cfg(feature = "service-diagnostics-export-v1")]
+        self.diagnostic_history.record_summary(
+            "Stored",
+            openblade_domain::profile_set::update::STORED_MESSAGE,
+        );
+    }
+}
+impl Runtime {
     #[cfg(test)]
     pub(super) fn injected(
         mailbox: &MailboxSource,
@@ -603,6 +623,8 @@ impl Runtime {
             #[cfg(feature = "service-keyboard-driver-mode-v1")]
             keyboard: Rc::default(),
             gate: Rc::default(),
+            #[cfg(feature = "service-diagnostics-export-v1")]
+            diagnostic_history: Arc::new(crate::diagnostic_export::History::service()),
             battery_observation: Arc::default(),
             battery_source: Arc::new(std::sync::atomic::AtomicU8::new(3)),
             battery_warning: Arc::default(),
@@ -779,6 +801,8 @@ impl Runtime {
             #[cfg(feature = "service-keyboard-driver-mode-v1")]
             keyboard: Rc::default(),
             gate: Rc::default(),
+            #[cfg(feature = "service-diagnostics-export-v1")]
+            diagnostic_history: Arc::new(crate::diagnostic_export::History::service()),
             battery_observation: Arc::default(),
             battery_source: Arc::new(std::sync::atomic::AtomicU8::new(3)),
             battery_warning: Arc::default(),
