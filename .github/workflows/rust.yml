@@ -365,6 +365,9 @@ jobs:
               ($driverModeProfiles + 'driver_mode::tests'),
               ($driverModeOwner + 'driver_mode'),
               ($driverModeOwner + 'device_mode'),
+              # The low-power cleanup admission and its generation fence
+              # (`mailbox_read::low_power_admission`).
+              ($driverModeOwner + 'the_low_power_admission'),
               ($driverModeOwner + 'a_serving_loop_tick_runs_the_keyboard_driver_mode_step'),
               ($driverModeOwnerTriggers + 'driver_mode'),
               ($driverModeOwnerTriggers + 'a_serving_loop_tick_runs_the_keyboard_driver_mode_step'),
