@@ -175,8 +175,9 @@ pub(super) struct Keyboard {
     started: Cell<bool>,
     /// When the next step is due; `None` until the first eligible tick.
     due: Cell<Option<Instant>>,
-    /// The store of the latest console capture, whose unsettled journal row
-    /// blocks a release (managed `RequiresReconciliation`).
+    /// The store of the latest capture of any caller (`captured_store`),
+    /// whose unsettled journal row blocks a release (managed
+    /// `RequiresReconciliation`).
     storage: RefCell<Option<Arc<Storage>>>,
     /// The shutdown release job started.
     shut_down: Cell<bool>,
@@ -372,8 +373,7 @@ impl Runtime {
 
     /// A fresh capture of the console user's ordinary write admission for one
     /// acquire. `None` when nobody is signed in or the capture is refused;
-    /// only fatal admission evidence is an error. Its store is kept for the
-    /// release's journal check.
+    /// only fatal admission evidence is an error.
     fn capture_console(&self, reader: &ReadSource) -> io::Result<Option<ConsoleCapture>> {
         let Some((sid, session)) = self.console.get().and_then(|read| read()) else {
             return Ok(None);
@@ -384,8 +384,18 @@ impl Runtime {
             Err(error) if is_fatal_admission(&error) => return Err(error),
             Err(_) => return Ok(None),
         };
-        *self.keyboard.storage.borrow_mut() = Some(storage.clone());
         Ok(Some((storage, fresh)))
+    }
+
+    /// Keeps the store of every capture for the release's journal check
+    /// (`Runtime::capture_scoped`). Every write in the process is captured
+    /// first, the captures are serialized by the gate, and every store
+    /// recovers the last row of the one custody journal when it opens, so the
+    /// latest capture's store has seen every row, whichever user wrote it.
+    /// A console capture alone would miss a row another console user's
+    /// request wrote after the owner's last step.
+    pub(super) fn captured_store(&self, storage: &Arc<Storage>) {
+        *self.keyboard.storage.borrow_mut() = Some(storage.clone());
     }
 
     /// One acquire attempt under a fresh capture. `None` when it was refused

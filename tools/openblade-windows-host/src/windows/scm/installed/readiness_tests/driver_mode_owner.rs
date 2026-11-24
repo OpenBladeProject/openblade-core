@@ -1588,6 +1588,17 @@ async fn release_skips_leave_the_mode_unchanged() {
     assert_eq!(release(&rig).await, Some(Release::Unsettled));
     assert_eq!((keyboard(&rig).len(), mode(&rig)), (reads, DRIVER));
 
+    // The same row written through another store than the owner's last
+    // console capture, as a request of another console user writes it.
+    let (rig, _) = owner_rig(NORMAL).await;
+    tick(&rig).await;
+    rig.custody.other_storage.store(true, Ordering::Release);
+    rig.port.state.lock().unwrap().fail_write = Some(1);
+    rig.set(1, value(1, 1)).await;
+    let reads = keyboard(&rig).len();
+    assert_eq!(release(&rig).await, Some(Release::Unsettled));
+    assert_eq!((keyboard(&rig).len(), mode(&rig)), (reads, DRIVER));
+
     // A held gate exhausts the share without a write.
     let (rig, _) = owner_rig(NORMAL).await;
     tick(&rig).await;

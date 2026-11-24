@@ -1160,6 +1160,8 @@ impl Runtime {
         {
             return Err(io::ErrorKind::PermissionDenied.into());
         }
+        #[cfg(feature = "service-keyboard-driver-mode-v1")]
+        self.captured_store(&captured.0);
         Ok(captured)
     }
 
