@@ -523,6 +523,8 @@ type interface OpenBlade.Protocol.ICoolingPadDevice
   method abstract System.Threading.Tasks.Task SetFanAsync(OpenBlade.Contracts.CoolingPadFanMode mode, System.Nullable<System.Int32> rpm, System.Func<System.Boolean> submissionAllowed, System.Threading.CancellationToken cancellationToken, System.Nullable<OpenBlade.Protocol.CoolingPadFanPreset> smartPreset = null)
   method abstract System.Threading.Tasks.Task SetLightingAsync(OpenBlade.Contracts.CoolingPadSettings settings, System.Func<System.Boolean> submissionAllowed, System.Threading.CancellationToken cancellationToken)
   method abstract System.Threading.Tasks.Task<OpenBlade.Protocol.CoolingPadDeviceSnapshot> ReadSnapshotAsync(System.Threading.CancellationToken cancellationToken)
+  method virtual System.Boolean get_Usable()
+  property System.Boolean Usable { get; }
   property System.String Identity { get; }
 type interface OpenBlade.Protocol.ICoolingPadDeviceProvider
   method abstract System.Threading.Tasks.Task<OpenBlade.Protocol.ICoolingPadDevice> OpenAsync(System.Threading.CancellationToken cancellationToken)
