@@ -100,6 +100,11 @@ pub(super) struct FanPermit {
     prepared: AtomicBool,
     joined: AtomicBool,
     registered: AtomicBool,
+    // A job of this owner's one cleanup attempt (`release`) registered: from
+    // then on it may have sent the owner's reserved cleanup IDs, the
+    // baseline read's included before any row, so no other admission may
+    // run the attempt again.
+    cleanup_registered: AtomicBool,
     fatal: Arc<Mutex<Option<&'static str>>>,
 }
 // A canceled/refused future which never registered a mutation worker cannot
@@ -119,8 +124,7 @@ impl FanPermit {
         self.write_in(progress, self.cleanup().then_some(CleanupScope::OwnedStop))
     }
     /// Appends `progress` for this owner's exact record. A cleanup row is
-    /// journaled under that cleanup scope's custody admission, which the
-    /// Service's handback (`FanHandbackPermit`) passes for low power.
+    /// journaled under that cleanup scope's custody admission.
     fn write_in(&self, progress: u8, cleanup: Option<CleanupScope>) -> io::Result<()> {
         let record = self
             .record
@@ -412,6 +416,9 @@ impl Permit for FanPermit {
     }
     fn mutation_registered(&self) {
         self.registered.store(true, Ordering::Release);
+        if self.release.load(Ordering::Acquire) {
+            self.cleanup_registered.store(true, Ordering::Release);
+        }
     }
     fn windows_on_battery(&self) -> Option<bool> {
         self.fresh.on_battery()
@@ -813,6 +820,9 @@ impl FanSettlePermit {
     }
 }
 impl Permit for FanSettlePermit {
+    fn mutation_registered(&self) {
+        self.owner.cleanup_registered.store(true, Ordering::Release);
+    }
     fn authorize(&self) -> Option<ReadAdmission> {
         verify_retained_failure(&self.owner.fatal).ok()?;
         self.fresh
@@ -900,8 +910,8 @@ impl Permit for FanSettlePermit {
 }
 /// The Service's owned fan handback under its cleanup admission
 /// (`Cleanup`), which needs no console user: at Stop or shutdown when the
-/// owner's own capture no longer authorizes Stop, and at a confirmed
-/// low-power boundary, where no ordinary capture is admitted. It runs the
+/// owner's own capture no longer authorizes Stop, as after a logoff. It
+/// never runs at a low-power boundary (`low_power_cleanup.rs`). It runs the
 /// owner's exact cleanup recipe and nothing else: the fresh baseline read,
 /// 51 when firmware already reports Automatic, and otherwise 31, the
 /// Automatic setters' 40-43 and their confirmed 50 under the owner's
@@ -912,13 +922,15 @@ struct FanHandbackPermit {
     owner: Arc<FanPermit>,
     cleanup: Arc<dyn Cleanup>,
     proof: ReadAdmission,
-    // The lane registered this job's worker (`Permit::mutation_registered`):
-    // from then on its reserved cleanup IDs may have been sent.
-    registered: AtomicBool,
 }
 #[cfg(feature = "service-keyboard-driver-mode-v1")]
 impl FanHandbackPermit {
     fn capture(owner: &Arc<FanPermit>, cleanup: Arc<dyn Cleanup>) -> Option<Arc<Self>> {
+        // Owned Stop and shutdown only: a low-power boundary hands no fans
+        // back (`low_power_cleanup.rs`).
+        if cleanup.scope() != CleanupScope::OwnedStop {
+            return None;
+        }
         verify_retained_failure(&owner.fatal).ok()?;
         if !owner.owned.load(Ordering::Acquire) || !owner.release.load(Ordering::Acquire) {
             return None;
@@ -935,7 +947,6 @@ impl FanHandbackPermit {
                 owner: owner.clone(),
                 cleanup,
                 proof,
-                registered: AtomicBool::new(false),
             })
         })
     }
@@ -943,7 +954,7 @@ impl FanHandbackPermit {
 #[cfg(feature = "service-keyboard-driver-mode-v1")]
 impl Permit for FanHandbackPermit {
     fn mutation_registered(&self) {
-        self.registered.store(true, Ordering::Release);
+        self.owner.cleanup_registered.store(true, Ordering::Release);
     }
     fn authorize(&self) -> Option<ReadAdmission> {
         verify_retained_failure(&self.owner.fatal).ok()?;
@@ -1046,130 +1057,8 @@ impl Permit for FanHandbackPermit {
         Ok(Settlement::Complete)
     }
 }
-/// How a low-power fan handback ended (`Runtime::hand_back_fans`). Only a
-/// fatal admission error fails the preparation; the outcome is a diagnostic.
-#[cfg(feature = "service-keyboard-driver-mode-v1")]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(in super::super) enum FanHandback {
-    /// Automatic confirmed: the owner's 50, or 51 on a fresh Automatic read.
-    Restored,
-    /// OpenBlade owns no manual fan change to hand back.
-    NotOwned,
-    /// A fan row is not settled, so nothing was sent.
-    Unsettled,
-    /// Fresh cleanup admission refused, or Windows reports battery or an
-    /// unknown power kind, where no handback recipe runs. Nothing was sent
-    /// and the owner's one cleanup attempt is kept for Stop.
-    Unadmitted,
-    /// The owner's one cleanup attempt already ran; it is never repeated.
-    Attempted,
-    /// The time ran out before the job registered. Nothing was sent.
-    Exhausted,
-    /// The job ran without confirming Automatic. Its rows fence every later
-    /// fan write until they are reconciled; nothing is replayed.
-    Unconfirmed,
-}
-/// Keeps an owner's one cleanup attempt only once its job registered: a
-/// handback refused or dropped before then sent none of the reserved IDs.
-#[cfg(feature = "service-keyboard-driver-mode-v1")]
-struct HandbackClaim {
-    owner: Arc<FanPermit>,
-    job: Option<Arc<FanHandbackPermit>>,
-}
-#[cfg(feature = "service-keyboard-driver-mode-v1")]
-impl Drop for HandbackClaim {
-    fn drop(&mut self) {
-        if self
-            .job
-            .as_ref()
-            .is_none_or(|job| !job.registered.load(Ordering::Acquire))
-        {
-            self.owner.release.store(false, Ordering::Release);
-        }
-    }
-}
 #[cfg(feature = "service-keyboard-driver-mode-v1")]
 impl Runtime {
-    /// The fan handback of a confirmed low-power boundary (managed
-    /// `PrepareForLowPowerCoreAsync`'s fan stop) under the Service's cleanup
-    /// admission for `scope`, by `deadline`. It joins active work first, as
-    /// owned Stop does, and hands back only a positively established owner.
-    /// Saved intent is unchanged: the next active reconciliation or request
-    /// applies it.
-    pub(super) async fn hand_back_fans(
-        &self,
-        mailbox: &MailboxSource,
-        scope: CleanupScope,
-        deadline: Instant,
-    ) -> io::Result<FanHandback> {
-        let Ok(_serial) = tokio::time::timeout_at(deadline, self.gate.lock()).await else {
-            return Ok(FanHandback::Exhausted);
-        };
-        let MailboxSource::Reader(reader) = mailbox else {
-            return Ok(FanHandback::NotOwned);
-        };
-        match tokio::time::timeout_at(deadline, reader.drain_active()).await {
-            Err(_) => return Ok(FanHandback::Exhausted),
-            Ok(Err(error)) if is_fatal_admission(&error) => return Err(error),
-            Ok(Err(_)) => return Ok(FanHandback::Unsettled),
-            Ok(Ok(())) => {}
-        }
-        verify_retained_failure(&self.fatal)?;
-        let pending = self.fan_pending.borrow().clone();
-        let owner = self.fan_owner.borrow().clone();
-        let latest = pending.clone().or(owner.clone());
-        if latest.as_ref().is_some_and(|p| p.storage.pending()) {
-            return Ok(FanHandback::Unsettled);
-        }
-        if latest.as_ref().is_none_or(|p| !p.storage.outstanding_fan()) {
-            return Ok(FanHandback::NotOwned);
-        }
-        let Some(permit) = pending
-            .filter(|p| p.owned.load(Ordering::Acquire))
-            .or(owner.filter(|p| p.owned.load(Ordering::Acquire)))
-        else {
-            return Ok(FanHandback::NotOwned);
-        };
-        let Some(cleanup) = self.capture_cleanup(reader, scope)? else {
-            return Ok(FanHandback::Unadmitted);
-        };
-        // Only fresh Windows AC has a handback recipe; keep the attempt.
-        if cleanup.on_battery() != Some(false) {
-            return Ok(FanHandback::Unadmitted);
-        }
-        if permit.release.swap(true, Ordering::AcqRel) {
-            return Ok(FanHandback::Attempted);
-        }
-        let mut claim = HandbackClaim {
-            owner: permit.clone(),
-            job: None,
-        };
-        let Some(handback) = FanHandbackPermit::capture(&permit, cleanup) else {
-            verify_retained_failure(&self.fatal)?;
-            return Ok(FanHandback::Unadmitted);
-        };
-        claim.job = Some(handback.clone());
-        if Instant::now() >= deadline {
-            return Ok(FanHandback::Exhausted);
-        }
-        let result = reader
-            .mutate_cleanup_in(handback.clone(), scope, deadline)
-            .await;
-        let confirmed = match result {
-            Err(error) if is_fatal_admission(&error) => return Err(error),
-            Err(_) => false,
-            Ok(reading) => reading.is_some(),
-        };
-        Ok(
-            if confirmed && matches!(permit.storage.progress(), Some(50 | 51)) {
-                FanHandback::Restored
-            } else if handback.registered.load(Ordering::Acquire) {
-                FanHandback::Unconfirmed
-            } else {
-                FanHandback::Unadmitted
-            },
-        )
-    }
     /// A fresh capture of the Service's cleanup admission for `scope`
     /// (`Runtime::cleanup`). `None` when it is not composed or refuses; only
     /// fatal admission evidence is an error.
@@ -1470,6 +1359,7 @@ impl Runtime {
             prepared: AtomicBool::new(false),
             joined: AtomicBool::new(false),
             registered: AtomicBool::new(false),
+            cleanup_registered: AtomicBool::new(false),
             fatal: self.fatal.clone(),
         });
         let store = permit.storage.clone();
@@ -1884,39 +1774,64 @@ impl Runtime {
                 "Owned Stop cleanup was already attempted; reserved IDs will not be reused.",
             ));
         }
-        // The owner's own capture authorizes Stop only inside its lifecycle
-        // epoch and console session. After a power or session event, or with
-        // nobody signed in, it cannot: the Service's own cleanup admission
-        // then runs the same handback recipe. Without it, only the settle-only
-        // permit may run: it reads, and appends 51 on Automatic.
-        let deadline = Instant::now() + std::time::Duration::from_secs(3);
-        #[cfg(feature = "service-keyboard-driver-mode-v1")]
-        let handback = if permit.authorize().is_some() {
-            None
-        } else {
-            self.capture_cleanup(reader, CleanupScope::OwnedStop)?
-                .and_then(|cleanup| FanHandbackPermit::capture(&permit, cleanup))
-        };
-        #[cfg(not(feature = "service-keyboard-driver-mode-v1"))]
-        let handback = None::<Arc<FanSettlePermit>>;
-        let result = if permit.authorize().is_some() {
-            reader.mutate_cleanup(permit.clone(), deadline).await
-        } else if let Some(handback) = handback {
-            reader.mutate_cleanup(handback, deadline).await
-        } else if let Some(settle) = FanSettlePermit::capture(&permit) {
-            reader.mutate_cleanup(settle, deadline).await
-        } else {
-            verify_retained_failure(&self.fatal)?;
-            Err(io::Error::other(
-                "Fresh owned fan cleanup admission is unavailable.",
-            ))
-        };
+        let result = self.run_owned_stop(reader, &permit).await;
         if !matches!(permit.storage.progress(), Some(50 | 51)) || result?.is_none() {
             return Err(io::Error::other(
                 "Automatic fan handback was not independently confirmed; evidence is retained.",
             ));
         }
         Ok(())
+    }
+}
+impl Runtime {
+    /// The owner's one Stop cleanup under the first admission that still
+    /// holds. The owner's own capture authorizes Stop only inside its
+    /// lifecycle epoch and console session. After a power or session event,
+    /// or with nobody signed in, it cannot: the Service's own cleanup
+    /// admission then runs the same handback recipe. Without it, only the
+    /// settle-only permit may run: it reads, and appends 51 on Automatic.
+    ///
+    /// A job the lane refused before registering sent nothing, so the next
+    /// admission may run the attempt. A registered job may have sent the
+    /// owner's reserved cleanup IDs, its baseline read's even before row 31,
+    /// so its result is final: no later admission resends those IDs.
+    async fn run_owned_stop(
+        &self,
+        reader: &super::super::mailbox_read::ReadSource,
+        permit: &Arc<FanPermit>,
+    ) -> io::Result<Option<ObservedPerformance>> {
+        let deadline = Instant::now() + std::time::Duration::from_secs(3);
+        let ran = |result: &io::Result<_>| {
+            permit.cleanup_registered.load(Ordering::Acquire)
+                || result.as_ref().is_err_and(is_fatal_admission)
+        };
+        let mut result = Err(io::Error::other(
+            "Fresh owned fan cleanup admission is unavailable.",
+        ));
+        if permit.authorize().is_some() {
+            result = reader.mutate_cleanup(permit.clone(), deadline).await;
+            if ran(&result) {
+                return result;
+            }
+        }
+        #[cfg(feature = "service-keyboard-driver-mode-v1")]
+        if let Some(handback) = self
+            .capture_cleanup(reader, CleanupScope::OwnedStop)?
+            .and_then(|cleanup| FanHandbackPermit::capture(permit, cleanup))
+        {
+            result = reader.mutate_cleanup(handback, deadline).await;
+            if ran(&result) {
+                return result;
+            }
+        }
+        if let Some(settle) = FanSettlePermit::capture(permit) {
+            result = reader.mutate_cleanup(settle, deadline).await;
+            if ran(&result) {
+                return result;
+            }
+        }
+        verify_retained_failure(&self.fatal)?;
+        result
     }
 }
 #[cfg(all(test, feature = "service-fan-mutation-v2"))]

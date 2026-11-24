@@ -53,9 +53,13 @@ pub(in super::super) use super::super::mailbox_read::DRIVER_MODE_INTERVAL as INT
 /// One acquire job from its start: three exchanges with their settles and
 /// checkpoints.
 const JOB_BUDGET: Duration = Duration::from_secs(2);
-/// A release's bound for the gate wait and the join of active work
-/// (`ReadSource::drain_active`), from the release's start. A read job is
-/// joined within it; a write job still running exhausts it.
+/// The shutdown release's bound for the gate wait and the join of active
+/// work (`ReadSource::drain_active`), from the release's start. A read job is
+/// joined within it; a write job still running exhausts it. A low-power
+/// release instead waits for the rest of its share, as managed's
+/// `ReleaseDriverModeAsync` waits on its operation gate for the whole
+/// preparation window, so a request in flight at the boundary does not cost
+/// it the release: the request is refused at its next authorization.
 const ENTRY_BUDGET: Duration = Duration::from_millis(150);
 /// The release job from its start: its baseline read, setter and readback.
 /// By count, a healthy one takes about 0.28 s besides its three exchanges:
@@ -499,7 +503,11 @@ impl Runtime {
         start: Instant,
         share: Duration,
     ) -> io::Result<Release> {
-        let entry = start + ENTRY_BUDGET.min(share);
+        let end = start + share.saturating_sub(RETIRE_SLACK);
+        let entry = match boundary {
+            Boundary::Shutdown => start + ENTRY_BUDGET.min(share),
+            Boundary::LowPower(_) => end,
+        };
         let Ok(_serial) = tokio::time::timeout_at(entry, self.gate.lock()).await else {
             return Ok(Release::Exhausted);
         };
@@ -548,7 +556,6 @@ impl Runtime {
         };
         // The admissions are synchronous, so the share is checked after them.
         // The job ends early enough for the lane to retire it in the share.
-        let end = start + share.saturating_sub(RETIRE_SLACK);
         let now = Instant::now();
         if now >= end {
             return Ok(Release::Exhausted);
