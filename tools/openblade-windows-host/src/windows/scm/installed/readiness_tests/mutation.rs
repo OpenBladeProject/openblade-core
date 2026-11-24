@@ -23,11 +23,13 @@ mod thermal_presets;
 #[path = "unclassified_external.rs"]
 mod unclassified_external;
 use crate::discovery::performance::{ReadAdmission, mutation_fixture::Fixture};
+#[cfg(feature = "service-keyboard-driver-mode-v1")]
+use crate::installed::readiness::thermal_mutation::Cleanup;
+use crate::installed::readiness::thermal_storage::{Files, Storage};
 use crate::installed::readiness::{
-    mailbox_read::{MailboxSource, MutationFactories, ReadCustody, ReadSource},
+    mailbox_read::{CleanupScope, MailboxSource, MutationFactories, ReadCustody, ReadSource},
     status_source::{StatusOrigin, injected_mutation_source},
     thermal_mutation::{Fresh, Runtime, Settle},
-    thermal_storage::{Files, Storage},
 };
 use std::{
     collections::BTreeMap,
@@ -484,9 +486,16 @@ impl Files for CustodialMemory {
         }
         self.files.replace(name, expected, bytes)
     }
-    fn replace_cleanup(&self, name: &str, expected: Option<&[u8]>, bytes: &[u8]) -> io::Result<()> {
+    fn replace_cleanup(
+        &self,
+        name: &str,
+        scope: CleanupScope,
+        expected: Option<&[u8]>,
+        bytes: &[u8],
+    ) -> io::Result<()> {
         custody_admits(
-            name == CUSTODY_JOURNAL && ReadCustody::authorize_owned_stop(&*self.custody).is_some(),
+            name == CUSTODY_JOURNAL
+                && ReadCustody::authorize_cleanup(&*self.custody, scope).is_some(),
         )?;
         self.files.replace(name, expected, bytes)
     }
@@ -629,6 +638,26 @@ impl ReadCustody for Custody {
             generation: [self.generation.load(Ordering::Acquire); 32],
         })
     }
+    // `ReadLease`'s low-power scope: `authorize` at the epoch the gate
+    // admits for that suspend generation.
+    #[cfg(feature = "service-keyboard-driver-mode-v1")]
+    fn authorize_cleanup(&self, scope: CleanupScope) -> Option<ReadAdmission> {
+        let CleanupScope::LowPower { generation } = scope else {
+            return ReadCustody::authorize_owned_stop(self);
+        };
+        if !self.live.load(Ordering::Acquire) || self.authority_for_fan.load(Ordering::Acquire) != 0
+        {
+            return None;
+        }
+        if let Some(origin) = &*self.origin_for_fan.lock().unwrap() {
+            origin.verify().ok()?;
+        }
+        let write = openblade_domain::low_power_gate::WriteScope::LowPowerCleanup { generation };
+        Some(ReadAdmission {
+            lifecycle: self.lifecycle.epoch_for(write)?,
+            generation: [self.generation.load(Ordering::Acquire); 32],
+        })
+    }
     fn verify_integrity(&self) -> io::Result<()> {
         if self
             .integrity_lost_at
@@ -755,24 +784,7 @@ impl Fresh for Custody {
         (authentication != usize::MAX).then_some((authentication as u32, 0))
     }
     fn authorize_owned_stop(&self) -> Option<ReadAdmission> {
-        let stall = {
-            let mut armed = self.owned_stop_stall.lock().unwrap();
-            match armed.as_mut() {
-                Some((1, by)) => {
-                    let by = *by;
-                    *armed = None;
-                    Some(by)
-                }
-                Some((nth, _)) => {
-                    *nth -= 1;
-                    None
-                }
-                None => None,
-            }
-        };
-        if let Some(by) = stall {
-            std::thread::sleep(by);
-        }
+        self.stall_owned_stop();
         self.verify_health().ok()?;
         if self.fresh_refuse.load(Ordering::Acquire) || self.controller.load(Ordering::Acquire) {
             return None;
@@ -923,6 +935,100 @@ impl Fresh for PinnedFresh {
         authentication: Option<(u32, i32)>,
     ) -> io::Result<Arc<dyn Settle>> {
         Fresh::capture_settle(self.custody.as_ref(), sid, session, authentication)
+    }
+}
+impl Custody {
+    /// Blocks in the armed owned-Stop or cleanup authorization, as a slow
+    /// Windows supplier would (`owned_stop_stall`).
+    fn stall_owned_stop(&self) {
+        let stall = {
+            let mut armed = self.owned_stop_stall.lock().unwrap();
+            match armed.as_mut() {
+                Some((1, by)) => {
+                    let by = *by;
+                    *armed = None;
+                    Some(by)
+                }
+                Some((nth, _)) => {
+                    *nth -= 1;
+                    None
+                }
+                None => None,
+            }
+        };
+        if let Some(by) = stall {
+            std::thread::sleep(by);
+        }
+    }
+}
+/// Test model of `CleanupGuard`: the Service's cleanup admission, with no
+/// console session, SID or logon, at the epoch its scope pinned. Every
+/// authorization checks fresh health, `fresh_refuse` (every refused Windows
+/// supplier) and `controller`, a known Windows AC line status, the pinned
+/// epoch and the passed custody's cleanup admission of the scope.
+#[cfg(feature = "service-keyboard-driver-mode-v1")]
+struct CleanupFresh {
+    custody: Arc<Custody>,
+    passed: Arc<dyn ReadCustody>,
+    scope: CleanupScope,
+    epoch: u64,
+}
+#[cfg(feature = "service-keyboard-driver-mode-v1")]
+impl CleanupFresh {
+    fn capture(
+        custody: Arc<Custody>,
+        passed: Arc<dyn ReadCustody>,
+        scope: CleanupScope,
+    ) -> io::Result<Arc<dyn Cleanup>> {
+        Fresh::verify_health(custody.as_ref())?;
+        let epoch = custody
+            .lifecycle
+            .epoch_for(scope.write_scope())
+            .ok_or(io::ErrorKind::PermissionDenied)?;
+        let controller = custody.controller.load(Ordering::Acquire);
+        let fresh = Self {
+            custody,
+            passed,
+            scope,
+            epoch,
+        };
+        // As `CleanupGuard::capture`: a refusal whose cause is fatal is
+        // reported as fatal by the health check after it.
+        let proof = fresh.authorize();
+        Fresh::verify_health(fresh.custody.as_ref())?;
+        if proof.is_none() {
+            return Err(if controller {
+                crate::installed::readiness::thermal_mutation::competing_controller()
+            } else {
+                io::ErrorKind::PermissionDenied.into()
+            });
+        }
+        Ok(Arc::new(fresh))
+    }
+}
+#[cfg(feature = "service-keyboard-driver-mode-v1")]
+impl Cleanup for CleanupFresh {
+    fn scope(&self) -> CleanupScope {
+        self.scope
+    }
+    fn on_battery(&self) -> Option<bool> {
+        self.custody.on_battery()
+    }
+    fn verify_health(&self) -> io::Result<()> {
+        Fresh::verify_health(self.custody.as_ref())
+    }
+    fn authorize(&self) -> Option<ReadAdmission> {
+        let c = &self.custody;
+        c.stall_owned_stop();
+        Fresh::verify_health(c.as_ref()).ok()?;
+        if c.fresh_refuse.load(Ordering::Acquire)
+            || c.controller.load(Ordering::Acquire)
+            || c.on_battery().is_none()
+            || c.lifecycle.epoch_for(self.scope.write_scope()) != Some(self.epoch)
+        {
+            return None;
+        }
+        self.passed.authorize_cleanup(self.scope)
     }
 }
 struct Origin(Arc<crate::loaded_origin::lifetime::Lifetime>, Arc<Custody>);

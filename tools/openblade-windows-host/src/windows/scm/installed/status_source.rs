@@ -408,6 +408,10 @@ pub(super) trait StatusOrigin: Send + Sync {
     fn admit_owned_stop(&self) -> io::Result<()> {
         Err(io::ErrorKind::PermissionDenied.into())
     }
+    #[cfg(feature = "service-keyboard-driver-mode-v1")]
+    fn low_power_wake(&self) -> Option<Arc<tokio::sync::Notify>> {
+        None
+    }
     // Only the metadata-only composition drains through the origin; the mailbox reader drains otherwise.
     #[cfg_attr(feature = "service-mailbox-observation-v1", allow(dead_code))]
     fn confirm_metadata_drain(&self) -> io::Result<()>;
@@ -422,6 +426,10 @@ impl StatusOrigin for crate::loaded_origin::Origin {
     }
     fn admit_owned_stop(&self) -> io::Result<()> {
         self.verify_owned_stop()
+    }
+    #[cfg(feature = "service-keyboard-driver-mode-v1")]
+    fn low_power_wake(&self) -> Option<Arc<tokio::sync::Notify>> {
+        Some(self.lifecycle.suspended())
     }
     fn verify(&self) -> io::Result<()> {
         self.verify()
@@ -513,6 +521,10 @@ impl StatusSource for GuardedStatus {
         }))
     }
     #[cfg(feature = "service-keyboard-driver-mode-v1")]
+    fn low_power_wake(&self) -> Option<Arc<tokio::sync::Notify>> {
+        self.origin.low_power_wake()
+    }
+    #[cfg(feature = "service-keyboard-driver-mode-v1")]
     fn maintain_driver_mode(&mut self) -> Option<super::Reconciling> {
         let runtime = self.mutation.clone()?;
         let mailbox = self.mailbox.clone();
@@ -520,7 +532,9 @@ impl StatusSource for GuardedStatus {
             // A step failure continues the loop (managed `RunStepAsync`); only
             // fatal admission evidence stops the Service. The step publishes
             // through the read cadence every status projects
-            // (`ReadSource::record_driver_mode`).
+            // (`ReadSource::record_driver_mode`). A new suspend generation
+            // is prepared first (managed `PrepareForLowPowerCoreAsync`).
+            runtime.prepare_for_low_power(&mailbox).await?;
             runtime.maintain_driver_mode(&mailbox).await
         }))
     }

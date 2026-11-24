@@ -74,10 +74,48 @@ impl ActivationFailure {
     }
 }
 
+/// Which owned cleanup an admission serves. Each admits only the cleanup
+/// that holds it (`thermal_mutation::Cleanup`), never a request.
+#[cfg(feature = "service-thermal-mutation-v1")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum CleanupScope {
+    /// The coordinated Stop: owned-Stop origin trust at the ordinary
+    /// lifecycle epoch (`ReadCustody::authorize_owned_stop`).
+    OwnedStop,
+    /// The low-power preparation for one suspend: live origin trust at the
+    /// epoch the gate admits for that generation
+    /// (`WriteScope::LowPowerCleanup`), which ends at the next resume,
+    /// DisplayOn or suspend.
+    #[cfg(feature = "service-keyboard-driver-mode-v1")]
+    LowPower { generation: u64 },
+}
+
+#[cfg(feature = "service-keyboard-driver-mode-v1")]
+impl CleanupScope {
+    /// The lifecycle write scope this cleanup pins its epoch under.
+    pub(super) fn write_scope(self) -> openblade_domain::low_power_gate::WriteScope {
+        use openblade_domain::low_power_gate::WriteScope;
+        match self {
+            Self::OwnedStop => WriteScope::Ordinary,
+            Self::LowPower { generation } => WriteScope::LowPowerCleanup { generation },
+        }
+    }
+}
+
 pub(super) trait ReadCustody: Send + Sync {
     fn authorize(&self) -> Option<ReadAdmission>;
     fn authorize_owned_stop(&self) -> Option<ReadAdmission> {
         None
+    }
+    /// The owned cleanup admission of `scope`: the owned-Stop one, and the
+    /// low-power one only where a custody admits it itself.
+    #[cfg(feature = "service-thermal-mutation-v1")]
+    fn authorize_cleanup(&self, scope: CleanupScope) -> Option<ReadAdmission> {
+        match scope {
+            CleanupScope::OwnedStop => self.authorize_owned_stop(),
+            #[cfg(feature = "service-keyboard-driver-mode-v1")]
+            CleanupScope::LowPower { .. } => None,
+        }
     }
     /// Whether this custody admits everything `authorize` checks but the
     /// lifecycle epoch. It admits storing request intent only
@@ -87,7 +125,13 @@ pub(super) trait ReadCustody: Send + Sync {
     fn authorize_storage(&self) -> bool {
         false
     }
-    fn journal_replace_cleanup(&self, _expected: Option<&[u8]>, _bytes: &[u8]) -> io::Result<()> {
+    #[cfg(feature = "service-thermal-mutation-v1")]
+    fn journal_replace_cleanup(
+        &self,
+        _scope: CleanupScope,
+        _expected: Option<&[u8]>,
+        _bytes: &[u8],
+    ) -> io::Result<()> {
         Err(deny())
     }
     fn journal_retire_prepared(&self, _expected: Option<&[u8]>, _bytes: &[u8]) -> io::Result<()> {
@@ -159,9 +203,19 @@ impl ReadCustody for GuardedReadCustody {
         self.verify_integrity().ok()?;
         self.original.authorize_owned_stop()
     }
-    fn journal_replace_cleanup(&self, expected: Option<&[u8]>, bytes: &[u8]) -> io::Result<()> {
+    fn authorize_cleanup(&self, scope: CleanupScope) -> Option<ReadAdmission> {
+        self.verify_integrity().ok()?;
+        self.original.authorize_cleanup(scope)
+    }
+    fn journal_replace_cleanup(
+        &self,
+        scope: CleanupScope,
+        expected: Option<&[u8]>,
+        bytes: &[u8],
+    ) -> io::Result<()> {
         self.verify_integrity()?;
-        self.original.journal_replace_cleanup(expected, bytes)
+        self.original
+            .journal_replace_cleanup(scope, expected, bytes)
     }
     fn journal_retire_prepared(&self, expected: Option<&[u8]>, bytes: &[u8]) -> io::Result<()> {
         self.verify_integrity()?;
@@ -668,9 +722,36 @@ impl ReadCustody for ReadLease {
             },
         )
     }
+    /// The low-power scope is `authorize` at the epoch the gate admits for
+    /// that suspend generation instead of the ordinary one: the same live
+    /// origin trust, original custody and generation.
+    #[cfg(feature = "service-keyboard-driver-mode-v1")]
+    fn authorize_cleanup(&self, scope: CleanupScope) -> Option<ReadAdmission> {
+        let CleanupScope::LowPower { generation } = scope else {
+            return self.authorize_owned_stop();
+        };
+        if self.state.load(Ordering::Acquire) != 0 {
+            return None;
+        }
+        let write = openblade_domain::low_power_gate::WriteScope::LowPowerCleanup { generation };
+        authorize_original(
+            &self.state,
+            self.origin.committed(),
+            || self.origin.mailbox_mapping().map(drop),
+            ReadAdmission {
+                lifecycle: self.origin.lifecycle.epoch_for(write)?,
+                ..self.proof
+            },
+        )
+    }
     #[cfg(feature = "service-thermal-mutation-v1")]
-    fn journal_replace_cleanup(&self, expected: Option<&[u8]>, bytes: &[u8]) -> io::Result<()> {
-        self.authorize_owned_stop().ok_or_else(deny)?;
+    fn journal_replace_cleanup(
+        &self,
+        scope: CleanupScope,
+        expected: Option<&[u8]>,
+        bytes: &[u8],
+    ) -> io::Result<()> {
+        self.authorize_cleanup(scope).ok_or_else(deny)?;
         self.resources
             .lock()
             .map_err(|_| deny())?
@@ -1740,6 +1821,18 @@ impl ReadSource {
         permit: Arc<dyn crate::discovery::performance::mutation::Permit>,
         deadline: Instant,
     ) -> io::Result<Option<crate::discovery::performance::ObservedPerformance>> {
+        self.mutate_cleanup_in(permit, CleanupScope::OwnedStop, deadline)
+            .await
+    }
+    /// One owned cleanup job under `scope`: the permit's admission must be
+    /// the custody's cleanup admission of that scope, so a low-power job
+    /// runs only while its suspend generation is current.
+    pub(super) async fn mutate_cleanup_in(
+        &self,
+        permit: Arc<dyn crate::discovery::performance::mutation::Permit>,
+        scope: CleanupScope,
+        deadline: Instant,
+    ) -> io::Result<Option<crate::discovery::performance::ObservedPerformance>> {
         let _serial = self.operation.lock().await;
         // No retained fan pair outlives a write that may change the fans; a
         // 00/04 keyboard write cannot (`changes_fans`).
@@ -1753,7 +1846,7 @@ impl ReadSource {
         if !self.activated.get()
             || !permit.cleanup()
             || permit.authorize().is_none()
-            || permit.authorize() != self.lease.authorize_owned_stop()
+            || permit.authorize() != self.lease.authorize_cleanup(scope)
         {
             return Err(deny());
         }

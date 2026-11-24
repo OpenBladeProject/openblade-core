@@ -1,5 +1,7 @@
 //! Real Windows suppliers, compile-only during offline verification.
 #![allow(unsafe_code)]
+#[cfg(feature = "service-keyboard-driver-mode-v1")]
+use super::mailbox_read::CleanupScope;
 use super::{mailbox_read::ReadCustody, thermal_storage::Files};
 use crate::discovery::performance::ReadAdmission;
 use crate::{
@@ -104,16 +106,7 @@ impl Identity {
             .observe_power_kind(crate::origin_lifetime::sample_power_kind())
     }
     fn on_battery(&self) -> Option<bool> {
-        let mut status = SYSTEM_POWER_STATUS::default();
-        // Same documented Windows ACLineStatus mapping as lifecycle Observation.
-        if unsafe { GetSystemPowerStatus(&mut status) } == 0 {
-            return None;
-        }
-        match status.ACLineStatus {
-            0 => Some(true),
-            1 => Some(false),
-            _ => None,
-        }
+        windows_on_battery()
     }
     fn verify_health(&self) -> io::Result<()> {
         self.custody.verify_integrity()?;
@@ -175,24 +168,7 @@ impl Identity {
         {
             return Err(Denial::Admission);
         }
-        let mut status = SYSTEM_POWER_STATUS::default();
-        // SAFETY: writable native output. This excludes an unknown coarse source only;
-        // typed 07/8C independently decides sufficient versus limited adapter.
-        if unsafe { GetSystemPowerStatus(&mut status) } == 0 || status.ACLineStatus > 1 {
-            return Err(Denial::Admission);
-        }
-        // Every check before this one is the session's or the power's; only
-        // this one says another controller may own the device. Detection
-        // that failed or ran too long confirms no absence and is refused the
-        // same way, as managed treats a detection warning as a controller.
-        if !self
-            .controllers
-            .lock()
-            .map_err(|_| Denial::Admission)?
-            .confirms_fresh_absence()
-        {
-            return Err(Denial::CompetingController);
-        }
+        power_and_controllers(&self.controllers)?;
         // Mutable callback fencing cannot revive an earlier operation. A new
         // request captures a fresh epoch and rechecks every Windows supplier.
         verify().map_err(|_| Denial::Admission)?;
@@ -202,6 +178,49 @@ impl Identity {
             Err(Denial::Admission)
         }
     }
+}
+/// The fresh Windows power kind: `Some(true)` battery, `Some(false)` AC and
+/// `None` unknown, with the same documented ACLineStatus mapping as lifecycle
+/// Observation.
+#[cfg_attr(test, allow(dead_code))] // Test composition injects its own Fresh; only the native factory builds the guard.
+fn windows_on_battery() -> Option<bool> {
+    let mut status = SYSTEM_POWER_STATUS::default();
+    // SAFETY: writable native output.
+    if unsafe { GetSystemPowerStatus(&mut status) } == 0 {
+        return None;
+    }
+    match status.ACLineStatus {
+        0 => Some(true),
+        1 => Some(false),
+        _ => None,
+    }
+}
+/// The power and controller checks every admission ends with: a known AC
+/// line status, then fresh competing-controller absence. Every check before
+/// them is the session's, the origin's or the lifecycle's; only the last one
+/// says another controller may own the device. Detection that failed or ran
+/// too long confirms no absence and is refused the same way, as managed
+/// treats a detection warning as a controller.
+#[cfg_attr(test, allow(dead_code))] // Test composition injects its own Fresh; only the native factory builds the guard.
+fn power_and_controllers(
+    controllers: &Mutex<
+        openblade_platform_windows::controller_presence::admission::ReadOnlyAdmission,
+    >,
+) -> Result<(), Denial> {
+    let mut status = SYSTEM_POWER_STATUS::default();
+    // SAFETY: writable native output. This excludes an unknown coarse source only;
+    // typed 07/8C independently decides sufficient versus limited adapter.
+    if unsafe { GetSystemPowerStatus(&mut status) } == 0 || status.ACLineStatus > 1 {
+        return Err(Denial::Admission);
+    }
+    if !controllers
+        .lock()
+        .map_err(|_| Denial::Admission)?
+        .confirms_fresh_absence()
+    {
+        return Err(Denial::CompetingController);
+    }
+    Ok(())
 }
 /// Why `Identity::admits` refused.
 #[cfg_attr(test, allow(dead_code))] // Test composition injects its own Fresh; only the native factory builds the guard.
@@ -338,8 +357,8 @@ impl WindowsGuard {
     /// `authorize_for` with the reason for a refusal.
     fn admit_for(&self, stop: bool) -> Result<ReadAdmission, Denial> {
         // The low-power gate refuses every request and owned-Stop write here.
-        // Only the low-power preparation's Automatic fan handback may pin
-        // `WriteScope::LowPowerFanAutomatic`, and nothing captures it yet.
+        // Only the Service's low-power cleanup (`CleanupGuard`) may pin
+        // `WriteScope::LowPowerCleanup`.
         let identity = &self.identity;
         identity.admits(stop, || {
             identity.origin.lifecycle.epoch_for(WriteScope::Ordinary) == Some(self.lifecycle)
@@ -364,6 +383,111 @@ impl SettleGuard {
     }
     pub(super) fn authorize_owned_stop(&self) -> Option<ReadAdmission> {
         self.0.authorize_for(true)
+    }
+}
+/// The Service's owned-cleanup admission (`thermal_mutation::Cleanup`): the
+/// keyboard Normal release and the owned fan Automatic handback at Stop, at
+/// shutdown and at a confirmed low-power boundary. It names no console user,
+/// SID or logon, because the cleanup is the Service's own and must run with
+/// nobody signed in or the session locked (managed
+/// `ReleaseDriverModeCoreAsync` and `FreshLightingCleanupAdmission`). Every
+/// other check of the console admission stays and runs fresh on each
+/// `authorize`: origin and package trust for the scope (owned-stop trust for
+/// Stop and shutdown, ordinary trust for low power), the lifecycle epoch the
+/// scope pinned, a known AC line status, fresh competing-controller absence,
+/// and the exact original mailbox custody and generation through
+/// `ReadCustody::authorize_cleanup`, which names the admitted device.
+#[cfg(feature = "service-keyboard-driver-mode-v1")]
+#[cfg_attr(test, allow(dead_code))] // Test composition injects its own Cleanup; only the native factory builds the guard.
+pub(super) struct CleanupGuard {
+    origin: Arc<Origin>,
+    custody: Arc<dyn ReadCustody>,
+    scope: CleanupScope,
+    lifecycle: u64,
+    controllers:
+        Mutex<openblade_platform_windows::controller_presence::admission::ReadOnlyAdmission>,
+}
+#[cfg(feature = "service-keyboard-driver-mode-v1")]
+#[cfg_attr(test, allow(dead_code))] // Test composition injects its own Cleanup; only the native factory builds the guard.
+impl CleanupGuard {
+    /// Pins the lifecycle epoch `scope` is admitted at: the ordinary one for
+    /// Stop and shutdown, and the exact suspend generation's for low power.
+    /// The gate admits neither while the other holds, so a Stop capture
+    /// refuses while suspending and a low-power capture refuses once resumed.
+    pub(super) fn capture(
+        origin: Arc<Origin>,
+        custody: Arc<dyn ReadCustody>,
+        scope: CleanupScope,
+    ) -> io::Result<Arc<Self>> {
+        origin.lifecycle.verify_health().map_err(|_| {
+            super::thermal_mutation::fatal_admission("lifecycle state lock poisoned")
+        })?;
+        origin.mutation_artifact()?;
+        let lifecycle = origin
+            .lifecycle
+            .epoch_for(scope.write_scope())
+            .ok_or_else(deny)?;
+        let guard = Arc::new(Self {
+            origin,
+            custody,
+            scope,
+            lifecycle,
+            controllers: Mutex::new(
+                openblade_platform_windows::controller_presence::admission::ReadOnlyAdmission::native(),
+            ),
+        });
+        let proof = guard.admit();
+        guard.verify_health()?;
+        proof.map_err(Denial::error)?;
+        Ok(guard)
+    }
+    pub(super) fn scope(&self) -> CleanupScope {
+        self.scope
+    }
+    pub(super) fn on_battery(&self) -> Option<bool> {
+        windows_on_battery()
+    }
+    pub(super) fn verify_health(&self) -> io::Result<()> {
+        self.custody.verify_integrity()?;
+        self.origin.lifecycle.verify_health().map_err(|_| {
+            super::thermal_mutation::fatal_admission("lifecycle state lock poisoned")
+        })?;
+        self.controllers.lock().map(|_| ()).map_err(|_| {
+            super::thermal_mutation::fatal_admission("controller admission lock poisoned")
+        })
+    }
+    pub(super) fn authorize(&self) -> Option<ReadAdmission> {
+        self.admit().ok()
+    }
+    /// `authorize` with the reason for a refusal.
+    fn admit(&self) -> Result<ReadAdmission, Denial> {
+        let stop = self.scope == CleanupScope::OwnedStop;
+        let verify = || {
+            if stop {
+                self.origin.verify_owned_stop()
+            } else {
+                self.origin.verify()
+            }
+        };
+        let epoch =
+            || self.origin.lifecycle.epoch_for(self.scope.write_scope()) == Some(self.lifecycle);
+        verify().map_err(|_| Denial::Admission)?;
+        let committed = if stop {
+            self.origin.owned_stop_committed()
+        } else {
+            self.origin.committed()
+        };
+        if !epoch() || !committed.map_err(|_| Denial::Admission)? {
+            return Err(Denial::Admission);
+        }
+        power_and_controllers(&self.controllers)?;
+        verify().map_err(|_| Denial::Admission)?;
+        if !epoch() {
+            return Err(Denial::Admission);
+        }
+        self.custody
+            .authorize_cleanup(self.scope)
+            .ok_or(Denial::Admission)
     }
 }
 /// Storage-only admission captured by `WindowsGuard::capture_storage`: an
@@ -702,11 +826,17 @@ impl Files for CustodialFiles {
         }
         self.custody.journal_retire_prepared(expected, bytes)
     }
-    fn replace_cleanup(&self, name: &str, expected: Option<&[u8]>, bytes: &[u8]) -> io::Result<()> {
+    fn replace_cleanup(
+        &self,
+        name: &str,
+        scope: super::mailbox_read::CleanupScope,
+        expected: Option<&[u8]>,
+        bytes: &[u8],
+    ) -> io::Result<()> {
         if name != "thermal-mutation.journal" {
             return Err(deny());
         }
-        self.custody.journal_replace_cleanup(expected, bytes)
+        self.custody.journal_replace_cleanup(scope, expected, bytes)
     }
     fn reserve(&self, expected: Option<&[u8]>, needed: usize) -> io::Result<Option<Vec<u8>>> {
         self.custody.journal_reserve(expected, needed)

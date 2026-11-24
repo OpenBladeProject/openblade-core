@@ -61,24 +61,28 @@ pub struct Accepted {
 
 /// What a thermal write is, as the low-power clause of managed
 /// `ScopedThermalWriteBlockReason` (`ServiceControlRuntime.cs:15410-15421`)
-/// reads it. Only that scoped thermal clause is ported. Managed runs other
+/// reads it, plus the keyboard Driver-mode release that managed runs in the
+/// same preparation under the same generation check. Managed runs other
 /// cleanup with the gate set under its own admission, such as the fan-stop
-/// release (`ServiceControlRuntime.FanStop.cs:319-339`) and the keyboard
-/// Driver-mode release; neither is a `WriteScope`.
+/// release (`ServiceControlRuntime.FanStop.cs:319-339`); it is not a
+/// `WriteScope`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum WriteScope {
     /// Every scoped thermal request, reconciliation and shutdown write:
     /// refused while the latch is set.
     Ordinary,
-    /// The low-power preparation's handback to firmware Automatic fans, and
-    /// nothing else (managed `PriorAuthorityCleanup` over `[Fans]` with
-    /// `FanMode.Automatic`), for the suspend whose odd generation it
-    /// captured. Admitted only while that exact suspend is still current,
-    /// so it ends at the next resume, DisplayOn or later suspend, as
-    /// managed `lowPowerFanCleanupAdmission` does through
-    /// `IsActiveForGeneration`. The caller's own ownership and session checks
-    /// still apply, as managed composes them into the same predicate.
-    LowPowerFanAutomatic { generation: u64 },
+    /// The low-power preparation's owned cleanup for the suspend whose odd
+    /// generation it captured, and nothing else: the handback to firmware
+    /// Automatic fans (managed `PriorAuthorityCleanup` over `[Fans]` with
+    /// `FanMode.Automatic`) and the keyboard's return to Normal mode (managed
+    /// `ReleaseDriverModeCoreAsync("low power")`, admitted while
+    /// `lowPowerGate.Generation == generation`). Admitted only while that
+    /// exact suspend is still current, so it ends at the next resume,
+    /// DisplayOn or later suspend, as managed `lowPowerFanCleanupAdmission`
+    /// does through `IsActiveForGeneration`. The caller's own ownership,
+    /// device and controller checks still apply, as managed composes them
+    /// into the same predicate.
+    LowPowerCleanup { generation: u64 },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -131,9 +135,7 @@ impl LowPowerGate {
     pub const fn admits(&self, write: WriteScope) -> bool {
         match write {
             WriteScope::Ordinary => !self.is_active(),
-            WriteScope::LowPowerFanAutomatic { generation } => {
-                self.is_active_for_generation(generation)
-            }
+            WriteScope::LowPowerCleanup { generation } => self.is_active_for_generation(generation),
         }
     }
 
@@ -311,9 +313,9 @@ mod tests {
     }
 
     #[test]
-    fn only_the_captured_suspend_admits_the_automatic_fan_cleanup() {
+    fn only_the_captured_suspend_admits_the_low_power_cleanup() {
         let mut gate = LowPowerGate::new(HZ);
-        let cleanup = |generation| WriteScope::LowPowerFanAutomatic { generation };
+        let cleanup = |generation| WriteScope::LowPowerCleanup { generation };
         assert!(gate.admits(WriteScope::Ordinary));
         // No suspend: the cleanup scope has nothing to clean up after.
         assert!(!gate.admits(cleanup(0)) && !gate.admits(cleanup(1)));
