@@ -4,20 +4,23 @@
 //! (`ServiceControlRuntime.EvaluateThermalConvergenceObservationAsync` and
 //! `ThermalConvergenceClassifier`).
 //!
-//! Native has no convergence loop: no budget, tombstone or arbiter is acted
-//! on. Nothing here writes, and the policy changes no write: under either
-//! policy confirmed drift only excludes automatic writes (`thermal_drift`).
-//! The status says so. A contradiction that managed would nominate for
-//! convergence under an admitted Maintain policy is published as managed
-//! publishes a reconciliation that cannot hold its intent: Paused with
-//! `InternalStateUnavailable`. Managed's Converging, Suppressed,
-//! RestorePending and ReconciliationUnavailable states, and the budget,
-//! tombstone and HyperBoost-journal reasons, need that loop and are never
-//! published: each but Converging leaves only an explicit reapply, which
-//! native does not offer yet.
+//! Without `service-thermal-convergence-v1` native has no convergence loop:
+//! no budget, tombstone or arbiter is acted on, and the policy changes no
+//! write: under either policy confirmed drift only excludes automatic
+//! writes (`thermal_drift`). A contradiction that managed would nominate
+//! for convergence under an admitted Maintain policy is published as
+//! managed publishes a reconciliation that cannot hold its intent: Paused
+//! with `InternalStateUnavailable`. Nothing here writes.
 //!
 //! With `service-thermal-convergence-v1` the status also reads the user's
-//! ledger, which native shares with managed (`thermal_convergence_ledger`).
+//! ledger, which native shares with managed (`thermal_convergence_ledger`),
+//! and asks the loop (`thermal_convergence_loop`, through `Nominator`) what
+//! it would do with a contradiction: Converging, or RestorePending with
+//! `HyperBoostPending` while managed's HyperBoost journal blocks it. A
+//! tombstone or a spent budget is still published Paused with
+//! `InternalStateUnavailable`, since Suppressed leaves only an explicit
+//! reapply (D6).
+//!
 //! A ledger the store cannot admit closes convergence as managed closes it:
 //! Strict is published, with the saved disclosure, and Paused with
 //! `ConfigurationQuarantined`. A reservation in the ledger is reconciled
@@ -145,11 +148,37 @@ pub(super) enum Kind {
     ExternalHyperBoost,
 }
 
+/// What the convergence loop says of the status's evaluation
+/// (`triggers::convergence_loop::Nominate`).
+#[cfg(feature = "service-thermal-convergence-v1")]
+pub(super) trait Nominator {
+    /// Managed `hyperBoostJournalSafetyBlock`.
+    fn journal_blocks(&self) -> bool;
+    /// What managed's observer does with a contradiction past every
+    /// admission check: nominate it, suppress it, or refuse it.
+    fn nominate(&self, performance: bool, fans: bool) -> io::Result<Nomination>;
+}
+
+/// Managed's observer outcome for a contradiction (`Nominator::nominate`).
+#[cfg(feature = "service-thermal-convergence-v1")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum Nomination {
+    /// Nominated: managed publishes Converging.
+    Converging,
+    /// A tombstone or a spent budget suppresses it (`Reason::Tombstoned`,
+    /// `Reason::BudgetExhausted`).
+    Suppressed(Reason),
+    /// No convergence intent can be held for it: no saved destination, a
+    /// blocked selection or an undeclared carried preset (D9).
+    Unavailable,
+}
+
 /// The status managed would publish for `admission`, classifying the
 /// observation `observe` reads only once every admission check passed.
 pub(super) fn derive(
     admission: &Admission,
     observe: impl FnOnce() -> io::Result<Observation>,
+    #[cfg(feature = "service-thermal-convergence-v1")] nominator: Option<&dyn Nominator>,
 ) -> io::Result<ThermalConvergence> {
     // Managed `BatteryConfigurationStore` quarantine preferences, and
     // `PublishThermalConvergenceStatus`, which reports Strict while the
@@ -213,6 +242,17 @@ pub(super) fn derive(
     if admission.controller_present {
         return paused(Reason::CompetingControllerPresent);
     }
+    // Managed `hyperBoostJournalSafetyBlock`: a HyperBoost journal that is
+    // not in a safe terminal state closes convergence for both components.
+    #[cfg(feature = "service-thermal-convergence-v1")]
+    if nominator.is_some_and(|loop_| loop_.journal_blocks()) {
+        return publish(
+            State::RestorePending,
+            &[Component::Performance, Component::Fans],
+            Reason::HyperBoostPending,
+            false,
+        );
+    }
     if admission.pending {
         return paused(Reason::PendingReconciliation);
     }
@@ -236,14 +276,39 @@ pub(super) fn derive(
             Reason::HyperBoostActive,
             false,
         ),
-        // Native cannot hold a convergence intent, as managed cannot when
-        // its ledger has none.
+        // Without the loop native cannot hold a convergence intent, as
+        // managed cannot when its ledger has none.
+        #[cfg(not(feature = "service-thermal-convergence-v1"))]
         Kind::Candidate { .. } => paused(Reason::InternalStateUnavailable),
+        #[cfg(feature = "service-thermal-convergence-v1")]
+        Kind::Candidate { performance, fans } => {
+            let Some(loop_) = nominator else {
+                return paused(Reason::InternalStateUnavailable);
+            };
+            let components: Vec<_> = [
+                (performance, Component::Performance),
+                (fans, Component::Fans),
+            ]
+            .into_iter()
+            .filter_map(|(contradicts, component)| contradicts.then_some(component))
+            .collect();
+            match loop_.nominate(performance, fans)? {
+                Nomination::Converging => {
+                    publish(State::Converging, &components, Reason::None, false)
+                }
+                // Until native serves `reapplyChangedSettings`, a suppression
+                // whose only exit is that explicit reapply is published as a
+                // contradiction native cannot hold.
+                Nomination::Suppressed(_) | Nomination::Unavailable => {
+                    paused(Reason::InternalStateUnavailable)
+                }
+            }
+        }
     }
 }
 
 /// Managed `IsManual`: Fixed, ManualCurve, Maximum and Stop.
-fn manual(mode: i32) -> bool {
+pub(super) fn manual(mode: i32) -> bool {
     (FanMode::FIXED.0..=FanMode::STOP.0).contains(&mode)
 }
 
@@ -331,6 +396,8 @@ impl Runtime {
         if !base.carries_thermal_convergence() {
             return Ok(None);
         }
+        #[cfg(feature = "service-thermal-convergence-v1")]
+        let held = storage.convergence_ledger();
         let admission = Admission {
             policy: storage.thermal_policy()?,
             low_power: self.status_low_power(),
@@ -338,27 +405,50 @@ impl Runtime {
             controller_present: base.names_potential_controllers(),
             pending: storage.pending(),
             #[cfg(feature = "service-thermal-convergence-v1")]
-            ledger: Ledger::of(storage.convergence_ledger().as_ref()),
+            ledger: Ledger::of(held.as_ref()),
         };
-        derive(&admission, || {
-            let desired = Intent {
-                performance: drift_intent(storage, query, profile)?.performance,
-                fans: storage.desired_fan_mode(query, profile)?,
-            };
-            let owns_manual_fans = manual(desired.fans.0)
-                && self.owns_exact_fans(
-                    sid,
-                    session,
-                    query,
-                    storage.desired_fan(query, profile)?.as_ref(),
-                );
-            Ok(Observation {
-                confirmed: base.confirmed_thermal(),
-                desired,
-                owns_manual_fans,
-            })
+        let observe = || self.convergence_observation(base, storage, sid, session, query, profile);
+        #[cfg(not(feature = "service-thermal-convergence-v1"))]
+        let status = derive(&admission, observe);
+        #[cfg(feature = "service-thermal-convergence-v1")]
+        let status = {
+            let nominate = self.nominate(base, storage, sid, session, query, profile, held);
+            derive(
+                &admission,
+                observe,
+                nominate.as_ref().map(|n| n as &dyn Nominator),
+            )
+        };
+        status.map(Some)
+    }
+    /// What the classifier compares for the user `sid` at class `query`:
+    /// the status's confirmed state, saved intent there and whether this
+    /// runtime owns the exact manual fan intent.
+    pub(super) fn convergence_observation(
+        &self,
+        base: &Snapshot,
+        storage: &Storage,
+        sid: &str,
+        session: u32,
+        query: i32,
+        profile: Option<&Resolution<'_>>,
+    ) -> io::Result<Observation> {
+        let desired = Intent {
+            performance: drift_intent(storage, query, profile)?.performance,
+            fans: storage.desired_fan_mode(query, profile)?,
+        };
+        let owns_manual_fans = manual(desired.fans.0)
+            && self.owns_exact_fans(
+                sid,
+                session,
+                query,
+                storage.desired_fan(query, profile)?.as_ref(),
+            );
+        Ok(Observation {
+            confirmed: base.confirmed_thermal(),
+            desired,
+            owns_manual_fans,
         })
-        .map(Some)
     }
 }
 

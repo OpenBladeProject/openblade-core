@@ -60,13 +60,6 @@ impl Storage {
     /// the ledger: the file may or may not hold `next`, so neither may be
     /// relied on. A `next` managed would not persist is refused before
     /// anything is written, and closes nothing.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "the convergence write path reserves and reconciles through it"
-        )
-    )]
     pub(in super::super) fn replace_convergence_ledger(
         &self,
         expected: &ledger::State,
@@ -98,13 +91,6 @@ impl Storage {
     /// Whether the file still holds exactly the bytes the store last read or
     /// wrote (managed `RevalidateThermalConvergenceReservationAsync`). A
     /// change, or a read that fails, closes the ledger.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "the convergence write path revalidates through it"
-        )
-    )]
     pub(in super::super) fn convergence_ledger_holds(&self) -> bool {
         let Ok(mut s) = self.state.lock() else {
             return false;

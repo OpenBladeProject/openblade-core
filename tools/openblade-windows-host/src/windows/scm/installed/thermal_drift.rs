@@ -158,6 +158,10 @@ pub(super) struct Tracker {
     /// step dropped at its bound or deadline, or failed after an intent.
     /// The next reading that reports the subsystem settles it.
     submitted: Own,
+    /// How many readings it has observed, so the convergence loop evaluates
+    /// each new one once (`convergence_loop`).
+    #[cfg(feature = "service-thermal-convergence-v1")]
+    readings: u64,
 }
 
 /// The reading's preset and Custom levels, `None` when unknown: a HyperBoost
@@ -200,6 +204,10 @@ fn changed(latched: bool, next: Option<bool>, own: Option<bool>) -> bool {
 impl Tracker {
     /// Managed `ConfirmedStateDriftTracker.Observe`.
     pub(super) fn observe(&mut self, reading: ObservedPerformance) {
+        #[cfg(feature = "service-thermal-convergence-v1")]
+        {
+            self.readings = self.readings.wrapping_add(1);
+        }
         // The first reading after a possible submission shows whether it
         // landed: OpenBlade's own write if it shows what was written, else
         // nothing of OpenBlade's.
@@ -340,6 +348,11 @@ impl Tracker {
     /// Whether a reading confirmed manual fans as OpenBlade's own and no
     /// fan change outside OpenBlade has been seen since: the tracker's part
     /// of managed `IsExactFanIntentOwned` (`Runtime::owns_exact_fans`).
+    /// The readings observed so far (`Tracker::observe`).
+    #[cfg(feature = "service-thermal-convergence-v1")]
+    pub(super) fn readings(&self) -> u64 {
+        self.readings
+    }
     pub(super) fn owns_manual_fans(&self) -> bool {
         self.own.manual == Some(true) && !self.fans
     }
@@ -435,12 +448,28 @@ impl Tracker {
 /// `now` is the reconciliation's start on the runtime's clock, which stamps
 /// any resume hold that a status reading later compares; a step's worker
 /// keeps its own clock.
+/// A convergence attempt's write scope (`convergence_loop::Guard`): which
+/// subsystems it declared and whether its reservation still admits a write.
+/// A reconciliation without one is unscoped.
+#[cfg(feature = "service-thermal-convergence-v1")]
+pub(super) trait Scope: Send + Sync {
+    /// Whether the subsystem's step runs at all.
+    fn declares(&self, fans: bool) -> bool;
+    /// Checked at every authorization: nothing has stopped the attempt.
+    fn open(&self) -> bool;
+    /// Checked before each setter's journaled intent: the reservation, the
+    /// HyperBoost journal and the policy still admit this write.
+    fn admits(&self, fans: bool) -> bool;
+}
+
 pub(super) struct Transition {
     tracker: Arc<Mutex<Tracker>>,
     mode: Mode,
     resume: bool,
     now: Instant,
     decided: Mutex<Option<Option<Exclusion>>>,
+    #[cfg(feature = "service-thermal-convergence-v1")]
+    scope: Option<Arc<dyn Scope>>,
 }
 impl Transition {
     pub(super) fn new(
@@ -455,7 +484,41 @@ impl Transition {
             resume,
             now,
             decided: Mutex::new(None),
+            #[cfg(feature = "service-thermal-convergence-v1")]
+            scope: None,
         }
+    }
+    /// The same reconciliation, limited to a convergence attempt's scope.
+    #[cfg(feature = "service-thermal-convergence-v1")]
+    pub(super) fn scoped(mut self, scope: Option<Arc<dyn Scope>>) -> Self {
+        self.scope = scope;
+        self
+    }
+    /// Whether the performance (or, with `fans`, the fan) step runs.
+    pub(super) fn declares(&self, fans: bool) -> bool {
+        #[cfg(feature = "service-thermal-convergence-v1")]
+        if let Some(scope) = &self.scope {
+            return scope.declares(fans);
+        }
+        let _ = fans;
+        true
+    }
+    /// Whether a step's authorization is still open (`Scope::open`).
+    pub(super) fn open(&self) -> bool {
+        #[cfg(feature = "service-thermal-convergence-v1")]
+        if let Some(scope) = &self.scope {
+            return scope.open();
+        }
+        true
+    }
+    /// Whether a setter's journaled intent is admitted (`Scope::admits`).
+    pub(super) fn admits(&self, fans: bool) -> bool {
+        #[cfg(feature = "service-thermal-convergence-v1")]
+        if let Some(scope) = &self.scope {
+            return scope.admits(fans);
+        }
+        let _ = fans;
+        true
     }
     /// The exclusion for this reconciliation, decided once from the first
     /// step's fresh `reading` and its saved intent `next`.

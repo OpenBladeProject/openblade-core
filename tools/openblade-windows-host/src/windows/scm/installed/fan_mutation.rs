@@ -492,6 +492,12 @@ impl Permit for FanPermit {
                 *self.verified.lock().ok()? = Some(inputs);
             }
         }
+        // A convergence attempt's scope closes at Stop or at a refusal
+        // (`thermal_drift::Scope::open`).
+        #[cfg(feature = "service-profile-triggers-v1")]
+        if self.transition.as_ref().is_some_and(|t| !t.open()) {
+            return None;
+        }
         proof
     }
     fn resolve(&self, _: i32, _: ObservedPerformance) -> io::Result<Option<Destination>> {
@@ -707,6 +713,17 @@ impl Permit for FanPermit {
     }
     fn record_fan(&self, progress: u8) -> io::Result<()> {
         self.authorize().ok_or(io::ErrorKind::PermissionDenied)?;
+        // A convergence attempt admits each setter's intent afresh, before
+        // its row: its reservation, the HyperBoost journal and the policy
+        // must still hold (`thermal_drift::Scope::admits`).
+        #[cfg(feature = "service-profile-triggers-v1")]
+        if (10..30).contains(&progress)
+            && progress.is_multiple_of(2)
+            && let Some(transition) = &self.transition
+            && !transition.admits(true)
+        {
+            return Err(io::ErrorKind::PermissionDenied.into());
+        }
         self.write(progress)?;
         // A journaled setter intent (10, 12, ...; 30 and 50 are the
         // confirmations) precedes its setter. A request dropped at its bound

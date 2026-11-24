@@ -517,6 +517,25 @@ impl StatusSource for GuardedStatus {
             if let Some(status) = runtime.reconcile_lifecycle(&mailbox, status).await? {
                 publish_reconciled(&publisher, &mailbox, status)?;
             }
+            // Then the convergence loop, which may ask for its own periodic
+            // read (D5): outside any ObserveState, so it requests no live
+            // reading.
+            #[cfg(feature = "service-thermal-convergence-v1")]
+            {
+                let status = || publisher.borrow().active.clone();
+                let converged = runtime.converge(&mailbox, status).await?;
+                if let Some(status) = converged.snapshot {
+                    publish_reconciled(&publisher, &mailbox, status)?;
+                }
+                if converged.observe {
+                    let deadline =
+                        Instant::now() + super::thermal_mutation::CONVERGENCE_OBSERVE_BUDGET;
+                    let current = publisher.borrow().active.clone();
+                    mailbox
+                        .observe(current, deadline, publisher.clone())
+                        .await?;
+                }
+            }
             Ok(())
         }))
     }
@@ -989,6 +1008,11 @@ impl StatusSource for GuardedStatus {
         // guards outlive listener/worker drain. It grants no firmware authority.
         Box::pin(async move {
             self.origin.normal_stop();
+            // No convergence write is admitted once Stop begins.
+            #[cfg(feature = "service-thermal-convergence-v1")]
+            if let Some(runtime) = &self.mutation {
+                runtime.stop_convergence();
+            }
             let mut result = self.inner.drain().await;
             #[cfg(feature = "service-thermal-mutation-v1")]
             if let Some(runtime) = &self.mutation {

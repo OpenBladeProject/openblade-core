@@ -190,10 +190,10 @@ impl Causes {
     }
 }
 /// The pair one attempt reconciles, and the process its steps record.
-struct Pair {
-    sid: String,
-    session: u32,
-    pid: u32,
+pub(super) struct Pair {
+    pub(super) sid: String,
+    pub(super) session: u32,
+    pub(super) pid: u32,
 }
 /// How one attempt ended.
 enum Attempt {
@@ -464,6 +464,8 @@ impl Runtime {
                     status: status(),
                     mode,
                     resume,
+                    #[cfg(feature = "service-thermal-convergence-v1")]
+                    scope: None,
                 },
             )
             .await?;
@@ -486,7 +488,17 @@ impl Runtime {
     /// caller. It is a candidate only: the attempt's capture proves the
     /// session, its unlocked state, the primary SID and logon afresh. Test
     /// composition without a console probe reads the reporter.
-    fn lifecycle_pair(&self) -> Option<Pair> {
+    /// Whether a lifecycle cause still owes an attempt, which runs before
+    /// any convergence (`convergence_loop`).
+    #[cfg(feature = "service-thermal-convergence-v1")]
+    pub(super) fn lifecycle_pending(&self) -> bool {
+        self.lifecycle
+            .borrow()
+            .as_ref()
+            .is_some_and(|tick| tick.pending.is_some())
+    }
+
+    pub(super) fn lifecycle_pair(&self) -> Option<Pair> {
         let reporter = self.application.borrow().as_ref().map(|a| Pair {
             sid: a.sid.clone(),
             session: a.session,

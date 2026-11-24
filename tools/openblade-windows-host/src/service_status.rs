@@ -1259,6 +1259,28 @@ impl Snapshot {
                 .and_then(Value::as_bool),
         }
     }
+    /// The members of managed `DesiredDeviceState` that the shared thermal
+    /// convergence ledger keeps as its effective intent, as this status
+    /// carries them (`thermal_convergence_loop`).
+    #[cfg(feature = "service-thermal-convergence-v1")]
+    pub(crate) fn effective_intent_members(&self) -> serde_json::Map<String, Value> {
+        const MEMBERS: [&str; 7] = [
+            "performance",
+            "fans",
+            "lighting",
+            "battery",
+            "customPerformance",
+            "gpuClockTuning",
+            "fanControl",
+        ];
+        match serde_json::to_value(&self.desired_state) {
+            Ok(Value::Object(state)) => state
+                .into_iter()
+                .filter(|(name, _)| MEMBERS.contains(&name.as_str()))
+                .collect(),
+            _ => serde_json::Map::new(),
+        }
+    }
     pub(crate) fn has_fresh_mailbox_read(&self) -> bool {
         self.read_confirmation
             .as_ref()
@@ -1406,7 +1428,10 @@ impl Snapshot {
     /// The verified laptop's `firmware.modelNumber`. Managed
     /// `ServiceReactiveLightingLoop` classifies the input device from this
     /// field, and only while `deviceVerified`; an unverified status has none.
-    #[cfg(feature = "agent-function-row-v1")]
+    #[cfg(any(
+        feature = "agent-function-row-v1",
+        feature = "service-thermal-convergence-v1"
+    ))]
     pub(crate) fn verified_model_number(&self) -> Option<&str> {
         if !self.device_verified {
             return None;

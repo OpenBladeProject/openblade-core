@@ -62,13 +62,23 @@ fn paused(policy: (i32, i32), reason: Reason) -> ThermalConvergence {
     status(policy, State::Paused, &[], reason, false)
 }
 
+/// `derive` without the convergence loop.
+fn derive_unlooped(
+    admission: &Admission,
+    observe: impl FnOnce() -> io::Result<Observation>,
+) -> io::Result<ThermalConvergence> {
+    #[cfg(feature = "service-thermal-convergence-v1")]
+    return derive(admission, observe, None);
+    #[cfg(not(feature = "service-thermal-convergence-v1"))]
+    derive(admission, observe)
+}
 fn derived(admission: &Admission, observed: Observation) -> ThermalConvergence {
-    derive(admission, || Ok(observed)).unwrap()
+    derive_unlooped(admission, || Ok(observed)).unwrap()
 }
 
 /// A derivation that must not read the observation.
 fn refused(admission: &Admission) -> ThermalConvergence {
-    derive(admission, || {
+    derive_unlooped(admission, || {
         panic!("an admission refusal reads no observation")
     })
     .unwrap()
@@ -182,7 +192,7 @@ fn strict_is_advisory_under_any_reading_and_acknowledged_maintain_classifies() {
 
 #[test]
 fn an_admitted_observation_failure_propagates() {
-    let error = derive(&admitted(MAINTAIN, DISCLOSURE_NOT_REQUIRED), || {
+    let error = derive_unlooped(&admitted(MAINTAIN, DISCLOSURE_NOT_REQUIRED), || {
         Err(io::ErrorKind::PermissionDenied.into())
     })
     .unwrap_err();
@@ -466,7 +476,7 @@ fn managed_status_vectors_replay_through_the_strict_codec() {
             .unwrap_or_else(|error| panic!("{name}: {error}"))
             .unwrap_or_else(|| panic!("{name}: managed published no status"));
         let (admission, observation) = replayed(row);
-        let native = derive(&admission, || Ok(observation)).unwrap();
+        let native = derive_unlooped(&admission, || Ok(observation)).unwrap();
         native.verify().unwrap();
         if managed.state == State::Converging as i32 {
             // Managed nominates the contradiction; native classifies the

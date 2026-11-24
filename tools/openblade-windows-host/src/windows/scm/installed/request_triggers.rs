@@ -37,6 +37,9 @@ use crate::installed::readiness::thermal_storage::ProfileSave;
 use openblade_domain::profile_set::{ProfileSet, update::STORED_MESSAGE};
 use tokio::time::timeout_at;
 
+#[cfg(feature = "service-thermal-convergence-v1")]
+#[path = "thermal_convergence_loop.rs"]
+pub(super) mod convergence_loop;
 #[path = "lifecycle_triggers.rs"]
 pub(super) mod lifecycle;
 
@@ -290,7 +293,7 @@ pub(in super::super) fn fans_first(confirmed_manual: bool, next_manual: bool) ->
 }
 
 /// One subsystem step of a reconciliation.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Eq, PartialEq)]
 enum Step {
     Performance,
     Fans,
@@ -346,6 +349,10 @@ struct Reconcile<'a> {
     // (`thermal_drift`).
     mode: thermal_drift::Mode,
     resume: bool,
+    // A convergence attempt's scope: only its declared subsystems run, and
+    // each write is admitted by its reservation (`convergence_loop`).
+    #[cfg(feature = "service-thermal-convergence-v1")]
+    scope: Option<Arc<dyn thermal_drift::Scope>>,
 }
 /// What one reconciliation did, managed `ServiceTransitionApplicationOutcome`.
 struct Reconciled {
@@ -610,6 +617,8 @@ impl Runtime {
                     status,
                     mode,
                     resume: false,
+                    #[cfg(feature = "service-thermal-convergence-v1")]
+                    scope: None,
                 },
             )
             .await?;
@@ -761,6 +770,8 @@ impl Runtime {
                     status,
                     mode,
                     resume: false,
+                    #[cfg(feature = "service-thermal-convergence-v1")]
+                    scope: None,
                 },
             )
             .await?;
@@ -820,6 +831,8 @@ impl Runtime {
             status,
             mode,
             resume,
+            #[cfg(feature = "service-thermal-convergence-v1")]
+            scope,
         } = step;
         // One drift decision for both steps, from the first step's own
         // fresh reading (`thermal_drift::Transition`). The user's startup
@@ -832,12 +845,11 @@ impl Runtime {
         } else {
             mode
         };
-        let transition = Arc::new(thermal_drift::Transition::new(
-            self.drift.clone(),
-            mode,
-            resume,
-            Instant::now(),
-        ));
+        let transition =
+            thermal_drift::Transition::new(self.drift.clone(), mode, resume, Instant::now());
+        #[cfg(feature = "service-thermal-convergence-v1")]
+        let transition = transition.scoped(scope);
+        let transition = Arc::new(transition);
         // The confirmed fans are the retained thermal observation's: the
         // published status is rebuilt from observed metadata and carries no
         // firmware fans. An owned fan change not yet handed back is manual
@@ -855,6 +867,11 @@ impl Runtime {
         } else {
             [Step::Performance, Step::Fans]
         };
+        // A scoped attempt runs only the subsystems it declared.
+        let order: Vec<Step> = order
+            .into_iter()
+            .filter(|kind| transition.declares(*kind == Step::Fans))
+            .collect();
         // The trigger answers by this bound even when a step's transfer has
         // not retired (`RECONCILE_MARGIN`).
         let bound = deadline + crate::service_frame::RECONCILE_MARGIN;
@@ -862,7 +879,7 @@ impl Runtime {
         let mut steps: Vec<(Stepped, bool)> = Vec::with_capacity(order.len());
         let mut unfinished = false;
         let mut deferred = false;
-        for kind in order {
+        for &kind in &order {
             if storage.pending() {
                 break;
             }
