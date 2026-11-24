@@ -724,11 +724,13 @@ marker by name. A build without the feature still refuses the request with
     read, so their version stays `Unavailable`. The read has not been
     compared with the managed Service on the device.
 - **Temperatures.** The CPU temperature stays null; the CPU temperature
-  worker below is unchanged. The GPU temperature is managed's live-readings
-  read (`ReadOptionalLiveSensorsAsync`, then
-  `SafeWindowsFanTemperatureSource.ReadAsync` with idle sampling off): the
-  same user-mode `nvml.dll` behind the same two Windows reads, neither of
-  which opens a GPU device or calls an NVIDIA API.
+  worker below is unchanged. The GPU temperature follows the workload gate
+  of `SafeWindowsFanTemperatureSource.ReadAsync`, which managed live readings
+  used before 8331bbf4: the same user-mode `nvml.dll` behind the same two
+  Windows reads, neither of which opens a GPU device or calls an NVIDIA API.
+  Managed live readings now call `ReadForLiveReadingsAsync`, which also
+  reports an idle GPU held in D0; that difference is listed under
+  [Pending parity with main a8aea95f](#pending-parity-with-main-a8aea95f).
   - The workload: the NVIDIA adapter's WDDM
     `\GPU Engine(*)\Utilization Percentage` counters, opened fresh, primed and
     read again 150 ms later (`WindowsGpuActivitySource`). A process other than
@@ -1614,7 +1616,7 @@ product ABI are unchanged.
 
 ## Compatibility boundary
 
-- Each connection accepts one request. Every mode serves v90 `getStatus` and `subscribeStatus` and v51 `getStatus`. Mutations use v90 in the explicitly scoped foreground modes. The v90 response and event use the [managed replay fixtures](windows-backend-replay.md). In the fixed replay modes, the subscription first sends the preceding synthetic revision and then one exact newer fixture event. v51 returns only the CLI fixture's approved fields and closes. Request IDs correlate replies. Every read uses in-memory fixtures and has no activation or state changes. It closes v79 requests without a reply.
+- Each connection accepts one request. Every mode serves v90 `getStatus` and `subscribeStatus` and v51 `getStatus`. Mutations use v90 in the explicitly scoped foreground modes. The v90 response and event use the [managed replay fixtures](windows-backend-replay.md). In the fixed replay modes, the subscription first sends the preceding synthetic revision and then one exact newer fixture event. v51 returns only the CLI fixture's approved fields and closes. Request IDs correlate replies. Every read uses in-memory fixtures and has no activation or state changes. It closes every other version, including the frozen v79, v80 and branch v85 requests, without a reply.
 - Framing uses a signed 32-bit little-endian byte count and caps bodies at 64 KiB. There is a two-second first-frame deadline and a two-second deadline per write. Invalid lengths, malformed envelopes, invalid identity and unsupported versions close the connection. Each mode returns a correlated refusal for operations outside its allowlist. The host allows eight concurrent handlers and four concurrent subscriptions, with one additional listening instance and a private first-instance claim. The host promptly closes connections above capacity and retries a temporarily busy listener replacement for up to two seconds.
 - Windows claims the first instance exclusively and rejects remote connections. The explicit DACL restricts access to the host account. After reading the request bytes, the host resolves the pipe token and requires the same SID, logon authentication ID and Windows session. This is a same-logon development trust boundary. The ordinary duplex C# client asks for generic write, which also gives its SID permission to create pipe instances. It does not establish server trust against another process in that logon. Both projections exercise synthetic authorization inputs behind the native identity check. They do not replicate active-session selection or LocalSystem access policy.
 - Rust tests cover the wire fixtures and native endpoint checks, including first-instance contention, listener saturation and recovery, an anonymous client, and start/stop ordering through the shared lifecycle with an injected SCM reporter and stop signal. The .NET tests exercise the real tray client through the foreground endpoint, including initial status, event, cancellation and reconnect. They supplement that path with managed codec and v51 raw frames. The Windows job in the Rust workflow runs both sets on stacked PRs.
@@ -1644,14 +1646,20 @@ Allowlisted native replays:
 | `live readings read D0 with unavailable counters after the dwell` | 8331bbf476ab4f17a2c70d4945a77782049aa4a8 | same | same |
 | `the power recheck drops an idle D0 live reading` | 8331bbf476ab4f17a2c70d4945a77782049aa4a8 | same | same |
 | `an ordinary read does not reuse an idle D0 live reading` | 8331bbf476ab4f17a2c70d4945a77782049aa4a8 | same | same |
+| `live readings reuse an active reading for idle samples for 10 s` | 8331bbf476ab4f17a2c70d4945a77782049aa4a8 | same | same |
+| `a live idle sample reuses an ordinary active reading` | 8331bbf476ab4f17a2c70d4945a77782049aa4a8 | same | same |
+| `the live reader keeps an active reading at the first idle sample` | 8331bbf476ab4f17a2c70d4945a77782049aa4a8 | same | same |
 
 Managed live readings now call
-`SafeWindowsFanTemperatureSource.ReadForLiveReadingsAsync`, which reads an idle
-GPU held in D0 after a 3-second D0 dwell, reuses that reading for up to
-10 seconds and drops it on any sample that is not D0. The native sampler has
-one read path with the workload gate of `ReadAsync`, so the native live
-readings leave an idle D0 GPU unread. The `sampler` rows with `reader: live`
-in `gpu-temperature-vectors.json` record the managed path.
+`SafeWindowsFanTemperatureSource.ReadForLiveReadingsAsync` instead of
+`ReadAsync`. An idle sample of a GPU held in D0 reuses the last D0 reading of
+any read, active or ordinary, for up to 10 seconds. Without such a reading it
+reads NVML once the GPU has been in D0 for 3 seconds. A sample that is not D0
+drops the reading and restarts the dwell. The native sampler has one read path
+with the workload gate of `ReadAsync`, so the native live readings leave an
+idle D0 GPU unread. The `sampler` rows with `reader: live` in
+`gpu-temperature-vectors.json` record the managed path; rows without a reader
+still record `ReadAsync`.
 
 Wire members the native Service does not publish at protocol 90. Each decodes
 as its managed default, which is the honest state for a native build that has
@@ -1662,7 +1670,11 @@ no backend for it:
 - `capabilities` stays null except beside a confirmed HyperBoost state. That
   observation record carries `hyperBoostEntryRestriction: null` and
   `blade14KeyboardEdition: null`, as managed writes them for
-  `DeviceCapabilities.Unavailable()`.
+  `DeviceCapabilities.Unavailable()`. It omits main's
+  `intelCpuPowerLimit`, `firmwareGamingGpuOverclockAccess` and
+  `localDimming`, which decode as null.
+- `confirmedState.localDimmingActive` is absent and decodes as null
+  (unknown). The native Service has no local-dimming read.
 - `coolingPad` is absent. The native Service has no cooling-pad backend, so it
   publishes neither the protocol 85 Auto mode nor its profile.
 - `reportWindowsDynamicLightingAdvisory` and `clearLocalDimming` get managed's
@@ -1683,7 +1695,7 @@ managed vector:
 | 374e4847, 66c6e902, 72137077, 26db283c, cc2dea76 | GPU clock offset confirmation, resend and NVML submission recovery | no native GPU clock offset writer; stored offsets are only validated |
 | 24966354, c91181b8 | GPU clock offsets and the NVIDIA laptop form on RZ09-0529 and RZ09-0530 | no native GPU clock offset writer; stored offsets are only validated |
 | a63f884c, 262c543c, 561c43bb, 927c2e18, b872ba70, ac6b1215 | Deferred presets under manual fans and their reconciliation | fan mutation, thermal drift |
-| a26e1519 | A blocked exit when journal retirement fails | low-power cleanup |
+| a26e1519 | A HyperBoost exit whose Maximum Fans restore was refused and whose journal cannot be retired reports the restore failure and blocked writes | HyperBoost exit reporting |
 | 0cf60756, 1aee2bd6, acdb3bf2, e22d97ac, 185c145a, d4249eca | Maximum fans in Custom, its restore, exit, refusal and RZ09-0482 handling | fan mutation, Custom capability |
 | cc9b97ff, 363805c9 | Product 669 Power Mode Control acknowledgements | power-mode decode |
 | e4f19946, b3b2b5ae | The limiter stays off while the override is on; an unreadable 07/8F | battery mutation |
