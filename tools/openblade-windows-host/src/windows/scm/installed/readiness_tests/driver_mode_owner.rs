@@ -1426,6 +1426,61 @@ async fn every_exit_of_the_preparation_ends_the_hold() {
     rig.port.state.lock().unwrap().device_mode_retire_delay = None;
 }
 
+/// WTSSESSION_NOTIFICATION codes Windows sends as it logs every user off
+/// before a shutdown or a Fast Startup hibernate.
+const WTS_CONSOLE_DISCONNECT: u32 = 2;
+const WTS_SESSION_LOGOFF: u32 = 6;
+/// Windows logs every user off: the logoff and console-disconnect notices,
+/// then nobody is signed in and the console has no session.
+fn log_everyone_off(rig: &Rig, named: &Cell<bool>) {
+    rig.custody
+        .lifecycle
+        .ingress(SESSION_CHANGE, WTS_SESSION_LOGOFF);
+    rig.custody
+        .lifecycle
+        .ingress(SESSION_CHANGE, WTS_CONSOLE_DISCONNECT);
+    named.set(false);
+    rig.custody.current_console.store(false, Ordering::Release);
+}
+
+/// A full shutdown logs every user off before SHUTDOWN reaches the
+/// Service; the Owned Stop release is captured after those notices, holds
+/// the Service's cleanup admission and restores Normal with nobody signed
+/// in and no console capture.
+#[tokio::test]
+async fn a_shutdown_after_logoff_releases() {
+    let (rig, named) = owner_rig(NORMAL).await;
+    tick(&rig).await;
+    assert_eq!((owner(&rig), mode(&rig)), ((true, false, false), DRIVER));
+    log_everyone_off(&rig, &named);
+    let captured = captures(&rig);
+    shutdown(&rig).await.unwrap();
+    assert_eq!(rig.runtime.driver_mode_release(), Some(Release::Restored));
+    assert_eq!((sets(&rig), mode(&rig)), (2, NORMAL));
+    assert_eq!(captures(&rig), captured, "no console capture");
+}
+
+/// A shutdown while the low-power gate is still set, a missed resume,
+/// refuses the Owned Stop release with nothing sent, as managed blocks its
+/// Stop cleanup in low power: Owned Stop pins the ordinary epoch, which the
+/// gate refuses. Here the suspend's own preparation came too late to run,
+/// so the keyboard is still in Driver mode.
+#[tokio::test]
+async fn a_shutdown_while_suspended_refuses_the_release() {
+    use crate::installed::readiness::thermal_mutation::LOW_POWER_MAXIMUM_AGE;
+    let (rig, _) = owner_rig(NORMAL).await;
+    tick(&rig).await;
+    rig.runtime.read_notice_age(|_| Some(LOW_POWER_MAXIMUM_AGE));
+    suspend(&rig);
+    tick(&rig).await;
+    assert_eq!(prepared(&rig), Some(Release::Exhausted));
+    let sent = keyboard(&rig).len();
+    shutdown(&rig).await.unwrap();
+    assert_eq!(rig.runtime.driver_mode_release(), Some(Release::Unadmitted));
+    assert_eq!(keyboard(&rig).len(), sent, "nothing sent");
+    assert_eq!((sets(&rig), mode(&rig)), (1, DRIVER));
+}
+
 /// An observeState request with request number `n`, as a client's status
 /// read; its reply.
 #[cfg(feature = "service-profile-triggers-v1")]

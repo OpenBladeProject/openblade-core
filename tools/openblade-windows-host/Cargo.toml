@@ -82,10 +82,10 @@ service-keyboard-driver-mode-read-v1 = ["service-mailbox-observation-v1"]
 # RZ09-0581 keyboard Driver-mode ownership: the 15 s acquire and maintain
 # step on the origin tick (00/84 read, claim, 00/04:0300 setter, exact
 # acknowledgement, independent 00/84 readback) under console-user write
-# admission, and the restore of Normal followed by the owned fan handback to
-# Automatic at a confirmed suspend and at shutdown, under the Service cleanup
-# admission, which needs no console user. It implies the fan feature for that
-# handback and the fan guardian, not profile triggers. No packaged
+# admission, and the restore of Normal at a confirmed suspend and at shutdown,
+# followed at shutdown only by the owned fan handback to Automatic, under the
+# Service cleanup admission, which needs no console user. It implies the fan
+# feature for that handback and the fan guardian, not profile triggers. No packaged
 # composition implies it, and both package readers refuse it. Its durable
 # owner-custody record uses the domain driver-mode-history codec.
 service-keyboard-driver-mode-v1 = ["service-keyboard-driver-mode-read-v1", "service-fan-mutation-v2", "openblade-protocol/device-mode-setters", "openblade-domain/driver-mode-history"]

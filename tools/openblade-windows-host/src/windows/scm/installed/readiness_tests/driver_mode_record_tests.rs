@@ -661,3 +661,112 @@ async fn a_slow_record_write_is_charged_before_a_release_claim() {
     assert_eq!(held(&rig).unwrap().0, State::Owned);
     rig.stop().await;
 }
+
+/// Fast Startup in Windows' order: every user is logged off, then the
+/// system session hibernates and the Service sees PBT_APMSUSPEND, with
+/// late session notices still arriving during the release. The release
+/// holds the suspend generation's cleanup scope, not a console capture:
+/// it restores Normal and settles `Clear` with nobody signed in, and the
+/// late notices do not end it.
+#[tokio::test]
+async fn a_fast_startup_order_releases_with_nobody_signed_in() {
+    let (rig, named) = owner_rig(NORMAL).await;
+    tick(&rig).await;
+    let acquired = rig.custody.driver_mode.writes().len();
+    log_everyone_off(&rig, &named);
+    let captured = captures(&rig);
+    let custody = Arc::downgrade(&rig.custody);
+    let baseline = rig.port.state.lock().unwrap().device_mode_queries + 1;
+    rig.port.state.lock().unwrap().device_mode_on_query = Some(Arc::new(move |query| {
+        if query == baseline {
+            let custody = custody.upgrade().unwrap();
+            custody
+                .lifecycle
+                .ingress(SESSION_CHANGE, WTS_SESSION_LOGOFF);
+            custody
+                .lifecycle
+                .ingress(SESSION_CHANGE, WTS_CONSOLE_DISCONNECT);
+        }
+    }));
+    suspend(&rig);
+    tick(&rig).await;
+    rig.port.state.lock().unwrap().device_mode_on_query = None;
+    assert_eq!(prepared(&rig), Some(Release::Restored));
+    assert_eq!(mode(&rig), NORMAL);
+    assert_eq!(captures(&rig), captured, "no console capture");
+    let generation = rig.custody.lifecycle.low_power().unwrap().generation;
+    assert_eq!(
+        scopes_from(&rig, acquired),
+        [Some(CleanupScope::LowPower { generation }); 2]
+    );
+    assert_eq!(held(&rig).unwrap().0, State::Clear);
+    rig.custody.lifecycle.ingress(POWER, RESUME);
+    rig.stop().await;
+}
+
+/// G3, a known limit: a process whose write lease never activated, because
+/// nobody signed in since it started, refuses the shutdown release over a
+/// loaded `Owned` record and a keyboard in Driver mode. Nothing is sent,
+/// and the record stays `Owned` and open. Only a console-captured mutation
+/// activates the lease, and the record custody refuses writes until it
+/// has, so a release that went ahead could not write its claim. Managed
+/// would release a fresh Driver read here, whoever set it.
+#[tokio::test]
+async fn an_unactivated_process_refuses_the_shutdown_release() {
+    let (rig, _) = owner_rig(NORMAL).await;
+    tick(&rig).await;
+    let (state, ids) = held(&rig).unwrap();
+    assert_eq!(state, State::Owned);
+    let restarted = restarted(&rig, DRIVER).await;
+    shutdown(&restarted).await.unwrap();
+    assert_eq!(
+        restarted.runtime.driver_mode_release(),
+        Some(Release::Unadmitted)
+    );
+    assert!(
+        keyboard(&restarted).is_empty(),
+        "{:?}",
+        keyboard(&restarted)
+    );
+    assert_eq!(mode(&restarted), DRIVER);
+    assert_eq!(held(&restarted), Some((State::Owned, ids)));
+    assert!(!closed(&restarted));
+    assert!(restarted.custody.driver_mode.writes().is_empty());
+}
+
+/// A Fast Startup release that may have applied Normal unconfirmed leaves
+/// its `ReleaseIntent` through the hibernate. After the hybrid boot the
+/// same process resumes, and with nobody signed in nothing resolves it: the
+/// owner's steps send nothing, because only a read job a client's
+/// ObserveState runs can show the mode after this process's own release,
+/// and no client runs at the logon screen. A later client read resolves
+/// it, and that settle needs no console user.
+#[tokio::test]
+async fn a_fast_startup_release_intent_waits_for_a_client_read() {
+    let (rig, named) = owner_rig(NORMAL).await;
+    tick(&rig).await;
+    log_everyone_off(&rig, &named);
+    rig.port.state.lock().unwrap().device_mode_bad_ack = true;
+    suspend(&rig);
+    tick(&rig).await;
+    rig.port.state.lock().unwrap().device_mode_bad_ack = false;
+    assert_eq!(prepared(&rig), Some(Release::Unconfirmed));
+    let (state, ids) = held(&rig).unwrap();
+    assert_eq!(state, State::ReleaseIntent);
+    // The hybrid boot resumes the same process.
+    rig.custody.lifecycle.ingress(POWER, RESUME);
+    let sent = keyboard(&rig).len();
+    for _ in 0..3 {
+        later(&rig).await;
+    }
+    assert_eq!(keyboard(&rig).len(), sent, "the steps send nothing");
+    assert_eq!(held(&rig), Some((State::ReleaseIntent, ids)));
+    assert!(rig.runtime.driver_mode_uncertain_for_tests());
+    // A client's read job, still with nobody at the console.
+    record(&rig, DeviceMode::Normal);
+    step(&rig).await;
+    assert_eq!(held(&rig), Some((State::Clear, ids)));
+    assert!(!rig.runtime.driver_mode_uncertain_for_tests());
+    assert_eq!(keyboard(&rig).len(), sent, "no console user, no acquire");
+    rig.stop().await;
+}

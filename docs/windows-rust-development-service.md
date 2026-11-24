@@ -290,7 +290,7 @@ A Service built with `service-keyboard-driver-mode-v1` acquires and maintains
 RZ09-0581 keyboard Driver mode and restores Normal at a confirmed suspend and
 at shutdown. The feature
 implies `service-keyboard-driver-mode-read-v1`, `service-fan-mutation-v2` (the
-fan guardian and the fan handback it runs before) and the protocol crate's
+fan guardian, and the fan handback the shutdown release runs before) and the protocol crate's
 `device-mode-setters`, and adds the capability marker
 `service-keyboard-driver-mode-v1`. It does not imply profile triggers. Both
 package readers refuse the feature and the marker by name, before the read and
@@ -633,7 +633,11 @@ intent is unchanged: the next active reconciliation or request applies it.
   lands, restore an owned Battery Saver fan stop here, after the keyboard and
   under the same generation's cleanup admission, as managed does. Managed's
   restore has no Windows-AC-only pre-check; do not copy the one owned Stop's
-  handback recipe needs (`fan_mutation.rs`).
+  handback recipe needs (`fan_mutation.rs`). An earlier revision handed
+  owned manual fans back at suspend too (the D1 suspend fan handback);
+  commit `874b7c07` removed it, which is managed parity. On Fast Startup,
+  too, the fans are not handed back at suspend, and owned fans continue in
+  the resumed process.
 - The keyboard gets the rest of the window, at most its 0.9 s shutdown
   share. Unlike the shutdown release's 150 ms entry, it waits on the gate and
   the join of active work for that whole share, as managed's
@@ -649,6 +653,17 @@ intent is unchanged: the next active reconciliation or request applies it.
 - Fast Startup hibernates the system session instead of stopping services,
   so its PBT_APMSUSPEND runs this path, not the shutdown release. Windows
   logs users off first, which the cleanup admission does not depend on.
+  After the hybrid boot the same process resumes, so an in-flight release
+  job and a release left in doubt survive it.
+
+The console-identity half of packaging blocker 2 is resolved: every release
+holds the Service's cleanup admission, which names no console session, SID
+or logon. Both Windows orders are pinned with nobody signed in: logoff and
+console-disconnect notices, then PBT_APMSUSPEND with late session notices
+during the release, restores Normal under the suspend generation's scope
+(`a_fast_startup_order_releases_with_nobody_signed_in`), and logoff notices
+before SHUTDOWN leave the Owned Stop release admitted
+(`a_shutdown_after_logoff_releases`). Neither takes a console capture.
 
 The preparation's healthy release has three exchanges and 20 cleanup
 authorizations, counted in the test rig. Each authorization reads the
@@ -688,10 +703,55 @@ any suspend, and managed holds nothing on Fast Startup, where no Agent runs.
 - A preparation still running when the cap ends goes on; a system that
   sleeps first ends the work at its next authorization after resume.
 
-Remaining before packaging admission: an attended timing of a real release
-at suspend and at shutdown and of the fan handback at shutdown on RZ09-0581, observation that Fast
-Startup delivers PBT_APMSUSPEND to the native Service, an attended timing of
-the Driver-mode record write against its 25 ms floor, and physical validation.
+Known limits, pinned by tests and left for the attended checks below:
+
+- G3, an unactivated write lease. Only a console-captured mutation
+  activates this process's write lease (`ReadSource::mutate`), and the record
+  custody writes nothing before it. A process in which nobody has signed in
+  since it started, such as a shutdown from the logon screen after a cold
+  boot, therefore refuses the shutdown release over a loaded `Owned` record
+  or a keyboard left in Driver mode: `Unadmitted`, nothing sent, and the
+  record stays `Owned` and open, which Setup admits
+  (`an_unactivated_process_refuses_the_shutdown_release`). Managed releases a
+  fresh Driver read there, whoever set it. A Service-scoped activation bound
+  to the loaded record would widen owner custody at the shutdown boundary;
+  it waits for V6, whether Driver mode survives a cold boot.
+- G4, the Owned Stop fence. Owned Stop pins the ordinary epoch, so a session
+  or power notice that arrives during the 0.9 s shutdown release ends it at
+  its next authorization. Notices before SHUTDOWN do not, because the
+  release captures after them. Whether late logoff notices reach the Service
+  during SHUTDOWN is not known; a session-tolerant fence waits for the V3
+  trace.
+- A shutdown while the gate is still set, after a missed resume, refuses the
+  release with nothing sent, as managed blocks its Stop cleanup in low power
+  (`a_shutdown_while_suspended_refuses_the_release`).
+- A Fast Startup release left in doubt (`ReleaseIntent`) is not resolved
+  after the hybrid boot while nobody is signed in. After this process's own
+  release, only a confirmed `00/84` read by a client's ObserveState read job
+  can resolve it, and no client runs at the logon screen. The first client
+  read after sign-in resolves it, and that settle needs no console user
+  (`a_fast_startup_release_intent_waits_for_a_client_read`). Until then
+  every release reports `Uncertain` and sends nothing, Setup refuses
+  retirement and handback, and a full shutdown leaves the intent for the
+  next process, whose first console-captured step resolves it read-only.
+
+Packaging blocker 2, the Driver-mode release at shutdown and Fast Startup
+with no console user, is code-complete: the cleanup admission resolves the
+identity half and the suspend hold the timing half. Remaining before
+packaging admission, attended on RZ09-0581:
+
+- V2: a Fast Startup shutdown with Driver mode owned. PBT_APMSUSPEND
+  reaches the native Service, the release lands within the hold, the record
+  is `Clear` after the hybrid boot and the keyboard reads Normal at the
+  logon screen, with no reacquire before sign-in.
+- V3: a full shutdown and a restart. The release and the fan handback land
+  within WaitToKillServiceTimeout, the record is `Clear`, and the session
+  notices seen during the release are recorded (G4).
+- V4: a shutdown from the logon screen once after a sign-in and sign-out in
+  the same boot (`Restored` expected) and once with no sign-in since boot
+  (`Unadmitted` expected, G3).
+- An attended timing of the Driver-mode record write against its 25 ms
+  floor, and physical validation.
 
 #### Live readings (read-only)
 
