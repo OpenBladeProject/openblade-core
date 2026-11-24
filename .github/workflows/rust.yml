@@ -201,9 +201,9 @@ jobs:
       - name: Clippy
         run: cargo clippy --locked --workspace --all-targets --target ${{ matrix.target }} -- -D warnings
 
-      # The workspace build leaves openblade-domain's thermal-history feature off;
-      # it carries the history grammar that tools/openblade-windows-host enables.
-      - name: Test and lint the domain thermal-history and profile-set features
+      # The workspace build leaves openblade-domain's optional features off;
+      # they carry the history grammars that tools/openblade-windows-host enables.
+      - name: Test and lint the domain thermal-history, profile-set and driver-mode-history features
         run: |
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true
@@ -215,6 +215,9 @@ jobs:
           cargo test --locked -p openblade-domain --features profile-set,thermal-history --target ${{ matrix.target }}
           cargo clippy --locked -p openblade-domain --features profile-set,thermal-history --all-targets --target ${{ matrix.target }} -- -D warnings
           cargo clippy --locked -p openblade-domain --features profile-set --all-targets --target ${{ matrix.target }} -- -D warnings
+          # The native keyboard Driver-mode record codec against its shared vectors.
+          cargo test --locked -p openblade-domain --features driver-mode-history --target ${{ matrix.target }}
+          cargo clippy --locked -p openblade-domain --features driver-mode-history --all-targets --target ${{ matrix.target }} -- -D warnings
 
       # The workspace build leaves the production Session GPU close backend
       # off. Its tests drive scripted process seams only; none opens, signals
