@@ -29,15 +29,24 @@ const WTS_SESSION_LOCK: u32 = 7;
 type Journal = Arc<Shared<Option<Option<Vec<u8>>>>>;
 
 fn run_loop(rig: &Rig) -> Journal {
+    glitching(rig).0
+}
+/// `run_loop` with a flag that makes the next journal read, and only that
+/// one, unsafe.
+fn glitching(rig: &Rig) -> (Journal, Arc<AtomicBool>) {
     let journal: Journal = Arc::new(Shared::new(Some(None)));
-    let read = journal.clone();
+    let glitch = Arc::new(AtomicBool::new(false));
+    let (read, once) = (journal.clone(), glitch.clone());
     rig.runtime.run_convergence(Arc::new(move || {
+        if once.swap(false, Ordering::AcqRel) {
+            return Ok(unsafe_journal());
+        }
         read.lock()
             .unwrap()
             .clone()
             .ok_or_else(|| io::ErrorKind::PermissionDenied.into())
     }));
-    journal
+    (journal, glitch)
 }
 /// Selects thermal policy `policy`; the fixture saves Maintain.
 async fn select(rig: &Rig, policy: u8) {
@@ -438,4 +447,489 @@ async fn an_ambiguous_submission_is_unavailable_and_never_replayed() {
     }
     assert_eq!((writes(&rig), ledger(&rig)), (0, state));
     abandon(rig).await;
+}
+
+/// A rig whose Game rule applies Performance with owned Fixed fans, with
+/// the loop running under Maintain.
+async fn fixed_fans() -> (Rig, Journal) {
+    let rule: Value = serde_json::from_str(PRESET_AND_FIXED).unwrap();
+    let rig = rig_at(files_with_game(rule), 0);
+    report(&rig, 1, Some(r"C:\Games\Game.exe")).await;
+    wired(&rig).await;
+    let journal = run_loop(&rig);
+    select(&rig, 0).await;
+    (rig, journal)
+}
+/// `converging` with the journal flag of `glitching`.
+async fn converging_glitching() -> (Rig, Journal, Arc<AtomicBool>) {
+    let rig = applied_game().await;
+    let (journal, glitch) = glitching(&rig);
+    select(&rig, 0).await;
+    (rig, journal, glitch)
+}
+fn fans(status: &Value) -> &Value {
+    &status["status"]["confirmedState"]["fans"]
+}
+
+/// D9 for fans, as managed projects them: saved fan intent native has no
+/// recipe for, ManualCurve on AC or Fixed on battery, reads as Automatic
+/// over Automatic fans. It contradicts nothing, spends no claim, and a
+/// real performance drift still converges alone.
+#[tokio::test]
+async fn unsupported_fan_intent_is_automatic_and_a_performance_drift_still_converges() {
+    for battery in [false, true] {
+        let (source, rule, fan) = if battery {
+            ("battery", json!({"battery":{"performance":4}}), 1)
+        } else {
+            ("pluggedIn", json!({"pluggedIn":{"performance":2}}), 2)
+        };
+        let files = files_with_game(rule);
+        let mut document = files.document("profiles.json");
+        document["profiles"][source]["fans"] = json!(fan);
+        files.put("profiles.json", document);
+        files.commit_configuration();
+        let rig = rig_at(files, 0);
+        if battery {
+            rig.port.state.lock().unwrap().actual = 0;
+            rig.metadata.store(1, Ordering::Release);
+        }
+        report(&rig, 1, Some(r"C:\Games\Game.exe")).await;
+        wired(&rig).await;
+        let _journal = run_loop(&rig);
+        select(&rig, 0).await;
+        let status = observe(&rig, 1).await;
+        let saved = performance(&status).clone();
+        assert_eq!(fans(&status), 0, "{battery} {status}");
+        assert_eq!(convergence(&status)["state"], MATCHED, "{battery} {status}");
+        let written = writes(&rig);
+        tick(&rig).await;
+        tick(&rig).await;
+        assert_eq!(writes(&rig), written, "{battery}");
+        let status = drift(&rig, 2).await;
+        assert_eq!(
+            convergence(&status)["state"],
+            CONVERGING,
+            "{battery} {status}"
+        );
+        assert_eq!(convergence(&status)["affectedComponents"], json!([0]));
+        tick(&rig).await;
+        let status = observe(&rig, 3).await;
+        assert_eq!(performance(&status), &saved, "{battery} {status}");
+        assert_eq!(convergence(&status)["state"], MATCHED, "{battery} {status}");
+        let state = ledger(&rig);
+        assert_eq!(state["tombstones"][0]["terminalDisposition"], 0, "{state}");
+        assert_eq!(state["tombstones"][0]["contradiction"], 1, "{state}");
+        assert_eq!(state["budgets"].as_array().unwrap().len(), 1, "{state}");
+        rig.stop().await;
+    }
+}
+
+/// D9 for performance: saved GPU clock tuning native has no writer for
+/// leaves no destination to converge to, so a drift spends no claim.
+#[tokio::test]
+async fn a_performance_contradiction_without_a_recipe_spends_no_claim() {
+    let (rig, _journal) = converging().await;
+    let mut document = rig.files.document("profiles.json");
+    document["profiles"]["applicationProfiles"][0]["overrides"]["pluggedIn"]["gpuClockTuning"] =
+        json!({"enabled":true,"offsets":{"coreMegahertz":10,"memoryMegahertz":20}});
+    rig.files.put("profiles.json", document);
+    rig.files.commit_configuration();
+    let before = raw(&rig, LEDGER);
+    let status = drift(&rig, 1).await;
+    assert_eq!(convergence(&status)["state"], AWAITING, "{status}");
+    let written = writes(&rig);
+    tick(&rig).await;
+    tick(&rig).await;
+    assert_eq!((writes(&rig), raw(&rig, LEDGER)), (written, before));
+    abandon(rig).await;
+}
+
+/// Managed evaluates an observation: a reconciliation step's own baseline
+/// read and readback are no reading, so after a report writes the
+/// performance preset idle ticks evaluate nothing, capture nothing and
+/// spend no claim.
+#[tokio::test]
+async fn a_reconciliations_own_readings_are_no_evidence() {
+    let (rig, _journal) = converging().await;
+    // The first tick asks for the loop's reading and the next evaluates it.
+    tick(&rig).await;
+    tick(&rig).await;
+    let before = raw(&rig, LEDGER);
+    let written = writes(&rig);
+    report(&rig, 2, None).await;
+    assert!(writes(&rig) > written);
+    let captured = captures(&rig);
+    for _ in 0..3 {
+        tick(&rig).await;
+    }
+    assert_eq!((captures(&rig), raw(&rig, LEDGER)), (captured, before));
+    rig.stop().await;
+}
+
+/// Between its periodic reads the loop reads no console user and captures
+/// nothing. Each 15 s it captures once; only Maintain then reads the
+/// device (D5), and the next tick evaluates that reading. Strict sends no
+/// frame.
+#[tokio::test]
+async fn idle_ticks_read_nothing_and_only_maintain_reads_the_device() {
+    for policy in [1u8, 0] {
+        let rig = reported_game().await;
+        let (_named, reads) = probed(&rig, true).await;
+        let _journal = run_loop(&rig);
+        select(&rig, policy).await;
+        tick(&rig).await;
+        tick(&rig).await;
+        let counts = |rig: &Rig| (reads.get(), captures(rig), sent(rig));
+        let idle = counts(&rig);
+        for _ in 0..4 {
+            tick(&rig).await;
+        }
+        assert_eq!(counts(&rig), idle, "{policy}");
+        rig.runtime.age_convergence(Duration::from_secs(15));
+        tick(&rig).await;
+        let (probe, captured, frames) = counts(&rig);
+        // Maintain's read admits itself too.
+        assert_eq!(probe, idle.0 + 1, "{policy}");
+        assert_eq!(captured == idle.1 + 1, policy != 0, "{policy} {captured}");
+        assert_eq!(frames > idle.2, policy == 0, "{policy}");
+        tick(&rig).await;
+        let maintain = usize::from(policy == 0);
+        let evaluated = (probe + maintain, captured + maintain, frames);
+        assert_eq!(counts(&rig), evaluated, "{policy}");
+        for _ in 0..3 {
+            tick(&rig).await;
+        }
+        assert_eq!(counts(&rig), evaluated, "{policy}");
+        rig.stop().await;
+    }
+}
+
+/// D7 kept by a suspend at the attempt's adapter read, then resumed: the
+/// writes before it and the ledger it left.
+async fn refused_once(rig: &Rig) -> (usize, Value) {
+    drift(rig, 1).await;
+    let written = writes(rig);
+    let custody = rig.custody.clone();
+    let once = Arc::new(AtomicBool::new(false));
+    rig.port.state.lock().unwrap().on_power = Some(Arc::new(move |_| {
+        if !once.swap(true, Ordering::AcqRel) {
+            custody.lifecycle.ingress(POWER, SUSPEND);
+        }
+    }));
+    tick(rig).await;
+    rig.port.state.lock().unwrap().on_power = None;
+    let held = ledger(rig);
+    assert!(!held["inFlight"].is_null(), "{held}");
+    resume(rig);
+    (written, held)
+}
+
+/// A due D7 retry asks for its reading once per 5 s, reading no console
+/// user and capturing nothing in between; under Strict that read sends no
+/// frame. A reading under Strict retires the claim Blocked without running
+/// the attempt.
+#[tokio::test]
+async fn a_due_retry_asks_once_per_interval_and_strict_retires_it_unread() {
+    let rig = reported_game().await;
+    let (_named, reads) = probed(&rig, true).await;
+    let _journal = run_loop(&rig);
+    select(&rig, 0).await;
+    let (written, held) = refused_once(&rig).await;
+    select(&rig, 1).await;
+    tick(&rig).await;
+    let counts = |rig: &Rig| (reads.get(), captures(rig), sent(rig));
+    for _ in 0..2 {
+        rig.runtime.age_convergence(Duration::from_secs(5));
+        let before = counts(&rig);
+        let asked = (before.0 + 1, before.1 + 1, before.2);
+        tick(&rig).await;
+        assert_eq!(counts(&rig), asked);
+        for _ in 0..3 {
+            tick(&rig).await;
+        }
+        assert_eq!(counts(&rig), asked);
+    }
+    assert_eq!(ledger(&rig), held);
+    observe(&rig, 2).await;
+    let frames = sent(&rig);
+    tick(&rig).await;
+    assert_eq!((writes(&rig), sent(&rig)), (written, frames));
+    let state = ledger(&rig);
+    assert!(state["inFlight"].is_null(), "{state}");
+    assert_eq!(state["tombstones"][0]["terminalDisposition"], 4, "{state}");
+    assert_eq!(state["budgets"], held["budgets"]);
+    rig.stop().await;
+}
+
+/// D7 retries once: a retry refused again is tombstoned Blocked, and no
+/// third attempt runs.
+#[tokio::test]
+async fn a_retry_refused_again_is_blocked_and_never_run_again() {
+    let (rig, _journal) = converging().await;
+    drift(&rig, 1).await;
+    let written = writes(&rig);
+    let custody = rig.custody.clone();
+    rig.port.state.lock().unwrap().on_power = Some(Arc::new(move |_| {
+        custody.lifecycle.ingress(POWER, SUSPEND);
+    }));
+    tick(&rig).await;
+    let held = ledger(&rig);
+    assert!(!held["inFlight"].is_null(), "{held}");
+    resume(&rig);
+    rig.runtime.age_convergence(Duration::from_secs(5));
+    for _ in 0..3 {
+        tick(&rig).await;
+        resume(&rig);
+    }
+    let state = ledger(&rig);
+    assert!(state["inFlight"].is_null(), "{state}");
+    assert_eq!(state["tombstones"][0]["terminalDisposition"], 4, "{state}");
+    assert_eq!(state["budgets"], held["budgets"]);
+    rig.runtime.age_convergence(Duration::from_secs(20));
+    for _ in 0..3 {
+        tick(&rig).await;
+        resume(&rig);
+    }
+    assert_eq!((writes(&rig), ledger(&rig)), (written, state));
+    rig.port.state.lock().unwrap().on_power = None;
+    abandon(rig).await;
+}
+
+/// Before reserving, managed's executor needs a settled store and a fresh
+/// write admission: an unsettled journal row, or an admission refused
+/// after the capture, holds a drift with no claim spent.
+#[tokio::test]
+async fn an_unsettled_row_or_a_refused_admission_spends_no_claim() {
+    // An earlier submission's row is unsettled.
+    let rig = rig_at(files_with_game(json!({"pluggedIn":{"performance":2}})), 0);
+    rig.port.state.lock().unwrap().fail_write = Some(1);
+    report(&rig, 1, Some(r"C:\Games\Game.exe")).await;
+    assert!(rig.storage.pending());
+    wired(&rig).await;
+    let _journal = run_loop(&rig);
+    // The loop asks for its reading, then evaluates it.
+    tick(&rig).await;
+    tick(&rig).await;
+    assert_eq!((writes(&rig), raw(&rig, LEDGER)), (1, None));
+    rig.stop().await;
+    // The capture passes, its write admission does not.
+    let (rig, _journal) = converging().await;
+    drift(&rig, 1).await;
+    let (written, before) = (writes(&rig), raw(&rig, LEDGER));
+    rig.custody.fresh_refuse.store(true, Ordering::Release);
+    tick(&rig).await;
+    assert_eq!((writes(&rig), raw(&rig, LEDGER)), (written, before));
+    rig.custody.fresh_refuse.store(false, Ordering::Release);
+    rig.stop().await;
+}
+
+/// The attempt revalidates its reservation before each setter: a ledger
+/// changed between two writes refuses the next one, and the changed file
+/// is kept.
+#[tokio::test]
+async fn a_ledger_changed_mid_recipe_refuses_the_next_write() {
+    let (rig, _journal) = converging().await;
+    drift(&rig, 1).await;
+    let written = writes(&rig);
+    let files = rig.files.clone();
+    let changed = Arc::new(Shared::new(None));
+    let kept = changed.clone();
+    before_write(&rig, move || {
+        let mut document = files.document(LEDGER);
+        document["state"]["budgets"] = json!([]);
+        files.put(LEDGER, document);
+        *kept.lock().unwrap() = files.read(LEDGER).unwrap();
+    });
+    tick(&rig).await;
+    assert_eq!(writes(&rig), written + 1);
+    assert_eq!(raw(&rig, LEDGER), changed.lock().unwrap().clone());
+    abandon(rig).await;
+}
+
+/// Once one write of an attempt is refused no later step runs, even when
+/// its cause cleared: a journal that is unsafe for one read at the first
+/// step's admission leaves the second step unrun and the claim Blocked.
+#[tokio::test]
+async fn one_refusal_refuses_every_later_step() {
+    let (rig, _journal, glitch) = converging_glitching().await;
+    // Silent with manual fans another controller set: both contradict.
+    moved(&rig, EXTERNAL, 1);
+    let status = observe(&rig, 1).await;
+    assert_eq!(
+        convergence(&status)["affectedComponents"],
+        json!([0, 1]),
+        "{status}"
+    );
+    let (written, frames) = (writes(&rig), sent(&rig));
+    rig.port.state.lock().unwrap().on_power = Some(Arc::new(move |_| {
+        glitch.store(true, Ordering::Release);
+    }));
+    tick(&rig).await;
+    rig.port.state.lock().unwrap().on_power = None;
+    // The first step read its baseline; no later step read anything.
+    assert_eq!(sent(&rig) - frames, 6);
+    assert_eq!(writes(&rig), written);
+    let state = ledger(&rig);
+    assert!(state["inFlight"].is_null(), "{state}");
+    assert_eq!(state["tombstones"][0]["terminalDisposition"], 4, "{state}");
+    abandon(rig).await;
+}
+
+/// A fans-only contradiction runs the fan step alone, which returns the
+/// owned Fixed fans; a journal change after its first setter refuses the
+/// next one, which leaves the claim to its fenced row; and Stop at its
+/// adapter read admits no setter.
+#[tokio::test]
+async fn the_fan_step_converges_and_admits_each_setter_afresh() {
+    for case in 0..3 {
+        let (rig, journal) = fixed_fans().await;
+        tick(&rig).await;
+        moved(&rig, 2, 0);
+        let rest = fans(&rig.get().await).clone();
+        let status = observe(&rig, 1).await;
+        assert_eq!(
+            convergence(&status)["affectedComponents"],
+            json!([1]),
+            "{case} {status}"
+        );
+        let (written, frames) = (writes(&rig), sent(&rig));
+        match case {
+            1 => before_write(&rig, move || {
+                *journal.lock().unwrap() = Some(unsafe_journal())
+            }),
+            2 => {
+                let stop = rig.runtime.convergence_stop();
+                rig.port.state.lock().unwrap().on_power =
+                    Some(Arc::new(move |_| stop.store(true, Ordering::Release)));
+            }
+            _ => {}
+        }
+        tick(&rig).await;
+        rig.port.state.lock().unwrap().on_power = None;
+        let state = ledger(&rig);
+        match case {
+            0 => {
+                assert!(writes(&rig) > written + 1);
+                assert_eq!(fans(&observe(&rig, 2).await), &rest);
+                assert_eq!(state["tombstones"][0]["terminalDisposition"], 0, "{state}");
+            }
+            1 => {
+                assert_eq!(writes(&rig), written + 1);
+                assert_eq!(sent(&rig) - frames, 6);
+                assert_eq!(state["tombstones"][0]["terminalDisposition"], 3, "{state}");
+            }
+            _ => {
+                assert_eq!(writes(&rig), written);
+                // The step read the adapter, then admitted no fan read.
+                assert_eq!(sent(&rig) - frames, 3);
+                assert!(!state["inFlight"].is_null(), "{state}");
+            }
+        }
+        abandon(rig).await;
+    }
+}
+
+/// Stop's drain closes the loop.
+#[tokio::test]
+async fn the_drain_stops_the_loop() {
+    let (rig, _journal) = converging().await;
+    let stop = rig.runtime.convergence_stop();
+    assert!(!stop.load(Ordering::Acquire));
+    let _ = rig.source.lock().await.drain().await;
+    assert!(stop.load(Ordering::Acquire));
+}
+
+/// A reservation a stop left before any submission is retired Confirmed by
+/// the restarted Service once its reading shows the reserved target.
+#[tokio::test]
+async fn a_left_reservation_whose_target_is_shown_retires_confirmed() {
+    let (rig, _journal) = converging().await;
+    drift(&rig, 1).await;
+    let stop = rig.runtime.convergence_stop();
+    rig.port.state.lock().unwrap().on_power =
+        Some(Arc::new(move |_| stop.store(true, Ordering::Release)));
+    tick(&rig).await;
+    rig.port.state.lock().unwrap().on_power = None;
+    let held = ledger(&rig);
+    assert!(!held["inFlight"].is_null(), "{held}");
+    let (rig, _journal) = restarted(rig).await;
+    report(&rig, 2, Some(r"C:\Games\Game.exe")).await;
+    assert_eq!(performance(&observe(&rig, 1).await), 2);
+    tick(&rig).await;
+    let state = ledger(&rig);
+    assert!(state["inFlight"].is_null(), "{state}");
+    assert_eq!(state["tombstones"][0]["terminalDisposition"], 0, "{state}");
+    assert_eq!(state["budgets"], held["budgets"]);
+    rig.stop().await;
+}
+
+/// A tombstone suppresses its contradiction by itself: with the claim's
+/// budget cleared, the same drift is still not converged.
+#[tokio::test]
+async fn a_tombstone_suppresses_its_contradiction_without_its_budget() {
+    let (rig, _journal) = converging().await;
+    drift(&rig, 1).await;
+    tick(&rig).await;
+    let mut document = rig.files.document(LEDGER);
+    document["state"]["budgets"] = json!([]);
+    rig.files.put(LEDGER, document);
+    let (rig, _journal) = restarted(rig).await;
+    report(&rig, 2, Some(r"C:\Games\Game.exe")).await;
+    assert_eq!(performance(&observe(&rig, 2).await), 2);
+    let before = raw(&rig, LEDGER);
+    drift(&rig, 3).await;
+    let written = writes(&rig);
+    tick(&rig).await;
+    tick(&rig).await;
+    assert_eq!((writes(&rig), raw(&rig, LEDGER)), (written, before));
+    rig.stop().await;
+}
+
+/// The loop's periodic read is bounded and a failed or stalled one is no
+/// reading: the tick returns, and after a stall the next one still carries
+/// lifecycle work.
+#[tokio::test]
+async fn a_failed_or_stalled_periodic_read_leaves_the_tick_its_work() {
+    for stall in [false, true] {
+        let (rig, _journal) = converging().await;
+        let held = Arc::new(AtomicBool::new(false));
+        {
+            let mut state = rig.port.state.lock().unwrap();
+            if stall {
+                state.held_read = Some(held.clone());
+            } else {
+                state.read_worker_error = Some(Arc::new(|| io::ErrorKind::Other.into()));
+            }
+        }
+        let frames = sent(&rig);
+        tokio::time::timeout(Duration::from_secs(15), tick(&rig))
+            .await
+            .expect("the periodic read is bounded");
+        assert!(sent(&rig) > frames, "{stall}");
+        if !stall {
+            // A failed job leaves the reader to its own recovery; the tick
+            // itself went on.
+            abandon(rig).await;
+            continue;
+        }
+        held.store(true, Ordering::Release);
+        rig.port.state.lock().unwrap().held_read = None;
+        // The released job retires before the next tick stops its reader.
+        for _ in 0..100 {
+            let retired = {
+                let state = rig.port.state.lock().unwrap();
+                state.opened == state.retired
+            };
+            if retired {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        let before = sent(&rig);
+        unplug(&rig);
+        tick(&rig).await;
+        assert!(sent(&rig) > before, "{stall}");
+        assert_ne!(performance(&rig.get().await), 2, "{stall}");
+        abandon(rig).await;
+    }
 }

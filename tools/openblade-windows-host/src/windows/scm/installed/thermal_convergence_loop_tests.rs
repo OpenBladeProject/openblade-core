@@ -10,6 +10,7 @@ fn relinquished(schema: i64) -> Value {
         "schemaVersion": schema, "state": RELINQUISHED, "baseMode": 1,
         "updatedAtUtc": "2026-11-24T00:00:00+00:00", "requiresCoolingPad": false,
         "restorePerformance": 1, "restoreFanControl": {"mode": 0},
+        "restorePowerSource": 0,
     })
 }
 
@@ -99,4 +100,77 @@ fn a_reserved_target_is_the_classifier_intent() {
         target_intent(&preset).performance,
         Preset::from_wire(2).map(Destination::Preset)
     );
+}
+
+/// Managed `IsWellFormed` over each member a Relinquished journal carries:
+/// a document it does not admit blocks, whatever its state says.
+#[test]
+fn a_journal_managed_would_not_admit_blocks() {
+    let safe = |schema: i64, edit: &dyn Fn(&mut Value)| {
+        let mut document = relinquished(schema);
+        edit(&mut document);
+        journal_safe(Some(&journal(document)))
+    };
+    let custom = json!({"cpu": 0, "gpu": 2, "maximumFans": false});
+    // Restore intent: a defined preset, Custom settings exactly for Custom,
+    // and a defined fan mode.
+    for preset in [-1, 10, 5] {
+        assert!(
+            !safe(8, &|d| d["restorePerformance"] = json!(preset)),
+            "{preset}"
+        );
+    }
+    assert!(safe(8, &|d| {
+        d["restorePerformance"] = json!(5);
+        d["restoreCustomPerformance"] = custom.clone();
+    }));
+    assert!(!safe(8, &|d| d["restoreCustomPerformance"] = custom.clone()));
+    assert!(!safe(8, &|d| d["restoreFanControl"]["mode"] = json!(5)));
+    assert!(!safe(8, &|d| d["restoreGpuClockTuning"] = json!(1)));
+    // The base mode: Silent, Balanced or Performance, or Custom with its
+    // restore settings. A legacy schema restores its base mode.
+    for mode in [3, 4, 5, 6] {
+        assert!(!safe(8, &|d| d["baseMode"] = json!(mode)), "{mode}");
+    }
+    assert!(safe(8, &|d| {
+        d["baseMode"] = json!(5);
+        d["restorePerformance"] = json!(5);
+        d["restoreCustomPerformance"] = custom.clone();
+    }));
+    assert!(!safe(2, &|d| d["baseMode"] = json!(5)));
+    // Schema 8 binds the restore to a power source.
+    for source in [json!(null), json!(3)] {
+        assert!(
+            !safe(8, &|d| d["restorePowerSource"] = source.clone()),
+            "{source}"
+        );
+    }
+    assert!(safe(7, &|d| d["restorePowerSource"] = json!(null)));
+    // No retry, each from the schema that added it.
+    assert!(!safe(5, &|d| d["restoreRetryDisposition"] = json!(1)));
+    assert!(safe(4, &|d| d["restoreRetryDisposition"] = json!(1)));
+    assert!(!safe(6, &|d| d["restoreRetryTarget"] = json!({"mode": 0})));
+    assert!(safe(5, &|d| d["restoreRetryTarget"] = json!({"mode": 0})));
+    // A transition ID, when present, is a non-empty GUID.
+    for id in [
+        json!("00000000-0000-0000-0000-000000000000"),
+        json!("transition"),
+        json!(1),
+    ] {
+        assert!(!safe(7, &|d| d["transitionId"] = id.clone()), "{id}");
+    }
+    assert!(safe(7, &|d| {
+        d["transitionId"] = json!("3f2504e0-4f89-41d3-9a0c-0305e82c3301");
+    }));
+    assert!(safe(6, &|d| d["transitionId"] = json!("transition")));
+    // A recovery baseline only under RestorePending.
+    assert!(!safe(4, &|d| d["recoveryBaseline"] = json!({})));
+    assert!(safe(3, &|d| d["recoveryBaseline"] = json!({})));
+    // A written timestamp.
+    assert!(!safe(8, &|d| {
+        d["updatedAtUtc"] = json!("0001-01-01T00:00:00+00:00");
+    }));
+    assert!(!safe(8, &|d| {
+        d.as_object_mut().unwrap().remove("updatedAtUtc");
+    }));
 }
