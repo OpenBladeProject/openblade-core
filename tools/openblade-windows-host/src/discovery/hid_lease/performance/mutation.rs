@@ -280,17 +280,50 @@ impl Pace {
         limit: Limit<'_>,
     ) -> bool {
         let appends = APPENDS_PER_SETTER * setters + CLOSING_APPENDS;
-        let measured = &reader.exchanges;
-        let now = Instant::now();
-        measured
-            .second
-            .checked_mul(exchanges.saturating_sub(1))
-            .and_then(|rest| rest.checked_add(measured.slowest))
-            .and_then(|rest| rest.checked_add(self.append.checked_mul(appends)?))
-            .and_then(|rest| rest.checked_add(fixed))
-            .and_then(|rest| now.checked_add(rest))
-            .is_some_and(|end| end < limit.deadline)
+        ends_by(
+            &reader.exchanges,
+            exchanges,
+            appends,
+            self.append,
+            fixed,
+            limit,
+        )
     }
+    /// `covers` before a recipe's first row, for owned fan cleanup, which
+    /// writes no Prepared row before its 31. No append is timed yet, so each
+    /// row left, the 31 included, is charged at the slowest exchange so far:
+    /// a cleanup that cannot finish by its deadline ends with no row and no
+    /// setter, instead of leaving an unsettled 31 or 4x row.
+    pub(super) fn covers_before_rows<P: Port, A>(
+        reader: &Reader<P, A>,
+        exchanges: u32,
+        setters: u32,
+        fixed: Duration,
+        limit: Limit<'_>,
+    ) -> bool {
+        let measured = &reader.exchanges;
+        let appends = 1 + APPENDS_PER_SETTER * setters + CLOSING_APPENDS;
+        ends_by(measured, exchanges, appends, measured.slowest, fixed, limit)
+    }
+}
+/// Whether `exchanges` at the measured pace, `appends` rows of `append` each
+/// and `fixed` scheduled waits end before the deadline (`Pace`).
+fn ends_by(
+    measured: &Exchanges,
+    exchanges: u32,
+    appends: u32,
+    append: Duration,
+    fixed: Duration,
+    limit: Limit<'_>,
+) -> bool {
+    measured
+        .second
+        .checked_mul(exchanges.saturating_sub(1))
+        .and_then(|rest| rest.checked_add(measured.slowest))
+        .and_then(|rest| rest.checked_add(append.checked_mul(appends)?))
+        .and_then(|rest| rest.checked_add(fixed))
+        .and_then(|rest| Instant::now().checked_add(rest))
+        .is_some_and(|end| end < limit.deadline)
 }
 
 impl<P: Port> Reader<P, ReadAdmission> {

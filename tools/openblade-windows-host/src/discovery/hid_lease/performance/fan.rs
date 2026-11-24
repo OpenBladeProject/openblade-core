@@ -120,18 +120,7 @@ impl<P: Port> Reader<P, ReadAdmission> {
                     cleanup_ids.push(reserve()?);
                 }
             }
-            // Each setter is one power read and its own exchange; the
-            // intermediate pair, the final pair and any Custom levels follow.
-            // An entry waits up to 210 ms before its target pair, and the
-            // target pair 65 ms between its commands.
-            let setters = plan.setters() as u32;
-            let remaining = 2 * setters
-                + 2 * u32::from(plan.intermediate)
-                + 2
-                + 2 * u32::from(plan.custom_levels().is_some());
-            let fixed = Duration::from_millis(
-                if plan.entry { 210 } else { 0 } + if intent.manual() { 65 } else { 0 },
-            );
+            let (remaining, fixed) = pace_of(&plan);
             // Request bytes are supplied by the retained permit, never client recipe bytes.
             let mut record = permit.fan_record()?;
             record.contract = if cfg!(feature = "service-battery-policy-v1") {
@@ -169,6 +158,17 @@ impl<P: Port> Reader<P, ReadAdmission> {
             reader: self,
             completed: false,
         };
+        // Owned cleanup is paced once, before its 31: a handback that cannot
+        // finish by its deadline ends with no row and no setter, so it leaves
+        // nothing unsettled. Its baseline reads may already have used the
+        // owner's reserved IDs, so the owner's one attempt stays spent.
+        if cleanup {
+            let (remaining, fixed) = pace_of(&plan);
+            if !Pace::covers_before_rows(a.reader, remaining, plan.setters() as u32, fixed, limit) {
+                a.completed = true;
+                return None;
+            }
+        }
         a.checkpoint(&mut authorize, admission, limit).ok()?;
         pace.prepared(a.reader, || permit.record_fan(if cleanup { 31 } else { 0 }))
             .ok()?;
@@ -313,6 +313,21 @@ impl<P: Port> Reader<P, ReadAdmission> {
         a.completed = true;
         Some(observed)
     }
+}
+/// The exchanges a fan plan has left before its first setter, and its
+/// scheduled spacing. Each setter is one power read and its own exchange; the
+/// intermediate pair, the final pair and any Custom levels follow. An entry
+/// waits up to 210 ms before its target pair, and a manual target pair 65 ms
+/// between its commands.
+fn pace_of(plan: &Plan) -> (u32, Duration) {
+    let remaining = 2 * plan.setters() as u32
+        + 2 * u32::from(plan.intermediate)
+        + 2
+        + 2 * u32::from(plan.custom_levels().is_some());
+    let fixed = Duration::from_millis(
+        if plan.entry { 210 } else { 0 } + if plan.intent.manual() { 65 } else { 0 },
+    );
+    (remaining, fixed)
 }
 /// One run of setters: a fan state or target pair, or a carried destination's
 /// own setters.

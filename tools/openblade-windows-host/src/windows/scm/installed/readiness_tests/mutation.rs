@@ -4976,6 +4976,43 @@ async fn fan_v2_stop_refusal_is_one_shot_and_saved_nonfan_fields_survive() {
     assert_eq!(r.port.state.lock().unwrap().sent.len(), sent);
 }
 
+/// Owned Stop cleanup is paced before its 31: on a device too slow to finish
+/// the recipe by the Stop deadline it writes no row and sends no setter, so
+/// no 31/4x tail is left. Its job registered and its baseline reads used the
+/// owner's reserved IDs (reviewer R8), so no later admission of the same
+/// Stop runs the recipe again: no reserved ID is sent twice.
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn fan_v2_a_stop_too_slow_for_its_recipe_writes_no_row_and_reuses_no_id() {
+    let r = fan_rig(0, 0);
+    r.get().await;
+    let applied = r.request(fan_request(141, Some(1), 3700)).await;
+    assert_eq!(applied["result"]["status"], 1, "{applied}");
+    let rows = fan_rows(&r).len();
+    r.origin.stop();
+    r.port.state.lock().unwrap().latency = Some(Duration::from_millis(400));
+    let sent = r.port.state.lock().unwrap().sent.len();
+    assert!(r.source.lock().await.drain().await.is_err());
+    let state = r.port.state.lock().unwrap();
+    let fan = state.sent[sent..]
+        .iter()
+        .filter(|(class, ..)| *class != 0)
+        .collect::<Vec<_>>();
+    assert!(!fan.is_empty());
+    assert!(
+        fan.iter().all(|(_, command, ..)| *command & 0x80 != 0),
+        "{fan:?}"
+    );
+    let mut ids = fan.iter().map(|sent| sent.3).collect::<Vec<_>>();
+    ids.sort_unstable();
+    let all = ids.len();
+    ids.dedup();
+    assert_eq!(ids.len(), all, "{fan:?}");
+    assert_eq!(state.fans, [1, 1]);
+    drop(state);
+    assert_eq!(fan_rows(&r).len(), rows);
+}
+
 #[cfg(feature = "service-fan-mutation-v2")]
 #[tokio::test]
 async fn fan_v2_actual_read_stop_race_retains_only_expected_cleanup_custody() {
