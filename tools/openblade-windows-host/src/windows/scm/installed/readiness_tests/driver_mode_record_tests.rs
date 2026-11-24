@@ -639,3 +639,25 @@ async fn a_dropped_low_power_release_leaves_its_intent_for_a_read() {
     assert_ne!(held(&rig).unwrap().1, ids);
     rig.stop().await;
 }
+
+/// A release claim is charged in its job's pace as an acquire's is: after a
+/// record write slower than the release job's whole budget, the release
+/// reads its baseline of Driver and writes nothing, neither record nor
+/// setter, and reports the share exhausted.
+#[tokio::test]
+async fn a_slow_record_write_is_charged_before_a_release_claim() {
+    let (rig, _) = owner_rig(NORMAL).await;
+    // The settle after the acquire takes longer than a whole release job.
+    rig.custody
+        .driver_mode
+        .delay_at(2, Duration::from_millis(800));
+    tick(&rig).await;
+    assert_eq!(held(&rig).unwrap().0, State::Owned);
+    let sent = keyboard(&rig).len();
+    assert_eq!(release(&rig).await, Some(Release::Exhausted));
+    assert_eq!(sent_from(&rig, sent), [0x84]);
+    assert_eq!((sets(&rig), mode(&rig)), (1, DRIVER));
+    assert_eq!(rig.custody.driver_mode.writes().len(), 2);
+    assert_eq!(held(&rig).unwrap().0, State::Owned);
+    rig.stop().await;
+}
