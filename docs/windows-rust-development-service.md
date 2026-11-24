@@ -287,14 +287,16 @@ independent managed evidence.
 #### Keyboard Driver mode ownership
 
 A Service built with `service-keyboard-driver-mode-v1` acquires and maintains
-RZ09-0581 keyboard Driver mode and restores Normal at shutdown. The feature
+RZ09-0581 keyboard Driver mode and restores Normal at a confirmed suspend and
+at shutdown, and hands owned manual fans back to Automatic at a confirmed
+suspend. The feature
 implies `service-keyboard-driver-mode-read-v1`, `service-fan-mutation-v2` (the
 fan guardian and the fan handback it runs before) and the protocol crate's
 `device-mode-setters`, and adds the capability marker
 `service-keyboard-driver-mode-v1`. It does not imply profile triggers. Both
 package readers refuse the feature and the marker by name, before the read and
 trigger features built with it, so no admitted image sends `00/04`. Packaging
-admission also waits for the low-power slice below.
+admission also waits for the attended checks listed below.
 
 The setters are the reviewed `00/04:0000` and `00/04:0300` of the same
 semantic admission. Only the write recipe `Reader::apply_device_mode`
@@ -376,14 +378,9 @@ in, with the session locked or switched, or with a competing controller
 present, the step is refused before any firmware access. It keeps the last
 confirmed status, consumes no recovery and runs again at the next step.
 Managed maintains Driver mode with no user signed in. Native adds no
-Service-scoped write authority for it, and the function row has no user to
-serve then. The tick also captures again, with no job, whenever the
-lifecycle write epoch moves: between steps, while the device is unverified
-and after an Indeterminate step. An Indeterminate owner captures only on such
-a move. The shutdown release therefore holds the capture of the current
-epoch. A capture refused for a cause that clears without a notice, such as a
-competing controller that exits, is retried only at the next epoch move or
-the next due step on a verified device.
+Service-scoped acquire authority for it, and the function row has no user to
+serve then. A release never uses this capture; it holds the Service's own
+cleanup admission below.
 
 The step publishes through the read cadence that every fresh status projects
 (`ReadSource::record_driver_mode`): a confirmed mode, or `null` after a failed
@@ -391,8 +388,50 @@ or Indeterminate step. It never edits the subscription feed, so an unchanged
 status is never republished. The feed stays unverified as described above.
 
 Ownership lives in memory, as it does in managed. It decides only whether a
-shutdown read of Normal is a foreign change; a restart reads `00/84` again. A
+release's read of Normal is a foreign change; a restart reads `00/84` again. A
 durable owned-or-uncertain record and crash recovery are stage 6a-5.
+
+##### Cleanup admission
+
+Every release and every Service fan handback holds the Service's own cleanup
+admission (`thermal_mutation::Cleanup`, built by `CleanupGuard::capture`),
+captured fresh for its boundary. It names no console session, SID or logon:
+Windows logs every user off before a system shutdown reaches services, and a
+suspend may start from the lock screen. Managed releases with nobody signed in
+too: `ReleaseDriverModeCoreAsync` checks the fan guardian, a pending
+reconciliation, controller presence and its detection warning, then the device
+provider's `FreshLightingCleanupAdmission` (exact-device probe and owned
+renderer access), and never a user (`ServiceControlRuntime.cs:13398-13520`,
+`WindowsVerifiedBladeDeviceProvider.cs:398-420`). Each authorization checks,
+fresh:
+
+- origin and package trust for its scope: owned-Stop trust for Stop and
+  shutdown, ordinary trust for a suspend generation;
+- the lifecycle epoch its scope pinned, before and after the Windows checks.
+  `CleanupScope::OwnedStop` pins `WriteScope::Ordinary`, so the gate refuses
+  it in low power; `CleanupScope::LowPower` pins
+  `WriteScope::LowPowerCleanup { generation }`, which the gate admits only
+  while that exact suspend generation is current, so a resume, a DisplayOn,
+  another suspend or any later power or session notice ends it;
+- a known Windows AC line status, then fresh competing-controller absence
+  (a typed denial at capture, as the console admission reports it);
+- the exact original mailbox custody and generation through
+  `ReadCustody::authorize_cleanup`, which names the admitted device. A fan
+  handback also needs the owner's own custody generation.
+
+Its authority is the release's `00/04:0000` and the owned fan handback, and
+nothing else. `Cleanup` is not a `Fresh` or a `Settle`, so no request,
+reconciliation, acquire or settle permit can hold it. Exactly two permits do:
+`DriverModePermit::release`, whose job writes Normal only after a fresh
+`00/84` read of Driver, and `FanHandbackPermit`, which journals only the
+owner's cleanup stages (31, 40-43, 50 and 51) for its exact retained record
+and refuses every request stage, preparation, resolution and no-op
+confirmation. The lane runs either job only through
+`ReadSource::mutate_cleanup_in`, which requires the permit's admission to
+equal the custody's cleanup admission of that scope, and each journal row is
+written under that same scope (`ReadCustody::journal_replace_cleanup`).
+
+##### Shutdown release
 
 At shutdown the Service releases Driver mode before the fan handback, the
 managed order (`ServiceControlRuntime.cs:12925-12950`,
@@ -403,32 +442,32 @@ managed order (`ServiceControlRuntime.cs:12925-12950`,
 - It joins active work first (`ReadSource::drain_active`), as the fan handback
   does.
 - The managed skip reasons the native Service can observe leave the mode
-  unchanged: an unsettled fan row, an unsettled journal row, and no owned-Stop
-  admission. The last covers a competing controller, a session, logon or
-  lifecycle change, low power and a write lease that never activated
+  unchanged: an unsettled fan row, an unsettled journal row of the last
+  console capture, and no cleanup admission. The last covers a competing
+  controller, unknown Windows power, lost origin or custody trust, low power
+  and a write lease that never activated
   (`ServiceControlRuntime.cs:13399-13520`). After origin loss the release is
   refused.
-- Owned-Stop admission is the latest ordinary write capture's own, as the
-  fan handback's owner path uses it (`Runtime::stop_fans`): origin and custody
-  trust, the exact device, the same unlocked console session, the lifecycle
-  epoch it pins and fresh competing-controller absence. A settle capture
-  (`Fresh::capture_settle`) authorizes owned-Stop reads only. Its type,
-  `Settle`, is not a `Fresh`, so it cannot authorize a request or this
-  release's `00/04:0000` setter; only the fan handback's settle permit uses it,
-  to read and append its record. After a lifecycle notice with no tick
-  since, the epoch the capture pins refuses the release. A tick after the
-  notice captures again for the console user signed in then; when that
-  capture is refused, as after a switch to a session nobody is signed in to,
-  the release is refused too. No Service-scoped authority is added.
+- The fan handback tries the owner's own capture first, then the Service's
+  cleanup admission with `FanHandbackPermit`, which runs the owner's full
+  cleanup recipe with nobody signed in, and only then the settle permit
+  (`Fresh::capture_settle`), which reads and appends 51 on Automatic.
 - A fresh `00/84` read of Driver writes `00/04:0000` once, whoever set it, as
   managed does, and requires the exact acknowledgement and an independent
   `00/84` readback of Normal. A read of Normal ends an owned claim as a
   foreign change and writes nothing.
-- The release job runs at most once per process, and only Stop starts it.
-  A job whose measured pace could not fit the setter, its acknowledgement and
-  the readback in its time sends nothing and reports `Exhausted`.
-- A process that never captured a console user's write admission, or whose
-  read lease is recovery-only, has no owned-Stop admission and cannot write.
+- Each boundary releases at most once: the shutdown, and each suspend
+  generation. A job whose measured pace could not fit the setter, its
+  acknowledgement and the readback in its time sends nothing and reports
+  `Exhausted`; a lane refusal before the job registered keeps the attempt.
+- A release that may have submitted Normal without confirming it
+  (`Submitted` or `Acknowledged`) ends every later release, acquire and
+  maintain write in the process; later releases report `Uncertain` and send
+  nothing. The uncertain write is never replayed.
+- A release job whose caller was dropped, as by a Stop during the low-power
+  release, stays registered. The next release joins it with the active work
+  and reads how far it got before it decides anything.
+- A process whose read lease is recovery-only cannot write.
 
 Managed retries the keyboard release once after the fan handback when the fan
 guardian blocked it and the handback cleared that block
@@ -477,25 +516,55 @@ named the target mode.
 A write port that fails to open is known not applied for every mutation job
 (`windows::mutation_worker`): the lane and owned Stop keep working.
 
-Remaining before packaging admission: the low-power boundary release of
-Driver mode and the D1 suspend fan handback, one slice. Until it lands the
-Service only refrains from acquiring or maintaining while the gate is set; it
-does not restore Normal at a low-power boundary. Physical validation on
-RZ09-0581 is also outstanding.
+##### Low-power release and fan handback
 
-Known gap at system shutdown, part of that slice: Windows closes applications
-and logs off every user session before it notifies services. Microsoft
-documents that order for the full shutdown that Fast Startup begins with
-("Preparing for fast startup" in *Distinguishing Fast Startup from
-Wake-from-Hibernation*); the SCM then sends PRESHUTDOWN and SHUTDOWN
-(*Service Control Handler Function*). When Fast Startup is on, a shut down
-then hibernates the system session instead of stopping services, so no
-SHUTDOWN arrives. Either way, under console-user write admission the shutdown
-release finds no signed-in console user and is refused at admission, or never
-runs, and Driver mode stays on. Managed maintains and releases with no user
-signed in. The slice must design a shutdown and low-power release admission
-that does not depend on a signed-in console user; this gap still blocks
-packaging. The order has not been observed on RZ09-0581.
+A confirmed suspend runs managed `PrepareForLowPowerCoreAsync` as
+`ServiceSessionPowerTransitionCoordinator` does
+(`ServiceControlRuntime.cs:12993`): once per suspend generation, within
+1.5 s of the notice's QPC timestamp (`SessionPowerTransition.MaximumAgeMilliseconds`,
+`low_power_cleanup::MAXIMUM_AGE`), the keyboard release and then the owned fan
+handback, each under `CleanupScope::LowPower` for that generation. A new
+suspend generation wakes the origin tick at once (`Lifecycle::suspended`), so
+the 500 ms interval does not spend the window. A notice older than the window
+prepares nothing. A keyboard failure never skips the fans. Saved intent is
+unchanged: the next active reconciliation or request applies it.
+
+- The keyboard gets at most its shutdown share, 0.9 s, and leaves the fans at
+  least 0.6 s of the window. The fan handback joins active work and the gate
+  by the window's end, hands back only a positively established owner, and
+  runs the owner's cleanup recipe under fresh Windows AC. Battery or unknown
+  power, a refused admission, or a deadline before the job registered sends
+  nothing and keeps the owner's one cleanup attempt for Stop. A job that
+  registered and did not confirm Automatic keeps its rows, which fence every
+  later fan write until reconciled.
+- A request in flight at the boundary is refused at its next authorization,
+  because the suspend fenced its epoch. The keyboard's 150 ms entry may be
+  exhausted while it ends, and the fan handback then runs.
+- In low power the 15 s step reads and writes nothing, so nothing is
+  reacquired until Windows reports the system active again (a resume, or a
+  DisplayOn that clears the gate); the cadence then reacquires.
+- Fast Startup hibernates the system session instead of stopping services,
+  so its PBT_APMSUSPEND runs this path, not the shutdown release. Windows
+  logs users off first, which the cleanup admission does not depend on.
+
+Divergence from managed: managed's low-power fan stop restores only a Battery
+Saver fan stop it owns (`OwnsBatterySaverFanStop`,
+`ServiceControlRuntime.cs:13086-13101`); it does not hand ordinary owned
+manual fans back at suspend. Native hands them back, as this slice specifies,
+under the same exact-device, controller, power and ownership admission.
+
+By count, the release takes about 0.28 s besides its three exchanges and the
+fan handback about 0.55-0.6 s with its nine exchanges, about 25 fresh
+admissions and six journal writes: about 0.9 s of the 1.5 s window when
+healthy. The SCM handler returns at once, as managed's does, so the window
+bounds staleness, not time Windows waits for; a system that sleeps first
+ends the work at its next authorization after resume. These figures are
+estimates.
+
+Remaining before packaging admission: an attended timing of a real release
+and handback at suspend and at shutdown on RZ09-0581, observation that Fast
+Startup delivers PBT_APMSUSPEND to the native Service, the durable owned and
+uncertain record and journaled IDs of stage 6a-5, and physical validation.
 
 #### Live readings (read-only)
 

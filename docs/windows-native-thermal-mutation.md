@@ -83,16 +83,21 @@ while it is set. `active()` is `epoch_for(WriteScope::Ordinary)`. Every capture 
 `capture_settle`, mailbox custody and status, so nothing is captured in low
 power. `WindowsGuard::authorize_for` compares the pinned epoch with
 `epoch_for(WriteScope::Ordinary)` before and after its Windows checks, so
-per-write admission stays authoritative. `WriteScope::LowPowerFanAutomatic` is
-managed's `PriorAuthorityCleanup` exception for the low-power preparation's
-firmware Automatic fan handback. The gate admits it only while the exact suspend
-generation it captured is current (`IsActiveForGeneration`), so the next
-resume, DisplayOn or suspend ends it. Nothing captures that scope yet. Owned
-Stop and shutdown handback stay Ordinary, because managed blocks them in low
-power too. D1 decision: `epoch_for(WriteScope::LowPowerFanAutomatic)` also pins
-the epoch, so a later power-status or session notice fences the cleanup. Managed admits
-it on the generation and ownership only. D1 must either keep that stricter
-fence or recapture after such a notice, and record which. `low_power()` returns
+per-write admission stays authoritative. `WriteScope::LowPowerCleanup` is
+managed's `PriorAuthorityCleanup` exception for the low-power preparation: the
+keyboard's Normal release and the owned fan Automatic handback. The gate admits
+it only while the exact suspend generation it captured is current
+(`IsActiveForGeneration`), so the next resume, DisplayOn or suspend ends it.
+Only the Service's cleanup admission captures it (`CleanupGuard`, with
+`CleanupScope::LowPower`; see Keyboard Driver mode ownership in
+[the Service guide](windows-rust-development-service.md)). Owned Stop and
+shutdown handback stay Ordinary, because managed blocks them in low power too.
+D1 decision, recorded: `epoch_for(WriteScope::LowPowerCleanup)` also pins the
+epoch, and the stricter fence is kept. Each cleanup job captures its own
+admission, so the fan handback after the keyboard release pins the epoch
+current then, but a power-status or session notice during one job, such as a
+lock, ends that job at its next authorization; it is not recaptured. Managed
+admits the cleanup on the generation and ownership only. `low_power()` returns
 the current transition for timers that ask outside a write, and `None`
 (unreadable or exhausted) means low power. Timers that need only the answer
 use `low_power_or_unknown()`, which is true for `None`. Request-driven
