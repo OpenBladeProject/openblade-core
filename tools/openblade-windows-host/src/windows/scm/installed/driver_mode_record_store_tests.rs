@@ -169,8 +169,17 @@ fn a_process_that_did_not_activate_never_writes_as_the_active_owner() {
             .driver_mode_record_replace(Some(&first), &owned)
             .is_err()
     );
+    // It has no writer nonce to name either.
+    assert!(successor.driver_mode_record_owner().is_err());
     assert_eq!(on_disk(&root, RECORD).unwrap(), first.bytes());
     assert_eq!(on_disk(&root, STAGE), None);
+}
+
+#[test]
+fn the_writer_nonce_is_the_activated_owners_own() {
+    let root = OwnerRoot::new("record-writer-nonce");
+    let store = root.active(OWNER);
+    assert_eq!(store.driver_mode_record_owner().unwrap(), owner(OWNER));
 }
 
 #[test]

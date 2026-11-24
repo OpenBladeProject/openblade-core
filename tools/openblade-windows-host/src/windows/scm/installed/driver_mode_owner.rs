@@ -37,7 +37,18 @@
 //!   one recovery per failure streak: a fresh capture and read-before-write.
 //!   A step refused before any exchange records nothing and spends no
 //!   recovery. Success or a lost device resets the latch.
-//! - Ownership lives in memory, as managed's does. Each release follows
+//! - Ownership is durable (`ledger`, `owner\keyboard-driver-mode.bin`),
+//!   where managed keeps it in memory. The acquire's claim is an
+//!   `AcquireIntent` naming the job's four IDs, written before the setter can
+//!   be sent; a claim that cannot be written sends no setter. After the job
+//!   the owner settles it: `Owned` when confirmed, back to its prior when
+//!   known not submitted, and it stays in doubt otherwise. The owner's
+//!   flags are derived from the record, never ahead of it, and a failed
+//!   write, or a record that cannot be read or is refused, closes the
+//!   keyboard owner for the process: no acquire or maintain write runs
+//!   again, and the status projects confirmed reads only. A later process
+//!   that loads an `AcquireIntent` resolves it read-only, as an
+//!   Indeterminate acquire. Each release follows
 //!   managed: a fresh 00/84 read of Driver writes Normal once, whoever set
 //!   it; a read of Normal ends an owned claim as a foreign change. A release
 //!   holds the Service's own cleanup admission (`Cleanup`), captured fresh
@@ -51,8 +62,13 @@
 use super::super::mailbox_read::ReadSource;
 use super::*;
 use crate::discovery::performance::{DeviceModeJob, DeviceModeRead, DeviceModeStep};
+use ledger::{Ledger, Standing, Writer};
+use openblade_domain::driver_mode_history::{Intent, Settled};
 use openblade_protocol::device_mode::DeviceMode;
 use std::{cell::Cell, time::Duration};
+
+#[path = "driver_mode_ledger.rs"]
+mod ledger;
 
 /// Managed `ServicePeriodicObservationLoop.ObservationInterval`, the read
 /// job's own 00/84 cadence.
@@ -156,24 +172,16 @@ impl Boundary {
 /// A console write capture and the store it was captured with.
 type ConsoleCapture = (Arc<Storage>, Arc<dyn Fresh>);
 
-/// What OpenBlade has claimed of the keyboard's Driver mode. The worker
-/// thread claims through it, so it is shared with each job.
-#[derive(Default)]
-struct Ownership {
-    owns: AtomicBool,
-    // Acquire claims made, so a test can tell a cleared claim from none.
-    #[cfg(test)]
-    claims: std::sync::atomic::AtomicUsize,
-}
-
-/// The owner's state between steps.
+/// The owner's state between steps. What OpenBlade has claimed, and whether
+/// an acquire setter may have been submitted unconfirmed (`AcquireIntent`:
+/// until a later step's own read resolves it, `resolve_indeterminate`, no
+/// acquire or maintain write runs), is the durable record the ledger holds.
 #[derive(Default)]
 pub(super) struct Keyboard {
-    ownership: Arc<Ownership>,
-    /// An acquire setter may have been submitted unconfirmed. Until a later
-    /// step's own read resolves it (`resolve_indeterminate`), no acquire or
-    /// maintain write runs.
-    indeterminate: Cell<bool>,
+    /// The durable record, read at the first step or release with a reader
+    /// (`Runtime::driver_mode_ledger`). The worker claims through it, so it
+    /// is shared with each job.
+    ledger: RefCell<Option<Arc<Ledger>>>,
     /// When a release setter may have been submitted unconfirmed. Until a
     /// later read resolves it (`maintain_driver_mode`), no release, acquire
     /// or maintain exchange runs.
@@ -223,25 +231,29 @@ enum Authority {
 }
 
 /// One Driver-mode job's permit: its admission and the job. It keeps no
-/// journal row.
+/// journal row; its claim is the durable Driver-mode record.
 struct DriverModePermit {
     authority: Authority,
     job: DeviceModeJob,
     fatal: Arc<Mutex<Option<&'static str>>>,
 }
 impl DriverModePermit {
+    /// Driver from Normal, claimed as an `AcquireIntent` under the custody's
+    /// ordinary admission before the setter can be sent.
     fn acquire(
         fresh: Arc<dyn Fresh>,
-        ownership: Arc<Ownership>,
+        ledger: Arc<Ledger>,
         fatal: &Arc<Mutex<Option<&'static str>>>,
     ) -> Self {
+        let allowance = ledger.claim_allowance(Intent::Acquire);
         Self {
             authority: Authority::Acquire(fresh),
-            job: DeviceModeJob::new(DeviceMode::Driver, Some(DeviceMode::Normal), move || {
-                ownership.owns.store(true, Ordering::Release);
-                #[cfg(test)]
-                ownership.claims.fetch_add(1, Ordering::AcqRel);
-            }),
+            job: DeviceModeJob::new(
+                DeviceMode::Driver,
+                Some(DeviceMode::Normal),
+                allowance,
+                move |ids| ledger.claim(Writer::Ordinary, Intent::Acquire, *ids),
+            ),
             fatal: fatal.clone(),
         }
     }
@@ -251,7 +263,9 @@ impl DriverModePermit {
     fn observe(fresh: Arc<dyn Fresh>, fatal: &Arc<Mutex<Option<&'static str>>>) -> Self {
         Self {
             authority: Authority::Acquire(fresh),
-            job: DeviceModeJob::new(DeviceMode::Driver, None, || {}),
+            job: DeviceModeJob::new(DeviceMode::Driver, None, Duration::ZERO, |_| {
+                Err(io::ErrorKind::PermissionDenied.into())
+            }),
             fatal: fatal.clone(),
         }
     }
@@ -260,7 +274,12 @@ impl DriverModePermit {
     fn release(cleanup: Arc<dyn Cleanup>, fatal: &Arc<Mutex<Option<&'static str>>>) -> Self {
         Self {
             authority: Authority::Release(cleanup),
-            job: DeviceModeJob::new(DeviceMode::Normal, Some(DeviceMode::Driver), || {}),
+            job: DeviceModeJob::new(
+                DeviceMode::Normal,
+                Some(DeviceMode::Driver),
+                Duration::ZERO,
+                |_| Ok(()),
+            ),
             fatal: fatal.clone(),
         }
     }
@@ -268,6 +287,14 @@ impl DriverModePermit {
         match &self.authority {
             Authority::Acquire(fresh) => fresh.verify_health(),
             Authority::Release(cleanup) => cleanup.verify_health(),
+        }
+    }
+    /// The custody admission this job's record writes hold: its own kind of
+    /// authority, so a cleanup scope never reaches an acquire.
+    fn writer(&self) -> Writer {
+        match &self.authority {
+            Authority::Acquire(_) => Writer::Ordinary,
+            Authority::Release(cleanup) => Writer::Cleanup(cleanup.scope()),
         }
     }
 }
@@ -319,7 +346,30 @@ async fn run_console_job(reader: &ReadSource, permit: &Arc<DriverModePermit>) ->
     }
 }
 
+/// Whether a record write succeeded. A failed one has closed the ledger;
+/// only fatal admission evidence is an error.
+fn recorded(written: io::Result<()>) -> io::Result<bool> {
+    match written {
+        Ok(()) => Ok(true),
+        Err(error) if is_fatal_admission(&error) => Err(error),
+        Err(_) => Ok(false),
+    }
+}
+
 impl Runtime {
+    /// The Driver-mode record's ledger, read through `reader`'s custody the
+    /// first time a step or release needs it. A record that cannot be read
+    /// or is refused closes it for the process (`Standing::Closed`); only
+    /// fatal admission evidence is an error, and is read again next time.
+    fn driver_mode_ledger(&self, reader: &ReadSource) -> io::Result<Arc<Ledger>> {
+        if let Some(ledger) = &*self.keyboard.ledger.borrow() {
+            return Ok(ledger.clone());
+        }
+        let ledger = Arc::new(Ledger::load(reader.custody(), &self.fatal)?);
+        *self.keyboard.ledger.borrow_mut() = Some(ledger.clone());
+        Ok(ledger)
+    }
+
     /// One maintenance step on the origin tick, after the power check. It is
     /// due at the first eligible tick and then `INTERVAL` after the last,
     /// managed's 15 s. In low power it reads, writes and publishes nothing: no
@@ -354,6 +404,11 @@ impl Runtime {
             return Ok(());
         };
         verify_retained_failure(&self.fatal)?;
+        let ledger = self.driver_mode_ledger(reader)?;
+        // A closed record admits no write for the rest of the process.
+        if ledger.standing() == Standing::Closed {
+            return Ok(());
+        }
         // A release that may have applied Normal unconfirmed is resolved
         // read-only, never replayed: a confirmed 00/84 read under the current
         // read admission, by a job that started after that release, says which
@@ -367,8 +422,11 @@ impl Runtime {
             let Some(driver) = reader.driver_mode_confirmed_since(since) else {
                 return Ok(());
             };
-            if !driver {
-                keyboard.ownership.owns.store(false, Ordering::Release);
+            if !driver
+                && ledger.standing().owns()
+                && !recorded(ledger.settle(Writer::Ordinary, Settled::Clear))?
+            {
+                return Ok(());
             }
             keyboard.uncertain.set(None);
         }
@@ -378,16 +436,20 @@ impl Runtime {
         }
         keyboard.due.set(Some(now + INTERVAL));
         // A step that resolves an Indeterminate acquire only reads.
-        if keyboard.indeterminate.get() {
-            return self.resolve_indeterminate(reader, now).await;
+        if ledger.standing() == Standing::AcquireIntent {
+            return self.resolve_indeterminate(reader, &ledger, now).await;
         }
-        let Some(first) = self.acquire_once(reader, now).await? else {
+        let Some(first) = self.acquire_once(reader, &ledger, now).await? else {
             return Ok(());
         };
         // One recovery per failure streak: a fresh capture and
-        // read-before-write, never a replay. An Indeterminate step has none.
-        let result = if first == Acquired::Failed && !keyboard.recovered.replace(true) {
-            self.acquire_once(reader, now)
+        // read-before-write, never a replay. An Indeterminate step has none,
+        // and a closed record leaves nothing to recover with.
+        let result = if first == Acquired::Failed
+            && ledger.standing() != Standing::Closed
+            && !keyboard.recovered.replace(true)
+        {
+            self.acquire_once(reader, &ledger, now)
                 .await?
                 .unwrap_or(Acquired::Failed)
         } else {
@@ -445,6 +507,7 @@ impl Runtime {
     async fn acquire_once(
         &self,
         reader: &ReadSource,
+        ledger: &Arc<Ledger>,
         step: Instant,
     ) -> io::Result<Option<Acquired>> {
         let Some((storage, fresh)) = self.capture_console(reader)? else {
@@ -465,25 +528,31 @@ impl Runtime {
         let admission = fresh.authorize();
         let permit = Arc::new(DriverModePermit::acquire(
             fresh,
-            keyboard.ownership.clone(),
+            ledger.clone(),
             &self.fatal,
         ));
         run_console_job(reader, &permit).await?;
         let acquired = match permit.job.step() {
             // Refused before any exchange: nothing to record or recover.
             DeviceModeStep::Pending => return Ok(None),
-            DeviceModeStep::Unread => Acquired::Failed,
+            // The claim could not be recorded, which closed the record, so
+            // no setter was sent.
+            DeviceModeStep::Unread | DeviceModeStep::Unrecorded => Acquired::Failed,
             // The baseline was not Normal, so it was Driver.
-            DeviceModeStep::Observed(_) | DeviceModeStep::Confirmed => Acquired::Driver,
+            DeviceModeStep::Observed(_) => Acquired::Driver,
+            DeviceModeStep::Confirmed => {
+                // The claim settles; a failed write closes the record and
+                // keeps nothing in memory ahead of it.
+                recorded(ledger.settle(Writer::Ordinary, Settled::Owned))?;
+                Acquired::Driver
+            }
             DeviceModeStep::Claimed => {
-                // Known not applied: the claim is cleared.
-                keyboard.ownership.owns.store(false, Ordering::Release);
+                // Known not applied: the claim reverts to its prior.
+                recorded(ledger.revert(Writer::Ordinary))?;
                 Acquired::Failed
             }
-            DeviceModeStep::Submitted | DeviceModeStep::Acknowledged => {
-                keyboard.indeterminate.set(true);
-                Acquired::Indeterminate
-            }
+            // The record keeps the intent: Indeterminate.
+            DeviceModeStep::Submitted | DeviceModeStep::Acknowledged => Acquired::Indeterminate,
         };
         keyboard.started.set(true);
         // A read job under the same admission publishes this result for the
@@ -504,13 +573,20 @@ impl Runtime {
     /// setter: one job under a fresh capture, with the acquire's own skip
     /// conditions, reads 00/84 and writes nothing. Each of its checkpoints
     /// checks the capture's lifecycle epoch, so a notice during the read
-    /// leaves it unconfirmed. Driver keeps whatever claim there is: the
-    /// acquire's own, unless a release since ended it; the read makes none.
-    /// Normal ends the claim, and the step is due again at the next tick,
-    /// whose acquire claims and writes afresh. Anything else stays
+    /// leaves it unconfirmed. Driver records the acquire's claim as `Owned`;
+    /// the read makes no claim of its own. Normal records `Clear`, and the
+    /// step is due again at the next tick, whose acquire claims and writes
+    /// afresh on new IDs. Either is written before the doubt ends in memory,
+    /// and a failed write closes the record instead. Anything else stays
     /// Indeterminate: a read sent without a confirmed reply publishes null,
-    /// and one refused before any exchange records nothing.
-    async fn resolve_indeterminate(&self, reader: &ReadSource, step: Instant) -> io::Result<()> {
+    /// and one refused before any exchange records nothing. An intent a
+    /// crashed earlier process left is resolved the same way.
+    async fn resolve_indeterminate(
+        &self,
+        reader: &ReadSource,
+        ledger: &Ledger,
+        step: Instant,
+    ) -> io::Result<()> {
         let Some((storage, fresh)) = self.capture_console(reader)? else {
             return Ok(());
         };
@@ -524,11 +600,14 @@ impl Runtime {
         let read = match permit.job.step() {
             DeviceModeStep::Pending => return Ok(()),
             DeviceModeStep::Observed(mode) => {
-                if mode == DeviceMode::Normal {
-                    keyboard.ownership.owns.store(false, Ordering::Release);
+                let to = if mode == DeviceMode::Driver {
+                    Settled::Owned
+                } else {
+                    Settled::Clear
+                };
+                if recorded(ledger.settle(Writer::Ordinary, to))? && to == Settled::Clear {
                     keyboard.due.set(None);
                 }
-                keyboard.indeterminate.set(false);
                 keyboard.recovered.set(false);
                 DeviceModeRead::Confirmed(mode)
             }
@@ -646,6 +725,9 @@ impl Runtime {
         {
             return Ok(Release::Unsettled);
         }
+        // The record is read only now, after every check that needs no
+        // custody, so a release refused before it never reads it.
+        self.driver_mode_ledger(reader)?;
         let scope = boundary.scope();
         let Some(cleanup) = self.capture_cleanup(reader, scope)? else {
             return Ok(Release::Unadmitted);
@@ -691,15 +773,28 @@ impl Runtime {
     fn released(&self, permit: &DriverModePermit, spent: bool) -> io::Result<Release> {
         verify_retained_failure(&self.fatal)?;
         let keyboard = &self.keyboard;
-        let ownership = &keyboard.ownership;
+        // A release job starts only after the ledger was read.
+        let ledger = keyboard.ledger.borrow().clone();
+        // What a release ended: an owned or claimed Driver mode is recorded
+        // `Clear` once Normal is confirmed or read.
+        let end_claim = || -> io::Result<bool> {
+            let Some(ledger) = &ledger else {
+                return Ok(false);
+            };
+            let owned = ledger.standing().owns();
+            if owned {
+                recorded(ledger.settle(permit.writer(), Settled::Clear))?;
+            }
+            Ok(owned)
+        };
         Ok(match permit.job.step() {
             DeviceModeStep::Confirmed => {
-                ownership.owns.store(false, Ordering::Release);
+                end_claim()?;
                 Release::Restored
             }
             // Not Driver: a foreign change if OpenBlade had claimed it.
             DeviceModeStep::Observed(_) => {
-                if ownership.owns.swap(false, Ordering::AcqRel) {
+                if end_claim()? {
                     Release::ForeignChange
                 } else {
                     Release::NotDriver
@@ -717,7 +812,9 @@ impl Runtime {
             }
             // Only the baseline query, or no setter at all, may have been
             // sent: nothing is in doubt.
-            DeviceModeStep::Unread | DeviceModeStep::Claimed => Release::Unconfirmed,
+            DeviceModeStep::Unread | DeviceModeStep::Unrecorded | DeviceModeStep::Claimed => {
+                Release::Unconfirmed
+            }
             DeviceModeStep::Submitted | DeviceModeStep::Acknowledged => {
                 keyboard.uncertain.set(Some(Instant::now()));
                 Release::Unconfirmed
@@ -741,14 +838,26 @@ impl Runtime {
 
 #[cfg(test)]
 impl Runtime {
-    /// (owns, indeterminate, recovery latch).
+    /// The held record's standing, `Clear` before it is read.
+    fn driver_mode_standing(&self) -> Standing {
+        self.keyboard
+            .ledger
+            .borrow()
+            .as_ref()
+            .map_or(Standing::Clear, |ledger| ledger.standing())
+    }
+    /// (owns, indeterminate, recovery latch), as the held record says.
     pub(in super::super) fn driver_mode_state_for_tests(&self) -> (bool, bool, bool) {
-        let keyboard = &self.keyboard;
+        let standing = self.driver_mode_standing();
         (
-            keyboard.ownership.owns.load(Ordering::Acquire),
-            keyboard.indeterminate.get(),
-            keyboard.recovered.get(),
+            standing.owns(),
+            standing == Standing::AcquireIntent,
+            self.keyboard.recovered.get(),
         )
+    }
+    /// Whether the record is closed for this process.
+    pub(in super::super) fn driver_mode_closed_for_tests(&self) -> bool {
+        self.driver_mode_standing() == Standing::Closed
     }
     /// Whether a release may have submitted Normal unconfirmed.
     pub(in super::super) fn driver_mode_uncertain_for_tests(&self) -> bool {
@@ -760,7 +869,11 @@ impl Runtime {
     }
     /// Acquire claims made so far.
     pub(in super::super) fn driver_mode_claims_for_tests(&self) -> usize {
-        self.keyboard.ownership.claims.load(Ordering::Acquire)
+        self.keyboard
+            .ledger
+            .borrow()
+            .as_ref()
+            .map_or(0, |ledger| ledger.claims())
     }
     /// The mutation gate, for a test that holds it.
     pub(in super::super) fn driver_mode_gate_for_tests(&self) -> Rc<tokio::sync::Mutex<()>> {

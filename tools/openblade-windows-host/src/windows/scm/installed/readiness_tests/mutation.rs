@@ -4,6 +4,9 @@ use super::*;
 #[cfg(feature = "service-keyboard-driver-mode-v1")]
 #[path = "driver_mode_owner.rs"]
 mod driver_mode_owner;
+#[cfg(feature = "service-keyboard-driver-mode-v1")]
+#[path = "driver_mode_record_model.rs"]
+mod driver_mode_record_model;
 #[cfg(feature = "service-fan-mutation-v2")]
 #[path = "pool_pins.rs"]
 mod pool_pins;
@@ -598,12 +601,17 @@ struct Custody {
     // `journal_failures` has been returned. Without files it refuses.
     journal: StdMutex<Option<MemoryFiles>>,
     journal_failures: StdMutex<std::collections::VecDeque<io::Error>>,
+    // The keyboard Driver-mode record in the rig's files.
+    #[cfg(feature = "service-keyboard-driver-mode-v1")]
+    driver_mode: driver_mode_record_model::RecordModel,
 }
 impl Custody {
     fn new(port: &Fixture) -> Arc<Self> {
         Arc::new_cyclic(|me| Self {
             journal: StdMutex::new(None),
             journal_failures: StdMutex::default(),
+            #[cfg(feature = "service-keyboard-driver-mode-v1")]
+            driver_mode: Default::default(),
             me: me.clone(),
             current_sid: StdMutex::new(SID.into()),
             current_session: AtomicUsize::new(7),
@@ -632,6 +640,12 @@ impl Custody {
             notice_during_authorize: StdMutex::new(None),
         })
     }
+    /// Whether this lease may write the Driver-mode record: it activated
+    /// mutation and is not recovery-only, as the owner Store requires.
+    #[cfg(feature = "service-keyboard-driver-mode-v1")]
+    fn writable(&self) -> bool {
+        self.activations.load(Ordering::Acquire) > 0 && !ReadCustody::recovery_only(self)
+    }
 }
 impl ReadCustody for Custody {
     fn journal_read_release(&self, pending: bool) -> io::Result<Option<Vec<u8>>> {
@@ -647,18 +661,39 @@ impl ReadCustody for Custody {
                 CUSTODY_JOURNAL
             })
     }
-    // The Driver-mode record the files hold, parsed as `Store` parses it,
-    // readable only where the journal is (`Rig::restarted`).
+    // The Driver-mode record the files hold, as the owner custody keeps it
+    // (`driver_mode_record_model`). Only an activated, writable lease has a
+    // writer, and each replace holds its caller's admission.
     #[cfg(feature = "service-keyboard-driver-mode-v1")]
     fn driver_mode_record_read(
         &self,
     ) -> io::Result<Option<openblade_domain::driver_mode_history::Record>> {
-        let files = self.journal.lock().unwrap().clone();
-        files
-            .ok_or(io::ErrorKind::PermissionDenied)?
-            .read("keyboard-driver-mode.bin")?
-            .map(|bytes| openblade_domain::driver_mode_history::Record::parse(&bytes))
-            .transpose()
+        self.driver_mode.read()
+    }
+    #[cfg(feature = "service-keyboard-driver-mode-v1")]
+    fn driver_mode_record_owner(&self) -> io::Result<String> {
+        self.driver_mode.owner(self.writable())
+    }
+    #[cfg(feature = "service-keyboard-driver-mode-v1")]
+    fn driver_mode_record_replace(
+        &self,
+        expected: Option<&openblade_domain::driver_mode_history::Record>,
+        next: &openblade_domain::driver_mode_history::Record,
+    ) -> io::Result<()> {
+        let admitted = ReadCustody::authorize(self).is_some();
+        self.driver_mode
+            .replace(self.writable(), admitted, None, expected, next)
+    }
+    #[cfg(feature = "service-keyboard-driver-mode-v1")]
+    fn driver_mode_record_replace_cleanup(
+        &self,
+        scope: CleanupScope,
+        expected: Option<&openblade_domain::driver_mode_history::Record>,
+        next: &openblade_domain::driver_mode_history::Record,
+    ) -> io::Result<()> {
+        let admitted = ReadCustody::authorize_cleanup(self, scope).is_some();
+        self.driver_mode
+            .replace(self.writable(), admitted, Some(scope), expected, next)
     }
     fn authorize_owned_stop(&self) -> Option<ReadAdmission> {
         if !self.live.load(Ordering::Acquire) || self.authority_for_fan.load(Ordering::Acquire) != 0
@@ -1207,6 +1242,11 @@ impl Rig {
     fn start(files: MemoryFiles, journal: Option<Vec<io::Error>>) -> Self {
         let port = Fixture::new();
         let custody = Custody::new(&port);
+        // A restarted Service is a new generation with its own owner nonce.
+        #[cfg(feature = "service-keyboard-driver-mode-v1")]
+        custody
+            .driver_mode
+            .bind(&files, if journal.is_some() { 'b' } else { 'a' });
         if let Some(failures) = journal {
             *custody.journal.lock().unwrap() = Some(files.clone());
             *custody.journal_failures.lock().unwrap() = failures.into();

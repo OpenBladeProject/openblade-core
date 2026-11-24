@@ -122,16 +122,20 @@ impl<P: Port, A: ObservationProof> Attempt<'_, P, A> {
 pub(crate) enum DeviceModeStep {
     /// No setter was sent and nothing is in doubt: the job never ran on a
     /// bound, admitted device, sent nothing, or read its baseline and then
-    /// found too little time for the setter, its acknowledgement and the
-    /// readback (`Pace::covers`).
+    /// found too little time for the claim's record, the setter, its
+    /// acknowledgement and the readback (`Pace::covers`).
     Pending,
     /// The baseline 00/84 query may have been sent and no reply was
     /// confirmed. Only that query may have been sent.
     Unread,
     /// The baseline read this mode and the job wrote nothing.
     Observed(DeviceMode),
-    /// The baseline admitted the setter and the owner's claim ran, but the
-    /// setter was not submitted (managed `KnownNotApplied`).
+    /// The baseline admitted the setter, but the owner's claim could not be
+    /// recorded durably, so the setter was not sent. Nothing is in doubt in
+    /// firmware.
+    Unrecorded,
+    /// The baseline admitted the setter and the owner's claim was recorded,
+    /// but the setter was not submitted (managed `KnownNotApplied`).
     Claimed,
     /// The setter may have been submitted and its exact acknowledgement was
     /// not confirmed.
@@ -143,6 +147,12 @@ pub(crate) enum DeviceModeStep {
     Confirmed,
 }
 
+/// The owner's claim (`DeviceModeJob::claim`): it records the job's four
+/// reserved IDs, baseline, setter, readback and spare, durably, and an error
+/// means the claim was not recorded and the setter must not be sent.
+#[cfg(feature = "service-keyboard-driver-mode-v1")]
+type Claim = Box<dyn Fn(&[u8; 4]) -> io::Result<()> + Send + Sync>;
+
 /// One Driver-mode write job, carried by its permit
 /// (`mutation::Permit::device_mode`): a fresh 00/84 read, then, only when that
 /// read names `write_from`, the owner's claim, the 00/04 setter for `target`,
@@ -153,25 +163,32 @@ pub(crate) enum DeviceModeStep {
 pub(crate) struct DeviceModeJob {
     target: DeviceMode,
     write_from: Option<DeviceMode>,
-    claim: Box<dyn Fn() + Send + Sync>,
+    claim: Claim,
+    /// What the claim's durable writes may take, charged in the pace.
+    claim_allowance: Duration,
     step: Mutex<DeviceModeStep>,
 }
 
 #[cfg(feature = "service-keyboard-driver-mode-v1")]
 impl DeviceModeJob {
     /// A job that writes `target` only from a baseline of `write_from`, and
-    /// only after `claim` has run; `None` reads the baseline and writes
-    /// nothing. `claim` must record the owner's claim before it returns: the
-    /// setter can be submitted as soon as it does.
+    /// only after `claim` has recorded the claim; `None` reads the baseline
+    /// and writes nothing. `claim` gets the job's reserved IDs and must make
+    /// the claim durable before it returns `Ok`: the setter can be submitted
+    /// as soon as it does. The setter is sent only when `claim_allowance`,
+    /// the claim's own time, fits in the job's pace beside the exchanges
+    /// after it.
     pub(crate) fn new(
         target: DeviceMode,
         write_from: Option<DeviceMode>,
-        claim: impl Fn() + Send + Sync + 'static,
+        claim_allowance: Duration,
+        claim: impl Fn(&[u8; 4]) -> io::Result<()> + Send + Sync + 'static,
     ) -> Self {
         Self {
             target,
             write_from,
             claim: Box::new(claim),
+            claim_allowance,
             step: Mutex::new(DeviceModeStep::Pending),
         }
     }
@@ -207,11 +224,13 @@ pub(super) fn setter_fixed(exchanges: &Exchanges, now: Instant) -> Duration {
 #[cfg(feature = "service-keyboard-driver-mode-v1")]
 impl<P: Port> Reader<P, ReadAdmission> {
     /// The Driver-mode write recipe (`DeviceModeJob`). Every ID it may send is
-    /// reserved before the first send, so exhaustion strands no setter. No ID
-    /// is pinned: no durable record names them (the journal is a later
-    /// slice), so each sent ID stays quarantined until a correlated reply is
-    /// read, as every unjournaled exchange's does, and the unsent ones are
-    /// freed at retirement.
+    /// reserved before the first send, so exhaustion strands no setter. The
+    /// IDs are seeded, not pinned: the claim records all four durably before
+    /// the setter can be sent, so a later process quarantines them before its
+    /// first job (`transaction_seed`), while in this process each sent ID
+    /// stays quarantined until a correlated reply is read, as every
+    /// unjournaled exchange's does, and the unsent ones are freed at
+    /// retirement. A new job always draws fresh IDs.
     pub(super) async fn apply_device_mode(
         &mut self,
         permit: &dyn mutation::Permit,
@@ -229,7 +248,7 @@ impl<P: Port> Reader<P, ReadAdmission> {
     ) -> Option<()> {
         let mut authorize = || permit.authorize();
         let [baseline_id, set_id] = self.reserve_pair()?;
-        let [readback_id, _] = self.reserve_pair()?;
+        let [readback_id, spare_id] = self.reserve_pair()?;
         let admission = self.admission;
         // The exchanges are timed from here, so the setter is sent only when
         // the job can still read its acknowledgement and the readback.
@@ -255,17 +274,25 @@ impl<P: Port> Reader<P, ReadAdmission> {
         // the second remaining one at the second-longest, which is zero, so the
         // baseline is charged again as fixed time. Exchanges are timed reply to
         // reply, so the readback's trailing checkpoint is in none of them; it is
-        // charged at the baseline's own, measured from its reply to now. Too
-        // little time left is known not applied, before any claim, and the
-        // baseline read leaves nothing in doubt.
-        let fixed = setter_fixed(&attempt.reader.exchanges, Instant::now());
+        // charged at the baseline's own, measured from its reply to now. The
+        // claim's durable record write comes before the setter and is in no
+        // exchange either, so its allowance is fixed time too. Too little time
+        // left is known not applied, before any claim, and the baseline read
+        // leaves nothing in doubt.
+        let fixed = setter_fixed(&attempt.reader.exchanges, Instant::now())
+            .saturating_add(job.claim_allowance);
         if !pace.covers(attempt.reader, 2, 0, fixed, limit) {
             job.record(DeviceModeStep::Pending);
             return None;
         }
         // Managed claims ownership before the setter is submitted, so any
-        // later failure leaves cleanup able to restore Normal.
-        (job.claim)();
+        // later failure leaves cleanup able to restore Normal. Here the claim
+        // is durable, naming every ID this job may send, and a claim that
+        // could not be recorded sends no setter.
+        if (job.claim)(&[baseline_id, set_id, readback_id, spare_id]).is_err() {
+            job.record(DeviceModeStep::Unrecorded);
+            return None;
+        }
         job.record(DeviceModeStep::Claimed);
         let set = DeviceModeSet::new(set_id, job.target);
         let mut frame = [0; FRAME_LENGTH];

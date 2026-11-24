@@ -31,7 +31,10 @@ const TRAILING_CHECKPOINT: usize = 9;
 async fn owner_rig(mode: u8) -> (Rig, Rc<Cell<bool>>) {
     let files = MemoryFiles::default();
     files.profiles(1);
-    let rig = Rig::new(files);
+    wired(Rig::new(files), mode).await
+}
+/// `rig` wired as `owner_rig` wires it, its keyboard in `mode`.
+async fn wired(rig: Rig, mode: u8) -> (Rig, Rc<Cell<bool>>) {
     rig.port.state.lock().unwrap().device_mode = mode;
     observe(&rig).await;
     let custody = rig.custody.clone();
@@ -609,9 +612,11 @@ async fn a_notice_during_the_resolution_read_leaves_it_indeterminate() {
 }
 
 /// A release while Indeterminate still restores Normal and ends the claim.
-/// A later resolution read of Driver, set by someone else, keeps the
-/// keyboard unclaimed: a read never claims, so a Stop that finds it Normal
-/// again reports `NotDriver`, not a foreign change.
+/// Its confirmed Normal also settles the acquire's doubt: the record is
+/// `Clear`, so nothing stays Indeterminate (with only memory, the doubt
+/// outlived the release). A later read of Driver, set by someone else, keeps
+/// the keyboard unclaimed: a read never claims, so a Stop that finds it
+/// Normal again reports `NotDriver`, not a foreign change.
 #[tokio::test]
 async fn a_resolution_read_of_driver_never_claims_the_keyboard() {
     let (rig, _) = fenced_readback_rig().await;
@@ -619,7 +624,7 @@ async fn a_resolution_read_of_driver_never_claims_the_keyboard() {
     tick(&rig).await;
     assert_eq!(prepared(&rig), Some(Release::Restored));
     assert_eq!((sets(&rig), mode(&rig)), (2, NORMAL));
-    assert_eq!(owner(&rig), (false, true, false));
+    assert_eq!(owner(&rig), (false, false, false));
     rig.custody.lifecycle.ingress(POWER, RESUME);
     rig.port.state.lock().unwrap().device_mode = DRIVER;
     later(&rig).await;
@@ -2414,3 +2419,6 @@ fn the_compiled_identity_carries_the_refused_owner_marker() {
         crate::native_package::startup_policy_for_tests(&crate::NATIVE_ARTIFACT_IDENTITY).is_err()
     );
 }
+
+#[path = "driver_mode_record_tests.rs"]
+mod record;

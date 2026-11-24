@@ -192,14 +192,17 @@ pub(super) trait ReadCustody: Send + Sync {
     fn driver_mode_record_read(&self) -> io::Result<Option<DriverModeRecord>> {
         Err(deny())
     }
+    /// The Active owner nonce a replace of that record names
+    /// (`Store::driver_mode_record_owner`): only a custody this process
+    /// activated has one, so a recovery-only custody refuses.
+    #[cfg(feature = "service-keyboard-driver-mode-v1")]
+    fn driver_mode_record_owner(&self) -> io::Result<String> {
+        Err(deny())
+    }
     /// Replaces that record with `next` while it holds `expected`, under the
     /// ordinary admission (`authorize`): the acquire and its read-only
     /// resolution. A recovery-only custody refuses.
     #[cfg(feature = "service-keyboard-driver-mode-v1")]
-    #[expect(
-        dead_code,
-        reason = "the Driver-mode owner writes its claims and resolutions through it"
-    )]
     fn driver_mode_record_replace(
         &self,
         _expected: Option<&DriverModeRecord>,
@@ -210,10 +213,6 @@ pub(super) trait ReadCustody: Send + Sync {
     /// `driver_mode_record_replace` under the owned cleanup admission of
     /// `scope` (`authorize_cleanup`): the releases at Stop and at a suspend.
     #[cfg(feature = "service-keyboard-driver-mode-v1")]
-    #[expect(
-        dead_code,
-        reason = "the Driver-mode releases write their claims and settles through it"
-    )]
     fn driver_mode_record_replace_cleanup(
         &self,
         _scope: CleanupScope,
@@ -320,6 +319,11 @@ impl ReadCustody for GuardedReadCustody {
     fn driver_mode_record_read(&self) -> io::Result<Option<DriverModeRecord>> {
         self.verify_integrity()?;
         self.original.driver_mode_record_read()
+    }
+    #[cfg(feature = "service-keyboard-driver-mode-v1")]
+    fn driver_mode_record_owner(&self) -> io::Result<String> {
+        self.verify_integrity()?;
+        self.original.driver_mode_record_owner()
     }
     #[cfg(feature = "service-keyboard-driver-mode-v1")]
     fn driver_mode_record_replace(
@@ -950,6 +954,19 @@ impl ReadCustody for ReadLease {
     }
     // The owner Store refuses a custody this process never activated as
     // well; the recovery-only check names the reason here.
+    #[cfg(feature = "service-keyboard-driver-mode-v1")]
+    fn driver_mode_record_owner(&self) -> io::Result<String> {
+        if self.recovery_only {
+            return Err(deny());
+        }
+        self.resources
+            .lock()
+            .map_err(|_| deny())?
+            .as_ref()
+            .ok_or_else(deny)?
+            ._owner
+            .driver_mode_record_owner()
+    }
     #[cfg(feature = "service-keyboard-driver-mode-v1")]
     fn driver_mode_record_replace(
         &self,

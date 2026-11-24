@@ -56,12 +56,7 @@ impl Store {
         expected: Option<&DriverModeRecord>,
         next: &DriverModeRecord,
     ) -> io::Result<()> {
-        let writer = self
-            .last
-            .as_ref()
-            .filter(|last| self.activated_here && last.phase == Phase::Active)
-            .ok_or_else(deny)?;
-        if next.owner() != writer.nonce || !history::follows(expected, next) {
+        if next.owner() != self.driver_mode_writer()?.nonce || !history::follows(expected, next) {
             return Err(deny());
         }
         if self.driver_mode_record_read()?.as_ref() != expected {
@@ -79,6 +74,21 @@ impl Store {
             &|| Ok(self.driver_mode_file()? == expected),
             &|| Ok(self.driver_mode_record_read()?.as_ref() == Some(next)),
         )
+    }
+
+    /// The Active owner nonce a replace must name: this process's own, and
+    /// only once it activated this custody.
+    pub(in crate::installed) fn driver_mode_record_owner(&self) -> io::Result<String> {
+        self.driver_mode_writer().map(|writer| writer.nonce.clone())
+    }
+
+    /// The owner record of the generation that may write: the last one,
+    /// Active, made by this process.
+    fn driver_mode_writer(&self) -> io::Result<&Record> {
+        self.last
+            .as_ref()
+            .filter(|last| self.activated_here && last.phase == Phase::Active)
+            .ok_or_else(deny)
     }
 
     /// Whether anything holds the stage's name. Its content is evidence only
