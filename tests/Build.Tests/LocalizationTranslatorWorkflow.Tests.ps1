@@ -1,5 +1,8 @@
 [CmdletBinding()]
-param([switch]$ArchiveEvidenceOnly)
+param(
+    [switch]$ArchiveEvidenceOnly,
+    [ValidateSet('All', 'Workbook', 'SameProcessPackage', 'FreshProcessPackage')]
+    [string]$Part = 'All')
 
 Set-StrictMode -Version 3.0
 $ErrorActionPreference = 'Stop'
@@ -185,6 +188,110 @@ try {
     if ($ArchiveEvidenceOnly) {
         Write-Host 'Translator archive evidence tests passed.'
         return
+    }
+
+    # The package exports dominate this suite. CI runs each determinism
+    # comparison in its own shard; -Part All keeps the complete local run.
+    if ($Part -ne 'Workbook') {
+        $exportScript = [IO.File]::ReadAllText((
+            Join-Path $repository 'build\Export-LocalizationTranslatorPackage.ps1'))
+        Assert-True ($exportScript.Contains("-Culture 'en-US'")) `
+            'Translator packages must generate source-language context.'
+        Assert-True ($exportScript -notmatch '(?i)RunAs|Publish\.ps1|InstallerValidation|Start-Service') `
+            'Translator packaging must not install, elevate, publish, or start services.'
+
+        $packageScript = Join-Path $repository 'build\Export-LocalizationTranslatorPackage.ps1'
+        $packageRoot = Join-Path $testRoot 'packages'
+        $protectedPackage = Join-Path $packageRoot 'OpenBlade-qps-ploc-translator'
+        [IO.Directory]::CreateDirectory($protectedPackage) | Out-Null
+        $sentinel = Join-Path $protectedPackage 'sentinel.txt'
+        [IO.File]::WriteAllText($sentinel, 'preserve')
+        Assert-Throws 'cannot be used as a translator target' {
+            & $packageScript -Locale qps-ploc -OutputDirectory $packageRoot -Force
+        } 'Locale validation must happen before replacing an existing package.'
+        Assert-True (Test-Path -LiteralPath $sentinel -PathType Leaf) `
+            'A rejected locale must not delete an existing package path.'
+
+        & $packageScript -Locale ru-RU -OutputDirectory $packageRoot -Force
+        $archive = Join-Path $packageRoot 'OpenBlade-ru-RU-translator.zip'
+        $referenceArchive = Join-Path $testRoot 'reference-translator.zip'
+        Copy-Item -LiteralPath $archive -Destination $referenceArchive
+        $archiveEvidenceRoot = Join-Path $repository 'artifacts\translator-archive-failures'
+        $generatedFolder = Join-Path $packageRoot 'OpenBlade-ru-RU-translator'
+        $manifest = Get-Content (Join-Path $generatedFolder 'manifest.json') -Raw |
+            ConvertFrom-Json
+        Assert-Equal 'UTC-for-snapshot-timestamps' $manifest.screenshotRenderProfile.timeZone `
+            'Snapshot timestamps must not depend on the machine timezone.'
+        Assert-Equal 'bgra8-4-bit-midpoint-local-majority-edge-alpha-accent-fringe-v5' `
+            $manifest.screenshotRenderProfile.pixelCanonicalization `
+            'The package manifest must record deterministic pixel canonicalization.'
+        Assert-Equal 'two-consecutive-canonical-frames-v1' `
+            $manifest.screenshotRenderProfile.frameStabilization `
+            'The package manifest must record deterministic frame stabilization.'
+        Assert-Equal 'stable-title-foreground-v1' `
+            $manifest.screenshotRenderProfile.windowActivation `
+            'The package manifest must record deterministic title activation styling.'
+        $generatedWorkbook = Join-Path $generatedFolder 'OpenBlade-ru-RU.csv'
+        Assert-Equal ((Get-FileHash -LiteralPath $generatedWorkbook -Algorithm SHA256).
+            Hash.ToLowerInvariant()) $manifest.workbookSha256 `
+            'The package manifest must bind the exact workbook bytes.'
+        $generatedRows = @(Import-Csv -LiteralPath $generatedWorkbook)
+        Assert-Equal $generatedRows[0].TargetCatalogHash $manifest.targetCatalogHash `
+            'The package manifest must expose the workbook target-catalog binding.'
+        Assert-Equal 'noninteractive-window-v1' $manifest.screenshotRenderProfile.inputIsolation `
+            'Snapshot windows must reject interaction while capturing.'
+        if ($Part -in @('All', 'SameProcessPackage')) {
+            & $packageScript -Locale ru-RU -OutputDirectory $packageRoot -Force
+            Assert-ArchiveEqual -Reference $referenceArchive -Actual $archive `
+                -Stage 'same-process' -EvidenceRoot $archiveEvidenceRoot `
+                -Message 'Repeated package exports must produce the same archive bytes.'
+        }
+        if ($Part -in @('All', 'FreshProcessPackage')) {
+            $freshPowerShell = Join-Path $PSHOME $(if ($PSVersionTable.PSEdition -eq 'Core') {
+                'pwsh.exe'
+            } else {
+                'powershell.exe'
+            })
+            & $freshPowerShell -NoProfile -ExecutionPolicy Bypass `
+                -File $packageScript `
+                -Locale ru-RU `
+                -OutputDirectory $packageRoot `
+                -Force
+            if ($LASTEXITCODE -ne 0) {
+                throw 'Fresh-process translator package export failed.'
+            }
+            Assert-ArchiveEqual -Reference $referenceArchive -Actual $archive `
+                -Stage 'fresh-process' -EvidenceRoot $archiveEvidenceRoot `
+                -Message 'Fresh-process package exports must produce the same archive bytes.'
+        }
+
+        $captureScript = [IO.File]::ReadAllText((
+            Join-Path $repository 'build\Capture-LocalizationSnapshots.ps1'))
+        foreach ($volatileField in @(
+                'generatedAtUtc', 'workingTreeDiff', 'operatingSystem', 'appliedDpi')) {
+            Assert-True (-not $captureScript.Contains($volatileField)) `
+                "Snapshot manifest must not expose volatile field '$volatileField'."
+        }
+        Assert-True ($captureScript.Contains("`$env:__COMPAT_LAYER = 'DPIUNAWARE'")) `
+            'Snapshot children must run in the process-local 96-DPI compatibility context.'
+        Assert-True ($captureScript.Contains(
+                '$env:__COMPAT_LAYER = $previousCompatibilityLayer')) `
+            'Snapshot capture must restore the caller compatibility environment.'
+        Assert-True ($captureScript.Contains(
+                'artifacts\translator-archive-failures\snapshot-stability\$Culture')) `
+            'Snapshot timeouts must retain evidence outside disposable package fixtures.'
+        Assert-True ($captureScript.Contains("[Guid]::NewGuid().ToString('N')")) `
+            'Each snapshot capture invocation must isolate its failure evidence.'
+        Assert-True ($captureScript.Contains(
+                '$env:OPENBLADE_LOCALIZATION_FAILURE_EVIDENCE_DIR = $failureEvidenceRoot')) `
+            'Both disconnected renderers must receive the durable failure-evidence root.'
+        Assert-True ($captureScript.Contains(
+                '$env:OPENBLADE_LOCALIZATION_FAILURE_EVIDENCE_DIR = $previousFailureEvidenceDirectory')) `
+            'Snapshot capture must restore the caller failure-evidence environment.'
+        if ($Part -ne 'All') {
+            Write-Host "Localization translator workflow tests passed ($Part)."
+            return
+        }
     }
 
     $first = Join-Path $testRoot 'first.csv'
@@ -950,98 +1057,6 @@ throw 'Target catalog was not write-locked during import.'
         Import-Module $modulePath -Force
         Remove-Item -LiteralPath $markupFixture -Recurse -Force
     }
-
-    $exportScript = [IO.File]::ReadAllText((
-        Join-Path $repository 'build\Export-LocalizationTranslatorPackage.ps1'))
-    Assert-True ($exportScript.Contains("-Culture 'en-US'")) `
-        'Translator packages must generate source-language context.'
-    Assert-True ($exportScript -notmatch '(?i)RunAs|Publish\.ps1|InstallerValidation|Start-Service') `
-        'Translator packaging must not install, elevate, publish, or start services.'
-
-    $packageScript = Join-Path $repository 'build\Export-LocalizationTranslatorPackage.ps1'
-    $packageRoot = Join-Path $testRoot 'packages'
-    $protectedPackage = Join-Path $packageRoot 'OpenBlade-qps-ploc-translator'
-    [IO.Directory]::CreateDirectory($protectedPackage) | Out-Null
-    $sentinel = Join-Path $protectedPackage 'sentinel.txt'
-    [IO.File]::WriteAllText($sentinel, 'preserve')
-    Assert-Throws 'cannot be used as a translator target' {
-        & $packageScript -Locale qps-ploc -OutputDirectory $packageRoot -Force
-    } 'Locale validation must happen before replacing an existing package.'
-    Assert-True (Test-Path -LiteralPath $sentinel -PathType Leaf) `
-        'A rejected locale must not delete an existing package path.'
-
-    & $packageScript -Locale ru-RU -OutputDirectory $packageRoot -Force
-    $archive = Join-Path $packageRoot 'OpenBlade-ru-RU-translator.zip'
-    $referenceArchive = Join-Path $testRoot 'reference-translator.zip'
-    Copy-Item -LiteralPath $archive -Destination $referenceArchive
-    $archiveEvidenceRoot = Join-Path $repository 'artifacts\translator-archive-failures'
-    $generatedFolder = Join-Path $packageRoot 'OpenBlade-ru-RU-translator'
-    $manifest = Get-Content (Join-Path $generatedFolder 'manifest.json') -Raw |
-        ConvertFrom-Json
-    Assert-Equal 'UTC-for-snapshot-timestamps' $manifest.screenshotRenderProfile.timeZone `
-        'Snapshot timestamps must not depend on the machine timezone.'
-    Assert-Equal 'bgra8-4-bit-midpoint-local-majority-edge-alpha-accent-fringe-v5' `
-        $manifest.screenshotRenderProfile.pixelCanonicalization `
-        'The package manifest must record deterministic pixel canonicalization.'
-    Assert-Equal 'two-consecutive-canonical-frames-v1' `
-        $manifest.screenshotRenderProfile.frameStabilization `
-        'The package manifest must record deterministic frame stabilization.'
-    Assert-Equal 'stable-title-foreground-v1' `
-        $manifest.screenshotRenderProfile.windowActivation `
-        'The package manifest must record deterministic title activation styling.'
-    $generatedWorkbook = Join-Path $generatedFolder 'OpenBlade-ru-RU.csv'
-    Assert-Equal ((Get-FileHash -LiteralPath $generatedWorkbook -Algorithm SHA256).
-        Hash.ToLowerInvariant()) $manifest.workbookSha256 `
-        'The package manifest must bind the exact workbook bytes.'
-    $generatedRows = @(Import-Csv -LiteralPath $generatedWorkbook)
-    Assert-Equal $generatedRows[0].TargetCatalogHash $manifest.targetCatalogHash `
-        'The package manifest must expose the workbook target-catalog binding.'
-    Assert-Equal 'noninteractive-window-v1' $manifest.screenshotRenderProfile.inputIsolation `
-        'Snapshot windows must reject interaction while capturing.'
-    & $packageScript -Locale ru-RU -OutputDirectory $packageRoot -Force
-    Assert-ArchiveEqual -Reference $referenceArchive -Actual $archive `
-        -Stage 'same-process' -EvidenceRoot $archiveEvidenceRoot `
-        -Message 'Repeated package exports must produce the same archive bytes.'
-    $freshPowerShell = Join-Path $PSHOME $(if ($PSVersionTable.PSEdition -eq 'Core') {
-        'pwsh.exe'
-    } else {
-        'powershell.exe'
-    })
-    & $freshPowerShell -NoProfile -ExecutionPolicy Bypass `
-        -File $packageScript `
-        -Locale ru-RU `
-        -OutputDirectory $packageRoot `
-        -Force
-    if ($LASTEXITCODE -ne 0) {
-        throw 'Fresh-process translator package export failed.'
-    }
-    Assert-ArchiveEqual -Reference $referenceArchive -Actual $archive `
-        -Stage 'fresh-process' -EvidenceRoot $archiveEvidenceRoot `
-        -Message 'Fresh-process package exports must produce the same archive bytes.'
-
-    $captureScript = [IO.File]::ReadAllText((
-        Join-Path $repository 'build\Capture-LocalizationSnapshots.ps1'))
-    foreach ($volatileField in @(
-            'generatedAtUtc', 'workingTreeDiff', 'operatingSystem', 'appliedDpi')) {
-        Assert-True (-not $captureScript.Contains($volatileField)) `
-            "Snapshot manifest must not expose volatile field '$volatileField'."
-    }
-    Assert-True ($captureScript.Contains("`$env:__COMPAT_LAYER = 'DPIUNAWARE'")) `
-        'Snapshot children must run in the process-local 96-DPI compatibility context.'
-    Assert-True ($captureScript.Contains(
-            '$env:__COMPAT_LAYER = $previousCompatibilityLayer')) `
-        'Snapshot capture must restore the caller compatibility environment.'
-    Assert-True ($captureScript.Contains(
-            'artifacts\translator-archive-failures\snapshot-stability\$Culture')) `
-        'Snapshot timeouts must retain evidence outside disposable package fixtures.'
-    Assert-True ($captureScript.Contains("[Guid]::NewGuid().ToString('N')")) `
-        'Each snapshot capture invocation must isolate its failure evidence.'
-    Assert-True ($captureScript.Contains(
-            '$env:OPENBLADE_LOCALIZATION_FAILURE_EVIDENCE_DIR = $failureEvidenceRoot')) `
-        'Both disconnected renderers must receive the durable failure-evidence root.'
-    Assert-True ($captureScript.Contains(
-            '$env:OPENBLADE_LOCALIZATION_FAILURE_EVIDENCE_DIR = $previousFailureEvidenceDirectory')) `
-        'Snapshot capture must restore the caller failure-evidence environment.'
 }
 finally {
     Import-Module $modulePath -Force

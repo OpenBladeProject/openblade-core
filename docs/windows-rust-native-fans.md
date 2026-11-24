@@ -72,7 +72,12 @@ its reply would publish an observation outside managed read parity.
 Stop closes the owner only after fresh admission. Every power-source,
 suspend/resume and session notice advances the lifecycle epoch that the
 owner's own capture pins, so after an unplug, an adapter change, a lock or a
-resume Stop uses a separate settle-only permit. It captures the owner's exact
+resume the owner's capture refuses. Stop then runs the owner's full handback
+recipe under the Service's own cleanup admission at the current epoch
+(`FanHandbackPermit`, composed with `service-fan-mutation-v2`), which needs
+no signed-in user; see
+[development Service](windows-rust-development-service.md). Only without
+that admission does Stop use a separate settle-only permit. It captures the owner's exact
 SID, session and logon at the current epoch and rechecks origin and package
 trust, the original custody and its generation, the unlocked console session,
 the AC line status and competing-controller absence before each read. It can
@@ -83,6 +88,16 @@ fan configuration, the 51-only journal and result admission) is covered by
 readiness tests and mutants. Its Windows half (`WindowsGuard::capture_settle`
 and `authorize_for`) is source-reviewed only: the tests drive a `SettleFresh`
 model of it, not the real console, token, AC-line and controller suppliers.
+
+Native and managed differ after such an event. Managed advances its fan
+authority epoch, which drops exact fan ownership (`AdvanceFanAuthorityEpoch`,
+`ServiceControlRuntime.cs:21396`), on a resume (`:13243`), an active-user
+change (`:1589`) and a competing controller's arrival (`:15707`), and its
+owned Stop handback then refuses (`:13666-13676`), so manual fans stay
+manual. Native keeps the owner through those events and hands its fans back
+to Automatic at Stop, under fresh admission that still requires the exact
+device, Windows AC and no competing controller at that moment. Returning the
+fans to firmware is the safer direction, so the difference is kept.
 Disagreeing or undecodable readback (including mode 7 with manual fans) keeps
 the owner outstanding on both paths. So do manual fans under another selector at
 Stop; an explicit return on external power writes the saved destination's own
@@ -167,8 +182,9 @@ A partial later submission cannot authorize that resumption.
 Normal Stop immediately denies ordinary writes, joins active original work,
 then permits one bounded direct Auto release of the positively established
 in-process owner. Expected Stop denies ordinary reads without discarding retained
-custody. Unexpected origin or trust loss never becomes cleanup authority, and an epoch
-change admits only the settle-only 51 close.
+custody. Unexpected origin or trust loss never becomes cleanup authority. After an epoch
+change the owner's own capture refuses; the Service cleanup admission may still
+run the handback recipe, and without it only the settle-only 51 close runs.
 The established owner is kept separately from a candidate request, so a refused
 identical request cannot discard its cleanup budget. Metadata-only settlement
 can append only exact Prepared-to-KnownNotSubmitted evidence and grants no

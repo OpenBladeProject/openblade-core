@@ -1,4 +1,4 @@
-//! Typed refusal for a well-formed v85 request that names a managed
+//! Typed refusal for a well-formed v90 request that names a managed
 //! ServiceMessages operation this composition does not serve.
 //!
 //! Managed `ControlRequestHandler.HandleUserRequestAsync` replies to an
@@ -50,8 +50,9 @@ impl UnservedRequest {
                 if managed_operations().contains(&name) && !StatusRequest::serves(&name) => {}
             _ => return Err(refused()),
         }
-        // An exact Int32 85, as the served decoder reads it: `85.0`, a string
-        // or an out-of-range integer is not this protocol.
+        // An exact Int32 `PROTOCOL_VERSION`, as the served decoder reads it:
+        // its float form, a string or an out-of-range integer is not this
+        // protocol.
         let version = match members.remove("version") {
             Some(Value::Number(number)) => number.as_i64(),
             _ => None,
@@ -243,17 +244,24 @@ mod tests {
     #[test]
     fn contract_lists_every_managed_operation_once() {
         let operations = managed_operations();
-        assert_eq!(operations.len(), 51);
+        assert_eq!(operations.len(), 53);
         assert!(operations.contains("reportSessionPowerTransition"));
         assert!(operations.contains("updateProfiles"));
+        // Main's protocol 87 and 88 operations, which no native composition serves.
+        assert!(operations.contains("reportWindowsDynamicLightingAdvisory"));
+        assert!(operations.contains("clearLocalDimming"));
         for served in StatusRequest::OPERATIONS {
             assert!(operations.contains(served), "{served}");
         }
+        let previous = format!(
+            r#"{{"protocol":{{"version":{}}},"operationFamilies":{{"a":["x"]}}}}"#,
+            PROTOCOL_VERSION - 1
+        );
         for broken in [
-            r#"{"protocol":{"version":84},"operationFamilies":{"a":["x"]}}"#,
-            r#"{"protocol":{"version":85},"operationFamilies":{"a":["x"],"b":["x"]}}"#,
-            r#"{"protocol":{"version":85},"operationFamilies":{"a":[""]}}"#,
-            r#"{"protocol":{"version":85}}"#,
+            previous.as_str(),
+            r#"{"protocol":{"version":90},"operationFamilies":{"a":["x"],"b":["x"]}}"#,
+            r#"{"protocol":{"version":90},"operationFamilies":{"a":[""]}}"#,
+            r#"{"protocol":{"version":90}}"#,
             "[]",
         ] {
             assert_eq!(parse(broken), None, "{broken}");
@@ -266,13 +274,13 @@ mod tests {
             .iter()
             .filter(|operation| !StatusRequest::serves(operation))
             .collect();
-        assert!(operations.len() >= 51 - StatusRequest::OPERATIONS.len());
+        assert!(operations.len() >= 53 - StatusRequest::OPERATIONS.len());
         for operation in operations {
             for body in [
                 json!({}),
                 json!({"profiles": {"pluggedIn": null}, "enabled": true}),
             ] {
-                let mut request = json!({"operation": operation, "version": 85, "requestId": ID});
+                let mut request = json!({"operation": operation, "version": 90, "requestId": ID});
                 request
                     .as_object_mut()
                     .unwrap()
@@ -282,7 +290,7 @@ mod tests {
                 assert_eq!(
                     reply,
                     json!({
-                        "frame": "response", "version": 85,
+                        "frame": "response", "version": 90,
                         "requestId": ID.to_ascii_lowercase(), "success": false,
                         "error": UNSUPPORTED, "status": null, "result": null,
                         "archive": null, "errorCode": null,
@@ -298,37 +306,44 @@ mod tests {
             frame(&json!({"operation": operation, "version": version, "requestId": id}))
         };
         let mut rejected = vec![
-            header(json!("notAManagedOperation"), json!(85), json!(ID)),
-            header(json!("UpdateProfiles"), json!(85), json!(ID)),
-            header(json!(""), json!(85), json!(ID)),
-            header(json!(7), json!(85), json!(ID)),
-            header(Value::Null, json!(85), json!(ID)),
+            header(json!("notAManagedOperation"), json!(90), json!(ID)),
+            header(json!("UpdateProfiles"), json!(90), json!(ID)),
+            header(json!(""), json!(90), json!(ID)),
+            header(json!(7), json!(90), json!(ID)),
+            header(Value::Null, json!(90), json!(ID)),
             header(json!("updateProfiles"), json!(51), json!(ID)),
-            header(json!("updateProfiles"), json!(84), json!(ID)),
-            header(json!("updateProfiles"), json!("85"), json!(ID)),
-            header(json!("updateProfiles"), json!(85.0), json!(ID)),
-            header(json!("updateProfiles"), json!(4_294_967_381_i64), json!(ID)),
-            header(json!("updateProfiles"), json!(85), json!("not-a-guid")),
+            // The neighbouring protocols, then the current one as a string, a
+            // float and an Int64 that wraps to it as an Int32.
+            header(json!("updateProfiles"), json!(PROTOCOL_VERSION - 1), json!(ID)),
+            header(json!("updateProfiles"), json!(PROTOCOL_VERSION + 1), json!(ID)),
+            header(json!("updateProfiles"), json!(PROTOCOL_VERSION.to_string()), json!(ID)),
+            header(json!("updateProfiles"), json!(f64::from(PROTOCOL_VERSION)), json!(ID)),
             header(
                 json!("updateProfiles"),
-                json!(85),
+                json!((1_i64 << 32) + i64::from(PROTOCOL_VERSION)),
+                json!(ID),
+            ),
+            header(json!("updateProfiles"), json!(90), json!("not-a-guid")),
+            header(
+                json!("updateProfiles"),
+                json!(90),
                 json!("00000000-0000-0000-0000-000000000000"),
             ),
-            header(json!("updateProfiles"), json!(85), json!(1)),
-            frame(&json!({"operation": "updateProfiles", "version": 85})),
-            frame(&json!({"version": 85, "requestId": ID})),
-            frame(&json!(["updateProfiles", 85, ID])),
+            header(json!("updateProfiles"), json!(90), json!(1)),
+            frame(&json!({"operation": "updateProfiles", "version": 90})),
+            frame(&json!({"version": 90, "requestId": ID})),
+            frame(&json!(["updateProfiles", 90, ID])),
             frame(&json!("updateProfiles")),
             format!(
-                r#"{{"operation":"updateProfiles","operation":"setHyperBoost","version":85,"requestId":"{ID}"}}"#
+                r#"{{"operation":"updateProfiles","operation":"setHyperBoost","version":90,"requestId":"{ID}"}}"#
             )
             .into_bytes(),
             format!(
-                r#"{{"operation":"updateProfiles","version":85,"requestId":"{ID}","profiles":{{"a":1,"a":2}}}}"#
+                r#"{{"operation":"updateProfiles","version":90,"requestId":"{ID}","profiles":{{"a":1,"a":2}}}}"#
             )
             .into_bytes(),
             format!(
-                r#"{{"operation":"updateProfiles","version":85,"requestId":"{ID}","$serde_json::private::Number":"1"}}"#
+                r#"{{"operation":"updateProfiles","version":90,"requestId":"{ID}","$serde_json::private::Number":"1"}}"#
             )
             .into_bytes(),
             b"{\"operation\":\"updateProfiles\"".to_vec(),
@@ -338,7 +353,7 @@ mod tests {
             .into_iter()
             .filter(|served| StatusRequest::serves(served))
         {
-            rejected.push(header(json!(served), json!(85), json!(ID)));
+            rejected.push(header(json!(served), json!(90), json!(ID)));
         }
         for payload in rejected {
             let error = UnservedRequest::decode(&payload).unwrap_err();

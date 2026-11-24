@@ -43,12 +43,14 @@
       "hyperBoostAccess": null,
       "hyperBoostWithoutCoolingPadAccess": null,
       "hyperBoostBaseModes": null,
+      "hyperBoostEntryRestriction": null,
       "specialKeyBindingsAccess": null,
       "writableSpecialKeySlots": 0,
       "lampArrayLightingAccess": null,
       "thxAudio": null,
       "keyboardLightingLayoutId": null,
       "blade18KeyboardLayoutId": null,
+      "blade14KeyboardEdition": null,
       "supportedLightingRefreshRates": [],
       "observedLightingEffects": [],
       "observedLightingZones": [],
@@ -269,14 +271,23 @@
         "fixedRpm": 1500,
         "allowDemandApi": false,
         "temperatureSource": 2,
+        "autoProfile": 1,
         "cpuCurve": [
+          {
+            "temperatureCelsius": 40,
+            "rpm": 500
+          },
           {
             "temperatureCelsius": 50,
             "rpm": 500
           },
           {
-            "temperatureCelsius": 65,
-            "rpm": 1500
+            "temperatureCelsius": 60,
+            "rpm": 1150
+          },
+          {
+            "temperatureCelsius": 70,
+            "rpm": 1850
           },
           {
             "temperatureCelsius": 80,
@@ -289,12 +300,20 @@
         ],
         "gpuCurve": [
           {
+            "temperatureCelsius": 40,
+            "rpm": 500
+          },
+          {
             "temperatureCelsius": 50,
             "rpm": 500
           },
           {
-            "temperatureCelsius": 65,
-            "rpm": 1500
+            "temperatureCelsius": 60,
+            "rpm": 1150
+          },
+          {
+            "temperatureCelsius": 70,
+            "rpm": 1850
           },
           {
             "temperatureCelsius": 80,
@@ -374,7 +393,8 @@
     },
     "isExperimentalDevice": false,
     "experimentalSupportSource": null,
-    "unsupportedLaptop": false
+    "unsupportedLaptop": false,
+    "windowsDynamicLightingAdvisory": 0
   },
-  "version": 85
+  "version": 90
 }

@@ -7,7 +7,7 @@ use super::*;
 use crate::installed::readiness::Logon;
 
 #[tokio::test]
-async fn private_pipe_serves_and_retires_observed_v85_status() {
+async fn private_pipe_serves_and_retires_observed_status() {
     use crate::installed::readiness::{
         DRAIN_TIMEOUT, StatusRequest, StatusResponse, read_payload, serve, verify_peer,
         windows::private_endpoint, write_frame,

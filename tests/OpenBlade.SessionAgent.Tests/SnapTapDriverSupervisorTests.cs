@@ -6,6 +6,53 @@ namespace OpenBlade.SessionAgent.Tests;
 
 public sealed class SnapTapDriverSupervisorTests
 {
+    [Theory]
+    [InlineData(false, false, 10000, false)]
+    [InlineData(false, false, 10001, true)]
+    [InlineData(true, false, 1500, false)]
+    [InlineData(true, false, 1501, true)]
+    // A per-mutation admission measured 1.7 s under boot load; it must not end the worker.
+    [InlineData(true, true, 1700, false)]
+    [InlineData(true, true, 10000, false)]
+    [InlineData(true, true, 10001, true)]
+    public void HeartbeatBudgetExtendsOnlyForSignalledAdmission(bool started, bool admitting, long elapsed, bool expired)
+    {
+        Assert.Equal(expired, SnapTapDriverSupervisor.HeartbeatExpired(elapsed, started, admitting));
+    }
+
+    [Fact]
+    public void AdmissionWindowSignalsProgressBeforeOpeningAndBeforeClosing()
+    {
+        using var window = new EventWaitHandle(false, EventResetMode.ManualReset);
+        var events = new List<string>();
+        void Progress() => events.Add(window.WaitOne(0) ? "progress:open" : "progress:closed");
+
+        bool admitted = SnapTapDriverLoop.AdmitWithProgress(() =>
+        {
+            events.Add(window.WaitOne(0) ? "admit:open" : "admit:closed");
+            return true;
+        }, Progress, window);
+
+        Assert.True(admitted);
+        // The closing heartbeat precedes the reset, so the supervisor never sees a
+        // closed window paired with the stale pre-admission heartbeat.
+        Assert.Equal(["progress:closed", "admit:open", "progress:open"], events);
+        Assert.False(window.WaitOne(0));
+    }
+
+    [Fact]
+    public void AdmissionWindowClosesWhenAdmissionThrowsOrRejects()
+    {
+        using var window = new EventWaitHandle(false, EventResetMode.ManualReset);
+        int progress = 0;
+        Assert.Throws<InvalidOperationException>(() => SnapTapDriverLoop.AdmitWithProgress(
+            () => throw new InvalidOperationException(), () => progress++, window));
+        Assert.False(window.WaitOne(0));
+        Assert.False(SnapTapDriverLoop.AdmitWithProgress(() => false, () => progress++, window));
+        Assert.False(window.WaitOne(0));
+        Assert.Equal(4, progress);
+    }
+
     [Fact]
     public void CleanupWrappingRetainsBothNativeFailuresAndSubmissionUncertainty()
     {
@@ -131,9 +178,9 @@ public sealed class SnapTapDriverSupervisorTests
         var status = new SnapTapRuntimeStatus(SnapTapRuntimeState.Paused, start.AddMilliseconds(1), 123,
             Failure: SnapTapDiagnosticFailure.Create("SnapTapWorker", "Run", "InputLoop", "ForegroundUnavailable"));
         bool Eligible(int code, SnapTapRuntimeStatus? value) =>
-            SnapTapDriverSupervisor.IsCleanForegroundPause(code, value, 123, start);
+            SnapTapDriverSupervisor.IsCleanPause(code, value, 123, start);
 
-        Assert.True(Eligible(SnapTapDriverLoop.ForegroundPauseExitCode, status));
+        Assert.True(Eligible(SnapTapDriverLoop.CleanPauseExitCode, status));
         foreach (int code in new[] { 0, 1, 2, 3, 4, 5, 6, 7, 9 })
         {
             Assert.False(Eligible(code, status));
@@ -148,6 +195,26 @@ public sealed class SnapTapDriverSupervisorTests
         Assert.False(Eligible(8, status with { Failure = status.Failure! with { Operation = "HookSession" } }));
         Assert.False(Eligible(8, status with { Failure = status.Failure! with { Cause = status.Failure } }));
         Assert.False(Eligible(8, status with { Failure = status.Failure! with { Related = [status.Failure!] } }));
+    }
+
+    [Fact]
+    public void DeferredSubscriptionIsACleanPauseOnlyInHookSetup()
+    {
+        DateTimeOffset start = DateTimeOffset.UtcNow;
+        var status = new SnapTapRuntimeStatus(SnapTapRuntimeState.Paused, start.AddMilliseconds(1), 123,
+            Failure: SnapTapDriverLoop.SubscriptionDeferredFailure());
+        bool Eligible(int code, SnapTapRuntimeStatus? value) =>
+            SnapTapDriverSupervisor.IsCleanPause(code, value, 123, start);
+
+        Assert.True(Eligible(SnapTapDriverLoop.CleanPauseExitCode, status));
+        Assert.False(Eligible(1, status));
+        Assert.False(Eligible(8, status with { State = SnapTapRuntimeState.Failed }));
+        Assert.False(Eligible(8, status with { Failure = status.Failure! with { MayHaveSubmitted = true } }));
+        // Each reason is admitted only at the stage that produces it.
+        Assert.False(Eligible(8, status with { Failure = status.Failure! with { Stage = "InputLoop" } }));
+        Assert.False(Eligible(8, status with { Failure = status.Failure! with { Reason = "ForegroundUnavailable" } }));
+        Assert.False(Eligible(8, status with { Failure = status.Failure! with { Reason = "EnableFailed" } }));
+        Assert.False(Eligible(8, status with { Failure = status.Failure! with { Component = "SnapTapSupervisor" } }));
     }
 
     [Fact]

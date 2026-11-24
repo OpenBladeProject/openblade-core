@@ -139,7 +139,7 @@ internal sealed class DynamicLightingIdentityProbeCommand(
         try
         {
             lampArray = await lampArraySource
-                .ObserveAsync(cancellationToken)
+                .ObserveAsync(Rz090528LampArrayGeometry.ProductId, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

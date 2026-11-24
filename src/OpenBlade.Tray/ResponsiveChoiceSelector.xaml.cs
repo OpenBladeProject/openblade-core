@@ -4,6 +4,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Data;
+using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 
 namespace OpenBlade.Tray;
@@ -359,6 +360,13 @@ public sealed partial class ResponsiveChoiceSelector
 
     private void OnResponsiveHostSizeChanged(object sender, SizeChangedEventArgs args) =>
         UpdatePresentationMode();
+
+    // A SelectorBar item selects on release and leaves the press unhandled. In a
+    // button host such as the Function key behavior Expander header, that press
+    // bubbles to the header, which captures the pointer and toggles the card
+    // instead of selecting. Keep the press inside the selector.
+    private void OnExpandedSelectorPointerPressed(object sender, PointerRoutedEventArgs args) =>
+        args.Handled = true;
 
     private void OnExpandedSelectorSizeChanged(object sender, SizeChangedEventArgs args)
     {

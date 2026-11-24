@@ -79,6 +79,19 @@ impl Cadence {
         self.current(admission, now)?.active
     }
 
+    /// `active` for a result read by a job that started after `since`.
+    #[cfg(feature = "service-keyboard-driver-mode-v1")]
+    pub(super) fn active_since(
+        &self,
+        admission: ReadAdmission,
+        now: Instant,
+        since: Instant,
+    ) -> Option<bool> {
+        self.current(admission, now)
+            .filter(|observed| observed.at > since)?
+            .active
+    }
+
     fn current(&self, admission: ReadAdmission, now: Instant) -> Option<Observed> {
         self.0.get().filter(|observed| {
             observed.admission == admission && now.saturating_duration_since(observed.at) < INTERVAL

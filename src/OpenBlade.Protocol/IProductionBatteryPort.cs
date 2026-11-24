@@ -29,9 +29,20 @@ public interface IProductionBatteryPort : IAsyncDisposable
 
     bool SupportsRz090581CapabilityDiagnosticsQuery => false;
 
+    /// <summary>The exact backend reads the local dimming bit for a confirmed mini-LED panel.</summary>
+    bool SupportsLocalDimmingQuery => false;
+
     Task<ConfirmedBatteryState> QueryProtectionAsync(CancellationToken cancellationToken);
 
     Task<bool?> QueryTemporaryFullChargeAsync(CancellationToken cancellationToken);
+
+    /// <summary>Returns the local dimming bit, or null when it could not be read.</summary>
+    Task<bool?> QueryLocalDimmingAsync(CancellationToken cancellationToken) =>
+        Task.FromResult<bool?>(null);
+
+    /// <summary>Turns local dimming off once through the exact backend's guarded path.</summary>
+    Task ClearLocalDimmingAsync(CancellationToken cancellationToken) =>
+        Task.FromException(new CapabilityUnavailableException("Local dimming has no admitted Clear."));
 
     Task<ProductionPerformanceFanState> QueryPerformanceFanStateAsync(
         CancellationToken cancellationToken);

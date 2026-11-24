@@ -696,6 +696,24 @@ unrelated worktrees and checkout changes.
    draft PR first, then add the verified reference before marking it ready or
    merging. Preserve existing references and published release snapshots;
    reference-only corrections to `Unreleased` must link the original PR.
+   Write bullets for laptop owners, following the README and UI language rules
+   below. Say what changed and on which laptops in one to three short
+   sentences; for a fix, name the problem that is gone. Keep any step the
+   reader must take, such as closing Synapse first, and any limit that changes
+   what they can do, each stated once. Say "experimental" where it applies.
+   Leave admission checks, readback, recovery sequences, internal names,
+   validation history and edge cases to the pull request and the relevant
+   guide. Do not write bullets as disclaimers: no stacked "never" or "only"
+   clauses, defensive caveats or reassurances. Rewording a published release
+   section keeps its heading, categories, bullets, links and credits.
+   Credit outside contributors in every changelog bullet that includes their
+   code. An outside contributor is a pull request author or commit co-author
+   who is not an owner, member or collaborator of the repository; check the
+   GitHub author association, not the name. Put the credit before the pull
+   request link as `Thanks to [@login](https://github.com/login).`, listing
+   each contributor. This covers code only, not issue reports, logs or
+   testing. Keep the credit when a maintainer finishes or rewrites an outside
+   contribution.
    The Nightly workflow treats each published tag as a release boundary, attaches
    an exact-source changelog snapshot, and opens or updates a draft pull request
    that moves included entries into dated `## [X.Y.Z-nightly.N] - YYYY-MM-DD`

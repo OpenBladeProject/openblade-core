@@ -35,8 +35,10 @@
 //! verified observation while it is null, and again on a power-source change
 //! while it is null. A captured value is never cleared or recaptured.
 //!
-//! Temperatures are not read here: the CPU temperature worker is unchanged
-//! and no native GPU temperature source exists, so both stay null.
+//! GPU temperature is managed's NVML read behind its workload and D0 gates,
+//! on a worker of its own beside the job (`gpu_temperature`). CPU
+//! temperature is not read here: the CPU temperature worker is unchanged, so
+//! it stays null.
 use super::RETENTION_WINDOW;
 use crate::discovery::performance::{FanPairSends, FanRpmRead, ReadAdmission};
 use std::{
@@ -53,9 +55,7 @@ mod windows;
 #[cfg(windows)]
 pub(super) use windows::Windows;
 
-pub(super) const BATTERY_POWER: u8 = 1;
-pub(super) const FAN_SPEEDS: u8 = 2;
-/// The managed v85 codec refuses a fan speed above this.
+/// The managed v90 codec refuses a fan speed above this.
 const MAXIMUM_RPM: u16 = 20_000;
 /// Consecutive unconfirmed fan reads that still publish the last pair.
 const RETAINED_MISSES: u8 = 2;

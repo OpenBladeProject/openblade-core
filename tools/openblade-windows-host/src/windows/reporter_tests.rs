@@ -1,4 +1,4 @@
-//! Scripted current-user caller for the development host's private v85 pipe.
+//! Scripted current-user caller for the development host's private v90 pipe.
 //! No desktop, process, or native device observations are used here.
 
 use std::{cell::Cell, future::Future, rc::Rc, time::Duration};
@@ -16,7 +16,7 @@ use tokio::{
     time::{Instant, sleep, timeout},
 };
 
-use super::tests::{open_pipe, runtime, test_id};
+use super::tests::{HANG_GUARD, open_pipe, runtime, test_id};
 use super::{PREFIX, Phase, Session, fixture, prepare_integrated, run_prepared};
 
 const STATUS_ID: &str = "11111111-2222-4333-8444-555555555555";
@@ -120,7 +120,7 @@ fn wait_status<'a>(
 ) -> impl Future<Output = Value> + 'a {
     let location = std::panic::Location::caller();
     async move {
-        let deadline = Instant::now() + Duration::from_secs(6);
+        let deadline = Instant::now() + HANG_GUARD;
         loop {
             let current = status(path).await;
             if ready(&current) {
@@ -164,16 +164,16 @@ fn report_codec_requires_explicit_null_and_correlated_result() {
     };
     assert_eq!(
         std::str::from_utf8(&encode(&request).unwrap()).unwrap(),
-        r#"{"operation":"reportApplicationContext","version":85,"requestId":"11111111-1111-1111-1111-111111111111","instanceId":"22222222-2222-2222-2222-222222222222","sequence":1,"executablePath":null}"#,
+        r#"{"operation":"reportApplicationContext","version":90,"requestId":"11111111-1111-1111-1111-111111111111","instanceId":"22222222-2222-2222-2222-222222222222","sequence":1,"executablePath":null}"#,
     );
 
-    let valid = r#"{"frame":"response","version":85,"requestId":"11111111-2222-4333-8444-555555555555","success":true,"result":{"status":0,"message":"stored"}}"#;
+    let valid = r#"{"frame":"response","version":90,"requestId":"11111111-2222-4333-8444-555555555555","success":true,"result":{"status":0,"message":"stored"}}"#;
     let outcome =
         |payload: &str, id: &str| Response::decode(payload.as_bytes(), id)?.report_outcome();
     assert_eq!(outcome(valid, STATUS_ID).unwrap().0, ReportOutcome::Stored);
     assert!(outcome(valid, &guid_text(request.request_id)).is_err());
     for malformed in [
-        valid.replace("85", "79"),
+        valid.replace("90", "79"),
         valid.replace(r#""status":0"#, r#""status":4"#),
         valid.replace(r#""status":0"#, r#""status":0,"status":1"#),
         valid.replace(r#""success":true"#, r#""success":true,"error":"conflict""#),
@@ -185,7 +185,7 @@ fn report_codec_requires_explicit_null_and_correlated_result() {
 }
 
 #[test]
-fn reporter_drives_unified_application_replay_over_private_v85_pipe() {
+fn reporter_drives_unified_application_replay_over_the_private_pipe() {
     runtime().block_on(async {
         let id = test_id();
         let path = format!("{PREFIX}{id}");
@@ -224,12 +224,10 @@ fn reporter_drives_unified_application_replay_over_private_v85_pipe() {
             release.send(()).unwrap();
             Ok(())
         };
-        timeout(Duration::from_secs(45), async {
-            tokio::try_join!(host, caller)
-        })
-        .await
-        .expect("unified reporter test timed out")
-        .unwrap();
+        timeout(HANG_GUARD, async { tokio::try_join!(host, caller) })
+            .await
+            .expect("unified reporter test timed out")
+            .unwrap();
     });
 }
 
@@ -441,7 +439,7 @@ async fn exercise_session_and_write_fence(
     let mut watcher = script
         .start(VERSION, Guid([0xA3; 16]), Default::default())
         .unwrap();
-    watcher.wait_ready(Duration::from_secs(2)).unwrap();
+    watcher.wait_ready(HANG_GUARD).unwrap();
     watcher.observe_profiles(vec![profile]);
 
     // A callback delivered during identity resolution supersedes the first

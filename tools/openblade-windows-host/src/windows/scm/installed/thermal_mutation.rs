@@ -1,13 +1,15 @@
 //! One installed request composition. No fake or scenario transport is imported.
 #[cfg(feature = "service-profile-triggers-v1")]
 use super::thermal_drift;
+#[cfg(feature = "service-fan-mutation-v2")]
+use super::thermal_native::CleanupGuard;
 #[cfg(feature = "service-profile-triggers-v1")]
 use super::thermal_native::StorageGuard;
 #[cfg(not(test))]
 use super::thermal_native::{CustodialFiles, ProtectedFiles};
 use super::{
     Caller, Logon,
-    mailbox_read::{MailboxSource, ReadCustody},
+    mailbox_read::{CleanupScope, MailboxSource, ReadCustody},
     thermal_native::{SettleGuard, WindowsGuard},
     thermal_storage::{Foreground, Override, Storage},
 };
@@ -113,6 +115,9 @@ mod convergence;
 #[cfg(feature = "service-keyboard-driver-mode-v1")]
 #[path = "driver_mode_owner.rs"]
 mod keyboard;
+#[cfg(feature = "service-keyboard-driver-mode-v1")]
+#[path = "low_power_cleanup.rs"]
+mod low_power;
 #[cfg(feature = "service-profile-triggers-v1")]
 #[path = "thermal_policy_mutation.rs"]
 mod policy;
@@ -125,7 +130,9 @@ mod triggers;
 #[cfg(feature = "service-keyboard-driver-mode-v1")]
 pub(super) use keyboard::SHUTDOWN_BUDGET as KEYBOARD_SHUTDOWN_BUDGET;
 #[cfg(all(test, feature = "service-keyboard-driver-mode-v1"))]
-pub(super) use keyboard::{INTERVAL, Release};
+pub(super) use keyboard::{Boundary, INTERVAL, Release};
+#[cfg(all(test, feature = "service-keyboard-driver-mode-v1"))]
+pub(super) use low_power::MAXIMUM_AGE as LOW_POWER_MAXIMUM_AGE;
 #[cfg(all(test, feature = "service-profile-triggers-v1"))]
 pub(super) use triggers::{
     APPLICATION_SESSION_REQUIRED, LOW_POWER_DEFERRED, LOW_POWER_PERFORMANCE, LOW_POWER_STEP,
@@ -191,6 +198,53 @@ impl Settle for SettleGuard {
         self.verify_health()
     }
 }
+/// The Service's own owned-cleanup admission (`CleanupGuard::capture`). It
+/// needs no signed-in console user: Windows logs every user off before a
+/// system shutdown reaches services, and a suspend may come from the lock
+/// screen. Managed releases with nobody signed in too
+/// (`ServiceControlRuntime.ReleaseDriverModeCoreAsync` and its
+/// `FreshLightingCleanupAdmission`). Every authorization is fresh: origin
+/// trust for its scope, the lifecycle epoch it pinned under the gate's
+/// admission of that scope, a known AC line status, fresh competing-
+/// controller absence, and the exact original mailbox custody and generation.
+///
+/// It is not a `Fresh` or a `Settle`, so no request, reconciliation, acquire
+/// or settle permit can hold one. Exactly two permits do, and each fixes what
+/// it may write: with the keyboard owner, its release (`keyboard::DriverModePermit::release`,
+/// Normal after a fresh read of Driver) and the owned fan handback
+/// (`fan::FanHandbackPermit`, the owner's own Automatic cleanup stages after a
+/// fresh read of its manual state).
+#[cfg(feature = "service-fan-mutation-v2")]
+pub(super) trait Cleanup: Send + Sync {
+    fn scope(&self) -> CleanupScope;
+    fn authorize(&self) -> Option<ReadAdmission>;
+    /// The fresh Windows power kind, as `Fresh::on_battery` reads it.
+    fn on_battery(&self) -> Option<bool>;
+    fn verify_health(&self) -> io::Result<()>;
+}
+#[cfg(feature = "service-fan-mutation-v2")]
+impl Cleanup for CleanupGuard {
+    fn scope(&self) -> CleanupScope {
+        self.scope()
+    }
+    fn authorize(&self) -> Option<ReadAdmission> {
+        self.authorize()
+    }
+    fn on_battery(&self) -> Option<bool> {
+        self.on_battery()
+    }
+    fn verify_health(&self) -> io::Result<()> {
+        self.verify_health()
+    }
+}
+/// The age of a gate transition's QPC timestamp (`Lifecycle::age`).
+#[cfg(feature = "service-keyboard-driver-mode-v1")]
+type NoticeAge = Box<dyn Fn(i64) -> Option<std::time::Duration>>;
+/// Captures the Service's cleanup admission over a mailbox custody
+/// (`CleanupGuard::capture`).
+#[cfg(feature = "service-fan-mutation-v2")]
+type CleanupFactory =
+    Box<dyn Fn(Arc<dyn ReadCustody>, CleanupScope) -> io::Result<Arc<dyn Cleanup>>>;
 impl Fresh for WindowsGuard {
     fn capture_settle(
         &self,
@@ -273,10 +327,7 @@ type ReleaseHook = Rc<dyn Fn()>;
 type LowPowerProbe = Box<dyn Fn() -> Option<openblade_domain::low_power_gate::Transition>>;
 /// Reads the lifecycle's Windows power generation without sampling it
 /// (`Lifecycle::observe_power_kind(None)`); every SCM power notice samples.
-#[cfg(any(
-    feature = "service-profile-triggers-v1",
-    feature = "service-keyboard-driver-mode-v1"
-))]
+#[cfg(feature = "service-profile-triggers-v1")]
 type PowerProbe = Box<dyn Fn() -> Option<u64>>;
 /// Reads the console session and its primary user's SID
 /// (`thermal_native::console_user`); `None` while none is known.
@@ -333,12 +384,20 @@ pub(super) struct Runtime {
     // The lifecycle's ordinary write epoch (`Lifecycle::active`), so a step
     // refused by a fence that left the gate generation in place keeps its
     // debt (`reconcile_locked`). Unset reads unknown: no such retry.
-    // The keyboard Driver-mode owner re-captures when it moves.
-    #[cfg(any(
-        feature = "service-profile-triggers-v1",
-        feature = "service-keyboard-driver-mode-v1"
-    ))]
+    #[cfg(feature = "service-profile-triggers-v1")]
     admission_epoch: Rc<std::cell::OnceCell<PowerProbe>>,
+    // The Service's owned-cleanup admission (`Cleanup`), for the fan
+    // handback at Stop and shutdown and, with the keyboard owner, its
+    // release there and at low power. Unset admits no cleanup.
+    #[cfg(feature = "service-fan-mutation-v2")]
+    cleanup: Rc<std::cell::OnceCell<CleanupFactory>>,
+    // How long ago a gate transition's QPC timestamp was (`Lifecycle::age`).
+    // Unset reads a fresh notice.
+    #[cfg(feature = "service-keyboard-driver-mode-v1")]
+    notice_age: Rc<std::cell::OnceCell<NoticeAge>>,
+    // The low-power preparation's last suspend generation (`low_power`).
+    #[cfg(feature = "service-keyboard-driver-mode-v1")]
+    low_power_prepared: Rc<low_power::Prepared>,
     // Confirmed thermal drift, shared with the reader that observes it
     // (`thermal_drift`).
     #[cfg(feature = "service-profile-triggers-v1")]
@@ -602,11 +661,14 @@ impl Runtime {
                 feature = "service-keyboard-driver-mode-v1"
             ))]
             console: Rc::default(),
-            #[cfg(any(
-                feature = "service-profile-triggers-v1",
-                feature = "service-keyboard-driver-mode-v1"
-            ))]
+            #[cfg(feature = "service-profile-triggers-v1")]
             admission_epoch: Rc::default(),
+            #[cfg(feature = "service-fan-mutation-v2")]
+            cleanup: Rc::default(),
+            #[cfg(feature = "service-keyboard-driver-mode-v1")]
+            notice_age: Rc::default(),
+            #[cfg(feature = "service-keyboard-driver-mode-v1")]
+            low_power_prepared: Rc::default(),
             #[cfg(feature = "service-profile-triggers-v1")]
             drift: mailbox.drift(),
             fan_owner: Rc::default(),
@@ -656,15 +718,27 @@ impl Runtime {
     }
     /// Reads the lifecycle's ordinary write epoch from `probe`
     /// (`Runtime::admission_epoch`); it may be set once.
-    #[cfg(all(
-        test,
-        any(
-            feature = "service-profile-triggers-v1",
-            feature = "service-keyboard-driver-mode-v1"
-        )
-    ))]
+    #[cfg(all(test, feature = "service-profile-triggers-v1"))]
     pub(super) fn read_admission_epoch(&self, probe: impl Fn() -> Option<u64> + 'static) {
         assert!(self.admission_epoch.set(Box::new(probe)).is_ok());
+    }
+    /// Captures the Service's cleanup admission with `factory`
+    /// (`Runtime::cleanup`); it may be set once.
+    #[cfg(all(test, feature = "service-fan-mutation-v2"))]
+    pub(super) fn read_cleanup(
+        &self,
+        factory: impl Fn(Arc<dyn ReadCustody>, CleanupScope) -> io::Result<Arc<dyn Cleanup>> + 'static,
+    ) {
+        assert!(self.cleanup.set(Box::new(factory)).is_ok());
+    }
+    /// Reads a gate transition's age from `probe` (`Runtime::notice_age`);
+    /// it may be set once.
+    #[cfg(all(test, feature = "service-keyboard-driver-mode-v1"))]
+    pub(super) fn read_notice_age(
+        &self,
+        probe: impl Fn(i64) -> Option<std::time::Duration> + 'static,
+    ) {
+        assert!(self.notice_age.set(Box::new(probe)).is_ok());
     }
     /// Reads the console session's user from `probe` (`Runtime::console`);
     /// it may be set once.
@@ -702,13 +776,22 @@ impl Runtime {
             let origin = origin.clone();
             Box::new(move || origin.lifecycle.observe_power_kind(None))
         };
-        #[cfg(any(
-            feature = "service-profile-triggers-v1",
-            feature = "service-keyboard-driver-mode-v1"
-        ))]
+        #[cfg(feature = "service-profile-triggers-v1")]
         let admission_epoch: PowerProbe = {
             let origin = origin.clone();
             Box::new(move || origin.lifecycle.active())
+        };
+        #[cfg(feature = "service-fan-mutation-v2")]
+        let cleanup: CleanupFactory = {
+            let origin = origin.clone();
+            Box::new(move |custody, scope| {
+                Ok(CleanupGuard::capture(origin.clone(), custody, scope)? as Arc<dyn Cleanup>)
+            })
+        };
+        #[cfg(feature = "service-keyboard-driver-mode-v1")]
+        let notice_age: NoticeAge = {
+            let origin = origin.clone();
+            Box::new(move |timestamp| origin.lifecycle.age(timestamp))
         };
         Self {
             factory: Rc::new(move |sid, session, custody, capture| {
@@ -780,11 +863,14 @@ impl Runtime {
             console: Rc::new(std::cell::OnceCell::from(
                 Box::new(super::thermal_native::console_user) as ConsoleProbe,
             )),
-            #[cfg(any(
-                feature = "service-profile-triggers-v1",
-                feature = "service-keyboard-driver-mode-v1"
-            ))]
+            #[cfg(feature = "service-profile-triggers-v1")]
             admission_epoch: Rc::new(admission_epoch.into()),
+            #[cfg(feature = "service-fan-mutation-v2")]
+            cleanup: Rc::new(cleanup.into()),
+            #[cfg(feature = "service-keyboard-driver-mode-v1")]
+            notice_age: Rc::new(notice_age.into()),
+            #[cfg(feature = "service-keyboard-driver-mode-v1")]
+            low_power_prepared: Rc::default(),
             #[cfg(feature = "service-profile-triggers-v1")]
             drift: mailbox.drift(),
             fan_owner: Rc::default(),

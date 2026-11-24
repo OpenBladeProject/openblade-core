@@ -6,7 +6,7 @@ use openblade_domain::{
 use std::{
     io,
     sync::{
-        Mutex,
+        Arc, Mutex,
         atomic::{AtomicU8, Ordering},
     },
 };
@@ -88,7 +88,13 @@ mod tests {
 /// the epoch. Unknown events fence old operations but never establish
 /// resume; fresh device/session/controller proof is still required.
 #[derive(Default)]
-pub(crate) struct Lifecycle(Mutex<LifecycleState>);
+pub(crate) struct Lifecycle(Mutex<LifecycleState>, Arc<tokio::sync::Notify>);
+/// Marks a low-power cleanup's fence (`Lifecycle::fence_for`). Epochs count
+/// up from 1 and are exhausted only at `u64::MAX` (`checked_add`), so an
+/// epoch could carry this bit only after 2^63 notices, which no process
+/// receives. Each admission compares a fence with its own scope's fence.
+#[cfg_attr(not(feature = "service-keyboard-driver-mode-v1"), allow(dead_code))]
+const CLEANUP_GENERATION: u64 = 1 << 63;
 struct LifecycleState {
     epoch: u64,
     gate: LowPowerGate,
@@ -177,11 +183,38 @@ impl Lifecycle {
             state.epoch = state.epoch.checked_add(1).unwrap_or(0);
         }
         if let Some(signal) = signal(&mut state.display) {
-            // A stale signal changes nothing but may have fenced. Nothing
-            // subscribes to transitions yet; a subscriber is notified after
-            // this lock is released, as managed raises TransitionChanged.
-            let _ = state.gate.apply(signal, timestamp);
+            // A stale signal changes nothing but may have fenced. A new
+            // suspend generation wakes the low-power cleanup after this lock
+            // is released, as managed raises TransitionChanged to its
+            // coordinator (`ServiceSessionPowerTransitionCoordinator`).
+            let accepted = state.gate.apply(signal, timestamp);
+            drop(state);
+            if accepted.is_some_and(|accepted| accepted.changed && accepted.transition.suspending())
+            {
+                // One stored permit: a suspend while the waiter is busy is
+                // seen at its next wait, never lost.
+                self.1.notify_one();
+            }
         }
+    }
+    /// Notified once for each new suspend generation (`apply`). Its waiter
+    /// reads the transition itself (`low_power`), so a stale or coalesced
+    /// notification admits nothing.
+    #[cfg_attr(not(feature = "service-keyboard-driver-mode-v1"), allow(dead_code))]
+    pub(crate) fn suspended(&self) -> Arc<tokio::sync::Notify> {
+        self.1.clone()
+    }
+    /// How long ago the QPC `timestamp` of a gate transition was, read on the
+    /// same clock every notice stamps with. `None` for a timestamp in the
+    /// future. Managed measures a transition's age the same way
+    /// (`ServiceSessionPowerTransitionCoordinator`, `TimeProvider.GetElapsedTime`).
+    #[cfg_attr(not(feature = "service-keyboard-driver-mode-v1"), allow(dead_code))]
+    pub(crate) fn age(&self, timestamp: i64) -> Option<std::time::Duration> {
+        let ticks = u128::try_from(i128::from(qpc::now()) - i128::from(timestamp)).ok()?;
+        let nanos = ticks * 1_000_000_000 / u128::from(qpc::frequency().get());
+        Some(std::time::Duration::from_nanos(
+            u64::try_from(nanos).unwrap_or(u64::MAX),
+        ))
     }
     /// The epoch a write of this scope pins now, or `None` while the gate
     /// refuses that scope. A capture pins it and every per-write
@@ -191,6 +224,25 @@ impl Lifecycle {
     pub(crate) fn epoch_for(&self, write: WriteScope) -> Option<u64> {
         let state = self.0.lock().ok()?;
         (state.epoch != 0 && state.gate.admits(write)).then_some(state.epoch)
+    }
+    /// What an owned cleanup of this scope pins now, or `None` while the
+    /// gate refuses it. Owned Stop pins the ordinary epoch (`epoch_for`), so
+    /// any later notice fences it. A low-power cleanup pins its suspend
+    /// generation only, as managed's `IsActiveForGeneration` does: a session
+    /// notice during the suspend moves the epoch and leaves the cleanup
+    /// admitted, and the generation's end (a resume, DisplayOn or another
+    /// suspend) refuses it. `CLEANUP_GENERATION` keeps that value apart from
+    /// every epoch, so it never equals an ordinary admission.
+    #[cfg_attr(not(feature = "service-keyboard-driver-mode-v1"), allow(dead_code))]
+    pub(crate) fn fence_for(&self, write: WriteScope) -> Option<u64> {
+        let state = self.0.lock().ok()?;
+        if state.epoch == 0 || !state.gate.admits(write) {
+            return None;
+        }
+        Some(match write {
+            WriteScope::Ordinary => state.epoch,
+            WriteScope::LowPowerCleanup { generation } => generation | CLEANUP_GENERATION,
+        })
     }
     /// The epoch an ordinary operation pins, or `None` in low power.
     pub(crate) fn active(&self) -> Option<u64> {
@@ -371,6 +423,40 @@ mod lifecycle_tests {
         lifecycle.ingress(SERVICE_CONTROL_POWEREVENT, 18);
         assert_eq!(lifecycle.active(), None);
     }
+    /// A low-power cleanup's fence is its suspend generation: a lock or
+    /// unlock during the suspend moves the epoch, which fences owned Stop,
+    /// and leaves the cleanup admitted; the resume refuses it.
+    #[test]
+    fn a_low_power_cleanup_fences_on_its_generation_only() {
+        use windows_sys::Win32::System::Services::{
+            SERVICE_CONTROL_POWEREVENT, SERVICE_CONTROL_SESSIONCHANGE,
+        };
+        let lifecycle = Lifecycle::default();
+        let ordinary = lifecycle.fence_for(WriteScope::Ordinary);
+        assert_eq!(ordinary, lifecycle.active());
+        lifecycle.ingress(SERVICE_CONTROL_SESSIONCHANGE, 7);
+        assert_ne!(lifecycle.fence_for(WriteScope::Ordinary), ordinary);
+        lifecycle.ingress(SERVICE_CONTROL_POWEREVENT, 4);
+        let generation = lifecycle.low_power().unwrap().generation;
+        let cleanup = WriteScope::LowPowerCleanup { generation };
+        let epoch = lifecycle.epoch_for(cleanup);
+        let fence = lifecycle.fence_for(cleanup);
+        assert_eq!(fence, Some(generation | CLEANUP_GENERATION));
+        assert_eq!(lifecycle.fence_for(WriteScope::Ordinary), None);
+        lifecycle.ingress(SERVICE_CONTROL_SESSIONCHANGE, 8);
+        lifecycle.ingress(SERVICE_CONTROL_SESSIONCHANGE, 7);
+        assert_ne!(lifecycle.epoch_for(cleanup), epoch);
+        assert_eq!(lifecycle.fence_for(cleanup), fence);
+        assert_eq!(
+            lifecycle.fence_for(WriteScope::LowPowerCleanup {
+                generation: generation + 2
+            }),
+            None
+        );
+        lifecycle.ingress(SERVICE_CONTROL_POWEREVENT, 18);
+        assert_eq!(lifecycle.fence_for(cleanup), None);
+        assert!(lifecycle.fence_for(WriteScope::Ordinary).is_some());
+    }
     #[test]
     fn power_generation_advances_only_on_a_changed_kind() {
         use windows_sys::Win32::System::Services::{
@@ -536,7 +622,7 @@ mod lifecycle_tests {
         assert!(lifecycle.active().is_some());
     }
     #[test]
-    fn the_gate_refuses_every_write_but_the_captured_automatic_fan_cleanup() {
+    fn the_gate_refuses_every_write_but_the_captured_low_power_cleanup() {
         let lifecycle = Lifecycle::default();
         let request = lifecycle.active().unwrap();
         // Per-write authorization compares the pinned epoch with the gate's
@@ -544,12 +630,12 @@ mod lifecycle_tests {
         lifecycle.0.lock().unwrap().gate.apply(Signal::Suspend, 1);
         assert_eq!(lifecycle.epoch_for(WriteScope::Ordinary), None);
         assert_eq!(lifecycle.active(), None);
-        let cleanup = WriteScope::LowPowerFanAutomatic {
+        let cleanup = WriteScope::LowPowerCleanup {
             generation: lifecycle.low_power().unwrap().generation,
         };
         assert_eq!(lifecycle.epoch_for(cleanup), Some(request));
         assert_eq!(
-            lifecycle.epoch_for(WriteScope::LowPowerFanAutomatic { generation: 3 }),
+            lifecycle.epoch_for(WriteScope::LowPowerCleanup { generation: 3 }),
             None
         );
         // The resume ends the cleanup scope and fences the request's epoch.
@@ -561,7 +647,7 @@ mod lifecycle_tests {
         assert_eq!(lifecycle.epoch_for(cleanup), None);
         // Exhaustion closes every scope and the timer view.
         lifecycle.0.lock().unwrap().epoch = 0;
-        let current = WriteScope::LowPowerFanAutomatic { generation: 3 };
+        let current = WriteScope::LowPowerCleanup { generation: 3 };
         assert_eq!(lifecycle.epoch_for(current), None);
         assert_eq!(lifecycle.low_power(), None);
     }
@@ -648,5 +734,45 @@ mod lifecycle_tests {
         assert_eq!(lifecycle.low_power(), None);
         assert!(lifecycle.low_power_or_unknown());
         assert_eq!(lifecycle.active(), None);
+    }
+    /// Each new suspend generation stores one wake for the low-power
+    /// preparation; a repeated suspend, a resume or a power notice that keeps
+    /// the system active stores none.
+    #[tokio::test]
+    async fn a_new_suspend_generation_wakes_the_preparation_once() {
+        use windows_sys::Win32::System::Services::SERVICE_CONTROL_POWEREVENT as POWER;
+        let woken = async |wake: &tokio::sync::Notify| {
+            tokio::time::timeout(std::time::Duration::from_millis(20), wake.notified())
+                .await
+                .is_ok()
+        };
+        let lifecycle = Lifecycle::default();
+        let wake = lifecycle.suspended();
+        lifecycle.ingress(POWER, 10);
+        assert!(!woken(&wake).await);
+        lifecycle.ingress(POWER, 4);
+        assert!(woken(&wake).await);
+        lifecycle.ingress(POWER, 4);
+        assert!(
+            !woken(&wake).await,
+            "a repeated suspend is the same generation"
+        );
+        lifecycle.ingress(POWER, 18);
+        assert!(!woken(&wake).await);
+        lifecycle.ingress(POWER, 4);
+        assert!(woken(&wake).await);
+    }
+    /// A transition's age is read on the notice clock; a future timestamp
+    /// has none.
+    #[test]
+    fn a_transition_age_reads_the_notice_clock() {
+        let lifecycle = Lifecycle::default();
+        let age = lifecycle.age(qpc::now() - 15_000_000).unwrap();
+        let expected = std::time::Duration::from_millis(1500);
+        assert!(
+            age >= expected && age < expected + std::time::Duration::from_millis(1),
+            "{age:?}"
+        );
+        assert_eq!(lifecycle.age(i64::MAX), None);
     }
 }

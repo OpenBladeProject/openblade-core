@@ -103,7 +103,8 @@ device admission for certification.
 ## Local preflight
 
 `build/Publish.ps1` produces
-`artifacts/win-x64/OpenBlade-Store-Readiness.json`. The report proves:
+`artifacts/win-x64/OpenBlade-Store-Readiness.json` unless it is given
+`-SkipStoreReadiness`, which pull-request CI uses. The report proves:
 
 - the Store package fields match the checked-in contract;
 - all payloads remain embedded in the validated Burn bundle;

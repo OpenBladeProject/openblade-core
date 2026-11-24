@@ -1302,6 +1302,12 @@
   <data name="Windows did not confirm the requested start-at-sign-in setting." xml:space="preserve">
     <value>Windows 未确认请求的登录时启动设置。</value>
   </data>
+  <data name="Windows Dynamic Lighting is on and can override OpenBlade keyboard and Vapor chamber lighting. If your OpenBlade lighting doesn’t show, turn off Use Dynamic Lighting on my devices in Settings &gt; Personalization &gt; Dynamic Lighting." xml:space="preserve">
+    <value>Windows 动态照明已开启，可能会覆盖 OpenBlade 设置的键盘和均热板灯光。如果 OpenBlade 灯光未显示，请在“设置”&gt;“个性化”&gt;“动态照明”中关闭“在我的设备上使用动态照明”。</value>
+  </data>
+  <data name="Windows Dynamic Lighting is on and can override OpenBlade keyboard lighting. If your OpenBlade lighting doesn’t show, turn off Use Dynamic Lighting on my devices in Settings &gt; Personalization &gt; Dynamic Lighting." xml:space="preserve">
+    <value>Windows 动态照明已开启，可能会覆盖 OpenBlade 设置的键盘灯光。如果 OpenBlade 灯光未显示，请在“设置”&gt;“个性化”&gt;“动态照明”中关闭“在我的设备上使用动态照明”。</value>
+  </data>
   <data name="Windows Dynamic Lighting manages keyboard lighting." xml:space="preserve">
     <value>Windows 动态照明管理键盘灯光。</value>
   </data>
@@ -1374,6 +1380,12 @@
   <data name="Pad-less HyperBoost is detected but is not available with the current admission evidence." xml:space="preserve">
     <value>已检测到无散热垫 HyperBoost，但当前准入证据尚不支持使用。</value>
   </data>
+  <data name="Synapse doesn't offer HyperBoost on this laptop configuration, so OpenBlade doesn't start it." xml:space="preserve">
+    <value>Synapse 不为此笔记本配置提供 HyperBoost，因此 OpenBlade 不会启用它。</value>
+  </data>
+  <data name="Synapse doesn't offer HyperBoost on this laptop configuration. You can still turn it off." xml:space="preserve">
+    <value>Synapse 不为此笔记本配置提供 HyperBoost。你仍可以将其关闭。</value>
+  </data>
   <data name="Detected on this laptop, but OpenBlade cannot safely change it with the current evidence." xml:space="preserve">
     <value>已在此笔记本上检测到该功能，但根据当前证据，OpenBlade 无法安全地更改它。</value>
   </data>
@@ -1445,6 +1457,9 @@
   </data>
   <data name="OpenBlade could not confirm a previous change. Select Check current state before trying again." xml:space="preserve">
     <value>OpenBlade 未能确认之前的更改。重试前，请选择“检查当前状态”。</value>
+  </data>
+  <data name="OpenBlade could not confirm a previous change. Select Check current state. If GPU clock tuning was part of it, OpenBlade checks it again when the GPU is next in use or the power source changes." xml:space="preserve">
+    <value>OpenBlade 未能确认之前的更改。请选择“检查当前状态”。如果其中包含 GPU 时钟调校，OpenBlade 会在下次使用 GPU 或供电方式改变时再次检查。</value>
   </data>
   <data name="OpenBlade could not identify the charger. Connect the laptop’s AC charger, then select Check current state." xml:space="preserve">
     <value>OpenBlade 无法识别电源适配器。连接笔记本的交流电源适配器，然后选择“检查当前状态”。</value>
@@ -1817,14 +1832,8 @@
   <data name="Optimizer recovery is blocked. Refresh to check its status." xml:space="preserve"><value>优化器恢复受阻。请刷新以检查状态。</value></data>
   <data name="CPU recovery includes power settings and cannot be restored here." xml:space="preserve"><value>CPU 恢复包含功耗设置，无法在此处恢复。</value></data>
   <data name="Recovery of earlier saved CPU settings is blocked." xml:space="preserve"><value>先前保存的 CPU 设置恢复已受阻。</value></data>
-  <data name="CPU/GPU curves" xml:space="preserve">
-    <value>CPU/GPU 曲线</value>
-  </data>
   <data name="Mirror keyboard" xml:space="preserve">
     <value>同步键盘灯效</value>
-  </data>
-  <data name="Cooling-pad control is paused. Refresh status before making another change." xml:space="preserve">
-    <value>散热底座控制已暂停。请刷新状态后再更改设置。</value>
   </data>
   <data name="Reconnecting. Showing the last confirmed cooling-pad state." xml:space="preserve">
     <value>正在重新连接。显示的是散热底座上次确认的状态。</value>
@@ -1832,38 +1841,8 @@
   <data name="OpenBlade is controlling the cooling pad." xml:space="preserve">
     <value>OpenBlade 正在控制散热底座。</value>
   </data>
-  <data name="Connected. Choose settings and apply them to take control." xml:space="preserve">
-    <value>已连接。选择并应用设置以开始控制。</value>
-  </data>
-  <data name="Configured fan target: {0} RPM" xml:space="preserve">
-    <value>已设定风扇目标转速：{0} RPM</value>
-  </data>
-  <data name="Configured fan target unavailable" xml:space="preserve">
-    <value>无法获取已设定的风扇目标转速</value>
-  </data>
-  <data name="Configured brightness: {0}%" xml:space="preserve">
-    <value>已配置亮度：{0}%</value>
-  </data>
-  <data name="Configured brightness unavailable" xml:space="preserve">
-    <value>无法获取已配置的亮度</value>
-  </data>
-  <data name="Check fan speeds, increasing curve temperatures, and six-digit RGB colors." xml:space="preserve">
-    <value>请检查风扇转速、曲线温度递增顺序和六位 RGB 色值。</value>
-  </data>
-  <data name="The cooling-pad change was blocked. Refresh status and check Troubleshooting." xml:space="preserve">
-    <value>散热底座设置更改已被阻止。请刷新状态并查看“故障排除”。</value>
-  </data>
-  <data name="The cooling-pad change could not be confirmed. Refresh status before continuing." xml:space="preserve">
-    <value>无法确认散热底座设置更改。请刷新状态后再继续。</value>
-  </data>
   <data name="Cooling-pad status is unavailable. Showing the last confirmed state." xml:space="preserve">
     <value>无法获取散热底座状态。显示的是上次确认的状态。</value>
-  </data>
-  <data name="Apply new settings, or release control to restore the captured cooling-pad settings." xml:space="preserve">
-    <value>请应用新设置，或释放控制以恢复接管前读取的散热底座设置。</value>
-  </data>
-  <data name="Keep current" xml:space="preserve">
-    <value>保持当前</value>
   </data>
   <data name="Spectrum" xml:space="preserve">
     <value>光谱循环</value>
@@ -1879,4 +1858,22 @@
   </data>
   <data name="Vapor chamber lighting" xml:space="preserve"><value>均热板灯光</value></data>
   <data name="Touchpad status indicator" xml:space="preserve"><value>触控板状态指示灯</value></data>
+  <data name="Quiet" xml:space="preserve">
+    <value>安静</value>
+  </data>
+  <data name="A change to the cooling pad could not be confirmed. Check the pad before making another change." xml:space="preserve">
+    <value>无法确认散热底座的更改。请先检查散热底座，再进行其他更改。</value>
+  </data>
+  <data name="Choose a setting, or release control to restore the pad's own settings." xml:space="preserve">
+    <value>请选择一项设置，或释放控制以恢复散热底座自身的设置。</value>
+  </data>
+  <data name="Connected. The pad is using its own settings." xml:space="preserve">
+    <value>已连接。散热底座正在使用自身的设置。</value>
+  </data>
+  <data name="The cooling pad did not accept the change. Check Troubleshooting for the reason." xml:space="preserve">
+    <value>散热底座未接受此更改。请在“疑难解答”中查看原因。</value>
+  </data>
+  <data name="Check the cooling-pad settings and try again." xml:space="preserve">
+    <value>请检查散热底座设置后重试。</value>
+  </data>
 </root>

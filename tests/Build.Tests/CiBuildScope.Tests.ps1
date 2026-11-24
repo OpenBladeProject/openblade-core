@@ -575,7 +575,7 @@ foreach ($invalidJob in @(
 
 $fullTest = [Regex]::Match($quality, '(?ms)^      - name: Test\r?\n.*?(?=^      - name:)').Value
 foreach ($required in @(
-        "if: inputs.validation-mode == 'full'",
+        "if: matrix.shard == 'solution'",
         'shell: pwsh',
         '. ./build/NativeWindowsFixtures.ps1',
         'Invoke-OpenBladeNativeFixtureScope',

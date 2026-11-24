@@ -4,7 +4,7 @@
 //! port. No hardware or operating-system supplier is reached.
 use super::*;
 use crate::discovery::performance::DeviceModeRead;
-use crate::installed::readiness::thermal_mutation::{INTERVAL, Release};
+use crate::installed::readiness::thermal_mutation::{Boundary, INTERVAL, Release};
 use openblade_protocol::device_mode::DeviceMode;
 use std::cell::Cell;
 use std::rc::Rc;
@@ -15,6 +15,8 @@ const SUSPEND: u32 = 4;
 const RESUME: u32 = 18;
 /// PBT_APMPOWERSTATUSCHANGE: a power notice that advances the lifecycle epoch.
 const SETTING: u32 = 10;
+const SESSION_CHANGE: u32 = 14;
+const WTS_SESSION_LOCK: u32 = 7;
 const NORMAL: u8 = 0;
 const DRIVER: u8 = 3;
 /// The release's owned-Stop fresh authorization at the job's checkpoint
@@ -35,12 +37,17 @@ async fn owner_rig(mode: u8) -> (Rig, Rc<Cell<bool>>) {
     let custody = rig.custody.clone();
     rig.runtime
         .read_low_power(move || custody.lifecycle.low_power());
-    let custody = rig.custody.clone();
-    rig.runtime
-        .read_admission_epoch(move || custody.lifecycle.active());
+    cleanup(&rig);
     let named = Rc::new(Cell::new(true));
     console(&rig, named.clone());
     (rig, named)
+}
+/// The Service cleanup admission over the rig custody, as
+/// `Runtime::native` wires `CleanupGuard`.
+fn cleanup(rig: &Rig) {
+    let custody = rig.custody.clone();
+    rig.runtime
+        .read_cleanup(move |passed, scope| CleanupFresh::capture(custody.clone(), passed, scope));
 }
 /// The console probe: the rig's user while `named` is set.
 fn console(rig: &Rig, named: Rc<Cell<bool>>) {
@@ -60,6 +67,10 @@ async fn fan_owner_rig() -> Rig {
     rig.get().await;
     let outcome = rig.request(fan_request(101, Some(1), 3700)).await;
     assert_eq!(outcome["result"]["status"], 1, "{outcome}");
+    cleanup(&rig);
+    let custody = rig.custody.clone();
+    rig.runtime
+        .read_low_power(move || custody.lifecycle.low_power());
     console(&rig, Rc::new(Cell::new(true)));
     tick(&rig).await;
     assert_eq!(owner(&rig), (true, false, false));
@@ -69,7 +80,7 @@ async fn fan_owner_rig() -> Rig {
 async fn observe(rig: &Rig) {
     assert_eq!(rig.get().await["success"], true);
     let observed = rig
-        .request(json!({"operation":"observeState","version":85,"requestId":"dddddddd-bbbb-cccc-dddd-000000000071","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0}))
+        .request(json!({"operation":"observeState","version":90,"requestId":"dddddddd-bbbb-cccc-dddd-000000000071","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0}))
         .await;
     assert_eq!(observed["success"], true, "{observed}");
     assert!(rig.reader.driver_mode_verified());
@@ -78,12 +89,20 @@ async fn observe(rig: &Rig) {
 async fn tick(rig: &Rig) {
     try_tick(rig).await.unwrap();
 }
+/// One maintenance step, run as a request's exchange is (`Rig::held`): its job
+/// takes its budget from the step's start and a loaded host spends none of it.
 async fn try_tick(rig: &Rig) -> io::Result<()> {
-    let maintain = rig.source.lock().await.maintain_driver_mode();
-    match maintain {
-        Some(maintain) => maintain.await,
-        None => Ok(()),
-    }
+    rig.held(
+        HeldClock::CatchUp,
+        Box::pin(async {
+            let maintain = rig.source.lock().await.maintain_driver_mode();
+            match maintain {
+                Some(maintain) => maintain.await,
+                None => Ok(()),
+            }
+        }),
+    )
+    .await
 }
 /// A due step while the recorded mode is still current, so a step after a
 /// confirmed Driver finds it and starts no job (managed reads and finds it).
@@ -103,7 +122,7 @@ async fn later(rig: &Rig) {
 /// query of its own, so only the owner records a mode here.
 async fn published(rig: &Rig) -> Option<bool> {
     let observed = rig
-        .request(json!({"operation":"observeState","version":85,"requestId":"dddddddd-bbbb-cccc-dddd-000000000072","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0}))
+        .request(json!({"operation":"observeState","version":90,"requestId":"dddddddd-bbbb-cccc-dddd-000000000072","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0}))
         .await;
     observed["status"]["keyboardDriverModeActive"].as_bool()
 }
@@ -148,10 +167,16 @@ fn record(rig: &Rig, mode: DeviceMode) {
 }
 /// The shutdown release on its own, and its outcome.
 async fn release(rig: &Rig) -> Option<Release> {
-    rig.runtime
-        .release_driver_mode(&mailbox(rig))
-        .await
-        .unwrap();
+    rig.held(
+        HeldClock::CatchUp,
+        Box::pin(async {
+            rig.runtime
+                .release_driver_mode(&mailbox(rig))
+                .await
+                .unwrap();
+        }),
+    )
+    .await;
     rig.runtime.driver_mode_release()
 }
 /// Arms a competing controller from the `nth` fresh authorization after
@@ -850,113 +875,717 @@ async fn the_release_restores_any_driver_mode_and_reports_a_foreign_change() {
     rig.stop().await;
 }
 
-/// The release uses the latest ordinary capture, whose admission pins the
-/// lifecycle write epoch, never a settle capture: after a power or session
-/// notice, the next tick re-captures with no job, even between steps, and
-/// the release restores Normal. Without that tick, or once the session has
-/// changed, the release is refused with nothing sent.
+/// The suspend notice (PBT_APMSUSPEND), as `Lifecycle::notice` delivers it.
+fn suspend(rig: &Rig) {
+    rig.custody.lifecycle.ingress(POWER, SUSPEND);
+}
+/// The last prepared suspend generation's keyboard outcome.
+fn prepared(rig: &Rig) -> Option<Release> {
+    rig.runtime.low_power_outcome_for_tests()
+}
+/// The progress of every fan journal row.
+fn progress(rig: &Rig) -> Vec<u64> {
+    fan_rows(rig)
+        .iter()
+        .filter_map(|row| row["progress"].as_u64())
+        .collect()
+}
+
+/// A release holds the Service's cleanup admission, never a console
+/// capture: with nobody signed in, the console switched and the write epoch
+/// moved since the last step, the release still restores Normal, while the
+/// same conditions refuse every acquire.
 #[tokio::test]
-async fn the_tick_recaptures_when_the_write_epoch_moves() {
-    // A notice, then a tick: one capture, no exchange, then a release.
-    let (rig, _) = owner_rig(NORMAL).await;
+async fn the_release_needs_no_console_user() {
+    let (rig, named) = owner_rig(NORMAL).await;
     rig.custody.pinned_fresh.store(true, Ordering::Release);
     tick(&rig).await;
     assert_eq!(owner(&rig), (true, false, false));
-    let (start, sent) = (captures(&rig), keyboard(&rig).len());
-    tick(&rig).await;
-    assert_eq!(captures(&rig), start, "an unmoved epoch captures nothing");
+    named.set(false);
+    rig.custody.current_console.store(false, Ordering::Release);
+    rig.custody.current_session.store(8, Ordering::Release);
     rig.custody.lifecycle.ingress(POWER, SETTING);
-    tick(&rig).await;
-    assert_eq!((captures(&rig), keyboard(&rig).len()), (start + 1, sent));
-    tick(&rig).await;
-    assert_eq!(captures(&rig), start + 1, "one capture per epoch");
+    let captured = captures(&rig);
+    later(&rig).await;
+    assert_eq!(
+        captures(&rig),
+        captured,
+        "no console user, no acquire capture"
+    );
     assert_eq!(release(&rig).await, Some(Release::Restored));
-    assert_eq!(mode(&rig), NORMAL);
+    assert_eq!((sets(&rig), mode(&rig)), (2, NORMAL));
+    assert_eq!(
+        captures(&rig),
+        captured,
+        "the release captured no console user"
+    );
+    rig.custody.current_session.store(7, Ordering::Release);
+    rig.custody.current_console.store(true, Ordering::Release);
     rig.stop().await;
+}
 
-    // A notice and no tick: the pinned capture refuses.
-    let (rig, _) = owner_rig(NORMAL).await;
-    rig.custody.pinned_fresh.store(true, Ordering::Release);
+/// Each cleanup refusal sends nothing and leaves the mode unchanged: a
+/// competing controller, unknown Windows power, a revoked custody (the
+/// device's exact custody), or no cleanup admission composed at all.
+#[tokio::test]
+async fn the_cleanup_admission_refuses_with_nothing_sent() {
+    for refusal in ["controller", "power", "custody", "uncomposed"] {
+        let (rig, _) = if refusal == "uncomposed" {
+            let files = MemoryFiles::default();
+            files.profiles(1);
+            let rig = Rig::new(files);
+            rig.port.state.lock().unwrap().device_mode = DRIVER;
+            observe(&rig).await;
+            (rig, Rc::new(Cell::new(true)))
+        } else {
+            owner_rig(NORMAL).await
+        };
+        tick(&rig).await;
+        let sent = keyboard(&rig).len();
+        match refusal {
+            "controller" => rig.custody.controller.store(true, Ordering::Release),
+            "power" => rig.port.state.lock().unwrap().windows_on_battery = Some(None),
+            "custody" => rig.custody.live.store(false, Ordering::Release),
+            _ => {}
+        }
+        assert_eq!(release(&rig).await, Some(Release::Unadmitted), "{refusal}");
+        assert_eq!(keyboard(&rig).len(), sent, "{refusal}");
+        assert_eq!(mode(&rig), DRIVER, "{refusal}");
+        rig.custody.controller.store(false, Ordering::Release);
+        rig.port.state.lock().unwrap().windows_on_battery = None;
+        rig.custody.live.store(true, Ordering::Release);
+    }
+}
+
+/// A confirmed suspend releases the keyboard at once and once per
+/// generation, under the cleanup admission for that generation with nobody
+/// signed in, and leaves owned manual fans as they are: rule 1 names only the
+/// keyboard at a low-power boundary, and native has no Fan Stop to restore.
+/// Owned Stop still hands them back, and the saved fan override is unchanged.
+#[tokio::test]
+async fn a_suspend_releases_the_keyboard_and_leaves_the_fans() {
+    let rig = fan_owner_rig().await;
+    let saved = rig.files.read("manual-overrides.json").unwrap();
+    assert!(saved.is_some());
+    let rows = progress(&rig);
+    let before = rig.port.state.lock().unwrap().sent.len();
+    rig.custody.current_console.store(false, Ordering::Release);
+    suspend(&rig);
     tick(&rig).await;
-    rig.custody.lifecycle.ingress(POWER, SETTING);
-    assert_eq!(release(&rig).await, Some(Release::Unadmitted));
+    assert_eq!(prepared(&rig), Some(Release::Restored));
+    {
+        let state = rig.port.state.lock().unwrap();
+        let fans_sent = state.sent[before..]
+            .iter()
+            .filter(|(class, ..)| *class != 0)
+            .count();
+        assert_eq!(fans_sent, 0);
+        assert_eq!((state.device_mode, state.fans), (NORMAL, [1, 1]));
+    }
+    assert_eq!(progress(&rig), rows);
+    assert_eq!(owner(&rig), (false, false, false));
+    // The same generation is prepared once.
+    let sent = rig.port.state.lock().unwrap().sent.len();
+    tick(&rig).await;
+    tick(&rig).await;
+    assert_eq!(rig.port.state.lock().unwrap().sent.len(), sent);
+    assert_eq!(prepared(&rig), Some(Release::Restored));
+    // A second release of that generation is its one attempt again, and
+    // sends nothing, not even the baseline query.
+    let generation = rig.custody.lifecycle.low_power().unwrap().generation;
+    let again = rig
+        .runtime
+        .release_driver_mode_for(
+            &mailbox(&rig),
+            Boundary::LowPower(generation),
+            Duration::from_millis(900),
+        )
+        .await
+        .unwrap();
+    assert_eq!(again, Release::Attempted);
+    assert_eq!(rig.port.state.lock().unwrap().sent.len(), sent);
+    rig.custody.current_console.store(true, Ordering::Release);
+    assert_eq!(rig.files.read("manual-overrides.json").unwrap(), saved);
+    rig.custody.lifecycle.ingress(POWER, RESUME);
+    shutdown(&rig).await.unwrap();
+    assert_eq!(rig.port.state.lock().unwrap().fans, [0, 0]);
+}
+
+/// A suspend from a late notice on a slow device leaves the fan owner whole
+/// (reviewer R1): no row, so after the resume a manual request and a return
+/// to Automatic both apply, and the Stop that follows succeeds.
+#[tokio::test]
+async fn a_late_suspend_on_a_slow_device_leaves_the_fan_owner_whole() {
+    let rig = fan_owner_rig().await;
+    rig.runtime
+        .read_notice_age(|_| Some(Duration::from_millis(1250)));
+    rig.port.state.lock().unwrap().latency = Some(Duration::from_millis(150));
+    let rows = progress(&rig);
+    suspend(&rig);
+    tick(&rig).await;
+    assert_eq!(progress(&rig), rows);
+    assert_eq!(rig.port.state.lock().unwrap().fans, [1, 1]);
+    rig.port.state.lock().unwrap().latency = None;
+    rig.custody.lifecycle.ingress(POWER, RESUME);
+    let manual = rig.request(fan_request(102, Some(1), 3600)).await;
+    assert_eq!(manual["result"]["status"], 1, "{manual}");
+    let automatic = rig.request(fan_request(103, None, 3700)).await;
+    assert_eq!(automatic["result"]["status"], 1, "{automatic}");
+    assert_eq!(rig.port.state.lock().unwrap().fans, [0, 0]);
+    shutdown(&rig).await.unwrap();
+}
+
+/// An observeState request with request number `n`, as a client's status
+/// read; its reply.
+#[cfg(feature = "service-profile-triggers-v1")]
+async fn observed(rig: &Rig, n: u32) -> Value {
+    rig.request(json!({"operation":"observeState","version":90,"requestId":format!("dddddddd-bbbb-cccc-dddd-{n:012}"),"includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0}))
+        .await
+}
+/// One lifecycle tick and the reconciliation it starts.
+#[cfg(feature = "service-profile-triggers-v1")]
+async fn lifecycle_tick(rig: &Rig) {
+    let reconcile = rig.source.lock().await.reconcile_lifecycle();
+    if let Some(reconcile) = reconcile {
+        reconcile.await.unwrap();
+    }
+}
+/// Wires the lifecycle tick as `Runtime::native` does and runs its first
+/// pass.
+#[cfg(feature = "service-profile-triggers-v1")]
+async fn wire_lifecycle(rig: &Rig) {
+    let epoch = rig.custody.clone();
+    rig.runtime
+        .read_admission_epoch(move || epoch.lifecycle.active());
+    let custody = rig.custody.clone();
+    rig.runtime
+        .read_power_generation(move || custody.lifecycle.observe_power_kind(None));
+    Fresh::power_generation(rig.custody.as_ref());
+    lifecycle_tick(rig).await;
+}
+
+/// With the lifecycle triggers, a suspend and resume latch no fan drift
+/// (reviewer R4): the suspend leaves owned manual fans as OpenBlade applied
+/// them, so no reading after the resume is an external change.
+#[cfg(feature = "service-profile-triggers-v1")]
+#[tokio::test]
+async fn a_suspend_and_resume_latch_no_fan_drift() {
+    let rig = fan_owner_rig().await;
+    wire_lifecycle(&rig).await;
+    let before = observed(&rig, 90).await;
+    assert_eq!(before["status"]["externalChanges"], json!([]), "{before}");
+    suspend(&rig);
+    tick(&rig).await;
+    lifecycle_tick(&rig).await;
+    assert_eq!(prepared(&rig), Some(Release::Restored));
+    rig.custody.lifecycle.ingress(POWER, RESUME);
+    for round in 0..4u32 {
+        lifecycle_tick(&rig).await;
+        let status = observed(&rig, 91 + round).await;
+        later(&rig).await;
+        assert_eq!(
+            status["status"]["externalChanges"],
+            json!([]),
+            "{round}: {status}"
+        );
+        assert_eq!(rig.port.state.lock().unwrap().fans, [1, 1], "{round}");
+    }
+}
+
+/// In low power the step acquires nothing; once Windows reports the system
+/// active again (PBT_APMRESUMEAUTOMATIC or PBT_APMRESUMESUSPEND) the 15 s
+/// cadence reacquires, and the next suspend generation releases again.
+#[tokio::test]
+async fn the_release_blocks_reacquire_until_resume() {
+    for resume in [RESUME, 7] {
+        let (rig, _) = owner_rig(NORMAL).await;
+        tick(&rig).await;
+        suspend(&rig);
+        tick(&rig).await;
+        assert_eq!(rig.runtime.driver_mode_release(), Some(Release::Restored));
+        assert_eq!((sets(&rig), mode(&rig)), (2, NORMAL), "{resume}");
+        for _ in 0..3 {
+            later(&rig).await;
+        }
+        assert_eq!(sets(&rig), 2, "{resume}: no acquire in low power");
+        rig.custody.lifecycle.ingress(POWER, resume);
+        later(&rig).await;
+        assert_eq!((sets(&rig), mode(&rig)), (3, DRIVER), "{resume}");
+        suspend(&rig);
+        tick(&rig).await;
+        assert_eq!((sets(&rig), mode(&rig)), (4, NORMAL), "{resume}");
+        rig.stop().await;
+    }
+}
+
+/// Only a suspend prepares: a power notice that keeps the system active,
+/// or a resume, sends nothing.
+#[tokio::test]
+async fn only_a_suspend_notice_prepares() {
+    let (rig, _) = owner_rig(NORMAL).await;
+    tick(&rig).await;
+    let sent = keyboard(&rig).len();
+    for notice in [SETTING, RESUME, 7] {
+        rig.custody.lifecycle.ingress(POWER, notice);
+        tick(&rig).await;
+        assert_eq!(prepared(&rig), None, "{notice}");
+    }
+    assert_eq!(keyboard(&rig).len(), sent);
     assert_eq!(mode(&rig), DRIVER);
     rig.stop().await;
-
-    // A session change: refused before or after the tick's capture attempt.
-    for ticked in [false, true] {
-        let (rig, named) = owner_rig(NORMAL).await;
-        rig.custody.pinned_fresh.store(true, Ordering::Release);
-        tick(&rig).await;
-        rig.custody.lifecycle.ingress(POWER, SETTING);
-        rig.custody.current_session.store(8, Ordering::Release);
-        if ticked {
-            named.set(false);
-            tick(&rig).await;
-        }
-        assert_eq!(release(&rig).await, Some(Release::Unadmitted), "{ticked}");
-        assert_eq!(mode(&rig), DRIVER, "{ticked}");
-        rig.custody.current_session.store(7, Ordering::Release);
-        rig.stop().await;
-    }
 }
 
-/// An Indeterminate owner sends nothing more but keeps its capture fresh,
-/// so the release still runs under the current epoch's admission. Only an
-/// epoch move captures: a due step does not.
+/// A cleanup captured for one suspend generation admits nothing once that
+/// generation ends: a resume refuses the low-power scope, and the low-power
+/// scope never admits an ordinary epoch.
 #[tokio::test]
-async fn an_indeterminate_owner_keeps_capturing_for_the_release() {
+async fn the_low_power_scope_ends_with_its_generation() {
     let (rig, _) = owner_rig(NORMAL).await;
-    rig.custody.pinned_fresh.store(true, Ordering::Release);
-    rig.port.state.lock().unwrap().device_mode_fail_set = true;
-    tick(&rig).await;
-    assert_eq!(owner(&rig), (true, true, false));
-    rig.port.state.lock().unwrap().device_mode_fail_set = false;
-    let (start, sent) = (captures(&rig), keyboard(&rig).len());
-    rig.custody.lifecycle.ingress(POWER, SETTING);
-    tick(&rig).await;
-    assert_eq!((captures(&rig), keyboard(&rig).len()), (start + 1, sent));
-    // A due step at an unmoved epoch captures nothing and sends nothing.
-    later(&rig).await;
-    tick(&rig).await;
-    assert_eq!((captures(&rig), keyboard(&rig).len()), (start + 1, sent));
-    // The failed setter applied nothing, so the release reads Normal under
-    // the renewed admission and ends the claim.
-    assert_eq!(release(&rig).await, Some(Release::ForeignChange));
+    suspend(&rig);
+    let generation = rig.custody.lifecycle.low_power().unwrap().generation;
+    let scope = CleanupScope::LowPower { generation };
+    let custody: Arc<dyn ReadCustody> = rig.custody.clone();
+    let cleanup = CleanupFresh::capture(rig.custody.clone(), custody.clone(), scope).unwrap();
+    assert!(cleanup.authorize().is_some());
+    assert!(
+        CleanupFresh::capture(
+            rig.custody.clone(),
+            custody.clone(),
+            CleanupScope::OwnedStop
+        )
+        .is_err()
+    );
+    rig.custody.lifecycle.ingress(POWER, RESUME);
+    assert_eq!(cleanup.authorize(), None);
+    assert!(CleanupFresh::capture(rig.custody.clone(), custody.clone(), scope).is_err());
+    suspend(&rig);
+    assert_eq!(
+        cleanup.authorize(),
+        None,
+        "a later generation is not this one"
+    );
+    rig.custody.lifecycle.ingress(POWER, RESUME);
     rig.stop().await;
 }
 
-/// While the device is unverified, so a due step writes nothing, an epoch
-/// move still re-captures, once, and the release restores Normal. Nothing
-/// sends ObserveState while the Tray is hidden. Control: without a tick
-/// after the notice, the epoch-pinned capture refuses the release.
+/// A notice older than managed's `MaximumAge` prepares nothing.
 #[tokio::test]
-async fn an_unverified_device_still_recaptures_when_the_write_epoch_moves() {
-    for ticked in [true, false] {
+async fn an_expired_suspend_notice_prepares_nothing() {
+    use crate::installed::readiness::thermal_mutation::LOW_POWER_MAXIMUM_AGE;
+    let (rig, _) = owner_rig(NORMAL).await;
+    rig.runtime.read_notice_age(|_| Some(LOW_POWER_MAXIMUM_AGE));
+    tick(&rig).await;
+    let sent = keyboard(&rig).len();
+    suspend(&rig);
+    tick(&rig).await;
+    assert_eq!(prepared(&rig), Some(Release::Exhausted));
+    assert_eq!((keyboard(&rig).len(), mode(&rig)), (sent, DRIVER));
+    rig.custody.lifecycle.ingress(POWER, RESUME);
+    rig.stop().await;
+}
+
+/// A late notice still gives the keyboard the rest of the window, up to its
+/// shutdown share, and its gate wait is that whole share (reviewer R5): with
+/// 550 or 300 ms left it restores Normal.
+#[tokio::test]
+async fn a_late_suspend_notice_still_releases_the_keyboard() {
+    for left in [550u64, 300] {
         let (rig, _) = owner_rig(NORMAL).await;
-        rig.custody.pinned_fresh.store(true, Ordering::Release);
         tick(&rig).await;
-        assert_eq!(owner(&rig), (true, false, false));
-        rig.reader.expire_for_tests();
-        rig.runtime.driver_mode_due_for_tests();
-        let (start, sent) = (captures(&rig), keyboard(&rig).len());
-        rig.custody.lifecycle.ingress(POWER, SETTING);
-        if ticked {
-            for _ in 0..4 {
-                tick(&rig).await;
-            }
-        }
-        assert_eq!(captures(&rig), start + usize::from(ticked), "{ticked}");
-        assert_eq!(keyboard(&rig).len(), sent, "{ticked}");
-        let (outcome, restored) = if ticked {
-            (Release::Restored, NORMAL)
-        } else {
-            (Release::Unadmitted, DRIVER)
-        };
-        assert_eq!(release(&rig).await, Some(outcome), "{ticked}");
-        assert_eq!(mode(&rig), restored, "{ticked}");
+        assert_eq!((sets(&rig), mode(&rig)), (1, DRIVER));
+        rig.runtime
+            .read_notice_age(move |_| Some(Duration::from_millis(1500 - left)));
+        suspend(&rig);
+        tick(&rig).await;
+        assert_eq!(prepared(&rig), Some(Release::Restored), "{left}");
+        assert_eq!((sets(&rig), mode(&rig)), (2, NORMAL), "{left}");
+        rig.custody.lifecycle.ingress(POWER, RESUME);
         rig.stop().await;
     }
+}
+
+/// The low-power preparation refuses as the shutdown release does: a
+/// competing controller or unknown Windows power sends nothing. Battery
+/// admits the keyboard release, which needs no AC. No case sends anything to
+/// the fans, and owned Stop still hands them back.
+#[tokio::test]
+async fn a_suspend_under_a_refused_admission_sends_nothing() {
+    for refusal in ["controller", "power", "battery"] {
+        let rig = fan_owner_rig().await;
+        let sent = rig.port.state.lock().unwrap().sent.len();
+        match refusal {
+            "controller" => rig.custody.controller.store(true, Ordering::Release),
+            "power" => rig.port.state.lock().unwrap().windows_on_battery = Some(None),
+            _ => rig.port.state.lock().unwrap().windows_on_battery = Some(Some(true)),
+        }
+        suspend(&rig);
+        tick(&rig).await;
+        let keyboard = if refusal == "battery" {
+            Release::Restored
+        } else {
+            Release::Unadmitted
+        };
+        assert_eq!(prepared(&rig), Some(keyboard), "{refusal}");
+        let fans_sent = rig.port.state.lock().unwrap().sent[sent..]
+            .iter()
+            .filter(|(class, ..)| *class != 0)
+            .count();
+        assert_eq!(fans_sent, 0, "{refusal}");
+        rig.custody.controller.store(false, Ordering::Release);
+        rig.port.state.lock().unwrap().windows_on_battery = None;
+        // The fan owner is untouched, so Stop hands the fans back.
+        rig.custody.lifecycle.ingress(POWER, RESUME);
+        shutdown(&rig).await.unwrap();
+        assert_eq!(rig.port.state.lock().unwrap().fans, [0, 0], "{refusal}");
+    }
+}
+
+/// A custody reopened since the owner's write cannot hand its record back:
+/// the cleanup proof's generation must be the owner's.
+#[tokio::test]
+async fn the_handback_needs_the_owner_custody_generation() {
+    let rig = fan_owner_rig().await;
+    rig.origin.stop();
+    rig.custody.generation.store(8, Ordering::Release);
+    assert!(
+        rig.runtime
+            .handback_permit_for_tests(CleanupScope::OwnedStop)
+            .is_none()
+    );
+    rig.custody.generation.store(7, Ordering::Release);
+    assert!(
+        rig.runtime
+            .handback_permit_for_tests(CleanupScope::OwnedStop)
+            .is_some()
+    );
+}
+
+/// A keyboard release that may have submitted Normal unconfirmed ends every
+/// later release and acquire write: the uncertain write is never replayed.
+#[tokio::test]
+async fn an_ambiguous_low_power_release_stops_later_keyboard_writes() {
+    let rig = fan_owner_rig().await;
+    rig.port.state.lock().unwrap().device_mode_bad_ack = true;
+    suspend(&rig);
+    tick(&rig).await;
+    assert_eq!(prepared(&rig), Some(Release::Unconfirmed));
+    assert!(rig.runtime.driver_mode_uncertain_for_tests());
+    rig.port.state.lock().unwrap().device_mode_bad_ack = false;
+    let sets = sets(&rig);
+    rig.custody.lifecycle.ingress(POWER, RESUME);
+    later(&rig).await;
+    shutdown(&rig).await.unwrap();
+    assert_eq!(rig.port.state.lock().unwrap().device_mode_sets, sets);
+    assert_eq!(rig.runtime.driver_mode_release(), Some(Release::Uncertain));
+}
+
+/// A release whose Normal may have applied unconfirmed is resolved by a later
+/// confirmed read, never replayed: a read from a job that started before the
+/// release leaves it in doubt, one after the resume resolves it, and the next
+/// due step acquires Driver through the normal cadence.
+#[tokio::test]
+async fn a_later_read_resolves_an_ambiguous_release() {
+    let rig = fan_owner_rig().await;
+    let before = Instant::now();
+    rig.port.state.lock().unwrap().device_mode_bad_ack = true;
+    suspend(&rig);
+    tick(&rig).await;
+    assert_eq!(prepared(&rig), Some(Release::Unconfirmed));
+    assert!(rig.runtime.driver_mode_uncertain_for_tests());
+    rig.port.state.lock().unwrap().device_mode_bad_ack = false;
+    assert_eq!(mode(&rig), NORMAL);
+    let sets = sets(&rig);
+    rig.custody.lifecycle.ingress(POWER, RESUME);
+    let admission = ReadCustody::authorize(rig.custody.as_ref()).unwrap();
+    rig.reader.record_driver_mode(
+        admission,
+        DeviceModeRead::Confirmed(DeviceMode::Normal),
+        before,
+    );
+    step(&rig).await;
+    assert!(rig.runtime.driver_mode_uncertain_for_tests());
+    assert_eq!(self::sets(&rig), sets);
+    record(&rig, DeviceMode::Normal);
+    step(&rig).await;
+    assert!(!rig.runtime.driver_mode_uncertain_for_tests());
+    assert_eq!((self::sets(&rig), mode(&rig)), (sets + 1, DRIVER));
+    assert!(owner(&rig).0);
+    shutdown(&rig).await.unwrap();
+    assert_eq!(rig.runtime.driver_mode_release(), Some(Release::Restored));
+}
+
+/// A read that resolves an ambiguous release as Driver keeps the claim it
+/// finds and never makes one: a keyboard OpenBlade never claimed, put in
+/// Driver by someone else, is still unclaimed after the read, so a Stop that
+/// finds it Normal again reports `NotDriver`, not a foreign change.
+#[tokio::test]
+async fn a_read_of_driver_never_claims_the_keyboard() {
+    let (rig, _) = owner_rig(DRIVER).await;
+    tick(&rig).await;
+    assert_eq!(owner(&rig), (false, false, false));
+    rig.port.state.lock().unwrap().device_mode_bad_ack = true;
+    suspend(&rig);
+    tick(&rig).await;
+    assert_eq!(prepared(&rig), Some(Release::Unconfirmed));
+    assert!(rig.runtime.driver_mode_uncertain_for_tests());
+    rig.port.state.lock().unwrap().device_mode_bad_ack = false;
+    rig.custody.lifecycle.ingress(POWER, RESUME);
+    rig.port.state.lock().unwrap().device_mode = DRIVER;
+    record(&rig, DeviceMode::Driver);
+    step(&rig).await;
+    assert!(!rig.runtime.driver_mode_uncertain_for_tests());
+    assert_eq!(owner(&rig), (false, false, false));
+    assert_eq!(rig.runtime.driver_mode_claims_for_tests(), 0);
+    rig.port.state.lock().unwrap().device_mode = NORMAL;
+    shutdown(&rig).await.unwrap();
+    assert_eq!(rig.runtime.driver_mode_release(), Some(Release::NotDriver));
+}
+
+/// A session notice during the low-power release, at its baseline read or
+/// between the setter's acknowledgement and its readback (reviewer R2, R3),
+/// moves the lifecycle epoch but not the suspend generation, so the release
+/// still restores Normal and nothing is left in doubt. After the resume
+/// requests apply, the keyboard is acquired again, and Stop succeeds.
+#[tokio::test]
+async fn a_lock_notice_during_the_low_power_release_keeps_its_admission() {
+    for at in [1, 2] {
+        let rig = fan_owner_rig().await;
+        assert_eq!(mode(&rig), DRIVER);
+        let custody = Arc::downgrade(&rig.custody);
+        let query = rig.port.state.lock().unwrap().device_mode_queries + at;
+        rig.port.state.lock().unwrap().device_mode_on_query = Some(Arc::new(move |sent| {
+            if sent == query {
+                custody
+                    .upgrade()
+                    .unwrap()
+                    .lifecycle
+                    .ingress(SESSION_CHANGE, WTS_SESSION_LOCK);
+            }
+        }));
+        suspend(&rig);
+        tick(&rig).await;
+        rig.port.state.lock().unwrap().device_mode_on_query = None;
+        assert_eq!(prepared(&rig), Some(Release::Restored), "{at}");
+        assert!(!rig.runtime.driver_mode_uncertain_for_tests(), "{at}");
+        assert_eq!(mode(&rig), NORMAL, "{at}");
+        rig.custody.lifecycle.ingress(POWER, RESUME);
+        let manual = rig.request(fan_request(102, Some(1), 3600)).await;
+        assert_eq!(manual["result"]["status"], 1, "{at}: {manual}");
+        let sets = sets(&rig);
+        later(&rig).await;
+        assert_eq!((self::sets(&rig), mode(&rig)), (sets + 1, DRIVER), "{at}");
+        shutdown(&rig).await.unwrap();
+        assert_eq!(mode(&rig), NORMAL, "{at}");
+        assert_eq!(rig.port.state.lock().unwrap().fans, [0, 0], "{at}");
+    }
+}
+
+/// The cleanup admission's order (`thermal_native::admit_cleanup`), which
+/// `CleanupGuard` and its test model share: origin trust, the pinned fence,
+/// origin commitment, power and controllers, origin trust and the fence
+/// again, then the custody. Each refusal stops the checks after it, an
+/// unreadable commitment refuses, and only a competing controller is typed.
+#[test]
+fn the_cleanup_admission_checks_in_order_and_stops_at_each_refusal() {
+    use crate::installed::readiness::thermal_native::{Denial, admit_cleanup};
+    const ORDER: [&str; 7] = [
+        "verify",
+        "fence",
+        "committed",
+        "power",
+        "verify",
+        "fence",
+        "custody",
+    ];
+    let proof = ReadAdmission {
+        lifecycle: 9,
+        generation: [7; 32],
+    };
+    // Runs the admission with the call at `refuse` failing: a refused
+    // commitment reads as `unreadable` or false, and refused power as a
+    // competing controller or another refusal.
+    let run = |refuse: Option<usize>, unreadable: bool, competing: bool| {
+        let calls = std::cell::RefCell::new(Vec::new());
+        let passes = |name: &'static str| {
+            let mut calls = calls.borrow_mut();
+            calls.push(name);
+            refuse != Some(calls.len() - 1)
+        };
+        let result = admit_cleanup(
+            || passes("verify"),
+            || match passes("committed") {
+                false if unreadable => None,
+                passed => Some(passed),
+            },
+            || passes("fence"),
+            || match passes("power") {
+                true => Ok(()),
+                false if competing => Err(Denial::CompetingController),
+                false => Err(Denial::Admission),
+            },
+            || passes("custody").then_some(proof),
+        );
+        (result, calls.into_inner())
+    };
+    assert_eq!(run(None, false, false), (Ok(proof), ORDER.to_vec()));
+    for at in 0..ORDER.len() {
+        assert_eq!(
+            run(Some(at), false, false),
+            (Err(Denial::Admission), ORDER[..=at].to_vec()),
+            "{at}"
+        );
+    }
+    assert_eq!(
+        run(Some(2), true, false),
+        (Err(Denial::Admission), ORDER[..=2].to_vec())
+    );
+    assert_eq!(
+        run(Some(3), false, true),
+        (Err(Denial::CompetingController), ORDER[..=3].to_vec())
+    );
+}
+
+/// A boundary while a request holds the gate: the keyboard waits on the gate
+/// for the rest of its share, as managed's release does, the request's next
+/// authorization refuses at the new epoch, and the keyboard then restores
+/// Normal. The fans keep what OpenBlade last applied.
+#[tokio::test]
+async fn a_suspend_while_a_write_is_in_flight() {
+    let rig = fan_owner_rig().await;
+    let held = Arc::new(AtomicBool::new(false));
+    let sent = rig.port.state.lock().unwrap().sent.len();
+    let keys = keyboard(&rig).len();
+    rig.port.state.lock().unwrap().held_read = Some(held.clone());
+    let request = crate::service_status::StatusRequest::decode(
+        &serde_json::to_vec(&fan_request(102, Some(1), 3600)).unwrap(),
+    )
+    .unwrap();
+    let mutation = rig.source.lock().await.mutate(
+        USER,
+        SID.into(),
+        request,
+        Instant::now() + Duration::from_secs(3),
+    );
+    let preparing = async {
+        while !rig.port.state.lock().unwrap().sent[sent..]
+            .iter()
+            .any(|(class, command, ..)| (*class, *command) == (13, 0x82))
+        {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        suspend(&rig);
+        let prepare = async {
+            let maintain = rig.source.lock().await.maintain_driver_mode().unwrap();
+            maintain.await.unwrap();
+        };
+        let unhold = async {
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            held.store(true, Ordering::Release);
+            rig.port.state.lock().unwrap().held_read = None;
+        };
+        tokio::join!(prepare, unhold);
+    };
+    let (outcome, ()) = tokio::join!(mutation, preparing);
+    assert_ne!(
+        outcome.unwrap().0.status,
+        1,
+        "the in-flight request is refused"
+    );
+    assert_eq!(prepared(&rig), Some(Release::Restored));
+    assert_eq!(mode(&rig), NORMAL);
+    assert!(keyboard(&rig).len() > keys);
+    assert_eq!(rig.port.state.lock().unwrap().fans, [1, 1]);
+}
+
+/// A Stop during the low-power release joins the dropped release job and
+/// reads how far it got. A job stopped before its setter leaves nothing in
+/// doubt, so the Stop release restores Normal itself; a job stopped after
+/// its setter may have applied it unconfirmed, so the Stop release sends
+/// nothing more.
+#[tokio::test]
+async fn a_stop_during_the_low_power_release_reads_the_dropped_job() {
+    for (held_query, ambiguous) in [(0, false), (1, true)] {
+        let (rig, _) = owner_rig(NORMAL).await;
+        tick(&rig).await;
+        let gate = Arc::new(AtomicBool::new(false));
+        let hold = gate.clone();
+        let blocked = rig.port.state.lock().unwrap().device_mode_queries + 1 + held_query;
+        rig.port.state.lock().unwrap().device_mode_on_query = Some(Arc::new(move |query| {
+            while query == blocked && !hold.load(Ordering::Acquire) {
+                std::thread::sleep(Duration::from_millis(1));
+            }
+        }));
+        suspend(&rig);
+        let dropped = tokio::time::timeout(Duration::from_millis(100), tick(&rig)).await;
+        assert!(
+            dropped.is_err(),
+            "{ambiguous}: the release was still running"
+        );
+        // The generation ends before the held reply, so the dropped job
+        // stops at its next authorization.
+        rig.custody.lifecycle.ingress(POWER, RESUME);
+        gate.store(true, Ordering::Release);
+        shutdown(&rig).await.unwrap();
+        assert_eq!(sets(&rig), 2, "{ambiguous}: one release setter");
+        let expected = if ambiguous {
+            Release::Uncertain
+        } else {
+            Release::Restored
+        };
+        assert_eq!(
+            rig.runtime.driver_mode_release(),
+            Some(expected),
+            "{ambiguous}"
+        );
+        assert_eq!(mode(&rig), NORMAL, "{ambiguous}");
+        assert_eq!(rig.runtime.driver_mode_uncertain_for_tests(), ambiguous);
+    }
+}
+
+/// The handback holds no authority beyond the owner's cleanup recipe: it
+/// journals only cleanup stages, and it prepares, resolves and confirms no
+/// request intent.
+#[tokio::test]
+async fn the_handback_refuses_every_stage_beyond_its_recipe() {
+    let rig = fan_owner_rig().await;
+    let rows = fan_rows(&rig).len();
+    rig.origin.stop();
+    let permit = rig
+        .runtime
+        .handback_permit_for_tests(CleanupScope::OwnedStop)
+        .unwrap();
+    for stage in [0, 6, 10, 11, 12, 30, 44, 52] {
+        assert!(permit.record_fan(stage).is_err(), "{stage}");
+    }
+    let baseline = crate::discovery::performance::ObservedPerformance::PerformanceManual;
+    assert!(permit.resolve_fan(2, baseline).is_err());
+    assert!(permit.confirm_fan_noop(2, baseline).is_err());
+    assert!(permit.prepare_fan(permit.fan_record().unwrap()).is_err());
+    assert!(permit.resolve(2, baseline).is_err());
+    assert_eq!(fan_rows(&rig).len(), rows);
+    assert!(permit.authorize().is_some());
+}
+
+/// The fan handback holds only the owned-Stop scope: a low-power cleanup
+/// admission captures no handback permit, so the suspend path cannot reach
+/// the fans.
+#[tokio::test]
+async fn the_handback_refuses_a_low_power_scope() {
+    let rig = fan_owner_rig().await;
+    suspend(&rig);
+    let generation = rig.custody.lifecycle.low_power().unwrap().generation;
+    assert!(
+        rig.runtime
+            .handback_permit_for_tests(CleanupScope::LowPower { generation })
+            .is_none()
+    );
+    rig.custody.lifecycle.ingress(POWER, RESUME);
+    rig.origin.stop();
+    assert!(
+        rig.runtime
+            .handback_permit_for_tests(CleanupScope::OwnedStop)
+            .is_some()
+    );
 }
 
 /// A release that starts no job does not consume the one attempt: after a
@@ -994,6 +1623,17 @@ async fn release_skips_leave_the_mode_unchanged() {
     // An unsettled journal row (managed `RequiresReconciliation`).
     let (rig, _) = owner_rig(NORMAL).await;
     tick(&rig).await;
+    rig.port.state.lock().unwrap().fail_write = Some(1);
+    rig.set(1, value(1, 1)).await;
+    let reads = keyboard(&rig).len();
+    assert_eq!(release(&rig).await, Some(Release::Unsettled));
+    assert_eq!((keyboard(&rig).len(), mode(&rig)), (reads, DRIVER));
+
+    // The same row written through another store than the owner's last
+    // console capture, as a request of another console user writes it.
+    let (rig, _) = owner_rig(NORMAL).await;
+    tick(&rig).await;
+    rig.custody.other_storage.store(true, Ordering::Release);
     rig.port.state.lock().unwrap().fail_write = Some(1);
     rig.set(1, value(1, 1)).await;
     let reads = keyboard(&rig).len();
@@ -1185,14 +1825,16 @@ async fn a_worker_slow_to_retire_ends_the_release_at_its_share() {
 }
 
 /// A keyboard worker that retires only after the keyboard's share has ended
-/// still leaves the fans their own drain time: the fan handback joins it and
+/// still leaves the fans the rest of the drain: the fan handback joins it and
 /// hands the fans back through the real listener-then-source retirement
 /// (`Ports::retire`), past the 2 s a source drain without the keyboard's
-/// share would allow.
+/// share would allow. The handback is paced to what is left of the drain,
+/// about 0.8 s after a 2.05 s join, which its fixture recipe needs about
+/// 0.36 s of; a later join leaves it too little, and it then writes no row.
 #[tokio::test]
 async fn the_fans_join_a_keyboard_worker_slow_to_retire_within_their_drain_time() {
     let rig = fan_owner_rig().await;
-    rig.port.state.lock().unwrap().device_mode_retire_delay = Some(Duration::from_millis(2400));
+    rig.port.state.lock().unwrap().device_mode_retire_delay = Some(Duration::from_millis(2050));
     let events = Events::default();
     let (mut ports, _tx) = ports(Fault::None, &events);
     ports.source = rig.source.clone();
@@ -1266,13 +1908,15 @@ async fn fatal_evidence_from_the_lane_fails_the_release() {
     assert!(failed(&rig).await);
     rig.port.state.lock().unwrap().mutation_worker_error = None;
 
-    // Integrity lost at any check of the release before the job sends: the
-    // release's own health check (1), its owned-Stop authorization (2), the
-    // lane's integrity check (3), the lane's authorization of the job's
-    // admission (4) and of its own (5), and the job's first checkpoint (6).
+    // Integrity lost at any of the 17 checks the release passes before its
+    // job sends: the cleanup capture's health checks around its first
+    // authorization, every later fresh authorization of the cleanup
+    // admission (each checks health itself), the lane's integrity check, the
+    // lane's authorizations of the job's admission and of its own, and the
+    // job's checkpoints before its first query. The 18th follows that query.
     // An authorization refuses as `None`, so each is fatal, never
     // `Unadmitted`.
-    for check in 1..=6 {
+    for check in 1..=17 {
         let (rig, _) = owner_rig(NORMAL).await;
         tick(&rig).await;
         let sent = keyboard(&rig).len();
@@ -1438,7 +2082,11 @@ async fn each_release_fatal_backstop_holds_on_its_own() {
     let rig = fan_owner_rig().await;
     rig.origin.stop();
     rig.port.state.lock().unwrap().mutation_worker_error = Some(fatal());
-    let error = rig.runtime.stop_fans(&mailbox(&rig)).await.unwrap_err();
+    let error = rig
+        .runtime
+        .stop_fans(&mailbox(&rig), Instant::now() + Duration::from_secs(3))
+        .await
+        .unwrap_err();
     assert!(
         crate::installed::readiness::thermal_mutation::is_fatal_admission(&error),
         "{error}"

@@ -66,7 +66,7 @@ have separate module trees from the fixture roles. Neither is a Setup payload.
 
 After the other adapter checks pass, the candidate lease must start its
 retained Service watcher and obtain a fresh initial subscription snapshot.
-The separate one-shot client uses the shared Service v85
+The separate one-shot client uses the shared Service v90
 `GetStatus` request and response on the local `OpenBlade.Service.v2` endpoint.
 The exchange is limited to a 64 KiB frame and a two-second deadline, including
 connection establishment. Only listener absence or a busy pipe is retried
@@ -82,7 +82,7 @@ retained connection. The proof provider and installed lease remain unwired.
 Status fields retain the producer's meaning, including inactive or unsupported
 states. Feature records are preserved for future consumers.
 
-The native watcher sends a fresh v85 `SubscribeStatus` request on each
+The native watcher sends a fresh v90 `SubscribeStatus` request on each
 connection and delivers an open marker only after a successful correlated
 response with a snapshot. It reads subsequent typed `statusEvent` frames in
 wire order. A new open always establishes a new baseline, including after a
@@ -123,20 +123,20 @@ Managed Agent call sites use the following Service operations:
 
 The managed server's protocol-51 compatibility path is limited to cached
 `GetStatus` and `SubscribeStatus` with a read-only projection. The native
-Agent status binding requires v85, matching the ordinary managed Agent. The
-installed Service candidate has a v85 `SubscribeStatus` handler behind the
+Agent status binding requires v90, matching the ordinary managed Agent. The
+installed Service candidate has a v90 `SubscribeStatus` handler behind the
 existing listener admission. It returns a correlated failure when the
 publication feed is unavailable. The startup probe
 still requires the exact self-issued `GetStatus` exchange.
 
-The Agent candidate also has a one-shot v85 `ObserveState` client for
+The Agent candidate also has a one-shot v90 `ObserveState` client for
 performance shortcut readback. Its request matches
 `ObserveStateAsync(LiveReadingSensors.None)`. The Service candidate requires
 an active caller and a fresh performance read from a separate admitted port.
 The installed metadata observer has no firmware read port, so it returns a
 correlated refusal. Optional live sensor selections also receive a refusal.
 The Agent requires a Service generation admitted for fresh observation. The
-v85 status envelope alone carries no proof of a fresh firmware read. The
+v90 status envelope alone carries no proof of a fresh firmware read. The
 Agent also checks verified device state, control access, power classification,
 observation state, Fan Stop ownership and unresolved performance writes.
 
@@ -195,10 +195,10 @@ budget expires, the Service can report only that cancellation was requested
 and retirement is unconfirmed. An explicit cleanup failure retains the
 resources and quarantines the native slot until process exit.
 
-The typed result can populate a fresh v85 reply only with independently
+The typed result can populate a fresh v90 reply only with independently
 verified status guards for the same live authority epoch. The installed read
 projection carries the complete decoded preset/fan state,
-HyperBoost observation and nullable Custom settings in the existing v85 schema.
+HyperBoost observation and nullable Custom settings in the existing v90 schema.
 Accepted levels use numeric CPU/GPU values and maximumFans=false; the manual
 selector does not imply that separate setting. Retained ordinary status has no
 fresh-read witness.
@@ -287,14 +287,15 @@ independent managed evidence.
 #### Keyboard Driver mode ownership
 
 A Service built with `service-keyboard-driver-mode-v1` acquires and maintains
-RZ09-0581 keyboard Driver mode and restores Normal at shutdown. The feature
+RZ09-0581 keyboard Driver mode and restores Normal at a confirmed suspend and
+at shutdown. The feature
 implies `service-keyboard-driver-mode-read-v1`, `service-fan-mutation-v2` (the
 fan guardian and the fan handback it runs before) and the protocol crate's
 `device-mode-setters`, and adds the capability marker
 `service-keyboard-driver-mode-v1`. It does not imply profile triggers. Both
 package readers refuse the feature and the marker by name, before the read and
 trigger features built with it, so no admitted image sends `00/04`. Packaging
-admission also waits for the low-power slice below.
+admission also waits for the attended checks listed below.
 
 The setters are the reviewed `00/04:0000` and `00/04:0300` of the same
 semantic admission. Only the write recipe `Reader::apply_device_mode`
@@ -376,14 +377,9 @@ in, with the session locked or switched, or with a competing controller
 present, the step is refused before any firmware access. It keeps the last
 confirmed status, consumes no recovery and runs again at the next step.
 Managed maintains Driver mode with no user signed in. Native adds no
-Service-scoped write authority for it, and the function row has no user to
-serve then. The tick also captures again, with no job, whenever the
-lifecycle write epoch moves: between steps, while the device is unverified
-and after an Indeterminate step. An Indeterminate owner captures only on such
-a move. The shutdown release therefore holds the capture of the current
-epoch. A capture refused for a cause that clears without a notice, such as a
-competing controller that exits, is retried only at the next epoch move or
-the next due step on a verified device.
+Service-scoped acquire authority for it, and the function row has no user to
+serve then. A release never uses this capture; it holds the Service's own
+cleanup admission below.
 
 The step publishes through the read cadence that every fresh status projects
 (`ReadSource::record_driver_mode`): a confirmed mode, or `null` after a failed
@@ -391,8 +387,54 @@ or Indeterminate step. It never edits the subscription feed, so an unchanged
 status is never republished. The feed stays unverified as described above.
 
 Ownership lives in memory, as it does in managed. It decides only whether a
-shutdown read of Normal is a foreign change; a restart reads `00/84` again. A
+release's read of Normal is a foreign change; a restart reads `00/84` again. A
 durable owned-or-uncertain record and crash recovery are stage 6a-5.
+
+##### Cleanup admission
+
+Every release and every Service fan handback at Stop holds the Service's own
+cleanup admission (`thermal_mutation::Cleanup`, built by
+`CleanupGuard::capture`), captured fresh for its boundary. Fan mutation
+composes it for the owned-Stop handback without the keyboard owner
+(`service-fan-mutation-v2`); the low-power scope needs the keyboard owner. It names no console session, SID or logon:
+Windows logs every user off before a system shutdown reaches services, and a
+suspend may start from the lock screen. Managed releases with nobody signed in
+too: `ReleaseDriverModeCoreAsync` checks the fan guardian, a pending
+reconciliation, controller presence and its detection warning, then the device
+provider's `FreshLightingCleanupAdmission` (exact-device probe and owned
+renderer access), and never a user (`ServiceControlRuntime.cs:13398-13520`,
+`WindowsVerifiedBladeDeviceProvider.cs:398-420`). Each authorization checks,
+fresh, in this order (`thermal_native::admit_cleanup`, which the test model
+shares):
+
+- origin and package trust for its scope: owned-Stop trust for Stop and
+  shutdown, ordinary trust for a suspend generation;
+- the lifecycle fence its scope pinned (`Lifecycle::fence_for`), with origin
+  commitment, before and after the Windows checks.
+  `CleanupScope::OwnedStop` pins the ordinary epoch, so the gate refuses it in
+  low power and any later power or session notice ends it.
+  `CleanupScope::LowPower` pins its suspend generation only, as managed's
+  `IsActiveForGeneration` does: a lock or unlock during the suspend leaves it
+  admitted, and a resume, a DisplayOn or another suspend ends it;
+- a known Windows AC line status, then fresh competing-controller absence
+  (a typed denial at capture, as the console admission reports it);
+- the exact original mailbox custody and generation through
+  `ReadCustody::authorize_cleanup`, which names the admitted device. A fan
+  handback also needs the owner's own custody generation.
+
+Its authority is the release's `00/04:0000` and the owned fan handback, and
+nothing else. `Cleanup` is not a `Fresh` or a `Settle`, so no request,
+reconciliation, acquire or settle permit can hold it. Exactly two permits do:
+`DriverModePermit::release`, whose job writes Normal only after a fresh
+`00/84` read of Driver, and `FanHandbackPermit`, which journals only the
+owner's cleanup stages (31, 40-43, 50 and 51) for its exact retained record
+and refuses every request stage, preparation, resolution and no-op
+confirmation. The lane runs either job only through
+`ReadSource::mutate_cleanup_in`, which requires the permit's admission to
+equal the custody's cleanup admission of that scope, and each journal row is
+written under that same scope (`ReadCustody::journal_replace_cleanup`).
+
+##### Shutdown release
 
 At shutdown the Service releases Driver mode before the fan handback, the
 managed order (`ServiceControlRuntime.cs:12925-12950`,
@@ -403,32 +445,51 @@ managed order (`ServiceControlRuntime.cs:12925-12950`,
 - It joins active work first (`ReadSource::drain_active`), as the fan handback
   does.
 - The managed skip reasons the native Service can observe leave the mode
-  unchanged: an unsettled fan row, an unsettled journal row, and no owned-Stop
-  admission. The last covers a competing controller, a session, logon or
-  lifecycle change, low power and a write lease that never activated
+  unchanged: an unsettled fan row, an unsettled journal row, and no cleanup
+  admission. The journal row is read from the latest capture's store, of any
+  user (`Runtime::captured_store`): the captures are serialized and every
+  store recovers the one custody journal's last row when it opens, so that
+  store has seen every row. The last covers a competing
+  controller, unknown Windows power, lost origin or custody trust, low power
+  and a write lease that never activated
   (`ServiceControlRuntime.cs:13399-13520`). After origin loss the release is
   refused.
-- Owned-Stop admission is the latest ordinary write capture's own, as the
-  fan handback's owner path uses it (`Runtime::stop_fans`): origin and custody
-  trust, the exact device, the same unlocked console session, the lifecycle
-  epoch it pins and fresh competing-controller absence. A settle capture
-  (`Fresh::capture_settle`) authorizes owned-Stop reads only. Its type,
-  `Settle`, is not a `Fresh`, so it cannot authorize a request or this
-  release's `00/04:0000` setter; only the fan handback's settle permit uses it,
-  to read and append its record. After a lifecycle notice with no tick
-  since, the epoch the capture pins refuses the release. A tick after the
-  notice captures again for the console user signed in then; when that
-  capture is refused, as after a switch to a session nobody is signed in to,
-  the release is refused too. No Service-scoped authority is added.
+- The fan handback tries the owner's own capture first, then the Service's
+  cleanup admission with `FanHandbackPermit`, which runs the owner's full
+  cleanup recipe with nobody signed in, and only then the settle permit
+  (`Fresh::capture_settle`), which reads and appends 51 on Automatic. A job
+  that registered may already have sent the owner's reserved cleanup IDs,
+  its baseline read's among them, so no later admission of the same Stop
+  runs the recipe again. Before row 31 the recipe is paced once against what
+  is left of the source drain (`StatusSource::drain_by`: 2 s, or 2.9 s with
+  the keyboard share, from the drain's start), with each cleanup job also
+  bounded by its own 3 s. Every exchange left is charged as `Pace` charges
+  any recipe, and every row left at the second longest exchange; when they
+  do not fit it ends with no row and no setter. A job that ends after 31 or
+  40-43 leaves a tail that cannot be closed in the process (51 follows only
+  30), so Stop reports the handback unconfirmed. A restarted Service finds
+  that row unsettled and refuses; nothing settles it yet. That predates the
+  low-power slice.
 - A fresh `00/84` read of Driver writes `00/04:0000` once, whoever set it, as
   managed does, and requires the exact acknowledgement and an independent
   `00/84` readback of Normal. A read of Normal ends an owned claim as a
   foreign change and writes nothing.
-- The release job runs at most once per process, and only Stop starts it.
-  A job whose measured pace could not fit the setter, its acknowledgement and
-  the readback in its time sends nothing and reports `Exhausted`.
-- A process that never captured a console user's write admission, or whose
-  read lease is recovery-only, has no owned-Stop admission and cannot write.
+- Each boundary releases at most once: the shutdown, and each suspend
+  generation. A job whose measured pace could not fit the setter, its
+  acknowledgement and the readback in its time sends nothing and reports
+  `Exhausted`; a lane refusal before the job registered keeps the attempt.
+- A release that may have submitted Normal without confirming it
+  (`Submitted` or `Acknowledged`) stops every later release, acquire and
+  maintain write until a confirmed `00/84` read under the current read
+  admission, by a job that started after that release, shows the mode
+  (`ReadSource::driver_mode_confirmed_since`). Driver keeps the claim and
+  any other mode clears it; the next due step then acquires through the
+  normal cadence. Until then later releases report `Uncertain` and send
+  nothing. The uncertain write is never replayed.
+- A release job whose caller was dropped, as by a Stop during the low-power
+  release, stays registered. The next release joins it with the active work
+  and reads how far it got before it decides anything.
+- A process whose read lease is recovery-only cannot write.
 
 Managed retries the keyboard release once after the fan handback when the fan
 guardian blocked it and the handback cleared that block
@@ -443,8 +504,10 @@ its own 2 s. Inside the share, the gate wait and the join of active work have
 before the share does so the lane can retire it. The share also ends the
 release when the job's worker has not retired by then, and the fan handback
 joins that worker within its own time. By count, a healthy release takes
-about 0.28 s besides its three exchanges: about 22 fresh admissions at 8-9 ms
-each and three 30 ms settles. That is an estimate pending an attended timing.
+about 0.28 s besides its three exchanges, if each of its 20 cleanup
+authorizations (counted in the test rig) takes 8-9 ms, plus three 30 ms
+settles. The per-authorization cost is not measured on RZ09-0581, so that is
+an estimate pending an attended timing.
 Twice the per-exchange allowance plus those admissions is
 about 1.09 s, which does not fit; the job's measured pace refuses the setter
 instead when it cannot finish. Native accepts SERVICE_CONTROL_SHUTDOWN, not
@@ -477,25 +540,59 @@ named the target mode.
 A write port that fails to open is known not applied for every mutation job
 (`windows::mutation_worker`): the lane and owned Stop keep working.
 
-Remaining before packaging admission: the low-power boundary release of
-Driver mode and the D1 suspend fan handback, one slice. Until it lands the
-Service only refrains from acquiring or maintaining while the gate is set; it
-does not restore Normal at a low-power boundary. Physical validation on
-RZ09-0581 is also outstanding.
+##### Low-power release
 
-Known gap at system shutdown, part of that slice: Windows closes applications
-and logs off every user session before it notifies services. Microsoft
-documents that order for the full shutdown that Fast Startup begins with
-("Preparing for fast startup" in *Distinguishing Fast Startup from
-Wake-from-Hibernation*); the SCM then sends PRESHUTDOWN and SHUTDOWN
-(*Service Control Handler Function*). When Fast Startup is on, a shut down
-then hibernates the system session instead of stopping services, so no
-SHUTDOWN arrives. Either way, under console-user write admission the shutdown
-release finds no signed-in console user and is refused at admission, or never
-runs, and Driver mode stays on. Managed maintains and releases with no user
-signed in. The slice must design a shutdown and low-power release admission
-that does not depend on a signed-in console user; this gap still blocks
-packaging. The order has not been observed on RZ09-0581.
+A confirmed suspend runs managed `PrepareForLowPowerCoreAsync` as
+`ServiceSessionPowerTransitionCoordinator` does
+(`ServiceControlRuntime.cs:12993`): once per suspend generation, within
+1.5 s of the notice's QPC timestamp (`SessionPowerTransition.MaximumAgeMilliseconds`,
+`low_power_cleanup::MAXIMUM_AGE`), the keyboard release under
+`CleanupScope::LowPower` for that generation. A new suspend generation wakes
+the origin tick at once (`Lifecycle::suspended`), so the 500 ms interval does
+not spend the window. A notice older than the window prepares nothing. Saved
+intent is unchanged: the next active reconciliation or request applies it.
+
+- The fans are not touched. AGENTS.md rule 1 names only the keyboard's
+  Normal release at a low-power boundary, and managed restores fans there
+  only for a Battery Saver fan stop it owns (`OwnsBatterySaverFanStop`,
+  `ServiceControlRuntime.cs:13069-13087`, property at `:21049`). Native has
+  no Fan Stop yet (`openblade_domain::profile_set::policy`), so owned manual
+  fans stay as OpenBlade applied them, no reading after the resume is an
+  external change, and owned Stop still hands them back. When Fan Stop
+  lands, restore an owned Battery Saver fan stop here, after the keyboard and
+  under the same generation's cleanup admission, as managed does. Managed's
+  restore has no Windows-AC-only pre-check; do not copy the one owned Stop's
+  handback recipe needs (`fan_mutation.rs`).
+- The keyboard gets the rest of the window, at most its 0.9 s shutdown
+  share. Unlike the shutdown release's 150 ms entry, it waits on the gate and
+  the join of active work for that whole share, as managed's
+  `ReleaseDriverModeAsync` waits on its operation gate
+  (`ServiceControlRuntime.cs:13318-13327`), so a request in flight at the
+  boundary does not cost the release: the request is refused at its next
+  authorization, because the suspend fenced its epoch.
+- A lock or unlock during the release does not end it (see Cleanup
+  admission), so it neither loses the release nor leaves it in doubt.
+- In low power the 15 s step reads and writes nothing, so nothing is
+  reacquired until Windows reports the system active again (a resume, or a
+  DisplayOn that clears the gate); the cadence then reacquires.
+- Fast Startup hibernates the system session instead of stopping services,
+  so its PBT_APMSUSPEND runs this path, not the shutdown release. Windows
+  logs users off first, which the cleanup admission does not depend on.
+
+The preparation's healthy release has three exchanges and 20 cleanup
+authorizations, counted in the test rig. Each authorization reads the
+Windows AC line status and competing-controller presence; their cost on
+RZ09-0581 is not measured, so the preparation's time is unknown until an
+attended timing. For comparison, the owned fan handback recipe counted 60
+authorizations with its nine exchanges and six journal writes when it still
+ran at suspend. The SCM handler returns at once, as managed's does, so the
+window bounds staleness, not time Windows waits for; a system that sleeps
+first ends the work at its next authorization after resume.
+
+Remaining before packaging admission: an attended timing of a real release
+at suspend and at shutdown and of the fan handback at shutdown on RZ09-0581, observation that Fast
+Startup delivers PBT_APMSUSPEND to the native Service, the durable owned and
+uncertain record and journaled IDs of stage 6a-5, and physical validation.
 
 #### Live readings (read-only)
 
@@ -626,8 +723,68 @@ marker by name. A build without the feature still refuses the request with
     and no native reader, and the source-reviewed models have no managed MCU
     read, so their version stays `Unavailable`. The read has not been
     compared with the managed Service on the device.
-- **Temperatures.** Both stay null. The CPU temperature worker below is
-  unchanged, and the Service has no GPU temperature source.
+- **Temperatures.** The CPU temperature stays null; the CPU temperature
+  worker below is unchanged. The GPU temperature follows the workload gate
+  of `SafeWindowsFanTemperatureSource.ReadAsync`, which managed live readings
+  used before 8331bbf4: the same user-mode `nvml.dll` behind the same two
+  Windows reads, neither of which opens a GPU device or calls an NVIDIA API.
+  Managed live readings now call `ReadForLiveReadingsAsync`, which also
+  reports an idle GPU held in D0; that difference is listed under
+  [Pending parity with main a8aea95f](#pending-parity-with-main-a8aea95f).
+  - The workload: the NVIDIA adapter's WDDM
+    `\GPU Engine(*)\Utilization Percentage` counters, opened fresh, primed and
+    read again 150 ms later (`WindowsGpuActivitySource`). A process other than
+    System (PID 4) above 0.1 % is a workload; unavailable counters are none.
+    The counter query is the platform crate's
+    `gpu_apps::NvidiaActivityQuery`, over the GPU-app sampler's reviewed PDH
+    and DXGI reads.
+  - The D-state: SetupAPI `SPDRP_DEVICE_POWER_DATA` of the one present
+    display-class `PCI\VEN_10DE&` device (`WindowsNvidiaGpuPowerState`). None,
+    several, a failed step or a property that is not a complete
+    `CM_POWER_DATA` is unknown.
+
+  NVML is loaded, started and read only for a workload on a D0 adapter, and a
+  D-state other than D0 read right after the read discards the value. The
+  session (`nvmlInit_v2` to `nvmlShutdown`) stays open across consecutive
+  valid samples of an active D0 GPU and at most 5 s after the last one; an
+  idle, powered-down, unknown or failed sample, a sample cancelled after its
+  D-state read and Stop end it. A sample that starts within 250 ms of the
+  lease's end ends the session first, and the D-state read ends one whose
+  lease ran out during the Windows reads, before NVML is called. Managed's
+  timer ends a session on time even during a sample; native keeps it past
+  5 s only while a PDH or SetupAPI read stalls. A missing driver, adapter or
+  library, a failed call and a value outside 10..=125 C are null, as in
+  managed. A value above the codec's 115 C bound is null where managed would
+  refuse the reply. No failure status is kept: a failed NVML, PDH or
+  SetupAPI call publishes null, and no diagnostics producer records why.
+  `nvml.dll` is loaded with `LOAD_LIBRARY_SEARCH_SYSTEM32`, so neither the
+  search path nor the current directory is searched for it or its
+  dependencies, and it stays loaded for the process. Like managed's
+  `[DllImport]`, the load checks no signature. A signer check is queued with
+  the package import-allowlist review of `pdh.dll` and `dxgi.dll` below.
+
+  The sample runs on its own worker thread, started by the first request,
+  never on the read job. It starts beside the job, and the observation waits
+  for it after the job's reading and before the admission check, at most
+  250 ms and never later than 500 ms before its deadline, so a slow sample
+  holds neither the reply nor the read source. A sample whose reading is not
+  accepted or that has not arrived by then is dropped, and a reading that
+  waited for its sample is never published over one from a later job. One
+  request may wait behind a running sample and any other gets none; a
+  waiting request whose observation went is skipped. Stop cancels without
+  waiting: a running sample makes no call after the one it is in, a waiting
+  request is skipped, and the worker ends the session when the call in
+  progress returns, then exits. Managed reads the GPU only after a
+  successful device read; native samples before the job ends, so a job that
+  then fails may still have read an active D0 GPU and renewed its session for
+  up to 5 s. It never starts NVML for an idle, powered-down or unknown GPU.
+  `gpu-temperature-vectors.json` pins the activity decision, the power
+  classification, the sampler's gate, session use and lease step by step,
+  and the codec bound against managed
+  (`ServiceControlRuntimeTests.NativeGpuTemperatureVectors`). The image
+  imports `pdh.dll` and `dxgi.dll`, which the package import allowlist does
+  not admit; the live-readings image stays refused by its marker. The read
+  has not been compared with the managed Service on the device.
 
 Live readings appear only in the ObserveState reply, never in the subscription
 feed, as managed does not push a change of live readings alone. A request for no
@@ -651,7 +808,7 @@ state names no model, so the record is bound to its one producer, the exact
 RZ09-0581 performance Reader: `capability_tests` pins that Reader's identity
 to the record's and fails when another source file publishes an observation.
 
-Still unavailable natively: GPU temperature and a reply
+Still unavailable natively: a reply
 for Custom High/High with Automatic fans, which the thermal read does not
 confirm, so that ObserveState has no fresh read and no live readings. A failed
 thermal read refuses the whole ObserveState, where managed still publishes the
@@ -666,7 +823,7 @@ The vectors in `tools/openblade-windows-host/tests/data/firmware-version-vectors
 pin the firmware record against managed
 (`ServiceControlRuntimeTests.NativeFirmwareVersionVectors`): each row feeds one set
 of Windows reads through `WindowsFirmwareVersionSource` and the two device
-selectors, writes the result through the v85 status codec and is replayed
+selectors, writes the result through the v90 status codec and is replayed
 through the native capture. The same file pins `Version.TryParse` and
 `Convert.ToInt32`, the two framework parsers the native code mirrors. The managed
 codec decodes the native frames in `firmware-version-native-frames.json`
@@ -892,7 +1049,7 @@ Performance on AC power. `subscribe-status-v79.frames` holds
 `SubscribeStatusRequest(79, id)`, the correlated response and a v79
 `ServiceStatusEvent` with the status revision incremented by one.
 
-The Service status client and server now speak v85, so these three recordings
+The Service status client and server now speak v90, so these three recordings
 are rejection controls. `original_v79_wire_fixtures_are_rejected_before_dispatch`
 replays each request in memory and checks that the installed dispatcher closes
 it without a reply or a firmware read, then accepts the same request with its
@@ -919,7 +1076,7 @@ observer inputs and peer evidence over in-memory streams.
 
 ### Managed operations the installed Service does not serve
 
-A well-formed v85 request that names a managed operation outside the
+A well-formed v90 request that names a managed operation outside the
 composition's typed decoder gets managed's own fallback reply: the correlated
 `ServiceResponse` with `success: false`, error
 `IPC request operation is unsupported.` and no body or error code
@@ -927,13 +1084,13 @@ composition's typed decoder gets managed's own fallback reply: the correlated
 `operationFamilies` inventory in the
 [managed replay contract](windows-backend-replay.md), which
 `WindowsReplay_FrozenWireInventoryMatchesManagedRegistry` pins to the managed
-`ServiceRequest` registry. Its 51 operations include `reportSessionPowerTransition`
+`ServiceRequest` registry. Its 53 operations include `reportSessionPowerTransition`
 and `updateProfiles`. An operation is served only when this build's features
 dispatch it, so a read-only composition also refuses `setFanOverride` and the
 other mutations instead of closing.
 
 The refusal decodes only the object envelope: one `operation`, an Int32
-`version` of 85 and a non-nil `requestId`, with duplicate members and serde
+`version` of 90 and a non-nil `requestId`, with duplicate members and serde
 private member names refused. It never interprets the body, reads the status
 source, opens the device or touches storage, so every caller the status
 endpoint admits receives it. Unknown operation names, malformed frames, other
@@ -952,7 +1109,7 @@ failure. Neither path changes state.
 `installed_unserved_operations_reply_with_the_managed_unsupported_failure`
 contributes its actual frames to the `OPENBLADE_NATIVE_THERMAL_RESPONSES`
 corpus, and the managed fact requires the unsupported reply to decode through
-the v85 codec.
+the v90 codec.
 
 ## Compile the installed service launch boundary
 
@@ -995,7 +1152,7 @@ handback) bind the complete attempt-set dispositions and independently
 validated owner chain. Public readers may still block legacy
 custody. Recovery preserves descriptors, launches, drains, counters, snapshots
 and partial staging evidence. The separate endpoint seam
-requires the installed ACL, caller admission, and a successful correlated v85
+requires the installed ACL, caller admission, and a successful correlated v90
 `GetStatus` response with a status snapshot on `OpenBlade.Service.v2`, bound to
 the admitted PID. The candidate publishes `SERVICE_RUNNING` only after that
 evidence. Setup's external probe still runs afterward. The fixture endpoints
@@ -1103,7 +1260,7 @@ The integration tests launch their own foreground processes and assign fresh pip
 
 Run `foreground-replay <id>` with a fresh development pipe ID. After `READY`, send one lowercase `n` to standard input for each step. With an interactive console, press Enter after each `n`. Close standard input to stop. The test harness controls the replay clock through these ordered steps. Pipe reads and subscriptions do not advance it.
 
-| Revision | Input | v85 status |
+| Revision | Input | v90 status |
 | --- | --- | --- |
 | 1 | Initial synthetic startup | Plugged-in profile, unknown function-key readback, writes blocked |
 | 2 | Recovery getter returns no value | Readback stays unknown and the in-memory intent stays pending |
@@ -1112,7 +1269,7 @@ Run `foreground-replay <id>` with a fresh development pipe ID. After `READY`, se
 
 The recovery inputs follow the managed restart cases in `service-runtime.json`. The existing Rust recovery reducer plans the getter and computes the settlement. The controller applies that settlement to its one-entry in-memory journal. Before the battery observation, the script cancels a recovery read and delivers its stale result. Neither event changes the snapshot or journal. The performance policy selects the battery preset from the fixture. The writes block stays set after settlement, as the replay omits the full observation that could lift it.
 
-Each v85 subscription starts at the latest snapshot and can receive newer revisions. The stream keeps only the latest pending snapshot per receiver, so slow subscribers may skip revisions. Reconnect starts at the latest revision without repeating earlier effects. v51 uses its existing passive projection.
+Each v90 subscription starts at the latest snapshot and can receive newer revisions. The stream keeps only the latest pending snapshot per receiver, so slow subscribers may skip revisions. Reconnect starts at the latest revision without repeating earlier effects. v51 uses its existing passive projection.
 
 This phase exercises the startup recovery and power-profile paths with scripted observations, a fake journal and no transport setter. Full startup and run-marker orchestration, protected storage and its recovery gates, native observation and command execution, session ownership, and the remaining profile and feature paths still need parity work.
 
@@ -1122,7 +1279,7 @@ The same Windows interoperability suite runs the durable scenario against the fo
 
 | Invocation | Behavior |
 | --- | --- |
-| `foreground-durable <pipe-id>` | After `READY`, one lowercase `n` commits the second managed aggregate. v85 publishes the new requested charge limit only after the writer verifies the commit and the startup inspector independently reads the committed bytes. |
+| `foreground-durable <pipe-id>` | After `READY`, one lowercase `n` commits the second managed aggregate. v90 publishes the new requested charge limit only after the writer verifies the commit and the startup inspector independently reads the committed bytes. |
 | `foreground-durable-restart <pipe-id> <fixture-id> <file-identity>` | Reopens the pinned namespace read-only, verifies the root identity and inspects the exact stored documents before opening the pipe. |
 | `foreground-durable-interrupt <pipe-id>` | One lowercase `n` injects an error after the profile replacement and before restoration. The process exits with the sidecar and remaining artifacts intact. A fresh restart refuses before readiness or pipe creation. |
 | `foreground-profile-bootstrap <pipe-id>` | Builds the typed 80 percent battery policy and default Fan Stop settings over the managed fixture, commits to an empty root, and reads back the current aggregate before publishing status. |
@@ -1140,7 +1297,7 @@ Run `foreground-battery-profile <id>` on a fresh private pipe. The host migrates
 the same managed schema 24 fixture before readiness. It loads that verified
 profile into the scripted RZ09-0581 controller. The 77% saved limit, the
 controller's 80% getter result, and the temporary override are separate.
-The existing v85 `updateProfiles` request accepts only a charge-limit edit
+The existing v90 `updateProfiles` request accepts only a charge-limit edit
 against the otherwise unchanged fixture. As in the managed service, it stores
 the profile without a setter and clears a temporary limit only if equivalent.
 The existing battery operations require the battery scenario's fresh admission
@@ -1166,7 +1323,7 @@ outside the scenario.
 ## Exercise temporary full charge
 
 `foreground-full-charge <pipe-id>` starts the unified foreground host with a
-private migrated fixture and no profile writer. The existing v85
+private migrated fixture and no profile writer. The existing v90
 `setFullChargeOverride` request exercises the exact RZ09-0581 recipe through
 encoded scripted Power Mode Control reports. Enable and cancel confirm the
 override and unchanged charge cap and protection independently of the setter
@@ -1183,7 +1340,7 @@ and physical verification of the native host.
 ## Exercise standard battery policy
 
 Run `foreground-battery-parity <id>` on a fresh private development pipe. The
-same-logon v85 client can send `setBatteryPolicy` and `setBatteryProtection` to this
+same-logon v90 client can send `setBatteryPolicy` and `setBatteryProtection` to this
 mode. All other mutations are refused. v51 keeps its passive status projection. The
 foreground, runtime replay, and SCM modes keep their existing refusal behavior.
 
@@ -1209,7 +1366,7 @@ saved profile, scoped overrides and pending intent are absent. Startup in this h
 observes state without applying a profile.
 
 After `READY`, stdin accepts one lowercase `n` for each fixed scenario step. Use the
-v85 status stream to observe the step before sending the next request.
+v90 status stream to observe the step before sending the next request.
 
 | Step | Effect |
 | --- | --- |
@@ -1228,7 +1385,7 @@ and the rest of the full-service transition remain separate work.
 ## Exercise a standard performance override
 
 Run `foreground-performance-parity <id>` on a fresh private development pipe.
-The same-logon v85 client can send `setPerformanceOverride` with Balanced or
+The same-logon v90 client can send `setPerformanceOverride` with Balanced or
 Performance, a temporary or persistent lifetime, or an explicit null to clear.
 The scenario fixes the RZ09-0581 (1532:02E0) on full adapter power with Automatic
 fans. It starts at Balanced, with no HyperBoost or manual fan ownership. The
@@ -1262,7 +1419,7 @@ event before sending the next request.
 
 The managed runtime oracle checks the typed operation, storage order and
 observed outcomes separately from the Rust replay. The tray test uses the
-existing `ServiceClient` and v85 status stream. Rust tests also check the
+existing `ServiceClient` and v90 status stream. Rust tests also check the
 exact payloads and partial-pair failure. Native admission, durable production
 configuration and restart recovery, power-source transitions, other presets,
 Custom, HyperBoost, manual fan ownership and handback, Guardian, and other
@@ -1272,7 +1429,7 @@ the only live owner.
 ## Exercise ordinary fan ownership
 
 Run `foreground-fan-parity <id>` on a fresh private development pipe. The
-same-logon v85 client admits a persistent Fixed 4,000 RPM fan override. The
+same-logon v90 client admits a persistent Fixed 4,000 RPM fan override. The
 scripted RZ09-0581 (1532:02E0) starts in Performance with Automatic fans and
 full adapter power.
 
@@ -1411,7 +1568,7 @@ appropriate battery and limited-power preset recipes, and session admission.
 
 ## Replay keyboard Off
 
-`foreground-lighting-off <pipe-id>` admits the existing v85 keyboard Off
+`foreground-lighting-off <pipe-id>` admits the existing v90 keyboard Off
 override on a scripted RZ09-0581 (1532:02E0) with no owned renderer. The
 saved profile selects Off, so clearing the override selects that same
 profile setting. The fixture records persistent and temporary intent in
@@ -1467,7 +1624,7 @@ separate work.
 ## Application context replay
 
 Run the existing managed client against `foreground-application-context <id>`
-with a fresh development pipe ID. This foreground mode accepts v85
+with a fresh development pipe ID. This foreground mode accepts v90
 `ReportApplicationContext` only after the same native pipe peer check used by
 the other modes. A scripted authority stands in for the active local interactive
 session. It is checked again where the report changes state.
@@ -1494,7 +1651,7 @@ and the other modes' effect admission unchanged.
 Use `foreground-integrated-application <id>` for a disposable private writer.
 The companion mode `foreground-protected-integrated-application <id> <root>`
 uses the existing protected-writer admission for a precreated test root.
-Both modes use the same private v85 pipe, composed runtime, and renderer
+Both modes use the same private v90 pipe, composed runtime, and renderer
 shutdown sequence as the integrated fixture. The executable rule is a
 fixture input in memory. Lease reports, expiry, and selected presets leave
 the saved profile aggregate untouched.
@@ -1520,7 +1677,7 @@ and drains on STOP even if an application lease is active.
 ## Replay private Fan Stop ownership and handback
 
 Run `foreground-fan-stop <pipe-id> <case>` on the Windows development host.
-Only the active v85 test endpoint accepts the existing typed
+Only the active v90 test endpoint accepts the existing typed
 `setFanStopMode` request. The scenario represents the exact SO6120 EC 1.04
 entry with a fixture clock, Balanced readback and resolved USB-C. It shares
 the manual-entry fixture and drives Phase 5q's guardian replay using inert
@@ -1551,7 +1708,7 @@ product ABI are unchanged.
 
 ## Compatibility boundary
 
-- Each connection accepts one request. Every mode serves v85 `getStatus` and `subscribeStatus` and v51 `getStatus`. Mutations use v85 in the explicitly scoped foreground modes. The v85 response and event use the [managed replay fixtures](windows-backend-replay.md). In the fixed replay modes, the subscription first sends the preceding synthetic revision and then one exact newer fixture event. v51 returns only the CLI fixture's approved fields and closes. Request IDs correlate replies. Every read uses in-memory fixtures and has no activation or state changes. It closes v79 requests without a reply.
+- Each connection accepts one request. Every mode serves v90 `getStatus` and `subscribeStatus` and v51 `getStatus`. Mutations use v90 in the explicitly scoped foreground modes. The v90 response and event use the [managed replay fixtures](windows-backend-replay.md). In the fixed replay modes, the subscription first sends the preceding synthetic revision and then one exact newer fixture event. v51 returns only the CLI fixture's approved fields and closes. Request IDs correlate replies. Every read uses in-memory fixtures and has no activation or state changes. It closes every other version, including the frozen v79, v80 and branch v85 requests, without a reply.
 - Framing uses a signed 32-bit little-endian byte count and caps bodies at 64 KiB. There is a two-second first-frame deadline and a two-second deadline per write. Invalid lengths, malformed envelopes, invalid identity and unsupported versions close the connection. Each mode returns a correlated refusal for operations outside its allowlist. The host allows eight concurrent handlers and four concurrent subscriptions, with one additional listening instance and a private first-instance claim. The host promptly closes connections above capacity and retries a temporarily busy listener replacement for up to two seconds.
 - Windows claims the first instance exclusively and rejects remote connections. The explicit DACL restricts access to the host account. After reading the request bytes, the host resolves the pipe token and requires the same SID, logon authentication ID and Windows session. This is a same-logon development trust boundary. The ordinary duplex C# client asks for generic write, which also gives its SID permission to create pipe instances. It does not establish server trust against another process in that logon. Both projections exercise synthetic authorization inputs behind the native identity check. They do not replicate active-session selection or LocalSystem access policy.
 - Rust tests cover the wire fixtures and native endpoint checks, including first-instance contention, listener saturation and recovery, an anonymous client, and start/stop ordering through the shared lifecycle with an injected SCM reporter and stop signal. The .NET tests exercise the real tray client through the foreground endpoint, including initial status, event, cancellation and reconnect. They supplement that path with managed codec and v51 raw frames. The Windows job in the Rust workflow runs both sets on stacked PRs.
@@ -1560,7 +1717,88 @@ product ABI are unchanged.
 
 - With null capabilities the tray's `ProfileAdmissionPolicy.Supports` refuses every profile draft. Beside an observed HyperBoost, the observation record lets it admit a draft that changes nothing, and it still refuses any change. Native profile admission stays authoritative, so the tray is unchanged.
 - Session Display IPC stays at version 2 although main changed what it means. Manual setters now admit `ExternalUnknown` with fresh Service external-power evidence, and the display checkpoint admits source 3 as an unowned manual hold. The native Agent implements both. A version-2 peer built before that change refuses an `ExternalUnknown` manual request and treats a source-3 checkpoint as invalid, so automation pauses with every field uncertain. Both outcomes fail closed. The version number cannot tell the two behaviours apart.
-- The read-only protocol-51 projection keeps a confirmed Custom preset whose levels the firmware did not report, with `customPerformance` null. Protocol 85 admits that state; every v51-era managed reader rejects it, because `ValidPerformanceState` requires `IsWellFormed`, so such a status fails closed. This branch made that choice before the reconciliation and did not revisit it.
+- The read-only protocol-51 projection keeps a confirmed Custom preset whose levels the firmware did not report, with `customPerformance` null. Protocol 90 admits that state; every v51-era managed reader rejects it, because `ValidPerformanceState` requires `IsWellFormed`, so such a status fails closed. This branch made that choice before the reconciliation and did not revisit it.
+
+### Pending parity with main a8aea95f
+
+The merge of main a8aea95f moved the branch protocol 85 (a confirmed Custom
+preset with unreported levels) to protocol 90, because main had assigned 85
+through 89. Every managed vector recorder was rerun through the real managed
+code. A native replay that differs from its rerecorded vector is listed in an
+exact allowlist in that native test file, with its case and the managed commit
+that introduced the behavior. A companion test fails when an allowlisted case
+is missing or starts to match, so a port must also remove its entry.
+
+Allowlisted native replays:
+
+| Case | Managed commit | Native area | Test file |
+|---|---|---|---|
+| `live readings read an idle D0 GPU after the dwell, then at most every 10 s` | 8331bbf476ab4f17a2c70d4945a77782049aa4a8 | GPU temperature sampler, live readings | `gpu_temperature_tests.rs` (`PENDING_PARITY`) |
+| `a non-D0 live-reading sample restarts the dwell` | 8331bbf476ab4f17a2c70d4945a77782049aa4a8 | same | same |
+| `live readings read D0 with unavailable counters after the dwell` | 8331bbf476ab4f17a2c70d4945a77782049aa4a8 | same | same |
+| `the power recheck drops an idle D0 live reading` | 8331bbf476ab4f17a2c70d4945a77782049aa4a8 | same | same |
+| `an ordinary read does not reuse an idle D0 live reading` | 8331bbf476ab4f17a2c70d4945a77782049aa4a8 | same | same |
+| `live readings reuse an active reading for idle samples for 10 s` | 8331bbf476ab4f17a2c70d4945a77782049aa4a8 | same | same |
+| `a live idle sample reuses an ordinary active reading` | 8331bbf476ab4f17a2c70d4945a77782049aa4a8 | same | same |
+| `the live reader keeps an active reading at the first idle sample` | 8331bbf476ab4f17a2c70d4945a77782049aa4a8 | same | same |
+
+Managed live readings now call
+`SafeWindowsFanTemperatureSource.ReadForLiveReadingsAsync` instead of
+`ReadAsync`. An idle sample of a GPU held in D0 reuses the last D0 reading of
+any read, active or ordinary, for up to 10 seconds. Without such a reading it
+reads NVML once the GPU has been in D0 for 3 seconds. A sample that is not D0
+drops the reading and restarts the dwell. The native sampler has one read path
+with the workload gate of `ReadAsync`, so the native live readings leave an
+idle D0 GPU unread. The `sampler` rows with `reader: live` in
+`gpu-temperature-vectors.json` record the managed path; rows without a reader
+still record `ReadAsync`.
+
+Wire members the native Service does not publish at protocol 90. Each decodes
+as its managed default, which is the honest state for a native build that has
+no backend for it:
+
+- `status.windowsDynamicLightingAdvisory` is absent and decodes as `Unknown`.
+  The native Service has no Windows Dynamic Lighting advisory.
+- `capabilities` stays null except beside a confirmed HyperBoost state. That
+  observation record carries `hyperBoostEntryRestriction: null` and
+  `blade14KeyboardEdition: null`, as managed writes them for
+  `DeviceCapabilities.Unavailable()`. It omits main's
+  `intelCpuPowerLimit`, `firmwareGamingGpuOverclockAccess` and
+  `localDimming`, which decode as null.
+- `confirmedState.localDimmingActive` is absent and decodes as null
+  (unknown). The native Service has no local-dimming read.
+- `coolingPad` is absent. The native Service has no cooling-pad backend, so it
+  publishes neither the protocol 85 Auto mode nor its profile.
+- `reportWindowsDynamicLightingAdvisory` and `clearLocalDimming` get managed's
+  unsupported reply in every composition.
+
+Managed changes from main a8aea95f with no native port. Their rerecorded
+vectors are unchanged, so no native replay fails, but no vector exercises the
+new behavior either. Each one stays a gap until it is ported and pinned by a
+managed vector:
+
+| Managed commits | Behavior | Native area |
+|---|---|---|
+| 3f7b3838, 1a03e358 | Power-only write block on unclassified external power ends on a power change and publishes the classified source | battery and power-source admission |
+| 85182893 | A pending write block is released on a power change | thermal mutation, drift |
+| e481be77, ea5bd41e, 70cbb567 | Raw 6 off battery is a transitional DC Balanced, limited to transitions from battery, and Custom can be entered from it | thermal decode and mutation |
+| 06577e09 | A firmware-only lost acknowledgement is judged from the preset | thermal confirmation |
+| 3b692b95, 445f17b7, 2b141ccd | HyperBoost journal handoff retirement and exit submission | thermal history store, thermal mutation |
+| 374e4847, 66c6e902, 72137077, 26db283c, cc2dea76 | GPU clock offset confirmation, resend and NVML submission recovery | no native GPU clock offset writer; stored offsets are only validated |
+| 24966354, c91181b8 | GPU clock offsets and the NVIDIA laptop form on RZ09-0529 and RZ09-0530 | no native GPU clock offset writer; stored offsets are only validated |
+| a63f884c, 262c543c, 561c43bb, 927c2e18, b872ba70, ac6b1215 | Deferred presets under manual fans and their reconciliation | fan mutation, thermal drift |
+| a26e1519 | A HyperBoost exit whose Maximum Fans restore was refused and whose journal cannot be retired reports the restore failure and blocked writes | HyperBoost exit reporting |
+| 0cf60756, 1aee2bd6, acdb3bf2, e22d97ac, 185c145a, d4249eca | Maximum fans in Custom, its restore, exit, refusal and RZ09-0482 handling | fan mutation, Custom capability |
+| cc9b97ff, 363805c9 | Product 669 Power Mode Control acknowledgements | power-mode decode |
+| e4f19946, b3b2b5ae | The limiter stays off while the override is on; an unreadable 07/8F | battery mutation |
+| db536537, b5a3aa6f | Temporary full charge on RZ09-0530 and RZ09-0529 | temporary full charge model admission |
+| d379614f, 677608a4, 4570d54c, 5b2b549d | SnapTap driver keyboard admission, rearm and retry | Agent function row |
+| 05ec5381 | A null one-shot control set is rejected | status decoder |
+| 0426e6a4, a4bc0874 | HyperBoost entry by SKU with a Balanced handoff, and the RZ09-0510 Turbo base | thermal mutation |
+| 4afe8fe2 and the cooling-pad series | Cooling-pad Auto mode and profile | no native cooling-pad backend |
+| 5dec9093, a1728389 | Windows Dynamic Lighting advisory | no native backend |
+| 7c56a32c, 4cca8813, 8bb17a4d, 736f6d8a, b82a614d, 5e74b33f | Observed CPU power, Intel ranges, GPU overclocking and local dimming | no native backend |
+| 520b7d03 and the lighting series | RZ09-0530 MCU edition key maps and MCU host lighting frames | no native backend |
 
 ## Native SCM gate
 

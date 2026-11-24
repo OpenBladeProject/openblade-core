@@ -109,7 +109,8 @@ internal sealed record PendingWriteConfirmation(
     NativeHandbackClaim? NativeHandback = null)
 {
     public WriteConfirmationExpectation Expectation => new(
-        Target, PreWriteState, HyperBoostActive, HyperBoostBaseMode, GpuClockTuningOnly, BatteryConfirmation);
+        Target, PreWriteState, HyperBoostActive, HyperBoostBaseMode, GpuClockTuningOnly, BatteryConfirmation,
+        HyperBoostBaseMode is null ? null : PowerSource);
 
     // A native write's firmware effect does not depend on managed's power
     // source or automation instance, so handback entries ignore both.

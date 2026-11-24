@@ -44,7 +44,7 @@ struct OffSettings {
     parameters: Option<Parameters>,
     logo_mode: Option<u8>,
     independent_controls: Option<serde::de::IgnoredAny>,
-    // Protocol 85 full-effect authority on hybrid backends. Managed omits the
+    // Protocol 81 full-effect authority on hybrid backends. Managed omits the
     // default; an explicit true is not an admitted Off on this backend.
     #[serde(default)]
     controls_keyboard_effect: bool,
@@ -1119,7 +1119,7 @@ mod tests {
                 Some(Lifetime::Persistent)
             );
         }
-        // Full-effect authority and the protocol 85 zone fields are not admitted here.
+        // Full-effect authority and the protocol 84 zone fields are not admitted here.
         assert_eq!(
             off(json!({"controlsKeyboardEffect": true}))
                 .unwrap()

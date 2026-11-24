@@ -408,6 +408,10 @@ pub(super) trait StatusOrigin: Send + Sync {
     fn admit_owned_stop(&self) -> io::Result<()> {
         Err(io::ErrorKind::PermissionDenied.into())
     }
+    #[cfg(feature = "service-keyboard-driver-mode-v1")]
+    fn low_power_wake(&self) -> Option<Arc<tokio::sync::Notify>> {
+        None
+    }
     // Only the metadata-only composition drains through the origin; the mailbox reader drains otherwise.
     #[cfg_attr(feature = "service-mailbox-observation-v1", allow(dead_code))]
     fn confirm_metadata_drain(&self) -> io::Result<()>;
@@ -422,6 +426,10 @@ impl StatusOrigin for crate::loaded_origin::Origin {
     }
     fn admit_owned_stop(&self) -> io::Result<()> {
         self.verify_owned_stop()
+    }
+    #[cfg(feature = "service-keyboard-driver-mode-v1")]
+    fn low_power_wake(&self) -> Option<Arc<tokio::sync::Notify>> {
+        Some(self.lifecycle.suspended())
     }
     fn verify(&self) -> io::Result<()> {
         self.verify()
@@ -524,6 +532,10 @@ impl StatusSource for GuardedStatus {
         }))
     }
     #[cfg(feature = "service-keyboard-driver-mode-v1")]
+    fn low_power_wake(&self) -> Option<Arc<tokio::sync::Notify>> {
+        self.origin.low_power_wake()
+    }
+    #[cfg(feature = "service-keyboard-driver-mode-v1")]
     fn maintain_driver_mode(&mut self) -> Option<super::Reconciling> {
         let runtime = self.mutation.clone()?;
         let mailbox = self.mailbox.clone();
@@ -531,7 +543,9 @@ impl StatusSource for GuardedStatus {
             // A step failure continues the loop (managed `RunStepAsync`); only
             // fatal admission evidence stops the Service. The step publishes
             // through the read cadence every status projects
-            // (`ReadSource::record_driver_mode`).
+            // (`ReadSource::record_driver_mode`). A new suspend generation
+            // is prepared first (managed `PrepareForLowPowerCoreAsync`).
+            runtime.prepare_for_low_power(&mailbox).await?;
             runtime.maintain_driver_mode(&mailbox).await
         }))
     }
@@ -978,6 +992,10 @@ impl StatusSource for GuardedStatus {
         })
     }
     fn drain(&mut self) -> Pending<'_, ()> {
+        self.drain_by(Instant::now() + super::SOURCE_DRAIN_TIMEOUT)
+    }
+    #[cfg_attr(not(feature = "service-thermal-mutation-v1"), allow(unused_variables))]
+    fn drain_by(&mut self, deadline: Instant) -> Pending<'_, ()> {
         // Cleanup remains possible after revocation; retained origin and package
         // guards outlive listener/worker drain. It grants no firmware authority.
         Box::pin(async move {
@@ -989,7 +1007,8 @@ impl StatusSource for GuardedStatus {
                 // then the fan handback. The keyboard's outcome is a diagnostic
                 // (`Runtime::driver_mode_release`): only fatal admission
                 // evidence fails the Stop, and nothing it does skips the fan
-                // step. The first error is kept.
+                // step. The first error is kept. The fan handback is paced to
+                // what is left of the drain (`deadline`), whose end cancels it.
                 #[cfg(feature = "service-keyboard-driver-mode-v1")]
                 {
                     let keyboard = if self.origin.admit_owned_stop().is_ok() {
@@ -1003,7 +1022,7 @@ impl StatusSource for GuardedStatus {
                     }
                 }
                 let fans = if self.origin.admit_owned_stop().is_ok() {
-                    runtime.stop_fans(&self.mailbox).await
+                    runtime.stop_fans(&self.mailbox, deadline).await
                 } else {
                     runtime.refuse_stop_fans()
                 };

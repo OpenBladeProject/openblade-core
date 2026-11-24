@@ -35,6 +35,7 @@
     <None Include="../../tools/openblade-windows-host/tests/data/diagnostic-export-contract.json" Link="diagnostic-export-contract.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../tools/openblade-windows-host/tests/data/diagnostic-export-vectors.json" Link="diagnostic-export-vectors.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../tools/openblade-windows-host/tests/data/diagnostic-export-native.json" Link="diagnostic-export-native.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../tools/openblade-windows-host/tests/data/gpu-temperature-vectors.json" Link="gpu-temperature-vectors.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../tools/openblade-windows-host/tests/data/thermal-convergence-vectors.json" Link="thermal-convergence-vectors.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../tools/openblade-windows-host/tests/data/firmware-version-vectors.json" Link="firmware-version-vectors.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../tools/openblade-windows-host/tests/data/firmware-version-native-frames.json" Link="firmware-version-native-frames.json" CopyToOutputDirectory="PreserveNewest" />

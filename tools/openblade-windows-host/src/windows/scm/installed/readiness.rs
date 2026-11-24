@@ -1,4 +1,4 @@
-//! Installed v85 status. Ports must own their resources and acknowledge retirement.
+//! Installed v90 status. Ports must own their resources and acknowledge retirement.
 
 use std::{future::Future, io, pin::Pin, rc::Rc, sync::Arc, time::Duration};
 
@@ -193,6 +193,13 @@ trait StatusSource {
     fn maintain_driver_mode(&mut self) -> Option<Reconciling> {
         None
     }
+    // Notified once for each new suspend generation
+    // (`Lifecycle::suspended`), so the origin tick prepares the boundary at
+    // once instead of at its next interval.
+    #[cfg(feature = "service-keyboard-driver-mode-v1")]
+    fn low_power_wake(&self) -> Option<Arc<tokio::sync::Notify>> {
+        None
+    }
     #[cfg(feature = "service-thermal-mutation-v1")]
     fn mutate(&mut self, _: Caller, _: String, _: StatusRequest, _: Instant) -> Mutation {
         Box::pin(async {
@@ -239,6 +246,11 @@ trait StatusSource {
         crate::diagnostic_export::Sources::service()
     }
     fn drain(&mut self) -> Pending<'_, ()>;
+    /// `drain` under `deadline`, the bound `Ports::retire` puts on it, so
+    /// work that must end inside the drain can pace itself to the time left.
+    fn drain_by(&mut self, _deadline: Instant) -> Pending<'_, ()> {
+        self.drain()
+    }
 }
 
 struct Ports {
@@ -378,7 +390,22 @@ impl Ports {
             // replay every missed origin and power check back to back after a
             // resume. Delay runs one check, then resumes the cadence.
             interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
+            // A new suspend generation runs the tick at once: its low-power
+            // preparation has `low_power_cleanup::MAXIMUM_AGE` from
+            // the notice, and the interval alone could spend a third of it.
+            #[cfg(feature = "service-keyboard-driver-mode-v1")]
+            let wake = self.source.lock().await.low_power_wake();
             loop {
+                #[cfg(feature = "service-keyboard-driver-mode-v1")]
+                if let Some(wake) = &wake {
+                    tokio::select! {
+                        _ = interval.tick() => {}
+                        () = wake.notified() => {}
+                    }
+                } else {
+                    interval.tick().await;
+                }
+                #[cfg(not(feature = "service-keyboard-driver-mode-v1"))]
                 interval.tick().await;
                 let mut source = self.source.lock().await;
                 source.verify_origin()?;
@@ -386,7 +413,8 @@ impl Ports {
                 // Managed step order: power-source classification, then the
                 // keyboard Driver-mode step. Its first eligible tick is the
                 // managed startup call; native runs no startup reconciliation
-                // for it to precede. Its own admission refuses in low power.
+                // for it to precede. In low power it prepares a new suspend
+                // generation once and acquires nothing.
                 #[cfg(feature = "service-keyboard-driver-mode-v1")]
                 {
                     let maintain = source.maintain_driver_mode();
@@ -449,8 +477,9 @@ impl Ports {
         // listener ownership or retirement cannot be confirmed.
         let owned = self.endpoint.listener().and_then(Listener::verify);
         let listener = timeout(DRAIN_TIMEOUT, self.endpoint.retire()).await;
-        let runtime = timeout(SOURCE_DRAIN_TIMEOUT, async {
-            self.source.lock().await.drain().await
+        let deadline = Instant::now() + SOURCE_DRAIN_TIMEOUT;
+        let runtime = timeout_at(deadline, async {
+            self.source.lock().await.drain_by(deadline).await
         })
         .await;
         owned.and(listener?).and(runtime?)?;

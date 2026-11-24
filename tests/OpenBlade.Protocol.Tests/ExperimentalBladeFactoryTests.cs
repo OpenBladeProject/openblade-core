@@ -142,6 +142,50 @@ public sealed partial class ExperimentalBladeFactoryTests
     }
 
     [Fact]
+    public async Task Blade14Factory_ReadsEditionOnceBeforePublishingThePort()
+    {
+        ExperimentalBladeModel model = ExperimentalBladeModels.All.Single(item => item.ProductId == 0x02C5);
+        var native = new Native(1) { ProductId = model.ProductId };
+        var io = new Io();
+        var factory = new ExperimentalBladeFactory(model, new Identity(model.ProductName), native,
+            new Guard(), io, () => PowerSource.ExternalUnknown);
+
+        HidSessionResult<IProductionBatteryPort> opened = await factory.OpenAsync(CancellationToken.None);
+
+        Assert.Null(opened.Failure);
+        await using ExperimentalBladePort port = Assert.IsType<ExperimentalBladePort>(opened.Value);
+        Assert.Equal(new byte[] { 0x82, 0x82, 0x86 }, io.Commands);
+        Assert.All(io.Commands, command => Assert.True(command >= 0x80));
+        Assert.Equal((byte)12, port.Capabilities.Blade14KeyboardEdition);
+        Assert.Null(port.Capabilities.Blade18KeyboardLayoutId);
+        Assert.Equal(1, native.BoundCount);
+    }
+
+    [Fact]
+    public async Task Blade14EditionStatusFailure_ReopensOnceWithoutRepeatingTheReadOrGuessing()
+    {
+        ExperimentalBladeModel model = ExperimentalBladeModels.All.Single(item => item.ProductId == 0x02C5);
+        var native = new Native(1) { ProductId = model.ProductId };
+        var io = new Io
+        {
+            Events = native.Events,
+            StatusFailure = (0x00, 0x86),
+            StatusFailuresRemaining = 1,
+        };
+        var factory = new ExperimentalBladeFactory(model, new Identity(model.ProductName), native,
+            new Guard(), io, () => PowerSource.ExternalUnknown);
+
+        HidSessionResult<IProductionBatteryPort> opened = await factory.OpenAsync(CancellationToken.None);
+
+        Assert.Null(opened.Failure);
+        await using ExperimentalBladePort port = Assert.IsType<ExperimentalBladePort>(opened.Value);
+        Assert.Equal(new byte[] { 0x82, 0x82, 0x86, 0x82, 0x82 }, io.Commands);
+        Assert.Equal(2, native.BoundCount);
+        Assert.Null(port.Capabilities.Blade14KeyboardEdition);
+        Assert.Equal(KeyboardLightingLayoutIds.Rz09_0530, port.Capabilities.KeyboardLightingLayoutId);
+    }
+
+    [Fact]
     public async Task Blade18LayoutStatusFailure_CancellationAtRetirementStopsBeforeReopen()
     {
         using var cancellation = new CancellationTokenSource();
@@ -241,7 +285,8 @@ public sealed partial class ExperimentalBladeFactoryTests
 
         Assert.Null(result.Failure);
         await using IProductionLightingPort port = Assert.IsType<ExperimentalBladePort>(result.Value);
-        Assert.Equal(new byte[] { 0x82, 0x82 }, io.Commands);
+        // Only RZ09-0530 adds its exact read-only edition getter after the two admission reads.
+        Assert.Equal(productId == 0x02C5 ? new byte[] { 0x82, 0x82, 0x86 } : new byte[] { 0x82, 0x82 }, io.Commands);
         Assert.Equal(1, native.BoundCount);
         Assert.True(port.Capabilities.SupportsKeyboardBrightness);
         Assert.NotEmpty(port.Capabilities.LightingEffects);
@@ -351,9 +396,11 @@ public sealed partial class ExperimentalBladeFactoryTests
         Assert.Null(result.Failure);
         Assert.NotNull(result.Value);
         await using IProductionBatteryPort port = result.Value!;
-        Assert.Empty(factory.GetDiagnostics().Observations);
+        // The admitted session's HyperBoost SKU recheck is its only open-time record.
+        Assert.DoesNotContain(factory.GetDiagnostics().Observations, item => item.Operation != "HyperBoostSystemSku");
         await port.QueryPerformanceFanStateAsync(CancellationToken.None);
-        ExperimentalControlObservation observation = Assert.Single(factory.GetDiagnostics().Observations);
+        ExperimentalControlObservation observation = Assert.Single(factory.GetDiagnostics().Observations,
+            item => item.Operation != "HyperBoostSystemSku");
         Assert.Equal("Confirmed", observation.Outcome);
         Assert.Equal("Performance", observation.Operation);
     }
@@ -436,7 +483,6 @@ public sealed partial class ExperimentalBladeFactoryTests
     [Theory]
     [InlineData(0x029F)]
     [InlineData(0x029D)]
-    [InlineData(0x02C5)]
     public async Task Recovery_WithoutFullChargeQueryPreservesUnknownLikeOrdinaryBatteryRead(int productId)
     {
         ExperimentalBladeModel model = ExperimentalBladeModels.All.Single(item => item.ProductId == productId);
@@ -457,17 +503,114 @@ public sealed partial class ExperimentalBladeFactoryTests
         Assert.All(io.Commands, command => Assert.True(command >= 0x80));
     }
 
+    [Theory]
+    [InlineData(0x02B7, "RZ09-0510TEH3", true)]
+    [InlineData(0x02B7, "RZ09-0510SEH3", false)]
+    [InlineData(0x02B7, null, true)]
+    [InlineData(0x029F, "RZ09-0483TEH3", true)]
+    [InlineData(0x029F, "RZ09-04835EH3", false)]
+    [InlineData(0x029F, "RZ09-04", true)]
+    [InlineData(0x029D, null, true)]
+    public async Task HyperBoostSkuRecheck_UsesAdmittedHostSkuForEntryOnly(int productId, string? sku, bool entryAdmitted)
+    {
+        ExperimentalBladeModel model = ExperimentalBladeModels.All.Single(item => item.ProductId == productId);
+        var native = new Native(1) { ProductId = model.ProductId };
+        var factory = new ExperimentalBladeFactory(model, new Identity(model.ProductName, sku), native,
+            new Guard(), new Io(), () => PowerSource.PluggedIn);
+        // Before a session reads the host SKU, HyperBoost access and entry are admitted, as in Synapse.
+        Assert.Equal(DeviceFeatureAccess.ReadWrite, factory.Capabilities.HyperBoostAccess);
+        Assert.Null(factory.Capabilities.HyperBoostEntryRestriction);
+        Assert.Equal(DeviceFeatureAccess.ReadWrite, factory.PotentialCapabilities.HyperBoostAccess);
+        HidSessionResult<IProductionBatteryPort> opened = await factory.OpenAsync(CancellationToken.None);
+        await using var port = Assert.IsType<ExperimentalBladePort>(opened.Value);
+
+        // The recheck never changes exit or restore access; it only declines entry.
+        foreach (DeviceCapabilities capabilities in new[] { port.Capabilities, factory.Capabilities })
+        {
+            Assert.Equal(DeviceFeatureAccess.ReadWrite, capabilities.HyperBoostAccess);
+            Assert.Equal(DeviceFeatureAccess.ReadWrite, capabilities.HyperBoostWithoutCoolingPadAccess);
+            Assert.NotNull(capabilities.HyperBoostBaseModes);
+            Assert.Equal(entryAdmitted ? null : HyperBoostEntryRestriction.VendorSystemSku,
+                capabilities.HyperBoostEntryRestriction);
+            Assert.Equal(entryAdmitted, HyperBoostCapabilityPolicy.IsWritable(capabilities));
+            Assert.True(HyperBoostCapabilityPolicy.CanExit(capabilities));
+        }
+        Assert.Equal(port.Capabilities.PerformancePresets, factory.PotentialCapabilities.PerformancePresets);
+        bool writable = entryAdmitted;
+        ExperimentalControlObservation[] records = factory.GetDiagnostics().Observations
+            .Where(item => item.Operation == "HyperBoostSystemSku").ToArray();
+        if (productId == 0x029D)
+        {
+            Assert.Empty(records);
+            return;
+        }
+        ExperimentalControlObservation record = Assert.Single(records);
+        Assert.Equal(writable ? "Confirmed" : "Blocked", record.Outcome);
+        Assert.Equal(sku is not { Length: > 9 } ? "SkuCharacter9=Unavailable" : $"SkuCharacter9={sku[9]}", record.ConfirmedValue);
+        // Diagnostics never carry the full SKU.
+        Assert.DoesNotContain(factory.GetDiagnostics().Observations,
+            item => sku is not null && (item.ConfirmedValue?.Contains(sku, StringComparison.Ordinal) == true));
+    }
+
+    // The host SKU is re-read on every open. A later failed read (null) admits entry
+    // like Synapse, and an excluded SKU only declines entry: exit access never closes.
+    [Theory]
+    [InlineData(0x02B7, "RZ09-0510TEH3", "RZ09-0510SEH3")]
+    [InlineData(0x02B7, "RZ09-0510SEH3", null)]
+    [InlineData(0x029F, "RZ09-0483TEH3", "RZ09-0483SEH3")]
+    [InlineData(0x029F, "RZ09-0483SEH3", null)]
+    public async Task HyperBoostSkuRecheck_RereadOnEveryOpenNeverClosesExitAccess(
+        int productId, string? first, string? later)
+    {
+        ExperimentalBladeModel model = ExperimentalBladeModels.All.Single(item => item.ProductId == productId);
+        var native = new Native(1) { ProductId = model.ProductId };
+        var identity = new MutableSkuIdentity(model.ProductName) { Sku = first };
+        var factory = new ExperimentalBladeFactory(model, identity, native, new Guard(), new Io(),
+            () => PowerSource.PluggedIn);
+        bool panelUnresolved = ExperimentalBladePort.SupportsLocalDimmingClear(model);
+        foreach (string? sku in new[] { first, later, first })
+        {
+            identity.Sku = sku;
+            int readsBefore = identity.ReadCount;
+            HidSessionResult<IProductionBatteryPort> opened = await factory.OpenAsync(CancellationToken.None);
+            await using var port = Assert.IsType<ExperimentalBladePort>(opened.Value);
+            // One admission read per open, plus the exact-host check before the
+            // one-time mini-LED panel read on local-dimming models.
+            Assert.Equal(panelUnresolved ? 2 : 1, identity.ReadCount - readsBefore);
+            panelUnresolved = false;
+            bool excluded = sku is { Length: > 9 } && sku[9] is 'R' or 'S' or '5' or '6';
+            Assert.Equal(DeviceFeatureAccess.ReadWrite, port.Capabilities.HyperBoostAccess);
+            Assert.Equal(DeviceFeatureAccess.ReadWrite, factory.Capabilities.HyperBoostAccess);
+            Assert.NotNull(port.Capabilities.HyperBoostBaseModes);
+            Assert.Equal(excluded ? HyperBoostEntryRestriction.VendorSystemSku : null,
+                port.Capabilities.HyperBoostEntryRestriction);
+            Assert.Equal(port.Capabilities.HyperBoostEntryRestriction,
+                factory.Capabilities.HyperBoostEntryRestriction);
+        }
+    }
+
+    private sealed class MutableSkuIdentity(string product) : IHostIdentitySource
+    {
+        internal string? Sku { get; set; }
+        internal int ReadCount { get; private set; }
+        public HostIdentityReadResult ReadExactIdentity()
+        {
+            ReadCount++;
+            return new(new HostIdentityEvidence("Razer", product, Sku, "test-firmware"), null);
+        }
+    }
+
     private static ExperimentalBladeFactory Create(Native native, Io io) =>
         new(ExperimentalBladeModels.All[0], new Identity(), native, new Guard(), io,
             () => PowerSource.ExternalUnknown);
 
-    private sealed class Identity(string product = "Blade 16 - RZ09-0483") : IHostIdentitySource
+    private sealed class Identity(string product = "Blade 16 - RZ09-0483", string? sku = null) : IHostIdentitySource
     {
         internal int ReadCount { get; private set; }
         public HostIdentityReadResult ReadExactIdentity()
         {
             ReadCount++;
-            return new(new HostIdentityEvidence("Razer", product, null, "test-firmware"), null);
+            return new(new HostIdentityEvidence("Razer", product, sku, "test-firmware"), null);
         }
     }
 
@@ -484,6 +627,7 @@ public sealed partial class ExperimentalBladeFactoryTests
         private readonly Dictionary<OpenedCandidateHandle, int> handleIndexes = [];
         private int nextHandle = 500;
         internal ushort ProductId { get; init; } = 0x029F;
+        internal ushort VersionNumber { get; set; }
         internal int[] DisposeCounts { get; }
         internal int BoundCount { get; private set; }
         internal List<string> Events { get; } = [];
@@ -520,7 +664,7 @@ public sealed partial class ExperimentalBladeFactoryTests
             {
                 BeforeSecondInterfaceRecheck?.Invoke();
             }
-            return new(0x1532, ProductId, 1, 2, 91);
+            return new(0x1532, ProductId, 1, 2, 91, VersionNumber);
         }
 
         public OpenedHidHandle BindSelected(OpenedCandidateHandle handle)
@@ -545,6 +689,7 @@ public sealed partial class ExperimentalBladeFactoryTests
     {
         private byte[] lastRequest = [];
         internal List<byte> Commands { get; } = [];
+        internal List<(byte Class, byte Id, byte Region)> Requests { get; } = [];
         internal List<string>? Events { get; init; }
         internal Action? AfterGet { get; init; }
         internal bool RejectSecondInterface { get; init; }
@@ -555,6 +700,9 @@ public sealed partial class ExperimentalBladeFactoryTests
         internal bool FailRead { get; init; }
         internal (byte Class, byte Id)? StatusFailure { get; init; }
         internal int StatusFailuresRemaining { get; set; }
+        internal byte? LayoutReplyDataSize { get; init; }
+        // Restricts StatusFailure to requests whose second argument is this region.
+        internal byte? StatusFailureRegion { get; init; }
 
         public Task<HidFeatureIoResult> ExecuteAsync(OpenedHidHandle handle, uint controlCode,
             byte[] buffer, CancellationToken callerCancellation, CancellationToken deadlineCancellation)
@@ -567,6 +715,7 @@ public sealed partial class ExperimentalBladeFactoryTests
                     LightingEffect = buffer[11];
                 }
                 Commands.Add(buffer[8]);
+                Requests.Add((buffer[7], buffer[8], buffer[10]));
                 Events?.Add($"query:{handle.FileHandle.DangerousGetHandle().ToInt64()}:{buffer[7]:X2}/{buffer[8]:X2}");
             }
             else
@@ -579,7 +728,8 @@ public sealed partial class ExperimentalBladeFactoryTests
                 lastRequest.CopyTo(buffer, 0);
                 if (StatusFailuresRemaining > 0
                     && StatusFailure is { } failure
-                    && failure == (lastRequest[7], lastRequest[8]))
+                    && failure == (lastRequest[7], lastRequest[8])
+                    && (StatusFailureRegion is not { } region || lastRequest[10] == region))
                 {
                     buffer[1] = 0x05;
                     StatusFailuresRemaining--;
@@ -592,6 +742,11 @@ public sealed partial class ExperimentalBladeFactoryTests
                 {
                     buffer[9] = 12;
                     buffer[89] ^= 12;
+                    if (LayoutReplyDataSize is { } size)
+                    {
+                        buffer[89] ^= (byte)(buffer[6] ^ size);
+                        buffer[6] = size;
+                    }
                 }
                 if (TrackLightingEffect && lastRequest[7] == 0x0F)
                 {

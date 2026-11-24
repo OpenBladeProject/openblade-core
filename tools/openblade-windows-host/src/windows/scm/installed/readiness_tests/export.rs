@@ -170,7 +170,7 @@ fn shared(history: Arc<History>, metadata: Arc<dyn Metadata>, events: &Events) -
 
 fn request(live_readings_enabled: bool) -> Vec<u8> {
     serde_json::to_vec(&json!({
-        "operation": "exportDiagnostics", "version": 85, "requestId": ID,
+        "operation": "exportDiagnostics", "version": PROTOCOL_VERSION, "requestId": ID,
         "liveReadingsEnabled": live_readings_enabled,
     }))
     .unwrap()
@@ -218,7 +218,7 @@ fn reply_value(reply: &[u8]) -> Value {
 
 fn failure(error: &str) -> Value {
     json!({
-        "frame": "response", "version": 85, "requestId": ID.to_ascii_lowercase(),
+        "frame": "response", "version": PROTOCOL_VERSION, "requestId": ID.to_ascii_lowercase(),
         "success": false, "error": error, "status": null, "result": null,
         "archive": null, "errorCode": null,
     })

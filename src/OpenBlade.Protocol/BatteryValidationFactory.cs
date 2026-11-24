@@ -674,7 +674,9 @@ public static class BatteryValidationFactory
             hasFanStopSourceEvidence: FanStopModelContract.ForProfile(target.Model, target.ProductId,
                 WindowsHostIdentitySource.Rz090528Identity.ProductName).Count != 0,
             capturePowerSource: capturePowerSource,
-            supportsOrdinaryThermalControlOnUnclassifiedExternalPower: true);
+            supportsOrdinaryThermalControlOnUnclassifiedExternalPower: true,
+            // Synapse 710 couples local dimming to Windows HDR, so it is shown as observed only.
+            localDimmingCapabilities: new LocalDimmingCapabilities(DeviceFeatureAccess.ObservedOnly, SupportsClear: false));
     }
 
     internal static ProductionBatteryReadEvidence

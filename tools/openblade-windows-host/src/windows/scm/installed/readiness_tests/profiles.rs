@@ -22,7 +22,7 @@ fn saved(files: &MemoryFiles) -> Value {
 
 fn update_request(n: u8, profiles: &Value) -> Value {
     json!({
-        "operation": "updateProfiles", "version": 85,
+        "operation": "updateProfiles", "version": 90,
         "requestId": format!("aaaaaaaa-bbbb-cccc-dddd-{n:012}"),
         "profiles": profiles,
     })
@@ -30,7 +30,7 @@ fn update_request(n: u8, profiles: &Value) -> Value {
 
 fn result(status: u8, message: &str, n: u8) -> Value {
     json!({
-        "frame": "response", "version": 85,
+        "frame": "response", "version": 90,
         "requestId": format!("aaaaaaaa-bbbb-cccc-dddd-{n:012}"),
         "success": true, "error": null, "status": null,
         "result": {"status": status, "message": message},
@@ -300,7 +300,7 @@ async fn installed_update_profiles_closes_on_a_frame_managed_refuses() {
         frame(&|r| r["profiles"]["windowsPowerModes"]["silent"] = json!(3)),
         frame(&|r| r["profiles"]["applicationProfiles"][0]["executablePath"] = json!("Game.exe")),
         frame(&|r| r["extra"] = json!(1)),
-        frame(&|r| r["version"] = json!(84)),
+        frame(&|r| r["version"] = json!(PROTOCOL_VERSION - 1)),
         frame(&|r| r["requestId"] = json!("not-a-guid")),
     ];
     // The discriminator of lighting parameters must come first, which only
@@ -476,7 +476,7 @@ async fn installed_update_profiles_waits_for_a_mutation_in_flight() {
     };
     tokio::select! {
         _ = &mut thermal => panic!("the held mutation completed"),
-        result = tokio::time::timeout(std::time::Duration::from_secs(2), held) => result.unwrap(),
+        result = tokio::time::timeout(HANG_GUARD, held) => result.unwrap(),
     }
 
     // The save neither answers nor stores while that mutation is in flight.
@@ -616,7 +616,7 @@ async fn installed_update_profiles_answers_the_managed_vector_corpus() {
         let payload = profile_set::json::write(
             &Json::Object(vec![
                 ("operation".into(), Json::string("updateProfiles")),
-                ("version".into(), Json::int(85)),
+                ("version".into(), Json::int(90)),
                 (
                     "requestId".into(),
                     Json::string("aaaaaaaa-bbbb-cccc-dddd-000000000001"),

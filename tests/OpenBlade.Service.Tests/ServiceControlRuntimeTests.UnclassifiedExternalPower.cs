@@ -193,6 +193,49 @@ public sealed partial class ServiceControlRuntimeTests
         Assert.Equal(setters, context.Device.TotalSetterCalls);
     }
 
+    // A limiter independent of the override accepts an unreadable flag, unless
+    // OpenBlade itself turned the override on: that intent stands in for the
+    // unreadable flag, so the limiter change is refused before any write.
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task UnclassifiedExternal_UnknownOverrideAdmitsIndependentLimiterUnlessOwnEnable(
+        bool ownEnable, bool limitChange)
+    {
+        TestContext context = await CreateUnclassifiedExternalContextAsync();
+        context.Device.Capabilities = context.Device.Capabilities with
+        {
+            ChargeLimits = new HashSet<int> { 70, 80 },
+            ChargePolicyIndependentOfTemporaryFullCharge = true,
+        };
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Battery = new ConfirmedBatteryState(true, 80, false),
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        if (ownEnable)
+        {
+            Assert.Equal(ControlOperationStatus.Applied,
+                (await context.Runtime.SetFullChargeOverrideAsync(true, CancellationToken.None)).Status);
+        }
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Battery = new ConfirmedBatteryState(true, 80, null),
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        int setters = context.Device.TotalSetterCalls;
+
+        ControlOperationResult result = limitChange
+            ? await context.Runtime.SetBatteryPolicyAsync(BatteryPolicy.Create(70), CancellationToken.None)
+            : await context.Runtime.SetBatteryProtectionAsync(false, CancellationToken.None);
+
+        Assert.Equal(ownEnable ? ControlOperationStatus.Blocked : ControlOperationStatus.Applied, result.Status);
+        Assert.Equal(setters + (ownEnable ? 0 : 1), context.Device.TotalSetterCalls);
+        Assert.Equal(ownEnable, context.Runtime.GetStatus().FullChargeOverride);
+    }
+
     [Fact]
     public async Task UnclassifiedExternal_KnownFullToLimitedThroughUnknownExpiresTemporaryOverride()
     {

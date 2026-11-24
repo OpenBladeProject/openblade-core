@@ -22,6 +22,7 @@ use openblade_domain::{
 };
 use serde_json::{Value, json};
 
+use super::mailbox_read::CleanupScope;
 use std::{
     io,
     sync::{Arc, Mutex},
@@ -168,7 +169,14 @@ pub(super) trait Files: Send + Sync {
         Ok(expected.map(<[u8]>::to_vec))
     }
     fn replace(&self, name: &str, expected: Option<&[u8]>, bytes: &[u8]) -> io::Result<()>;
-    fn replace_cleanup(&self, name: &str, expected: Option<&[u8]>, bytes: &[u8]) -> io::Result<()> {
+    /// A cleanup row under `scope`, which only a custodial store checks.
+    fn replace_cleanup(
+        &self,
+        name: &str,
+        _scope: CleanupScope,
+        expected: Option<&[u8]>,
+        bytes: &[u8],
+    ) -> io::Result<()> {
         self.replace(name, expected, bytes)
     }
     fn replace_retired(&self, name: &str, expected: Option<&[u8]>, bytes: &[u8]) -> io::Result<()> {
@@ -1357,7 +1365,11 @@ impl Storage {
         drop(s);
         profile_fan(power, profile)
     }
-    pub(super) fn record_fan(&self, mut entry: Entry, cleanup: bool) -> io::Result<()> {
+    pub(super) fn record_fan(
+        &self,
+        mut entry: Entry,
+        cleanup: Option<CleanupScope>,
+    ) -> io::Result<()> {
         let mut s = self.state.lock().map_err(|_| denied())?;
         if s.quarantined {
             return Err(denied());
@@ -1448,9 +1460,9 @@ impl Storage {
         let result = if entry.progress == 6 {
             self.files
                 .replace_retired(JOURNAL, s.journal.as_deref(), &bytes)
-        } else if cleanup {
+        } else if let Some(scope) = cleanup {
             self.files
-                .replace_cleanup(JOURNAL, s.journal.as_deref(), &bytes)
+                .replace_cleanup(JOURNAL, scope, s.journal.as_deref(), &bytes)
         } else {
             self.files.replace(JOURNAL, s.journal.as_deref(), &bytes)
         };

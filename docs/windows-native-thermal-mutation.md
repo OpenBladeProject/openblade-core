@@ -16,7 +16,7 @@ selection and Setup handoff consumers retain the same authenticated mailbox
 handoff requirement. A correctly authenticated role inventory can carry this
 composition. There is no new default native publishing or installation path.
 
-The installed v85 dispatcher accepts typed `setPerformanceOverride` and
+The installed v90 dispatcher accepts typed `setPerformanceOverride` and
 `reportApplicationContext` requests only in this composition. The SID comes
 from the actual named-pipe peer token, with active interactive session continuity
 checked before and after the operation. The real supplier independently matches
@@ -83,16 +83,22 @@ while it is set. `active()` is `epoch_for(WriteScope::Ordinary)`. Every capture 
 `capture_settle`, mailbox custody and status, so nothing is captured in low
 power. `WindowsGuard::authorize_for` compares the pinned epoch with
 `epoch_for(WriteScope::Ordinary)` before and after its Windows checks, so
-per-write admission stays authoritative. `WriteScope::LowPowerFanAutomatic` is
-managed's `PriorAuthorityCleanup` exception for the low-power preparation's
-firmware Automatic fan handback. The gate admits it only while the exact suspend
-generation it captured is current (`IsActiveForGeneration`), so the next
-resume, DisplayOn or suspend ends it. Nothing captures that scope yet. Owned
-Stop and shutdown handback stay Ordinary, because managed blocks them in low
-power too. D1 decision: `epoch_for(WriteScope::LowPowerFanAutomatic)` also pins
-the epoch, so a later power-status or session notice fences the cleanup. Managed admits
-it on the generation and ownership only. D1 must either keep that stricter
-fence or recapture after such a notice, and record which. `low_power()` returns
+per-write admission stays authoritative. `WriteScope::LowPowerCleanup` is
+managed's `PriorAuthorityCleanup` exception for the low-power preparation: the
+keyboard's Normal release. Native has no Fan Stop, so no fan cleanup runs
+there. The gate admits it only while the exact suspend generation it captured
+is current
+(`IsActiveForGeneration`), so the next resume, DisplayOn or suspend ends it.
+Only the Service's cleanup admission captures it (`CleanupGuard`, with
+`CleanupScope::LowPower`; see Keyboard Driver mode ownership in
+[the Service guide](windows-rust-development-service.md)). Owned Stop and
+shutdown handback stay Ordinary, because managed blocks them in low power too.
+D1 decision, revised: a low-power cleanup pins its suspend generation only
+(`Lifecycle::fence_for`), as managed admits it on the generation and
+ownership. The earlier epoch fence let a lock between the release setter's
+acknowledgement and its readback turn a good release into uncertainty for the
+rest of the process. Owned Stop and the shutdown handback keep the ordinary
+epoch, which every notice moves. `low_power()` returns
 the current transition for timers that ask outside a write, and `None`
 (unreadable or exhausted) means low power. Timers that need only the answer
 use `low_power_or_unknown()`, which is true for `None`. Request-driven
@@ -688,7 +694,7 @@ ineligible saved request also replies Blocked with that prefix, even when the
 policy-selected preset is confirmed; the hardware result then says that the
 policy selects another destination. Requested override, effective
 selected value/provenance, and observed state remain distinct. Mutation success
-frames contain only the operation result, as required by the unchanged v85
+frames contain only the operation result, as required by the unchanged v90
 single-body response contract. Status travels separately through GetStatus,
 ObserveState and subscriptions.
 
@@ -2204,8 +2210,11 @@ checkpoint, or Custom with a 126 ms one, start and overrun with setters
 submitted. Otherwise the intent stays saved, no setter is submitted, retirement settles the Prepared row as known not
 submitted, and the reply is Blocked with "The remaining request time cannot
 cover this recipe at the measured device pace; no thermal setter was
-submitted." (no fan setter, for a fan request). Owned Stop cleanup is not
-paced. The refused recipe's transaction IDs were reserved but never sent, so
+submitted." (no fan setter, for a fan request). Owned Stop fan cleanup is
+paced once, before its first row (`Pace::covers_before_rows`), against what is
+left of the source drain: with no append timed yet, every row left, its 31
+included, is charged at the second longest exchange, so one stall still counts
+once. When the recipe does not fit it writes no row and sends no setter. The refused recipe's transaction IDs were reserved but never sent, so
 retirement returns them to the pool. A fan record pins its IDs only once a
 setter may reach the device, so a refused fan recipe returns them too.
 
@@ -2329,7 +2338,7 @@ ProtectedFiles, with only the security verifier injected, in a private directory
 under the temporary directory, through a refused rename, leftover and held staging files, a recorded transaction
 and exact-byte deletion. Constructors take those inputs before any default
 root resolution. Real controller/token/session/SCM/HID suppliers are compiled,
-not executed. Managed tests parse emitted native replies with the actual v85 codec
+not executed. Managed tests parse emitted native replies with the actual v90 codec
 and inspect explicit artifact capabilities and conservative recovery refusal.
 The native test marker emits the original received UTF-8 payload, preserving
 property order and the leading polymorphic discriminator. Extraction retains

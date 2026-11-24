@@ -378,6 +378,9 @@ jobs:
               ($driverModeProfiles + 'driver_mode::tests'),
               ($driverModeOwner + 'driver_mode'),
               ($driverModeOwner + 'device_mode'),
+              # The low-power cleanup admission and its generation fence
+              # (`mailbox_read::low_power_admission`).
+              ($driverModeOwner + 'the_low_power_admission'),
               ($driverModeOwner + 'a_serving_loop_tick_runs_the_keyboard_driver_mode_step'),
               ($driverModeOwnerTriggers + 'driver_mode'),
               ($driverModeOwnerTriggers + 'a_serving_loop_tick_runs_the_keyboard_driver_mode_step'),
@@ -385,22 +388,30 @@ jobs:
               # the transaction pool pins of fan and temporary-charge writes.
               @('openblade-windows-service-candidate', 'service-temporary-charge-v1', 'tfc_release_a_cancel_whose_port'),
               @('openblade-windows-service-candidate', 'service-fan-mutation-v2', 'pool_pins'),
+              # Owned Stop fan cleanup with fan mutation alone: the handback under
+              # the Service cleanup admission with nobody signed in, and the pacing
+              # before row 31.
+              @('openblade-windows-service-candidate', 'service-fan-mutation-v2', 'fan_v2_owned_stop_cleanup'),
               ($liveReadings + 'live_readings::tests'),
               ($liveReadings + 'live_readings::windows::tests'),
               ($liveReadings + 'firmware_versions'),
+              ($liveReadings + 'gpu_temperature'),
               ($liveReadings + 'fan_rpm'),
               ($liveReadings + 'mcu_version'),
               ($liveReadings + 'readiness::tests::observation'),
               ($liveReadings + 'native_package'),
               ($liveReadingsProfiles + 'live_readings::tests'),
               ($liveReadingsProfiles + 'firmware_versions'),
+              ($liveReadingsProfiles + 'gpu_temperature'),
               ($liveReadingsDriverMode + 'live_readings::tests'),
               ($liveReadingsDriverMode + 'firmware_versions'),
+              ($liveReadingsDriverMode + 'gpu_temperature'),
               ($liveReadingsDriverMode + 'fan_rpm'),
               ($liveReadingsDriverMode + 'mcu_version'),
               ($liveReadingsDriverMode + 'driver_mode::tests'),
               ($liveReadingsFans + 'live_readings::tests'),
               ($liveReadingsFans + 'firmware_versions'),
+              ($liveReadingsFans + 'gpu_temperature'),
               ($liveReadingsFans + 'capability_tests'),
               ($export + 'diagnostic_export'),
               ($export + 'readiness::tests::export'),

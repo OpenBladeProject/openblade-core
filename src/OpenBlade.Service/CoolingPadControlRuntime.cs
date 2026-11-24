@@ -5,6 +5,8 @@ namespace OpenBlade.Service;
 
 /// <summary>
 /// One serial owner for exact-pad control. Saved intent is inert until an explicit Apply.
+/// After a clean service-owned handback (service stop, low power or user change), the
+/// service applies that user's saved settings again; an explicit Release ends this.
 /// A possibly submitted operation stops all writes until an explicit successful read.
 /// </summary>
 internal sealed class CoolingPadControlRuntime(
@@ -15,6 +17,10 @@ internal sealed class CoolingPadControlRuntime(
 {
     private readonly SemaphoreSlim gate = new(1, 1);
     private readonly TimeProvider clock = timeProvider ?? TimeProvider.System;
+    // Shared with the laptop manual curve; pauses and validity checks stay on raw readings.
+    private readonly FanCurveTemperatureFilter temperatureFilter = new(timeProvider ?? TimeProvider.System);
+    private readonly EmergencyLimit cpuEmergency = new(FanCurveCalculator.EmergencyCpuCelsius);
+    private readonly EmergencyLimit gpuEmergency = new(FanCurveCalculator.EmergencyGpuCelsius);
     private readonly Dictionary<Guid, DemandLease> leases = [];
     private CoolingPadStatusSnapshot status = new();
     private CoolingPadOwnershipRecord? ownership;
@@ -28,6 +34,12 @@ internal sealed class CoolingPadControlRuntime(
     private long mirroredSequence = -1;
     private DateTimeOffset nextDiscovery;
     private long? lastTemperatureTimestamp;
+    private bool resumeIntent;
+    private DateTimeOffset nextResumeAttempt;
+    // A closed admission (asleep, locked, another user) is checked again each second.
+    // An attempt that reached the pad and was refused retries at the longer interval.
+    internal static readonly TimeSpan ResumeAdmissionInterval = TimeSpan.FromSeconds(1);
+    internal static readonly TimeSpan ResumeRetryInterval = TimeSpan.FromSeconds(5);
 
     internal CoolingPadStatusSnapshot Status => Volatile.Read(ref status);
 
@@ -62,6 +74,7 @@ internal sealed class CoolingPadControlRuntime(
                 await LoadOwnershipAsync(token).ConfigureAwait(false);
                 CoolingPadSettings settings = await store.LoadSettingsAsync(user, token).ConfigureAwait(false);
                 if (!CoolingPadSettings.IsWellFormed(settings)) { throw new InvalidDataException("Saved cooling pad settings are invalid."); }
+                resumeIntent = await store.LoadResumeIntentAsync(user, token).ConfigureAwait(false);
                 owner = user;
                 configurationFailure = false;
                 leases.Clear();
@@ -82,6 +95,7 @@ internal sealed class CoolingPadControlRuntime(
                 DiagnosticTrace.TraceException(nameof(CoolingPadControlRuntime), nameof(SetUserAsync), exception);
                 owner = user;
                 configurationFailure = true;
+                resumeIntent = false;
                 leases.Clear();
                 authority = static () => false;
                 UpdateStatus(previous => previous with
@@ -144,10 +158,17 @@ internal sealed class CoolingPadControlRuntime(
                 || lighting && (baseline.LightingConfiguration is null || baseline.BrightnessRaw is null))
             { return Block("The affected cooling pad settings could not be read for restoration."); }
 
-            int? target = settings.FanMode == CoolingPadFanMode.HostCurve
+            // New settings start a new filter history from the first raw sample.
+            ResetTemperatureHistory();
+            int? target = IsTemperatureDriven(settings.FanMode)
                 ? await CurveTargetAsync(settings, token).ConfigureAwait(false)
                 : settings.FanMode == CoolingPadFanMode.Fixed ? settings.FixedRpm : null;
             await store.SaveSettingsAsync(owner, settings, token).ConfigureAwait(false);
+            if (resumeIntent != (fan || lighting))
+            {
+                await store.SaveResumeIntentAsync(owner, fan || lighting, token).ConfigureAwait(false);
+                resumeIntent = fan || lighting;
+            }
             UpdateStatus(previous => previous with { Requested = settings });
             if (!settings.AllowDemandApi) { leases.Clear(); }
             authority = continuedOwnership ?? admission;
@@ -180,7 +201,8 @@ internal sealed class CoolingPadControlRuntime(
             {
                 submitted = true;
                 await device!.SetFanAsync(settings.FanMode, target,
-                    () => Allowed() && (settings.FanMode != CoolingPadFanMode.HostCurve || TemperatureIsFresh()), token).ConfigureAwait(false);
+                    () => Allowed() && (!IsTemperatureDriven(settings.FanMode) || TemperatureIsFresh()), token,
+                    SmartPreset(settings)).ConfigureAwait(false);
             }
             if (lighting)
             {
@@ -207,12 +229,19 @@ internal sealed class CoolingPadControlRuntime(
             if (submitted) { Pause("Cooling pad submission was interrupted. Read its configuration before continuing."); }
             throw;
         }
+        // The target is computed before any submission, so a missing reading is a refusal.
+        catch (TemperatureUnavailableException exception) when (!submitted) { return Block(exception.Message); }
         catch (Exception exception) { return Fail(exception, submitted); }
         finally { gate.Release(); }
     }
 
+    private sealed class TemperatureUnavailableException() : InvalidOperationException(Text)
+    {
+        internal const string Text = "Cooling pad curve is waiting for a reading from its selected temperature source.";
+    }
+
     internal async Task<ControlOperationResult> ReleaseAsync(Func<bool> admission, CancellationToken token,
-        bool serviceOwnedRestoration = false)
+        bool serviceOwnedRestoration = false, bool userRequested = false)
     {
         Revoke();
         await gate.WaitAsync(token).ConfigureAwait(false);
@@ -221,6 +250,12 @@ internal sealed class CoolingPadControlRuntime(
         {
             leases.Clear();
             await LoadOwnershipAsync(token).ConfigureAwait(false);
+            if (userRequested && owner is not null && resumeIntent)
+            {
+                // The user stopped control. Later handbacks must not start it again.
+                await store.SaveResumeIntentAsync(owner, false, token).ConfigureAwait(false);
+                resumeIntent = false;
+            }
             if (ownership is null)
             {
                 UpdateStatus(previous => previous with { Active = false, Message = "Cooling pad control is stopped." });
@@ -277,18 +312,24 @@ internal sealed class CoolingPadControlRuntime(
             bool Allowed() => epoch == Interlocked.Read(ref generation) && !token.IsCancellationRequested
                 && Status.Active && authority() && admission();
             CoolingPadSettings settings = status.Requested;
-            if (clock.GetUtcNow() >= nextCurveRead && settings.FanMode is CoolingPadFanMode.Fixed or CoolingPadFanMode.HostCurve)
+            if (clock.GetUtcNow() >= nextCurveRead
+                && (settings.FanMode == CoolingPadFanMode.Fixed || IsTemperatureDriven(settings.FanMode)))
             {
                 nextCurveRead = clock.GetUtcNow().AddSeconds(1);
                 ExpireLeases();
-                int target = settings.FanMode == CoolingPadFanMode.HostCurve
+                int target = IsTemperatureDriven(settings.FanMode)
                     ? await CurveTargetAsync(settings, token).ConfigureAwait(false) : settings.FixedRpm;
+                if (status.Message == TemperatureUnavailableException.Text)
+                {
+                    UpdateStatus(previous => previous with { Message = "Cooling pad curve is following its temperature source again." });
+                }
                 if (settings.AllowDemandApi && leases.Count != 0) { target = Math.Max(target, leases.Values.Max(value => value.Rpm)); }
                 if (status.ConfirmedTargetRpm != target)
                 {
                     submitted = true;
                     await device!.SetFanAsync(settings.FanMode, target,
-                        () => Allowed() && (settings.FanMode != CoolingPadFanMode.HostCurve || TemperatureIsFresh()), token).ConfigureAwait(false);
+                        () => Allowed() && (!IsTemperatureDriven(settings.FanMode) || TemperatureIsFresh()), token,
+                        SmartPreset(settings)).ConfigureAwait(false);
                     // Typed SetFan completes only after independent fan configuration readback.
                     UpdateStatus(previous => previous with { ConfirmedTargetRpm = target });
                 }
@@ -312,6 +353,12 @@ internal sealed class CoolingPadControlRuntime(
         {
             // Proven local deferral submitted no native write and changed no firmware state.
             // Preserve the healthy owned epoch; the next scheduled tick gets fresh admission.
+        }
+        catch (TemperatureUnavailableException exception) when (!submitted)
+        {
+            // A missing reading pauses curve updates only. The last confirmed target keeps
+            // running, and no write can use a stale reading because freshness was cleared.
+            UpdateStatus(previous => previous with { Message = exception.Message });
         }
         catch (Exception exception) { Fail(exception, submitted); }
         finally { gate.Release(); }
@@ -356,6 +403,30 @@ internal sealed class CoolingPadControlRuntime(
     internal Task<ControlOperationResult> HandBackForUserTransitionAsync(Func<bool> admission, CancellationToken token) =>
         ReleaseAsync(admission, token, serviceOwnedRestoration: true);
 
+    /// <summary>
+    /// Applies the user's saved settings again after a clean service-owned handback, so a
+    /// service restart, sleep or user change does not leave the pad on its own settings.
+    /// Retained restoration state, paused writes, a failed apply or an explicit Release
+    /// wait for the user instead. A blocked attempt retries at a bounded interval.
+    /// </summary>
+    internal async Task ResumeSavedControlAsync(string user, Func<bool> admission, Func<bool> continuedOwnership,
+        CancellationToken token)
+    {
+        if (clock.GetUtcNow() < nextResumeAttempt || !ResumeEligible()) { return; }
+        if (!admission())
+        {
+            nextResumeAttempt = clock.GetUtcNow() + ResumeAdmissionInterval;
+            return;
+        }
+        nextResumeAttempt = clock.GetUtcNow() + ResumeRetryInterval;
+        await SetUserAsync(user, token).ConfigureAwait(false);
+        if (!resumeIntent || !ResumeEligible()) { return; }
+        await ApplyAsync(Status.Requested, admission, token, continuedOwnership).ConfigureAwait(false);
+    }
+
+    private bool ResumeEligible() => !configurationFailure
+        && Status is { Active: false, WritesPaused: false, RecoveryRequired: false, Connection: CoolingPadConnectionState.PresentExact };
+
     internal async Task<ControlOperationResult> SetLeaseAsync(Guid id, string client, int rpm, int seconds,
         Func<bool> clientAlive, CancellationToken token)
     {
@@ -365,8 +436,8 @@ internal sealed class CoolingPadControlRuntime(
             ExpireLeases();
             if (!status.Requested.AllowDemandApi)
             { return Block("Enable app cooling requests before using the cooling pad demand API."); }
-            if (!status.Active || status.Requested.FanMode is not (CoolingPadFanMode.Fixed or CoolingPadFanMode.HostCurve))
-            { return Block("Start cooling pad fixed or curve control before requesting additional cooling."); }
+            if (!status.Active || status.Requested.FanMode is not (CoolingPadFanMode.Fixed or CoolingPadFanMode.HostCurve or CoolingPadFanMode.Auto))
+            { return Block("Start cooling pad fixed, curve or automatic control before requesting additional cooling."); }
             if (id == Guid.Empty || !CoolingPadSettings.ValidRpm(rpm) || seconds is < 1 or > 30 || !clientAlive())
             { return Block("The cooling pad demand lease is invalid."); }
             if (leases.TryGetValue(id, out DemandLease? existing) && existing.Client != client)
@@ -503,13 +574,97 @@ internal sealed class CoolingPadControlRuntime(
         bool gpu = settings.TemperatureSource is CoolingPadTemperatureSource.Gpu or CoolingPadTemperatureSource.Both;
         FanTemperatureReadings reading = await temperatures.ReadForFanCurveAsync(cpu, gpu, token).ConfigureAwait(false);
         long acquired = clock.GetTimestamp();
-        if (cpu && reading.CpuCelsius is not (>= 0 and <= 115) || gpu && reading.GpuCelsius is not (>= 0 and <= 115))
-        { throw new InvalidOperationException("Cooling pad curve paused because a selected temperature source is unavailable."); }
-        int target = cpu ? Evaluate(settings.CpuCurve, reading.CpuCelsius!.Value) : CoolingPadSettings.MinimumRpm;
-        if (gpu) { target = Math.Max(target, Evaluate(settings.GpuCurve, reading.GpuCelsius!.Value)); }
+        // A GPU confirmed powered down (Windows D3) produces no heat and has no reading.
+        // As in the laptop curve, it is ignored rather than treated as missing; workload
+        // absence alone does not establish that.
+        bool gpuOff = gpu && reading.GpuCelsius is null && reading.GpuPoweredDown;
+        // Availability is judged on the raw sample; only the curve input is conditioned.
+        if (cpu && reading.CpuCelsius is not (>= 0 and <= 115) || gpu && !gpuOff && reading.GpuCelsius is not (>= 0 and <= 115))
+        {
+            ResetTemperatureHistory();
+            throw new TemperatureUnavailableException();
+        }
+        FanTemperatureReadings filtered = temperatureFilter.Filter(reading);
+        int target;
+        // The laptop curve's emergency limits, held on the selected sources' raw readings, so a
+        // quiet table or curve cannot hold the pad back. Smoothing would take 12-20 s to reach
+        // a steady limit. Synapse has none. Both are updated so each keeps its own streak.
+        bool emergency = cpuEmergency.Update(cpu ? reading.CpuCelsius : null, acquired, clock)
+            | gpuEmergency.Update(gpu && !gpuOff ? reading.GpuCelsius : null, acquired, clock);
+        if (emergency)
+        {
+            target = CoolingPadSettings.MaximumRpm;
+        }
+        else if (settings.FanMode == CoolingPadFanMode.Auto)
+        {
+            target = CoolingPadAutoCurves.Target(settings.AutoProfile, settings.TemperatureSource,
+                filtered.CpuCelsius, gpuOff ? null : filtered.GpuCelsius);
+        }
+        else
+        {
+            target = cpu ? Evaluate(settings.CpuCurve, filtered.CpuCelsius!.Value) : CoolingPadSettings.MinimumRpm;
+            if (gpu && !gpuOff) { target = Math.Max(target, Evaluate(settings.GpuCurve, filtered.GpuCelsius!.Value)); }
+            // A GPU-only curve with the GPU off runs at its coolest point.
+            else if (gpu && !cpu) { target = settings.GpuCurve[0].Rpm; }
+        }
         lastTemperatureTimestamp = acquired;
         return target;
     }
+
+    private void ResetTemperatureHistory()
+    {
+        temperatureFilter.Reset();
+        cpuEmergency.Reset();
+        gpuEmergency.Reset();
+    }
+
+    /// <summary>
+    /// Full pad speed once a raw reading has stayed at or above the limit for
+    /// <see cref="Confirmation"/>, so a transient package spike does not trip it. It holds
+    /// until the reading falls <see cref="ReleaseMarginCelsius"/> below the limit, so a
+    /// reading at the limit does not switch the speed back and forth.
+    /// </summary>
+    private sealed class EmergencyLimit(int limitCelsius)
+    {
+        internal static readonly TimeSpan Confirmation = TimeSpan.FromSeconds(2);
+        internal const int ReleaseMarginCelsius = 3;
+        private long? hotSince;
+        private bool active;
+
+        internal bool Update(int? celsius, long timestamp, TimeProvider clock)
+        {
+            if (celsius is not int value)
+            {
+                Reset();
+                return false;
+            }
+            if (value >= limitCelsius)
+            {
+                hotSince ??= timestamp;
+                if (clock.GetElapsedTime(hotSince.Value, timestamp) >= Confirmation) { active = true; }
+            }
+            else
+            {
+                hotSince = null;
+                if (value < limitCelsius - ReleaseMarginCelsius) { active = false; }
+            }
+            return active;
+        }
+
+        internal void Reset()
+        {
+            hotSince = null;
+            active = false;
+        }
+    }
+
+    // Auto follows Synapse's Smart tables; HostCurve follows the user's curves. Both send 0D/01
+    // demands from fresh host temperatures under the same freshness and admission gates.
+    private static bool IsTemperatureDriven(CoolingPadFanMode mode) =>
+        mode is CoolingPadFanMode.HostCurve or CoolingPadFanMode.Auto;
+
+    private static CoolingPadFanPreset? SmartPreset(CoolingPadSettings settings) =>
+        settings.FanMode == CoolingPadFanMode.Auto ? CoolingPadAutoCurves.Preset(settings.AutoProfile) : null;
 
     private bool TemperatureIsFresh() => lastTemperatureTimestamp is { } acquired
         && clock.GetElapsedTime(acquired, clock.GetTimestamp()) <= TimeSpan.FromSeconds(5);
