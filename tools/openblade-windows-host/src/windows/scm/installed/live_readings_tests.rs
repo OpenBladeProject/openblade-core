@@ -13,6 +13,7 @@ use crate::discovery::performance::{
 use serde_json::{Value, json};
 use std::{
     cell::{Cell, RefCell},
+    sync::atomic::AtomicUsize,
     time::Duration,
 };
 
@@ -180,6 +181,69 @@ impl Rig {
                 })),
             )
             .unwrap();
+    }
+}
+
+/// A GPU for the rig's worker: active and in D0, its NVML reading `first`
+/// plus the number of earlier reads. While `hold` is set, each workload
+/// sample waits for one message or its sender's drop.
+#[derive(Clone, Default)]
+struct Gpu {
+    workloads: Arc<AtomicUsize>,
+    reads: Arc<AtomicUsize>,
+}
+
+struct GpuProbes(Arc<AtomicUsize>, Option<std::sync::mpsc::Receiver<()>>);
+
+impl gpu_temperature::Probes for GpuProbes {
+    fn workload(&mut self) -> Option<bool> {
+        self.0.fetch_add(1, Ordering::SeqCst);
+        if let Some(hold) = &self.1 {
+            let _ = hold.recv();
+        }
+        Some(true)
+    }
+
+    fn power(&mut self) -> gpu_temperature::Power {
+        gpu_temperature::Power::On
+    }
+}
+
+struct GpuSession(i32, Arc<AtomicUsize>);
+
+impl gpu_temperature::TemperatureSession for GpuSession {
+    fn try_read(&mut self) -> Option<i32> {
+        Some(self.0 + self.1.fetch_add(1, Ordering::SeqCst) as i32)
+    }
+
+    fn release(&mut self) {}
+}
+
+impl Gpu {
+    fn factory(
+        &self,
+        first: i32,
+        hold: Option<std::sync::mpsc::Receiver<()>>,
+    ) -> gpu_temperature::Factory {
+        let gpu = self.clone();
+        Box::new(move || {
+            gpu_temperature::Sampler::new(
+                Box::new(GpuProbes(gpu.workloads, hold)),
+                Box::new(GpuSession(first, gpu.reads)),
+                Box::new(std::time::Instant::now),
+            )
+        })
+    }
+
+    fn workloads(&self) -> usize {
+        self.workloads.load(Ordering::SeqCst)
+    }
+}
+
+impl Rig {
+    fn with_gpu(mut self, factory: gpu_temperature::Factory) -> Self {
+        self.source = self.source.with_gpu_for_tests(factory);
+        self
     }
 }
 
@@ -605,6 +669,95 @@ async fn an_observation_before_any_status_captures_health_once() {
     assert_eq!(rig.battery.capacity_reads.get(), 1);
 }
 
+/// The GPU is sampled only for an ObserveState that asks for its
+/// temperature, and the sample is published in that reply alone.
+#[tokio::test]
+async fn gpu_temperature_is_sampled_and_published_only_for_an_observe_state_that_asks() {
+    let gpu = Gpu::default();
+    let rig = Rig::new().with_gpu(gpu.factory(52, None));
+    for mask in [0, 1, 2, 4, 7] {
+        let observed = rig.observe(mask).await.unwrap();
+        assert_eq!(readings(&observed)[4], &Value::Null, "{mask}");
+    }
+    let deadline = Instant::now() + Duration::from_secs(2);
+    let outside = rig
+        .source
+        .observe(status(0), deadline, rig.publisher.clone())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        serde_json::to_value(outside).unwrap()["liveReadings"],
+        Value::Null
+    );
+    assert_eq!(gpu.workloads(), 0);
+
+    let observed = rig.observe(8).await.unwrap();
+    assert_eq!(readings(&observed)[4], &json!(52));
+    let observed = rig.observe(ALL).await.unwrap();
+    assert_eq!(readings(&observed)[4], &json!(53));
+    assert_eq!(gpu.workloads(), 2);
+    for published in rig.published() {
+        assert_eq!(published["liveReadings"], Value::Null);
+    }
+}
+
+/// A temperature the managed codec refuses is null, and the rest of the
+/// reply is published.
+#[tokio::test]
+async fn a_gpu_temperature_above_the_codec_bound_is_null() {
+    let rig = Rig::new().with_gpu(Gpu::default().factory(116, None));
+    rig.battery.state.set(Some((true, (-25000i32) as u32)));
+    let observed = rig.observe(ALL).await.unwrap();
+    let [power, fan1, _, _, gpu] = readings(&observed);
+    assert_eq!(
+        [power, fan1, gpu],
+        [&json!(-25000), &json!(3200), &Value::Null]
+    );
+}
+
+/// A sample is published only by the observation that asked for it: one
+/// whose observation was dropped or not accepted is never published, and
+/// the next observation publishes the latest read.
+#[tokio::test]
+async fn gpu_temperature_of_a_dropped_or_unaccepted_observation_is_not_published() {
+    for dropped in [true, false] {
+        let gpu = Gpu::default();
+        let (release, hold) = std::sync::mpsc::channel();
+        let rig = Rig::new().with_gpu(gpu.factory(50, Some(hold)));
+        {
+            let observation = rig.snapshot(8);
+            tokio::pin!(observation);
+            while gpu.workloads() == 0 {
+                tokio::select! {
+                    _ = &mut observation => panic!("the held sample completed"),
+                    () = tokio::time::sleep(Duration::from_millis(1)) => {}
+                }
+            }
+            if !dropped {
+                // The custody ends while the sample runs.
+                rig.custody.live.store(false, Ordering::Release);
+                release.send(()).unwrap();
+                assert!(observation.await.is_none());
+            }
+            // Otherwise a disconnecting client drops the observation here.
+        }
+        rig.custody.live.store(true, Ordering::Release);
+        drop(release);
+        let observed = loop {
+            if let Some(observed) = rig.observe(8).await {
+                break observed;
+            }
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        };
+        // The dropped observation's sample ends before its power read.
+        let reads = gpu.reads.load(Ordering::SeqCst);
+        assert!(reads >= 1, "{dropped}");
+        let latest = json!(50 + reads as i32 - 1);
+        assert_eq!(readings(&observed)[4], &latest, "{dropped}");
+    }
+}
+
 const FRAMES: &str = "live-reading-native-frames.json";
 const REGENERATE: &str = "OPENBLADE_REGENERATE_NATIVE_LIVE_READING_FRAMES";
 
@@ -629,7 +782,8 @@ async fn native_frames_match_the_recorded_managed_codec_input() {
     let battery = Battery::default();
     battery.state.set(Some((true, 25_000)));
     *battery.capacities.borrow_mut() = Some(vec![HEALTH]);
-    let rig = Rig::with(FanIo::new([0x20, 0x1e]), battery);
+    let rig =
+        Rig::with(FanIo::new([0x20, 0x1e]), battery).with_gpu(Gpu::default().factory(52, None));
     rig.metadata(false);
     let observed = rig.snapshot(ALL).await.unwrap();
     record(
@@ -637,7 +791,7 @@ async fn native_frames_match_the_recorded_managed_codec_input() {
         &observed,
         json!({
             "hyperBoostActive": false, "hyperBoostObservedOnly": false,
-            "fan1Rpm": 3200, "fan2Rpm": 3000, "batteryPowerFlowMilliwatts": 25000,
+            "fan1Rpm": 3200, "fan2Rpm": 3000, "batteryPowerFlowMilliwatts": 25000, "gpuTemperatureCelsius": 52,
             "designCapacityMilliwattHours": 90000, "fullChargeCapacityMilliwattHours": 85000,
         }),
     );
@@ -650,7 +804,7 @@ async fn native_frames_match_the_recorded_managed_codec_input() {
         &observed,
         json!({
             "hyperBoostActive": true, "hyperBoostObservedOnly": true,
-            "fan1Rpm": 3200, "fan2Rpm": 3000, "batteryPowerFlowMilliwatts": null,
+            "fan1Rpm": 3200, "fan2Rpm": 3000, "batteryPowerFlowMilliwatts": null, "gpuTemperatureCelsius": null,
             "designCapacityMilliwattHours": null, "fullChargeCapacityMilliwattHours": null,
         }),
     );
@@ -660,7 +814,7 @@ async fn native_frames_match_the_recorded_managed_codec_input() {
         &published.active,
         json!({
             "hyperBoostActive": true, "hyperBoostObservedOnly": true,
-            "fan1Rpm": null, "fan2Rpm": null, "batteryPowerFlowMilliwatts": null,
+            "fan1Rpm": null, "fan2Rpm": null, "batteryPowerFlowMilliwatts": null, "gpuTemperatureCelsius": null,
             "designCapacityMilliwattHours": null, "fullChargeCapacityMilliwattHours": null,
         }),
     );
@@ -672,7 +826,7 @@ async fn native_frames_match_the_recorded_managed_codec_input() {
         &published.active,
         json!({
             "hyperBoostActive": null, "hyperBoostObservedOnly": false,
-            "fan1Rpm": null, "fan2Rpm": null, "batteryPowerFlowMilliwatts": null,
+            "fan1Rpm": null, "fan2Rpm": null, "batteryPowerFlowMilliwatts": null, "gpuTemperatureCelsius": null,
             "designCapacityMilliwattHours": null, "fullChargeCapacityMilliwattHours": null,
         }),
     );

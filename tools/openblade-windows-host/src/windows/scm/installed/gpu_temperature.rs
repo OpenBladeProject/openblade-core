@@ -1,0 +1,489 @@
+//! Managed GPU temperature on the installed read source
+//! (`service-live-readings-v1`).
+//!
+//! Managed reads it for an ObserveState that asks for `GpuTemperature`
+//! (`ReadOptionalLiveSensorsAsync`, then `SafeWindowsFanTemperatureSource.
+//! ReadAsync` with idle sampling off) from NVIDIA's user-mode NVML, behind two
+//! Windows reads that never call an NVIDIA API:
+//!
+//! 1. A workload: the WDDM GPU-engine counters of the NVIDIA adapter,
+//!    collected twice 150 ms apart (`WindowsGpuActivitySource`). A process
+//!    other than System (PID 4) above 0.1 % is a workload; System's copy
+//!    engine pages video memory at the adapter's own power transitions.
+//! 2. The adapter's latest D-state from SetupAPI `CM_POWER_DATA`
+//!    (`WindowsNvidiaGpuPowerState`).
+//!
+//! NVML is called only for a workload on a D0 adapter, and a D-state other
+//! than D0 read again right after the call discards the value. The session
+//! (`nvmlInit_v2` to `nvmlShutdown`) stays open only across consecutive
+//! samples that read a valid temperature from an active, D0 GPU, and for at
+//! most `LEASE` after the last one; any other sample, one cancelled after its
+//! workload read and Stop shut it down at once. So a sample neither wakes an
+//! idle GPU nor keeps it awake past a workload by more than the lease, as
+//! managed's does.
+//!
+//! The reads run on a worker thread this module owns, never on the HID read
+//! job, and an observation waits for its sample only until `RESERVE` before
+//! its own deadline. One sample runs at a time and one request may wait for
+//! it; any further request gets none. A request whose observation has gone is
+//! skipped, and a sample whose observation goes stops after the step it is
+//! in: the workload, a power read or the NVML read. Stop does not wait for
+//! the worker: a call still running ends the session when it returns.
+//!
+//! A missing driver, adapter or NVML, a failed call, an idle or powered-down
+//! GPU and a sensor outside managed's 10..=125 C all publish null, as managed
+//! does. A value the managed codec refuses (above 115 C) is published as null
+//! rather than refusing the whole reply.
+use std::{
+    cell::RefCell,
+    collections::BTreeMap,
+    sync::mpsc::{Receiver, RecvTimeoutError, SyncSender, TrySendError, sync_channel},
+    thread,
+    time::{Duration, Instant},
+};
+use tokio::sync::oneshot;
+
+#[cfg(windows)]
+#[path = "gpu_temperature_windows.rs"]
+mod windows;
+#[cfg(windows)]
+pub(super) use windows::sampler as windows_sampler;
+
+/// Managed `SafeWindowsFanTemperatureSource.GpuSessionIdleTimeout`: how long
+/// a session outlives the last active sample when no sample follows.
+pub(super) const LEASE: Duration = Duration::from_secs(5);
+/// The part of an observation's time the sample leaves to the reply: the
+/// read job's own reserve.
+pub(super) const RESERVE: Duration = Duration::from_millis(500);
+/// Managed's plausible sensor range (`ReadCoreAsync`).
+const PLAUSIBLE: std::ops::RangeInclusive<i32> = 10..=125;
+/// Managed `NvidiaNvmlTemperatureSession`'s own bound.
+const MAXIMUM_SENSOR: u32 = 125;
+/// The GPU temperatures the managed v85 codec writes.
+const PUBLISHED: std::ops::RangeInclusive<i32> = 0..=115;
+/// `NVML_TEMPERATURE_GPU`.
+const TEMPERATURE_GPU: u32 = 0;
+
+/// The adapter's latest D-state, as managed `FanStopGpuPowerState`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Power {
+    Unknown,
+    /// D0.
+    On,
+    /// D3 (no D3cold claim).
+    Down,
+}
+
+/// The Windows reads that gate NVML. Neither calls an NVIDIA API.
+pub(super) trait Probes {
+    /// Managed `WindowsGpuActivitySource.IsActiveAsync`, its sample window
+    /// included: whether an NVIDIA workload runs, or None when the counters
+    /// are unavailable.
+    fn workload(&mut self) -> Option<bool>;
+    /// Managed `WindowsNvidiaGpuPowerState.Read`.
+    fn power(&mut self) -> Power;
+}
+
+/// Managed `WindowsGpuActivitySource.SampleDelayMilliseconds`.
+pub(super) const SAMPLE_WINDOW: Duration = Duration::from_millis(150);
+/// The Windows System process, whose NVIDIA copy-engine entries are video
+/// memory paging at the adapter's own power transitions, not a workload.
+const SYSTEM_PROCESS: i32 = 4;
+/// Managed `WindowsGpuProcessActivity.ActiveThresholdPercent`.
+const ACTIVE_PERCENT: f64 = 0.1;
+
+/// Managed `WindowsGpuActivitySource.IsActiveAsync` over one fresh query
+/// (`open`, managed `Refresh`): the first read primes it and its result is
+/// ignored, and the read after `pause` decides. None when the query cannot
+/// be opened or that read is unavailable.
+pub(super) fn workload<Q>(
+    open: impl FnOnce() -> Option<Q>,
+    mut read: impl FnMut(&mut Q) -> Option<BTreeMap<i32, f64>>,
+    pause: impl FnOnce(Duration),
+) -> Option<bool> {
+    let mut query = open()?;
+    let _ = read(&mut query);
+    pause(SAMPLE_WINDOW);
+    let processes = read(&mut query)?;
+    Some(
+        processes
+            .iter()
+            .any(|(pid, percent)| *pid != SYSTEM_PROCESS && *percent > ACTIVE_PERCENT),
+    )
+}
+
+/// `PCI\VEN_10DE&`: the NVIDIA PCI vendor of a display-class instance ID.
+const NVIDIA_INSTANCE: &str = r"PCI\VEN_10DE&";
+/// `REG_BINARY`.
+const BINARY: u32 = 3;
+/// `CM_POWER_DATA`: fourteen 32-bit fields, its size first.
+pub(super) const POWER_DATA: usize = 56;
+
+/// One step of a display-class device enumeration.
+pub(super) enum Enumerated {
+    /// The enumeration ended (`ERROR_NO_MORE_ITEMS`).
+    End,
+    /// The enumeration or the device's instance ID failed.
+    Failed,
+    Device(String),
+}
+
+/// Managed `WindowsNvidiaGpuPowerState.Read` over an enumeration of the
+/// present display-class devices: the D-state of the one NVIDIA PCI device,
+/// or Unknown for none, several, a failed step or a property that is not a
+/// complete `CM_POWER_DATA`. `power_data` is the type and bytes of the
+/// `SPDRP_DEVICE_POWER_DATA` property of the device `device` returned last.
+pub(super) fn nvidia_power(
+    mut device: impl FnMut(u32) -> Enumerated,
+    mut power_data: impl FnMut() -> Option<(u32, Vec<u8>)>,
+) -> Power {
+    let mut power = Power::Unknown;
+    let mut matches = 0;
+    for index in 0..u32::MAX {
+        let instance = match device(index) {
+            Enumerated::End if matches == 1 => return power,
+            Enumerated::End | Enumerated::Failed => return Power::Unknown,
+            Enumerated::Device(instance) => instance,
+        };
+        let nvidia = instance
+            .get(..NVIDIA_INSTANCE.len())
+            .is_some_and(|prefix| prefix.eq_ignore_ascii_case(NVIDIA_INSTANCE));
+        if !nvidia {
+            continue;
+        }
+        matches += 1;
+        if matches != 1 {
+            return Power::Unknown;
+        }
+        let Some((kind, data)) = power_data() else {
+            return Power::Unknown;
+        };
+        power = classify_power_data(&data, kind);
+    }
+    Power::Unknown
+}
+
+/// Managed `WindowsNvidiaGpuPowerState.ClassifyPowerData`.
+pub(super) fn classify_power_data(data: &[u8], kind: u32) -> Power {
+    let field = |offset: usize| {
+        data.get(offset..offset + 4)
+            .map(|bytes| u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
+    };
+    if kind != BINARY || data.len() != POWER_DATA || field(0) != Some(POWER_DATA as u32) {
+        return Power::Unknown;
+    }
+    field(4).map_or(Power::Unknown, classify)
+}
+
+/// Managed `WindowsNvidiaGpuPowerState.Classify`: `PowerDeviceD0` and
+/// `PowerDeviceD3`; any other state is Unknown.
+pub(super) fn classify(state: u32) -> Power {
+    match state {
+        1 => Power::On,
+        4 => Power::Down,
+        _ => Power::Unknown,
+    }
+}
+
+/// The four NVML calls managed makes, each returning its `nvmlReturn_t`.
+pub(super) trait Nvml {
+    fn init(&mut self) -> i32;
+    /// `nvmlDeviceGetHandleByIndex_v2`.
+    fn device(&mut self, index: u32) -> Result<usize, i32>;
+    /// `nvmlDeviceGetTemperature`.
+    fn temperature(&mut self, device: usize, sensor: u32) -> Result<u32, i32>;
+    fn shutdown(&mut self) -> i32;
+}
+
+/// Managed `IGpuTemperatureSession`: a reader whose driver session outlives
+/// one read, closed by its owner.
+pub(super) trait TemperatureSession {
+    fn try_read(&mut self) -> Option<i32>;
+    fn release(&mut self);
+}
+
+/// Managed `NvidiaNvmlTemperatureSession`: initializes NVML on the first read
+/// and keeps it; a failed handle or temperature call shuts it down.
+pub(super) struct NvmlSession<N> {
+    nvml: N,
+    initialized: bool,
+}
+
+impl<N: Nvml> NvmlSession<N> {
+    pub(super) fn new(nvml: N) -> Self {
+        Self {
+            nvml,
+            initialized: false,
+        }
+    }
+}
+
+impl<N: Nvml> TemperatureSession for NvmlSession<N> {
+    fn try_read(&mut self) -> Option<i32> {
+        if !self.initialized {
+            if self.nvml.init() != 0 {
+                return None;
+            }
+            self.initialized = true;
+        }
+        let Ok(device) = self.nvml.device(0) else {
+            self.release();
+            return None;
+        };
+        let Ok(celsius) = self.nvml.temperature(device, TEMPERATURE_GPU) else {
+            self.release();
+            return None;
+        };
+        // The range check needs no release: the sampler releases every
+        // sample without a valid temperature.
+        (celsius <= MAXIMUM_SENSOR).then_some(celsius as i32)
+    }
+
+    fn release(&mut self) {
+        if !self.initialized {
+            return;
+        }
+        self.initialized = false;
+        // Managed traces a failed shutdown and changes nothing else.
+        let _ = self.nvml.shutdown();
+    }
+}
+
+/// Managed `SafeWindowsFanTemperatureSource` on the live-readings path
+/// (`ReadAsync`: active samples renew the session, idle samples do not read).
+pub(super) struct Sampler {
+    probes: Box<dyn Probes>,
+    session: Box<dyn TemperatureSession>,
+    clock: Box<dyn Fn() -> Instant>,
+    /// `LEASE`, which tests shorten.
+    lease: Duration,
+    /// When the last renewing sample ended (`lastGpuReadTimestamp`), while
+    /// the session is held (`gpuIdleReleasePending`).
+    renewed: Option<Instant>,
+}
+
+impl Sampler {
+    pub(super) fn new(
+        probes: Box<dyn Probes>,
+        session: Box<dyn TemperatureSession>,
+        clock: Box<dyn Fn() -> Instant>,
+    ) -> Self {
+        Self {
+            probes,
+            session,
+            clock,
+            lease: LEASE,
+            renewed: None,
+        }
+    }
+
+    /// One sample (`ReadCoreAsync`). `cancelled` is checked where managed
+    /// checks its token: a cancellation before the power read leaves the
+    /// session as it is, and one after it releases the session.
+    pub(super) fn sample(&mut self, cancelled: &dyn Fn() -> bool) -> Option<i32> {
+        if cancelled() {
+            return None;
+        }
+        let active = self.probes.workload();
+        if cancelled() {
+            return None;
+        }
+        // A valid temperature renews the session; anything else ends it.
+        let celsius = self.gated(active, cancelled);
+        match celsius {
+            Some(_) => self.renewed = Some((self.clock)()),
+            None => self.release(),
+        }
+        celsius
+    }
+
+    /// The power gate, the read and the recheck: a valid temperature of an
+    /// active D0 GPU, or None.
+    fn gated(&mut self, active: Option<bool>, cancelled: &dyn Fn() -> bool) -> Option<i32> {
+        let power = self.probes.power();
+        if cancelled() {
+            return None;
+        }
+        // An idle D0 GPU is not read on this path. D3 or unknown power never
+        // opens NVML, even when a workload counter still reports activity.
+        if power != Power::On || active != Some(true) {
+            return None;
+        }
+        let celsius = self.session.try_read().filter(|c| PLAUSIBLE.contains(c));
+        if cancelled() {
+            return None;
+        }
+        let still_on = self.probes.power() == Power::On;
+        if cancelled() || !still_on {
+            return None;
+        }
+        celsius
+    }
+
+    /// How long the held session lasts without another sample, or None.
+    pub(super) fn remaining_lease(&self) -> Option<Duration> {
+        self.renewed
+            .map(|renewed| (renewed + self.lease).saturating_duration_since((self.clock)()))
+    }
+
+    /// Managed `ReleaseIdleGpuSession`: ends a held session whose lease has
+    /// run out, and leaves a renewed one.
+    pub(super) fn expire(&mut self) {
+        if self.remaining_lease() == Some(Duration::ZERO) {
+            self.renewed = None;
+            self.session.release();
+        }
+    }
+
+    /// Managed `ReleaseGpuSession`.
+    pub(super) fn release(&mut self) {
+        self.renewed = None;
+        self.session.release();
+    }
+}
+
+/// Builds the worker's sampler on the worker thread, so the Windows and NVML
+/// handles never leave it.
+pub(super) type Factory = Box<dyn FnOnce() -> Sampler + Send>;
+
+struct Request {
+    reply: oneshot::Sender<Option<i32>>,
+    until: Instant,
+}
+
+impl Request {
+    /// Whether the observation stopped waiting for this sample.
+    fn abandoned(&self) -> bool {
+        self.reply.is_closed() || Instant::now() >= self.until
+    }
+}
+
+fn run(factory: Factory, requests: Receiver<Request>) {
+    let mut sampler = factory();
+    loop {
+        let request = match sampler.remaining_lease() {
+            Some(remaining) => match requests.recv_timeout(remaining) {
+                Ok(request) => request,
+                Err(RecvTimeoutError::Timeout) => {
+                    sampler.expire();
+                    continue;
+                }
+                Err(RecvTimeoutError::Disconnected) => break,
+            },
+            None => match requests.recv() {
+                Ok(request) => request,
+                Err(_) => break,
+            },
+        };
+        // A lease that ran out while the request waited ends first, as
+        // managed's timer ends it on time.
+        sampler.expire();
+        // A request whose observation went ends before the workload read.
+        let celsius = sampler.sample(&|| request.abandoned());
+        let _ = request.reply.send(celsius);
+    }
+    sampler.release();
+}
+
+enum State {
+    /// No source, Stop, or a worker that could not start or has ended.
+    Absent,
+    /// The source, handed to the worker by the first request.
+    Idle(Factory),
+    Running(SyncSender<Request>),
+}
+
+/// The installed read source's GPU temperature worker.
+pub(super) struct Host {
+    state: RefCell<State>,
+}
+
+/// A requested sample, published only if it arrives in time.
+pub(super) struct Pending {
+    reply: oneshot::Receiver<Option<i32>>,
+    until: tokio::time::Instant,
+}
+
+impl Pending {
+    /// The temperature to publish, or None when the sample read none or did
+    /// not arrive by its deadline.
+    pub(super) async fn temperature(self) -> Option<i32> {
+        tokio::time::timeout_at(self.until, self.reply)
+            .await
+            .ok()?
+            .ok()
+            .flatten()
+            .filter(|celsius| PUBLISHED.contains(celsius))
+    }
+}
+
+impl Host {
+    /// No source: no sample is ever taken.
+    pub(super) fn none() -> Self {
+        Self {
+            state: RefCell::new(State::Absent),
+        }
+    }
+
+    pub(super) fn new(factory: Factory) -> Self {
+        Self {
+            state: RefCell::new(State::Idle(factory)),
+        }
+    }
+
+    /// A sample for an observation that publishes by `deadline`, or None
+    /// without a source, while a sample still runs, or without time for one.
+    /// The first request starts the worker.
+    pub(super) fn request(&self, deadline: tokio::time::Instant) -> Option<Pending> {
+        let until = deadline.checked_sub(RESERVE)?;
+        if until <= tokio::time::Instant::now() {
+            return None;
+        }
+        let mut state = self.state.borrow_mut();
+        if let State::Idle(_) = &*state
+            && let State::Idle(factory) = std::mem::replace(&mut *state, State::Absent)
+        {
+            *state = Self::start(factory);
+        }
+        let State::Running(requests) = &*state else {
+            return None;
+        };
+        let (reply, receiver) = oneshot::channel();
+        match requests.try_send(Request {
+            reply,
+            until: until.into_std(),
+        }) {
+            Ok(()) => Some(Pending {
+                reply: receiver,
+                until,
+            }),
+            Err(TrySendError::Full(_)) => None,
+            Err(TrySendError::Disconnected(_)) => {
+                *state = State::Absent;
+                None
+            }
+        }
+    }
+
+    /// Stops the worker without waiting for it: it ends the session and
+    /// exits after any call it is in.
+    pub(super) fn stop(&self) {
+        *self.state.borrow_mut() = State::Absent;
+    }
+
+    fn start(factory: Factory) -> State {
+        // One request may wait while a sample runs; any other is refused.
+        let (requests, receiver) = sync_channel(1);
+        match thread::Builder::new()
+            .name("gpu-temperature".into())
+            .spawn(move || run(factory, receiver))
+        {
+            Ok(_) => State::Running(requests),
+            Err(_) => State::Absent,
+        }
+    }
+}
+
+#[cfg(test)]
+#[path = "gpu_temperature_tests.rs"]
+mod tests;

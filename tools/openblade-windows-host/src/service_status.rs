@@ -1063,23 +1063,26 @@ impl Snapshot {
     /// when it asked for none, otherwise each asked sensor. Battery power is
     /// this observation's read. `fans` is this job's confirmed pair or the
     /// pair `live_readings::Host` still retains from an earlier job under the
-    /// same admission. Temperatures are never read here.
+    /// same admission. `gpu_temperature` is this observation's GPU sample;
+    /// CPU temperature is never read here.
     #[cfg(all(windows, feature = "service-live-readings-v1"))]
     pub(crate) fn with_live_readings(
         mut self,
         mask: u8,
         battery_power_flow: Option<i32>,
         fans: Option<[u16; 2]>,
+        gpu_temperature: Option<i32>,
     ) -> Self {
         const BATTERY_POWER: u8 = 1;
         const FAN_SPEEDS: u8 = 2;
+        const GPU_TEMPERATURE: u8 = 8;
         let fans = fans.filter(|_| mask & FAN_SPEEDS != 0);
         self.live_readings = (mask != 0).then(|| LiveReadings {
             battery_power_flow_milliwatts: battery_power_flow.filter(|_| mask & BATTERY_POWER != 0),
             fan1_rpm: fans.map(|[first, _]| i32::from(first)),
             fan2_rpm: fans.map(|[_, second]| i32::from(second)),
             cpu_temperature_celsius: None,
-            gpu_temperature_celsius: None,
+            gpu_temperature_celsius: gpu_temperature.filter(|_| mask & GPU_TEMPERATURE != 0),
         });
         self
     }

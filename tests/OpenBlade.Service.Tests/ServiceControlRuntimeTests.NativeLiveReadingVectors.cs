@@ -218,6 +218,9 @@ public sealed partial class ServiceControlRuntimeTests
                 (int?)expected["batteryPowerFlowMilliwatts"],
                 status.LiveReadings?.BatteryPowerFlowMilliwatts);
             Assert.Equal(
+                (int?)expected["gpuTemperatureCelsius"],
+                status.LiveReadings?.GpuTemperatureCelsius);
+            Assert.Equal(
                 (int?)expected["designCapacityMilliwattHours"],
                 status.BatteryHealth?.DesignCapacityMilliwattHours);
             Assert.Equal(

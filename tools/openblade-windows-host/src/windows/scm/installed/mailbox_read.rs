@@ -39,6 +39,9 @@ mod driver_mode_rig;
 #[path = "firmware_versions.rs"]
 mod firmware_versions;
 #[cfg(feature = "service-live-readings-v1")]
+#[path = "gpu_temperature.rs"]
+mod gpu_temperature;
+#[cfg(feature = "service-live-readings-v1")]
 #[path = "live_readings.rs"]
 mod live_readings;
 
@@ -1121,6 +1124,8 @@ pub(super) struct ReadSource {
     live: Rc<live_readings::Host>,
     #[cfg(feature = "service-live-readings-v1")]
     firmware: Rc<firmware_versions::Host>,
+    #[cfg(feature = "service-live-readings-v1")]
+    gpu: Rc<gpu_temperature::Host>,
     metadata: Rc<RefCell<Option<Arc<Publication>>>>,
 }
 impl ReadSource {
@@ -1135,14 +1140,17 @@ impl ReadSource {
         });
         #[cfg(feature = "service-thermal-mutation-v1")]
         let source = source.with_mutation(MutationFactories::native());
-        // Only the acquired production source reads Windows battery state and
-        // firmware versions.
+        // Only the acquired production source reads Windows battery state,
+        // firmware versions and the GPU temperature.
         #[cfg(feature = "service-live-readings-v1")]
         let source = Self {
             live: Rc::new(live_readings::Host::new(Rc::new(live_readings::Windows))),
             firmware: Rc::new(firmware_versions::Host::new(Arc::new(
                 firmware_versions::Windows,
             ))),
+            gpu: Rc::new(gpu_temperature::Host::new(
+                gpu_temperature::windows_sampler(),
+            )),
             ..source
         };
         Ok(source)
@@ -1151,6 +1159,13 @@ impl ReadSource {
     fn with_firmware_capture_for_tests(self, capture: Arc<dyn firmware_versions::Capture>) -> Self {
         Self {
             firmware: Rc::new(firmware_versions::Host::new(capture)),
+            ..self
+        }
+    }
+    #[cfg(all(test, feature = "service-live-readings-v1"))]
+    fn with_gpu_for_tests(self, factory: gpu_temperature::Factory) -> Self {
+        Self {
+            gpu: Rc::new(gpu_temperature::Host::new(factory)),
             ..self
         }
     }
@@ -1209,6 +1224,8 @@ impl ReadSource {
             ))),
             #[cfg(feature = "service-live-readings-v1")]
             firmware: Rc::new(firmware_versions::Host::none()),
+            #[cfg(feature = "service-live-readings-v1")]
+            gpu: Rc::new(gpu_temperature::Host::none()),
             metadata: Rc::default(),
         }
     }
@@ -1398,6 +1415,14 @@ impl ReadSource {
             let battery_power = (live & live_readings::BATTERY_POWER != 0)
                 .then(|| source.live.battery_power_flow())
                 .flatten();
+            // Managed reads GPU temperature after its device read. Its worker
+            // samples it beside the job here, so the 150 ms activity window
+            // and an NVML start lengthen neither the job nor the reply, and
+            // a sample whose reading is not accepted is dropped unpublished.
+            #[cfg(feature = "service-live-readings-v1")]
+            let gpu = (live & live_readings::GPU_TEMPERATURE != 0)
+                .then(|| source.gpu.request(deadline))
+                .flatten();
             // The 0D/88 pair rides this serialized job only for an
             // ObserveState that asked for fan speeds, after the thermal read,
             // and not while an unconfirmed pair's back-off lasts.
@@ -1495,6 +1520,13 @@ impl ReadSource {
             let Some(reading) = reading else {
                 return Ok(None);
             };
+            // The sample ends `gpu_temperature::RESERVE` before the deadline,
+            // ahead of the admission and deadline checks below.
+            #[cfg(feature = "service-live-readings-v1")]
+            let gpu = match gpu {
+                Some(pending) => pending.temperature().await,
+                None => None,
+            };
             let admission = source.lease.authorize();
             #[cfg(feature = "service-thermal-mutation-v1")]
             source.lease.verify_integrity()?;
@@ -1546,7 +1578,7 @@ impl ReadSource {
                 // publication carries it.
                 source.firmware.mcu_read(reading.mcu_version);
                 observed = observed
-                    .with_live_readings(live, battery_power, fans)
+                    .with_live_readings(live, battery_power, fans, gpu)
                     .with_battery_health(source.live.battery_health());
             }
             *source.last.borrow_mut() = Some((observed.clone(), Instant::now()));
@@ -1570,9 +1602,14 @@ impl ReadSource {
     }
     pub(super) async fn stop(&self) -> io::Result<()> {
         self.lease.revoke();
-        // A firmware capture still running ends after the read it is in.
+        // A firmware capture still running ends after the read it is in, and
+        // the GPU worker ends its NVML session after the call it is in;
+        // neither is waited for.
         #[cfg(feature = "service-live-readings-v1")]
-        self.firmware.stop();
+        {
+            self.firmware.stop();
+            self.gpu.stop();
+        }
         #[cfg(feature = "service-thermal-mutation-v1")]
         let settlement = self.drain_mutation(false).await;
         #[cfg(feature = "service-thermal-mutation-v1")]
