@@ -724,13 +724,10 @@ marker by name. A build without the feature still refuses the request with
     read, so their version stays `Unavailable`. The read has not been
     compared with the managed Service on the device.
 - **Temperatures.** The CPU temperature stays null; the CPU temperature
-  worker below is unchanged. The GPU temperature follows the workload gate
-  of `SafeWindowsFanTemperatureSource.ReadAsync`, which managed live readings
-  used before 8331bbf4: the same user-mode `nvml.dll` behind the same two
-  Windows reads, neither of which opens a GPU device or calls an NVIDIA API.
-  Managed live readings now call `ReadForLiveReadingsAsync`, which also
-  reports an idle GPU held in D0; that difference is listed under
-  [Pending parity with main a8aea95f](#pending-parity-with-main-a8aea95f).
+  worker below is unchanged. The GPU temperature follows managed live
+  readings, `SafeWindowsFanTemperatureSource.ReadForLiveReadingsAsync` since
+  8331bbf4: the same user-mode `nvml.dll` behind the same two Windows reads,
+  neither of which opens a GPU device or calls an NVIDIA API.
   - The workload: the NVIDIA adapter's WDDM
     `\GPU Engine(*)\Utilization Percentage` counters, opened fresh, primed and
     read again 150 ms later (`WindowsGpuActivitySource`). A process other than
@@ -743,12 +740,23 @@ marker by name. A build without the feature still refuses the request with
     several, a failed step or a property that is not a complete
     `CM_POWER_DATA` is unknown.
 
-  NVML is loaded, started and read only for a workload on a D0 adapter, and a
-  D-state other than D0 read right after the read discards the value. The
-  session (`nvmlInit_v2` to `nvmlShutdown`) stays open across consecutive
-  valid samples of an active D0 GPU and at most 5 s after the last one; an
-  idle, powered-down, unknown or failed sample, a sample cancelled after its
-  D-state read and Stop end it. A sample that starts within 250 ms of the
+  NVML is loaded, started and read only for a D0 adapter, and a D-state
+  other than D0 read right after the read discards the value. A sample with
+  a workload reads NVML. A sample without one, idle or with unavailable
+  counters, reuses the last valid D0 reading of any sample for up to 10 s
+  while every sample since has reported D0. Otherwise it reads NVML once the
+  samples have reported D0 for 3 s, so a GPU an idle app holds in D0 is read
+  at most once every 10 s and NVIDIA's own brief wakes open no NVML. Any
+  sample that is not D0, the recheck after a read included, drops the
+  reading and restarts the dwell. A sample cancelled right after its D-state
+  read changes neither, and a cancelled read keeps no value, as in managed.
+  The 3 s dwell and 10 s spacing are managed's and have not been checked
+  against NVIDIA's runtime-D3 idle timeout on the device. The session
+  (`nvmlInit_v2` to `nvmlShutdown`) stays open across consecutive valid
+  samples of an active D0 GPU and at most 5 s after the last one; an idle
+  sample, even one that read NVML, a powered-down, unknown or failed sample,
+  a sample cancelled after its D-state read and Stop end it before the
+  sample returns. A sample that starts within 250 ms of the
   lease's end ends the session first, and the D-state read ends one whose
   lease ran out during the Windows reads, before NVML is called. Managed's
   timer ends a session on time even during a sample; native keeps it past
@@ -777,11 +785,15 @@ marker by name. A build without the feature still refuses the request with
   progress returns, then exits. Managed reads the GPU only after a
   successful device read; native samples before the job ends, so a job that
   then fails may still have read an active D0 GPU and renewed its session for
-  up to 5 s. It never starts NVML for an idle, powered-down or unknown GPU.
-  `gpu-temperature-vectors.json` pins the activity decision, the power
-  classification, the sampler's gate, session use and lease step by step,
-  and the codec bound against managed
-  (`ServiceControlRuntimeTests.NativeGpuTemperatureVectors`). The image
+  up to 5 s. It never starts NVML for a powered-down or unknown GPU, or for
+  an idle D0 GPU before the dwell. `gpu-temperature-vectors.json` pins the
+  activity decision, the power classification, the sampler's gate, idle
+  reuse and dwell, session use and lease step by step, and the codec bound
+  against managed
+  (`ServiceControlRuntimeTests.NativeGpuTemperatureVectors`). The native
+  sampler keeps managed's `ReadAsync` reader, which leaves an idle GPU
+  unread, only to replay the rows that interleave both readers; the Service
+  samples through the live reader alone. The image
   imports `pdh.dll` and `dxgi.dll`, which the package import allowlist does
   not admit; the live-readings image stays refused by its marker. The read
   has not been compared with the managed Service on the device.
@@ -1632,34 +1644,14 @@ product ABI are unchanged.
 The merge of main a8aea95f moved the branch protocol 85 (a confirmed Custom
 preset with unreported levels) to protocol 90, because main had assigned 85
 through 89. Every managed vector recorder was rerun through the real managed
-code. A native replay that differs from its rerecorded vector is listed in an
-exact allowlist in that native test file, with its case and the managed commit
-that introduced the behavior. A companion test fails when an allowlisted case
-is missing or starts to match, so a port must also remove its entry.
-
-Allowlisted native replays:
-
-| Case | Managed commit | Native area | Test file |
-|---|---|---|---|
-| `live readings read an idle D0 GPU after the dwell, then at most every 10 s` | 8331bbf476ab4f17a2c70d4945a77782049aa4a8 | GPU temperature sampler, live readings | `gpu_temperature_tests.rs` (`PENDING_PARITY`) |
-| `a non-D0 live-reading sample restarts the dwell` | 8331bbf476ab4f17a2c70d4945a77782049aa4a8 | same | same |
-| `live readings read D0 with unavailable counters after the dwell` | 8331bbf476ab4f17a2c70d4945a77782049aa4a8 | same | same |
-| `the power recheck drops an idle D0 live reading` | 8331bbf476ab4f17a2c70d4945a77782049aa4a8 | same | same |
-| `an ordinary read does not reuse an idle D0 live reading` | 8331bbf476ab4f17a2c70d4945a77782049aa4a8 | same | same |
-| `live readings reuse an active reading for idle samples for 10 s` | 8331bbf476ab4f17a2c70d4945a77782049aa4a8 | same | same |
-| `a live idle sample reuses an ordinary active reading` | 8331bbf476ab4f17a2c70d4945a77782049aa4a8 | same | same |
-| `the live reader keeps an active reading at the first idle sample` | 8331bbf476ab4f17a2c70d4945a77782049aa4a8 | same | same |
-
-Managed live readings now call
-`SafeWindowsFanTemperatureSource.ReadForLiveReadingsAsync` instead of
-`ReadAsync`. An idle sample of a GPU held in D0 reuses the last D0 reading of
-any read, active or ordinary, for up to 10 seconds. Without such a reading it
-reads NVML once the GPU has been in D0 for 3 seconds. A sample that is not D0
-drops the reading and restarts the dwell. The native sampler has one read path
-with the workload gate of `ReadAsync`, so the native live readings leave an
-idle D0 GPU unread. The `sampler` rows with `reader: live` in
-`gpu-temperature-vectors.json` record the managed path; rows without a reader
-still record `ReadAsync`.
+code. The only native replays that then differed were the eight `reader: live`
+GPU sampler rows of 8331bbf476ab4f17a2c70d4945a77782049aa4a8, which gave
+managed live readings `ReadForLiveReadingsAsync` and its idle D0 reads. They
+were held in a `PENDING_PARITY` allowlist in `gpu_temperature_tests.rs` until
+the native sampler ported that path (see **Temperatures** above). Every
+sampler row now matches, so the allowlist and its companion test were
+removed. A later replay that differs and cannot be ported at once goes into
+such an allowlist again, with its case and the full managed commit.
 
 Wire members the native Service does not publish at protocol 90. Each decodes
 as its managed default, which is the honest state for a native build that has

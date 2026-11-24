@@ -35,8 +35,9 @@
 //! verified observation while it is null, and again on a power-source change
 //! while it is null. A captured value is never cleared or recaptured.
 //!
-//! GPU temperature is managed's NVML read behind its workload and D0 gates,
-//! on a worker of its own beside the job (`gpu_temperature`). CPU
+//! GPU temperature is managed live readings' NVML read behind its D0 gate,
+//! with its workload, idle reuse and dwell (`gpu_temperature`), on a worker
+//! of its own beside the job. CPU
 //! temperature is not read here: the CPU temperature worker is unchanged, so
 //! it stays null.
 use super::RETENTION_WINDOW;
