@@ -604,22 +604,28 @@ marker by name. A build without the feature still refuses the request with
     admission is the read job's exact RZ09-0581 `1532:02E0` identity, and its
     command is pinned by the captured exchange in
     `evidence/legacy-captures/decoded/rz09-0581-pid-02e0-bios-3.01-mcu-version-fixture.json`
-    (1.5.0.0). The query has its own 1 s budget and keeps the job's reserve, so
-    a timeout, another transaction, a malformed reply or a failed status costs
-    no other reading and leaves `Unavailable`. Only a version from a reading
-    the source accepted is kept: one read across a device change or Stop is
-    discarded. Once read it is never read again or cleared. Before the record
-    is published the version waits for it; a later version republishes the
-    record, as managed's changed record does. A Service without a firmware
-    source sends no query. The budget is three sent queries per read
-    admission, and a new admission, which resume mints, restores it. Native
-    counts an attempt when its request is sent, so a dropped observation still
-    spends one where managed returns the attempt of a canceled read, and it
-    has no device-loss reset because a lost lease ends the native reader.
-    RZ09-0528 has only summary evidence and no native reader, and the
-    source-reviewed models have no managed MCU read, so their version stays
-    `Unavailable`. The read has not been compared with the managed Service on
-    the device.
+    (1.5.0.0). The query has its own 1 s budget and keeps the job's reserve, and
+    its request goes out only while one exchange still fits, checked again
+    just before it is sent. A timeout, another transaction, a malformed reply
+    or a failed status costs no other reading and leaves `Unavailable`. Only a
+    version from a reading the source accepted is kept: one read across a
+    device change or Stop is discarded. Once read it is never read again or
+    cleared. Before the record is published the version waits for it; a later
+    version republishes the record, as managed's changed record does. A
+    Service without a firmware source sends no query. The budget is three sent queries since the last
+    resume, which the low-power gate's generation identifies. As in managed,
+    only a resume restores it: a lock, an unlock or a power notice advances
+    the read admission's lifecycle epoch but leaves the budget spent. A query
+    that gets no terminal reply leaves its transaction ID quarantined for the
+    process, so native also caps one read source at 12 sent queries, four
+    budgets, whatever the resumes; managed has no cap. Native counts an
+    attempt when its request is sent, so a dropped observation still spends
+    one where managed returns the attempt of a canceled read. It has no
+    device-loss reset: a lost lease ends the native read source for the
+    process, so no later query is sent. RZ09-0528 has only summary evidence
+    and no native reader, and the source-reviewed models have no managed MCU
+    read, so their version stays `Unavailable`. The read has not been
+    compared with the managed Service on the device.
 - **Temperatures.** Both stay null. The CPU temperature worker below is
   unchanged, and the Service has no GPU temperature source.
 
