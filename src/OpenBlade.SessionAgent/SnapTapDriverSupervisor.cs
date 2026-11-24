@@ -251,16 +251,8 @@ internal static class SnapTapDriverSupervisor
                     int exitCode = clean ? worker.ExitCode : 4;
                     if (!clean)
                     {
-                        // A supervisor-observed cause, such as a heartbeat timeout, hides
-                        // why the worker itself exited; keep both for diagnostics.
-                        DiagnosticFailure? workerReported = MatchingTerminalFailure(finalStatus, worker.Id, workerStartedAt);
-                        DiagnosticFailure cleanupFailure = SnapTapDiagnosticFailure.Create(
-                            SnapTapDiagnosticFailure.Supervisor, "ReconcileHooks", stage,
-                            "RecoveryRequired", observedWorkerFailure?.MayHaveSubmitted == true, observedWorkerFailure) with
-                        {
-                            Context = $"WorkerExitCode={worker.ExitCode}; WorkerReason={workerReported?.Reason ?? "None"}; "
-                                + $"WorkerStage={workerReported?.Stage ?? "None"}; WorkerContext={workerReported?.Context ?? "None"}",
-                        };
+                        DiagnosticFailure cleanupFailure = RecoveryRequiredFailure(stage, observedWorkerFailure,
+                            worker.ExitCode, MatchingTerminalFailure(finalStatus, worker.Id, workerStartedAt));
                         return PublishTerminal(endpoint.Profile, SnapTapRuntimeState.RecoveryRequired,
                             cleanupFailure, exitCode);
                     }
@@ -325,6 +317,19 @@ internal static class SnapTapDriverSupervisor
         }
         && failure is { Stage: "InputLoop", Reason: "ForegroundUnavailable" }
             or { Stage: "HookSetup", Reason: "SubscriptionDeferred" };
+
+    // A supervisor-observed cause, such as a heartbeat timeout, hides why the
+    // worker itself exited; keep both for diagnostics.
+    internal static DiagnosticFailure RecoveryRequiredFailure(
+        string stage, DiagnosticFailure? observedWorkerFailure, int workerExitCode, DiagnosticFailure? workerReported) =>
+        (SnapTapDiagnosticFailure.Create(
+            SnapTapDiagnosticFailure.Supervisor, "ReconcileHooks", stage, "RecoveryRequired",
+            observedWorkerFailure?.MayHaveSubmitted == true, observedWorkerFailure,
+            processExitCode: workerExitCode) with
+        {
+            Context = $"WorkerReason={workerReported?.Reason ?? "None"}; "
+                + $"WorkerStage={workerReported?.Stage ?? "None"}; WorkerContext={workerReported?.Context ?? "None"}",
+        }).LimitDetails();
 
     internal static bool TryReconcileHooks(
         IRazerSnapTapHookTransport guardian,

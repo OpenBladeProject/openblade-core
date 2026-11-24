@@ -530,7 +530,16 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
                 if (observeKeyboardInputCaughtUp is not null
                     && ((GetQueueStatus(QueueStatusRawInput) >> 16) & QueueStatusRawInput) == 0)
                 {
-                    observeKeyboardInputCaughtUp();
+                    try
+                    {
+                        observeKeyboardInputCaughtUp();
+                    }
+                    catch (Exception exception) when (exception is not OutOfMemoryException)
+                    {
+                        // Without a catch-up the delivery check counts no pumps, so it
+                        // never reports a loss; Fn handling here is unaffected.
+                        Trace.TraceWarning("Keyboard input catch-up observer failed: {0}", exception.GetType().Name);
+                    }
                 }
             }
         }

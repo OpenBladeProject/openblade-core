@@ -71,11 +71,11 @@ public sealed class SnapTapKeyboardFeedTests
             feed.Post(0x10, 0);
         }
         tracker.Expect(new(0x1E, true), TimeSpan.Zero);
-        for (int index = 0; index < SnapTapDeliveryTracker.MinimumPumps; index++)
-        {
-            feed.Drain(tracker);
-        }
+        Assert.Equal(1, tracker.PendingCount);
+        feed.MarkCaughtUp();
+        feed.Drain(tracker);
 
+        // The A down was never posted; only the overflow cleared it.
         Assert.Equal(0, tracker.PendingCount);
         Assert.Null(tracker.Check(TimeSpan.FromSeconds(10)));
     }

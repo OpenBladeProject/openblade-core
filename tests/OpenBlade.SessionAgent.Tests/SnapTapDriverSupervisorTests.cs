@@ -171,6 +171,29 @@ public sealed class SnapTapDriverSupervisorTests
         Assert.Null(SnapTapDriverSupervisor.MatchingTerminalFailure(
             matching with { State = SnapTapRuntimeState.Active, Failure = null }, 123, startedAt));
     }
+
+    [Fact]
+    public void RecoveryRequiredKeepsTheWorkerExitAndItsOwnReasonBesideTheObservedCause()
+    {
+        var heartbeat = new DiagnosticFailure("SnapTapSupervisor", "Run", "InputLoop", "HeartbeatTimeout", false);
+        var reported = new DiagnosticFailure("SnapTapWorker", "Run", "InputLoop", "OutputCountMismatch", false)
+        {
+            Context = new string('x', 20_000),
+        };
+
+        DiagnosticFailure failure = SnapTapDriverSupervisor.RecoveryRequiredFailure("InputLoop", heartbeat, 1, reported);
+
+        Assert.Equal("RecoveryRequired", failure.Reason);
+        Assert.Equal(1, failure.ProcessExitCode);
+        Assert.Equal("HeartbeatTimeout", failure.Cause?.Reason);
+        Assert.False(failure.MayHaveSubmitted);
+        Assert.StartsWith("WorkerReason=OutputCountMismatch; WorkerStage=InputLoop; WorkerContext=x", failure.Context);
+        Assert.True(failure.Context!.Length <= 8192);
+
+        DiagnosticFailure unreported = SnapTapDriverSupervisor.RecoveryRequiredFailure("InputLoop", null, 4, null);
+        Assert.Equal("WorkerReason=None; WorkerStage=None; WorkerContext=None", unreported.Context);
+    }
+
     [Fact]
     public void ForegroundPauseRequiresDedicatedExitAndFreshUnambiguousStatus()
     {

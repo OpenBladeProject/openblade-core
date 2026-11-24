@@ -181,7 +181,7 @@ internal static class SnapTapDriverLoop
                 }
                 lastDeliveryPass = deliveryPass;
                 delivery.Pump(deliveryTracker);
-                if (deliveryTracker.Check(deliveryClock.Elapsed) is { } lost)
+                if (deliveryTracker.Check(deliveryPass) is { } lost)
                 {
                     // The driver accepted a key that Windows never received. Stop all
                     // output and let the guardian clear the hooks so Windows gets the
