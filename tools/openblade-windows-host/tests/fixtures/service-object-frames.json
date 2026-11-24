@@ -91,7 +91,12 @@
       { "case": "status event version as 90.0", "base": "status-event", "valid": false, "path": ["version"], "value": "90.0" },
       { "case": "status event version as -0.0", "base": "status-event", "valid": false, "path": ["version"], "value": "-0.0" },
       { "case": "status event version as 2^32 + 90", "base": "status-event", "valid": false, "path": ["version"], "value": "4294967386" },
-      { "case": "status event version as a private number token", "base": "status-event", "valid": false, "path": ["version"], "value": "{\"$serde_json::private::Number\":\"90\"}" }
+      { "case": "status event version as a private number token", "base": "status-event", "valid": false, "path": ["version"], "value": "{\"$serde_json::private::Number\":\"90\"}" },
+      { "case": "capabilities.oneShotLaptopControls as null", "base": "get-status", "valid": false, "path": ["status", "capabilities", "oneShotLaptopControls"], "value": "null", "nativeError": "invalid v90 status snapshot" },
+      { "case": "capabilities.hostManagedLaptopControls as null", "base": "get-status", "valid": false, "path": ["status", "capabilities", "hostManagedLaptopControls"], "value": "null", "nativeError": "invalid v90 status snapshot" },
+      { "case": "observed capabilities.oneShotLaptopControls as null", "base": "observe-state", "valid": false, "path": ["status", "capabilities", "oneShotLaptopControls"], "value": "null", "nativeError": "invalid v90 status snapshot" },
+      { "case": "status event capabilities.oneShotLaptopControls as null", "base": "status-event", "valid": false, "path": ["status", "capabilities", "oneShotLaptopControls"], "value": "null", "nativeError": "invalid v90 status snapshot" },
+      { "case": "status event capabilities.hostManagedLaptopControls as null", "base": "status-event", "valid": false, "path": ["status", "capabilities", "hostManagedLaptopControls"], "value": "null", "nativeError": "invalid v90 status snapshot" }
     ]
   }
 }

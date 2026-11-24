@@ -165,18 +165,21 @@ fn status_response_arrays_are_refused_at_every_object_position() {
             let error = result
                 .err()
                 .unwrap_or_else(|| panic!("{case} was accepted"));
-            assert!(
-                [
-                    "invalid Service status response",
-                    "invalid ObserveState confirmation members"
-                ]
-                .contains(&error.to_string().as_str()),
-                "{case}: {error}"
-            );
+            match row["nativeError"].as_str() {
+                Some(expected) => assert_eq!(error.to_string(), expected, "{case}"),
+                None => assert!(
+                    [
+                        "invalid Service status response",
+                        "invalid ObserveState confirmation members"
+                    ]
+                    .contains(&error.to_string().as_str()),
+                    "{case}: {error}"
+                ),
+            }
         }
         checked += 1;
     }
-    assert_eq!(checked, 27);
+    assert_eq!(checked, 30);
 }
 
 #[cfg(feature = "native-agent-entry-compile-check")]
@@ -211,7 +214,7 @@ async fn status_event_arrays_are_refused_at_every_object_position() {
         }
         checked += 1;
     }
-    assert_eq!(checked, 24);
+    assert_eq!(checked, 26);
 }
 
 /// The ObserveState confirmation pass reads members that the snapshot keeps
@@ -492,5 +495,31 @@ async fn integer_negative_zero_in_typed_event_members_is_refused() {
             .err()
             .unwrap();
         assert_eq!(error.to_string(), message, "{path}");
+    }
+}
+
+/// A laptop control set in the opaque capabilities must be an array when
+/// present: managed `IsWellFormed` refuses a null one (05ec5381), which the
+/// fixture rows pin through both codecs, and reads an absent one as empty.
+#[test]
+fn laptop_control_sets_are_arrays_when_present() {
+    let (request, frame) = server_frame(&rows("serverFrames")[0]);
+    let base: Value = serde_json::from_slice(&frame).unwrap();
+    let decode = |status: &Value| {
+        StatusResponse::decode(&serde_json::to_vec(status).unwrap(), &request, None)
+    };
+    for set in ["oneShotLaptopControls", "hostManagedLaptopControls"] {
+        let mut absent = base.clone();
+        let capabilities = absent["status"]["capabilities"].as_object_mut().unwrap();
+        assert!(capabilities.remove(set).is_some(), "{set}");
+        decode(&absent).unwrap_or_else(|error| panic!("{set}: {error}"));
+        for shape in [Value::Null, json!({}), json!(1), json!("")] {
+            let mut edited = base.clone();
+            edited["status"]["capabilities"][set] = shape.clone();
+            let error = decode(&edited)
+                .err()
+                .unwrap_or_else(|| panic!("{set} as {shape} was accepted"));
+            assert_eq!(error.to_string(), "invalid v90 status snapshot", "{set}");
+        }
     }
 }

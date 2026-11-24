@@ -1480,6 +1480,16 @@ impl Snapshot {
         {
             return Err(invalid("invalid v90 status snapshot"));
         }
+        // Capabilities stay opaque, but a laptop control set that is present
+        // and not an array is malformed, as managed `IsWellFormed` refuses a
+        // null one (05ec5381); an absent set is managed's empty default.
+        if let Some(capabilities) = &self.capabilities
+            && ["oneShotLaptopControls", "hostManagedLaptopControls"]
+                .into_iter()
+                .any(|set| capabilities.get(set).is_some_and(|value| !value.is_array()))
+        {
+            return Err(invalid("invalid v90 status snapshot"));
+        }
         ThermalConvergence::decode(self.feature_fields.get("thermalConvergence"))?;
         Ok(())
     }
