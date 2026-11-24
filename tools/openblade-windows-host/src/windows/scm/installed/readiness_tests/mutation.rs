@@ -5047,6 +5047,30 @@ async fn fan_v2_owned_stop_cleanup_too_slow_for_its_recipe_writes_no_row() {
     assert_eq!(fan_rows(&r).len(), rows);
 }
 
+/// One 400 ms stall in the cleanup's first exchange is charged once, at its
+/// own length, as `Pace` charges every recipe: the rows are charged at the
+/// second longest exchange, so a handback that needs well under a second of
+/// its deadline is admitted and completes. A device slow throughout is still
+/// refused (`fan_v2_owned_stop_cleanup_too_slow_for_its_recipe_writes_no_row`).
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn fan_v2_owned_stop_cleanup_after_one_stall_hands_fans_back() {
+    let r = fan_rig(0, 0);
+    r.get().await;
+    let applied = r.request(fan_request(142, Some(1), 3700)).await;
+    assert_eq!(applied["result"]["status"], 1, "{applied}");
+    r.origin.stop();
+    let sent = r.port.state.lock().unwrap().sent.len();
+    r.port.state.lock().unwrap().exchange_stall = vec![(sent + 1, Duration::from_millis(400))];
+    assert!(r.source.lock().await.drain().await.is_ok());
+    let state = r.port.state.lock().unwrap();
+    assert_ne!(state.sent[sent].0, 0, "the stall is a fan exchange");
+    assert_eq!(state.fans, [0, 0]);
+    drop(state);
+    let rows = fan_rows(&r);
+    assert_eq!(rows.last().unwrap()["progress"], 50, "{rows:?}");
+}
+
 #[cfg(feature = "service-fan-mutation-v2")]
 #[tokio::test]
 async fn fan_v2_actual_read_stop_race_retains_only_expected_cleanup_custody() {

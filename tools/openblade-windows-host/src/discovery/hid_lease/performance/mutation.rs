@@ -291,8 +291,11 @@ impl Pace {
     }
     /// `covers` before a recipe's first row, for owned fan cleanup, which
     /// writes no Prepared row before its 31. No append is timed yet, so each
-    /// row left, the 31 included, is charged at the slowest exchange so far:
-    /// a cleanup that cannot finish by its deadline ends with no row and no
+    /// row left, the 31 included, is charged at the second longest exchange
+    /// so far, as every exchange but one is: one stall is charged once, at
+    /// its own length, and does not refuse a handback with seconds to spare,
+    /// while a device slow throughout has two slow baseline exchanges by now.
+    /// A cleanup that cannot finish by its deadline ends with no row and no
     /// setter, instead of leaving an unsettled 31 or 4x row.
     pub(super) fn covers_before_rows<P: Port, A>(
         reader: &Reader<P, A>,
@@ -303,7 +306,7 @@ impl Pace {
     ) -> bool {
         let measured = &reader.exchanges;
         let appends = 1 + APPENDS_PER_SETTER * setters + CLOSING_APPENDS;
-        ends_by(measured, exchanges, appends, measured.slowest, fixed, limit)
+        ends_by(measured, exchanges, appends, measured.second, fixed, limit)
     }
 }
 /// Whether `exchanges` at the measured pace, `appends` rows of `append` each
