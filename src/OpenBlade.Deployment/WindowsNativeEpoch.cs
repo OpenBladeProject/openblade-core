@@ -79,6 +79,8 @@ internal sealed class WindowsNativeEpochTransaction : IDisposable
             if (!package.Service.RequiresMailboxHandoff && previous is null && WindowsNativeRecoveryState.Inspect(files).State != NativeInstallationState.VerifiedBootstrap)
             { throw new NativeRecoveryException(NativeRecoveryReason.UnknownBootstrapHistory, "Native bootstrap admission changed; preserved mappings/reservations/ownership were not reset."); }
             using var prefix = package.Service.RequiresMailboxHandoff ? ManagedMailboxNativeCustody.AcquireUnderWriter(files.RetainView()) : null;
+            // After the owner admission above has named any Driver-mode doubt.
+            WindowsNativeDriverModeHistory.RequireAbsentForIncoming(files);
             using var legacyAdmission = prefix is null ? null : WindowsManagedMailboxRun.AcquireLegacyExclusion(prefix, storage);
             using var handoff = package.Service.RequiresMailboxHandoff
                 ? (managedTransfer ?? throw new IOException("A real managed transport handoff is required for native observation.")).AcquireForBegin(package, request) : null;
