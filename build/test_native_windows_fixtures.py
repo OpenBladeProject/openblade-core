@@ -14,7 +14,7 @@ spec.loader.exec_module(f)
 
 
 class FixtureContracts(unittest.TestCase):
-    def line(self, emitter='peer_response', raw='{"frame":"response","version":85,"z":1,"a":2}'):
+    def line(self, emitter='peer_response', raw='{"frame":"response","version":90,"z":1,"a":2}'):
         return f.PREFIX + json.dumps(dict(schemaVersion=1, emitter=emitter, operation='getStatus',
                                            method='response', raw=raw)).encode() + b'\n'
 
@@ -47,7 +47,7 @@ class FixtureContracts(unittest.TestCase):
             self.assertEqual(json.loads(edge.read_bytes())[0]['raw'], rows[0]['raw'])
 
     def test_missing_producer_and_legacy_emissions_fail(self):
-        legacy = b'NATIVE_THERMAL_MUTATION_RESPONSE {"frame":"response","version":85}\n'
+        legacy = b'NATIVE_THERMAL_MUTATION_RESPONSE {"frame":"response","version":90}\n'
         for data in (b'', legacy, legacy + self.line(), self.line() + legacy):
             with self.subTest(data=data), self.assertRaises(ValueError):
                 f.collect(data, 'intended_frame_producer', {'peer_response'})
@@ -66,8 +66,9 @@ class FixtureContracts(unittest.TestCase):
         for data in (self.line('unknown'), self.line('publisher_projection'), self.line()[:-1],
                      b'prefix ' + self.line(), self.line(raw='{}'), self.line(raw=''),
                      self.line().replace(b'"schemaVersion": 1', b'"schemaVersion": 2'),
-                     # A frame from the retired protocol 80 peer.
-                     self.line(raw='{"frame":"response","version":80,"z":1,"a":2}')):
+                     # Frames from the retired protocol 80 and 85 peers.
+                     self.line(raw='{"frame":"response","version":80,"z":1,"a":2}'),
+                     self.line(raw='{"frame":"response","version":85,"z":1,"a":2}')):
             with self.subTest(data=data), self.assertRaises((ValueError, KeyError)):
                 f.collect(data, 'test', {'peer_response'})
         with tempfile.TemporaryDirectory() as d, self.assertRaises(ValueError):

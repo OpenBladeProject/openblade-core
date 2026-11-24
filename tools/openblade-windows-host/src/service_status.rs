@@ -1,4 +1,4 @@
-//! The managed ServiceMessages v85 shape shared by the installed Service and Agent candidates.
+//! The managed ServiceMessages v90 shape shared by the installed Service and Agent candidates.
 //! Preserve rich feature records verbatim; readiness consumes the core snapshot
 //! and never interprets feature data as independent device or write evidence.
 
@@ -25,7 +25,7 @@ use tokio::{
 use crate::service_frame::{FRAME_TIMEOUT, invalid, is_guid, read_payload, write_frame};
 
 pub(crate) const PIPE_NAME: &str = "OpenBlade.Service.v2";
-pub(crate) const PROTOCOL_VERSION: i32 = 85;
+pub(crate) const PROTOCOL_VERSION: i32 = 90;
 
 pub(crate) fn production_path() -> String {
     format!(r"\\.\pipe\{PIPE_NAME}")
@@ -563,7 +563,7 @@ impl StatusResponse {
             request_id: request.header().1.to_ascii_lowercase(),
             success: true,
             error: None,
-            // v85 success frames carry exactly one body. Status is published
+            // v90 success frames carry exactly one body. Status is published
             // separately through GetStatus, ObserveState and subscriptions.
             status: None,
             result: Some(outcome),
@@ -744,7 +744,7 @@ pub(crate) async fn read_status_event(
 
 type FeatureRecord = Map<String, Value>;
 
-// Internal diagnostic provenance never crosses the v85 wire. Battery updates
+// Internal diagnostic provenance never crosses the v90 wire. Battery updates
 // replace one family; private policy text is dropped at the redaction boundary.
 #[derive(Clone, Copy)]
 pub(crate) enum PrivatePolicyFamily {
@@ -975,7 +975,7 @@ impl Snapshot {
             confirmed_state: None,
             profiles,
             desired_state,
-            // v85 has no fully unknown power source. Use its conservative
+            // v90 has no fully unknown power source. Use its conservative
             // unresolved encoding for both unknown and unclassified external.
             active_power_source: if on_battery {
                 BATTERY
@@ -1131,7 +1131,7 @@ impl Snapshot {
     pub(crate) fn device_verified(&self) -> bool {
         self.device_verified
     }
-    /// The v85 power source this status was built with.
+    /// The v90 power source this status was built with.
     #[cfg(all(windows, feature = "service-live-readings-v1"))]
     pub(crate) fn active_power_source(&self) -> i32 {
         self.active_power_source
@@ -1426,7 +1426,7 @@ impl Snapshot {
             .get("modelNumber")?
             .as_str()
     }
-    // Use only for a direct, admitted ObserveState reply. v85 can retain
+    // Use only for a direct, admitted ObserveState reply. v90 can retain
     // fields during failed observations. Require the managed completion
     // guards and explicit absence of observation or write uncertainty.
     pub(crate) fn confirmed_performance(&self) -> Option<ConfirmedPerformance> {
@@ -1478,7 +1478,7 @@ impl Snapshot {
                 .iter()
                 .any(|value| !(0..=3).contains(value))
         {
-            return Err(invalid("invalid v85 status snapshot"));
+            return Err(invalid("invalid v90 status snapshot"));
         }
         ThermalConvergence::decode(self.feature_fields.get("thermalConvergence"))?;
         Ok(())

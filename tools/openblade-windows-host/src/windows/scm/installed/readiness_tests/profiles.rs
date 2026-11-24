@@ -22,7 +22,7 @@ fn saved(files: &MemoryFiles) -> Value {
 
 fn update_request(n: u8, profiles: &Value) -> Value {
     json!({
-        "operation": "updateProfiles", "version": 85,
+        "operation": "updateProfiles", "version": 90,
         "requestId": format!("aaaaaaaa-bbbb-cccc-dddd-{n:012}"),
         "profiles": profiles,
     })
@@ -30,7 +30,7 @@ fn update_request(n: u8, profiles: &Value) -> Value {
 
 fn result(status: u8, message: &str, n: u8) -> Value {
     json!({
-        "frame": "response", "version": 85,
+        "frame": "response", "version": 90,
         "requestId": format!("aaaaaaaa-bbbb-cccc-dddd-{n:012}"),
         "success": true, "error": null, "status": null,
         "result": {"status": status, "message": message},
@@ -596,7 +596,7 @@ async fn installed_update_profiles_answers_the_managed_vector_corpus() {
         let payload = profile_set::json::write(
             &Json::Object(vec![
                 ("operation".into(), Json::string("updateProfiles")),
-                ("version".into(), Json::int(85)),
+                ("version".into(), Json::int(90)),
                 (
                     "requestId".into(),
                     Json::string("aaaaaaaa-bbbb-cccc-dddd-000000000001"),
