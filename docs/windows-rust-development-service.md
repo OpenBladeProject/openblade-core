@@ -66,7 +66,7 @@ have separate module trees from the fixture roles. Neither is a Setup payload.
 
 After the other adapter checks pass, the candidate lease must start its
 retained Service watcher and obtain a fresh initial subscription snapshot.
-The separate one-shot client uses the shared Service v85
+The separate one-shot client uses the shared Service v90
 `GetStatus` request and response on the local `OpenBlade.Service.v2` endpoint.
 The exchange is limited to a 64 KiB frame and a two-second deadline, including
 connection establishment. Only listener absence or a busy pipe is retried
@@ -82,7 +82,7 @@ retained connection. The proof provider and installed lease remain unwired.
 Status fields retain the producer's meaning, including inactive or unsupported
 states. Feature records are preserved for future consumers.
 
-The native watcher sends a fresh v85 `SubscribeStatus` request on each
+The native watcher sends a fresh v90 `SubscribeStatus` request on each
 connection and delivers an open marker only after a successful correlated
 response with a snapshot. It reads subsequent typed `statusEvent` frames in
 wire order. A new open always establishes a new baseline, including after a
@@ -123,20 +123,20 @@ Managed Agent call sites use the following Service operations:
 
 The managed server's protocol-51 compatibility path is limited to cached
 `GetStatus` and `SubscribeStatus` with a read-only projection. The native
-Agent status binding requires v85, matching the ordinary managed Agent. The
-installed Service candidate has a v85 `SubscribeStatus` handler behind the
+Agent status binding requires v90, matching the ordinary managed Agent. The
+installed Service candidate has a v90 `SubscribeStatus` handler behind the
 existing listener admission. It returns a correlated failure when the
 publication feed is unavailable. The startup probe
 still requires the exact self-issued `GetStatus` exchange.
 
-The Agent candidate also has a one-shot v85 `ObserveState` client for
+The Agent candidate also has a one-shot v90 `ObserveState` client for
 performance shortcut readback. Its request matches
 `ObserveStateAsync(LiveReadingSensors.None)`. The Service candidate requires
 an active caller and a fresh performance read from a separate admitted port.
 The installed metadata observer has no firmware read port, so it returns a
 correlated refusal. Optional live sensor selections also receive a refusal.
 The Agent requires a Service generation admitted for fresh observation. The
-v85 status envelope alone carries no proof of a fresh firmware read. The
+v90 status envelope alone carries no proof of a fresh firmware read. The
 Agent also checks verified device state, control access, power classification,
 observation state, Fan Stop ownership and unresolved performance writes.
 
@@ -195,10 +195,10 @@ budget expires, the Service can report only that cancellation was requested
 and retirement is unconfirmed. An explicit cleanup failure retains the
 resources and quarantines the native slot until process exit.
 
-The typed result can populate a fresh v85 reply only with independently
+The typed result can populate a fresh v90 reply only with independently
 verified status guards for the same live authority epoch. The installed read
 projection carries the complete decoded preset/fan state,
-HyperBoost observation and nullable Custom settings in the existing v85 schema.
+HyperBoost observation and nullable Custom settings in the existing v90 schema.
 Accepted levels use numeric CPU/GPU values and maximumFans=false; the manual
 selector does not imply that separate setting. Retained ordinary status has no
 fresh-read witness.
@@ -821,7 +821,7 @@ The vectors in `tools/openblade-windows-host/tests/data/firmware-version-vectors
 pin the firmware record against managed
 (`ServiceControlRuntimeTests.NativeFirmwareVersionVectors`): each row feeds one set
 of Windows reads through `WindowsFirmwareVersionSource` and the two device
-selectors, writes the result through the v85 status codec and is replayed
+selectors, writes the result through the v90 status codec and is replayed
 through the native capture. The same file pins `Version.TryParse` and
 `Convert.ToInt32`, the two framework parsers the native code mirrors. The managed
 codec decodes the native frames in `firmware-version-native-frames.json`
@@ -955,7 +955,7 @@ Performance on AC power. `subscribe-status-v79.frames` holds
 `SubscribeStatusRequest(79, id)`, the correlated response and a v79
 `ServiceStatusEvent` with the status revision incremented by one.
 
-The Service status client and server now speak v85, so these three recordings
+The Service status client and server now speak v90, so these three recordings
 are rejection controls. `original_v79_wire_fixtures_are_rejected_before_dispatch`
 replays each request in memory and checks that the installed dispatcher closes
 it without a reply or a firmware read, then accepts the same request with its
@@ -982,7 +982,7 @@ observer inputs and peer evidence over in-memory streams.
 
 ### Managed operations the installed Service does not serve
 
-A well-formed v85 request that names a managed operation outside the
+A well-formed v90 request that names a managed operation outside the
 composition's typed decoder gets managed's own fallback reply: the correlated
 `ServiceResponse` with `success: false`, error
 `IPC request operation is unsupported.` and no body or error code
@@ -990,13 +990,13 @@ composition's typed decoder gets managed's own fallback reply: the correlated
 `operationFamilies` inventory in the
 [managed replay contract](windows-backend-replay.md), which
 `WindowsReplay_FrozenWireInventoryMatchesManagedRegistry` pins to the managed
-`ServiceRequest` registry. Its 51 operations include `reportSessionPowerTransition`
+`ServiceRequest` registry. Its 53 operations include `reportSessionPowerTransition`
 and `updateProfiles`. An operation is served only when this build's features
 dispatch it, so a read-only composition also refuses `setFanOverride` and the
 other mutations instead of closing.
 
 The refusal decodes only the object envelope: one `operation`, an Int32
-`version` of 85 and a non-nil `requestId`, with duplicate members and serde
+`version` of 90 and a non-nil `requestId`, with duplicate members and serde
 private member names refused. It never interprets the body, reads the status
 source, opens the device or touches storage, so every caller the status
 endpoint admits receives it. Unknown operation names, malformed frames, other
@@ -1015,7 +1015,7 @@ failure. Neither path changes state.
 `installed_unserved_operations_reply_with_the_managed_unsupported_failure`
 contributes its actual frames to the `OPENBLADE_NATIVE_THERMAL_RESPONSES`
 corpus, and the managed fact requires the unsupported reply to decode through
-the v85 codec.
+the v90 codec.
 
 ## Compile the installed service launch boundary
 
@@ -1058,7 +1058,7 @@ handback) bind the complete attempt-set dispositions and independently
 validated owner chain. Public readers may still block legacy
 custody. Recovery preserves descriptors, launches, drains, counters, snapshots
 and partial staging evidence. The separate endpoint seam
-requires the installed ACL, caller admission, and a successful correlated v85
+requires the installed ACL, caller admission, and a successful correlated v90
 `GetStatus` response with a status snapshot on `OpenBlade.Service.v2`, bound to
 the admitted PID. The candidate publishes `SERVICE_RUNNING` only after that
 evidence. Setup's external probe still runs afterward. The fixture endpoints
@@ -1166,7 +1166,7 @@ The integration tests launch their own foreground processes and assign fresh pip
 
 Run `foreground-replay <id>` with a fresh development pipe ID. After `READY`, send one lowercase `n` to standard input for each step. With an interactive console, press Enter after each `n`. Close standard input to stop. The test harness controls the replay clock through these ordered steps. Pipe reads and subscriptions do not advance it.
 
-| Revision | Input | v85 status |
+| Revision | Input | v90 status |
 | --- | --- | --- |
 | 1 | Initial synthetic startup | Plugged-in profile, unknown function-key readback, writes blocked |
 | 2 | Recovery getter returns no value | Readback stays unknown and the in-memory intent stays pending |
@@ -1175,7 +1175,7 @@ Run `foreground-replay <id>` with a fresh development pipe ID. After `READY`, se
 
 The recovery inputs follow the managed restart cases in `service-runtime.json`. The existing Rust recovery reducer plans the getter and computes the settlement. The controller applies that settlement to its one-entry in-memory journal. Before the battery observation, the script cancels a recovery read and delivers its stale result. Neither event changes the snapshot or journal. The performance policy selects the battery preset from the fixture. The writes block stays set after settlement, as the replay omits the full observation that could lift it.
 
-Each v85 subscription starts at the latest snapshot and can receive newer revisions. The stream keeps only the latest pending snapshot per receiver, so slow subscribers may skip revisions. Reconnect starts at the latest revision without repeating earlier effects. v51 uses its existing passive projection.
+Each v90 subscription starts at the latest snapshot and can receive newer revisions. The stream keeps only the latest pending snapshot per receiver, so slow subscribers may skip revisions. Reconnect starts at the latest revision without repeating earlier effects. v51 uses its existing passive projection.
 
 This phase exercises the startup recovery and power-profile paths with scripted observations, a fake journal and no transport setter. Full startup and run-marker orchestration, protected storage and its recovery gates, native observation and command execution, session ownership, and the remaining profile and feature paths still need parity work.
 
@@ -1185,7 +1185,7 @@ The same Windows interoperability suite runs the durable scenario against the fo
 
 | Invocation | Behavior |
 | --- | --- |
-| `foreground-durable <pipe-id>` | After `READY`, one lowercase `n` commits the second managed aggregate. v85 publishes the new requested charge limit only after the writer verifies the commit and the startup inspector independently reads the committed bytes. |
+| `foreground-durable <pipe-id>` | After `READY`, one lowercase `n` commits the second managed aggregate. v90 publishes the new requested charge limit only after the writer verifies the commit and the startup inspector independently reads the committed bytes. |
 | `foreground-durable-restart <pipe-id> <fixture-id> <file-identity>` | Reopens the pinned namespace read-only, verifies the root identity and inspects the exact stored documents before opening the pipe. |
 | `foreground-durable-interrupt <pipe-id>` | One lowercase `n` injects an error after the profile replacement and before restoration. The process exits with the sidecar and remaining artifacts intact. A fresh restart refuses before readiness or pipe creation. |
 | `foreground-profile-bootstrap <pipe-id>` | Builds the typed 80 percent battery policy and default Fan Stop settings over the managed fixture, commits to an empty root, and reads back the current aggregate before publishing status. |
@@ -1203,7 +1203,7 @@ Run `foreground-battery-profile <id>` on a fresh private pipe. The host migrates
 the same managed schema 24 fixture before readiness. It loads that verified
 profile into the scripted RZ09-0581 controller. The 77% saved limit, the
 controller's 80% getter result, and the temporary override are separate.
-The existing v85 `updateProfiles` request accepts only a charge-limit edit
+The existing v90 `updateProfiles` request accepts only a charge-limit edit
 against the otherwise unchanged fixture. As in the managed service, it stores
 the profile without a setter and clears a temporary limit only if equivalent.
 The existing battery operations require the battery scenario's fresh admission
@@ -1229,7 +1229,7 @@ outside the scenario.
 ## Exercise temporary full charge
 
 `foreground-full-charge <pipe-id>` starts the unified foreground host with a
-private migrated fixture and no profile writer. The existing v85
+private migrated fixture and no profile writer. The existing v90
 `setFullChargeOverride` request exercises the exact RZ09-0581 recipe through
 encoded scripted Power Mode Control reports. Enable and cancel confirm the
 override and unchanged charge cap and protection independently of the setter
@@ -1246,7 +1246,7 @@ and physical verification of the native host.
 ## Exercise standard battery policy
 
 Run `foreground-battery-parity <id>` on a fresh private development pipe. The
-same-logon v85 client can send `setBatteryPolicy` and `setBatteryProtection` to this
+same-logon v90 client can send `setBatteryPolicy` and `setBatteryProtection` to this
 mode. All other mutations are refused. v51 keeps its passive status projection. The
 foreground, runtime replay, and SCM modes keep their existing refusal behavior.
 
@@ -1272,7 +1272,7 @@ saved profile, scoped overrides and pending intent are absent. Startup in this h
 observes state without applying a profile.
 
 After `READY`, stdin accepts one lowercase `n` for each fixed scenario step. Use the
-v85 status stream to observe the step before sending the next request.
+v90 status stream to observe the step before sending the next request.
 
 | Step | Effect |
 | --- | --- |
@@ -1291,7 +1291,7 @@ and the rest of the full-service transition remain separate work.
 ## Exercise a standard performance override
 
 Run `foreground-performance-parity <id>` on a fresh private development pipe.
-The same-logon v85 client can send `setPerformanceOverride` with Balanced or
+The same-logon v90 client can send `setPerformanceOverride` with Balanced or
 Performance, a temporary or persistent lifetime, or an explicit null to clear.
 The scenario fixes the RZ09-0581 (1532:02E0) on full adapter power with Automatic
 fans. It starts at Balanced, with no HyperBoost or manual fan ownership. The
@@ -1325,7 +1325,7 @@ event before sending the next request.
 
 The managed runtime oracle checks the typed operation, storage order and
 observed outcomes separately from the Rust replay. The tray test uses the
-existing `ServiceClient` and v85 status stream. Rust tests also check the
+existing `ServiceClient` and v90 status stream. Rust tests also check the
 exact payloads and partial-pair failure. Native admission, durable production
 configuration and restart recovery, power-source transitions, other presets,
 Custom, HyperBoost, manual fan ownership and handback, Guardian, and other
@@ -1335,7 +1335,7 @@ the only live owner.
 ## Exercise ordinary fan ownership
 
 Run `foreground-fan-parity <id>` on a fresh private development pipe. The
-same-logon v85 client admits a persistent Fixed 4,000 RPM fan override. The
+same-logon v90 client admits a persistent Fixed 4,000 RPM fan override. The
 scripted RZ09-0581 (1532:02E0) starts in Performance with Automatic fans and
 full adapter power.
 
@@ -1474,7 +1474,7 @@ appropriate battery and limited-power preset recipes, and session admission.
 
 ## Replay keyboard Off
 
-`foreground-lighting-off <pipe-id>` admits the existing v85 keyboard Off
+`foreground-lighting-off <pipe-id>` admits the existing v90 keyboard Off
 override on a scripted RZ09-0581 (1532:02E0) with no owned renderer. The
 saved profile selects Off, so clearing the override selects that same
 profile setting. The fixture records persistent and temporary intent in
@@ -1530,7 +1530,7 @@ separate work.
 ## Application context replay
 
 Run the existing managed client against `foreground-application-context <id>`
-with a fresh development pipe ID. This foreground mode accepts v85
+with a fresh development pipe ID. This foreground mode accepts v90
 `ReportApplicationContext` only after the same native pipe peer check used by
 the other modes. A scripted authority stands in for the active local interactive
 session. It is checked again where the report changes state.
@@ -1557,7 +1557,7 @@ and the other modes' effect admission unchanged.
 Use `foreground-integrated-application <id>` for a disposable private writer.
 The companion mode `foreground-protected-integrated-application <id> <root>`
 uses the existing protected-writer admission for a precreated test root.
-Both modes use the same private v85 pipe, composed runtime, and renderer
+Both modes use the same private v90 pipe, composed runtime, and renderer
 shutdown sequence as the integrated fixture. The executable rule is a
 fixture input in memory. Lease reports, expiry, and selected presets leave
 the saved profile aggregate untouched.
@@ -1583,7 +1583,7 @@ and drains on STOP even if an application lease is active.
 ## Replay private Fan Stop ownership and handback
 
 Run `foreground-fan-stop <pipe-id> <case>` on the Windows development host.
-Only the active v85 test endpoint accepts the existing typed
+Only the active v90 test endpoint accepts the existing typed
 `setFanStopMode` request. The scenario represents the exact SO6120 EC 1.04
 entry with a fixture clock, Balanced readback and resolved USB-C. It shares
 the manual-entry fixture and drives Phase 5q's guardian replay using inert
@@ -1614,7 +1614,7 @@ product ABI are unchanged.
 
 ## Compatibility boundary
 
-- Each connection accepts one request. Every mode serves v85 `getStatus` and `subscribeStatus` and v51 `getStatus`. Mutations use v85 in the explicitly scoped foreground modes. The v85 response and event use the [managed replay fixtures](windows-backend-replay.md). In the fixed replay modes, the subscription first sends the preceding synthetic revision and then one exact newer fixture event. v51 returns only the CLI fixture's approved fields and closes. Request IDs correlate replies. Every read uses in-memory fixtures and has no activation or state changes. It closes v79 requests without a reply.
+- Each connection accepts one request. Every mode serves v90 `getStatus` and `subscribeStatus` and v51 `getStatus`. Mutations use v90 in the explicitly scoped foreground modes. The v90 response and event use the [managed replay fixtures](windows-backend-replay.md). In the fixed replay modes, the subscription first sends the preceding synthetic revision and then one exact newer fixture event. v51 returns only the CLI fixture's approved fields and closes. Request IDs correlate replies. Every read uses in-memory fixtures and has no activation or state changes. It closes v79 requests without a reply.
 - Framing uses a signed 32-bit little-endian byte count and caps bodies at 64 KiB. There is a two-second first-frame deadline and a two-second deadline per write. Invalid lengths, malformed envelopes, invalid identity and unsupported versions close the connection. Each mode returns a correlated refusal for operations outside its allowlist. The host allows eight concurrent handlers and four concurrent subscriptions, with one additional listening instance and a private first-instance claim. The host promptly closes connections above capacity and retries a temporarily busy listener replacement for up to two seconds.
 - Windows claims the first instance exclusively and rejects remote connections. The explicit DACL restricts access to the host account. After reading the request bytes, the host resolves the pipe token and requires the same SID, logon authentication ID and Windows session. This is a same-logon development trust boundary. The ordinary duplex C# client asks for generic write, which also gives its SID permission to create pipe instances. It does not establish server trust against another process in that logon. Both projections exercise synthetic authorization inputs behind the native identity check. They do not replicate active-session selection or LocalSystem access policy.
 - Rust tests cover the wire fixtures and native endpoint checks, including first-instance contention, listener saturation and recovery, an anonymous client, and start/stop ordering through the shared lifecycle with an injected SCM reporter and stop signal. The .NET tests exercise the real tray client through the foreground endpoint, including initial status, event, cancellation and reconnect. They supplement that path with managed codec and v51 raw frames. The Windows job in the Rust workflow runs both sets on stacked PRs.
@@ -1623,7 +1623,78 @@ product ABI are unchanged.
 
 - With null capabilities the tray's `ProfileAdmissionPolicy.Supports` refuses every profile draft. Beside an observed HyperBoost, the observation record lets it admit a draft that changes nothing, and it still refuses any change. Native profile admission stays authoritative, so the tray is unchanged.
 - Session Display IPC stays at version 2 although main changed what it means. Manual setters now admit `ExternalUnknown` with fresh Service external-power evidence, and the display checkpoint admits source 3 as an unowned manual hold. The native Agent implements both. A version-2 peer built before that change refuses an `ExternalUnknown` manual request and treats a source-3 checkpoint as invalid, so automation pauses with every field uncertain. Both outcomes fail closed. The version number cannot tell the two behaviours apart.
-- The read-only protocol-51 projection keeps a confirmed Custom preset whose levels the firmware did not report, with `customPerformance` null. Protocol 85 admits that state; every v51-era managed reader rejects it, because `ValidPerformanceState` requires `IsWellFormed`, so such a status fails closed. This branch made that choice before the reconciliation and did not revisit it.
+- The read-only protocol-51 projection keeps a confirmed Custom preset whose levels the firmware did not report, with `customPerformance` null. Protocol 90 admits that state; every v51-era managed reader rejects it, because `ValidPerformanceState` requires `IsWellFormed`, so such a status fails closed. This branch made that choice before the reconciliation and did not revisit it.
+
+### Pending parity with main a8aea95f
+
+The merge of main a8aea95f moved the branch protocol 85 (a confirmed Custom
+preset with unreported levels) to protocol 90, because main had assigned 85
+through 89. Every managed vector recorder was rerun through the real managed
+code. A native replay that differs from its rerecorded vector is listed in an
+exact allowlist in that native test file, with its case and the managed commit
+that introduced the behavior. A companion test fails when an allowlisted case
+is missing or starts to match, so a port must also remove its entry.
+
+Allowlisted native replays:
+
+| Case | Managed commit | Native area | Test file |
+|---|---|---|---|
+| `live readings read an idle D0 GPU after the dwell, then at most every 10 s` | 8331bbf476ab4f17a2c70d4945a77782049aa4a8 | GPU temperature sampler, live readings | `gpu_temperature_tests.rs` (`PENDING_PARITY`) |
+| `a non-D0 live-reading sample restarts the dwell` | 8331bbf476ab4f17a2c70d4945a77782049aa4a8 | same | same |
+| `live readings read D0 with unavailable counters after the dwell` | 8331bbf476ab4f17a2c70d4945a77782049aa4a8 | same | same |
+| `the power recheck drops an idle D0 live reading` | 8331bbf476ab4f17a2c70d4945a77782049aa4a8 | same | same |
+| `an ordinary read does not reuse an idle D0 live reading` | 8331bbf476ab4f17a2c70d4945a77782049aa4a8 | same | same |
+
+Managed live readings now call
+`SafeWindowsFanTemperatureSource.ReadForLiveReadingsAsync`, which reads an idle
+GPU held in D0 after a 3-second D0 dwell, reuses that reading for up to
+10 seconds and drops it on any sample that is not D0. The native sampler has
+one read path with the workload gate of `ReadAsync`, so the native live
+readings leave an idle D0 GPU unread. The `sampler` rows with `reader: live`
+in `gpu-temperature-vectors.json` record the managed path.
+
+Wire members the native Service does not publish at protocol 90. Each decodes
+as its managed default, which is the honest state for a native build that has
+no backend for it:
+
+- `status.windowsDynamicLightingAdvisory` is absent and decodes as `Unknown`.
+  The native Service has no Windows Dynamic Lighting advisory.
+- `capabilities` stays null except beside a confirmed HyperBoost state. That
+  observation record carries `hyperBoostEntryRestriction: null` and
+  `blade14KeyboardEdition: null`, as managed writes them for
+  `DeviceCapabilities.Unavailable()`.
+- `coolingPad` is absent. The native Service has no cooling-pad backend, so it
+  publishes neither the protocol 85 Auto mode nor its profile.
+- `reportWindowsDynamicLightingAdvisory` and `clearLocalDimming` get managed's
+  unsupported reply in every composition.
+
+Managed changes from main a8aea95f with no native port. Their rerecorded
+vectors are unchanged, so no native replay fails, but no vector exercises the
+new behavior either. Each one stays a gap until it is ported and pinned by a
+managed vector:
+
+| Managed commits | Behavior | Native area |
+|---|---|---|
+| 3f7b3838, 1a03e358 | Power-only write block on unclassified external power ends on a power change and publishes the classified source | battery and power-source admission |
+| 85182893 | A pending write block is released on a power change | thermal mutation, drift |
+| e481be77, ea5bd41e, 70cbb567 | Raw 6 off battery is a transitional DC Balanced, limited to transitions from battery, and Custom can be entered from it | thermal decode and mutation |
+| 06577e09 | A firmware-only lost acknowledgement is judged from the preset | thermal confirmation |
+| 3b692b95, 445f17b7, 2b141ccd | HyperBoost journal handoff retirement and exit submission | thermal history store, thermal mutation |
+| 374e4847, 66c6e902, 72137077, 26db283c, cc2dea76 | GPU clock offset confirmation, resend and NVML submission recovery | no native GPU clock offset writer; stored offsets are only validated |
+| 24966354, c91181b8 | GPU clock offsets and the NVIDIA laptop form on RZ09-0529 and RZ09-0530 | no native GPU clock offset writer; stored offsets are only validated |
+| a63f884c, 262c543c, 561c43bb, 927c2e18, b872ba70, ac6b1215 | Deferred presets under manual fans and their reconciliation | fan mutation, thermal drift |
+| a26e1519 | A blocked exit when journal retirement fails | low-power cleanup |
+| 0cf60756, 1aee2bd6, acdb3bf2, e22d97ac, 185c145a, d4249eca | Maximum fans in Custom, its restore, exit, refusal and RZ09-0482 handling | fan mutation, Custom capability |
+| cc9b97ff, 363805c9 | Product 669 Power Mode Control acknowledgements | power-mode decode |
+| e4f19946, b3b2b5ae | The limiter stays off while the override is on; an unreadable 07/8F | battery mutation |
+| db536537, b5a3aa6f | Temporary full charge on RZ09-0530 and RZ09-0529 | temporary full charge model admission |
+| d379614f, 677608a4, 4570d54c, 5b2b549d | SnapTap driver keyboard admission, rearm and retry | Agent function row |
+| 05ec5381 | A null one-shot control set is rejected | status decoder |
+| 0426e6a4, a4bc0874 | HyperBoost entry by SKU with a Balanced handoff, and the RZ09-0510 Turbo base | thermal mutation |
+| 4afe8fe2 and the cooling-pad series | Cooling-pad Auto mode and profile | no native cooling-pad backend |
+| 5dec9093, a1728389 | Windows Dynamic Lighting advisory | no native backend |
+| 7c56a32c, 4cca8813, 8bb17a4d, 736f6d8a, b82a614d, 5e74b33f | Observed CPU power, Intel ranges, GPU overclocking and local dimming | no native backend |
+| 520b7d03 and the lighting series | RZ09-0530 MCU edition key maps and MCU host lighting frames | no native backend |
 
 ## Native SCM gate
 
