@@ -16,6 +16,8 @@ pub mod fan_recipe;
 pub mod profile_set;
 #[cfg(feature = "thermal-history")]
 pub mod temporary_charge_history;
+#[cfg(feature = "thermal-convergence")]
+pub mod thermal_convergence;
 pub mod thermal_mutation;
 pub mod thermal_observation;
 
