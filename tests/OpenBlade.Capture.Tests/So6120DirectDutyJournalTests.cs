@@ -129,12 +129,14 @@ public sealed class So6120DirectDutyJournalTests
     [InlineData("above-half")]
     public void StopReplayRejectsHashValidUnapprovedOrOutOfOrderZeroEvidence(string damage)
     {
-        using var fixture = So6120SilentTrialTests.StopFixture();
-        So6120SilentTrialPlan plan;
-        using (var session = fixture.Create())
+        using var fixture = new Fixture();
+        var completed = CompletedStopTrial.Value;
+        var plan = completed.Plan;
+        foreach (var (name, bytes) in completed.Files)
         {
-            plan = session.PrepareBalancedStop(new(() => true, () => true));
-            Assert.True(session.ExecuteApproved(plan, new(plan.PlanId, plan.PlanSha256, Guid.NewGuid(), new('C', 64))).Success);
+            string target = Path.Combine(fixture.Root, name);
+            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+            File.WriteAllBytes(target, bytes);
         }
         Assert.True(So6120DirectDutyJournal.Inspect(fixture.Root).Complete);
 
@@ -191,6 +193,29 @@ public sealed class So6120DirectDutyJournalTests
         Assert.True(inspected.Corrupt);
         Assert.Equal(frames[end].Record["Sequence"]!.GetValue<long>() - 1, inspected.Records);
         Assert.False(inspected.CanResume);
+    }
+
+    // A complete stop trial durably journals every mailbox operation (about
+    // 2,100 flushes). Each replay row only damages its own copy of the same
+    // completed run, so the trial runs once and the rows share its files.
+    private static readonly Lazy<CompletedStop> CompletedStopTrial = new(RunCompletedStopTrial);
+
+    private sealed record CompletedStop(So6120SilentTrialPlan Plan, IReadOnlyList<(string Name, byte[] Bytes)> Files);
+
+    private static CompletedStop RunCompletedStopTrial()
+    {
+        using var fixture = So6120SilentTrialTests.StopFixture();
+        So6120SilentTrialPlan plan;
+        using (var session = fixture.Create())
+        {
+            plan = session.PrepareBalancedStop(new(() => true, () => true));
+            Assert.True(session.ExecuteApproved(plan, new(plan.PlanId, plan.PlanSha256, Guid.NewGuid(), new('C', 64))).Success);
+        }
+        Assert.True(So6120DirectDutyJournal.Inspect(fixture.Root).Complete);
+        var files = Directory.GetFiles(fixture.Root, "*", SearchOption.AllDirectories)
+            .Select(file => (Path.GetRelativePath(fixture.Root, file), File.ReadAllBytes(file)))
+            .ToArray();
+        return new(plan, files);
     }
 
     [Fact]

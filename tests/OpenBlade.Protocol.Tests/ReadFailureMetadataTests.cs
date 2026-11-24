@@ -143,16 +143,8 @@ public sealed class ReadFailureMetadataTests
             new(new byte[] { 0, 1, 0, 1 }, null),
             new(new byte[] { 0, 2, 0, 1 }, null),
         };
-        // Recovery retains strict target validation. Product672 reads its
-        // independent charge policy/override before the thermal baseline.
-        if (productId == 0x02A0)
-        {
-            results.InsertRange(0,
-            [
-                new(new byte[] { 0x50 }, null),
-                new(new byte[] { 0 }, null),
-            ]);
-        }
+        // Recovery retains strict target validation. Without a possibly submitted
+        // override write, product 672 reads the thermal baseline first like the others.
         if (secondTarget)
         {
             results.Add(new(new byte[] { profile, 1, 30 }, null));
@@ -167,9 +159,8 @@ public sealed class ReadFailureMetadataTests
 
         Assert.Equal(DeviceStateQuery.PerformanceAndFans, error.StateQuery);
         Assert.Equal(diagnostic, error.Diagnostic);
-        int batteryReads = productId == 0x02A0 ? 2 : 0;
-        Assert.Equal((secondTarget ? 4 : 3) + batteryReads, session.Commands.Count);
-        Assert.All(session.Commands.Skip(batteryReads), command => Assert.True(command.CommandId is 0x82 or 0x81));
+        Assert.Equal(secondTarget ? 4 : 3, session.Commands.Count);
+        Assert.All(session.Commands, command => Assert.True(command.CommandId is 0x82 or 0x81));
         Assert.Equal(new byte[] { profile, secondTarget ? (byte)2 : (byte)1, 0 },
             session.Commands[^1].Arguments.ToArray());
     }

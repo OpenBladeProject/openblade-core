@@ -216,6 +216,131 @@ public sealed class ExperimentalLightingBaselineJournalTests : IDisposable
         Assert.Equal(Baseline(), Create().Load().Baseline);
     }
 
+    [Fact]
+    public void KeyboardOnlyBaselineRemainsSchemaOneWithoutVaporChamberMember()
+    {
+        Create().SavePending(Baseline());
+        JsonObject document = JsonNode.Parse(File.ReadAllText(JournalPath))!.AsObject();
+        Assert.Equal(1, (int)document["schemaVersion"]!);
+        Assert.Equal(new[] { "settings", "rawBrightness" }, document["baseline"]!.AsObject().Select(member => member.Key));
+        Assert.Equal(new(Baseline(), false), Create().Load());
+    }
+
+    public static TheoryData<LightingSettings> VaporChamberBaselines => new()
+    {
+        LightingSettingsFactory.Off(),
+        LightingSettingsFactory.Static(new(1, 2, 3), 100),
+        LightingSettingsFactory.BreathingRandom(100),
+        LightingSettingsFactory.BreathingSingle(new(1, 2, 3), 100),
+        LightingSettingsFactory.BreathingDual(new(1, 2, 3), new(4, 5, 6), 100),
+        LightingSettingsFactory.Wave(LightingDirection.Leftward, 100),
+        LightingSettingsFactory.Wave(LightingDirection.Rightward, 100),
+    };
+
+    [Theory]
+    [MemberData(nameof(VaporChamberBaselines))]
+    public void VaporChamberBaselineRoundTripsAsSchemaTwo(LightingSettings vaporChamber)
+    {
+        var baseline = Baseline() with { VaporChamber = vaporChamber };
+        var journal = Create();
+        journal.SavePending(baseline);
+        Assert.Equal(2, (int)JsonNode.Parse(File.ReadAllText(JournalPath))!["schemaVersion"]!);
+        Assert.Equal(new(baseline, false), Create().Load());
+        Assert.Throws<InvalidDataException>(() => journal.SavePending(Baseline()));
+        journal.ClearAfterVerifiedRestoration();
+        Assert.Equal(1, (int)JsonNode.Parse(File.ReadAllText(JournalPath))!["schemaVersion"]!);
+        Assert.Equal(new(null, false), Create().Load());
+    }
+
+    [Theory]
+    [InlineData(true, 1)]
+    [InlineData(false, 2)]
+    public void SchemaAndVaporChamberPresenceMustAgree(bool withVaporChamber, int schema)
+    {
+        Create().SavePending(withVaporChamber
+            ? Baseline() with { VaporChamber = LightingSettingsFactory.Static(new(1, 2, 3), 100) }
+            : Baseline());
+        JsonNode document = JsonNode.Parse(File.ReadAllText(JournalPath))!;
+        document["schemaVersion"] = schema;
+        File.WriteAllText(JournalPath, document.ToJsonString());
+        Assert.True(Create().Load().Invalid);
+    }
+
+    [Fact]
+    public void SchemaTwoTombstoneIsInvalid()
+    {
+        var journal = Create();
+        journal.SavePending(Baseline());
+        journal.ClearAfterVerifiedRestoration();
+        JsonNode document = JsonNode.Parse(File.ReadAllText(JournalPath))!;
+        document["schemaVersion"] = 2;
+        File.WriteAllText(JournalPath, document.ToJsonString());
+        Assert.True(Create().Load().Invalid);
+    }
+
+    [Fact]
+    public void IncompleteOrUnrestorableVaporChamberBaselinesAreRejectedWithoutFiles()
+    {
+        var journal = Create();
+        LightingSettings[] invalid =
+        [
+            LightingSettingsFactory.SpectrumCycling(100),
+            LightingSettingsFactory.StarlightRandom(100, StarlightLightingDuration.Medium),
+            new(LightingEffect.Static, new(1, 2, 3), 100),
+            LightingSettingsFactory.Static(new(1, 2, 3), 50),
+            LightingSettingsFactory.Wave(LightingDirection.Leftward, 100) with { LogoMode = LogoLightingMode.Breathing },
+            LightingSettingsFactory.Static(new(1, 2, 3), 100) with { ControlsKeyboardEffect = true },
+        ];
+        foreach (LightingSettings vaporChamber in invalid)
+        {
+            Assert.Throws<InvalidDataException>(() => journal.SavePending(Baseline() with { VaporChamber = vaporChamber }));
+        }
+        Assert.False(Directory.Exists(directory));
+    }
+
+    [Fact]
+    public void TamperedVaporChamberBaselineIsInvalid()
+    {
+        Create().SavePending(Baseline() with { VaporChamber = LightingSettingsFactory.Static(new(1, 2, 3), 100) });
+        JsonNode document = JsonNode.Parse(File.ReadAllText(JournalPath))!;
+        document["baseline"]!["vaporChamber"]!["brightness"] = 40;
+        File.WriteAllText(JournalPath, document.ToJsonString());
+        Assert.True(Create().Load().Invalid);
+    }
+
+    // Only RZ09-0529 has a reviewed LED38 contract. An LED38 record journaled for
+    // any other product is not a recovery instruction: the journal is invalid and
+    // no new one is written.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void VaporChamberRecordIsInvalidForAnyOtherProduct(bool withVaporChamber)
+    {
+        Create().SavePending(withVaporChamber
+            ? Baseline() with { VaporChamber = LightingSettingsFactory.Static(new(1, 2, 3), 100) }
+            : Baseline());
+        JsonNode document = JsonNode.Parse(File.ReadAllText(JournalPath))!;
+        document["modelNumber"] = "RZ09-0301";
+        document["productId"] = 0x0245;
+        File.Delete(JournalPath);
+        File.WriteAllText(Path.Combine(directory, "RZ09-0301-1532-0245.json"), document.ToJsonString());
+        var other = new ExperimentalLightingBaselineJournal(directory, "RZ09-0301", 0x0245, _ => { });
+
+        ExperimentalLightingBaselineJournalLoadResult loaded = other.Load();
+
+        Assert.Equal(withVaporChamber, loaded.Invalid);
+        if (!withVaporChamber)
+        {
+            Assert.Equal(Baseline(), loaded.Baseline);
+        }
+
+        var fresh = new ExperimentalLightingBaselineJournal(
+            Path.Combine(directory, "fresh"), "RZ09-0301", 0x0245, _ => { });
+        Assert.Throws<InvalidDataException>(() => fresh.SavePending(
+            Baseline() with { VaporChamber = LightingSettingsFactory.Static(new(1, 2, 3), 100) }));
+        Assert.False(Directory.Exists(Path.Combine(directory, "fresh")));
+    }
+
     private ExperimentalLightingBaselineJournal Create() => new(directory, "RZ09-0529", 0x02C7, _ => { });
 
     private static ExperimentalLightingBaseline Baseline() =>

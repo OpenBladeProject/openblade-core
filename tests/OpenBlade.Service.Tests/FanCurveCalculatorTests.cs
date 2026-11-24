@@ -353,6 +353,136 @@ public sealed class FanCurveCalculatorTests
     }
 
     [Fact]
+    public async Task LiveReadingsShowAwakeIdleGpuAfterD0PersistsAndSpaceItsReads()
+    {
+        var session = new CountingGpuTemperatureSession(52);
+        var time = new ManualTimeProvider();
+        using var source = new SafeWindowsFanTemperatureSource(new SettableGpuActivitySource { Active = false },
+            () => 48, session, time, gpuPowerState: () => FanStopGpuPowerState.PoweredOn);
+
+        // A brief wake, such as NVIDIA's own services, neither reads nor shows a value.
+        Assert.Null((await source.ReadForLiveReadingsAsync(true, true, CancellationToken.None)).GpuCelsius);
+        time.Advance(TimeSpan.FromSeconds(2));
+        Assert.Null((await source.ReadForLiveReadingsAsync(true, true, CancellationToken.None)).GpuCelsius);
+        Assert.Equal(0, session.Reads);
+
+        time.Advance(SafeWindowsFanTemperatureSource.IdleGpuLiveReadingDwell - TimeSpan.FromSeconds(2));
+        FanTemperatureReadings first = await source.ReadForLiveReadingsAsync(true, true, CancellationToken.None);
+        Assert.Equal(52, first.GpuCelsius);
+        Assert.True(first.GpuInactive);
+        Assert.Equal(1, session.Reads);
+        Assert.Equal(3, session.Releases); // Idle samples never keep NVML open.
+        Assert.Equal(Timeout.InfiniteTimeSpan, time.LastDueTime);
+
+        // Reuse the reading while D0 persists, without opening NVML again.
+        session.Temperature = 60;
+        time.Advance(SafeWindowsFanTemperatureSource.IdleGpuLiveReadingInterval - TimeSpan.FromTicks(1));
+        Assert.Equal(52, (await source.ReadForLiveReadingsAsync(true, true, CancellationToken.None)).GpuCelsius);
+        Assert.Equal(1, session.Reads);
+
+        time.Advance(TimeSpan.FromTicks(1));
+        Assert.Equal(60, (await source.ReadForLiveReadingsAsync(true, true, CancellationToken.None)).GpuCelsius);
+        Assert.Equal(2, session.Reads);
+    }
+
+    [Fact]
+    public async Task LiveReadingsDropIdleGpuReadingAndRestartDwellAfterAnyNonD0Sample()
+    {
+        var session = new CountingGpuTemperatureSession(52);
+        var time = new ManualTimeProvider();
+        FanStopGpuPowerState power = FanStopGpuPowerState.PoweredOn;
+        using var source = new SafeWindowsFanTemperatureSource(new SettableGpuActivitySource { Active = false },
+            () => 48, session, time, gpuPowerState: () => power);
+
+        await source.ReadForLiveReadingsAsync(true, true, CancellationToken.None);
+        time.Advance(SafeWindowsFanTemperatureSource.IdleGpuLiveReadingDwell);
+        Assert.Equal(52, (await source.ReadForLiveReadingsAsync(true, true, CancellationToken.None)).GpuCelsius);
+
+        foreach (FanStopGpuPowerState interruption in new[]
+            { FanStopGpuPowerState.PoweredDown, FanStopGpuPowerState.Unknown })
+        {
+            power = interruption;
+            time.Advance(TimeSpan.FromSeconds(1));
+            FanTemperatureReadings off = await source.ReadForLiveReadingsAsync(true, true, CancellationToken.None);
+            Assert.Null(off.GpuCelsius);
+            Assert.Equal(interruption == FanStopGpuPowerState.PoweredDown, off.GpuPoweredDown);
+
+            power = FanStopGpuPowerState.PoweredOn;
+            time.Advance(TimeSpan.FromSeconds(1));
+            Assert.Null((await source.ReadForLiveReadingsAsync(true, true, CancellationToken.None)).GpuCelsius);
+            Assert.Equal(1, session.Reads);
+        }
+
+        time.Advance(SafeWindowsFanTemperatureSource.IdleGpuLiveReadingDwell);
+        Assert.Equal(52, (await source.ReadForLiveReadingsAsync(true, true, CancellationToken.None)).GpuCelsius);
+        Assert.Equal(2, session.Reads);
+    }
+
+    [Fact]
+    public async Task LiveReadingsDiscardIdleGpuReadingWhenPowerChangesDuringTheRead()
+    {
+        var time = new ManualTimeProvider();
+        FanStopGpuPowerState power = FanStopGpuPowerState.PoweredOn;
+        var session = new CountingGpuTemperatureSession(52)
+        {
+            BeforeRead = () => power = FanStopGpuPowerState.PoweredDown,
+        };
+        using var source = new SafeWindowsFanTemperatureSource(new SettableGpuActivitySource { Active = false },
+            () => 48, session, time, gpuPowerState: () => power);
+
+        await source.ReadForLiveReadingsAsync(true, true, CancellationToken.None);
+        time.Advance(SafeWindowsFanTemperatureSource.IdleGpuLiveReadingDwell);
+        FanTemperatureReadings changed = await source.ReadForLiveReadingsAsync(true, true, CancellationToken.None);
+        Assert.Null(changed.GpuCelsius);
+        Assert.False(changed.GpuPoweredDown);
+
+        session.BeforeRead = null;
+        power = FanStopGpuPowerState.PoweredOn;
+        time.Advance(TimeSpan.FromSeconds(1));
+        Assert.Null((await source.ReadForLiveReadingsAsync(true, true, CancellationToken.None)).GpuCelsius);
+        Assert.Equal(1, session.Reads);
+    }
+
+    [Fact]
+    public async Task LiveReadingsKeepAPausedWorkloadsReadingAndReleaseItsSession()
+    {
+        var activity = new SettableGpuActivitySource { Active = true };
+        var session = new CountingGpuTemperatureSession(52);
+        var time = new ManualTimeProvider();
+        using var source = new SafeWindowsFanTemperatureSource(activity, () => 48, session, time,
+            gpuPowerState: () => FanStopGpuPowerState.PoweredOn);
+
+        Assert.Equal(52, (await source.ReadForLiveReadingsAsync(true, true, CancellationToken.None)).GpuCelsius);
+        Assert.Equal(0, session.Releases);
+
+        activity.Active = false;
+        time.Advance(TimeSpan.FromSeconds(2));
+        FanTemperatureReadings paused = await source.ReadForLiveReadingsAsync(true, true, CancellationToken.None);
+        Assert.Equal(52, paused.GpuCelsius);
+        Assert.True(paused.GpuInactive);
+        Assert.Equal(1, session.Reads);
+        Assert.Equal(1, session.Releases);
+        Assert.Equal(Timeout.InfiniteTimeSpan, time.LastDueTime);
+    }
+
+    [Fact]
+    public async Task OrdinaryReadsKeepTheWorkloadGateForAnAwakeIdleGpu()
+    {
+        var session = new CountingGpuTemperatureSession(52);
+        var time = new ManualTimeProvider();
+        using var source = new SafeWindowsFanTemperatureSource(new SettableGpuActivitySource { Active = false },
+            () => 48, session, time, gpuPowerState: () => FanStopGpuPowerState.PoweredOn);
+
+        await source.ReadAsync(CancellationToken.None);
+        time.Advance(SafeWindowsFanTemperatureSource.IdleGpuLiveReadingDwell);
+        FanTemperatureReadings readings = await source.ReadAsync(CancellationToken.None);
+
+        Assert.Null(readings.GpuCelsius);
+        Assert.True(readings.GpuInactive);
+        Assert.Equal(0, session.Reads);
+    }
+
+    [Fact]
     public async Task PowerTransitionInvalidatesBorrowedSessionAndTemperature()
     {
         var session = new CountingGpuTemperatureSession(52);

@@ -1122,6 +1122,21 @@ impl Drop for RetirementGate {
         self.open();
     }
 }
+/// Bounds only waits that explicit sequencing already orders, so it turns a
+/// hang into a failure and never decides the race. A wait whose bound is the
+/// property under test keeps its own.
+const HANG_GUARD: Duration = Duration::from_secs(120);
+/// What a held exchange leaves of the test clock (`Rig::held`).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum HeldClock {
+    /// Brought level with the real clock, so later work that ages results on
+    /// it or takes a deadline from it sees the time that passed.
+    CatchUp,
+    /// Left where the exchange held it. The exchange returns a result judged on
+    /// the test clock, such as a read's freshness, whose deadline the held
+    /// clock measured; the time the exchange lost stays lost.
+    Keep,
+}
 struct Rig {
     #[cfg(feature = "service-fan-mutation-v2")]
     runtime: Runtime,
@@ -1320,7 +1335,6 @@ impl Rig {
     }
     async fn request_as(&self, request: Value, caller: Caller, sid: &str) -> Value {
         let operation = request["operation"].as_str().unwrap().to_owned();
-        self.port.state.lock().unwrap().arrival = Some(tokio::time::Instant::now());
         let (client, server) = duplex(65536);
         let source = self.source.clone();
         let publications = source.lock().await.publications();
@@ -1343,9 +1357,14 @@ impl Rig {
             .unwrap();
             crate::service_frame::read_payload(&mut client).await
         };
-        let (server, bytes) = tokio::join!(server, client);
-        // A later job that serves no request keeps its own deadline.
-        self.port.state.lock().unwrap().arrival = None;
+        // Boxed: the debug build keeps every nested future on the stack, and
+        // the isolated cases run on small thread stacks.
+        let (server, bytes) = self
+            .held(
+                HeldClock::CatchUp,
+                Box::pin(async { tokio::join!(server, client) }),
+            )
+            .await;
         // The server's error explains a missing reply.
         assert!(server.is_ok(), "{operation}: {:?}", server.err());
         let bytes = bytes.unwrap();
@@ -1361,14 +1380,88 @@ impl Rig {
         );
         response
     }
+    /// Asks whether the test has made a job thread wait for something other
+    /// than the clock: a held transfer it has not released, or a deliberate
+    /// stall of real time. A request in that state can end only at its own
+    /// bound on the real clock, which these tests exercise, so a held exchange
+    /// does not hold the clock back for it. (A test hook that parks a thread is
+    /// seen while it runs: `Fixture::hooked`.)
+    fn parks(&self) -> Rc<dyn Fn() -> bool> {
+        let state = self.port.state.clone();
+        let stalled = self.files.stalled_replace.clone();
+        let custody = self.custody.clone();
+        Rc::new(move || {
+            let waiting = |release: &Arc<AtomicBool>| !release.load(Ordering::Acquire);
+            // A job inside a test hook holds this lock (the fixture calls hooks under
+            // it), so it is never waited for: a locked fixture is a parked job.
+            let Ok(state) = state.try_lock() else {
+                return true;
+            };
+            #[cfg(feature = "service-keyboard-driver-mode-v1")]
+            let real_time =
+                state.device_mode_latency.is_some() || state.device_mode_retire_delay.is_some();
+            #[cfg(not(feature = "service-keyboard-driver-mode-v1"))]
+            let real_time = false;
+            real_time
+                || state.held_read.as_ref().is_some_and(waiting)
+                || state
+                    .held_write
+                    .as_ref()
+                    .is_some_and(|(_, release)| waiting(release))
+                || stalled.try_lock().is_ok_and(|stall| stall.is_some())
+                || custody
+                    .owned_stop_stall
+                    .try_lock()
+                    .is_ok_and(|stall| stall.is_some())
+        })
+    }
+    /// Runs one request exchange on a held test clock, and starts the budget of
+    /// every job it runs at the exchange's arrival; a later job that serves no
+    /// request keeps its own deadline. The Service bounds an exchange by the
+    /// frame deadline or a recipe budget on the test runtime's clock, and its
+    /// jobs run on OS threads, so on the real clock a loaded host that leaves a
+    /// job thread unscheduled for longer than that bound refuses a request that
+    /// was fine. The clock is paused for the exchange and keeps pace with the
+    /// real one only while no job thread is busy (`HeldClocks`), then is
+    /// brought level with the real clock as `after` says. The bounds themselves
+    /// are unchanged: a test that advances the clock past one still expires it.
+    /// A clock the test already paused (`frozen`, `tokio::time::pause`) stays
+    /// that test's to drive.
+    async fn held<T>(&self, after: HeldClock, exchange: impl std::future::Future<Output = T>) -> T {
+        let mut exchange_hold = Exchange::enter(self);
+        let out = if exchange_hold.holding() {
+            HeldClocks::pace(exchange).await
+        } else {
+            exchange.await
+        };
+        exchange_hold.end(after).await;
+        out
+    }
+    /// One observation through the source's own entry point, run as a request's
+    /// exchange is (see `held`): `budget` is its deadline from now, spent
+    /// through the job's own waits and not through the host's delays.
+    async fn observe(&self, budget: Duration) -> io::Result<Option<Snapshot>> {
+        self.held(
+            HeldClock::Keep,
+            Box::pin(async {
+                let observation = self
+                    .source
+                    .lock()
+                    .await
+                    .observe_performance(USER, tokio::time::Instant::now() + budget);
+                observation.await
+            }),
+        )
+        .await
+    }
     async fn get(&self) -> Value {
-        self.request(json!({"operation":"getStatus","version":85,"requestId":"bbbbbbbb-cccc-dddd-eeee-000000000099"})).await
+        self.request(json!({"operation":"getStatus","version":90,"requestId":"bbbbbbbb-cccc-dddd-eeee-000000000099"})).await
     }
     async fn set(&self, n: u8, value: Value) -> Value {
-        let response = self.request(json!({"operation":"setPerformanceOverride","version":85,"requestId":format!("aaaaaaaa-bbbb-cccc-dddd-{n:012}"),"value":value})).await;
+        let response = self.request(json!({"operation":"setPerformanceOverride","version":90,"requestId":format!("aaaaaaaa-bbbb-cccc-dddd-{n:012}"),"value":value})).await;
         assert!(
             response["status"].is_null(),
-            "v85 result replies have exactly one body"
+            "v90 result replies have exactly one body"
         );
         assert!(!response["result"].is_null());
         response
@@ -1393,7 +1486,7 @@ async fn installed_dispatcher_direct_pair_persists_before_applied_and_retains_pu
     assert_eq!(metadata["success"], true);
     assert_eq!(metadata["status"]["writesBlocked"], true);
     assert!(metadata["status"]["confirmedState"].is_null());
-    let initial=rig.request(json!({"operation":"observeState","version":85,"requestId":"dddddddd-bbbb-cccc-dddd-000000000001","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0})).await;
+    let initial=rig.request(json!({"operation":"observeState","version":90,"requestId":"dddddddd-bbbb-cccc-dddd-000000000001","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0})).await;
     assert_eq!(initial["success"], true);
     assert_eq!(initial["status"]["confirmedState"]["performance"], 5);
     assert_eq!(initial["status"]["confirmedState"]["fans"], 3);
@@ -1629,19 +1722,19 @@ async fn installed_unserved_operations_reply_with_the_managed_unsupported_failur
         refused += 1;
         let id = format!("eeeeeeee-ffff-4aaa-8bbb-{refused:012}");
         let response = rig
-            .request(json!({"operation": operation, "version": 85, "requestId": id}))
+            .request(json!({"operation": operation, "version": 90, "requestId": id}))
             .await;
         assert_eq!(
             response,
             json!({
-                "frame": "response", "version": 85, "requestId": id, "success": false,
+                "frame": "response", "version": 90, "requestId": id, "success": false,
                 "error": "IPC request operation is unsupported.", "status": null,
                 "result": null, "archive": null, "errorCode": null,
             }),
             "{operation}"
         );
     }
-    assert!(refused >= 51 - crate::service_status::StatusRequest::OPERATIONS.len());
+    assert!(refused >= 53 - crate::service_status::StatusRequest::OPERATIONS.len());
     {
         let port = rig.port.state.lock().unwrap();
         assert_eq!((port.writes, port.opened, port.power_reads), (0, 0, 0));
@@ -1666,7 +1759,7 @@ async fn installed_canceled_submission_retains_custody_until_actual_callback_ret
                 tokio::task::yield_now().await;
             }
         };
-        tokio::select! {_ = &mut request=>panic!("held mutation callback completed"), result = tokio::time::timeout(std::time::Duration::from_secs(2),entered)=>{result.unwrap();}}
+        tokio::select! {_ = &mut request=>panic!("held mutation callback completed"), result = tokio::time::timeout(HANG_GUARD,entered)=>{result.unwrap();}}
     }
     assert!(
         Storage::open(Box::new(rig.files.clone()), SID)
@@ -1891,12 +1984,12 @@ async fn installed_private_projection_is_bound_to_sid_for_get_observe_and_subscr
     let rig = Rig::new(files);
     assert_eq!(rig.set(1, value(2, 1)).await["result"]["status"], 1);
     for operation in ["getStatus", "observeState", "subscribeStatus"] {
-        let request = json!({"operation":operation,"version":85,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000077","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0});
+        let request = json!({"operation":operation,"version":90,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000077","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0});
         // Get/subscription DTOs reject observation-only members.
         let request = if operation == "observeState" {
             request
         } else {
-            json!({"operation":operation,"version":85,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000077"})
+            json!({"operation":operation,"version":90,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000077"})
         };
         let own = rig.request_as(request.clone(), USER, SID).await;
         assert_eq!(
@@ -2101,7 +2194,7 @@ fn policy_inputs_change_with_a_temporary_alone() {
 }
 async fn fresh_observe(rig: &Rig) -> Value {
     assert_eq!(rig.get().await["success"], true); // Same metadata readiness probe as installed prepare.
-    rig.request(json!({"operation":"observeState","version":85,"requestId":"eeeeeeee-bbbb-cccc-dddd-000000000001","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0})).await
+    rig.request(json!({"operation":"observeState","version":90,"requestId":"eeeeeeee-bbbb-cccc-dddd-000000000001","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0})).await
 }
 #[tokio::test]
 async fn correction_manual_active0581_stores_without_setters_and_automatic_stays_direct() {
@@ -2318,7 +2411,7 @@ async fn correction_late_accepted_intent_reconciles_only_with_new_read_without_r
     let rig = Rig::new(MemoryFiles::default());
     rig.get().await;
     let gate = RetirementGate::install(&rig);
-    let request=crate::service_status::StatusRequest::decode(&serde_json::to_vec(&json!({"operation":"setPerformanceOverride","version":85,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000091","value":value(1,1)})).unwrap()).unwrap();
+    let request=crate::service_status::StatusRequest::decode(&serde_json::to_vec(&json!({"operation":"setPerformanceOverride","version":90,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000091","value":value(1,1)})).unwrap()).unwrap();
     // The worker caps the deadline at the 6 s recipe budget. The recipe runs
     // on paused fixture time and reaches retirement well inside it, however
     // loaded the host is. Paused time then expires the deadline while the
@@ -2339,6 +2432,8 @@ async fn correction_late_accepted_intent_reconciles_only_with_new_read_without_r
     gate.open();
     let (result, status) = operation.await.unwrap();
     assert_eq!(result.status, 2);
+    // Retirement is past, so the later reads park nothing and run on a held clock.
+    rig.port.state.lock().unwrap().on_mutation_retired = None;
     assert!(status.is_none());
     let count = rig.port.state.lock().unwrap().sent.len();
     let observed = fresh_observe(&rig).await;
@@ -2407,7 +2502,7 @@ async fn correction_queued_stored_subscription_rebases_latest_hardware_without_r
         Rc::new(Subscriptions::new(2)),
     );
     let exercise = async {
-        crate::service_frame::write_payload(&mut client,&serde_json::to_vec(&json!({"operation":"subscribeStatus","version":85,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000090"})).unwrap()).await.unwrap();
+        crate::service_frame::write_payload(&mut client,&serde_json::to_vec(&json!({"operation":"subscribeStatus","version":90,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000090"})).unwrap()).await.unwrap();
         let _: Value = serde_json::from_slice(
             &crate::service_frame::read_payload(&mut client)
                 .await
@@ -2421,11 +2516,11 @@ async fn correction_queued_stored_subscription_rebases_latest_hardware_without_r
                 tokio::task::yield_now().await;
             }
         };
-        tokio::select! {_=&mut a=>panic!("held A completed"),v=tokio::time::timeout(std::time::Duration::from_secs(2),entered)=>v.unwrap()}
+        tokio::select! {_=&mut a=>panic!("held A completed"),v=tokio::time::timeout(HANG_GUARD,entered)=>v.unwrap()}
         let mut desired = value(2, 1);
         desired["gpuClockTuning"] =
             json!({"enabled":true,"offsets":{"coreMegahertz":10,"memoryMegahertz":20}});
-        let request=crate::service_status::StatusRequest::decode(&serde_json::to_vec(&json!({"operation":"setPerformanceOverride","version":85,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000092","value":desired})).unwrap()).unwrap();
+        let request=crate::service_status::StatusRequest::decode(&serde_json::to_vec(&json!({"operation":"setPerformanceOverride","version":90,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000092","value":desired})).unwrap()).unwrap();
         let b = rig.source.lock().await.mutate(
             USER,
             SID.into(),
@@ -2485,7 +2580,7 @@ async fn correction_unknown_external_metadata_preserves_temporary_intent_without
     let rig = Rig::new(MemoryFiles::default());
     assert_eq!(rig.set(91, value(2, 0)).await["result"]["status"], 1);
     for operation in ["getStatus", "observeState", "subscribeStatus"] {
-        let mut request = json!({"operation":operation,"version":85,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000093"});
+        let mut request = json!({"operation":operation,"version":90,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000093"});
         if operation == "observeState" {
             request["includeLiveReadings"] = json!(false);
             request["requestedLiveReadings"] = json!(0);
@@ -2552,11 +2647,11 @@ async fn correction_outer_lifecycle_and_transient_admission_keep_service_running
             });
             assert_eq!(controls.handle(code), 0);
         };
-        let get = || json!({"operation":"getStatus","version":85,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000094"});
-        let observe = || json!({"operation":"observeState","version":85,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000095","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0});
+        let get = || json!({"operation":"getStatus","version":90,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000094"});
+        let observe = || json!({"operation":"observeState","version":90,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000095","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0});
         assert_eq!(outer_request(&tx, observe()).await["success"], true);
         rig.custody.fresh_refuse.store(true, Ordering::Release);
-        let refused=outer_request(&tx,json!({"operation":"setPerformanceOverride","version":85,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000096","value":value(1,1)})).await;
+        let refused=outer_request(&tx,json!({"operation":"setPerformanceOverride","version":90,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000096","value":value(1,1)})).await;
         assert_eq!(refused["result"]["status"], 2);
         assert_eq!(outer_request(&tx, get()).await["success"], true);
         ingress(SERVICE_CONTROL_POWEREVENT, 4);
@@ -2618,7 +2713,7 @@ async fn correction_prepared_settlement_waits_for_actual_retirement_and_rejects_
             tokio::task::yield_now().await;
         }
     };
-    tokio::select! {_=&mut request=>panic!("unretired operation completed"),r=tokio::time::timeout(std::time::Duration::from_secs(2),reached)=>r.unwrap()}
+    tokio::select! {_=&mut request=>panic!("unretired operation completed"),r=tokio::time::timeout(HANG_GUARD,reached)=>r.unwrap()}
     let prepared = rig.files.read("thermal-mutation.journal").unwrap().unwrap();
     let prior = Storage::open(Box::new(rig.files.clone()), SID).unwrap();
     assert_eq!(prior.progress(), Some(0));
@@ -2712,7 +2807,7 @@ async fn correction_outer_fatal_admission_terminates_and_preserves_possible_subm
                 sid: SID.into(),
             }))
             .unwrap();
-            crate::service_frame::write_payload(&mut client,&serde_json::to_vec(&json!({"operation":"setPerformanceOverride","version":85,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000098","value":value(1,1)})).unwrap()).await.unwrap();
+            crate::service_frame::write_payload(&mut client,&serde_json::to_vec(&json!({"operation":"setPerformanceOverride","version":90,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000098","value":value(1,1)})).unwrap()).await.unwrap();
             assert!(
                 crate::service_frame::read_payload(&mut client)
                     .await
@@ -2778,14 +2873,7 @@ async fn edge_configuration_drift_keeps_public_read_proof_and_truthful_cause() {
             .unwrap()
             .contains("permission is revoked")
     );
-    let observed = rig
-        .source
-        .lock()
-        .await
-        .observe_performance(USER, Instant::now() + std::time::Duration::from_secs(2))
-        .await
-        .unwrap()
-        .unwrap();
+    let observed = rig.observe(Duration::from_secs(2)).await.unwrap().unwrap();
     assert!(observed.has_fresh_mailbox_read());
     let stamp = rig.reader.last_completed_for_tests();
     assert!(
@@ -2948,7 +3036,7 @@ async fn edge_pre_activation_cancellation_and_suspend_recover_only_after_callbac
                     tokio::task::yield_now().await;
                 }
             };
-            tokio::select! { _ = &mut observation => panic!("held getter completed"), r = tokio::time::timeout(std::time::Duration::from_secs(2), opened) => r.unwrap() }
+            tokio::select! { _ = &mut observation => panic!("held getter completed"), r = tokio::time::timeout(HANG_GUARD, opened) => r.unwrap() }
         } // Cancel the actual read future, leaving its native callback held.
         {
             let request = rig.set(91, value(1, 1));
@@ -2958,7 +3046,7 @@ async fn edge_pre_activation_cancellation_and_suspend_recover_only_after_callbac
                     tokio::task::yield_now().await;
                 }
             };
-            tokio::select! { _ = &mut request => panic!("request escaped held pre-activation drain"), r = tokio::time::timeout(std::time::Duration::from_secs(2), entered) => r.unwrap() }
+            tokio::select! { _ = &mut request => panic!("request escaped held pre-activation drain"), r = tokio::time::timeout(HANG_GUARD, entered) => r.unwrap() }
             assert_eq!(rig.entered.get(), 1);
             assert_eq!(rig.port.state.lock().unwrap().opened, 1);
             assert_eq!(rig.port.state.lock().unwrap().retired, 0);
@@ -3035,9 +3123,9 @@ async fn edge_outer_policy_fatal_capture_and_health_fail_get_and_observe() {
             }))
             .unwrap();
             let request = if observe {
-                json!({"operation":"observeState","version":85,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000098","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0})
+                json!({"operation":"observeState","version":90,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000098","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0})
             } else {
-                json!({"operation":"getStatus","version":85,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000098"})
+                json!({"operation":"getStatus","version":90,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000098"})
             };
             crate::service_frame::write_payload(
                 &mut client,
@@ -3051,7 +3139,12 @@ async fn edge_outer_policy_fatal_capture_and_health_fail_get_and_observe() {
                     .is_err()
             );
         };
-        let (result, ()) = tokio::join!(service, exercise);
+        let (result, ()) = rig
+            .held(
+                HeldClock::CatchUp,
+                Box::pin(async { tokio::join!(service, exercise) }),
+            )
+            .await;
         assert!(
             entered.get(),
             "the requested Get/Observe route must arm policy failure"
@@ -3128,7 +3221,7 @@ async fn edge_original_owner_integrity_loss_after_retirement_never_reopens_reads
         }));
     }
     rig.get().await;
-    let request = crate::service_status::StatusRequest::decode(&serde_json::to_vec(&json!({"operation":"setPerformanceOverride","version":85,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000098","value":value(1,1)})).unwrap()).unwrap();
+    let request = crate::service_status::StatusRequest::decode(&serde_json::to_vec(&json!({"operation":"setPerformanceOverride","version":90,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000098","value":value(1,1)})).unwrap()).unwrap();
     let result = rig
         .source
         .lock()
@@ -3184,7 +3277,7 @@ async fn edge_stored_temporary_publication_cannot_resurrect_expired_policy() {
         Rc::new(Subscriptions::new(2)),
     );
     let exercise = async {
-        crate::service_frame::write_payload(&mut client, &serde_json::to_vec(&json!({"operation":"subscribeStatus","version":85,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000090"})).unwrap()).await.unwrap();
+        crate::service_frame::write_payload(&mut client, &serde_json::to_vec(&json!({"operation":"subscribeStatus","version":90,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000090"})).unwrap()).await.unwrap();
         crate::service_frame::read_payload(&mut client)
             .await
             .unwrap();
@@ -3198,7 +3291,7 @@ async fn edge_stored_temporary_publication_cannot_resurrect_expired_policy() {
                 tokio::task::yield_now().await;
             }
         };
-        tokio::select! { _ = &mut request => panic!("retirement must remain held"), result = tokio::time::timeout(std::time::Duration::from_secs(2), held) => result.unwrap() }
+        tokio::select! { _ = &mut request => panic!("retirement must remain held"), result = tokio::time::timeout(HANG_GUARD, held) => result.unwrap() }
         assert_eq!(
             rig.files.document("manual-overrides.json")["overrides"]["performance"],
             Value::Null
@@ -3245,7 +3338,7 @@ async fn edge_stored_temporary_publication_cannot_resurrect_expired_policy() {
     };
     let (result, ()) = tokio::join!(server, exercise);
     assert!(result.is_ok());
-    let foreign = rig.request_as(json!({"operation":"getStatus","version":85,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000099"}), USER, "S-1-5-21-111-222-333-1002").await;
+    let foreign = rig.request_as(json!({"operation":"getStatus","version":90,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000099"}), USER, "S-1-5-21-111-222-333-1002").await;
     assert!(foreign["status"]["performanceOverride"].is_null());
     rig.stop().await;
 }
@@ -3332,7 +3425,7 @@ async fn report_game(rig: &Rig) {
         .unwrap()
         .windows_on_battery
         .replace(None);
-    let result = rig.request(json!({"operation":"reportApplicationContext","version":85,"requestId":"bbbbbbbb-bbbb-cccc-dddd-000000000003","instanceId":"cccccccc-bbbb-cccc-dddd-000000000003","sequence":1,"executablePath":r"C:\Games\Game.exe"})).await;
+    let result = rig.request(json!({"operation":"reportApplicationContext","version":90,"requestId":"bbbbbbbb-bbbb-cccc-dddd-000000000003","instanceId":"cccccccc-bbbb-cccc-dddd-000000000003","sequence":1,"executablePath":r"C:\Games\Game.exe"})).await;
     rig.port.state.lock().unwrap().windows_on_battery = windows;
     let expected = if cfg!(feature = "service-profile-triggers-v1") {
         "The active application profile was recorded."
@@ -3542,7 +3635,7 @@ async fn edge_managed_saved_custom_survives_unpublished_activation_and_private_f
         );
         assert_eq!(rig.custody.activations.load(Ordering::Acquire), 0);
         for operation in ["getStatus", "observeState", "subscribeStatus"] {
-            let mut request = json!({"operation":operation,"version":85,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000078"});
+            let mut request = json!({"operation":operation,"version":90,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000078"});
             if operation == "observeState" {
                 request["includeLiveReadings"] = json!(false);
                 request["requestedLiveReadings"] = json!(0);
@@ -3581,7 +3674,7 @@ async fn edge_managed_saved_custom_survives_unpublished_activation_and_private_f
             Rc::new(Subscriptions::new(2)),
         );
         let exercise = async {
-            crate::service_frame::write_payload(&mut client, &serde_json::to_vec(&json!({"operation":"subscribeStatus","version":85,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000090"})).unwrap()).await.unwrap();
+            crate::service_frame::write_payload(&mut client, &serde_json::to_vec(&json!({"operation":"subscribeStatus","version":90,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000090"})).unwrap()).await.unwrap();
             crate::service_frame::read_payload(&mut client)
                 .await
                 .unwrap();
@@ -3643,7 +3736,7 @@ async fn edge_shutdown_publishes_actual_retirement_after_one_failed_settlement()
                 tokio::task::yield_now().await;
             }
         };
-        tokio::select! { _ = &mut request => panic!("request completed before actual retirement release"), r = tokio::time::timeout(std::time::Duration::from_secs(2), held) => r.unwrap() }
+        tokio::select! { _ = &mut request => panic!("request completed before actual retirement release"), r = tokio::time::timeout(HANG_GUARD, held) => r.unwrap() }
     }
     release.store(true, Ordering::Release);
     assert!(rig.reader.stop().await.is_err());
@@ -3701,7 +3794,7 @@ async fn edge_outer_terminal_fatal_survives_healthy_fresh_recheck() {
         .unwrap();
         crate::service_frame::write_payload(
             &mut client,
-            &serde_json::to_vec(&json!({"operation":"setPerformanceOverride","version":85,
+            &serde_json::to_vec(&json!({"operation":"setPerformanceOverride","version":90,
                 "requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000099","value":value(1,1)}))
             .unwrap(),
         )
@@ -3788,7 +3881,7 @@ async fn edge_outer_first_intent_and_worker_fatals_preserve_class_and_fences() {
             .unwrap();
             crate::service_frame::write_payload(
                 &mut client,
-                &serde_json::to_vec(&json!({"operation":"setPerformanceOverride","version":85,
+                &serde_json::to_vec(&json!({"operation":"setPerformanceOverride","version":90,
                 "requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000099","value":value(1,1)}))
                 .unwrap(),
             )
@@ -3853,11 +3946,11 @@ async fn edge_canceled_first_intent_fatal_is_sticky_for_get_observe_and_new_sid(
         ("setPerformanceOverride", "S-1-5-21-111-222-333-1002"),
     ] {
         let request = if operation == "setPerformanceOverride" {
-            json!({"operation":operation,"version":85,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000098","value":value(1,1)})
+            json!({"operation":operation,"version":90,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000098","value":value(1,1)})
         } else if operation == "observeState" {
-            json!({"operation":operation,"version":85,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000097","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0})
+            json!({"operation":operation,"version":90,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000097","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0})
         } else {
-            json!({"operation":operation,"version":85,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000096"})
+            json!({"operation":operation,"version":90,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000096"})
         };
         let (mut client, server) = duplex(65536);
         let publications = rig.source.lock().await.publications();
@@ -3939,11 +4032,11 @@ async fn correction_idle_owner_loss_precedes_direct_observe_and_retains_first_fa
         "setPerformanceOverride",
     ] {
         let request = if operation == "setPerformanceOverride" {
-            json!({"operation":operation,"version":85,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000098","value":value(1,1)})
+            json!({"operation":operation,"version":90,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000098","value":value(1,1)})
         } else if operation == "observeState" {
-            json!({"operation":operation,"version":85,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000097","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0})
+            json!({"operation":operation,"version":90,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000097","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0})
         } else {
-            json!({"operation":operation,"version":85,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000096"})
+            json!({"operation":operation,"version":90,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000096"})
         };
         let (mut client, server) = duplex(65536);
         let publications = rig.source.lock().await.publications();
@@ -4058,7 +4151,7 @@ async fn correction_inflight_config_drift_distinguishes_stored_from_first_intent
                 tokio::task::yield_now().await;
             }
         };
-        tokio::select! { _ = &mut request => panic!("retirement must remain held"), result = tokio::time::timeout(std::time::Duration::from_secs(2), held) => result.unwrap() }
+        tokio::select! { _ = &mut request => panic!("retirement must remain held"), result = tokio::time::timeout(HANG_GUARD, held) => result.unwrap() }
         assert_eq!(
             rig.files.document("manual-overrides.json")["overrides"]["performance"],
             2
@@ -4122,14 +4215,7 @@ async fn correction_inflight_config_drift_distinguishes_stored_from_first_intent
                 before["status"]["confirmedState"]
             );
             assert!(observed["status"]["performanceOverride"].is_null());
-            let witness = rig
-                .source
-                .lock()
-                .await
-                .observe_performance(USER, Instant::now() + std::time::Duration::from_secs(2))
-                .await
-                .unwrap()
-                .unwrap();
+            let witness = rig.observe(Duration::from_secs(2)).await.unwrap().unwrap();
             assert!(witness.has_fresh_mailbox_read());
         }
         rig.stop().await;
@@ -4177,7 +4263,7 @@ async fn correction_present_malformed_app_fans_refuse_committed_dispatch_without
         if cfg!(feature = "service-profile-triggers-v1") {
             // The report selects from the saved profiles, so a store that
             // cannot open records the sequence but selects nothing, and says why.
-            let report = rig.request(json!({"operation":"reportApplicationContext","version":85,"requestId":"bbbbbbbb-bbbb-cccc-dddd-000000000003","instanceId":"cccccccc-bbbb-cccc-dddd-000000000003","sequence":1,"executablePath":r"C:\Games\Game.exe"})).await;
+            let report = rig.request(json!({"operation":"reportApplicationContext","version":90,"requestId":"bbbbbbbb-bbbb-cccc-dddd-000000000003","instanceId":"cccccccc-bbbb-cccc-dddd-000000000003","sequence":1,"executablePath":r"C:\Games\Game.exe"})).await;
             assert_eq!(report["result"]["status"], 2, "case={case}");
             assert!(
                 report["result"]["message"]
@@ -4254,7 +4340,7 @@ async fn correction_disconnected_first_intent_fatal_precedes_later_owner_loss() 
         crate::service_frame::write_payload(
             &mut client,
             &serde_json::to_vec(&json!({
-                "operation":"setPerformanceOverride","version":85,
+                "operation":"setPerformanceOverride","version":90,
                 "requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000091","value":value(1,1)
             }))
             .unwrap(),
@@ -4286,11 +4372,11 @@ async fn correction_disconnected_first_intent_fatal_precedes_later_owner_loss() 
         ("setPerformanceOverride", "S-1-5-21-111-222-333-1002"),
     ] {
         let request = if operation == "setPerformanceOverride" {
-            json!({"operation":operation,"version":85,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000098","value":value(1,1)})
+            json!({"operation":operation,"version":90,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000098","value":value(1,1)})
         } else if operation == "observeState" {
-            json!({"operation":operation,"version":85,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000097","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0})
+            json!({"operation":operation,"version":90,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000097","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0})
         } else {
-            json!({"operation":operation,"version":85,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000096"})
+            json!({"operation":operation,"version":90,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000096"})
         };
         let (mut client, server) = duplex(65536);
         let publications = rig.source.lock().await.publications();
@@ -4431,7 +4517,7 @@ async fn correction_first_prepared_protection_failure_remains_fatal() {
         crate::service_frame::write_payload(
             &mut client,
             &serde_json::to_vec(&json!({
-                "operation":"setPerformanceOverride", "version":85,
+                "operation":"setPerformanceOverride", "version":90,
                 "requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000091", "value":value(1,1)
             }))
             .unwrap(),
@@ -4658,7 +4744,7 @@ fn fan_request(n: u32, mode: Option<u8>, rpm: u16) -> Value {
         v["fixedSpeedRpm"] = json!(rpm);
         v
     });
-    json!({"operation":"setFanOverride","version":85,"requestId":format!("aaaaaaaa-bbbb-cccc-dddd-{n:012}"),"value":value,"settings":settings})
+    json!({"operation":"setFanOverride","version":90,"requestId":format!("aaaaaaaa-bbbb-cccc-dddd-{n:012}"),"value":value,"settings":settings})
 }
 #[cfg(feature = "service-fan-mutation-v2")]
 fn fan_rig(selector: u8, manual: u8) -> Rig {
@@ -4748,7 +4834,7 @@ fn fan_v2_strict_managed_shapes_and_target_validation() {
     let valid = fan_request(1, Some(1), 3700);
     for (key, value) in [
         ("version", json!(80)),
-        ("version", json!(84)),
+        ("version", json!(PROTOCOL_VERSION - 1)),
         ("requestId", json!("bad")),
         ("extra", json!(1)),
     ] {
@@ -4757,8 +4843,8 @@ fn fan_v2_strict_managed_shapes_and_target_validation() {
         assert!(StatusRequest::decode(&serde_json::to_vec(&v).unwrap()).is_err());
     }
     for text in [
-        r#"{"operation":"setFanOverride","version":85,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000001"}"#,
-        r#"{"operation":"setFanOverride","version":85,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000001","value":{"value":1,"value":3,"lifetime":1}}"#,
+        r#"{"operation":"setFanOverride","version":90,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000001"}"#,
+        r#"{"operation":"setFanOverride","version":90,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000001","value":{"value":1,"value":3,"lifetime":1}}"#,
     ] {
         assert!(StatusRequest::decode(text.as_bytes()).is_err());
     }
@@ -4821,7 +4907,7 @@ async fn fan_v2_actual_dispatch_recipes_ownership_stop_timing_and_private_intent
                     .all(|(c, k, _, _)| !(*c == 13 && *k == 0x81))
             );
         }
-        let public=r.request_as(json!({"operation":"getStatus","version":85,"requestId":"bbbbbbbb-cccc-dddd-eeee-000000000077"}),USER,"S-1-5-21-111-222-333-1002").await;
+        let public=r.request_as(json!({"operation":"getStatus","version":90,"requestId":"bbbbbbbb-cccc-dddd-eeee-000000000077"}),USER,"S-1-5-21-111-222-333-1002").await;
         assert!(public["status"]["fanOverride"].is_null());
         assert!(public["status"]["fanControlOverride"].is_null());
         r.origin.stop();
@@ -5171,7 +5257,7 @@ async fn fan_v2_actual_read_stop_race_retains_only_expected_cleanup_custody() {
             .await
             .observe_performance(USER, Instant::now() + Duration::from_secs(3));
         let stopping = async {
-            let end = Instant::now() + Duration::from_secs(2);
+            let end = Instant::now() + HANG_GUARD;
             while r.port.state.lock().unwrap().opened == opened {
                 assert!(Instant::now() < end);
                 tokio::time::sleep(Duration::from_millis(5)).await;
@@ -5270,7 +5356,7 @@ async fn fan_v2_held_target_callback_blocks_retirement_then_retains_ambiguity() 
         request,
         Instant::now() + Duration::from_secs(3),
     );
-    let end = Instant::now() + Duration::from_secs(2);
+    let end = Instant::now() + HANG_GUARD;
     while r.port.state.lock().unwrap().writes == 0 {
         assert!(Instant::now() < end);
         tokio::select! {result=&mut mutation=>panic!("held target completed early: {}",result.is_ok()),_=tokio::time::sleep(Duration::from_millis(5))=>{}}
@@ -5288,7 +5374,7 @@ async fn fan_v2_held_target_callback_blocks_retirement_then_retains_ambiguity() 
     assert_eq!(r.port.state.lock().unwrap().writes, 1);
     held.store(true, Ordering::Release);
     assert!(
-        tokio::time::timeout(Duration::from_secs(2), draining)
+        tokio::time::timeout(HANG_GUARD, draining)
             .await
             .unwrap()
             .is_err()
@@ -6055,7 +6141,7 @@ async fn fan_handback_canceled_mid_pair_then_stop_retains_ambiguity() {
         request,
         Instant::now() + Duration::from_secs(3),
     );
-    let end = Instant::now() + Duration::from_secs(2);
+    let end = Instant::now() + HANG_GUARD;
     while r.port.state.lock().unwrap().writes == 4 {
         assert!(Instant::now() < end);
         tokio::select! {result=&mut mutation=>panic!("held handback completed early: {}",result.is_ok()),_=tokio::time::sleep(Duration::from_millis(5))=>{}}
@@ -6072,7 +6158,7 @@ async fn fan_handback_canceled_mid_pair_then_stop_retains_ambiguity() {
     assert!(!r.custody.retired.load(Ordering::Acquire));
     held.store(true, Ordering::Release);
     assert!(
-        tokio::time::timeout(Duration::from_secs(2), draining)
+        tokio::time::timeout(HANG_GUARD, draining)
             .await
             .unwrap()
             .is_err()
@@ -6469,7 +6555,7 @@ async fn fan_correction_fresh_epoch_auto_recovery_and_true_noop_close_original_o
                 .await["result"]["status"],
                 2
             );
-            let foreign_performance = json!({"operation":"setPerformanceOverride","version":85,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000186","value":value(1, 1)});
+            let foreign_performance = json!({"operation":"setPerformanceOverride","version":90,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000186","value":value(1, 1)});
             assert_eq!(
                 r.request_as(foreign_performance, USER, "S-1-5-21-111-222-333-1002")
                     .await["result"]["status"],
@@ -7113,7 +7199,7 @@ async fn fan_settle_stop_rechecks_admission_during_the_read() {
         r.origin.stop();
         let drain = async { r.source.lock().await.drain().await };
         let change = async {
-            let deadline = std::time::Instant::now() + Duration::from_secs(5);
+            let deadline = std::time::Instant::now() + HANG_GUARD;
             while r.port.state.lock().unwrap().sent.len() == sent {
                 assert!(std::time::Instant::now() < deadline, "{name}");
                 tokio::time::sleep(Duration::from_millis(1)).await;
@@ -7249,7 +7335,7 @@ async fn fan_correction_cancelled_positive_worker_then_refusal_releases_latest_e
     let hook_release = release.clone();
     r.port.state.lock().unwrap().on_mutation_retired = Some(Arc::new(move || {
         hook_entered.store(true, Ordering::Release);
-        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        let deadline = std::time::Instant::now() + HANG_GUARD;
         while !hook_release.load(Ordering::Acquire) {
             assert!(std::time::Instant::now() < deadline);
             std::thread::sleep(Duration::from_millis(2));
@@ -7265,7 +7351,7 @@ async fn fan_correction_cancelled_positive_worker_then_refusal_releases_latest_e
         request,
         Instant::now() + Duration::from_secs(3),
     );
-    let deadline = Instant::now() + Duration::from_secs(3);
+    let deadline = Instant::now() + HANG_GUARD;
     while !entered.load(Ordering::Acquire) {
         assert!(Instant::now() < deadline);
         tokio::select! { result=&mut future => panic!("retirement hold ended early: {}", result.is_ok()), _=tokio::time::sleep(Duration::from_millis(5))=>{} }
@@ -7435,7 +7521,7 @@ async fn fan_correction_cancelled_auto_terminal_does_not_obstruct_later_true_noo
         let hook_release = release.clone();
         r.port.state.lock().unwrap().on_mutation_retired = Some(Arc::new(move || {
             hook_entered.store(true, Ordering::Release);
-            let deadline = std::time::Instant::now() + Duration::from_secs(5);
+            let deadline = std::time::Instant::now() + HANG_GUARD;
             while !hook_release.load(Ordering::Acquire) {
                 assert!(std::time::Instant::now() < deadline);
                 std::thread::sleep(Duration::from_millis(2));
@@ -7451,7 +7537,7 @@ async fn fan_correction_cancelled_auto_terminal_does_not_obstruct_later_true_noo
             request,
             Instant::now() + Duration::from_secs(3),
         );
-        let deadline = Instant::now() + Duration::from_secs(3);
+        let deadline = Instant::now() + HANG_GUARD;
         while !entered.load(Ordering::Acquire) {
             assert!(Instant::now() < deadline);
             tokio::select! { result=&mut future => panic!("retirement hold ended early: {}", result.is_ok()), _=tokio::time::sleep(Duration::from_millis(5))=>{} }
@@ -7496,7 +7582,7 @@ async fn fan_correction_cancelled_registered_preflight_keeps_scope_until_native_
         request,
         Instant::now() + Duration::from_secs(3),
     );
-    let deadline = Instant::now() + Duration::from_secs(3);
+    let deadline = Instant::now() + HANG_GUARD;
     while r.port.state.lock().unwrap().opened == opened {
         assert!(Instant::now() < deadline);
         tokio::select! { result=&mut future => panic!("held preflight ended early: {}", result.is_ok()), _=tokio::time::sleep(Duration::from_millis(5))=>{} }
@@ -7504,7 +7590,7 @@ async fn fan_correction_cancelled_registered_preflight_keeps_scope_until_native_
     drop(future);
     assert!(fan_rows(&r).is_empty());
     let captures = r.factory_calls.load(Ordering::Acquire);
-    let foreign = json!({"operation":"setPerformanceOverride","version":85,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000231","value":value(1, 1)});
+    let foreign = json!({"operation":"setPerformanceOverride","version":90,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000231","value":value(1, 1)});
     assert_eq!(
         r.request_as(foreign, USER, "S-1-5-21-111-222-333-1002")
             .await["result"]["status"],
@@ -7535,7 +7621,7 @@ async fn fan_correction_known_unpublished_activation_does_not_keep_scope_fence()
         2
     );
     let captures = r.factory_calls.load(Ordering::Acquire);
-    let foreign = json!({"operation":"setPerformanceOverride","version":85,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000241","value":value(1, 1)});
+    let foreign = json!({"operation":"setPerformanceOverride","version":90,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000241","value":value(1, 1)});
     assert_eq!(
         r.request_as(foreign, USER, "S-1-5-21-111-222-333-1002")
             .await["result"]["status"],
@@ -7550,7 +7636,7 @@ async fn fan_correction_known_unpublished_activation_does_not_keep_scope_fence()
 
 #[cfg(feature = "service-battery-policy-v1")]
 fn battery_request(n: u32, operation: &str, value: Value) -> Value {
-    let mut r = json!({"operation":operation,"version":85,"requestId":format!("aaaaaaaa-bbbb-cccc-dddd-{n:012}")});
+    let mut r = json!({"operation":operation,"version":90,"requestId":format!("aaaaaaaa-bbbb-cccc-dddd-{n:012}")});
     r[if operation == "setBatteryPolicy" {
         "value"
     } else {
@@ -7577,7 +7663,7 @@ fn battery_v1_strict_existing_requests_no_raw_or_lifetime_escape() {
     for (k, v) in [
         ("lifetime", json!(1)),
         ("version", json!(80)),
-        ("version", json!(84)),
+        ("version", json!(PROTOCOL_VERSION - 1)),
         ("raw", json!(198)),
         ("requestId", json!("bad")),
     ] {
@@ -8184,7 +8270,7 @@ async fn battery_correction_first_committed_intent_survives_final_authority_loss
         "{status}"
     );
     assert_eq!(r.port.state.lock().unwrap().writes, 1);
-    let foreign = r.request_as(json!({"operation":"getStatus","version":85,"requestId":"bbbbbbbb-cccc-dddd-eeee-000000000331"}), USER, "S-1-5-21-111-222-333-1002").await;
+    let foreign = r.request_as(json!({"operation":"getStatus","version":90,"requestId":"bbbbbbbb-cccc-dddd-eeee-000000000331"}), USER, "S-1-5-21-111-222-333-1002").await;
     assert_ne!(
         foreign["status"]["desiredState"]["battery"]["configuredPolicy"]["chargeLimitPercent"],
         70
@@ -8701,7 +8787,7 @@ async fn battery_publication_active_subscription_expires_at_unaligned_battery_de
     };
     let exercise = async {
         crate::service_frame::write_payload(&mut client,&serde_json::to_vec(&json!({
-            "operation":"subscribeStatus","version":85,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000408"})).unwrap()).await.unwrap();
+            "operation":"subscribeStatus","version":90,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000408"})).unwrap()).await.unwrap();
         let initial = crate::service_frame::read_payload(&mut client)
             .await
             .unwrap();
@@ -9231,7 +9317,7 @@ async fn tfc_v1_real_service_loop_battery_event_needs_no_subscriber_and_uses_res
             10,
             || rig.origin.stop(),
         );
-        tokio::time::timeout(Duration::from_secs(3), async {
+        tokio::time::timeout(HANG_GUARD, async {
             loop {
                 if rig.port.state.lock().unwrap().writes == 2 && !rig.storage.pending() {
                     break;
@@ -9447,16 +9533,198 @@ fn paused_rig(files: MemoryFiles) -> Rig {
 #[cfg(feature = "service-temporary-charge-v1")]
 async fn frozen<T>(port: &Fixture, work: impl std::future::Future<Output = T>) -> T {
     tokio::time::pause();
-    port.state.lock().unwrap().arrival = Some(tokio::time::Instant::now());
+    let now = Some(tokio::time::Instant::now());
+    port.arrive(now, None);
     let out = hold_clock(port, work).await;
     tokio::time::resume();
     out
 }
+/// One rig's claim on the held test clock while one of its exchanges runs.
+struct Holder {
+    id: u64,
+    port: Fixture,
+    parks: Rc<dyn Fn() -> bool>,
+}
+/// The test clock as the rigs of one test hold it. Exchanges of several rigs
+/// can overlap (a test joins them), so the clock is paused once, billed from
+/// every holder's job threads, and let go when the last holder ends.
+struct HeldClocks {
+    holders: Vec<Holder>,
+    next: u64,
+    /// Set while this layer has the clock paused, with the moment it did.
+    paused: Option<ClockMark>,
+    /// The real instant up to which the held clock has been billed.
+    billed: Option<std::time::Instant>,
+    /// The test exercises a bound on the real clock, so no exchange holds it.
+    real_clock: bool,
+}
+thread_local! {
+    static HELD_CLOCKS: std::cell::RefCell<HeldClocks> = const {
+        std::cell::RefCell::new(HeldClocks {
+            holders: Vec::new(),
+            next: 0,
+            paused: None,
+            billed: None,
+            real_clock: false,
+        })
+    };
+}
+/// Leaves the test clock real for the rest of the calling test. A test whose
+/// subject is a bound the Service measures on the real clock, with slack the
+/// test sets in real time, calls it: its rigs' exchanges would otherwise hold
+/// the clock while their job threads work, and rigs that run side by side
+/// would hold it back from one another.
+#[cfg(feature = "service-profile-triggers-v1")]
+fn keep_real_clock() {
+    HELD_CLOCKS.with(|held| held.borrow_mut().real_clock = true);
+}
+impl HeldClocks {
+    /// Runs `work` on the held clock, which keeps pace with the real clock
+    /// except while a holder's job thread is busy: that time is not billed, so
+    /// a loaded host cannot expire a deadline the Service holds on the test
+    /// clock while a job thread waits to be scheduled or to finish. Time is
+    /// billed as it passes while no job thread runs (a cooldown, say), while
+    /// one is parked in a test hook (`Fixture::hooked`), and while the test
+    /// parks a job on purpose (`Rig::parks`): those waits end only at the
+    /// Service's own bound on the real clock. Unlike `hold_clock`, which also
+    /// bounds the polls an idle Service gets, the test is never left waiting on
+    /// a timer that no job moves.
+    async fn pace<T>(work: impl std::future::Future<Output = T>) -> T {
+        let finished = std::cell::Cell::new(false);
+        let work = async {
+            let out = work.await;
+            finished.set(true);
+            out
+        };
+        let clock = async {
+            while !finished.get() {
+                let now = std::time::Instant::now();
+                let unbilled = HELD_CLOCKS.with(|held| {
+                    let mut held = held.borrow_mut();
+                    // A wait the test chose bills every holder's time as the real
+                    // clock would: another rig's busy job cannot hold it back.
+                    let waiting = held
+                        .holders
+                        .iter()
+                        .any(|holder| holder.port.hooks_running() > 0 || (holder.parks)());
+                    let busy = !waiting
+                        && held
+                            .holders
+                            .iter()
+                            .any(|holder| holder.port.running_threads() > 0);
+                    let billed = held.billed.unwrap_or(now);
+                    if busy || now - billed < Duration::from_millis(1) {
+                        held.billed = Some(if busy { now } else { billed });
+                        return None;
+                    }
+                    held.billed = Some(now);
+                    Some(now - billed)
+                });
+                if let Some(elapsed) = unbilled {
+                    tokio::time::advance(elapsed).await;
+                }
+                tokio::task::yield_now().await;
+            }
+        };
+        let (out, ()) = tokio::join!(work, clock);
+        out
+    }
+}
+/// One exchange's hold on the test clock, undone when it ends or is dropped
+/// part way, as a test cancels a pending request: arrivals cleared and, for
+/// the last holder, the clock running again.
+struct Exchange<'a> {
+    rig: &'a Rig,
+    id: Option<u64>,
+}
+impl<'a> Exchange<'a> {
+    fn enter(rig: &'a Rig) -> Self {
+        let parks = rig.parks();
+        let id = HELD_CLOCKS.with(|held| {
+            // A test that arms a real-time wait before the exchange has its own
+            // bound on the real clock to exercise.
+            if parks() || held.borrow().real_clock {
+                return None;
+            }
+            let mut held = held.borrow_mut();
+            if held.paused.is_none() {
+                if clock_is_paused() {
+                    return None;
+                }
+                held.paused = Some(ClockMark::now());
+                held.billed = Some(std::time::Instant::now());
+                tokio::time::pause();
+            }
+            let id = held.next;
+            held.next += 1;
+            held.holders.push(Holder {
+                id,
+                port: rig.port.clone(),
+                parks: parks.clone(),
+            });
+            Some(id)
+        });
+        let arrival = Some(tokio::time::Instant::now());
+        rig.port.arrive(arrival, arrival);
+        Self { rig, id }
+    }
+    fn holding(&self) -> bool {
+        self.id.is_some()
+    }
+    /// Ends the exchange, bringing the clock level first when it is the last
+    /// and `after` asks.
+    async fn end(&mut self, after: HeldClock) {
+        let last = HELD_CLOCKS.with(|held| {
+            let held = held.borrow();
+            if held.holders.len() == 1 && self.id.is_some() {
+                held.paused
+            } else {
+                None
+            }
+        });
+        if let (Some(mark), HeldClock::CatchUp) = (last, after) {
+            mark.catch_up().await;
+        }
+        self.release();
+    }
+    fn release(&mut self) {
+        self.rig.port.arrive(None, None);
+        let Some(id) = self.id.take() else {
+            return;
+        };
+        HELD_CLOCKS.with(|held| {
+            let mut held = held.borrow_mut();
+            held.holders.retain(|holder| holder.id != id);
+            if held.holders.is_empty() && held.paused.take().is_some() && !std::thread::panicking()
+            {
+                tokio::time::resume();
+            }
+        });
+    }
+}
+impl Drop for Exchange<'_> {
+    fn drop(&mut self) {
+        self.release();
+    }
+}
+/// Whether the test clock is paused. Tokio offers no query, and pausing a
+/// paused clock panics. A running clock moves within microseconds; a paused
+/// one stays put for as long as it is watched.
+fn clock_is_paused() -> bool {
+    let mark = tokio::time::Instant::now();
+    let watched = std::time::Instant::now();
+    while watched.elapsed() < Duration::from_millis(2) {
+        if tokio::time::Instant::now() != mark {
+            return false;
+        }
+        std::hint::spin_loop();
+    }
+    true
+}
 /// Both clocks at one moment, to measure how far a held test clock has fallen
 /// behind the real one.
-#[cfg(feature = "service-temporary-charge-v1")]
+#[derive(Clone, Copy)]
 struct ClockMark(std::time::Instant, tokio::time::Instant);
-#[cfg(feature = "service-temporary-charge-v1")]
 impl ClockMark {
     fn now() -> Self {
         Self(std::time::Instant::now(), tokio::time::Instant::now())
@@ -9638,7 +9906,7 @@ async fn tfc_v1_near_capacity_performance_refuses_before_spending_reserved_sourc
         );
         mark.catch_up().await;
         // The cancellation serves no request, so it takes its budget from here.
-        r.port.state.lock().unwrap().arrival = Some(tokio::time::Instant::now());
+        r.port.arrive(Some(tokio::time::Instant::now()), None);
         r.source.lock().await.process_power_source().await.unwrap();
         assert_eq!(r.port.state.lock().unwrap().writes, 2);
         assert_eq!(r.port.state.lock().unwrap().temporary_raw, 0);

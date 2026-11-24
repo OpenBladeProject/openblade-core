@@ -9,6 +9,9 @@ public sealed class SessionPowerTransitionRelayTests
     private static readonly ControlOperationResult Applied =
         new(ControlOperationStatus.Applied, "completed");
 
+    // A scheduling guard for test signals, not a relay deadline under test.
+    private static readonly TimeSpan CompletionGuard = TimeSpan.FromSeconds(10);
+
     [Fact]
     public void NativeRegistrationAcceptsTheDocumentedCallbackFlag()
     {
@@ -98,8 +101,15 @@ public sealed class SessionPowerTransitionRelayTests
     {
         var requests = new ConcurrentQueue<ReportSessionPowerTransitionRequest>();
         var firstStarted = new TaskCompletionSource<CancellationToken>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var finishFirst = new TaskCompletionSource<ControlOperationResult>(TaskCreationOptions.RunContinuationsAsynchronously);
-        long now = 100;
+        // Synchronous continuations on purpose: completing the in-flight report
+        // promotes and sends the pending resume inside SetResult on this thread.
+        // An asynchronous continuation waits for a thread-pool turn while the
+        // pending resume's real-time callback budget runs, and expires it under
+        // load before it is sent.
+        var finishFirst = new TaskCompletionSource<ControlOperationResult>();
+        var latestReported = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var supersededSuspendCreated = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        int supersededSuspendThread = 0;
         using var relay = new SessionPowerTransitionRelay(Guid.NewGuid(), 100, (request, token) =>
         {
             requests.Enqueue(request);
@@ -108,17 +118,35 @@ public sealed class SessionPowerTransitionRelayTests
                 firstStarted.SetResult(token);
                 return finishFirst.Task;
             }
+            latestReported.TrySetResult();
             return Task.FromResult(Applied);
-        }, () => Volatile.Read(ref now), 1000, TimeSpan.FromMilliseconds(40));
-        Task suspend = Task.Run(() => relay.OnPowerNotification(4));
-        CancellationToken firstCancellation = await firstStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        }, () =>
+        {
+            // The relay reads the clock under its lock while creating a
+            // transition, so a notification sent after this signal is ordered
+            // after the second suspend has replaced the pending resume.
+            if (Environment.CurrentManagedThreadId == Volatile.Read(ref supersededSuspendThread))
+            {
+                supersededSuspendCreated.TrySetResult();
+            }
+            return 100;
+        }, 1000);
+        Task suspend = StartNativeCallback(() => relay.OnPowerNotification(4));
+        CancellationToken firstCancellation = await firstStarted.Task.WaitAsync(CompletionGuard);
         relay.OnPowerNotification(18);
-        await WaitUntilAsync(() => firstCancellation.IsCancellationRequested);
-        relay.OnPowerNotification(4);
+        Assert.True(firstCancellation.IsCancellationRequested);
+        // This suspend blocks its caller until it is superseded, so it needs its
+        // own thread, as Windows' notification thread would be.
+        Task supersededSuspend = StartNativeCallback(() =>
+        {
+            Volatile.Write(ref supersededSuspendThread, Environment.CurrentManagedThreadId);
+            relay.OnPowerNotification(4);
+        });
+        await supersededSuspendCreated.Task.WaitAsync(CompletionGuard);
         relay.OnPowerNotification(7);
         finishFirst.SetResult(Applied);
-        await suspend.WaitAsync(TimeSpan.FromSeconds(5));
-        await WaitUntilAsync(() => requests.Count == 2);
+        await latestReported.Task.WaitAsync(CompletionGuard);
+        await Task.WhenAll(suspend, supersededSuspend).WaitAsync(CompletionGuard);
 
         Assert.Equal(new long[] { 1, 4 }, requests.Select(item => item.Sequence));
         Assert.False(requests.Last().Suspending);
@@ -275,6 +303,12 @@ public sealed class SessionPowerTransitionRelayTests
             await cancellationFinished.Task.WaitAsync(TimeSpan.FromSeconds(5));
         }
     }
+
+    // A dedicated thread, so a blocking suspend callback does not wait for
+    // thread-pool injection under full-suite load.
+    private static Task StartNativeCallback(Action callback) =>
+        Task.Factory.StartNew(callback, CancellationToken.None,
+            TaskCreationOptions.LongRunning, TaskScheduler.Default);
 
     private static async Task WaitUntilAsync(Func<bool> condition)
     {

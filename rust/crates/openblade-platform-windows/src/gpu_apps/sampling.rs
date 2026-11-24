@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
 use super::*;
 use QueryUnavailable as Unavailable;
 
+pub(crate) mod activity;
 mod native;
 #[cfg(feature = "scripted-gpu")]
 pub mod scripted;

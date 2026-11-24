@@ -15,10 +15,10 @@ async fn origin_tick(r: &Rig) {
     r.source.lock().await.process_power_source().await.unwrap();
 }
 fn get_request() -> Value {
-    json!({"operation":"getStatus","version":85,"requestId":"bbbbbbbb-cccc-dddd-eeee-000000000901"})
+    json!({"operation":"getStatus","version":90,"requestId":"bbbbbbbb-cccc-dddd-eeee-000000000901"})
 }
 fn performance_request(n: u32) -> Value {
-    json!({"operation":"setPerformanceOverride","version":85,"requestId":format!("aaaaaaaa-bbbb-cccc-dddd-{n:012}"),"value":value(1,1)})
+    json!({"operation":"setPerformanceOverride","version":90,"requestId":format!("aaaaaaaa-bbbb-cccc-dddd-{n:012}"),"value":value(1,1)})
 }
 async fn enable(r: &Rig, n: u32) {
     r.get().await;
@@ -29,7 +29,7 @@ async fn enable(r: &Rig, n: u32) {
 }
 async fn wait_release_view(r: &Rig, paused: bool) {
     let mut publications = r.source.lock().await.publications().unwrap();
-    tokio::time::timeout(Duration::from_secs(5), async {
+    tokio::time::timeout(HANG_GUARD, async {
         loop {
             let bytes = crate::service_status::encode_status_event(
                 &publications.borrow().active.project_private(Some(SID)),
@@ -140,11 +140,9 @@ async fn tfc_release_actual_loop_defers_read_and_serves_blocked_requests_then_re
         assert_eq!(r.port.state.lock().unwrap().writes, 2);
         controls.handle(windows_sys::Win32::System::Services::SERVICE_CONTROL_STOP);
     };
-    let (result, ()) = tokio::time::timeout(Duration::from_secs(10), async {
-        tokio::join!(service, exercise)
-    })
-    .await
-    .unwrap();
+    let (result, ()) = tokio::time::timeout(HANG_GUARD, async { tokio::join!(service, exercise) })
+        .await
+        .unwrap();
     result.unwrap();
 }
 
@@ -176,11 +174,10 @@ async fn tfc_release_actual_loop_preserves_trust_mismatch_unclassified_and_custo
             }
             source_battery(&r);
         };
-        let (result, ()) = tokio::time::timeout(Duration::from_secs(5), async {
-            tokio::join!(service, exercise)
-        })
-        .await
-        .unwrap();
+        let (result, ()) =
+            tokio::time::timeout(HANG_GUARD, async { tokio::join!(service, exercise) })
+                .await
+                .unwrap();
         let error = result.unwrap_err();
         assert!(
             !is_release_deferred(&error),
@@ -221,9 +218,6 @@ async fn tfc_release_actual_worker_prepared_race_keeps_origin_until_settlement_a
 async fn tfc_release_outcome_cause_changes_publish_while_release_remains_paused() {
     prepared_race(true).await;
 }
-/// Bounds only waits that explicit sequencing already orders, so it turns a
-/// hang into a failure and never decides the race.
-const HANG_GUARD: Duration = Duration::from_secs(120);
 /// One mutation on the served source, answered as the pipe's `result`.
 /// The pipe's budget is wall clock, and the padded journal costs about a
 /// second of debug-build CPU per request, which a loaded host can stretch past
@@ -1514,7 +1508,7 @@ async fn tfc_release_a_charge_read_off_by_a_fenced_attempt_is_not_restored() {
 /// `frozen` section lags the real clock by the time it has held, so a tick that
 /// found none would measure its deadline from a clock that is behind.
 fn arrive(r: &Rig) {
-    r.port.state.lock().unwrap().arrival = Some(tokio::time::Instant::now());
+    r.port.arrive(Some(tokio::time::Instant::now()), None);
 }
 /// One origin tick that starts its own budget (see `arrive`).
 async fn arrived_tick(r: &Rig) {
@@ -1553,7 +1547,7 @@ fn near_capacity_rig(reservation: usize) -> Rig {
 async fn enable_near_capacity(r: &Rig) {
     r.get().await;
     // A request starts its job's budget at its arrival, as `request_as` does.
-    r.port.state.lock().unwrap().arrival = Some(tokio::time::Instant::now());
+    r.port.arrive(Some(tokio::time::Instant::now()), None);
     let response = source_mutation(
         r,
         battery_request(801, "setFullChargeOverride", json!(true)),

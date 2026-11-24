@@ -21,6 +21,20 @@ public sealed class ServiceStatusSnapshotComparerTests
         }));
     }
 
+    [Fact]
+    public void HyperBoostEntryRestrictionChangesArePublished()
+    {
+        // A SKU reread that declines entry must reach the tray, which then explains it.
+        ServiceStatusSnapshot baseline = CreateStatus();
+        Assert.False(ServiceStatusSnapshotComparer.Equivalent(baseline, baseline with
+        {
+            Capabilities = baseline.Capabilities! with
+            {
+                HyperBoostEntryRestriction = HyperBoostEntryRestriction.VendorSystemSku,
+            },
+        }));
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -221,6 +235,7 @@ public sealed class ServiceStatusSnapshotComparerTests
             baseline with { Capabilities = baseline.Capabilities! with { SupportsBreathingColorSelection = false } },
             baseline with { Capabilities = baseline.Capabilities! with { SupportsWaveDirectionSelection = false } },
             baseline with { Capabilities = baseline.Capabilities! with { Blade18KeyboardLayoutId = 12 } },
+            baseline with { Capabilities = baseline.Capabilities! with { Blade14KeyboardEdition = 12 } },
             baseline with { ThermalConvergence = baseline.ThermalConvergence! with { ExplicitReapplyRequired = true } },
         ];
 

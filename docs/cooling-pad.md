@@ -6,17 +6,34 @@ confirmed and disappears when unplugging is confirmed. A temporary connection
 check failure keeps the last confirmed page visible with writes disabled.
 Support is source-backed experimental. The pad is admitted by its own exact USB
 identity; pad commands do not depend on the laptop model. Laptop controls retain
-their separate model admission. Connect one pad, choose its settings, then select
-**Apply**. Starting
-OpenBlade or reconnecting the pad does not start control automatically.
+their separate model admission. Connect one pad and choose a fan or lighting
+setting; each change applies after a short pause, like the laptop controls, and
+the page refreshes the pad status while it is open. Until you choose a setting,
+the pad keeps its own settings. The page always shows the settings the service
+is running, including ones changed by another OpenBlade client; a change you are
+making takes precedence until it applies. Reconnecting the pad does not start
+control automatically.
 
-Choose a fixed target from 500 to 3200 RPM in 50-RPM steps, turn the fan off, or
-use a CPU curve, a GPU curve, or both. With both selected, the higher demand wins. Fixed targets come from the selected mode configuration; Smart targets come from
-the separate host-demand register. Neither is measured fan speed. Missing or stale temperature readings
-pause curve updates. The shared CPU temperature source currently rejects the
-firmware's constant readings, so CPU and combined CPU/GPU curves remain unavailable
-until a supported changing CPU reading is provided. GPU-only curves can use an
-active GPU's fresh temperature. Stop competing pad controllers before applying settings.
+OpenBlade hands the pad back to its own settings when the laptop sleeps or shuts
+down and when the service stops, for example during an update. Once Windows is
+awake and you are signed in again, it applies your cooling-pad settings again.
+**Release control** stops this until you choose a setting again. If the handback
+was not confirmed, the page asks you to check the pad first.
+
+Choose Automatic with a Quiet, Balanced or Performance profile, a fixed target
+from 500 to 3200 RPM in 50-RPM steps, a manual fan curve, or Off. Automatic and
+manual curves follow the CPU, the GPU, or both; with both, the higher demand wins.
+Curve input uses the same smoothed temperatures as the laptop's manual fan
+curve, so a brief package spike does not change the fan speed. When the
+selected CPU stays at 95 °C or the GPU at 87 °C for 2 seconds, Automatic and
+curves run the pad at full speed until it drops 3 °C. Fixed targets come from the selected mode configuration; Smart targets are the
+ramping speed the firmware reports. Neither is measured fan speed. A missing or stale
+temperature reading pauses curve updates; the pad keeps its last speed and control
+continues. A GPU that Windows reports powered down is ignored: with both sources the
+curve follows the CPU, and a GPU-only curve runs at its first point. Curves use the same CPU package and GPU readings as the
+laptop's manual fan curve. Stop competing pad controllers before applying settings.
+Any running Razer service blocks pad writes, except Razer Experience Service, a
+model runner that Razer's driver packages install; it has no HID device access.
 
 Lighting supports Off, Static, Breathing, Spectrum and Wave, with brightness and
 colors. Keyboard sync projects OpenBlade's host-rendered keyboard frames onto
@@ -33,6 +50,22 @@ baseline from OpenBlade's own mirror session can support explicit mirror recover
 after a service restart; unreadable current pixels are never treated as saved.
 
 Both persistent profile 1 and volatile profile 0 effect parameters are saved. Pixel data from another custom renderer remains unreadable.
+Byte 0 of `0F/02` is the store flag that openrazer and padctl call VARSTORE (`1`)
+and NOSTORE (`0`); the strip shows whichever effect was written last. When the
+two records hold different effects, a read cannot tell which one is showing on
+its own. The service then reports the effect it wrote last and confirmed while
+that record still holds it, which covers its own Apply (profile 1), keyboard
+sync (profile 0) and restoration (profile 0 when the baseline has it). Otherwise, including after a restart before its next lighting
+write, or after a controller or identity boundary, the lighting mode is
+unconfirmed instead of read from profile 1 alone.
+
+The service resumes control only after a clean service-owned handback. It keeps a
+per-user resume record beside the saved settings, written by an Apply that takes
+control and removed by **Release control**. A retained restoration journal,
+paused writes, a failed Apply or a configuration failure all wait for the user.
+Resumption uses the same session, power and per-command admission as an Apply,
+checks a closed admission again each second, and waits five seconds after an
+attempt that reached the pad and was refused. Shutdown cleanup is never undone.
 
 A failed or ambiguous submission pauses control. Read the current state before
 choosing an explicit recovery action. OpenBlade retains a write-ahead recovery
@@ -66,6 +99,14 @@ Windows adds the zero report-ID prefix for 91 bytes. Report ID 5 belongs to the
 following input descriptors. The carrier and extracted firmware remain outside
 Git. OpenBlade does not run or flash this updater.
 
+Because interface 0 declares exactly one feature report, any other `1532:0F43`
+interface-0 collection without a feature report is input-only and cannot be the
+control channel. An installed Razer driver stack re-exposes such collections
+under its virtual consumer device. Discovery and the control opener skip them
+without opening them for I/O, whatever usage or revision the driver assigns. A
+non-exact interface-0 collection with a feature report, or one that cannot be
+read, still blocks discovery and control.
+
 The updater also contains a generic keyboard `update_config.ini`; its PID02B0
 is not the attached device's identity. Resource/firmware descriptors establish
 the pad identity independently of that unrelated configuration.
@@ -79,13 +120,13 @@ is introduced.
 
 | Command | Source module | Meaning |
 | --- | --- | --- |
-| `0D/90` | 63472, 91655 | Read `[ownership,preset,speed]`; zero selector matches the generic omitted/default selector |
-| `0D/10` | 63472, 91655, 87887 | Set saved or requested fan configuration directly |
-| `0D/81` | 63472, 91655 | Read configured target for class 1, fan 5; not a tachometer |
+| `0D/90` | 63472, 91655, firmware | Read one owner's selection: `[owner,preset,speed]` for Low/Medium/High, `[owner,preset]` otherwise |
+| `0D/10` | 63472, 91655, 87887, firmware | Set an owner's selection directly; it becomes the running preset |
+| `0D/81` | 63472, 91655, firmware | Read the ramping speed for class 1, fan 5; not a tachometer |
 | `0D/01` | 91655, exact-pad scheduler | Set class 1, fan 5 target in 50-RPM units |
-| `0F/80` | 65430, 9069 | Read five-byte region records; admit the reviewed 18-LED geometry |
+| `0F/80` | 65430, 9069, firmware | Read the five-byte region record; admit one row of 18 LEDs |
 | `0F/84`, `0F/04` | 65430, 9069, 85191 | Read actual first-region brightness; write profile 1, region 0; preserve raw 0..255 baseline |
-| `0F/82`, `0F/02` | 65430, 79151, 9069, 85191 | Read and set effect, flags, rate, color count and RGB values |
+| `0F/82`, `0F/02` | 65430, 79151, 9069, 85191, firmware | Read and set effect, flags, rate, color count and RGB values |
 | `0F/03` | 65430, 9069 | Stream profile 0 frames with region/row/start/end and bounded RGB data |
 | `00/84`, `00/04` | 9069, product initialization | Read/set device mode; mirror entry uses Driver directly and saves prior mode |
 
@@ -93,9 +134,43 @@ Ownership is firmware `0` or Synapse `1`. Presets are Low `0`, Medium `1`, High
 `2`, Quiet `3`, Balanced `4`, Performance `5`, Off `6`. Fixed control directly
 requests `[1,1,target/50]`; Off requests `[0,6,0]`. A host curve preserves an
 existing Smart preset or directly selects Quiet `[0,3,0]`, then sends calculated
-`0D/01` demands. No preliminary Fixed, Medium, Automatic or Normal reset is
+`0D/01` demands. Automatic selects the profile's Smart preset `[0,3..5,0]`
+directly and sends `0D/01` demands from the Synapse tables below. No preliminary Fixed, Medium, Automatic or Normal reset is
 required. Source initialization enters Driver `03 00` directly; ordinary pad
 cleanup in Synapse skips a blanket Normal handoff for this Chroma device.
+
+The firmware 1.10.00 image (class `0D` handler at `0x3144`) defines the fan
+replies:
+
+- `0D/90` (`0x3228`) treats byte 0 as an owner selector. The firmware (`0`) and
+  Synapse (`1`) owners each keep their own last selection. The reply echoes the
+  selector, then the preset, then the speed only for Low, Medium and High. Other
+  selectors fail.
+- `0D/10` (`0x3290`) accepts presets 0 to 6 from the firmware owner and only
+  Low, Medium and High from the Synapse owner. Those three need a speed from
+  500 to 3200 RPM and share one speed per preset between both owners. The
+  selection written last runs; no command reports which owner that was.
+- `0D/81` (`0x3190`) reports the ramping speed, and the target only once the
+  two are within 50 RPM. It cannot confirm a new `0D/01` demand; the verified
+  echo does.
+
+Fan readback therefore queries the owner OpenBlade just wrote. Until a session
+confirms its own fan write, status reports the firmware owner's selection.
+
+The same image (Cortex-M0, class `0F` handler at `0x64E0`) defines the lighting
+replies:
+
+- `0F/80` (`0x657C`) returns exactly `[05,19,03,01,12]`: region 5, then one row
+  at byte 3 and 18 LEDs at byte 4.
+- `0F/82` (`0x65BA`) returns twelve bytes: a constant zero, the stored region
+  id, effect, flags, rate, color count, color slot 1 and color slot 2. Byte 0 is
+  not the profile. The request's profile and region select the record.
+- `0F/02` (`0x6E40`) stores only the effect id for effect 8. Other effects store
+  flags, rate and count, color slot 1 only for Static, and color slot 2 from
+  every request. Slots beyond the count keep earlier bytes.
+
+Readback compares only those stored fields. The firmware also accepts effects
+7 and 9, which OpenBlade does not admit.
 
 Brightness GET resolves requested region 0 through the regional descriptor to
 the first actual region (historically 5), while SET retains region 0. That is a
@@ -112,11 +187,67 @@ but its exact-pad caller and physical meaning are not established here. It is
 not exposed as measured RPM. Physical speed, thermal performance, arbitrary
 firmware revisions and display-off behavior have not been newly validated.
 
+## Automatic mode
+
+Automatic follows Synapse's Smart scheduler from the pinned shared bundle
+(module 74967, product task runner in `main.js`):
+
+- Entering Smart writes `setThermalFanCoolingMode(smart.active, 0, 0)`: `0D/10`
+  with the firmware owner and preset Quiet `3`, Balanced `4` or Performance `5`.
+- Each system-monitor sample evaluates a step table: the speed of the point with
+  the smallest temperature strictly above the reading, without interpolation.
+  With so few points, that is one speed across normal laptop temperatures:
+  Balanced CPU is 2200 RPM from 40 to 89 °C. `cpu` uses the CPU table with the package temperature, `gpu` the GPU table,
+  and `cpu_gpu` the higher of both results.
+- The demand `floor(rpm/50)` is sent with `0D/01` only when it changes.
+- Synapse's default profile is Fixed with `smart.active` Balanced and source
+  `cpu`; its Fixed Low, Medium and High are 1600, 2200 and 2700 RPM.
+
+| Profile | CPU (°C:RPM) | GPU (°C:RPM) |
+| --- | --- | --- |
+| Quiet | 40:500, 50:500, 85:1000, 90:1600, 100:1600 | 30:500, 40:500, 75:1000, 80:1600, 90:1600 |
+| Balanced | 40:1000, 90:2200, 100:2200 | 30:1000, 80:2200, 90:2200 |
+| Performance | 40:1000, 55:2000, 80:2700, 100:2700 | 30:1000, 45:2000, 70:2700, 90:2700 |
+
+OpenBlade differs in five ways. The profile and temperature source are
+selectable. Tables are evaluated on smoothed temperatures. OpenBlade
+interpolates between the table points in 50-RPM steps, like a manual pad curve,
+so the speed follows the temperature: Balanced CPU gives about 1500 RPM at
+60 °C and 1850 RPM at 75 °C. Below the first point it uses the first point's
+speed. Above the last point,
+Synapse yields no speed and sends 0; OpenBlade keeps the last point's speed. The
+preset write is skipped only when this session already confirmed that exact
+preset. Automatic is source-backed and software-tested; it has not been
+physically validated on a pad.
+
+## Curve temperature smoothing
+
+The service conditions CPU and GPU readings for every host-driven fan curve:
+the laptop's manual fan curve on every model that admits it, and the pad's
+manual curve and Automatic mode. Each sensor is smoothed exponentially over the
+actual elapsed time with a 5-second time constant, so a one-second +30 °C spike
+moves the input about 5 °C, while 95% of a sustained change is followed
+within 15 seconds. A falling reading must drop 3 °C below the held value
+before the input follows it. There is no timed cooldown hold. A missing sensor
+or a sample gap over 10 seconds starts a fresh history. Safety decisions keep
+using the raw readings: the laptop curve still forces maximum speed immediately
+for a missing CPU reading, an unconfirmed missing GPU, CPU at 95 °C or GPU at
+87 °C, and the pad's missing-reading pause checks the raw reading. The pad's
+Automatic mode and manual curve use the same emergency limits on the raw
+readings: a selected CPU at or above 95 °C, or a selected, powered GPU at or
+above 87 °C, for three consecutive one-second samples (2 seconds) sends
+3200 RPM whatever the table or curve says. A shorter spike does not trip them.
+Full speed holds until that reading drops 3 °C below its limit, so a reading at
+the limit does not switch the speed back and forth. The smoothed input is not
+used here because it approaches a steady reading gradually and would take 12
+to 20 seconds to reach the limit. Synapse has no such limit. Fixed targets read
+no temperature and keep their speed.
+
 ## Typed cooling-demand API
 
-Turn on **Allow apps to request more cooling** and apply it to opt in. It is off
-by default. The authenticated current-user service pipe exposes explicit demand
-leases only while that opt-in and a user-started Fixed or curve session are active.
+Turn on **Allow apps to request more cooling** to opt in. It is off by default.
+The authenticated current-user service pipe exposes explicit demand leases only
+while that opt-in and a user-started Fixed, curve or Automatic session are active.
 Leases are bounded to eight, expire within 30 seconds, and belong to the
 requesting Windows process identity. They can raise demand while a user-started
 fan session is active; they do not start an inactive session. Settings, desired

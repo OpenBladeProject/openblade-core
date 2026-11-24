@@ -82,6 +82,67 @@ public sealed class HyperBoostCapabilityPolicyTests
         Assert.Null(HyperBoostCapabilityPolicy.PadlessEntryBaseMode(capabilities));
     }
 
+    [Fact]
+    public void DeclaredTurboCoolingPadEntry_AdmitsTurboAndPadlessOrdinaryBases()
+    {
+        // RZ09-0510 shape: product 695 lists Turbo (raw 1) and has no Performance mode.
+        DeviceCapabilities capabilities = DeviceCapabilities.Unavailable() with
+        {
+            HyperBoostAccess = RW,
+            HyperBoostWithoutCoolingPadAccess = RW,
+            HyperBoostBaseModes = new HyperBoostBaseModeCapabilities(RW, RW, Observed)
+            {
+                Custom = RW,
+                Turbo = RW,
+                CoolingPadEntryBaseMode = PerformancePreset.Turbo,
+            },
+        };
+
+        Assert.Equal(PerformancePreset.Turbo, HyperBoostCapabilityPolicy.PadPresentEntryBaseMode(capabilities));
+        Assert.Equal(PerformancePreset.Balanced, HyperBoostCapabilityPolicy.PadlessEntryBaseMode(capabilities));
+        foreach (bool pad in new[] { true, false })
+        {
+            foreach (PerformancePreset mode in new[] { PerformancePreset.Silent, PerformancePreset.Balanced,
+                PerformancePreset.Turbo, PerformancePreset.Custom })
+            {
+                Assert.True(HyperBoostCapabilityPolicy.IsDirectEntryBase(capabilities, pad, mode));
+            }
+            Assert.False(HyperBoostCapabilityPolicy.IsDirectEntryBase(capabilities, pad, PerformancePreset.Performance));
+        }
+        DeviceCapabilities withoutTurbo = capabilities with
+        {
+            HyperBoostBaseModes = capabilities.HyperBoostBaseModes! with { Turbo = null, CoolingPadEntryBaseMode = null },
+        };
+        Assert.False(HyperBoostCapabilityPolicy.IsDirectEntryBase(withoutTurbo, coolingPadPresent: false, PerformancePreset.Turbo));
+    }
+
+    [Theory]
+    [InlineData(PerformancePreset.Turbo, PerformancePreset.Turbo, PowerSource.PluggedIn, true)]
+    [InlineData(PerformancePreset.Balanced, PerformancePreset.Balanced, PowerSource.Battery, true)]
+    [InlineData(PerformancePreset.Balanced, PerformancePreset.BatteryBalanced, PowerSource.Battery, true)]
+    [InlineData(PerformancePreset.Balanced, PerformancePreset.BatteryBalanced, PowerSource.PluggedIn, false)]
+    [InlineData(PerformancePreset.Balanced, PerformancePreset.BatteryBalanced, PowerSource.UsbC, false)]
+    // The mode-7 battery handoff is Balanced whatever base is owned.
+    [InlineData(PerformancePreset.Silent, PerformancePreset.BatteryBalanced, PowerSource.Battery, true)]
+    [InlineData(PerformancePreset.Turbo, PerformancePreset.BatteryBalanced, PowerSource.Battery, true)]
+    [InlineData(PerformancePreset.Turbo, PerformancePreset.Balanced, PowerSource.Battery, true)]
+    [InlineData(PerformancePreset.Custom, PerformancePreset.Balanced, PowerSource.Battery, true)]
+    [InlineData(PerformancePreset.Performance, PerformancePreset.Balanced, PowerSource.Battery, true)]
+    // A backend whose reviewed exit restores the owned base on battery still confirms it.
+    [InlineData(PerformancePreset.Performance, PerformancePreset.Performance, PowerSource.Battery, true)]
+    [InlineData(PerformancePreset.Turbo, PerformancePreset.Silent, PowerSource.Battery, false)]
+    [InlineData(PerformancePreset.Turbo, PerformancePreset.BatterySaver, PowerSource.Battery, false)]
+    [InlineData(PerformancePreset.Turbo, PerformancePreset.Balanced, PowerSource.PluggedIn, false)]
+    [InlineData(PerformancePreset.Silent, PerformancePreset.Balanced, PowerSource.ExternalUnknown, false)]
+    [InlineData(PerformancePreset.Turbo, PerformancePreset.Performance, PowerSource.PluggedIn, false)]
+    [InlineData(PerformancePreset.Turbo, null, PowerSource.PluggedIn, false)]
+    [InlineData(PerformancePreset.Turbo, null, PowerSource.Battery, false)]
+    public void RestoredBase_AcceptsTheOwnedBaseOrTheBatteryBalancedHandoff(
+        PerformancePreset requested, PerformancePreset? confirmed, PowerSource source, bool restored)
+    {
+        Assert.Equal(restored, HyperBoostCapabilityPolicy.IsRestoredBase(requested, confirmed, source));
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData(DeviceFeatureAccess.ObservedOnly)]
@@ -115,6 +176,32 @@ public sealed class HyperBoostCapabilityPolicyTests
         Assert.Null(HyperBoostCapabilityPolicy.PadPresentEntryBaseMode(capabilities));
         Assert.Null(HyperBoostCapabilityPolicy.PadlessEntryBaseMode(capabilities));
         Assert.False(HyperBoostCapabilityPolicy.IsWritable(capabilities));
+    }
+
+    [Fact]
+    public void EntryRestriction_DeclinesEveryEntryPathButKeepsExit()
+    {
+        DeviceCapabilities admitted = Create(padless: RW, silent: RW, balanced: RW, performance: RW);
+        DeviceCapabilities restricted = admitted with
+        {
+            HyperBoostEntryRestriction = HyperBoostEntryRestriction.VendorSystemSku,
+        };
+
+        Assert.True(HyperBoostCapabilityPolicy.IsWritable(admitted));
+        Assert.False(HyperBoostCapabilityPolicy.IsEntryRestricted(admitted));
+        Assert.True(HyperBoostCapabilityPolicy.IsEntryRestricted(restricted));
+        Assert.Null(HyperBoostCapabilityPolicy.PadPresentEntryBaseMode(restricted));
+        Assert.Null(HyperBoostCapabilityPolicy.PadlessEntryBaseMode(restricted));
+        Assert.False(HyperBoostCapabilityPolicy.IsWritable(restricted));
+        foreach (PerformancePreset mode in new[] { PerformancePreset.Silent, PerformancePreset.Balanced, PerformancePreset.Performance })
+        {
+            Assert.False(HyperBoostCapabilityPolicy.IsDirectEntryBase(restricted, coolingPadPresent: true, mode));
+            Assert.False(HyperBoostCapabilityPolicy.IsDirectEntryBase(restricted, coolingPadPresent: false, mode));
+            // Restore access per base is unchanged.
+            Assert.Equal(RW, restricted.HyperBoostBaseModes!.AccessFor(mode));
+        }
+        Assert.True(HyperBoostCapabilityPolicy.CanExit(restricted));
+        Assert.False(HyperBoostCapabilityPolicy.CanExit(restricted with { HyperBoostAccess = Observed }));
     }
 
     private static DeviceCapabilities Create(

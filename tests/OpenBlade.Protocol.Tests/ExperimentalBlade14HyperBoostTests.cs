@@ -66,19 +66,146 @@ public sealed partial class ExperimentalThermalExpansionTests
         Assert.Empty(session.Writes);
     }
 
-    [Theory]
-    [InlineData(2)]
-    [InlineData(3)]
-    [InlineData(10)]
-    public async Task Blade14HyperBoost_ActiveUnrestorableMaximumFansBlocksWithoutClearing(byte flags)
+    [Fact]
+    public async Task Blade14HyperBoost_ClearsMaximumFansBeforeModeSevenLikeProduct669()
     {
-        var session = new Session { Mode = 4, Cpu = 1, Gpu = 2, PowerModeControlFlags = flags };
+        // Product 669 clears Maximum Fans before any non-Custom thermal setter.
+        var session = new Session { Mode = 4, Cpu = 1, Gpu = 2, PowerModeControlFlags = 2, HyperBoostFirmware = [1, 1, 1, 3] };
+        await using var port = HyperBoostPort(session, new Pad(), pid: 0x029D);
+        await port.SetHyperBoostAsync(true, PerformancePreset.Custom, true, CancellationToken.None);
+        Assert.Equal(0, session.PowerModeControlFlags);
+        Assert.Equal(7, session.Mode);
+        Assert.Equal(new byte[][] { [0], [1, 1, 7, 0], [1, 2, 7, 0] },
+            session.Writes.Select(command => command.Arguments.ToArray()).ToArray());
+        Assert.Equal((0x07, 0x0F), (session.Writes.First().ClassId, session.Writes.First().CommandId));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("00")]
+    public async Task Blade14HyperBoost_MaximumFansCleanupAcceptsStatusOnlyAck(string ackHex)
+    {
+        var session = new Session { Mode = 4, Cpu = 1, Gpu = 2, PowerModeControlFlags = 2, HyperBoostFirmware = [1, 1, 1, 3], MaximumAckPayloadOverride = Convert.FromHexString(ackHex) };
+        var policy = new ExperimentalFeaturesPolicy(Model(0x029D));
+        await using var port = HyperBoostPort(session, new Pad(), policy, pid: 0x029D);
+
+        await port.SetHyperBoostAsync(true, PerformancePreset.Custom, true, CancellationToken.None);
+
+        Assert.Equal(0, session.PowerModeControlFlags);
+        Assert.Equal(7, session.Mode);
+        Assert.True(policy.WritesAllowed);
+        Assert.True(session.Writes.First().AllowVariableResponseLength);
+    }
+
+    public enum StopAfterCleanup
+    {
+        PadAdmissionLost,
+        ExactHostLost,
+        NativeGuardRefusal,
+    }
+
+    [Theory]
+    [InlineData(StopAfterCleanup.PadAdmissionLost)]
+    [InlineData(StopAfterCleanup.ExactHostLost)]
+    [InlineData(StopAfterCleanup.NativeGuardRefusal)]
+    public async Task Blade14HyperBoost_KnownStopAfterConfirmedCleanupReportsTheClearedFlag(StopAfterCleanup stop)
+    {
+        // The cleanup is confirmed and mode 7 was never sent: the state is known,
+        // so writes stay allowed, every such stop names the cleared flag, and
+        // the service can reapply the saved Custom intent.
+        var session = new Session { Mode = 4, Cpu = 1, Gpu = 2, PowerModeControlFlags = 2, HyperBoostFirmware = [1, 1, 1, 3] };
+        var pad = new Pad();
+        var policy = new ExperimentalFeaturesPolicy(Model(0x029D));
+        bool hostPresent = true;
+        session.BeforeSubmission = command =>
+        {
+            bool cleanupConfirmed = session.Writes.Any(item => item.ClassId == 0x07 && item.CommandId == 0x0F);
+            if (stop == StopAfterCleanup.NativeGuardRefusal ? command.ClassId == 0x0D && command.CommandId == 0x02
+                : command.ClassId == 0x07 && command.CommandId == 0x8F && cleanupConfirmed)
+            {
+                if (stop == StopAfterCleanup.ExactHostLost)
+                {
+                    hostPresent = false;
+                }
+                else
+                {
+                    pad.State = CoolingPadConnectionState.Absent;
+                }
+            }
+        };
+        await using var port = new ExperimentalBladePort(session, new(), Model(0x029D), policy, () => hostPresent,
+            () => PowerSource.ExternalUnknown, coolingPadDiscovery: pad);
+
+        BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetHyperBoostAsync(true, PerformancePreset.Custom, true, CancellationToken.None));
+
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, failure.SubmissionState);
+        Assert.EndsWith(ExperimentalBladePort.MaximumFansClearedForHyperBoostNotice, failure.Message, StringComparison.Ordinal);
+        Assert.True(failure.MaximumFansClearedBeforeFailure);
+        Assert.True(policy.WritesAllowed);
+        Assert.Equal(0, session.PowerModeControlFlags);
+        Assert.Equal(4, session.Mode);
+        Assert.Equal(new byte[][] { [0] }, session.Writes.Select(command => command.Arguments.ToArray()).ToArray());
+    }
+
+    [Fact]
+    public async Task Blade14HyperBoost_UnconfirmedCleanupStaysIndeterminate()
+    {
+        var session = new Session { Mode = 4, Cpu = 1, Gpu = 2, PowerModeControlFlags = 2, HyperBoostFirmware = [1, 1, 1, 3], IgnoreMaximum = true };
+        var policy = new ExperimentalFeaturesPolicy(Model(0x029D));
+        await using var port = HyperBoostPort(session, new Pad(), policy, pid: 0x029D);
+
+        BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetHyperBoostAsync(true, PerformancePreset.Custom, true, CancellationToken.None));
+
+        Assert.Equal(WriteSubmissionState.Indeterminate, failure.SubmissionState);
+        Assert.False(failure.MaximumFansClearedBeforeFailure);
+        Assert.DoesNotContain(ExperimentalBladePort.MaximumFansClearedForHyperBoostNotice, failure.Message, StringComparison.Ordinal);
+        Assert.False(policy.WritesAllowed);
+        Assert.Equal(4, session.Mode);
+        Assert.DoesNotContain(session.Writes, command => command.ClassId == 0x0D);
+    }
+
+    [Fact]
+    public async Task HyperBoost_ModelWithoutMaximumFansIntentRefusesToClearTheFlag()
+    {
+        // Every shipped HyperBoost model admits Maximum Fans, so this guard is
+        // reached only through a synthetic exact-product policy without it.
+        ExperimentalBladeModel synthetic = Model(0x029D) with
+        {
+            ThermalPolicy = new SourceReviewedThermalPolicy("synthetic", SupportsMaximumFans: false,
+                SupportsCpuBoost: false, SupportsBatterySaver: false, SupportsMaximumPower: false,
+                EvidenceSources: []),
+        };
+        var session = new Session { Mode = 4, Cpu = 1, Gpu = 2, PowerModeControlFlags = 2, HyperBoostFirmware = [1, 1, 1, 3] };
+        var policy = new ExperimentalFeaturesPolicy(synthetic);
+        await using var port = new ExperimentalBladePort(session, new(), synthetic, policy, () => true,
+            () => PowerSource.ExternalUnknown, coolingPadDiscovery: new Pad());
+        Assert.False(port.Capabilities.CustomPerformance!.SupportsMaximumFans);
+
+        BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetHyperBoostAsync(true, PerformancePreset.Custom, true, CancellationToken.None));
+
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, failure.SubmissionState);
+        Assert.Contains("cannot restore", failure.Message, StringComparison.Ordinal);
+        Assert.Equal(2, session.PowerModeControlFlags);
+        Assert.Empty(session.Writes);
+        Assert.True(policy.WritesAllowed);
+    }
+
+    [Theory]
+    [InlineData(3)]
+    [InlineData(6)]
+    [InlineData(10)]
+    public async Task Blade14HyperBoost_MaximumFansWithOtherPowerOptionsBlocksWithoutClearing(byte flags)
+    {
+        var session = new Session { Mode = 4, Cpu = 1, Gpu = 2, PowerModeControlFlags = flags, HyperBoostFirmware = [1, 1, 1, 3] };
         var policy = new ExperimentalFeaturesPolicy(Model(0x029D));
         await using var port = HyperBoostPort(session, new Pad(), policy, pid: 0x029D);
         BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
             port.SetHyperBoostAsync(true, PerformancePreset.Custom, true, CancellationToken.None));
         Assert.Equal(WriteSubmissionState.KnownNotApplied, failure.SubmissionState);
-        Assert.Contains("Maximum Fans", failure.Message);
+        Assert.Contains("maximum fans", failure.Message);
         Assert.Equal(flags, session.PowerModeControlFlags);
         Assert.Empty(session.Writes);
         Assert.True(policy.WritesAllowed);

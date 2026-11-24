@@ -8,6 +8,8 @@ public sealed class WindowsCoolingPadHidSessionOpenerTests
 {
     private const string PadPath = @"\\?\hid#vid_1532&pid_0f43&mi_00#pad";
     private const string OtherPadPath = @"\\?\hid#vid_1532&pid_0f43&mi_00#other";
+    private const string ConsumerAuxiliaryPath = @"\\?\hid#vid_1532&pid_0f43&mi_00&col03&col01#aux";
+    private const string SystemAuxiliaryPath = @"\\?\hid#vid_1532&pid_0f43&mi_00&col03&col02#aux";
 
     [Fact]
     public async Task ExactAccessoryOpensWithoutAnyLaptopIdentityAndTransfersHandleOwnership()
@@ -18,8 +20,9 @@ public sealed class WindowsCoolingPadHidSessionOpenerTests
         Assert.Null(result.Failure);
         var handle = Assert.IsType<OpenedHidHandle>(result.Value);
         Assert.Equal(PadPath, opener.SelectedPath);
-        Assert.Equal(1, native.Opened);
-        Assert.Equal(0, native.Closed);
+        // One closed metadata-only classification handle, then the bound operational handle.
+        Assert.Equal(2, native.Opened);
+        Assert.Equal(1, native.Closed);
         await handle.DisposeAsync();
         await handle.DisposeAsync();
         Assert.Equal(native.Opened, native.Closed);
@@ -110,13 +113,15 @@ public sealed class WindowsCoolingPadHidSessionOpenerTests
         var native = new Native { OperationalOpenError = 5 };
         var result = new WindowsCoolingPadHidSessionOpener(native).Open(Allow());
         Assert.Null(result.Failure);
-        Assert.Equal(new uint[] { 0xC0000000, 0 }, native.Accesses);
+        // Metadata-only classification precedes the operational open and its fallback.
+        Assert.Equal(new uint[] { 0, 0xC0000000, 0 }, native.Accesses);
         await result.Value!.DisposeAsync();
         Assert.Equal(native.Opened, native.Closed);
 
         var failed = new Native { OperationalOpenError = 32 };
         Assert.NotNull(new WindowsCoolingPadHidSessionOpener(failed).Open(Allow()).Failure);
-        Assert.Equal(new uint[] { 0xC0000000 }, failed.Accesses);
+        Assert.Equal(new uint[] { 0, 0xC0000000 }, failed.Accesses);
+        Assert.Equal(failed.Opened, failed.Closed);
     }
 
     [Fact]
@@ -179,6 +184,71 @@ public sealed class WindowsCoolingPadHidSessionOpenerTests
         Assert.Equal(1, native.BoundClosed);
     }
 
+    [Theory]
+    [InlineData(0x0101)]
+    [InlineData(0x0200)]
+    public async Task InputOnlyMi00SiblingsDoNotBlockTheExactControlInterface(ushort revision)
+    {
+        // The firmware's interface-0 descriptor has one feature report; other MI_00 collections,
+        // such as those a Razer driver stack re-exposes, are input-only and never opened for I/O.
+        var native = new Native { Paths = [PadPath, ConsumerAuxiliaryPath, SystemAuxiliaryPath] };
+        native.PathIdentities[ConsumerAuxiliaryPath] = Auxiliary(0x000C, 0x0001) with { VersionNumber = revision };
+        native.PathIdentities[SystemAuxiliaryPath] = Auxiliary(0x0001, 0x0080) with { VersionNumber = revision };
+        var opener = new WindowsCoolingPadHidSessionOpener(native);
+        Assert.True(opener.StillExact());
+        var result = opener.Open(Allow());
+        Assert.Null(result.Failure);
+        Assert.Equal(PadPath, opener.SelectedPath);
+        Assert.True(opener.StillExact());
+        Assert.All(native.OpenedPaths.Where(open => open.Path != PadPath), open => Assert.Equal(0u, open.Access));
+        await result.Value!.DisposeAsync();
+        Assert.Equal(native.Opened, native.Closed);
+        Assert.Equal(1, native.BoundClosed);
+    }
+
+    [Theory]
+    [InlineData(0x0200, 1)]
+    [InlineData(0x0101, 91)]
+    [InlineData(0x0101, 90)]
+    public void FeatureBearingMi00SiblingStillBlocksAdmission(ushort revision, ushort featureLength)
+    {
+        var native = new Native { Paths = [PadPath, ConsumerAuxiliaryPath] };
+        native.PathIdentities[ConsumerAuxiliaryPath] = Auxiliary(0x000C, 0x0001) with
+        { VersionNumber = revision, FeatureReportByteLength = featureLength };
+        var opener = new WindowsCoolingPadHidSessionOpener(native);
+        Assert.Equal(HidSessionFailureKind.IdentityBlocked, opener.Open(Allow()).Failure);
+        Assert.False(opener.StillExact());
+        Assert.Equal(native.Opened, native.Closed);
+        Assert.Equal(0, native.Bound);
+    }
+
+    [Fact]
+    public void AuxiliariesAloneNeverBind()
+    {
+        var native = new Native { Paths = [ConsumerAuxiliaryPath, SystemAuxiliaryPath] };
+        native.PathIdentities[ConsumerAuxiliaryPath] = Auxiliary(0x000C, 0x0001);
+        native.PathIdentities[SystemAuxiliaryPath] = Auxiliary(0x0001, 0x0080);
+        var opener = new WindowsCoolingPadHidSessionOpener(native);
+        Assert.Equal(HidSessionFailureKind.IdentityBlocked, opener.Open(Allow()).Failure);
+        Assert.False(opener.StillExact());
+        Assert.Equal(native.Opened, native.Closed);
+        Assert.Equal(0, native.Bound);
+    }
+
+    [Fact]
+    public void ExperienceServiceIsNotAPadControllerButOtherRazerServicesStillBlock()
+    {
+        var experience = new WindowsServiceSnapshot("RazerExperienceService", "Razer Experience Service", WindowsServiceState.Running);
+        var unknown = new WindowsServiceSnapshot("RazerNewDeviceService", "Razer New Device Service", WindowsServiceState.Running);
+        Assert.True(new WindowsCoolingPadDeviceProvider.CoolingPadAccessGuard(
+            new Processes(), new Services { Snapshots = [experience] }, () => true).Check().Safe);
+        var blocked = new WindowsCoolingPadDeviceProvider.CoolingPadAccessGuard(
+            new Processes(), new Services { Snapshots = [experience, unknown] }, () => true).Check();
+        Assert.False(blocked.Safe);
+        Assert.Equal(new[] { "RazerNewDeviceService" }, blocked.Conflicts);
+    }
+
+    private static HidHandleIdentity Auxiliary(ushort page, ushort usage) => new(0x1532, 0x0F43, page, usage, 0, 0x0101);
     private static Guard Allow() => new(() => new([], null));
     private sealed class Guard(Func<HardwareAccessDecision> check) : IHardwareAccessGuard
     { public HardwareAccessDecision Check() => check(); }
@@ -188,7 +258,10 @@ public sealed class WindowsCoolingPadHidSessionOpenerTests
         public IReadOnlyList<string> GetProcessNames() => Names;
     }
     private sealed class Services : IWindowsServiceSource
-    { public IReadOnlyList<WindowsServiceSnapshot> GetServices() => []; }
+    {
+        internal WindowsServiceSnapshot[] Snapshots { get; set; } = [];
+        public IReadOnlyList<WindowsServiceSnapshot> GetServices() => Snapshots;
+    }
     private sealed class Io : IHidFeatureIo
     {
         internal List<byte[]> Reports { get; } = [];
@@ -214,11 +287,14 @@ public sealed class WindowsCoolingPadHidSessionOpenerTests
         internal int Bound { get; private set; }
         internal int BoundClosed { get; private set; }
         internal List<uint> Accesses { get; } = [];
+        internal List<(string Path, uint Access)> OpenedPaths { get; } = [];
+        internal Dictionary<string, HidHandleIdentity> PathIdentities { get; } = [];
         private readonly Dictionary<OpenedCandidateHandle, string> paths = [];
         public IReadOnlyList<string> EnumerateDevicePaths() => Paths;
         public HidCandidateOpenResult TryOpen(string path, HidOpenParameters parameters)
         {
             Accesses.Add(parameters.DesiredAccess);
+            OpenedPaths.Add((path, parameters.DesiredAccess));
             if (path == OpenErrorPath) { return new(null, 32); }
             if (parameters.DesiredAccess != 0 && OperationalOpenError is { } error) { return new(null, error); }
             var file = (SafeFileHandle)RuntimeHelpers.GetUninitializedObject(typeof(SafeFileHandle));
@@ -228,7 +304,8 @@ public sealed class WindowsCoolingPadHidSessionOpenerTests
             return new(handle, null);
         }
         public HidHandleIdentity ReadIdentity(OpenedCandidateHandle handle) => paths[handle] == IdentityErrorPath
-            ? throw new IOException("Unreadable identity") : Identity;
+            ? throw new IOException("Unreadable identity")
+            : PathIdentities.GetValueOrDefault(paths[handle], Identity);
         public OpenedHidHandle BindSelected(OpenedCandidateHandle handle)
         {
             if (BindFails) { throw new IOException("Bind failed"); }

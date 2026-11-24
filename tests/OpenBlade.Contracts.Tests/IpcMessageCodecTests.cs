@@ -889,7 +889,7 @@ public sealed partial class IpcMessageCodecTests
             BatteryProtectionOverride = false,
         };
 
-        Assert.Equal(85, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(90, OpenBladeIpc.ProtocolVersion);
         Assert.Equal(request, await RoundTripRequestAsync(request));
         ServiceStatusSnapshot roundTrip = await RoundTripStatusAsync(status);
         Assert.Equal([80], roundTrip.Capabilities!.ChargeLimits);
@@ -931,7 +931,7 @@ public sealed partial class IpcMessageCodecTests
         using MemoryStream requestBytes = new();
         await IpcMessageCodec.WriteRequestAsync(requestBytes, request, CancellationToken.None);
         JsonObject requestJson = FramedJsonObject(requestBytes);
-        Assert.Equal(85, requestJson["version"]!.GetValue<int>());
+        Assert.Equal(90, requestJson["version"]!.GetValue<int>());
         Assert.Equal(wireValue, requestJson["value"]!["value"]!.GetValue<int>());
         requestBytes.Position = 0;
         Assert.Equal(request, await IpcMessageCodec.ReadRequestAsync(requestBytes, CancellationToken.None));
@@ -969,6 +969,49 @@ public sealed partial class IpcMessageCodecTests
         Assert.Equal(status.Profiles.WindowsPowerModes, decoded.Profiles.WindowsPowerModes);
         var profilesRequest = new UpdateProfilesRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), status.Profiles);
         Assert.Equal(profilesRequest, await RoundTripRequestAsync(profilesRequest));
+    }
+
+    // Protocol 90: firmware can confirm Custom without reporting its levels,
+    // so confirmed Custom may omit them. Desired Custom is intent and must
+    // still carry levels, on both write and read.
+    [Fact]
+    public async Task ConfirmedCustomWithUnreportedLevels_RoundTripsButDesiredCustomStaysStrict()
+    {
+        ServiceStatusSnapshot baseline = CreateStatus();
+        ServiceStatusSnapshot decoded = await RoundTripStatusAsync(baseline with
+        {
+            ConfirmedState = new ConfirmedDeviceState(PerformancePreset.Custom, FanMode.Automatic, null, null),
+        });
+        Assert.Equal(PerformancePreset.Custom, decoded.ConfirmedState!.Performance);
+        Assert.Null(decoded.ConfirmedState.CustomPerformance);
+
+        ServiceStatusSnapshot desiredCustom = baseline with
+        {
+            DesiredState = baseline.DesiredState with
+            {
+                Performance = new ResolvedSetting<PerformancePreset>(
+                    PerformancePreset.Custom, SettingValueSource.PowerProfile),
+                CustomPerformance = new CustomPerformanceSettings(
+                    CustomPerformanceLevel.Medium, CustomPerformanceLevel.Medium),
+            },
+        };
+        await AssertStatusWriteRejectedAsync(desiredCustom with
+        {
+            DesiredState = desiredCustom.DesiredState with { CustomPerformance = null },
+        });
+
+        using MemoryStream encoded = new();
+        await IpcMessageCodec.WriteServerFrameAsync(
+            encoded,
+            new ServiceStatusEvent(OpenBladeIpc.ProtocolVersion, desiredCustom),
+            CancellationToken.None);
+        JsonObject json = FramedJsonObject(encoded);
+        JsonObject desired = Assert.IsType<JsonObject>(json["status"]!["desiredState"]);
+        Assert.NotNull(desired["customPerformance"]);
+        desired["customPerformance"] = null;
+        using MemoryStream projected = FrameJson(json.ToJsonString());
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.ReadServerFrameAsync(projected, CancellationToken.None));
     }
 
     [Fact]
@@ -1028,7 +1071,7 @@ public sealed partial class IpcMessageCodecTests
                 }),
             CancellationToken.None);
         JsonObject json = FramedJsonObject(encoded);
-        Assert.Equal(85, json["version"]!.GetValue<int>());
+        Assert.Equal(90, json["version"]!.GetValue<int>());
         JsonObject status = Assert.IsType<JsonObject>(json["status"]);
         JsonObject capabilities = Assert.IsType<JsonObject>(status["capabilities"]);
         Assert.True(capabilities.Remove("supportsDirectManualFanTransitions"));
@@ -1063,7 +1106,7 @@ public sealed partial class IpcMessageCodecTests
             await IpcMessageCodec.ReadServerFrameAsync(encoded, CancellationToken.None));
         Assert.True(roundTrip.Status.Capabilities!.SupportsManualFansOnLimitedPower);
         JsonObject json = FramedJsonObject(encoded);
-        Assert.Equal(85, json["version"]!.GetValue<int>());
+        Assert.Equal(90, json["version"]!.GetValue<int>());
         JsonObject status = Assert.IsType<JsonObject>(json["status"]);
         JsonObject capabilities = Assert.IsType<JsonObject>(status["capabilities"]);
         Assert.True(capabilities.Remove("supportsManualFansOnLimitedPower"));
@@ -1452,26 +1495,16 @@ public sealed partial class IpcMessageCodecTests
     [InlineData("LightingEffects")]
     [InlineData("ObservedLightingEffects")]
     [InlineData("OneShotLaptopControls")]
+    [InlineData("HostManagedLaptopControls")]
     [InlineData("ObservedPowerSourceBehaviors")]
     public async Task ReadServerFrameAsync_RejectsNullNestedCapabilityCollection(
         string propertyName)
     {
-        ServiceServerFrame frame = new ServiceStatusEvent(
-            OpenBladeIpc.ProtocolVersion,
-            CreateStatus() with
-            {
-                Capabilities = DeviceCapabilities.SafeTargetDefaults(),
-            });
-        JsonObject root = Assert.IsType<JsonObject>(
-            JsonNode.Parse(JsonSerializer.Serialize<ServiceServerFrame>(frame)));
-        JsonObject status = Assert.IsType<JsonObject>(root[nameof(ServiceStatusEvent.Status)]);
-        JsonObject capabilities = Assert.IsType<JsonObject>(
-            status[nameof(ServiceStatusSnapshot.Capabilities)]);
-        capabilities[propertyName] = null;
-        using MemoryStream stream = FrameJson(root.ToJsonString());
-
-        await Assert.ThrowsAsync<InvalidDataException>(() =>
-            IpcMessageCodec.ReadServerFrameAsync(stream, CancellationToken.None));
+        await AssertMalformedNestedCapabilityRejectedAsync(capabilities =>
+        {
+            Assert.True(capabilities.ContainsKey(Wire(propertyName)), propertyName);
+            capabilities[Wire(propertyName)] = null;
+        });
     }
 
     [Fact]
@@ -1501,9 +1534,8 @@ public sealed partial class IpcMessageCodecTests
         await AssertMalformedNestedCapabilityRejectedAsync(capabilities =>
         {
             JsonObject customPerformance = Assert.IsType<JsonObject>(
-                capabilities[nameof(DeviceCapabilities.CustomPerformance)]);
-            customPerformance[
-                nameof(CustomPerformanceCapabilities.AllowedCombinations)] = null;
+                capabilities[Wire(nameof(DeviceCapabilities.CustomPerformance))]);
+            customPerformance[Wire(nameof(CustomPerformanceCapabilities.AllowedCombinations))] = null;
         });
     }
 
@@ -1513,10 +1545,10 @@ public sealed partial class IpcMessageCodecTests
         await AssertMalformedNestedCapabilityRejectedAsync(capabilities =>
         {
             JsonObject cpuPowerLimit = Assert.IsType<JsonObject>(
-                capabilities[nameof(DeviceCapabilities.CpuPowerLimit)]);
+                capabilities[Wire(nameof(DeviceCapabilities.CpuPowerLimit))]);
             JsonObject watts = Assert.IsType<JsonObject>(
-                cpuPowerLimit[nameof(CpuPowerLimitCapabilities.Watts)]);
-            watts[nameof(DeviceNumericRange.Minimum)] = 0;
+                cpuPowerLimit[Wire(nameof(CpuPowerLimitCapabilities.Watts))]);
+            watts[Wire(nameof(DeviceNumericRange.Minimum))] = 0;
         });
     }
 
@@ -1526,10 +1558,10 @@ public sealed partial class IpcMessageCodecTests
         await AssertMalformedNestedCapabilityRejectedAsync(capabilities =>
         {
             JsonObject cpuVoltageOptimizer = Assert.IsType<JsonObject>(
-                capabilities[nameof(DeviceCapabilities.CpuVoltageOptimizer)]);
+                capabilities[Wire(nameof(DeviceCapabilities.CpuVoltageOptimizer))]);
             JsonObject value = Assert.IsType<JsonObject>(
-                cpuVoltageOptimizer[nameof(CpuVoltageOptimizerCapabilities.Value)]);
-            value[nameof(DeviceNumericRange.Step)] = 0;
+                cpuVoltageOptimizer[Wire(nameof(CpuVoltageOptimizerCapabilities.Value))]);
+            value[Wire(nameof(DeviceNumericRange.Step))] = 0;
         });
     }
 
@@ -1539,11 +1571,10 @@ public sealed partial class IpcMessageCodecTests
         await AssertMalformedNestedCapabilityRejectedAsync(capabilities =>
         {
             JsonObject gpuOverclock = Assert.IsType<JsonObject>(
-                capabilities[nameof(DeviceCapabilities.GpuOverclock)]);
+                capabilities[Wire(nameof(DeviceCapabilities.GpuOverclock))]);
             JsonObject memoryOffset = Assert.IsType<JsonObject>(
-                gpuOverclock[
-                    nameof(GpuOverclockCapabilities.MemoryOffsetMegahertz)]);
-            memoryOffset[nameof(DeviceNumericRange.Minimum)] = 3_001;
+                gpuOverclock[Wire(nameof(GpuOverclockCapabilities.MemoryOffsetMegahertz))]);
+            memoryOffset[Wire(nameof(DeviceNumericRange.Minimum))] = 3_001;
         });
     }
 
@@ -1638,7 +1669,7 @@ public sealed partial class IpcMessageCodecTests
 
         ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
 
-        Assert.Equal(85, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(90, OpenBladeIpc.ProtocolVersion);
         AssertStatusEqual(expected, actual);
     }
 
@@ -1956,20 +1987,13 @@ public sealed partial class IpcMessageCodecTests
     [InlineData("[50,55,60,65,70,75,80,80]")]
     public async Task ReadServerFrameAsync_RejectsInvalidRawChargeLimits(string chargeLimitsJson)
     {
-        ServiceServerFrame frame = new ServiceStatusEvent(
-            OpenBladeIpc.ProtocolVersion,
-            CreateStatus() with { Capabilities = DeviceCapabilities.Unavailable() });
-        JsonObject root = Assert.IsType<JsonObject>(
-            JsonNode.Parse(JsonSerializer.Serialize<ServiceServerFrame>(frame)));
-        JsonObject status = Assert.IsType<JsonObject>(root[nameof(ServiceStatusEvent.Status)]);
-        JsonObject capabilities = Assert.IsType<JsonObject>(
-            status[nameof(ServiceStatusSnapshot.Capabilities)]);
-        capabilities[nameof(DeviceCapabilities.ChargeLimits)] = JsonNode.Parse(chargeLimitsJson);
-
-        await Assert.ThrowsAsync<InvalidDataException>(() =>
-            IpcMessageCodec.ReadServerFrameAsync(
-                FrameJson(root.ToJsonString()),
-                CancellationToken.None));
+        await AssertMalformedNestedCapabilityRejectedAsync(capabilities =>
+        {
+            Assert.True(capabilities.ContainsKey(Wire(nameof(DeviceCapabilities.ChargeLimits))));
+            capabilities[Wire(nameof(DeviceCapabilities.ChargeLimits))] = JsonNode.Parse(chargeLimitsJson);
+        },
+        // The charge-limit converter rejects these while reading the body.
+        "IPC message body is invalid.");
     }
 
     [Fact]
@@ -2345,6 +2369,11 @@ public sealed partial class IpcMessageCodecTests
     [InlineData(82)]
     [InlineData(83)]
     [InlineData(84)]
+    [InlineData(85)]
+    [InlineData(86)]
+    [InlineData(87)]
+    [InlineData(88)]
+    [InlineData(89)]
     public async Task WriteRequestAsync_RejectsPriorProtocols(int previousProtocolVersion)
     {
         using MemoryStream stream = new();
@@ -2357,7 +2386,7 @@ public sealed partial class IpcMessageCodecTests
             IpcMessageCodec.WriteRequestAsync(stream, request, CancellationToken.None));
 
         Assert.Equal("IPC protocol version is unsupported.", exception.Message);
-        Assert.Equal(85, exception.ExpectedVersion);
+        Assert.Equal(90, exception.ExpectedVersion);
         Assert.Equal(previousProtocolVersion, exception.ActualVersion);
     }
 
@@ -2381,6 +2410,11 @@ public sealed partial class IpcMessageCodecTests
     [InlineData(82)]
     [InlineData(83)]
     [InlineData(84)]
+    [InlineData(85)]
+    [InlineData(86)]
+    [InlineData(87)]
+    [InlineData(88)]
+    [InlineData(89)]
     public async Task ReadRequestAsync_RejectsPriorProtocolPeers(int previousProtocolVersion)
     {
         using MemoryStream stream = FrameJson(
@@ -2391,7 +2425,7 @@ public sealed partial class IpcMessageCodecTests
             IpcMessageCodec.ReadRequestAsync(stream, CancellationToken.None));
 
         Assert.Equal("IPC protocol version is unsupported.", exception.Message);
-        Assert.Equal(85, exception.ExpectedVersion);
+        Assert.Equal(90, exception.ExpectedVersion);
         Assert.Equal(previousProtocolVersion, exception.ActualVersion);
     }
 
@@ -2415,6 +2449,11 @@ public sealed partial class IpcMessageCodecTests
     [InlineData(82)]
     [InlineData(83)]
     [InlineData(84)]
+    [InlineData(85)]
+    [InlineData(86)]
+    [InlineData(87)]
+    [InlineData(88)]
+    [InlineData(89)]
     public async Task ReadServerFrameAsync_RejectsPriorProtocolPeers(int previousProtocolVersion)
     {
         Guid requestId = Guid.NewGuid();
@@ -2437,7 +2476,7 @@ public sealed partial class IpcMessageCodecTests
             IpcMessageCodec.ReadServerFrameAsync(stream, CancellationToken.None));
 
         Assert.Equal("IPC protocol version is unsupported.", exception.Message);
-        Assert.Equal(85, exception.ExpectedVersion);
+        Assert.Equal(90, exception.ExpectedVersion);
         Assert.Equal(previousProtocolVersion, exception.ActualVersion);
     }
 
@@ -3351,11 +3390,13 @@ public sealed partial class IpcMessageCodecTests
         Assert.Null(projected["confirmedState"]!["battery"]);
         Assert.Null(projected["batteryPolicyOverride"]);
         Assert.False(projected.ContainsKey("unsupportedLaptop"));
+        Assert.False(projected.ContainsKey("windowsDynamicLightingAdvisory"));
         JsonObject capabilities = Assert.IsType<JsonObject>(projected["capabilities"]);
         Assert.False(capabilities.ContainsKey("supportsDirectManualFanTransitions"));
         Assert.False(capabilities.ContainsKey("supportedBreathingColorModes"));
         Assert.False(capabilities.ContainsKey("supportsUniformLightingFrames"));
         Assert.False(capabilities.ContainsKey("blade18KeyboardLayoutId"));
+        Assert.False(capabilities.ContainsKey("blade14KeyboardEdition"));
         Assert.Contains(
             "Update or repair",
             projected["message"]!.GetValue<string>(),
@@ -3403,6 +3444,7 @@ public sealed partial class IpcMessageCodecTests
                 },
                 KeyboardLightingLayoutId = layoutId,
                 Blade18KeyboardLayoutId = layoutId == KeyboardLightingLayoutIds.Rz09_0484 ? (byte)1 : null,
+                Blade14KeyboardEdition = layoutId == KeyboardLightingLayoutIds.Rz09_0530 ? (byte)12 : null,
             },
             ConfirmedState = new ConfirmedDeviceState(null, null, null, lighting),
             Profiles = profiles,
@@ -3426,6 +3468,7 @@ public sealed partial class IpcMessageCodecTests
         JsonObject projected = Assert.IsType<JsonObject>(FramedJsonObject(stream)["status"]);
         JsonObject capabilities = Assert.IsType<JsonObject>(projected["capabilities"]);
         Assert.False(capabilities.ContainsKey("blade18KeyboardLayoutId"));
+        Assert.False(capabilities.ContainsKey("blade14KeyboardEdition"));
         Assert.Null(capabilities["keyboardLightingLayoutId"]);
         Assert.DoesNotContain(
             (int)LightingEffect.Sequence,
@@ -3988,13 +4031,13 @@ public sealed partial class IpcMessageCodecTests
     {
         await AssertMalformedNestedCapabilityRejectedAsync(capabilities =>
         {
-            capabilities[nameof(DeviceCapabilities.HyperBoostAccess)] = (int)DeviceFeatureAccess.ReadOnly;
-            capabilities[nameof(DeviceCapabilities.HyperBoostBaseModes)] = JsonSerializer.SerializeToNode(
+            capabilities[Wire(nameof(DeviceCapabilities.HyperBoostAccess))] = (int)DeviceFeatureAccess.ReadOnly;
+            capabilities[Wire(nameof(DeviceCapabilities.HyperBoostBaseModes))] = JsonSerializer.SerializeToNode(
                 new HyperBoostBaseModeCapabilities(DeviceFeatureAccess.ReadOnly, DeviceFeatureAccess.ReadOnly,
                     DeviceFeatureAccess.ReadOnly)
                 {
                     Custom = custom,
-                });
+                }, WireOptions);
         });
     }
 
@@ -4022,6 +4065,74 @@ public sealed partial class IpcMessageCodecTests
         Assert.Equal(
             PerformancePreset.Balanced,
             HyperBoostCapabilityPolicy.PadPresentEntryBaseMode(decoded.Capabilities));
+    }
+
+    [Fact]
+    public async Task HyperBoostTurboBase_RoundTripsAndOmittedTurboStaysUnadmitted()
+    {
+        // RZ09-0510 shape: Turbo is the default pad-present entry; Performance is observed only.
+        DeviceCapabilities capabilities = DeviceCapabilities.Unavailable() with
+        {
+            HyperBoostAccess = DeviceFeatureAccess.ReadWrite,
+            HyperBoostWithoutCoolingPadAccess = DeviceFeatureAccess.ReadWrite,
+            HyperBoostBaseModes = new HyperBoostBaseModeCapabilities(
+                DeviceFeatureAccess.ReadWrite,
+                DeviceFeatureAccess.ReadWrite,
+                DeviceFeatureAccess.ObservedOnly)
+            {
+                Custom = DeviceFeatureAccess.ReadWrite,
+                Turbo = DeviceFeatureAccess.ReadWrite,
+                CoolingPadEntryBaseMode = PerformancePreset.Turbo,
+            },
+        };
+
+        using MemoryStream encoded = new();
+        await IpcMessageCodec.WriteServerFrameAsync(
+            encoded,
+            new ServiceStatusEvent(
+                OpenBladeIpc.ProtocolVersion,
+                CreateStatus() with { Capabilities = capabilities }),
+            CancellationToken.None);
+        JsonObject json = FramedJsonObject(encoded);
+        encoded.Position = 0;
+        ServiceStatusEvent decoded = Assert.IsType<ServiceStatusEvent>(
+            await IpcMessageCodec.ReadServerFrameAsync(encoded, CancellationToken.None));
+        HyperBoostBaseModeCapabilities bases = decoded.Status.Capabilities!.HyperBoostBaseModes!;
+        Assert.Equal(DeviceFeatureAccess.ReadWrite, bases.Turbo);
+        Assert.Equal(PerformancePreset.Turbo, bases.CoolingPadEntryBaseMode);
+        Assert.Equal(PerformancePreset.Turbo,
+            HyperBoostCapabilityPolicy.PadPresentEntryBaseMode(decoded.Status.Capabilities));
+
+        // A frame without the slot (the protocol 84 shape) leaves Turbo unadmitted.
+        JsonObject serializedBases = Assert.IsType<JsonObject>(
+            json["status"]!["capabilities"]!["hyperBoostBaseModes"]);
+        Assert.True(serializedBases.Remove("turbo"));
+        Assert.True(serializedBases.Remove("coolingPadEntryBaseMode"));
+        using MemoryStream omitted = FrameJson(json.ToJsonString());
+        ServiceStatusEvent legacy = Assert.IsType<ServiceStatusEvent>(
+            await IpcMessageCodec.ReadServerFrameAsync(omitted, CancellationToken.None));
+        Assert.Null(legacy.Status.Capabilities!.HyperBoostBaseModes!.Turbo);
+        Assert.False(HyperBoostCapabilityPolicy.IsDirectEntryBase(
+            legacy.Status.Capabilities, coolingPadPresent: true, PerformancePreset.Turbo));
+    }
+
+    [Fact]
+    public async Task ReadServerFrameAsync_RejectsTurboAccessAboveHyperBoostAccess()
+    {
+        await AssertMalformedNestedCapabilityRejectedAsync(capabilities =>
+        {
+            capabilities[Wire(nameof(DeviceCapabilities.HyperBoostAccess))] =
+                (int)DeviceFeatureAccess.ObservedOnly;
+            capabilities[Wire(nameof(DeviceCapabilities.HyperBoostBaseModes))] =
+                JsonSerializer.SerializeToNode(
+                    new HyperBoostBaseModeCapabilities(
+                        DeviceFeatureAccess.ObservedOnly,
+                        DeviceFeatureAccess.ObservedOnly,
+                        DeviceFeatureAccess.ObservedOnly)
+                    {
+                        Turbo = DeviceFeatureAccess.ReadWrite,
+                    }, WireOptions);
+        });
     }
 
     [Fact]
@@ -4066,9 +4177,9 @@ public sealed partial class IpcMessageCodecTests
     {
         await AssertMalformedNestedCapabilityRejectedAsync(capabilities =>
         {
-            capabilities[nameof(DeviceCapabilities.HyperBoostAccess)] =
+            capabilities[Wire(nameof(DeviceCapabilities.HyperBoostAccess))] =
                 (int)DeviceFeatureAccess.ReadWrite;
-            capabilities[nameof(DeviceCapabilities.HyperBoostBaseModes)] =
+            capabilities[Wire(nameof(DeviceCapabilities.HyperBoostBaseModes))] =
                 JsonSerializer.SerializeToNode(
                     new HyperBoostBaseModeCapabilities(
                         DeviceFeatureAccess.ObservedOnly,
@@ -4076,12 +4187,13 @@ public sealed partial class IpcMessageCodecTests
                         DeviceFeatureAccess.ObservedOnly)
                     {
                         CoolingPadEntryBaseMode = declaredBase,
-                    });
+                    }, WireOptions);
         });
     }
 
     private static async Task AssertMalformedNestedCapabilityRejectedAsync(
-        Action<JsonObject> mutateCapabilities)
+        Action<JsonObject> mutateCapabilities,
+        string expectedMessage = MalformedCapabilitiesMessage)
     {
         DeviceCapabilities capabilities = DeviceCapabilities.Unavailable() with
         {
@@ -4109,22 +4221,36 @@ public sealed partial class IpcMessageCodecTests
                 SupportsEnableDisable = true,
             },
         };
-        ServiceServerFrame frame = new ServiceStatusEvent(
-            OpenBladeIpc.ProtocolVersion,
-            CreateStatus() with { Capabilities = capabilities });
-        JsonObject root = Assert.IsType<JsonObject>(
-            JsonNode.Parse(JsonSerializer.Serialize<ServiceServerFrame>(frame)));
-        JsonObject status = Assert.IsType<JsonObject>(
-            root[nameof(ServiceStatusEvent.Status)]);
-        JsonObject serializedCapabilities = Assert.IsType<JsonObject>(
-            status[nameof(ServiceStatusSnapshot.Capabilities)]);
+        // Encode with the codec itself: a frame serialized with other names or
+        // options is rejected before capability validation and proves nothing.
+        using MemoryStream encoded = new();
+        await IpcMessageCodec.WriteServerFrameAsync(
+            encoded,
+            new ServiceStatusEvent(
+                OpenBladeIpc.ProtocolVersion,
+                CreateStatus() with { Capabilities = capabilities }),
+            CancellationToken.None);
+        JsonObject root = FramedJsonObject(encoded);
+        encoded.Position = 0;
+        Assert.IsType<ServiceStatusEvent>(
+            await IpcMessageCodec.ReadServerFrameAsync(encoded, CancellationToken.None));
+        JsonObject status = Assert.IsType<JsonObject>(root["status"]);
+        JsonObject serializedCapabilities = Assert.IsType<JsonObject>(status["capabilities"]);
         mutateCapabilities(serializedCapabilities);
 
-        await Assert.ThrowsAsync<InvalidDataException>(() =>
+        InvalidDataException failure = await Assert.ThrowsAsync<InvalidDataException>(() =>
             IpcMessageCodec.ReadServerFrameAsync(
                 FrameJson(root.ToJsonString()),
                 CancellationToken.None));
+        Assert.Equal(expectedMessage, failure.Message);
     }
+
+    private const string MalformedCapabilitiesMessage =
+        "IPC server status is invalid: capability collections are malformed.";
+
+    private static readonly JsonSerializerOptions WireOptions = new(JsonSerializerDefaults.Web);
+
+    private static string Wire(string memberName) => JsonNamingPolicy.CamelCase.ConvertName(memberName);
 
     private static void AssertStatusEqual(
         ServiceStatusSnapshot expected,

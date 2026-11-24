@@ -87,7 +87,7 @@ public sealed partial class MainViewModelTests
             () => viewModel.ObserveExternalPowerDischargeAsync(CancellationToken.None), status);
         Assert.True(viewModel.CoolingPad.IsVisible);
         Assert.True(viewModel.CoolingPad.CanApply);
-        Assert.Contains("1500", viewModel.CoolingPad.ConfiguredTargetText, StringComparison.Ordinal);
+        Assert.Equal(TrayText.Format("{0:N0} RPM", 1500), viewModel.CoolingPad.ConfiguredTargetText);
 
         status = status with
         {
@@ -98,7 +98,7 @@ public sealed partial class MainViewModelTests
             () => viewModel.ObserveExternalPowerDischargeAsync(CancellationToken.None), status);
         Assert.True(viewModel.CoolingPad.IsVisible);
         Assert.False(viewModel.CoolingPad.CanApply);
-        Assert.Contains("2000", viewModel.CoolingPad.ConfiguredTargetText, StringComparison.Ordinal);
+        Assert.Equal(TrayText.Format("{0:N0} RPM", 2000), viewModel.CoolingPad.ConfiguredTargetText);
 
         status = status with
         {
@@ -228,6 +228,42 @@ public sealed partial class MainViewModelTests
         Assert.Equal(1, viewModel.ExternalPowerDischargeEpisode);
     }
 
+    // The limiter stays usable when the override can't be read, so only a
+    // confirmed active override lifts the cap that suppresses the warning.
+    [Fact]
+    public async Task UnknownOverrideKeepsChargeLimitSuppressionUntilBatteryFallsBelowLimit()
+    {
+        var client = new FakeServiceClient();
+        var dispatcher = new RecordingDispatcher();
+        int batteryPercent = 75;
+        await using var viewModel = new MainViewModel(client, dispatcher)
+        {
+            ReadPluggedInBatteryPercent = () => batteryPercent,
+        };
+        ServiceStatusSnapshot baseline = CreateLiveStatus();
+        ServiceStatusSnapshot status = baseline with
+        {
+            Capabilities = baseline.Capabilities! with { SupportsTemporaryFullCharge = true },
+            ConfirmedState = baseline.ConfirmedState! with
+            {
+                Battery = new ConfirmedBatteryState(true, 75, null),
+            },
+            LiveReadings = new LiveReadings(-1000, null, null),
+        };
+        await ConnectAsync(viewModel, client, dispatcher, status);
+        await ObserveAsync(client,
+            () => viewModel.ObserveExternalPowerDischargeAsync(CancellationToken.None), status);
+        Assert.False(viewModel.IsExternalPowerDischarging);
+        Assert.Equal(0, viewModel.ExternalPowerDischargeEpisode);
+
+        batteryPercent = 69;
+        await ObserveAsync(client,
+            () => viewModel.ObserveExternalPowerDischargeAsync(CancellationToken.None),
+            status with { Revision = status.Revision + 1 });
+        Assert.True(viewModel.IsExternalPowerDischarging);
+        Assert.Equal(1, viewModel.ExternalPowerDischargeEpisode);
+    }
+
     [Fact]
     public async Task ChargeLimitThresholdCrossingsDoNotRearmAnOngoingDischargeWarning()
     {
@@ -266,7 +302,6 @@ public sealed partial class MainViewModelTests
     [Theory]
     [InlineData(false, 80, false)]
     [InlineData(true, 80, true)]
-    [InlineData(true, 80, null)]
     [InlineData(true, null, false)]
     public async Task DischargeStillWarnsWhenActiveCapIsNotEstablished(
         bool protectionEnabled,

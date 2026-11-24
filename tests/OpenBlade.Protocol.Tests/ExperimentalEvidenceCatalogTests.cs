@@ -45,7 +45,7 @@ public sealed class ExperimentalEvidenceCatalogTests
                 else if (feature.Feature == "MappedReactiveRippleAndSequence")
                 {
                     Assert.Equal((ushort)0x02C5, model.ProductId);
-                    Assert.Equal("KeyboardMcuCommonRegionalBindingsWithoutRgbReadbackOrPhysicalValidation", feature.Basis);
+                    Assert.Equal("KeyboardMcuEditionSelectedRegionalBindingsWithoutRgbReadbackOrPhysicalValidation", feature.Basis);
                     Assert.Equal(2, feature.Sources.Count);
                     Assert.Equal("https://dl.razerzone.com/drivers/Razer%20Blade%2014%E2%80%9D%20%282025%29%20%7C%20RZ09-0530/PI4110-MCUv01.04.00.exe;SHA256=AED7039BE5CC4EC3F166A2728B0C1B90839BAE72C8A04150056654F64F20581F",
                         feature.Sources[0]);
@@ -79,6 +79,24 @@ public sealed class ExperimentalEvidenceCatalogTests
                     Assert.Contains(";SHA256=", feature.Sources[0], StringComparison.Ordinal);
                     Assert.Equal("evidence/source-reviewed-blades/2026-11-13-rz09-0529-keyboard-frames.json", feature.Sources[1]);
                     Assert.EndsWith(";SHA256=FDD5D817BF28F152B3DF498AC6E908291993BBCC6939BE4D86F94AD74F52A9F1", feature.Sources[2]);
+                }
+                else if (feature.Feature == "GpuClockOffsets")
+                {
+                    Assert.Contains(model.ProductId, new ushort[] { 0x02C5, 0x02C7 });
+                    Assert.Equal("SynapseSourceBackedNvmlWithoutPhysicalValidation", feature.Basis);
+                    Assert.Equal("Pending", snapshot.PhysicalValidation);
+                    // The mw main sets isNvidiaOverclockUISupported; the UI chunk
+                    // carries the offset envelope. Further pinned files may follow.
+                    string product = $"https://apps.razer.com/synapse/products/{(model.ProductId == 0x02C7 ? 711 : 709)}/";
+                    string envelopeChunk = model.ProductId == 0x02C7 ? "892.12b29c32.chunk.js" : "2915.4e513855.chunk.js";
+                    Assert.Single(feature.Sources, source => source.StartsWith($"{product}mw/main.", StringComparison.Ordinal));
+                    Assert.Single(feature.Sources, source => source.StartsWith(
+                        $"{product}ui/static/js/{envelopeChunk};", StringComparison.Ordinal));
+                    Assert.All(feature.Sources, source =>
+                    {
+                        Assert.StartsWith(product, source);
+                        Assert.Matches(@";SHA256=[0-9A-F]{64}$", source);
+                    });
                 }
                 else if (feature.Feature == "CpuVoltageOptimizer")
                 {
@@ -118,6 +136,56 @@ public sealed class ExperimentalEvidenceCatalogTests
                     Assert.Equal("ExactMcuAndSelectedSynapseFieldsWithoutPhysicalValidation", feature.Basis);
                     Assert.Equal("evidence/source-reviewed-blades/2026-11-13-rz09-0529-keyboard-frames.json", feature.Sources[1]);
                 }
+                else if (feature.Feature is "CpuPowerLimit" or "IntelCpuPowerLimits" or "FirmwareGamingGpuOverclock"
+                    or "LocalDimmingClearOnMiniLedPanels" or "LocalDimmingFollowsWindowsHdr")
+                {
+                    Assert.StartsWith("SynapseSource", feature.Basis);
+                    Assert.Equal(ExperimentalBladePort.ObservedFeaturesReview, feature.Sources[^1]);
+                    Assert.All(feature.Sources.SkipLast(1), source =>
+                    {
+                        Assert.StartsWith($"https://apps.razer.com/synapse/products/{model.ProductId}/", source);
+                        Assert.Matches(@";SHA256=[0-9A-F]{64}$", source);
+                    });
+                }
+                else if (feature.Feature == "HyperBoostSystemSkuRecheck"
+                    || model.ProductId == 0x02B7 && feature.Feature is "HyperBoost" or "PadlessHyperBoost")
+                {
+                    // Products 671 and 695 both run the vendor SKU recheck; 669 does not.
+                    Assert.Contains(model.ProductId, new ushort[] { 0x029F, 0x02B7 });
+                    Assert.Equal(feature.Feature switch
+                    {
+                        "HyperBoostSystemSkuRecheck" => "SynapseSourceBackedCapabilityGate",
+                        "HyperBoost" => "SynapseSourceBackedWithoutPhysicalValidation",
+                        _ => "SourceBackedExtrapolationWithoutPhysicalValidation",
+                    }, feature.Basis);
+                    Assert.Equal(ExperimentalBladeModels.Rz090510HyperBoostEvidence, feature.Sources[^1]);
+                    Assert.All(feature.Sources.SkipLast(1), source =>
+                    {
+                        Assert.StartsWith($"https://apps.razer.com/synapse/products/{model.ProductId}/mw/", source);
+                        Assert.Matches(@";SHA256=[0-9A-F]{64}$", source);
+                    });
+                }
+                else if (feature.Feature == "VaporChamberHostFramesWithRestorableBaseline")
+                {
+                    Assert.Equal((ushort)0x02C7, model.ProductId);
+                    Assert.Equal("ExactMcuSourceBackedWithoutPhysicalValidation", feature.Basis);
+                    Assert.Equal(2, feature.Sources.Count);
+                    Assert.Contains(";SHA256=", feature.Sources[0], StringComparison.Ordinal);
+                    Assert.Equal("evidence/source-reviewed-blades/2026-11-13-rz09-0529-keyboard-frames.json", feature.Sources[1]);
+                }
+                else if (feature.Feature is "KeyboardOnlyCustomFramesGridAndUniformEffects" or "KeyboardCustomFrames")
+                {
+                    bool admitted = feature.Feature == "KeyboardOnlyCustomFramesGridAndUniformEffects";
+                    Assert.Contains(model.ProductId, admitted
+                        ? new ushort[] { 0x0245, 0x028A, 0x028B, 0x028C } : new ushort[] { 0x02B7, 0x02B8 });
+                    Assert.Equal(admitted ? "ExactMcuSourceBackedWithoutPhysicalValidation"
+                        : "NotEstablishedLampArrayAutonomousModeSelectsDisplayedBuffer", feature.Basis);
+                    Assert.Equal(2, feature.Sources.Count);
+                    Assert.Matches(@";SHA256=[0-9A-F]{64}$", feature.Sources[0]);
+                    Assert.Equal($"evidence/source-reviewed-blades/2026-11-19-{model.ModelNumber.ToLowerInvariant()}-keyboard-frames.json",
+                        feature.Sources[1]);
+                    Assert.Equal("Pending", snapshot.PhysicalValidation);
+                }
                 else if (model.ThermalPolicy is not null)
                 {
                     Assert.Equal("Supported", snapshot.SupportStatus);
@@ -151,7 +219,8 @@ public sealed class ExperimentalEvidenceCatalogTests
                     Assert.Equal("Supported", snapshot.SupportStatus);
                     Assert.Equal("Pending", snapshot.PhysicalValidation);
                     Assert.True(feature.Feature.StartsWith("ManualFanRange", StringComparison.Ordinal)
-                        || feature.Feature is "FixedAndCurveFanWrites" or "CreatorPerformanceRaw2" or "MaximumPowerPerformanceRaw2");
+                        || feature.Feature is "FixedAndCurveFanWrites" or "CreatorPerformanceRaw2" or "MaximumPowerPerformanceRaw2"
+                        || feature.Feature == "TemporaryFullCharge" && model.ProductId == 0x02C5);
                     Assert.All(feature.Sources, source =>
                     {
                         Assert.StartsWith($"https://apps.razer.com/synapse/products/{model.ProductId}/", source);
@@ -166,6 +235,13 @@ public sealed class ExperimentalEvidenceCatalogTests
                     Assert.Equal(blade14 ? basis + "NotPubliclyListed" : basis, feature.Basis);
                     Assert.All(feature.Sources, source => Assert.StartsWith(
                         $"https://apps.razer.com/synapse/products/{(blade14 ? 669 : 671)}/mw/", source));
+                }
+                else if (feature.Feature is "MaximumFans" or "PowerModeCpuBoost" && model.ProductId == 0x029D)
+                {
+                    // The evidence record, not a second hand-written copy, defines the pins.
+                    (string basis, string[] sources) = Blade14PowerModeControlEvidence.CatalogFeature(feature.Feature);
+                    Assert.Equal(basis, feature.Basis);
+                    Assert.Equal(sources, feature.Sources);
                 }
                 else if (feature.Feature == "FireAndWheel")
                 {

@@ -80,7 +80,7 @@ async fn fan_owner_rig() -> Rig {
 async fn observe(rig: &Rig) {
     assert_eq!(rig.get().await["success"], true);
     let observed = rig
-        .request(json!({"operation":"observeState","version":85,"requestId":"dddddddd-bbbb-cccc-dddd-000000000071","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0}))
+        .request(json!({"operation":"observeState","version":90,"requestId":"dddddddd-bbbb-cccc-dddd-000000000071","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0}))
         .await;
     assert_eq!(observed["success"], true, "{observed}");
     assert!(rig.reader.driver_mode_verified());
@@ -89,12 +89,20 @@ async fn observe(rig: &Rig) {
 async fn tick(rig: &Rig) {
     try_tick(rig).await.unwrap();
 }
+/// One maintenance step, run as a request's exchange is (`Rig::held`): its job
+/// takes its budget from the step's start and a loaded host spends none of it.
 async fn try_tick(rig: &Rig) -> io::Result<()> {
-    let maintain = rig.source.lock().await.maintain_driver_mode();
-    match maintain {
-        Some(maintain) => maintain.await,
-        None => Ok(()),
-    }
+    rig.held(
+        HeldClock::CatchUp,
+        Box::pin(async {
+            let maintain = rig.source.lock().await.maintain_driver_mode();
+            match maintain {
+                Some(maintain) => maintain.await,
+                None => Ok(()),
+            }
+        }),
+    )
+    .await
 }
 /// A due step while the recorded mode is still current, so a step after a
 /// confirmed Driver finds it and starts no job (managed reads and finds it).
@@ -114,7 +122,7 @@ async fn later(rig: &Rig) {
 /// query of its own, so only the owner records a mode here.
 async fn published(rig: &Rig) -> Option<bool> {
     let observed = rig
-        .request(json!({"operation":"observeState","version":85,"requestId":"dddddddd-bbbb-cccc-dddd-000000000072","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0}))
+        .request(json!({"operation":"observeState","version":90,"requestId":"dddddddd-bbbb-cccc-dddd-000000000072","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0}))
         .await;
     observed["status"]["keyboardDriverModeActive"].as_bool()
 }
@@ -159,10 +167,16 @@ fn record(rig: &Rig, mode: DeviceMode) {
 }
 /// The shutdown release on its own, and its outcome.
 async fn release(rig: &Rig) -> Option<Release> {
-    rig.runtime
-        .release_driver_mode(&mailbox(rig))
-        .await
-        .unwrap();
+    rig.held(
+        HeldClock::CatchUp,
+        Box::pin(async {
+            rig.runtime
+                .release_driver_mode(&mailbox(rig))
+                .await
+                .unwrap();
+        }),
+    )
+    .await;
     rig.runtime.driver_mode_release()
 }
 /// Arms a competing controller from the `nth` fresh authorization after
@@ -1025,7 +1039,7 @@ async fn a_late_suspend_on_a_slow_device_leaves_the_fan_owner_whole() {
 /// read; its reply.
 #[cfg(feature = "service-profile-triggers-v1")]
 async fn observed(rig: &Rig, n: u32) -> Value {
-    rig.request(json!({"operation":"observeState","version":85,"requestId":format!("dddddddd-bbbb-cccc-dddd-{n:012}"),"includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0}))
+    rig.request(json!({"operation":"observeState","version":90,"requestId":format!("dddddddd-bbbb-cccc-dddd-{n:012}"),"includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0}))
         .await
 }
 /// One lifecycle tick and the reconciliation it starts.

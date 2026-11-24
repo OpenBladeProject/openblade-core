@@ -373,11 +373,9 @@ async fn a_tick_during_an_enable_leaves_its_pins_pinned() {
         };
         tokio::join!(origin_tick(&r), released);
     };
-    let (response, ()) = tokio::time::timeout(Duration::from_secs(10), async {
-        tokio::join!(enable, tick)
-    })
-    .await
-    .unwrap();
+    let (response, ()) = tokio::time::timeout(HANG_GUARD, async { tokio::join!(enable, tick) })
+        .await
+        .unwrap();
     assert_eq!(response["result"]["status"], 1, "{response}");
     let reserved = cancel_ids(&r);
     assert_eq!(r.port.pinned_transactions(&reserved), reserved);

@@ -12,6 +12,8 @@ namespace OpenBlade.Service;
 internal sealed record CoolingPadOwnershipRecord(
     string Owner, CoolingPadDeviceSnapshot Baseline, bool FanChanged, bool LightingChanged, int SchemaVersion = 1);
 internal sealed record CoolingPadSettingsDocument(int SchemaVersion, CoolingPadSettings Settings);
+// A separate file, so a service that predates resumption never reads an unknown member.
+internal sealed record CoolingPadResumeDocument(int SchemaVersion);
 
 /// <summary>Machine-owned atomic state. An unreadable record never means that ownership is absent.</summary>
 internal sealed class CoolingPadStateStore(string? directory = null, Action<string>? storageVerifier = null)
@@ -19,6 +21,7 @@ internal sealed class CoolingPadStateStore(string? directory = null, Action<stri
     private static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web)
     { UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow };
     private readonly Dictionary<string, CoolingPadSettings> memorySettings = new(StringComparer.Ordinal);
+    private readonly HashSet<string> memoryResume = new(StringComparer.Ordinal);
     private CoolingPadOwnershipRecord? memoryOwnership;
 
     internal async Task<CoolingPadSettings> LoadSettingsAsync(string owner, CancellationToken token)
@@ -37,6 +40,28 @@ internal sealed class CoolingPadStateStore(string? directory = null, Action<stri
         if (!CoolingPadSettings.IsWellFormed(settings)) { throw new InvalidDataException("Cooling pad settings are invalid."); }
         await WriteAsync(PathForOwner(owner), new CoolingPadSettingsDocument(1, settings), token).ConfigureAwait(false);
         memorySettings[owner] = settings;
+    }
+
+    /// <summary>Whether the owner's last Apply left OpenBlade controlling the pad and no Release followed.</summary>
+    internal async Task<bool> LoadResumeIntentAsync(string owner, CancellationToken token) => directory is null
+        ? memoryResume.Contains(owner)
+        : await ReadAsync<CoolingPadResumeDocument>(ResumePathForOwner(owner), token).ConfigureAwait(false) is not null;
+
+    internal async Task SaveResumeIntentAsync(string owner, bool resume, CancellationToken token)
+    {
+        if (resume)
+        {
+            await WriteAsync(ResumePathForOwner(owner), new CoolingPadResumeDocument(1), token).ConfigureAwait(false);
+            memoryResume.Add(owner);
+            return;
+        }
+        token.ThrowIfCancellationRequested();
+        if (ResumePathForOwner(owner) is { } path && PrepareDirectory(create: false))
+        {
+            ValidateFileIfPresent(path);
+            File.Delete(path);
+        }
+        memoryResume.Remove(owner);
     }
 
     internal async Task<CoolingPadOwnershipRecord?> LoadOwnershipAsync(CancellationToken token)
@@ -69,6 +94,8 @@ internal sealed class CoolingPadStateStore(string? directory = null, Action<stri
     private string? OwnershipPath => directory is null ? null : Path.Combine(directory, "ownership.json");
     private string? PathForOwner(string owner) => directory is null ? null : Path.Combine(directory,
         "settings-" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(owner))) + ".json");
+    private string? ResumePathForOwner(string owner) => directory is null ? null : Path.Combine(directory,
+        "resume-" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(owner))) + ".json");
 
     private void Validate(CoolingPadOwnershipRecord record)
     {

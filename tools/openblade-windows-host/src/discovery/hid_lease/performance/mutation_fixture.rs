@@ -84,10 +84,6 @@ pub(crate) struct State {
     /// Extra latency on each 0D/01, 0D/02 and 0D/07 setter, on top of
     /// `latency`.
     pub(crate) setter_latency: Option<Duration>,
-    /// When the test sent the request that a recipe serves, on the test's
-    /// clock. A recipe on paused time takes its deadline as that request's
-    /// budget from its own start (see `worker`).
-    pub(crate) arrival: Option<Instant>,
     /// The keyboard device mode a 00/84 query reports (0 Normal, 3 Driver),
     /// which an accepted 00/04 setter changes.
     pub(crate) device_mode: u8,
@@ -116,9 +112,23 @@ pub(crate) struct State {
     #[cfg(feature = "service-keyboard-driver-mode-v1")]
     pub(crate) device_mode_retire_delay: Option<Duration>,
 }
+/// When the test sent the request a job serves, on the test's clock. They sit
+/// beside the state, not in it: the state is locked for as long as a test hook
+/// runs, and the rig must be able to set and clear them meanwhile.
+#[derive(Default)]
+struct Arrivals {
+    /// A recipe on paused time takes its deadline as that request's budget from
+    /// its own start (see `worker`), once.
+    recipe: Option<Instant>,
+    /// Every observation job of the request on paused time does the same, as a
+    /// recipe does with `recipe`, so the host's time between the request and
+    /// the job does not count. Not taken: the request clears it.
+    observation: Option<Instant>,
+}
 #[derive(Clone)]
 pub(crate) struct Fixture {
     pub(crate) state: Arc<Mutex<State>>,
+    arrivals: Arc<Mutex<Arrivals>>,
     transactions: Arc<Transactions>,
     threads: Arc<Threads>,
 }
@@ -127,6 +137,7 @@ pub(crate) struct Fixture {
 struct Threads {
     started: std::sync::atomic::AtomicUsize,
     exited: std::sync::atomic::AtomicUsize,
+    hooked: std::sync::atomic::AtomicUsize,
 }
 struct Exited(Arc<Threads>);
 impl Drop for Exited {
@@ -151,6 +162,7 @@ impl Fixture {
             })),
             transactions: Arc::new(Transactions::new()),
             threads: Arc::default(),
+            arrivals: Arc::default(),
         }
     }
     pub(crate) fn reserve_for_tests(&self, pairs: usize) {
@@ -186,6 +198,29 @@ impl Fixture {
     /// finished state by its last instructions.
     pub(crate) fn exited_threads(&self) -> usize {
         self.threads.exited.load(Ordering::Acquire)
+    }
+    /// Runs a test hook, counting it while it runs. A hook that parks its thread
+    /// is a wait the test chose, which no clock the rig holds may hide.
+    pub(crate) fn hooked<R>(&self, hook: impl FnOnce() -> R) -> R {
+        struct Running<'a>(&'a Threads);
+        impl Drop for Running<'_> {
+            fn drop(&mut self) {
+                self.0.hooked.fetch_sub(1, Ordering::AcqRel);
+            }
+        }
+        self.threads.hooked.fetch_add(1, Ordering::AcqRel);
+        let _running = Running(&self.threads);
+        hook()
+    }
+    /// Sets the arrivals of the request the next jobs serve (see `Arrivals`).
+    pub(crate) fn arrive(&self, recipe: Option<Instant>, observation: Option<Instant>) {
+        let mut arrivals = self.arrivals.lock().unwrap();
+        arrivals.recipe = recipe;
+        arrivals.observation = observation;
+    }
+    /// Test hooks running now.
+    pub(crate) fn hooks_running(&self) -> usize {
+        self.threads.hooked.load(Ordering::Acquire)
     }
     /// Counted threads that have started and not exited.
     pub(crate) fn running_threads(&self) -> usize {
@@ -242,10 +277,15 @@ impl Fixture {
                         && s.held_read.is_none()
                         && s.held_write.is_none()
                         && !real;
-                    let arrival = if paused && permit.is_some() {
-                        s.arrival.take()
-                    } else {
+                    let arrival = if !paused {
                         None
+                    } else {
+                        let mut arrivals = fixture.arrivals.lock().unwrap();
+                        if permit.is_some() {
+                            arrivals.recipe.take()
+                        } else {
+                            arrivals.observation
+                        }
                     };
                     (paused, arrival)
                 };
@@ -289,7 +329,7 @@ impl Fixture {
                         if permit.is_some() {
                             let hook = fixture.state.lock().unwrap().on_mutation_retired.clone();
                             if let Some(hook) = hook {
-                                hook();
+                                fixture.hooked(|| hook());
                             }
                         }
                         let error = {
@@ -407,12 +447,14 @@ impl Port for MemoryPort {
                     && matches!(command, 0x92 | 0x8f)
                     && let Some(hook) = &s.battery_getter_hook
                 {
-                    hook(command, s.battery_reads);
+                    let reads = s.battery_reads;
+                    self.fixture.hooked(|| hook(command, reads));
                 }
                 let response = match (class, command) {
                     (13, 1 | 2 | 7) => {
                         if let Some(check) = &s.before_write {
-                            check(s.writes + 1);
+                            let number = s.writes + 1;
+                            self.fixture.hooked(|| check(number));
                         }
                         assert_eq!(payload.len(), if command == 2 { 4 } else { 3 });
                         assert_eq!(payload[0], 1);
@@ -477,7 +519,8 @@ impl Port for MemoryPort {
                     }
                     (7, 0x0f) => {
                         if let Some(check) = &s.before_write {
-                            check(s.writes + 1);
+                            let number = s.writes + 1;
+                            self.fixture.hooked(|| check(number));
                         }
                         assert_eq!(payload.len(), 1);
                         assert!(matches!(payload[0], 0 | 4));
@@ -500,7 +543,8 @@ impl Port for MemoryPort {
                     }
                     (7, 0x12) => {
                         if let Some(check) = &s.before_write {
-                            check(s.writes + 1);
+                            let number = s.writes + 1;
+                            self.fixture.hooked(|| check(number));
                         }
                         assert_eq!(payload.len(), 1);
                         s.writes += 1;
@@ -523,7 +567,8 @@ impl Port for MemoryPort {
                     (7, 0x8c) => {
                         s.power_reads += 1;
                         if let Some(hook) = &s.on_power {
-                            hook(s.power_reads);
+                            let reads = s.power_reads;
+                            self.fixture.hooked(|| hook(reads));
                         }
                         if let Some((at, actual)) = s.change_power
                             && at == s.power_reads
@@ -546,7 +591,8 @@ impl Port for MemoryPort {
                         assert_eq!(payload, [0, 0]);
                         s.device_mode_queries += 1;
                         if let Some(hook) = &s.device_mode_on_query {
-                            hook(s.device_mode_queries);
+                            let queries = s.device_mode_queries;
+                            self.fixture.hooked(|| hook(queries));
                         }
                         if s.device_mode_timeout == Some(s.device_mode_queries)
                             || s.device_mode_mute

@@ -1,4 +1,4 @@
-//! The managed ServiceMessages v85 shape shared by the installed Service and Agent candidates.
+//! The managed ServiceMessages v90 shape shared by the installed Service and Agent candidates.
 //! Preserve rich feature records verbatim; readiness consumes the core snapshot
 //! and never interprets feature data as independent device or write evidence.
 
@@ -25,7 +25,7 @@ use tokio::{
 use crate::service_frame::{FRAME_TIMEOUT, invalid, is_guid, read_payload, write_frame};
 
 pub(crate) const PIPE_NAME: &str = "OpenBlade.Service.v2";
-pub(crate) const PROTOCOL_VERSION: i32 = 85;
+pub(crate) const PROTOCOL_VERSION: i32 = 90;
 
 pub(crate) fn production_path() -> String {
     format!(r"\\.\pipe\{PIPE_NAME}")
@@ -33,6 +33,15 @@ pub(crate) fn production_path() -> String {
 
 // LiveReadingSensors is a four-bit mask. The managed legacy default is All.
 const ALL_LIVE_READINGS: u8 = 15;
+
+/// The LiveReadingSensors bits this Service reads. CPU temperature (4) is
+/// never read here.
+#[cfg(all(windows, feature = "service-live-readings-v1"))]
+pub(crate) mod live_sensors {
+    pub(crate) const BATTERY_POWER: u8 = 1;
+    pub(crate) const FAN_SPEEDS: u8 = 2;
+    pub(crate) const GPU_TEMPERATURE: u8 = 8;
+}
 
 // Decoded through `json_object`: managed reads the request and every nested
 // struct member only from a JSON object, never a positional array.
@@ -554,7 +563,7 @@ impl StatusResponse {
             request_id: request.header().1.to_ascii_lowercase(),
             success: true,
             error: None,
-            // v85 success frames carry exactly one body. Status is published
+            // v90 success frames carry exactly one body. Status is published
             // separately through GetStatus, ObserveState and subscriptions.
             status: None,
             result: Some(outcome),
@@ -705,9 +714,9 @@ pub(crate) async fn read_status_event(
     }
 
     // With `arbitrary_precision` a `Number` keeps the exact text, so this reads
-    // an Int32 as managed `TryGetInt32` does: `-0` is 0, while `-0.0`, `85.0`
-    // and out-of-range integers are refused. A visitor would see `-0` and
-    // `-0.0` as the same float. The scan refuses a private-token object first.
+    // an Int32 as managed `TryGetInt32` does: `-0` is 0, while `-0.0`, a
+    // float such as `90.0` and out-of-range integers are refused. A visitor
+    // would see `-0` and `-0.0` as the same float. The scan refuses a private-token object first.
     fn event_version<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<i32, D::Error> {
         serde_json::Number::deserialize(deserializer)?
             .as_i64()
@@ -735,7 +744,7 @@ pub(crate) async fn read_status_event(
 
 type FeatureRecord = Map<String, Value>;
 
-// Internal diagnostic provenance never crosses the v85 wire. Battery updates
+// Internal diagnostic provenance never crosses the v90 wire. Battery updates
 // replace one family; private policy text is dropped at the redaction boundary.
 #[derive(Clone, Copy)]
 pub(crate) enum PrivatePolicyFamily {
@@ -966,7 +975,7 @@ impl Snapshot {
             confirmed_state: None,
             profiles,
             desired_state,
-            // v85 has no fully unknown power source. Use its conservative
+            // v90 has no fully unknown power source. Use its conservative
             // unresolved encoding for both unknown and unclassified external.
             active_power_source: if on_battery {
                 BATTERY
@@ -1063,23 +1072,24 @@ impl Snapshot {
     /// when it asked for none, otherwise each asked sensor. Battery power is
     /// this observation's read. `fans` is this job's confirmed pair or the
     /// pair `live_readings::Host` still retains from an earlier job under the
-    /// same admission. Temperatures are never read here.
+    /// same admission. `gpu_temperature` is this observation's GPU sample;
+    /// CPU temperature is never read here.
     #[cfg(all(windows, feature = "service-live-readings-v1"))]
     pub(crate) fn with_live_readings(
         mut self,
         mask: u8,
         battery_power_flow: Option<i32>,
         fans: Option<[u16; 2]>,
+        gpu_temperature: Option<i32>,
     ) -> Self {
-        const BATTERY_POWER: u8 = 1;
-        const FAN_SPEEDS: u8 = 2;
+        use live_sensors::{BATTERY_POWER, FAN_SPEEDS, GPU_TEMPERATURE};
         let fans = fans.filter(|_| mask & FAN_SPEEDS != 0);
         self.live_readings = (mask != 0).then(|| LiveReadings {
             battery_power_flow_milliwatts: battery_power_flow.filter(|_| mask & BATTERY_POWER != 0),
             fan1_rpm: fans.map(|[first, _]| i32::from(first)),
             fan2_rpm: fans.map(|[_, second]| i32::from(second)),
             cpu_temperature_celsius: None,
-            gpu_temperature_celsius: None,
+            gpu_temperature_celsius: gpu_temperature.filter(|_| mask & GPU_TEMPERATURE != 0),
         });
         self
     }
@@ -1121,7 +1131,7 @@ impl Snapshot {
     pub(crate) fn device_verified(&self) -> bool {
         self.device_verified
     }
-    /// The v85 power source this status was built with.
+    /// The v90 power source this status was built with.
     #[cfg(all(windows, feature = "service-live-readings-v1"))]
     pub(crate) fn active_power_source(&self) -> i32 {
         self.active_power_source
@@ -1441,7 +1451,7 @@ impl Snapshot {
             .get("modelNumber")?
             .as_str()
     }
-    // Use only for a direct, admitted ObserveState reply. v85 can retain
+    // Use only for a direct, admitted ObserveState reply. v90 can retain
     // fields during failed observations. Require the managed completion
     // guards and explicit absence of observation or write uncertainty.
     pub(crate) fn confirmed_performance(&self) -> Option<ConfirmedPerformance> {
@@ -1493,7 +1503,7 @@ impl Snapshot {
                 .iter()
                 .any(|value| !(0..=3).contains(value))
         {
-            return Err(invalid("invalid v85 status snapshot"));
+            return Err(invalid("invalid v90 status snapshot"));
         }
         ThermalConvergence::decode(self.feature_fields.get("thermalConvergence"))?;
         Ok(())
@@ -1643,7 +1653,7 @@ impl Snapshot {
         observation: Option<(u8, Option<bool>)>,
         message: &str,
     ) -> Self {
-        // The existing IPC85 DesiredBatteryState cannot represent Off + TFC.
+        // The managed DesiredBatteryState cannot represent Off + TFC.
         // Keep that private intent internally and publish the established
         // unavailable projection; never turn it into firmware-confirmed false.
         let incompatible = desired.is_some_and(|d| d.temporary && !d.protection);

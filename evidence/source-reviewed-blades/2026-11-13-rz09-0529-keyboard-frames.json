@@ -55,13 +55,56 @@
     "columns": 18,
     "rowCommand": "03/0B",
     "rowArguments": "FF,6,0,17,RGB*18",
+    "openBladeRowArguments": "FF,6,0,18,RGB*19 (keyboard row encoding; transport column 0 black, columns 1..18 carry logical VC columns 0..17, as in Synapse frames)",
+    "firmwareColumnMapping": "The KI8110 1.07.00 row-6 handler stores transport columns 0..17 in VC slots 0..17 and drops column 18. OpenBlade follows the Synapse manifest addresses (row 6 columns 1..18), so VC slot 0 receives the black column 0 and logical VC column 17 is dropped, exactly as with Synapse frames. Physical validation decides whether the offset is visible.",
     "vendorFramePath": "Selected Product 711 engine iterates every eventData.numRow, sends each row, then selects the CustomFrame effect.",
     "vendorSource": "https://apps.razer.com/synapse/lighting-engine/static/js/3061.282c86b2.chunk.js",
     "knownCombinedSelector": "03/0A [5,0] activates LED5 and LED38.",
-    "stateReadback": "Enabled boolean plus newly identified 0F/82 [0,38,...] built-in effect parameters; custom-frame RGB pixels remain unreadable. The complete restoration contract is under review.",
-    "openBladeMutationAdmitted": false,
-    "blocker": "The durable renderer baseline/restoration path confirms keyboard effect parameters and brightness but does not capture or restore the prior LED38 frame/effect.",
+    "activationCommand": "0F/02",
+    "activationArguments": [0, 38, 8],
+    "activationOrder": "After keyboard [0,5,8] and its readback confirmation. [0,0,8] is not used because it also switches the LED4 logo.",
+    "selectionReadback": "0F/82 [0,38,0,0,0,0,0,0,0,0,0,0] returns [0,38,8,...]",
+    "stateReadback": "Enabled boolean plus 0F/82 [0,38,...] built-in effect parameters; custom-frame RGB pixels remain unreadable.",
+    "restoreContract": {
+      "firmware": "KI8110 MCU 1.07.00",
+      "hexImageSha256Prefix": "18392850",
+      "decodedImageSha256": "C0EBB3B40D3AC763A50D7301457D73F1A84A3E2C951730454D848B13CA3F3578",
+      "class0fHandler": "0x9400",
+      "getTable": "0x9524",
+      "setTable": "0x96B2",
+      "stateRecords": "0x100015D6 + 0x40*i; VC record index 2",
+      "restorableModes": [
+        "Off [0,38,0]",
+        "Static [0,38,1,0,0,1,R,G,B]",
+        "Breathing [0,38,2,0,0,count,colors] with count 0 (random), 1 or 2",
+        "Wave [0,38,4,direction] with direction 1 or 2 and speed 40"
+      ],
+      "unrestorableModes": "Spectrum (3), Starlight (7), Custom (8), mode 9 and inconsistent parameters: the VC stays unchanged and frames remain keyboard-only.",
+      "brightness": "No VC setter changes the record brightness; the baseline brightness is 100. OpenBlade writes no VC brightness and scales VC frame colors by the keyboard brightness percentage.",
+      "restorePrecondition": "Restore only while the selection record exists and a fresh 0F/82 region-38 read reports mode 8. Any other mode means another controller changed the VC; OpenBlade leaves it unchanged and removes the record.",
+      "sameModeShortcuts": "The Off, same-count Breathing and same-direction Wave shortcuts compare against the current mode. Restores start from mode 8, so they always write.",
+      "journal": "Durable baseline schema 2 stores the VC destination as a write-ahead selection record, saved before [0,38,8] can be submitted and removed after a confirmed restore or an external change. Schema 1 remains the keyboard-only format. An LED38 record journaled for any product other than 0x02C7 makes the journal invalid, and restore sends region-38 commands only on 0x02C7.",
+      "selection": "LED38 is selected only from a read made under the same operation lock, while it reads mode 8 under the selection record or equals the destination first observed for the keyboard baseline. Ambient Awareness and Audio Meter re-read it with their first sample.",
+      "readFailure": "Only effects that drive the VC read it. A rejected or malformed optional read on a usable session keeps frames keyboard-only; a session-poisoning read stops before any write. The factory probe result is cached per host and HID identity. An optional frame read that never reached the MCU (shared command-gate refusal) leaves only that request keyboard-only and caches nothing, so a running renderer is replaced normally and the next request reads again. An open-time probe refused at the gate or canceled caches nothing either."
+    },
+    "participatingEffects": ["Spectrum", "Fire", "Wheel", "Starlight", "Tidal", "Ripple", "AmbientAwareness", "AudioMeter"],
+    "excludedEffects": "Reactive and imported or per-key sequences never read the VC; they restore a VC that OpenBlade selected before their first frame.",
+    "openBladeMutationAdmitted": true,
     "physicalValidation": "Pending"
+  },
+  "windowsDynamicLighting": {
+    "reviewedAt": "2026-11-19",
+    "firmware": "KI8110 MCU 1.07.00, decoded image C0EBB3B40D3AC763A50D7301457D73F1A84A3E2C951730454D848B13CA3F3578",
+    "descriptor": "HID LampArray usage page 0x59 usage 0x01 at 0xEE30 (0x147 bytes): report 1 LampArrayAttributes, 2 LampAttributesRequest, 3 LampAttributesResponse, 4 LampMultiUpdate, 5 LampRangeUpdate, 6 LampArrayControl (AutonomousMode).",
+    "state": "Struct 0x100001C8: [0] attributes cursor, [1] AutonomousMode, [2] lamp layout variant, [3] pending report, [4] lamp table pointer. Initialised data (scatter 0x21BC: 0xFA88 -> 0x100000C0, 0x110 bytes, uncompressed copy 0x479A) gives AutonomousMode 0x100001C9 = 1 (byte 0xFB91), policy 0x10000179 = 0 and 0x10000188 = 0.",
+    "writers": "0x100001C9 is written by LampArrayControl at 0xAA7A and by a keyboard-event branch at 0x7FA8 that sets it to 1 when it is 0, clears custom flags 0 and 2 and persists (0x7FB4). 0x10000179 is written only by 0F/10 at 0xA0F0. 0x10000188 is only ever stored as 0 (0x417E, 0x6316).",
+    "lampBuffers": "Report handler 0xA784 (report switch 0xA7AC, report data 0x10001D2C). LampMultiUpdate 0xA8C4 and LampRangeUpdate 0xA9A4 write lamps below count-18 to the keyboard LampArray buffer 0x10001264 (6x19x3) through 0x48A4 and the last 18 lamps to the VC LampArray buffer 0x1000145C (18x3) through 0x490C. Lamp counts are 115, 116 or 119 by layout variant. Neither writer touches keyboard staging 0x10001B80 or VC staging 0x10001CD6.",
+    "sourceSelect": "Copy helper 0x4B80 (overlayCopy) copies the LampArray buffer instead of staging when 0x100001C9 == 0 and (0x10000179 == 0 or 0x10000188 == 0): LED5 0x10001264 instead of 0x10001B80 into 0x10000CD6, LED38 0x1000145C instead of 0x10001CD6 into 0x100013BA. The 0F/02 custom arm 0x9CBC sets the custom flag and mode 8 and calls this helper without checking AutonomousMode, and the refresh 0x4ABC repeats the copy while the flag is set.",
+    "updateSideEffects": "While AutonomousMode is 0 (unless policy 1 with 0x10000188 equal to 2 or 3), every LampMultiUpdate or LampRangeUpdate checks LED5 and LED38 separately: when the active mode is not 8 or the custom flag is clear it sets the flag (0x10000125[0] or [2]), sets saved record mode 8 (0x10001A83+0x14 or 0x10001B03+0x14), copies, activates through 0x4BF4 and persists through 0xABE0. When both regions already read mode 8 with the flag set, it changes no record.",
+    "releaseSideEffects": "LampArrayControl 0xAA70 returning AutonomousMode to 1 with 0x10000188 == 0 (the only stored value) sets each region whose active mode is not 3 to saved Spectrum (mode 3), clears its custom flag, sets 0x10000119 = 1, activates and persists (0xAAB6..0xAAF4). The branch for a non-zero 0x10000188 (0xAA94) copies backup records 0x10001696 and 0x100016E0 instead.",
+    "setterInteraction": "0F/02 Off, Static, Breathing and Wave clear the custom flag whatever AutonomousMode is. The 0F/02 Spectrum arm 0x9982 acts only while AutonomousMode is 1 and otherwise leaves the record unchanged.",
+    "consequence": "Same hazard as RZ09-0509/0510, and it covers LED38 as well as the keyboard. While Windows Dynamic Lighting holds AutonomousMode 0, OpenBlade rows land in staging but the keyboard and VC show the LampArray buffers, and 0F/82 still reports mode 8, so output is hidden without a readable signal. Once Windows sends an update, both regions read mode 8 and an OpenBlade baseline is unrestorable, so host entry is refused. A restore confirmed while Windows still holds control is replaced by mode 8 at its next update, and release replaces it with persisted Spectrum. OpenBlade cannot read AutonomousMode through a reviewed command.",
+    "admission": "Unchanged pending maintainer decision; this affects keyboard frames already admitted, not only LED38."
   },
   "rgbAddressingReview": {
     "selectedBlade2Module": {
@@ -154,14 +197,14 @@
       }
     },
     "touchpadRgbAddressing": "Not established; reviewed MCU commands address only the touchpad status indicator boolean.",
-    "independentPixelReadbackAndRestore": "Not established for Vapor Chamber or touchpad RGB.",
+    "independentPixelReadbackAndRestore": "Not established for Vapor Chamber or touchpad RGB pixels. The VC built-in effect baseline is read and restored through 0F/82 and 0F/02 region 38.",
     "firmwareReadbackReview": {
       "source": "2026-11-13-modern-mcu-lighting.json, RZ09-0529 KI8110 section",
       "imageSha256": "C0EBB3B40D3AC763A50D7301457D73F1A84A3E2C951730454D848B13CA3F3578",
       "class03Handler": "Offset 0x896C, reviewed as brightness/logo fields; independent brightness GET is command 03/83.",
       "class0fHandler": "Offset 0x9400, effect GET returns built-in effect parameters for LED5, LED4 and LED38 (decimal38/hex26). Instructions94F2-9516 explicitly accept region38 and choose its record through65B4. Custom-frame mode does not return RGB pixels.",
       "frameSetter": "Command 03/0B is a write-only row transport; no matching exact-model frame getter is established.",
-      "conclusion": "The expanded exact-image review establishes a region38 effect getter previously missed by the module/callsite review. It also identifies 0F/03 LED38 row0 column0..17 writes into the separate VC buffer. Mutation remains disabled pending complete setter/renderer side-effect and restoration review; neither a touchpad RGB map nor pixel readback is established."
+      "conclusion": "The expanded exact-image review establishes a region38 effect getter previously missed by the module/callsite review. It also identifies 0F/03 LED38 row0 column0..17 writes into the separate VC buffer. The KI8110 1.07.00 setter and state-record review (vaporChamberFrame.restoreContract) admits host VC frames with a restorable built-in baseline; neither a touchpad RGB map nor pixel readback is established."
     },
     "independentUpstreamReview": {
       "project": "OpenRazer",
@@ -209,7 +252,8 @@
     "openBladeRgbMutationAdmitted": false
   },
   "restoration": {
-    "baseline": "Complete independently read Off/Static/Breathing/Wave parameters plus exact raw bank0 brightness, durably saved before possible writes.",
+    "baseline": "Complete independently read Off/Static/Breathing/Wave parameters plus exact raw bank0 brightness, durably saved before possible writes. A restorable VC effect read through 0F/82 region 38 is saved in the same journal entry before [0,38,8] can be submitted.",
+    "vaporChamber": "Restore through 0F/02 region 38 with full parameter readback only while the selection record exists and the VC reads mode 8; otherwise leave it unchanged. An unrestorable VC baseline keeps frames keyboard-only.",
     "unknownBaseline": "External custom pixels and hidden Spectrum policy remain unknown; block host entry without a complete baseline.",
     "method": "Fresh current bank0 payload, MCU-aware typed built-in setter and full parameter readback; exact raw brightness restored through bank0 with independent readback.",
     "failure": "Stop on ambiguous submission or confirmation; retain durable original baseline. No startup replay or alternative sequence."
@@ -225,7 +269,15 @@
     { "name": "inputDescriptorTable", "offset": "EF78", "length": 32, "sha256": "93E8A88F801474248BD20C50FA346B20DD9E9C135F7EC6A2F09D6FB736D67064" },
     { "name": "usbConfiguration", "offset": "EF98", "length": 109, "sha256": "9DB6069211888D5F085C5B3D48A509F422D8B02AE0907B476209BA6557C9B2F5" },
     { "name": "mi00Keyboard", "offset": "EDF3", "length": 61, "sha256": "A638A07D99BB58FA0734D44E7B20AC7327BD0B92AEC401420CEAFBAE0C552915" },
-    { "name": "mi01Collections", "offset": "ED54", "length": 159, "sha256": "1A8DED231A2DF9765104BF1D0DE3449F35676DE229DAB0300892FDA05735C40A" }
+    { "name": "mi01Collections", "offset": "ED54", "length": 159, "sha256": "1A8DED231A2DF9765104BF1D0DE3449F35676DE229DAB0300892FDA05735C40A" },
+    { "name": "lampArrayDescriptor", "offset": "EE30", "length": 327, "sha256": "6AE88AEB15120171F2112D116C2BC987A173368B6197DBCE3B87BCDBDE9C9D8D" },
+    { "name": "lampArrayReportHandler", "offset": "A784", "length": 886, "sha256": "B64ED1F2C1205CF16B528EF437C75EAD0FB3848B9C4FA54FA8BD6E8C2385E70C" },
+    { "name": "lampArrayBufferWriters", "offset": "48A4", "length": 160, "sha256": "E857E1A67883598F74DB9FB807F18DAB9E040B532E14A5EE081D945FCCA44800" },
+    { "name": "spectrumAutonomousGate", "offset": "9982", "length": 82, "sha256": "23D0C8C5EC159D40C5ED3F87F702AAAE09428895E732FC58FC1E81463F70BEB1" },
+    { "name": "policyStore0F10", "offset": "A0E6", "length": 14, "sha256": "0257FDE4225D9D65927B99B6B32B34AF878BCB3AD06D775A0018E840607BD6CC" },
+    { "name": "keyEventAutonomousReset", "offset": "7F8C", "length": 44, "sha256": "3117E699C582E78227BE62A2279D08B23C1AE7BB73CECC05604209653C66A1AF" },
+    { "name": "scatterLoad", "offset": "21BC", "length": 34, "sha256": "8E3A7DD2AF7D6C95C8C9A3AC224C149EF4A5F1647AB0C74DAE10B86F155F2237" },
+    { "name": "initializedData", "offset": "FA88", "length": 272, "sha256": "B15CC33933AC7B824A589DCFACA9D1EFFE708299CF41DA93D609F049F46EA703" }
   ],
   "inputAdmission": "MI00 sole keyboard TLC; MI01 COL01 keyboard only. Reject MI02 mouse/control and MI03 vendor feature collection. Use exact711 manifest's 94 common kbd scan bindings; no dkm or auxiliary row input mapping.",
   "independentFields": {

@@ -130,13 +130,20 @@ public sealed partial class ServiceControlRuntime
         }
         ServiceStatusSnapshot current = GetStatus();
         if (current.ConfirmedState?.Battery is not { } battery
-            || current.Capabilities?.SupportsTemporaryFullCharge == true && battery.TemporaryFullCharge is null)
+            || battery.TemporaryFullCharge is null && current.Capabilities is { } capabilities
+                && !BatteryOperationPlanner.UnknownOverrideAdmitsPolicy(capabilities))
         {
             return null;
         }
+        bool protectionEnabled = Automation.BatteryProtectionOverride ?? battery.ProtectionEnabled;
+        // An unreadable override keeps OpenBlade's own intent, as
+        // ResolveFullChargeOverride does, so a limiter change cannot be staged
+        // while OpenBlade itself turned the override on. Protection off cannot
+        // carry the override, so that intent is stale there.
         return new(Automation.BatteryPolicy,
-            Automation.BatteryProtectionOverride ?? battery.ProtectionEnabled,
-            battery.TemporaryFullCharge == true);
+            protectionEnabled,
+            protectionEnabled
+                && (battery.TemporaryFullCharge ?? Automation.DesiredBattery.TemporaryFullCharge));
     }
 
     private bool HasFreshDirectControlPowerContext()
@@ -154,9 +161,21 @@ public sealed partial class ServiceControlRuntime
     private PowerSource EffectiveControlPowerSource(ServiceStatusSnapshot current) =>
         IsUnclassifiedExternalContext ? PowerSource.ExternalUnknown : current.ActivePowerSource;
 
+    // A transient read or probe failure only relabels the published state; it
+    // adds no block of its own. A block under that label is treated as
+    // non-power unless the publish layer tracked it as power-only, so a missed
+    // read cannot turn a stale power-only block into one that a fresh
+    // classification may not discharge.
     private bool HasExplicitNonPowerWriteBlock(ServiceStatusSnapshot current) =>
+        HasNonPowerWriteBlockOwner(current)
+        || current.WritesBlocked && IsTransientObservationReason(current.ObservationReason)
+            && current.Revision != Interlocked.Read(ref powerOnlyWriteBlockRevision);
+
+    private static bool IsTransientObservationReason(DeviceObservationReason reason) =>
+        reason is DeviceObservationReason.CheckingConnection or DeviceObservationReason.RefreshingControls;
+
+    private bool HasNonPowerWriteBlockOwner(ServiceStatusSnapshot current) =>
         retainedNonPowerWriteBlock
-        || current.WritesBlocked && current.ObservationReason is DeviceObservationReason.CheckingConnection or DeviceObservationReason.RefreshingControls
         || ownsHyperBoost && (current.WritesBlocked || IsUnclassifiedExternalContext)
         || hyperBoostJournalSafetyBlock || hyperBoostRestorePending
         || pendingIndeterminateHyperBoostEntryIntent is not null || pendingIndeterminateHyperBoostExitIntent is not null
@@ -179,13 +198,49 @@ public sealed partial class ServiceControlRuntime
         PublishIfChangedWithPowerBlock(current with
         {
             ActivePowerSource = presentation,
-            ObservationReason = current.ObservationReason is DeviceObservationReason.CheckingConnection or DeviceObservationReason.RefreshingControls
+            ObservationReason = IsTransientObservationReason(current.ObservationReason)
                 ? current.ObservationReason
                 : presentation == PowerSource.ExternalUnknown ? DeviceObservationReason.None : DeviceObservationReason.RetainedPowerSource,
-            WritesBlocked = nonPowerBlock || powerBlock,
+            // Ordinary unclassified control also needs a fresh successful read,
+            // as in the periodic classifier.
+            WritesBlocked = nonPowerBlock || powerBlock || IsTransientObservationReason(current.ObservationReason),
             Message = nonPowerBlock ? current.Message
                 : presentation == PowerSource.ExternalUnknown ? UnclassifiedExternalPowerMessage : TransientExternalPowerMessage,
         }, powerOnlyWriteBlock: powerBlock && !nonPowerBlock);
+    }
+
+    // Only a published block with no non-power owner qualifies: pending
+    // confirmations, HyperBoost recovery, write pauses, laptop-control
+    // reconciliation and untracked blocks all keep theirs.
+    private bool HoldsOnlyPowerWriteBlock(ServiceStatusSnapshot current) =>
+        current is { DeviceVerified: true, WritesBlocked: true }
+        && !IsUnclassifiedExternalContext
+        && !NonPowerClassificationWriteBlock(current);
+
+    // A fresh classified source change ends the power-only block that an
+    // unresolved or conflicting classification published. Without this, the
+    // destination transition's thermal step was refused with "Thermal write
+    // authority closed" and dropped. The transition still performs its fresh
+    // exact-device, read, power, session, controller and ownership admission
+    // before any write. The caller decides eligibility before it invalidates
+    // pending confirmations, so a block they held is never released here.
+    // The same snapshot carries the classified source, so no reader sees the
+    // stale unclassified presentation with writes allowed.
+    private void ReleasePowerOnlyWriteBlockForClassifiedSource(PowerSource classifiedSource)
+    {
+        ServiceStatusSnapshot current = GetStatus();
+        if (!HoldsOnlyPowerWriteBlock(current))
+        {
+            return;
+        }
+        PublishIfChanged(current with
+        {
+            ActivePowerSource = classifiedSource,
+            WritesBlocked = false,
+            ObservationReason = current.ObservationReason == DeviceObservationReason.RetainedPowerSource
+                ? DeviceObservationReason.None
+                : current.ObservationReason,
+        });
     }
 
     private CustomPerformanceSettings? ResolveOrdinaryShortcutCustomIntent(ServiceStatusSnapshot current)

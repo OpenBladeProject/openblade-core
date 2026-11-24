@@ -132,7 +132,10 @@ mod cases {
     async fn tfc_correction_never_registered_repeat_preserves_actual_source_owner() {
         for current_epoch in [false, true] {
             for drop_future in [false, true] {
-                let r = Rig::new(MemoryFiles::default());
+                let r = paused_rig(MemoryFiles::default());
+                // Its jobs run on paused time under a held test clock (see `frozen`), so a
+                // loaded host costs the tick and the requests no budget.
+                frozen(&r.port, async {
                 let a = enable(&r, 850).await;
                 r.port.state.lock().unwrap().actual = 0;
                 r.metadata.store(1, Ordering::Release);
@@ -149,7 +152,7 @@ mod cases {
                         "setFullChargeOverride",
                         json!(true),
                     )));
-                    tokio::select! { _=&mut b=>panic!("B unexpectedly completed"), _=async {while pause.get()!=2 {tokio::time::sleep(Duration::from_millis(1)).await;}}=>{} }
+                    tokio::select! { _=&mut b=>panic!("B unexpectedly completed"), _=async {while pause.get()!=2 {tokio::task::yield_now().await;}}=>{} }
                     drop(b);
                     pause.set(0);
                 } else {
@@ -189,6 +192,8 @@ mod cases {
                     "NATIVE_THERMAL_MUTATION_RESPONSE {}",
                     std::str::from_utf8(&bytes).unwrap()
                 );
+                })
+                .await;
                 r.stop().await;
             }
         }

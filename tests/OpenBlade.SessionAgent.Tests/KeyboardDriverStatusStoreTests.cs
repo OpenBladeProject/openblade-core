@@ -33,6 +33,46 @@ public sealed class KeyboardDriverStatusStoreTests
     }
 
     [Theory]
+    [InlineData(KeyboardDriverFeatures.FunctionRow, false)]
+    [InlineData(KeyboardDriverFeatures.SnapTap, false)]
+    [InlineData(KeyboardDriverFeatures.SnapTap | KeyboardDriverFeatures.FunctionRow, false)]
+    [InlineData(KeyboardDriverFeatures.FunctionRow, true)]
+    [InlineData(KeyboardDriverFeatures.SnapTap, true)]
+    [InlineData(KeyboardDriverFeatures.SnapTap | KeyboardDriverFeatures.FunctionRow, true)]
+    public void WorkerCleanPauseSurvivesStoreForSupervisorRearm(KeyboardDriverFeatures features, bool deferred)
+    {
+        // The worker publishes this exact status before exit 8. The supervisor reads it
+        // back from disk, so an in-memory status cannot prove the rearm path.
+        WithPaths((joint, snap, fn) =>
+        {
+            DateTimeOffset startedAt = DateTimeOffset.UtcNow;
+            var paused = new SnapTapRuntimeStatus(SnapTapRuntimeState.Paused, DateTimeOffset.UtcNow, 123,
+                Failure: deferred ? SnapTapDriverLoop.SubscriptionDeferredFailure()
+                    : SnapTapDriverLoop.ForegroundUnavailableFailure(false, false, true));
+            KeyboardDriverStatusStore.Write(paused, features, joint, snap, fn);
+            SnapTapRuntimeStatus? read = KeyboardDriverStatusStore.Read(joint);
+            Assert.Equal(paused.Failure, read?.Failure);
+            Assert.True(SnapTapDriverSupervisor.IsCleanPause(
+                SnapTapDriverLoop.CleanPauseExitCode, read, 123, startedAt));
+            if (features.HasFlag(KeyboardDriverFeatures.FunctionRow))
+            {
+                Assert.Equal(SnapTapRuntimeState.Paused, FunctionRowBackendStatusStore.Read(fn)?.State);
+            }
+        });
+    }
+
+    [Fact]
+    public void ActiveStatusStillRejectsFailure()
+    {
+        WithPaths((joint, _, _) =>
+        {
+            var active = new SnapTapRuntimeStatus(SnapTapRuntimeState.Active, DateTimeOffset.UtcNow, 123,
+                Failure: SnapTapDriverLoop.ForegroundUnavailableFailure(true, true, true));
+            Assert.Throws<ArgumentException>(() => SnapTapStatusStore.Write(active, joint));
+        });
+    }
+
+    [Theory]
     [InlineData(SnapTapRuntimeState.Armed, SnapTapRuntimeState.WaitingForFunctionKey)]
     [InlineData(SnapTapRuntimeState.Active, SnapTapRuntimeState.WaitingForFunctionKey)]
     [InlineData(SnapTapRuntimeState.WaitingForRelease, SnapTapRuntimeState.WaitingForRelease)]

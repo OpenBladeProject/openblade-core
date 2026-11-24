@@ -90,3 +90,4 @@ src/OpenBlade.Contracts/Fixtures/Blade16KeyboardLightingLayout.json text eol=crl
 src/OpenBlade.Contracts/Fixtures/Blade16AmdKeyboardLightingLayout.json text eol=lf
 src/OpenBlade.Contracts/Fixtures/Rz090529KeyboardLightingLayout.json text eol=crlf
 evidence/source-reviewed-blades/2026-11-13-rz09-0529-keyboard-frames.json text eol=crlf
+evidence/source-reviewed-blades/2026-11-19-rz09-*-keyboard-frames.json text eol=crlf

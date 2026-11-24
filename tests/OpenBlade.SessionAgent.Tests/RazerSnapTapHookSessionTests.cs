@@ -103,6 +103,41 @@ public sealed class RazerSnapTapHookSessionTests
     }
 
     [Fact]
+    public void EnableRefusedBeforeSubmissionIsDeferredNotAmbiguous()
+    {
+        // Call 6 is the subscription enable after both owned hooks were confirmed.
+        var transport = new FakeTransport { FailureCall = 6, Failure = new KeyboardSubmissionDeferredException() };
+        var session = new RazerSnapTapHookSession(transport);
+        Assert.False(session.Start());
+        Assert.Equal(RazerSnapTapHookSessionState.Faulted, session.State);
+        Assert.True(session.SubscriptionDeferred);
+        Assert.False(session.FailureMayHaveSubmitted);
+        Assert.False(Assert.IsType<OpenBlade.Contracts.DiagnosticFailure>(session.Failure).MayHaveSubmitted);
+        Assert.Equal(2, session.OwnedHooks.Count);
+        Assert.Equal("enable", transport.Calls[^1]);
+    }
+
+    [Fact]
+    public void EnableFailureAfterPossibleSubmissionIsNotDeferred()
+    {
+        var transport = new FakeTransport { FailureCall = 6 };
+        var session = new RazerSnapTapHookSession(transport);
+        Assert.False(session.Start());
+        Assert.False(session.SubscriptionDeferred);
+        Assert.True(session.FailureMayHaveSubmitted);
+    }
+
+    [Fact]
+    public void NativeRequestRefusedByGuardThrowsDeferredBeforeSubmission()
+    {
+        using var io = new RazerSnapTapNativeIo(@"\\.\NUL", () => true);
+        int checks = 0;
+        Assert.Throws<KeyboardSubmissionDeferredException>(() =>
+            io.Request(0x222000, [1], 0, 250, false, () => { checks++; return false; }));
+        Assert.Equal(1, checks);
+    }
+
+    [Fact]
     public void FailurePreservesRedactedMessageAndNativeInnerCause()
     {
         var transport = new FakeTransport

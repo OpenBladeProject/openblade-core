@@ -46,7 +46,7 @@ public sealed partial class ServiceControlRuntime
             await coolingPadControl.SetUserAsync(userSid.Value, token).ConfigureAwait(false);
             return await coolingPadControl.ReleaseAsync(
                 () => stillControlsSession() && CoolingPadWriteAdmission(userSid.Value, allowLowPower: false), token,
-                serviceOwnedRestoration: true).ConfigureAwait(false);
+                serviceOwnedRestoration: true, userRequested: true).ConfigureAwait(false);
         }
         finally { PublishCoolingPadStatus(); }
     }
@@ -82,6 +82,19 @@ public sealed partial class ServiceControlRuntime
                 () => sessionEpoch == Interlocked.Read(ref sessionAdmissionEpoch)
                     && powerEpoch == Interlocked.Read(ref powerAdmissionEpoch)
                     && CoolingPadWriteAdmission(user, allowLowPower: false), token).ConfigureAwait(false);
+            if (user is not null && !coolingPadControl.Status.Active)
+            {
+                // Same admission as a user's Apply, bound to the active session. Shutdown
+                // has already handed the pad back and must not be undone.
+                Func<bool>? controlsSession = activeUserStillControlsSession;
+                bool StillOwns() => Volatile.Read(ref fanStopShutdownStarted) == 0
+                    && CoolingPadSessionContinues(user, () => controlsSession?.Invoke() == true);
+                await coolingPadControl.ResumeSavedControlAsync(user,
+                    () => sessionEpoch == Interlocked.Read(ref sessionAdmissionEpoch)
+                        && powerEpoch == Interlocked.Read(ref powerAdmissionEpoch)
+                        && StillOwns() && CoolingPadWriteAdmission(user, allowLowPower: false),
+                    StillOwns, token).ConfigureAwait(false);
+            }
         }
         finally { PublishCoolingPadStatus(); }
     }

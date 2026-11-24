@@ -165,7 +165,7 @@ public static class KeyboardLightingSequenceCodec
     private static bool IsHole(int slot, string? layoutId) => layoutId switch
     {
         KeyboardLightingLayoutIds.Rz09_0484 => !Blade18KeyboardLightingLayout.IsKeySlot(slot),
-        KeyboardLightingLayoutIds.Rz09_0530 => !Blade14KeyboardLightingLayout.IsKeySlot(slot),
+        KeyboardLightingLayoutIds.Rz09_0530 => !Blade14KeyboardLightingLayout.IsAddressableKeySlot(slot),
         KeyboardLightingLayoutIds.Rz09_0529 => !Rz090529KeyboardLightingLayout.IsKeySlot(slot),
         _ => AmbientLightingFrame.IsHole(slot),
     };

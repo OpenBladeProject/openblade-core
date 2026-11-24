@@ -73,10 +73,16 @@ public static class PawnIoRuntimeAdmission
                     TraceObservation("VerifyCatalog", $"DriverPath={driver}; CatalogPath={catalog}; FileVersion={version}");
                     string identity = WindowsDriverApiTrust.VerifyCatalogMembers(catalog, [driver],
                         [WindowsDriverApiTrust.MicrosoftHardwareCompatibilityPublisher], cancellationToken);
-                    InspectDevice(cancellationToken);
-                    TraceObservation("QueryServiceStatus", "Service=PawnIO; signed catalog and device binding verified.");
+                    TraceObservation("QueryServiceStatus", "Service=PawnIO; signed catalog verified.");
                     if (!QueryServiceStatus(service, out ServiceStatus status))
                     { throw new Win32Exception(Marshal.GetLastWin32Error()); }
+                    if (!InspectDevice(status.CurrentState, cancellationToken))
+                    {
+                        // Issue #969: the vendor uninstall left only its stopped service
+                        // and DriverStore package. Report absence so the official
+                        // installer can recreate the device; readback still applies.
+                        return null;
+                    }
                     // The official 2.1 INF has the same root binding but its driver
                     // predates full PnP support (upstream b312f788). Require the
                     // actual kernel service to be running, without treating an old
@@ -161,11 +167,19 @@ public static class PawnIoRuntimeAdmission
         return path;
     }
 
-    private static void InspectDevice(CancellationToken cancellationToken)
+    private static bool InspectDevice(uint serviceState, CancellationToken cancellationToken)
     {
         using RegistryKey? root = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Enum\ROOT\PawnIO");
         string[] instances = root?.GetSubKeyNames() ?? [];
-        InspectDevice(instances, (string id, out uint node) => CM_Locate_DevNode(out node, id, 0),
+        DeviceNodeLocator locate = (string id, out uint node) => CM_Locate_DevNode(out node, id, 0);
+        if (IsOrphanedServiceResidue(serviceState, () =>
+            {
+                using RegistryKey? uninstall = Registry.LocalMachine.OpenSubKey(
+                    @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\PawnIO");
+                return uninstall is not null;
+            }, instances, locate, cancellationToken))
+        { return false; }
+        InspectDevice(instances, locate,
             selected =>
             {
                 using RegistryKey instance = root!.OpenSubKey(selected)
@@ -175,6 +189,27 @@ public static class PawnIoRuntimeAdmission
                     || !ids.Contains(@"Root\PawnIO", StringComparer.OrdinalIgnoreCase))
                 { throw new InvalidDataException("The PawnIO device is not bound to its reviewed service and hardware ID."); }
             }, node => CM_Get_DevNode_Status(out _, out _, node, 0), cancellationToken);
+        return true;
+    }
+
+    /// <summary>
+    /// True only for the stopped service and DriverStore package left after the
+    /// vendor removal took its device and uninstall registration. Any live device
+    /// returns false for normal binding admission. A registered or running install
+    /// without its device is preserved for repair, never replaced.
+    /// </summary>
+    internal static bool IsOrphanedServiceResidue(uint serviceState, Func<bool> uninstallRegistrationExists,
+        string[] instances, DeviceNodeLocator locate, CancellationToken cancellationToken)
+    {
+        if (LocatePresentDevices(instances, locate, cancellationToken).Count != 0) { return false; }
+        bool registered = uninstallRegistrationExists();
+        TraceObservation("DeviceAbsent", $"ServiceState={serviceState}; UninstallRegistration={registered}; RegisteredDevices={instances.Length}.");
+        if (serviceState != 1) // SERVICE_STOPPED
+        { throw new InvalidOperationException($"PawnIO service is active without its Root\\PawnIO device (state {serviceState}). Restart Windows, then run setup again."); }
+        if (registered)
+        { throw new InvalidOperationException("PawnIO is registered but its Root\\PawnIO device is missing. Repair or reinstall PawnIO, then run setup again."); }
+        cancellationToken.ThrowIfCancellationRequested();
+        return true;
     }
 
     internal static void InspectDevice(string[] instances, DeviceNodeLocator locate,

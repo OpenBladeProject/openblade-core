@@ -5,6 +5,11 @@ namespace OpenBlade.Protocol.Tests;
 
 public sealed partial class SourceReviewedBladeModelTests
 {
+    // RZ09-0529 admits temporary full charge, so a policy write first reads 07/8F
+    // after the 07/92 baseline and refuses while the override is active.
+    private static byte[] BatteryCommands(int product, params byte[] commands) =>
+        product == 0x02C7 ? [commands[0], 0x8F, .. commands[1..]] : commands;
+
     [Theory]
     [MemberData(nameof(Products))]
     [MemberData(nameof(EarlyBatteryProducts))]
@@ -20,7 +25,7 @@ public sealed partial class SourceReviewedBladeModelTests
         Assert.Equal((byte)0xCB, session.Battery);
         Assert.Contains(policy.Snapshot().Observations, observation => observation.Stage == "Submission"
             && observation.ConfirmedValue == "AckPayload=D0");
-        Assert.Equal(new byte[] { 0x92, 0x12, 0x92 }, session.Commands.Select(command => command.CommandId));
+        Assert.Equal(BatteryCommands(product, 0x92, 0x12, 0x92), session.Commands.Select(command => command.CommandId));
     }
 
     [Fact]
@@ -32,7 +37,7 @@ public sealed partial class SourceReviewedBladeModelTests
         await port.SetChargeLimitAsync(75, default);
 
         Assert.Equal((byte)0xCB, session.Battery);
-        Assert.Equal(new byte[] { 0x92, 0x12, 0x92 }, session.Commands.Select(command => command.CommandId));
+        Assert.Equal(BatteryCommands(0x02C7, 0x92, 0x12, 0x92), session.Commands.Select(command => command.CommandId));
     }
 
     [Theory]
@@ -78,7 +83,7 @@ public sealed partial class SourceReviewedBladeModelTests
         await port.SetProtectionOffAsync(default);
 
         Assert.Equal((byte)55, session.Battery);
-        Assert.Equal(new byte[] { 0x92, 0x12, 0x92, 0x92 }, session.Commands.Select(command => command.CommandId));
+        Assert.Equal(BatteryCommands(product, 0x92, 0x12, 0x92, 0x92), session.Commands.Select(command => command.CommandId));
         Assert.Equal((byte)55, session.Commands.Single(command => command.CommandId == 0x12).Arguments.Span[0]);
     }
 
@@ -128,7 +133,7 @@ public sealed partial class SourceReviewedBladeModelTests
         Assert.Equal(WriteSubmissionState.Indeterminate, failure.SubmissionState);
         Assert.False(policy.WritesAllowed);
         Assert.Equal(0, delays);
-        Assert.Equal(new byte[] { 0x92, 0x12, 0x92 }, session.Commands.Select(command => command.CommandId));
+        Assert.Equal(BatteryCommands(0x02C7, 0x92, 0x12, 0x92), session.Commands.Select(command => command.CommandId));
     }
 
     [Fact]
@@ -155,7 +160,7 @@ public sealed partial class SourceReviewedBladeModelTests
         Assert.Equal(WriteSubmissionState.Indeterminate, failure.SubmissionState);
         Assert.False(policy.WritesAllowed);
         Assert.Equal(0, delays);
-        Assert.Equal(new byte[] { 0x92, 0x12, 0x92 }, session.Commands.Select(command => command.CommandId));
+        Assert.Equal(BatteryCommands(0x02C7, 0x92, 0x12, 0x92), session.Commands.Select(command => command.CommandId));
     }
 
     [Fact]
@@ -175,7 +180,7 @@ public sealed partial class SourceReviewedBladeModelTests
 
         Assert.Equal(WriteSubmissionState.Indeterminate, failure.SubmissionState);
         Assert.False(policy.WritesAllowed);
-        Assert.Equal(new byte[] { 0x92, 0x12, 0x92 }, session.Commands.Select(command => command.CommandId));
+        Assert.Equal(BatteryCommands(0x02C7, 0x92, 0x12, 0x92), session.Commands.Select(command => command.CommandId));
     }
 
     [Fact]
@@ -189,7 +194,7 @@ public sealed partial class SourceReviewedBladeModelTests
 
         Assert.Equal(WriteSubmissionState.Indeterminate, failure.SubmissionState);
         Assert.False(policy.WritesAllowed);
-        Assert.Equal(new byte[] { 0x92, 0x12 }, session.Commands.Select(command => command.CommandId));
+        Assert.Equal(BatteryCommands(0x02C7, 0x92, 0x12), session.Commands.Select(command => command.CommandId));
     }
 
     [Theory]

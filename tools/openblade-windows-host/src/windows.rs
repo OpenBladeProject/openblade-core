@@ -653,6 +653,12 @@ mod tests {
 
     use super::*;
 
+    /// The bound on a whole scripted scenario over real named pipes. It only
+    /// catches a hang: the frame deadlines under test are the Service's own
+    /// and run on the real clock, which no test clock can drive, so a loaded
+    /// host must not expire a scenario that is merely slow.
+    pub(super) const HANG_GUARD: Duration = Duration::from_secs(60);
+
     pub(super) fn test_id() -> String {
         let time = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -732,10 +738,9 @@ mod tests {
                     result => panic!("shutdown left a readable or unexpected pipe: {result:?}"),
                 }
             };
-            let (result, ()) =
-                timeout(Duration::from_secs(5), async { tokio::join!(host, client) })
-                    .await
-                    .unwrap();
+            let (result, ()) = timeout(HANG_GUARD, async { tokio::join!(host, client) })
+                .await
+                .unwrap();
             result.unwrap();
             assert_eq!(
                 phases,
@@ -820,10 +825,9 @@ mod tests {
                 read_status(&path).await;
                 stop.send(()).unwrap();
             };
-            let (result, ()) =
-                timeout(Duration::from_secs(8), async { tokio::join!(host, client) })
-                    .await
-                    .unwrap();
+            let (result, ()) = timeout(HANG_GUARD, async { tokio::join!(host, client) })
+                .await
+                .unwrap();
             result.unwrap();
         });
     }
@@ -882,10 +886,9 @@ mod tests {
                 read_status(&path).await;
                 stop.send(()).unwrap();
             };
-            let (result, ()) =
-                timeout(Duration::from_secs(5), async { tokio::join!(host, client) })
-                    .await
-                    .unwrap();
+            let (result, ()) = timeout(HANG_GUARD, async { tokio::join!(host, client) })
+                .await
+                .unwrap();
             result.unwrap();
         });
     }
@@ -903,7 +906,7 @@ mod tests {
 
     pub(super) async fn read_status(path: &str) {
         let mut pipe = open_pipe(path).await;
-        let request = br#"{"operation":"getStatus","version":85,"requestId":"11111111-2222-4333-8444-555555555555"}"#;
+        let request = br#"{"operation":"getStatus","version":90,"requestId":"11111111-2222-4333-8444-555555555555"}"#;
         pipe.write_all(&(request.len() as i32).to_le_bytes())
             .await
             .unwrap();
@@ -937,7 +940,7 @@ mod tests {
                 wait_ready.await.unwrap();
                 let mut pipe = ClientOptions::new().security_qos_flags(0) // SecurityAnonymous
                     .open(&path).unwrap();
-                let request = br#"{"operation":"getStatus","version":85,"requestId":"11111111-2222-4333-8444-555555555555"}"#;
+                let request = br#"{"operation":"getStatus","version":90,"requestId":"11111111-2222-4333-8444-555555555555"}"#;
                 pipe.write_all(&(request.len() as i32).to_le_bytes()).await.unwrap();
                 pipe.write_all(request).await.unwrap();
                 let mut byte = [0];
@@ -949,7 +952,7 @@ mod tests {
                 }
                 stop.send(()).unwrap();
             };
-            let (result, ()) = timeout(Duration::from_secs(5), async { tokio::join!(host, client) }).await.unwrap();
+            let (result, ()) = timeout(HANG_GUARD, async { tokio::join!(host, client) }).await.unwrap();
             result.unwrap();
         });
     }
