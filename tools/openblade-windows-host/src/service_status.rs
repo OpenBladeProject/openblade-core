@@ -108,6 +108,11 @@ pub(crate) enum StatusRequest {
         version: i32,
         request_id: String,
     },
+    /// Managed `ReapplyChangedSettingsRequest`.
+    ReapplyChangedSettings {
+        version: i32,
+        request_id: String,
+    },
     GetStatus {
         version: i32,
         request_id: String,
@@ -182,7 +187,7 @@ impl StatusRequest {
     /// The discriminator of every variant. `operation` maps each variant to
     /// its entry, so a new variant cannot be added without listing it here.
     #[cfg(feature = "installed-service-candidate")]
-    pub(crate) const OPERATIONS: [&'static str; 12] = [
+    pub(crate) const OPERATIONS: [&'static str; 13] = [
         "setBatteryPolicy",
         "setBatteryProtection",
         "setFullChargeOverride",
@@ -195,6 +200,7 @@ impl StatusRequest {
         "updateProfiles",
         "setThermalControlPolicy",
         "acknowledgeThermalPolicyUpgradeDisclosure",
+        "reapplyChangedSettings",
     ];
 
     #[cfg(all(test, feature = "installed-service-candidate"))]
@@ -212,6 +218,7 @@ impl StatusRequest {
             Self::UpdateProfiles { .. } => 9,
             Self::SetThermalControlPolicy { .. } => 10,
             Self::AcknowledgeThermalPolicyUpgradeDisclosure { .. } => 11,
+            Self::ReapplyChangedSettings { .. } => 12,
         }]
     }
 
@@ -226,9 +233,21 @@ impl StatusRequest {
         const BATTERY: bool = cfg!(feature = "service-battery-policy-v1");
         const PROFILES: bool = cfg!(feature = "service-profiles-v1");
         const POLICY: bool = cfg!(feature = "service-profile-triggers-v1");
-        const COMPILED: [bool; 12] = [
-            BATTERY, BATTERY, BATTERY, FAN, THERMAL, THERMAL, true, true, true, PROFILES, POLICY,
+        const CONVERGENCE: bool = cfg!(feature = "service-thermal-convergence-v1");
+        const COMPILED: [bool; 13] = [
+            BATTERY,
+            BATTERY,
+            BATTERY,
+            FAN,
+            THERMAL,
+            THERMAL,
+            true,
+            true,
+            true,
+            PROFILES,
             POLICY,
+            POLICY,
+            CONVERGENCE,
         ];
         Self::OPERATIONS
             .iter()
@@ -379,6 +398,10 @@ impl StatusRequest {
                 version,
                 request_id,
             }
+            | Self::ReapplyChangedSettings {
+                version,
+                request_id,
+            }
             | Self::GetStatus {
                 version,
                 request_id,
@@ -436,6 +459,13 @@ impl StatusRequest {
         ) && !cfg!(feature = "service-profile-triggers-v1")
         {
             return Err(invalid("signed thermal policy composition is unavailable"));
+        }
+        if matches!(self, Self::ReapplyChangedSettings { .. })
+            && !cfg!(feature = "service-thermal-convergence-v1")
+        {
+            return Err(invalid(
+                "signed thermal convergence composition is unavailable",
+            ));
         }
         // Managed `IpcMessageCodec`: `Enum.IsDefined(set.Policy)`.
         if let Self::SetThermalControlPolicy { policy, .. } = self

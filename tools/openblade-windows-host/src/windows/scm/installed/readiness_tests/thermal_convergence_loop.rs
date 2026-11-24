@@ -13,12 +13,14 @@ const MATCHED: i64 = 0;
 const AWAITING: i64 = 1;
 const CONVERGING: i64 = 2;
 const PAUSED: i64 = 3;
+const SUPPRESSED: i64 = 4;
 const RESTORE_PENDING: i64 = 6;
 // Managed `ThermalConvergenceReason`.
 const QUARANTINED: i64 = 4;
 const HYPERBOOST_PENDING: i64 = 15;
 const PENDING_RECONCILIATION: i64 = 17;
-const UNAVAILABLE: i64 = 21;
+const BUDGET_EXHAUSTED: i64 = 18;
+const TOMBSTONED: i64 = 19;
 /// The selector another controller leaves (Silent); the Game rule saves 2.
 const EXTERNAL: u8 = 5;
 /// `WTS_SESSION_LOCK`.
@@ -103,11 +105,11 @@ async fn external_drift_converges_once_and_its_tombstone_holds() {
     let written = writes(&rig);
     tick(&rig).await;
     assert_eq!(writes(&rig), written);
-    // Until native serves the explicit reapply, a suppression is published
-    // as a contradiction native cannot hold (D6).
+    // Suppressed until an explicit reapply rearms it.
     let status = drift(&rig, 2).await;
-    assert_eq!(convergence(&status)["state"], PAUSED, "{status}");
-    assert_eq!(convergence(&status)["reason"], UNAVAILABLE, "{status}");
+    assert_eq!(convergence(&status)["state"], SUPPRESSED, "{status}");
+    assert_eq!(convergence(&status)["reason"], TOMBSTONED, "{status}");
+    assert_eq!(convergence(&status)["explicitReapplyRequired"], true);
     tick(&rig).await;
     assert_eq!(writes(&rig), written);
     assert_eq!(ledger(&rig)["tombstones"], state["tombstones"]);
@@ -363,8 +365,9 @@ async fn a_spent_budget_suppresses_the_same_contradiction() {
     assert_eq!(performance(&observe(&rig, 2).await), 2);
     let before = raw(&rig, LEDGER);
     let status = drift(&rig, 3).await;
-    // D6 until native serves the explicit reapply.
-    assert_eq!(convergence(&status)["reason"], UNAVAILABLE, "{status}");
+    assert_eq!(convergence(&status)["state"], SUPPRESSED, "{status}");
+    assert_eq!(convergence(&status)["reason"], BUDGET_EXHAUSTED, "{status}");
+    assert_eq!(convergence(&status)["explicitReapplyRequired"], true);
     let written = writes(&rig);
     tick(&rig).await;
     tick(&rig).await;

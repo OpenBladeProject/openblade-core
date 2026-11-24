@@ -42,6 +42,9 @@ use tokio::time::timeout_at;
 pub(super) mod convergence_loop;
 #[path = "lifecycle_triggers.rs"]
 pub(super) mod lifecycle;
+#[cfg(feature = "service-thermal-convergence-v1")]
+#[path = "thermal_reapply.rs"]
+pub(super) mod reapply;
 
 /// Managed `ReportApplicationContextAsync` (Blocked) for a reporter that no
 /// longer controls the active local session.
@@ -387,6 +390,10 @@ struct Reconciled {
     // Blocked.
     #[cfg(feature = "service-thermal-convergence-v1")]
     refused_last: bool,
+    // Each step that ran or was deferred, with its reply, in step order
+    // (`reapply`).
+    #[cfg(feature = "service-thermal-convergence-v1")]
+    outcomes: Vec<(Step, Outcome)>,
     message: String,
     snapshot: Option<Snapshot>,
 }
@@ -1092,6 +1099,15 @@ impl Runtime {
             }
         }
         let message = said.join(" ");
+        // Each step is pushed in `order`: a step that breaks the loop before
+        // it runs pushes nothing, and the deferral pushed after the loop is
+        // the step the gate stopped.
+        #[cfg(feature = "service-thermal-convergence-v1")]
+        let outcomes = order
+            .iter()
+            .copied()
+            .zip(steps.iter().map(|(s, _)| s.outcome.clone()))
+            .collect();
         Ok(Reconciled {
             applied,
             submitted,
@@ -1102,6 +1118,8 @@ impl Runtime {
             unfinished,
             #[cfg(feature = "service-thermal-convergence-v1")]
             refused_last,
+            #[cfg(feature = "service-thermal-convergence-v1")]
+            outcomes,
             message,
             snapshot: steps.into_iter().rev().find_map(|(s, _)| s.snapshot),
         })

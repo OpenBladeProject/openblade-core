@@ -39,8 +39,8 @@ use std::sync::{Arc, Mutex};
 use tokio::time::Instant;
 
 /// Managed `DeviceSubsystem.Performance` and `DeviceSubsystem.Fans`.
-const PERFORMANCE: i32 = 0;
-const FANS: i32 = 1;
+pub(super) const PERFORMANCE: i32 = 0;
+pub(super) const FANS: i32 = 1;
 /// Managed `ResumeStateValidationTracker.ObservationWindow`: how long a
 /// resume hold lasts, and how long after a gate boundary a power change is
 /// applied as the resume's.

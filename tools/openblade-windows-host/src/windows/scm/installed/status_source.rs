@@ -766,6 +766,24 @@ impl StatusSource for GuardedStatus {
                     let status = publish_reconciled(&publisher, &mailbox, status)?;
                     Ok((outcome, Some(status)))
                 }
+                #[cfg(feature = "service-thermal-convergence-v1")]
+                crate::service_status::StatusRequest::ReapplyChangedSettings {
+                    request_id, ..
+                } => {
+                    let status = publisher.borrow().active.clone();
+                    let reapplied = runtime
+                        .reapply_changed(mailbox.clone(), caller, sid, request_id, deadline, status)
+                        .await?;
+                    // The steps' status, or after a ledger change alone the latest,
+                    // projected again with the rearmed or closed ledger.
+                    let status = match reapplied.snapshot {
+                        Some(status) => status,
+                        None if reapplied.ledger_changed => publisher.borrow().active.clone(),
+                        None => return Ok((reapplied.outcome, None)),
+                    };
+                    let status = publish_reconciled(&publisher, &mailbox, status)?;
+                    Ok((reapplied.outcome, Some(status)))
+                }
                 #[cfg(feature = "service-profiles-v1")]
                 crate::service_status::StatusRequest::UpdateProfiles {
                     request_id,

@@ -17,9 +17,9 @@
 //! and asks the loop (`thermal_convergence_loop`, through `Nominator`) what
 //! it would do with a contradiction: Converging, or RestorePending with
 //! `HyperBoostPending` while managed's HyperBoost journal blocks it. A
-//! tombstone or a spent budget is still published Paused with
-//! `InternalStateUnavailable`, since Suppressed leaves only an explicit
-//! reapply (D6).
+//! tombstone or a spent budget publishes Suppressed with its reason and an
+//! explicit reapply required, which `reapplyChangedSettings` rearms
+//! (`request_triggers::reapply`).
 //!
 //! A ledger the store cannot admit closes convergence as managed closes it:
 //! Strict is published, with the saved disclosure, and Paused with
@@ -305,12 +305,11 @@ pub(super) fn derive(
                     Reason::AwaitingFreshObservation,
                     false,
                 ),
-                // Until native serves `reapplyChangedSettings`, a suppression
-                // whose only exit is that explicit reapply is published as a
-                // contradiction native cannot hold.
-                Nomination::Suppressed(_) | Nomination::Unavailable => {
-                    paused(Reason::InternalStateUnavailable)
+                // Only an explicit reapply rearms a suppression.
+                Nomination::Suppressed(reason) => {
+                    publish(State::Suppressed, &components, reason, true)
                 }
+                Nomination::Unavailable => paused(Reason::InternalStateUnavailable),
             }
         }
     }

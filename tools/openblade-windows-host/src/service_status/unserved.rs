@@ -130,7 +130,7 @@ mod tests {
     }
 
     // One valid request per variant: each decodes wherever it is compiled.
-    fn variants() -> [StatusRequest; 12] {
+    fn variants() -> [StatusRequest; 13] {
         let id = || ID.to_owned();
         let version = PROTOCOL_VERSION;
         [
@@ -195,6 +195,10 @@ mod tests {
                 policy: 1,
             },
             StatusRequest::AcknowledgeThermalPolicyUpgradeDisclosure {
+                version,
+                request_id: id(),
+            },
+            StatusRequest::ReapplyChangedSettings {
                 version,
                 request_id: id(),
             },
