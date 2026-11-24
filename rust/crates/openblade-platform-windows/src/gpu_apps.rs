@@ -22,7 +22,7 @@ mod action;
 
 #[cfg(feature = "gpu-close")]
 pub use action::{ActionResult, Kind, Report, Target};
-pub use sampling::activity::{NvidiaActivityQuery, nvidia_process_utilization};
+pub use sampling::activity::NvidiaActivityQuery;
 #[cfg(feature = "gpu-close")]
 pub use sampling::close_windows_gpu_apps;
 pub use sampling::sample_windows_gpu_apps;

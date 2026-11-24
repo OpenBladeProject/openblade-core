@@ -51,7 +51,7 @@ impl NvidiaActivityQuery {
 /// The summed utilization of each process on `adapter`, over the counters
 /// with a valid status and a finite value, a negative value counting as zero
 /// (managed `Read`'s projection).
-pub fn nvidia_process_utilization(
+fn nvidia_process_utilization(
     counters: &[EngineCounter],
     adapter: NvidiaAdapterLuid,
 ) -> BTreeMap<i32, f64> {
