@@ -1687,7 +1687,6 @@ managed vector:
 
 | Managed commits | Behavior | Native area |
 |---|---|---|
-| 3f7b3838, 1a03e358 | Power-only write block on unclassified external power ends on a power change and publishes the classified source | battery and power-source admission |
 | 85182893 | A pending write block is released on a power change | thermal mutation, drift |
 | e481be77, ea5bd41e, 70cbb567 | Raw 6 off battery is a transitional DC Balanced, limited to transitions from battery, and Custom can be entered from it | thermal decode and mutation |
 | 06577e09 | A firmware-only lost acknowledgement is judged from the preset | thermal confirmation |
@@ -1698,15 +1697,27 @@ managed vector:
 | a26e1519 | A HyperBoost exit whose Maximum Fans restore was refused and whose journal cannot be retired reports the restore failure and blocked writes | HyperBoost exit reporting |
 | 0cf60756, 1aee2bd6, acdb3bf2, e22d97ac, 185c145a, d4249eca | Maximum fans in Custom, its restore, exit, refusal and RZ09-0482 handling | fan mutation, Custom capability |
 | cc9b97ff, 363805c9 | Product 669 Power Mode Control acknowledgements | power-mode decode |
-| e4f19946, b3b2b5ae | The limiter stays off while the override is on; an unreadable 07/8F | battery mutation |
 | db536537, b5a3aa6f | Temporary full charge on RZ09-0530 and RZ09-0529 | temporary full charge model admission |
 | d379614f, 677608a4, 4570d54c, 5b2b549d | SnapTap driver keyboard admission, rearm and retry | Agent function row |
-| 05ec5381 | A null one-shot control set is rejected | status decoder |
 | 0426e6a4, a4bc0874 | HyperBoost entry by SKU with a Balanced handoff, and the RZ09-0510 Turbo base | thermal mutation |
 | 4afe8fe2 and the cooling-pad series | Cooling-pad Auto mode and profile | no native cooling-pad backend |
 | 5dec9093, a1728389 | Windows Dynamic Lighting advisory | no native backend |
 | 7c56a32c, 4cca8813, 8bb17a4d, 736f6d8a, b82a614d, 5e74b33f | Observed CPU power, Intel ranges, GPU overclocking and local dimming | no native backend |
 | 520b7d03 and the lighting series | RZ09-0530 MCU edition key maps and MCU host lighting frames | no native backend |
+
+Ported from main a8aea95f and pinned by a managed vector:
+
+| Managed commits | Native behavior | Pinned by |
+|---|---|---|
+| 3f7b3838, 1a03e358 | Native latches no power-only block, so the destination already applied at the next classified power change. The origin tick now publishes the classified Windows source once per lifecycle epoch before it reconciles; see [Power change after conflicting adapter classes](windows-native-thermal-mutation.md#power-change-after-conflicting-adapter-classes) for the deviations | `power-only-release-vectors.json`, `readiness_tests/power_only_release.rs` |
+| 05ec5381 | `Snapshot::verify` refuses a status whose capabilities carry a `oneShotLaptopControls` or `hostManagedLaptopControls` member that is present and not an array; an absent one stays accepted. The rest of the capability record stays opaque | `service-object-frames.json` rows run through both codecs, `service_status/object_tests.rs` |
+
+Managed changes from main a8aea95f that do not apply to anything native
+admits:
+
+| Managed commits | Behavior | Why no native port |
+|---|---|---|
+| e4f19946, b3b2b5ae | The limiter stays off while the override was last on; an unreadable 07/8F blocks only override enable and cancel | Both change the experimental 0x02A0, 0x02C5 and 0x02C7 backends (`ExperimentalBladeModels`, `ExperimentalBladePort`) and their `ChargePolicyIndependentOfTemporaryFullCharge` capability, and admit temporary full charge on ExternalUnknown power. Native admits battery commands only on exact RZ09-0581 (`02E0`), where battery policy and temporary full charge need classified power. The shared read that reports protection off with bit 04 as an unknown override is already an unavailable native battery group (`BatteryObservation::projection`), with thermal reads independent of it. The `ResolveExplicitBatteryBaseline` fallback runs only on ExternalUnknown, which native refuses for battery |
 
 ## Native SCM gate
 

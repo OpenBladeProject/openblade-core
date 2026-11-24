@@ -608,8 +608,11 @@ expires the temporary, while a lock, an unlock, a suspend and resume or a
 notice that keeps the kind do not. A failed sample, an unknown ACLineStatus
 included, is not a boundary, and a change is seen only while a sample still
 shows it: a replug that completes before the notice's sample is missed. The
-status base reports 1 for battery and 3 for any other power, Unknown included,
-and may be older than the read. Status reads saved intent at that class only
+status base reports 1 for battery and 3 for any other power, Unknown included.
+It is the Windows power the metadata last observed: every 2 s, and once per
+lifecycle epoch at the origin tick (see
+[Power change after conflicting adapter classes](#power-change-after-conflicting-adapter-classes)),
+so it may be older than a read served before that tick. Status reads saved intent at that class only
 where fresh Windows power agrees with it, and otherwise at an unknown class,
 which expires nothing (managed `CaptureControlPowerSource`: a failed read is
 not a power boundary).
@@ -659,6 +662,52 @@ Native differs from managed here in these ways:
   the confirmed firmware state.
 - Managed also admits lighting and battery controls on unclassified power;
   those are not native thermal setters and are unchanged.
+
+#### Power change after conflicting adapter classes
+
+Managed latches a power-only write block when a reading's adapter classes
+conflict with Windows power, and a classified power change releases it,
+applies the destination and publishes the classified source (`1a03e358`,
+`3f7b3838`, `ChangePowerSourceCore`). Native latches nothing. Every step
+reads 07/8C fresh, and a reading that conflicts with Windows power (a battery
+class under Windows AC, or an unclassified one without Windows AC presence)
+refuses that step with nothing submitted and nothing published. The cause
+stays owed, so the next lifecycle epoch's classified reading applies the
+destination as any power-kind change does (see
+[Lifecycle reconciliation](#lifecycle-reconciliation)).
+
+The native port is the published source. Each origin tick's
+`process_power_source` observes Windows power once per lifecycle epoch, before
+the tick reconciles (`GuardedStatus::publish_power_source`), so the
+destination's publication carries the new source instead of the source of the
+last 2 s metadata refresh. An epoch moves on every SCM power, session and
+suspend notice. Metadata that repeats the last publication publishes no new
+revision, and a refresh that yields no evidence is retried at the next tick.
+The source is presentation only and admits no write: every step still takes
+its own fresh 07/8C reading and Windows power. A rejected or timed-out 07/8C
+read at the change writes nothing, still publishes the Windows source, and
+the next notice's classified reading applies the destination once the
+debt's retry pace has passed.
+
+`power-only-release-vectors.json`
+(`ServiceControlRuntimeTests.NativePowerOnlyReleaseVectors`) records the
+managed transitions, and `readiness_tests/power_only_release.rs` replays them.
+Differences from managed:
+
+- `writesBlocked` stays true: native publications never report thermal write
+  authority open, where managed reports false after the release.
+- The refused step publishes nothing, so during the conflict status shows the
+  Windows source (3), where managed retains PluggedIn (0).
+- Native has no transient-read label, so both managed release cases replay
+  the same native case.
+- The block another owner holds is a store fenced by an earlier submission
+  that may have reached the device, not an experimental write pause. Its
+  source is still published, and nothing is written.
+- `unconfirmedWrites` is not published. An unresolved destination submission
+  keeps the store fenced, and a read-only observation and a later notice
+  replay nothing; managed reopens write authority there.
+- An explicit request served before the next tick publishes the source of
+  the last observation.
 
 Resolution uses eligible manual intent, then the current application report's
 performance override, then the matching power profile. Desired performance
