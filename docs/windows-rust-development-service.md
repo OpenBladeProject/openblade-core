@@ -864,7 +864,7 @@ with managed's message, and the response frame has managed's 24 MiB bound.
 | --- | --- |
 | `versions.json` | The status `serviceVersion`, the RtlGetVersion text managed `Environment.OSVersion` prints, and the status `firmware` record (live-reading builds); `Unavailable` otherwise. No fresh firmware read runs. |
 | `device.json`, `capabilities.json` | The status `firmware.modelNumber` against the contract's model catalog, and the status capabilities, as managed's status-only runtime. |
-| `configuration.json` | The status members managed prints. The `capability.rz09-0581.*` keys, `hyperBoostBase` and the fan speed ranges are `Unavailable`: no native status carries them. |
+| `configuration.json` | The status members managed prints. The `capability.rz09-0581.*` keys, the three `hyperBoostBase` modes and the fan speed ranges are `Unavailable`: no native status carries them. |
 | `command-results.json`, `service-history.json` | The bounded history below. |
 | `device-verification.json` | Managed's `NotObserved` record: native has no device verification cache. |
 | `firmware-queries.json` | `[]`: native keeps no firmware query cache. |
@@ -873,8 +873,9 @@ with managed's message, and the response frame has managed's 24 MiB bound.
 | `logs.jsonl` | Empty: native has no `ILogger` or trace producer. |
 
 A status capability member that no native summary prints
-(`customPerformance`, `cpuPowerLimit`, `cpuVoltageOptimizer`, `gpuOverclock`,
-`hyperBoostBaseModes`, a non-empty `fanSpeedRangesByPerformancePreset` or
+(`customPerformance`, `cpuPowerLimit`, `intelCpuPowerLimit`, `localDimming`,
+`cpuVoltageOptimizer`, `gpuOverclock`, `hyperBoostBaseModes`, a non-empty
+`fanSpeedRangesByPerformancePreset` or
 `observedPowerSourceBehaviors`) fails the export instead of omitting it. No
 native composition publishes one today.
 
@@ -920,7 +921,7 @@ the contract in `diagnostic-export-contract.json` pin the redaction, history
 retention and truncation, entry text for typed bundles and the refusal replies
 (`NativeDiagnosticExportVectorTests`). The native tests replay them, and the
 managed reader decodes the native responses recorded in
-`diagnostic-export-native.json` through the v85 codec and compares each entry
+`diagnostic-export-native.json` through the v90 codec and compares each entry
 with the archive the managed provider builds from the same status and history
 (`NativeDiagnosticArchive_ReadsThroughTheManagedCodecAndMatchesTheManagedProvider`).
 Set `OPENBLADE_REGENERATE_NATIVE_DIAGNOSTIC_ARCHIVES` to rerecord them.
@@ -1799,6 +1800,24 @@ managed vector:
 | 5dec9093, a1728389 | Windows Dynamic Lighting advisory | no native backend |
 | 7c56a32c, 4cca8813, 8bb17a4d, 736f6d8a, b82a614d, 5e74b33f | Observed CPU power, Intel ranges, GPU overclocking and local dimming | no native backend |
 | 520b7d03 and the lighting series | RZ09-0530 MCU edition key maps and MCU host lighting frames | no native backend |
+
+Diagnostic export. Main added these managed `DiagnosticArchiveProvider` keys.
+Each reads only status members, so the native export prints them from the
+status it publishes, and the managed archive comparison
+(`NativeDiagnosticArchive_ReadsThroughTheManagedCodecAndMatchesTheManagedProvider`)
+pins them. No export case is allowlisted:
+
+| Managed commit | Keys | Native value |
+|---|---|---|
+| b82a614d7800ddd8367d2a57d51c90ea17a78c50 | `performance.intelCpuPowerLimit.{observed,write,rangesKnown}`, `display.localDimming.{observed,clear}` | False. `intelCpuPowerLimit` and `localDimming` join the capability records that refuse the export when present. |
+| b82a614d7800ddd8367d2a57d51c90ea17a78c50 | `performance.firmwareGamingGpuOverclock.{observed,write}` | Read from the status access member, as `hyperBoostAccess` is; absent, so False. |
+| 5dec9093266deb4169eba33b2e592b0029bb5e93 | `lighting.windowsDynamicLightingAdvisory` | The status member, absent, so managed's `Unknown`. |
+| 0426e6a4efd66bb99ef350af409ade09ebf20861 | `capability.hyperBoostEntryRestriction` | The status capability member, null, so `None`. |
+| a4bc0874790d6d7b18e9e72d95524e75158bdc1f | `capability.hyperBoostBase.Turbo` | `Unavailable`, as the other base modes. |
+
+The export gaps listed under [Diagnostic export](#diagnostic-export-read-only)
+are unchanged: no reconciliation summaries, logs, device verification,
+firmware query or HyperBoost ownership sources.
 
 ## Native SCM gate
 
