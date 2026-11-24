@@ -100,6 +100,15 @@ an earlier version restores nothing, and does not resume, until its disclosure
 has been seen. The firmware cannot report which owner's fan
 record is running, so a change written under the other owner is not detected.
 
+A timed-out exchange retires the HID session, and its later commands fail as
+`Disposed` without reaching the pad. Reads, Apply and Release then open a fresh
+exact-device session. A new session cannot tell which fan owner or effect record
+the old one confirmed, so during control it does not compare those. **Restore
+them** applies the saved settings again, counted against the same restore
+allowance; **Notify me** stops control. Without the lighting opt-in, lighting is
+rewritten only when the stored effect, brightness and device mode still match;
+otherwise control is released as for an outside change.
+
 A failed or ambiguous submission pauses control. Read the current state before
 choosing an explicit recovery action. The tray's automatic read is read-only and
 never resends the change. OpenBlade retains a write-ahead recovery
