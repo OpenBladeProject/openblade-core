@@ -3,8 +3,11 @@
 //!
 //! Managed reads it for an ObserveState that asks for `GpuTemperature`
 //! (`ReadOptionalLiveSensorsAsync`, then `SafeWindowsFanTemperatureSource.
-//! ReadAsync` with idle sampling off) from NVIDIA's user-mode NVML, behind two
-//! Windows reads that never call an NVIDIA API:
+//! ReadForLiveReadingsAsync`) from NVIDIA's user-mode NVML, behind two
+//! Windows reads that never call an NVIDIA API. This module keeps the
+//! workload gate of managed's `ReadAsync`, which live readings used before
+//! 8331bbf4. The idle D0 reads that managed live readings now make are not
+//! ported (`PENDING_PARITY` in the tests). The two Windows reads are:
 //!
 //! 1. A workload: the WDDM GPU-engine counters of the NVIDIA adapter,
 //!    collected twice 150 ms apart (`WindowsGpuActivitySource`). A process
@@ -35,10 +38,12 @@
 //! without waiting for the worker, which ends the session when the call it
 //! is in returns.
 //!
-//! A missing driver, adapter or NVML, a failed call, an idle or powered-down
-//! GPU and a sensor outside managed's 10..=125 C all publish null, as managed
-//! does. A value the managed codec refuses (above 115 C) is published as null
-//! rather than refusing the whole reply.
+//! A missing driver, adapter or NVML, a failed call, a powered-down GPU and a
+//! sensor outside managed's 10..=125 C all publish null, as managed does. An
+//! idle GPU also publishes null here; managed live readings instead report an
+//! idle GPU held in D0 from a recent or dwell-gated reading. A value the
+//! managed codec refuses (above 115 C) is published as null rather than
+//! refusing the whole reply.
 use std::{
     cell::RefCell,
     collections::BTreeMap,

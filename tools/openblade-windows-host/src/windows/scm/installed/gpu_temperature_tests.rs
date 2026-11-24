@@ -302,7 +302,11 @@ fn power_states(states: &Value) -> VecDeque<Power> {
 }
 
 /// Managed's sampler replay over the native sampler: a read is `sample`,
-/// the session timer is `expire` and disposal is `release`.
+/// the session timer is `expire` and disposal is `release`. The native
+/// sampler has one read path, so both managed readers (no `reader` for
+/// ReadAsync, `live` for ReadForLiveReadingsAsync) replay through `sample`,
+/// and [`PENDING_PARITY`] lists the live rows that differ. Any other reader
+/// is a recorder this replay does not know.
 fn replay(steps: &[Value]) -> Vec<Value> {
     let script = Rc::new(RefCell::new(Script::default()));
     let (base, elapsed, clock) = clock();
@@ -319,6 +323,11 @@ fn replay(steps: &[Value]) -> Vec<Value> {
             let mut expect = Map::new();
             match step["action"].as_str().unwrap_or("read") {
                 "read" => {
+                    match &step["reader"] {
+                        Value::Null => {}
+                        Value::String(reader) if reader == "live" => {}
+                        reader => panic!("unknown sampler reader {reader}"),
+                    }
                     {
                         let mut script = script.borrow_mut();
                         script.active = step["active"].as_bool();
@@ -350,34 +359,52 @@ fn replay(steps: &[Value]) -> Vec<Value> {
         .collect()
 }
 
+/// The managed commit that gave live readings their own GPU read.
+const IDLE_D0_LIVE_READINGS: &str = "8331bbf476ab4f17a2c70d4945a77782049aa4a8";
+
 /// Sampler rows the native sampler does not match yet, each with the managed
 /// commit that introduced the behavior. Managed live readings since
-/// 8331bbf4 read an idle GPU held in D0 after a 3 s D0 dwell, at most once
-/// per 10 s, and drop the reading on any non-D0 sample (`reader: live`
-/// rows, `SafeWindowsFanTemperatureSource.ReadForLiveReadingsAsync`). The
-/// native sampler has one read path with ReadAsync's workload gate, so an
-/// idle D0 GPU stays unread. docs/windows-rust-development-service.md lists
-/// every pending gap; remove a row here when its port lands.
+/// [`IDLE_D0_LIVE_READINGS`] call
+/// `SafeWindowsFanTemperatureSource.ReadForLiveReadingsAsync` (`reader:
+/// live` rows). An idle sample of a GPU held in D0 reuses the last D0
+/// reading of any read, active or ordinary, for up to 10 s, and otherwise
+/// reads NVML once the GPU has been in D0 for 3 s. A non-D0 sample drops
+/// the reading and restarts the dwell. The native sampler has one read path
+/// with ReadAsync's workload gate, so its idle samples read nothing.
+/// docs/windows-rust-development-service.md lists every pending gap; remove
+/// a row here when its port lands.
 const PENDING_PARITY: &[(&str, &str)] = &[
     (
         "live readings read an idle D0 GPU after the dwell, then at most every 10 s",
-        "8331bbf476ab4f17a2c70d4945a77782049aa4a8",
+        IDLE_D0_LIVE_READINGS,
     ),
     (
         "a non-D0 live-reading sample restarts the dwell",
-        "8331bbf476ab4f17a2c70d4945a77782049aa4a8",
+        IDLE_D0_LIVE_READINGS,
     ),
     (
         "live readings read D0 with unavailable counters after the dwell",
-        "8331bbf476ab4f17a2c70d4945a77782049aa4a8",
+        IDLE_D0_LIVE_READINGS,
     ),
     (
         "the power recheck drops an idle D0 live reading",
-        "8331bbf476ab4f17a2c70d4945a77782049aa4a8",
+        IDLE_D0_LIVE_READINGS,
     ),
     (
         "an ordinary read does not reuse an idle D0 live reading",
-        "8331bbf476ab4f17a2c70d4945a77782049aa4a8",
+        IDLE_D0_LIVE_READINGS,
+    ),
+    (
+        "live readings reuse an active reading for idle samples for 10 s",
+        IDLE_D0_LIVE_READINGS,
+    ),
+    (
+        "a live idle sample reuses an ordinary active reading",
+        IDLE_D0_LIVE_READINGS,
+    ),
+    (
+        "the live reader keeps an active reading at the first idle sample",
+        IDLE_D0_LIVE_READINGS,
     ),
 ];
 
