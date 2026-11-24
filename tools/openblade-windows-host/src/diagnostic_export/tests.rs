@@ -472,6 +472,8 @@ fn capability_members_without_a_native_summary_refuse_the_export() {
     for (member, value) in [
         ("customPerformance", json!({"cpu": 1})),
         ("cpuPowerLimit", json!({})),
+        ("intelCpuPowerLimit", json!({})),
+        ("localDimming", json!({"access": 1, "supportsClear": true})),
         ("cpuVoltageOptimizer", json!({})),
         ("gpuOverclock", json!({})),
         ("hyperBoostBaseModes", json!({"balanced": true})),

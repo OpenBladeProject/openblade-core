@@ -41,6 +41,7 @@ public sealed class NativeDiagnosticExportVectorTests
         typeof(FanMode),
         typeof(FirmwareCompatibilityStatus),
         typeof(FunctionKeyPrimaryMode),
+        typeof(HyperBoostEntryRestriction),
         typeof(LightingEffect),
         typeof(LightingRefreshRate),
         typeof(LightingRendererOwnershipState),
@@ -50,6 +51,7 @@ public sealed class NativeDiagnosticExportVectorTests
         typeof(PowerSource),
         typeof(SettingValueSource),
         typeof(SpecialKeySlotSet),
+        typeof(WindowsDynamicLightingAdvisory),
     ];
 
     [Fact]
@@ -379,7 +381,7 @@ public sealed class NativeDiagnosticExportVectorTests
     private static Dictionary<string, string> ToDictionary(List<(string Name, string Text)> entries) =>
         entries.ToDictionary(entry => entry.Name, entry => entry.Text, StringComparer.Ordinal);
 
-    // The reply managed gives each refused or failed export, as the v85 codec writes it.
+    // The reply managed gives each refused or failed export, as the current codec writes it.
     private static async Task<string> RefusalAsync(string caller, string? failure)
     {
         var user = new SecurityIdentifier("S-1-5-21-1000000000-2000000000-3000000000-1001");

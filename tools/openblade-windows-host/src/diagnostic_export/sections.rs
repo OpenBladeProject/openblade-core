@@ -188,9 +188,11 @@ fn capability_record(status: &Value) -> Value {
 
 /// Capability members whose managed summary reads a typed record native
 /// never composes. A non-empty value refuses the export.
-const UNEXPORTED: [&str; 7] = [
+const UNEXPORTED: [&str; 9] = [
     "customPerformance",
     "cpuPowerLimit",
+    "intelCpuPowerLimit",
+    "localDimming",
     "cpuVoltageOptimizer",
     "gpuOverclock",
     "hyperBoostBaseModes",
@@ -388,6 +390,11 @@ pub(crate) fn capabilities(status: &Value) -> Result<BTreeMap<String, bool>, Fai
         "performance.customMaximumFans",
         "performance.cpuPowerLimit.observed",
         "performance.cpuPowerLimit.write",
+        "performance.intelCpuPowerLimit.observed",
+        "performance.intelCpuPowerLimit.write",
+        "performance.intelCpuPowerLimit.rangesKnown",
+        "display.localDimming.observed",
+        "display.localDimming.clear",
         "performance.cpuVoltageOptimizer.observed",
         "performance.cpuVoltageOptimizer.write",
         "performance.cpuVoltageOptimizer.enableDisableObserved",
@@ -418,6 +425,10 @@ pub(crate) fn capabilities(status: &Value) -> Result<BTreeMap<String, bool>, Fai
     };
     for (prefix, name) in [
         ("performance.hyperBoost", "hyperBoostAccess"),
+        (
+            "performance.firmwareGamingGpuOverclock",
+            "firmwareGamingGpuOverclockAccess",
+        ),
         (
             "performance.hyperBoost.withoutCoolingPad",
             "hyperBoostWithoutCoolingPadAccess",
@@ -649,6 +660,15 @@ pub(crate) fn configuration(
         )?,
     );
     put(
+        "lighting.windowsDynamicLightingAdvisory",
+        enum_or(
+            status,
+            "windowsDynamicLightingAdvisory",
+            "WindowsDynamicLightingAdvisory",
+            0,
+        )?,
+    );
+    put(
         "lighting.alwaysOverrideExternalChanges",
         bool_text(flag(status, "alwaysOverrideExternalLightingChanges", false)),
     );
@@ -837,8 +857,21 @@ pub(crate) fn configuration(
         "capability.hyperBoostWithoutCoolingPadAccess",
         access_name("hyperBoostWithoutCoolingPadAccess")?,
     );
-    put("capability.hyperBoostBase.Balanced", UNAVAILABLE.into());
-    put("capability.hyperBoostBase.Custom", UNAVAILABLE.into());
+    put(
+        "capability.hyperBoostEntryRestriction",
+        enum_member(
+            caps,
+            "hyperBoostEntryRestriction",
+            "HyperBoostEntryRestriction",
+        )?
+        .unwrap_or_else(|| "None".into()),
+    );
+    for base in ["Balanced", "Custom", "Turbo"] {
+        put(
+            &format!("capability.hyperBoostBase.{base}"),
+            UNAVAILABLE.into(),
+        );
+    }
     let range = member(caps, "fanSpeedRange");
     for (key, name) in [
         ("capability.fanSpeedMinimumRpm", "minimumRpm"),
