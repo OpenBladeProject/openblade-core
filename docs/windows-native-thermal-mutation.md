@@ -2214,9 +2214,6 @@ Native differs from managed in these ways:
   starts a new budget generation once, at most.
 - Record equality. Managed compares the ledger's lists by reference, so a
   loaded tombstone never equals a new one; native compares them by value.
-- Without `reapplyChangedSettings` (S5d), a tombstone or a spent budget is
-  published Paused with `InternalStateUnavailable` (D6), as a contradiction
-  native cannot hold, rather than Suppressed with its only exit.
 
 #### Convergence loop
 
@@ -2322,6 +2319,64 @@ a ledger changed between writes and one refusal refusing every later step;
 the fan step's convergence, mid-step refusal and Stop; the drain stopping
 the loop; a left reservation retired Confirmed; a tombstone holding without
 its budget; and a failed and a stalled periodic read.
+
+#### Explicit reapply
+
+A tombstone or a spent budget suppresses its contradiction, and the status
+publishes Suppressed with its components, `Tombstoned` or `BudgetExhausted`
+and `explicitReapplyRequired`, as managed does. With
+`service-thermal-convergence-v1`, native serves managed's
+`reapplyChangedSettings` at protocol 90 (`thermal_reapply.rs`), its only
+exit. It needs no wire change: the request carries only its version and
+request ID, and the reply is an ordinary operation result with the status
+the request published.
+
+Under the operation gate, in managed's order (`ReapplyChangedSettingsAsync`):
+
+| Condition | Reply | Ledger |
+| --- | --- | --- |
+| An unsettled journal row (managed's pending write confirmation) | Blocked, confirm the current laptop state | Kept |
+| A reservation in the ledger | Blocked, reconcile the reserved transition | Kept |
+| Tombstones or budgets, and the replacement fails | Blocked, the suppression could not be retired | Kept, store closed |
+| Tombstones or budgets | Rearmed, then the rows below | Tombstones, budgets and the terminal result cleared |
+| No drift | Stored, no settings changed outside OpenBlade | |
+| Drift | Applied, or Blocked or Failed with what is still changed | |
+
+The rearm is a compare-and-swap on the bytes the store holds
+(`Storage::replace_convergence_ledger`), so a ledger changed under the
+running Service is kept, and the failed write closes the store, which the
+status then reports quarantined. A rearm, or that failed write,
+republishes the status from the ledger at once, and after a rearm the next
+evaluation of the same drift reserves a fresh claim. The drift reapply is one reconciliation scoped to the drifted
+subsystems native tracks, performance and fans, ordered as managed's
+transition order and overwriting the drift. Each step keeps its own capture,
+write admission, readback and stop-on-ambiguity path, and spends no claim.
+Manual fans on both sides of a performance reapply block both, with
+managed's per-subsystem reasons. The reply names what was reapplied and
+what is still changed, with each remaining subsystem's reason.
+
+Native differs from managed in these ways:
+
+- A caller outside the control session is closed without a reply, as for
+  every mutation, where managed replies Blocked.
+- The request capture precedes the pending and ledger checks, so a
+  competing controller, a locked session or an unknown AC status refuses the
+  request before them, as it refuses a policy change.
+- Unknown Windows power blocks with managed's unclassified-adapter reply.
+  An adapter only a step's own reading finds unclassified is that step's
+  refusal.
+- A power class changed since the last reconciliation is the lifecycle
+  tick's, so no full transition runs first, and native has no automatic
+  fan-stop arming to pause.
+
+`tests/data/thermal-reapply-vectors.json` holds managed's replies, the
+ledger each leaves and whether it wrote, recorded by
+`ServiceControlRuntimeTests.NativeThermalReapplyVectors.cs`.
+`readiness_tests/thermal_reapply.rs` replays each row through the framed
+dispatcher over the convergence rig, and pins a rearm followed by the same
+drift converging again with a fresh claim, a rearm that cannot persist and
+its immediate quarantined publication, and the pending and in-flight blocks
+writing nothing. `thermal_reapply.rs` checks the three reply summaries.
 
 ## Submission, ambiguity and finite transport lifetime
 
