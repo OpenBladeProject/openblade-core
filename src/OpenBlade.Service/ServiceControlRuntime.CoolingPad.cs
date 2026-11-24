@@ -16,13 +16,14 @@ public sealed partial class ServiceControlRuntime
         {
             await coolingPadControl.SetUserAsync(userSid.Value, token).ConfigureAwait(false);
             long sessionEpoch = Interlocked.Read(ref sessionAdmissionEpoch);
-            long powerEpoch = Interlocked.Read(ref powerAdmissionEpoch);
+            long powerEpoch = Interlocked.Read(ref coolingPadPowerEpoch);
             bool StillOwns() => CoolingPadSessionContinues(userSid.Value, stillControlsSession);
             bool Allowed() => sessionEpoch == Interlocked.Read(ref sessionAdmissionEpoch)
-                && powerEpoch == Interlocked.Read(ref powerAdmissionEpoch)
+                && powerEpoch == Interlocked.Read(ref coolingPadPowerEpoch)
                 && StillOwns() && CoolingPadWriteAdmission(userSid.Value, allowLowPower: false);
-            // Epochs admit this finite command. Periodic power classification is not loss of
-            // the long-lived Windows-session owner and must not stop a healthy pad session.
+            // Epochs admit this finite command. Only a Windows AC/DC event advances the pad's
+            // power epoch. Periodic classification runs every 15 s outside the pad's gate and would
+            // otherwise cancel any command it overlaps, sometimes after a partial write.
             return await coolingPadControl.ApplyAsync(settings, Allowed, token, continuedOwnership: StillOwns).ConfigureAwait(false);
         }
         finally { PublishCoolingPadStatus(); }
@@ -75,7 +76,7 @@ public sealed partial class ServiceControlRuntime
     {
         string? user = Volatile.Read(ref activeUserSid);
         long sessionEpoch = Interlocked.Read(ref sessionAdmissionEpoch);
-        long powerEpoch = Interlocked.Read(ref powerAdmissionEpoch);
+        long powerEpoch = Interlocked.Read(ref coolingPadPowerEpoch);
         // The pad follows "If settings change outside OpenBlade" for changes found while it is
         // controlled and for resuming control after a handback.
         bool restoreOutsideChanges = CoolingPadRestoresOutsideChanges();
@@ -85,7 +86,7 @@ public sealed partial class ServiceControlRuntime
         {
             await coolingPadControl.MaintainAsync(
                 () => sessionEpoch == Interlocked.Read(ref sessionAdmissionEpoch)
-                    && powerEpoch == Interlocked.Read(ref powerAdmissionEpoch)
+                    && powerEpoch == Interlocked.Read(ref coolingPadPowerEpoch)
                     && CoolingPadWriteAdmission(user, allowLowPower: false), token, restoreOutsideChanges,
                 restoreOutsideLighting).ConfigureAwait(false);
             if (user is not null && restoreOutsideChanges && !coolingPadControl.Status.Active)
@@ -97,7 +98,7 @@ public sealed partial class ServiceControlRuntime
                     && CoolingPadSessionContinues(user, () => controlsSession?.Invoke() == true);
                 await coolingPadControl.ResumeSavedControlAsync(user,
                     () => sessionEpoch == Interlocked.Read(ref sessionAdmissionEpoch)
-                        && powerEpoch == Interlocked.Read(ref powerAdmissionEpoch)
+                        && powerEpoch == Interlocked.Read(ref coolingPadPowerEpoch)
                         && StillOwns() && CoolingPadWriteAdmission(user, allowLowPower: false),
                     StillOwns, token).ConfigureAwait(false);
             }
@@ -161,7 +162,7 @@ public sealed partial class ServiceControlRuntime
     {
         coolingPadControl.Revoke();
         long sessionEpoch = Interlocked.Read(ref sessionAdmissionEpoch);
-        long powerEpoch = Interlocked.Read(ref powerAdmissionEpoch);
+        long powerEpoch = Interlocked.Read(ref coolingPadPowerEpoch);
         int ownSessionAdmissions = Volatile.Read(ref pendingSessionAdmissions);
         using var budget = new CancellationTokenSource(TimeSpan.FromSeconds(2));
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(token, budget.Token);
@@ -173,7 +174,7 @@ public sealed partial class ServiceControlRuntime
                 // not application of either user's preferences. The old user may be logged off.
                 return previousUser != newUser && !lowPowerGate.IsActive && !linked.IsCancellationRequested
                     && sessionEpoch == Interlocked.Read(ref sessionAdmissionEpoch)
-                    && powerEpoch == Interlocked.Read(ref powerAdmissionEpoch)
+                    && powerEpoch == Interlocked.Read(ref coolingPadPowerEpoch)
                     && Volatile.Read(ref pendingSessionAdmissions) == ownSessionAdmissions
                     && Volatile.Read(ref pendingPowerAdmissions) == 0
                     && string.Equals(Volatile.Read(ref activeUserSid), previousUser, StringComparison.OrdinalIgnoreCase)

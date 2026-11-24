@@ -269,14 +269,16 @@ public sealed partial class ServiceControlRuntimeTests
         internal Func<Task>? Dispose;
         internal int RestoreCalls;
         internal int FanWrites;
+        // Runs inside a fan write before its admission check, as a concurrent service task would.
+        internal Func<Task>? DuringFanWrite;
         public Task<CoolingPadDeviceSnapshot> ReadSnapshotAsync(CancellationToken token) => Task.FromResult(snapshot);
-        public Task SetFanAsync(CoolingPadFanMode mode, int? rpm, Func<bool> allowed, CancellationToken token,
+        public async Task SetFanAsync(CoolingPadFanMode mode, int? rpm, Func<bool> allowed, CancellationToken token,
             CoolingPadFanPreset? smartPreset = null)
         {
+            if (DuringFanWrite is { } during) { await during(); }
             if (!allowed()) { throw new CoolingPadOperationException("Admission closed.", false); }
             FanWrites++;
             snapshot = snapshot with { FanMode = mode, TargetRpm = rpm };
-            return Task.CompletedTask;
         }
         public Task SetLightingAsync(CoolingPadSettings settings, Func<bool> allowed, CancellationToken token) =>
             throw new InvalidOperationException("This lifecycle test must not write pad lighting.");
