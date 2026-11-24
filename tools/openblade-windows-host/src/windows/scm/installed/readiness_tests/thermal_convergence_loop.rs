@@ -520,8 +520,39 @@ async fn unsupported_fan_intent_is_automatic_and_a_performance_drift_still_conve
         assert_eq!(state["tombstones"][0]["terminalDisposition"], 0, "{state}");
         assert_eq!(state["tombstones"][0]["contradiction"], 1, "{state}");
         assert_eq!(state["budgets"].as_array().unwrap().len(), 1, "{state}");
+        // Manual fans another controller set, under the Automatic
+        // projection, spend no claim either.
+        let selector = device_state(&rig).0[0];
+        moved(&rig, selector, 1);
+        let status = observe(&rig, 4).await;
+        // Firmware reports no preset under them, so only their topology
+        // contradicts (managed `ManualTopologyOnly`).
+        assert_eq!(convergence(&status)["state"], PAUSED, "{battery} {status}");
+        assert_eq!(convergence(&status)["reason"], 16, "{battery} {status}");
+        let (written, before) = (writes(&rig), raw(&rig, LEDGER));
+        tick(&rig).await;
+        assert_eq!(
+            (writes(&rig), raw(&rig, LEDGER)),
+            (written, before),
+            "{battery}"
+        );
         rig.stop().await;
     }
+}
+
+/// A contradiction read while a lifecycle cause is owed awaits it: its
+/// reconciliation runs first, so the status names no convergence.
+#[tokio::test]
+async fn a_contradiction_awaits_an_owed_lifecycle_cause() {
+    let (rig, _journal) = converging().await;
+    // A report deferred in low power is owed to the resume tick.
+    suspend(&rig);
+    report(&rig, 2, None).await;
+    resume(&rig);
+    let status = drift(&rig, 1).await;
+    assert_eq!(convergence(&status)["state"], AWAITING, "{status}");
+    assert_eq!(convergence(&status)["reason"], 7, "{status}");
+    abandon(rig).await;
 }
 
 /// D9 for performance: saved GPU clock tuning native has no writer for
