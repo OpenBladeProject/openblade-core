@@ -34,6 +34,15 @@ pub(crate) fn production_path() -> String {
 // LiveReadingSensors is a four-bit mask. The managed legacy default is All.
 const ALL_LIVE_READINGS: u8 = 15;
 
+/// The LiveReadingSensors bits this Service reads. CPU temperature (4) is
+/// never read here.
+#[cfg(all(windows, feature = "service-live-readings-v1"))]
+pub(crate) mod live_sensors {
+    pub(crate) const BATTERY_POWER: u8 = 1;
+    pub(crate) const FAN_SPEEDS: u8 = 2;
+    pub(crate) const GPU_TEMPERATURE: u8 = 8;
+}
+
 // Decoded through `json_object`: managed reads the request and every nested
 // struct member only from a JSON object, never a positional array.
 #[derive(Clone, Deserialize, Serialize)]
@@ -1073,9 +1082,7 @@ impl Snapshot {
         fans: Option<[u16; 2]>,
         gpu_temperature: Option<i32>,
     ) -> Self {
-        const BATTERY_POWER: u8 = 1;
-        const FAN_SPEEDS: u8 = 2;
-        const GPU_TEMPERATURE: u8 = 8;
+        use live_sensors::{BATTERY_POWER, FAN_SPEEDS, GPU_TEMPERATURE};
         let fans = fans.filter(|_| mask & FAN_SPEEDS != 0);
         self.live_readings = (mask != 0).then(|| LiveReadings {
             battery_power_flow_milliwatts: battery_power_flow.filter(|_| mask & BATTERY_POWER != 0),

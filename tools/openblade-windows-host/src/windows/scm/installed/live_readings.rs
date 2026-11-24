@@ -55,9 +55,6 @@ mod windows;
 #[cfg(windows)]
 pub(super) use windows::Windows;
 
-pub(super) const BATTERY_POWER: u8 = 1;
-pub(super) const FAN_SPEEDS: u8 = 2;
-pub(super) const GPU_TEMPERATURE: u8 = 8;
 /// The managed v85 codec refuses a fan speed above this.
 const MAXIMUM_RPM: u16 = 20_000;
 /// Consecutive unconfirmed fan reads that still publish the last pair.

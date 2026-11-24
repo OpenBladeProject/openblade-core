@@ -1417,7 +1417,7 @@ impl ReadSource {
             let worker = source.worker.borrow().clone();
             // Managed captures battery power before its device read.
             #[cfg(feature = "service-live-readings-v1")]
-            let battery_power = (live & live_readings::BATTERY_POWER != 0)
+            let battery_power = (live & crate::service_status::live_sensors::BATTERY_POWER != 0)
                 .then(|| source.live.battery_power_flow())
                 .flatten();
             // Managed reads GPU temperature after its device read. Its worker
@@ -1425,14 +1425,14 @@ impl ReadSource {
             // and an NVML start lengthen neither the job nor the reply, and
             // a sample whose reading is not accepted is dropped unpublished.
             #[cfg(feature = "service-live-readings-v1")]
-            let gpu = (live & live_readings::GPU_TEMPERATURE != 0)
+            let gpu = (live & crate::service_status::live_sensors::GPU_TEMPERATURE != 0)
                 .then(|| source.gpu.request(deadline))
                 .flatten();
             // The 0D/88 pair rides this serialized job only for an
             // ObserveState that asked for fan speeds, after the thermal read,
             // and not while an unconfirmed pair's back-off lasts.
             #[cfg(feature = "service-live-readings-v1")]
-            let fan_speeds = live & live_readings::FAN_SPEEDS != 0;
+            let fan_speeds = live & crate::service_status::live_sensors::FAN_SPEEDS != 0;
             #[cfg(feature = "service-live-readings-v1")]
             let fan_query = fan_speeds
                 .then(|| source.live.fan_query(Instant::now()))

@@ -186,11 +186,13 @@ impl Rig {
 
 /// A GPU for the rig's worker: active and in D0, its NVML reading `first`
 /// plus the number of earlier reads. While `hold` is set, each workload
-/// sample waits for one message or its sender's drop.
+/// sample waits for one message or its sender's drop. `exited` reports
+/// when the worker drops its session.
 #[derive(Clone, Default)]
 struct Gpu {
     workloads: Arc<AtomicUsize>,
     reads: Arc<AtomicUsize>,
+    exited: Option<std::sync::mpsc::Sender<()>>,
 }
 
 struct GpuProbes(Arc<AtomicUsize>, Option<std::sync::mpsc::Receiver<()>>);
@@ -209,7 +211,15 @@ impl gpu_temperature::Probes for GpuProbes {
     }
 }
 
-struct GpuSession(i32, Arc<AtomicUsize>);
+struct GpuSession(i32, Arc<AtomicUsize>, Option<std::sync::mpsc::Sender<()>>);
+
+impl Drop for GpuSession {
+    fn drop(&mut self) {
+        if let Some(exited) = &self.2 {
+            let _ = exited.send(());
+        }
+    }
+}
 
 impl gpu_temperature::TemperatureSession for GpuSession {
     fn try_read(&mut self) -> Option<i32> {
@@ -229,7 +239,7 @@ impl Gpu {
         Box::new(move || {
             gpu_temperature::Sampler::new(
                 Box::new(GpuProbes(gpu.workloads, hold)),
-                Box::new(GpuSession(first, gpu.reads)),
+                Box::new(GpuSession(first, gpu.reads, gpu.exited)),
                 Box::new(std::time::Instant::now),
             )
         })
@@ -237,6 +247,12 @@ impl Gpu {
 
     fn workloads(&self) -> usize {
         self.workloads.load(Ordering::SeqCst)
+    }
+
+    fn watch_exit(&mut self) -> std::sync::mpsc::Receiver<()> {
+        let (exited, exits) = std::sync::mpsc::channel();
+        self.exited = Some(exited);
+        exits
     }
 }
 
@@ -800,6 +816,94 @@ async fn an_observation_waiting_for_its_gpu_sample_never_overwrites_a_later_read
     assert_eq!(rig.published(), published);
     for published in published {
         assert_eq!(published["confirmedState"]["hyperBoostActive"], true);
+    }
+}
+
+/// Stop ends the GPU worker and its held session without waiting for the
+/// lease.
+#[tokio::test]
+async fn stop_ends_the_gpu_worker() {
+    let mut gpu = Gpu::default();
+    let exits = gpu.watch_exit();
+    let rig = Rig::new().with_gpu(gpu.factory(52, None));
+    let observed = rig.observe(8).await.unwrap();
+    assert_eq!(readings(&observed)[4], &json!(52));
+    assert!(exits.try_recv().is_err());
+    rig.source.stop().await.unwrap();
+    exits
+        .recv_timeout(gpu_temperature::LEASE / 2)
+        .expect("the worker outlived Stop");
+}
+
+/// Each LiveReadings member is published only when its bit was asked for,
+/// and an observation that asked for none publishes no LiveReadings.
+#[test]
+fn live_readings_carry_only_the_asked_sensors() {
+    let published = |mask| {
+        serde_json::to_value(status(0).with_live_readings(
+            mask,
+            Some(-25000),
+            Some([3200, 3000]),
+            Some(52),
+        ))
+        .unwrap()
+    };
+    assert_eq!(published(0)["liveReadings"], Value::Null);
+    let null = Value::Null;
+    for (mask, expected) in [
+        (
+            1,
+            [
+                json!(-25000),
+                null.clone(),
+                null.clone(),
+                null.clone(),
+                null.clone(),
+            ],
+        ),
+        (
+            2,
+            [
+                null.clone(),
+                json!(3200),
+                json!(3000),
+                null.clone(),
+                null.clone(),
+            ],
+        ),
+        (
+            4,
+            [
+                null.clone(),
+                null.clone(),
+                null.clone(),
+                null.clone(),
+                null.clone(),
+            ],
+        ),
+        (
+            8,
+            [
+                null.clone(),
+                null.clone(),
+                null.clone(),
+                null.clone(),
+                json!(52),
+            ],
+        ),
+        (
+            15,
+            [
+                json!(-25000),
+                json!(3200),
+                json!(3000),
+                null.clone(),
+                json!(52),
+            ],
+        ),
+    ] {
+        let value = published(mask);
+        assert_eq!(readings(&value), expected.each_ref(), "{mask}");
     }
 }
 
