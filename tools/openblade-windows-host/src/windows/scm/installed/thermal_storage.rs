@@ -40,6 +40,9 @@ mod profiles;
 pub(super) use profiles::ProfileSave;
 #[cfg(feature = "service-profile-triggers-v1")]
 pub(super) use profiles::{PolicyChange, PolicySave, SavedPolicy};
+#[cfg(feature = "service-thermal-convergence-v1")]
+#[path = "thermal_convergence_ledger.rs"]
+mod convergence;
 
 pub(super) const RELEASE_PAUSED: &str = "Temporary charge journal release is deferred.";
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -667,6 +670,9 @@ struct State {
     // retry needs (`battery_storage::retry_capacity`); it outlives the
     // reserved cancel's Prepared row, which spends the reservation.
     temporary_retry_capacity: usize,
+    // The shared thermal convergence ledger, read once at open.
+    #[cfg(feature = "service-thermal-convergence-v1")]
+    ledger: convergence::Ledger,
 }
 pub(super) struct Storage {
     same_path: fn(&str, &str) -> bool,
@@ -747,6 +753,10 @@ impl Storage {
         }
         #[cfg(feature = "service-profiles-v1")]
         profiles::opened(user_sid);
+        // Read last, and never a reason to refuse the open: a ledger that is
+        // not authoritative closes convergence only.
+        #[cfg(feature = "service-thermal-convergence-v1")]
+        let ledger = convergence::Ledger::load(files.as_ref(), user_sid);
         Ok(Arc::new(Self {
             #[cfg(test)]
             battery_append_hook: Mutex::new(None),
@@ -776,6 +786,8 @@ impl Storage {
                 temporary_capacity: 0,
                 temporary_capacity_origin: None,
                 temporary_retry_capacity: 0,
+                #[cfg(feature = "service-thermal-convergence-v1")]
+                ledger,
             }),
         }))
     }

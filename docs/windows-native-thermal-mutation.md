@@ -1957,8 +1957,12 @@ Native differs from managed in these ways:
   report that leaves a rule (`otherReportedWithOwnPreset`) and the lease
   expiry (`leaseExpired`) both pause over OpenBlade's own preset, and
   managed's convergence loop repairs that later. Native compares OpenBlade's
-  own confirmed state and applies at once, a deliberate deviation while it
-  has no convergence loop. The vectors keep managed's rows, and
+  own confirmed state and applies at once. This is a permanent, declared
+  divergence, kept when native gains its convergence loop: managed's repair
+  spends the one convergence claim for that destination and policy revision
+  on OpenBlade's own preset, and under Strict, where nothing converges, the
+  pause strands OpenBlade's own Fixed fans until an explicit reapply. The
+  vectors keep managed's rows, and
   `a_report_over_its_own_preset_applies_where_managed_pauses` and
   `an_expired_lease_applies_the_power_profile_once` pin native's outcome.
   A reconciliation deferred or retried before any submission keeps its
@@ -2156,6 +2160,62 @@ and checks that native classifies the same components where managed
 converges. `readiness_tests/thermal_policy.rs` replays the replies through
 the framed dispatcher. `tests/data/profile-migration-vectors.json` carries
 managed's Strict and Acknowledged rows that survive migration.
+
+#### Shared convergence ledger
+
+With `service-thermal-convergence-v1`, which implies the lifecycle triggers,
+the store also reads the user's convergence ledger. Native shares managed's
+`thermal-convergence.json` (`ThermalConvergenceStateStore`): the same
+per-user directory, schema 1 and members. `openblade_domain::thermal_convergence`
+ports the document, its validation and managed's ledger transitions
+(`ThermalConvergenceLedgerTransitions`: refresh, reserve, complete), and the
+revision hash byte for byte: SHA-256 of the default PascalCase serialization,
+read as a .NET `Guid`. The feature has its own package marker and both
+package readers refuse it by feature and by marker, so no package carries it
+yet.
+
+`tests/data/thermal-convergence-ledger-vectors.json` holds the revisions,
+documents and transition states, recorded through managed's own transitions
+and store by `NativeThermalConvergenceLedgerVectorsTests`. Its native rows are
+documents the Rust encoder wrote, which managed loads.
+`thermal_convergence_vectors.rs` replays all four sections.
+
+The store reads the ledger once, when it opens, and fails closed
+(`thermal_convergence_ledger.rs`). A file that is unreadable, unparsable,
+duplicate-keyed, of another user, invalid or of a newer schema closes
+convergence for this user, and the store never writes over it. So does any
+write it cannot confirm, since a reservation that may be durable must never
+be mistaken for one that is not. A closed ledger stays closed until the store
+opens again, at a user switch or a Service restart, as managed reloads it
+only at activation. A write is a compare-and-swap on the bytes the store
+holds, through its own atomic `Files::replace`, so a ledger changed outside
+the Service is never overwritten. An empty state is never written, as managed
+never persists one.
+
+The status reads the ledger at each publication:
+
+| Condition | State | Reason |
+| --- | --- | --- |
+| Ledger not authoritative, after a quarantined configuration | Paused, policy published as Strict with the saved disclosure | ConfigurationQuarantined |
+| A reservation, power settled and not low power, under either policy | AwaitingObservation, its declared components | AwaitingFreshObservation |
+
+A reservation comes before the Strict, disclosure, controller and pending
+rows, as managed reconciles one whatever the policy
+(`ThermalConvergenceReconciliationAdmitted`).
+
+Native differs from managed in these ways:
+
+- Revisions. Native's intent comes from its own resolution: Custom
+  performance never carries `maximumFans`, and GPU clock tuning is never
+  set. Where that differs from managed's `ResolveHardwareDesired`, the
+  revisions differ, so a switch between the managed and native Service
+  starts a new budget generation once, at most.
+- Record equality. Managed compares the ledger's lists by reference, so a
+  loaded tombstone never equals a new one; native compares them by value.
+- The loop is not wired yet. Native neither reserves, retires a reservation
+  nor publishes a budget or tombstone, and it offers no explicit reapply.
+  A reservation managed left stays AwaitingObservation until the native loop
+  reconciles it read-only, or managed does.
 
 ## Submission, ambiguity and finite transport lifetime
 

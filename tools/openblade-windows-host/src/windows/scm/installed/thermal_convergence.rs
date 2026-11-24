@@ -4,16 +4,27 @@
 //! (`ServiceControlRuntime.EvaluateThermalConvergenceObservationAsync` and
 //! `ThermalConvergenceClassifier`).
 //!
-//! Native has no convergence loop: no durable ledger, budget, tombstone or
-//! arbiter. Nothing here writes, and the policy changes no write: under
-//! either policy confirmed drift only excludes automatic writes
-//! (`thermal_drift`). The status says so. A contradiction that managed would
-//! nominate for convergence under an admitted Maintain policy is published
-//! as managed publishes a reconciliation that cannot hold its intent:
-//! Paused with `InternalStateUnavailable`. Managed's Converging,
-//! Suppressed, RestorePending and ReconciliationUnavailable states, and
-//! the budget, tombstone and HyperBoost-journal reasons, need that loop and
-//! are never published.
+//! Native has no convergence loop: no budget, tombstone or arbiter is acted
+//! on. Nothing here writes, and the policy changes no write: under either
+//! policy confirmed drift only excludes automatic writes (`thermal_drift`).
+//! The status says so. A contradiction that managed would nominate for
+//! convergence under an admitted Maintain policy is published as managed
+//! publishes a reconciliation that cannot hold its intent: Paused with
+//! `InternalStateUnavailable`. Managed's Converging, Suppressed,
+//! RestorePending and ReconciliationUnavailable states, and the budget,
+//! tombstone and HyperBoost-journal reasons, need that loop and are never
+//! published: each but Converging leaves only an explicit reapply, which
+//! native does not offer yet.
+//!
+//! With `service-thermal-convergence-v1` the status also reads the user's
+//! ledger, which native shares with managed (`thermal_convergence_ledger`).
+//! A ledger the store cannot admit closes convergence as managed closes it:
+//! Strict is published, with the saved disclosure, and Paused with
+//! `ConfigurationQuarantined`. A reservation in the ledger is reconciled
+//! under either policy, as managed's is
+//! (`ThermalConvergenceReconciliationAdmitted`), so while it is admitted it
+//! publishes AwaitingObservation for its declared components until a
+//! read-only reconciliation retires it.
 //!
 //! Native derives the status from current facts at each publication.
 //! Managed publishes AwaitingObservation right after a policy change until
@@ -30,6 +41,8 @@ use crate::{
         },
     },
 };
+#[cfg(feature = "service-thermal-convergence-v1")]
+use openblade_domain::thermal_convergence as ledger;
 use openblade_domain::{
     profile_set::{FanMode, application::Resolution},
     thermal_mutation::Destination,
@@ -53,6 +66,48 @@ pub(super) struct Admission {
     /// Managed `pendingWriteConfirmations.HasPending`: a journaled thermal
     /// write that is not settled (`Storage::pending`).
     pub(super) pending: bool,
+    /// What the user's shared convergence ledger holds.
+    #[cfg(feature = "service-thermal-convergence-v1")]
+    pub(super) ledger: Ledger,
+}
+
+/// The user's convergence ledger as a status reads it
+/// (`Storage::convergence_ledger`).
+#[cfg(feature = "service-thermal-convergence-v1")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum Ledger {
+    /// Not authoritative: managed `thermalConvergenceLedgerAuthoritative`
+    /// is false.
+    Closed,
+    /// Authoritative, with no reservation.
+    Open,
+    /// Authoritative and holding a reservation for these components, which
+    /// only a read-only reconciliation retires.
+    Reserved { performance: bool, fans: bool },
+}
+
+#[cfg(feature = "service-thermal-convergence-v1")]
+impl Ledger {
+    pub(super) fn of(state: Option<&ledger::State>) -> Self {
+        let Some(state) = state else {
+            return Self::Closed;
+        };
+        match &state.in_flight {
+            None => Self::Open,
+            Some(reservation) => {
+                let declares = |component| reservation.declared_components.contains(&component);
+                Self::Reserved {
+                    performance: declares(ledger::Component::PERFORMANCE),
+                    fans: declares(ledger::Component::FANS),
+                }
+            }
+        }
+    }
+}
+
+/// Managed's settled destinations: PluggedIn, Battery and UsbC.
+fn settled(power: i32) -> bool {
+    (0..=2).contains(&power)
 }
 
 /// Saved thermal intent at the status's power class, as managed's ledger
@@ -103,6 +158,13 @@ pub(super) fn derive(
         SavedPolicy::Quarantined => (STRICT, DISCLOSURE_NOT_REQUIRED),
         SavedPolicy::Admitted { policy, disclosure } => (policy, disclosure),
     };
+    // Managed `PublishThermalConvergenceStatus` reports Strict while the
+    // ledger is not authoritative, and keeps the saved disclosure.
+    #[cfg(feature = "service-thermal-convergence-v1")]
+    let ledger_closed = admission.ledger == Ledger::Closed;
+    #[cfg(not(feature = "service-thermal-convergence-v1"))]
+    let ledger_closed = false;
+    let policy = if ledger_closed { STRICT } else { policy };
     let publish = |state, components: &[Component], reason, explicit| {
         Ok(ThermalConvergence::new(
             policy, disclosure, state, components, reason, explicit,
@@ -110,8 +172,31 @@ pub(super) fn derive(
     };
     let paused = |reason| publish(State::Paused, &[], reason, false);
     // Managed `ResolveThermalConvergenceClosureReason` order.
-    if admission.policy == SavedPolicy::Quarantined {
+    if admission.policy == SavedPolicy::Quarantined || ledger_closed {
         return paused(Reason::ConfigurationQuarantined);
+    }
+    // Managed reconciles a reservation whatever the policy and disclosure,
+    // once power is settled. Until a read-only reconciliation retires it,
+    // it awaits that observation.
+    #[cfg(feature = "service-thermal-convergence-v1")]
+    if let Ledger::Reserved { performance, fans } = admission.ledger
+        && !admission.low_power
+        && settled(admission.power)
+    {
+        let declared = [
+            (performance, Component::Performance),
+            (fans, Component::Fans),
+        ];
+        let components: Vec<_> = declared
+            .into_iter()
+            .filter_map(|(declares, component)| declares.then_some(component))
+            .collect();
+        return publish(
+            State::AwaitingObservation,
+            &components,
+            Reason::AwaitingFreshObservation,
+            false,
+        );
     }
     if policy == STRICT {
         return paused(Reason::StrictPolicy);
@@ -122,7 +207,7 @@ pub(super) fn derive(
     if admission.low_power {
         return paused(Reason::LowPower);
     }
-    if !(0..=2).contains(&admission.power) {
+    if !settled(admission.power) {
         return paused(Reason::PowerUnsettled);
     }
     if admission.controller_present {
@@ -252,6 +337,8 @@ impl Runtime {
             power: query,
             controller_present: base.names_potential_controllers(),
             pending: storage.pending(),
+            #[cfg(feature = "service-thermal-convergence-v1")]
+            ledger: Ledger::of(storage.convergence_ledger().as_ref()),
         };
         derive(&admission, || {
             let desired = Intent {

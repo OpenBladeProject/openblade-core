@@ -14,6 +14,8 @@ fn admitted(policy: i32, disclosure: i32) -> Admission {
         power: 0,
         controller_present: false,
         pending: false,
+        #[cfg(feature = "service-thermal-convergence-v1")]
+        ledger: Ledger::Open,
     }
 }
 
@@ -75,13 +77,12 @@ fn refused(admission: &Admission) -> ThermalConvergence {
 #[test]
 fn each_admission_refusal_wins_over_every_later_one_without_reading() {
     // Each row also sets every later refusal, so the earlier check must win.
-    let mut admission = Admission {
-        policy: SavedPolicy::Quarantined,
-        low_power: true,
-        power: 3,
-        controller_present: true,
-        pending: true,
-    };
+    let mut admission = admitted(MAINTAIN, DISCLOSURE_NOT_REQUIRED);
+    admission.policy = SavedPolicy::Quarantined;
+    admission.low_power = true;
+    admission.power = 3;
+    admission.controller_present = true;
+    admission.pending = true;
     assert_eq!(
         refused(&admission),
         paused(
@@ -417,17 +418,15 @@ fn replayed(row: &Value) -> (Admission, Observation) {
             disclosure: int(row, "disclosure").unwrap(),
         }
     };
-    let admission = Admission {
-        policy,
-        low_power: flag(row, "lowPower"),
-        power: if flag(row, "unsettled") {
-            3
-        } else {
-            int(row, "power").unwrap()
-        },
-        controller_present: flag(row, "controller"),
-        pending: false,
+    let mut admission = admitted(MAINTAIN, DISCLOSURE_NOT_REQUIRED);
+    admission.policy = policy;
+    admission.low_power = flag(row, "lowPower");
+    admission.power = if flag(row, "unsettled") {
+        3
+    } else {
+        int(row, "power").unwrap()
     };
+    admission.controller_present = flag(row, "controller");
     let desired = &row["desired"];
     let performance = int(desired, "performance").unwrap();
     let destination = match levels(&desired["custom"]) {
@@ -515,5 +514,160 @@ fn managed_status_vectors_replay_through_the_strict_codec() {
             published.contains(&(state as i32, reason as i32)),
             "{state:?} {reason:?}"
         );
+    }
+}
+
+#[cfg(feature = "service-thermal-convergence-v1")]
+mod ledger_status {
+    use super::*;
+
+    fn reserved(performance: bool, fans: bool) -> Admission {
+        Admission {
+            ledger: Ledger::Reserved { performance, fans },
+            ..admitted(MAINTAIN, DISCLOSURE_ACKNOWLEDGED)
+        }
+    }
+
+    #[test]
+    fn a_closed_ledger_publishes_strict_and_quarantined_before_every_later_check() {
+        for (policy, disclosure) in [
+            (MAINTAIN, DISCLOSURE_ACKNOWLEDGED),
+            (MAINTAIN, DISCLOSURE_PENDING),
+            (STRICT, DISCLOSURE_NOT_REQUIRED),
+        ] {
+            let admission = Admission {
+                ledger: Ledger::Closed,
+                low_power: true,
+                power: 3,
+                controller_present: true,
+                pending: true,
+                ..admitted(policy, disclosure)
+            };
+            assert_eq!(
+                refused(&admission),
+                paused((STRICT, disclosure), Reason::ConfigurationQuarantined)
+            );
+        }
+        // A quarantined configuration has no disclosure to keep.
+        let admission = Admission {
+            policy: SavedPolicy::Quarantined,
+            ledger: Ledger::Closed,
+            ..admitted(MAINTAIN, DISCLOSURE_PENDING)
+        };
+        assert_eq!(
+            refused(&admission),
+            paused(
+                (STRICT, DISCLOSURE_NOT_REQUIRED),
+                Reason::ConfigurationQuarantined
+            )
+        );
+    }
+
+    #[test]
+    fn a_reservation_awaits_reconciliation_under_either_policy_once_power_is_settled() {
+        let awaiting = |policy, components: &[Component]| {
+            status(
+                policy,
+                State::AwaitingObservation,
+                components,
+                Reason::AwaitingFreshObservation,
+                false,
+            )
+        };
+        for (policy, disclosure) in [
+            (MAINTAIN, DISCLOSURE_ACKNOWLEDGED),
+            (MAINTAIN, DISCLOSURE_PENDING),
+            (STRICT, DISCLOSURE_NOT_REQUIRED),
+        ] {
+            // It is reconciled ahead of controller and pending checks.
+            let admission = Admission {
+                controller_present: true,
+                pending: true,
+                ..Admission {
+                    policy: SavedPolicy::Admitted { policy, disclosure },
+                    ..reserved(true, false)
+                }
+            };
+            assert_eq!(
+                refused(&admission),
+                awaiting((policy, disclosure), &[Component::Performance])
+            );
+        }
+        assert_eq!(
+            refused(&reserved(false, true)),
+            awaiting((MAINTAIN, DISCLOSURE_ACKNOWLEDGED), &[Component::Fans])
+        );
+        assert_eq!(
+            refused(&reserved(true, true)),
+            awaiting(
+                (MAINTAIN, DISCLOSURE_ACKNOWLEDGED),
+                &[Component::Performance, Component::Fans]
+            )
+        );
+        // Low power or unsettled power closes admission, with managed's
+        // closure order.
+        let maintain = (MAINTAIN, DISCLOSURE_ACKNOWLEDGED);
+        let low = Admission {
+            low_power: true,
+            ..reserved(true, false)
+        };
+        assert_eq!(refused(&low), paused(maintain, Reason::LowPower));
+        let unsettled = Admission {
+            power: -1,
+            ..reserved(true, false)
+        };
+        assert_eq!(
+            refused(&unsettled),
+            paused(maintain, Reason::PowerUnsettled)
+        );
+        let strict = Admission {
+            policy: SavedPolicy::Admitted {
+                policy: STRICT,
+                disclosure: DISCLOSURE_NOT_REQUIRED,
+            },
+            ..unsettled
+        };
+        assert_eq!(
+            refused(&strict),
+            paused((STRICT, DISCLOSURE_NOT_REQUIRED), Reason::StrictPolicy)
+        );
+    }
+
+    #[test]
+    fn the_status_view_follows_authority_and_the_declared_components() {
+        use openblade_domain::thermal_convergence as ledger;
+        const SID: &str = "S-1-5-21-111-222-333-1001";
+        assert_eq!(Ledger::of(None), Ledger::Closed);
+        let mut state = ledger::State::empty(SID);
+        assert_eq!(Ledger::of(Some(&state)), Ledger::Open);
+        let target: ledger::Intent = serde_json::from_value(serde_json::json!({
+            "performance": {"value": 1, "source": 1},
+            "fans": {"value": 0, "source": 1},
+            "lighting": null,
+            "battery": null,
+        }))
+        .unwrap();
+        for (declared, performance, fans) in [
+            (vec![ledger::Component::PERFORMANCE], true, false),
+            (vec![ledger::Component::FANS], false, true),
+            (
+                vec![ledger::Component::PERFORMANCE, ledger::Component::FANS],
+                true,
+                true,
+            ),
+        ] {
+            state.in_flight = Some(ledger::InFlight {
+                transition_attempt_id: ledger::Guid::EMPTY,
+                declared_components: declared,
+                pre_write_observation: ledger::Observation::thermal(None, None, None, None),
+                desired_target: target.clone(),
+                // Managed reconciles any reservation, required or not.
+                reconciliation_required: false,
+            });
+            assert_eq!(
+                Ledger::of(Some(&state)),
+                Ledger::Reserved { performance, fans }
+            );
+        }
     }
 }
