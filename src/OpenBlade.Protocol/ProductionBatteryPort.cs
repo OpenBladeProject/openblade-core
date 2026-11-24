@@ -129,7 +129,8 @@ internal sealed partial class ProductionBatteryPort :
         bool supportsBatterySaverFanStop = false,
         Func<bool>? stopHardwareAdmission = null,
         Func<PowerSource>? capturePowerSource = null,
-        bool supportsOrdinaryThermalControlOnUnclassifiedExternalPower = false)
+        bool supportsOrdinaryThermalControlOnUnclassifiedExternalPower = false,
+        LocalDimmingCapabilities? localDimmingCapabilities = null)
         : this(
             session,
             session,
@@ -157,7 +158,8 @@ internal sealed partial class ProductionBatteryPort :
             supportsBatterySaverFanStop,
             stopHardwareAdmission,
             capturePowerSource,
-            supportsOrdinaryThermalControlOnUnclassifiedExternalPower)
+            supportsOrdinaryThermalControlOnUnclassifiedExternalPower,
+            localDimmingCapabilities)
     {
     }
 
@@ -188,7 +190,8 @@ internal sealed partial class ProductionBatteryPort :
         bool supportsBatterySaverFanStop = false,
         Func<bool>? stopHardwareAdmission = null,
         Func<PowerSource>? capturePowerSource = null,
-        bool supportsOrdinaryThermalControlOnUnclassifiedExternalPower = false)
+        bool supportsOrdinaryThermalControlOnUnclassifiedExternalPower = false,
+        LocalDimmingCapabilities? localDimmingCapabilities = null)
         : this(
             sharedCommandGate is null
                 ? actor.Session
@@ -218,7 +221,8 @@ internal sealed partial class ProductionBatteryPort :
             supportsBatterySaverFanStop,
             stopHardwareAdmission,
             capturePowerSource,
-            supportsOrdinaryThermalControlOnUnclassifiedExternalPower)
+            supportsOrdinaryThermalControlOnUnclassifiedExternalPower,
+            localDimmingCapabilities)
     {
     }
 
@@ -249,7 +253,8 @@ internal sealed partial class ProductionBatteryPort :
         bool supportsBatterySaverFanStop,
         Func<bool>? stopHardwareAdmission,
         Func<PowerSource>? capturePowerSource,
-        bool supportsOrdinaryThermalControlOnUnclassifiedExternalPower)
+        bool supportsOrdinaryThermalControlOnUnclassifiedExternalPower,
+        LocalDimmingCapabilities? localDimmingCapabilities)
     {
         this.stopHardwareAdmission = stopHardwareAdmission;
         this.capturePowerSource = capturePowerSource;
@@ -370,7 +375,8 @@ internal sealed partial class ProductionBatteryPort :
             hyperBoostBaseModes,
             supportsDirectManualFanTransitions,
             thxAudioCapabilities,
-            supportsBatterySaverFanStop, this.supportsOrdinaryThermalControlOnUnclassifiedExternalPower);
+            supportsBatterySaverFanStop, this.supportsOrdinaryThermalControlOnUnclassifiedExternalPower,
+            localDimmingCapabilities);
     }
 
     private readonly Func<bool>? stopHardwareAdmission;
@@ -1918,7 +1924,8 @@ internal sealed partial class ProductionBatteryPort :
         bool supportsDirectManualFanTransitions = false,
         ThxAudioCapabilities? thxAudioCapabilities = null,
         bool supportsBatterySaverFanStop = false,
-        bool supportsOrdinaryThermalControlOnUnclassifiedExternalPower = false)
+        bool supportsOrdinaryThermalControlOnUnclassifiedExternalPower = false,
+        LocalDimmingCapabilities? localDimmingCapabilities = null)
     {
         var limits = new HashSet<int>();
         foreach ((int percent, string action) in ChargeLimitActions)
@@ -2064,6 +2071,7 @@ internal sealed partial class ProductionBatteryPort :
                 ? []
                 : [.. observedPowerSourceBehaviors],
             ThxAudio = thxAudioCapabilities,
+            LocalDimming = localDimmingCapabilities,
             SupportsBatterySaverFanStop = supportsBatterySaverFanStop
                 && supportsDirectManualFanTransitions && HasDirectManualFanCommandSet(catalog),
         };

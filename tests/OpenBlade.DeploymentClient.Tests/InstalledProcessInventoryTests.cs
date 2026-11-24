@@ -25,6 +25,23 @@ public sealed class InstalledProcessInventoryTests
     }
 
     [Fact]
+    public void SharedGrammar_AcceptsExplicitRetryOnlyAfterDriverFeatures()
+    {
+        Assert.True(InputHelperCommandLine.TryParse(
+            ["--snap-tap-input", "10", "razer-driver", "function-row", "explicit-retry"], out var retry));
+        Assert.True(retry.RetryRequested);
+        Assert.Equal(InputHelperFeatures.FunctionRow, retry.Features);
+        Assert.True(InputHelperCommandLine.TryParse(["--snap-tap-input", "10", "razer-driver", "snap-tap"], out var normal));
+        Assert.False(normal.RetryRequested);
+        Assert.False(InputHelperCommandLine.TryParse(["--snap-tap-input", "10", "razer-driver", "explicit-retry"], out _));
+        Assert.False(InputHelperCommandLine.TryParse(["--snap-tap-input", "10", "windows-hook", "snap-tap", "explicit-retry"], out _));
+        Assert.False(InputHelperCommandLine.TryParse(["--snap-tap-input", "10", "razer-driver", "snap-tap", "retry"], out _));
+        Assert.False(InputHelperCommandLine.TryParse(["--snap-tap-driver-worker", "10", "snap-tap", "explicit-retry"], out _));
+        Assert.False(InputHelperCommandLine.TryParse(
+            ["--snap-tap-input", "10", "razer-driver", "snap-tap", "explicit-retry", "extra"], out _));
+    }
+
+    [Fact]
     public void WindowsSnapTapAndDriverFunctionRow_AreOneCoherentFamily()
     {
         InstalledProcessObservation windows = Agent(11, "--snap-tap-input", "10", "windows-hook")

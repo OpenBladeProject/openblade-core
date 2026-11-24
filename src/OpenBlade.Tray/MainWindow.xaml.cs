@@ -3067,11 +3067,21 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
     {
         if (sender is Slider { Tag: FanCurveEditorPoint point } slider)
         {
-            ViewModel.UpdateFanCurvePoint(
-                point,
-                IntegerEditorValue.ToInt32(slider.Value));
-            await CommitFanControlAsync();
+            await CommitFanCurvePointAsync(point, IntegerEditorValue.ToInt32(slider.Value));
         }
+    }
+
+    // Laptop and cooling-pad curves share one point template; route each commit to its owner.
+    private async Task CommitFanCurvePointAsync(FanCurveEditorPoint point, int speedRpm)
+    {
+        if (ViewModel.CoolingPad.OwnsCurvePoint(point))
+        {
+            ViewModel.CoolingPad.UpdateCurvePoint(point, speedRpm);
+            return;
+        }
+
+        ViewModel.UpdateFanCurvePoint(point, speedRpm);
+        await CommitFanControlAsync();
     }
 
     private async void OnFanCurvePointKeyUp(
@@ -3086,10 +3096,7 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
                 or Windows.System.VirtualKey.Home
                 or Windows.System.VirtualKey.End)
         {
-            ViewModel.UpdateFanCurvePoint(
-                point,
-                IntegerEditorValue.ToInt32(slider.Value));
-            await CommitFanControlAsync();
+            await CommitFanCurvePointAsync(point, IntegerEditorValue.ToInt32(slider.Value));
         }
     }
 
@@ -3934,6 +3941,9 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
             && windowVisible
             && TelemetryPage.Visibility == Visibility.Visible;
         ViewModel.SetTelemetryPresentationActive(telemetryActive);
+        // The cooling-pad page reads its status only while someone can see it.
+        ViewModel.CoolingPad.IsPageVisible = !localizationSnapshotMode && windowVisible
+            && CoolingPadPage.Visibility == Visibility.Visible;
         if (!telemetryActive)
         {
             telemetryPresentationDirty = true;
@@ -6049,7 +6059,8 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
                     content,
                     Path.GetFileNameWithoutExtension(result.Path),
                     ViewModel.Capabilities.KeyboardLightingLayoutId,
-                    ViewModel.Capabilities.Blade18KeyboardLayoutId)
+                    ViewModel.Capabilities.Blade18KeyboardLayoutId,
+                    ViewModel.Capabilities.Blade14KeyboardEdition)
                 : KeyboardLightingFileSerializer.Deserialize(content);
             if (!ViewModel.CanImportKeyboardLighting(preset))
             {

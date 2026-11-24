@@ -114,6 +114,64 @@ public sealed class PawnIoRuntimeAdmissionTests
             PawnIoRuntimeAdmission.VerifyNoInstallation(false, ["0000"], Locate, default));
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(2)]
+    public void StoppedServiceLeftWithoutDeviceOrUninstallRegistrationIsReportedAbsent(int disconnected)
+    {
+        // Issue #969: vendor removal kept the service and DriverStore package only.
+        uint Locate(string id, out uint node) { node = 0; return 0x0D; }
+        string[] instances = Enumerable.Range(0, disconnected).Select(i => i.ToString("D4")).ToArray();
+        Assert.True(PawnIoRuntimeAdmission.IsOrphanedServiceResidue(1, () => false, instances, Locate, default));
+    }
+
+    [Theory]
+    [InlineData(1u)]
+    [InlineData(4u)]
+    public void LiveDeviceKeepsNormalBindingAdmission(uint serviceState)
+    {
+        int registrationReads = 0;
+        uint Locate(string id, out uint node)
+        {
+            node = id.EndsWith("0001", StringComparison.Ordinal) ? 42u : 0u;
+            return node == 42 ? 0u : 0x0Du;
+        }
+        Assert.False(PawnIoRuntimeAdmission.IsOrphanedServiceResidue(serviceState,
+            () => { registrationReads++; return false; }, ["0000", "0001"], Locate, default));
+        Assert.Equal(0, registrationReads);
+    }
+
+    [Theory]
+    [InlineData(1u, true)]
+    [InlineData(3u, false)]
+    [InlineData(4u, false)]
+    [InlineData(4u, true)]
+    public void RegisteredOrActiveServiceWithoutDeviceIsPreservedForRepair(uint serviceState, bool registered)
+    {
+        uint Locate(string id, out uint node) { node = 0; return 0x0D; }
+        var error = Assert.Throws<InvalidOperationException>(() =>
+            PawnIoRuntimeAdmission.IsOrphanedServiceResidue(serviceState, () => registered, ["0000"], Locate, default));
+        Assert.Contains(@"Root\PawnIO", error.Message);
+    }
+
+    [Fact]
+    public void ResidueCheckCannotTurnFailedPresenceQueryIntoAbsence()
+    {
+        uint Locate(string id, out uint node) { node = 0; return 0x33; }
+        Assert.Throws<InvalidDataException>(() =>
+            PawnIoRuntimeAdmission.IsOrphanedServiceResidue(1, () => false, ["0000"], Locate, default));
+    }
+
+    [Fact]
+    public void CanceledResidueCheckCannotReportAbsence()
+    {
+        using CancellationTokenSource cancellation = new();
+        uint Locate(string id, out uint node) { node = 0; return 0x0D; }
+        Assert.Throws<OperationCanceledException>(() =>
+            PawnIoRuntimeAdmission.IsOrphanedServiceResidue(1,
+                () => { cancellation.Cancel(); return false; }, ["0000"], Locate, cancellation.Token));
+    }
+
     [Fact]
     public void InspectionValidatesSelectedLiveBindingAndQueriesThatSameDevnode()
     {

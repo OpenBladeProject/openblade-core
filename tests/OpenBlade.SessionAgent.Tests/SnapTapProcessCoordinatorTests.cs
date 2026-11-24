@@ -73,6 +73,74 @@ public sealed class SnapTapProcessCoordinatorTests
     }
 
     [Fact]
+    public async Task OnlyTheFirstLaunchAfterAnExplicitOffOnRetryIsMarked()
+    {
+        var source = new Preference(true);
+        var children = new ConcurrentQueue<Child>();
+        var marks = new ConcurrentQueue<bool>();
+        using var cancel = new CancellationTokenSource();
+        SnapTapProcessCoordinator? coordinator = null;
+        coordinator = new SnapTapProcessCoordinator(source, () =>
+        {
+            marks.Enqueue(coordinator!.LaunchIsExplicitRetry);
+            var child = new Child(); children.Enqueue(child); return child;
+        }, _ => { });
+        Task run = coordinator.RunAsync(cancel.Token);
+        try
+        {
+            await WaitUntilAsync(() => children.Count == 1);
+            children.Last().Exit(4);
+            await WaitUntilAsync(() => !coordinator.HasChild);
+            source.Set(false);
+            source.Set(true);
+            await WaitUntilAsync(() => children.Count == 2);
+            // A clean preference cycle of a healthy owner is not a retry.
+            source.Set(false);
+            await WaitUntilAsync(() => !coordinator.HasChild);
+            source.Set(true);
+            await WaitUntilAsync(() => children.Count == 3);
+            Assert.Equal(new[] { false, true, false }, marks);
+            Assert.False(coordinator.LaunchIsExplicitRetry);
+        }
+        finally { cancel.Cancel(); await run; }
+    }
+
+    [Theory]
+    [InlineData(true, 0, true)]
+    [InlineData(true, 1, false)]
+    [InlineData(false, 0, false)]
+    public async Task RetriedOwnerClearsItsRecoveryBarrierOnlyAfterConfirmedCleanup(bool retry, int stopExitCode, bool cleared)
+    {
+        var source = new Preference(true);
+        var children = new ConcurrentQueue<Child>();
+        using var cancel = new CancellationTokenSource();
+        var driver = new SnapTapProcessCoordinator(source, () =>
+        {
+            var child = new Child { StopExitCode = children.IsEmpty ? 0 : stopExitCode };
+            children.Enqueue(child); return child;
+        }, _ => { }, ownsSharedInput: () => true, ownsFunctionRowInput: () => true);
+        Task run = driver.RunAsync(cancel.Token);
+        try
+        {
+            await WaitUntilAsync(() => children.Count == 1);
+            children.Last().Exit(4);
+            await WaitUntilAsync(() => !driver.HasChild);
+            Assert.True(driver.FunctionRowRecoveryRequired);
+            if (retry)
+            {
+                source.Set(false);
+                source.Set(true);
+                await WaitUntilAsync(() => children.Count == 2 && driver.HasChild);
+                source.Set(false);
+                await WaitUntilAsync(() => !driver.HasChild);
+            }
+            Assert.Equal(cleared, !driver.FunctionRowRecoveryRequired);
+            Assert.Equal(cleared, driver.CanTransferOwnership);
+        }
+        finally { cancel.Cancel(); await run; }
+    }
+
+    [Fact]
     public async Task SlowStop_DoesNotLaunchReplacementUntilOldChildExits()
     {
         var source = new Preference(true);

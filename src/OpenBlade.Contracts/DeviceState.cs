@@ -113,6 +113,87 @@ public sealed record CpuPowerLimitCapabilities(
         && Enum.IsDefined(Access);
 }
 
+/// <summary>
+/// Intel package power limits as Synapse presents them: a long-term limit (PL1),
+/// a short-term limit (PL2) that can be switched off, and the PL1 time window
+/// (tau). Power values are milliwatts so fractional vendor steps stay integral.
+/// A null range or tau list is unknown for that model; its defaults are still
+/// reported. A writable limit needs every range.
+/// </summary>
+public sealed record IntelCpuPowerLimitCapabilities(
+    DeviceNumericRange? LongTermPowerMilliwatts,
+    DeviceNumericRange? ShortTermPowerMilliwatts,
+    IReadOnlyList<int>? TimeWindowSeconds,
+    int DefaultLongTermPowerMilliwatts,
+    int DefaultShortTermPowerMilliwatts,
+    int DefaultTimeWindowSeconds,
+    DeviceFeatureAccess Access)
+{
+    public bool SupportsShortTermPowerEnableDisable { get; init; }
+
+    /// <summary>True when both power ranges and the tau list are known.</summary>
+    public bool RangesKnown =>
+        LongTermPowerMilliwatts is not null
+        && ShortTermPowerMilliwatts is not null
+        && TimeWindowSeconds is not null;
+
+    public bool IsWellFormed =>
+        DefaultLongTermPowerMilliwatts > 0
+        && DefaultShortTermPowerMilliwatts > 0
+        && DefaultTimeWindowSeconds > 0
+        && IsKnownRangeWellFormed(LongTermPowerMilliwatts, DefaultLongTermPowerMilliwatts)
+        && IsKnownRangeWellFormed(ShortTermPowerMilliwatts, DefaultShortTermPowerMilliwatts)
+        && (TimeWindowSeconds is null
+            || TimeWindowSeconds is { Count: > 0 and <= 64 }
+            && TimeWindowSeconds[0] > 0
+            && TimeWindowSeconds.Zip(TimeWindowSeconds.Skip(1)).All(pair => pair.First < pair.Second)
+            && TimeWindowSeconds.Contains(DefaultTimeWindowSeconds))
+        && Enum.IsDefined(Access)
+        && (Access != DeviceFeatureAccess.ReadWrite || RangesKnown);
+
+    private static bool IsKnownRangeWellFormed(DeviceNumericRange? range, int defaultValue) =>
+        range is null
+        || range is { IsWellFormed: true, Step: not null, Minimum: > 0 }
+        && range.Supports(defaultValue);
+
+    public bool Equals(IntelCpuPowerLimitCapabilities? other) =>
+        other is not null
+        && LongTermPowerMilliwatts == other.LongTermPowerMilliwatts
+        && ShortTermPowerMilliwatts == other.ShortTermPowerMilliwatts
+        && (ReferenceEquals(TimeWindowSeconds, other.TimeWindowSeconds)
+            || TimeWindowSeconds is not null && other.TimeWindowSeconds is not null
+                && TimeWindowSeconds.SequenceEqual(other.TimeWindowSeconds))
+        && DefaultLongTermPowerMilliwatts == other.DefaultLongTermPowerMilliwatts
+        && DefaultShortTermPowerMilliwatts == other.DefaultShortTermPowerMilliwatts
+        && DefaultTimeWindowSeconds == other.DefaultTimeWindowSeconds
+        && Access == other.Access
+        && SupportsShortTermPowerEnableDisable == other.SupportsShortTermPowerEnableDisable;
+
+    public override int GetHashCode() => HashCode.Combine(
+        LongTermPowerMilliwatts,
+        ShortTermPowerMilliwatts,
+        TimeWindowSeconds?.Count ?? -1,
+        DefaultLongTermPowerMilliwatts,
+        DefaultShortTermPowerMilliwatts,
+        DefaultTimeWindowSeconds,
+        Access,
+        SupportsShortTermPowerEnableDisable);
+}
+
+/// <summary>
+/// The display local dimming bit (0x08) of the shared Power Mode Control mask.
+/// ReadOnly with <see cref="SupportsClear"/> admits only the reviewed Clear
+/// action, never turning local dimming on.
+/// </summary>
+public sealed record LocalDimmingCapabilities(
+    DeviceFeatureAccess Access,
+    bool SupportsClear)
+{
+    public bool IsWellFormed =>
+        Enum.IsDefined(Access)
+        && (!SupportsClear || Access == DeviceFeatureAccess.ReadOnly);
+}
+
 public sealed record CpuVoltageOptimizerCapabilities(
     DeviceNumericRange Value,
     DeviceFeatureAccess Access)
@@ -167,6 +248,15 @@ public enum CoolingPadConnectionState
     ObservationFailed,
 }
 
+// Why an exact model declines a new HyperBoost entry while exit and restoration
+// stay admitted. It never limits turning HyperBoost off.
+public enum HyperBoostEntryRestriction
+{
+    // The exact model's vendor source does not offer HyperBoost for this
+    // system SKU (Synapse shouldDisableHyperboost).
+    VendorSystemSku,
+}
+
 public sealed record HyperBoostBaseModeCapabilities(
     DeviceFeatureAccess Silent,
     DeviceFeatureAccess Balanced,
@@ -174,6 +264,10 @@ public sealed record HyperBoostBaseModeCapabilities(
 {
     // Direct entry from and restoration to Custom; null where it has not been admitted.
     public DeviceFeatureAccess? Custom { get; init; }
+
+    // Direct entry from and restoration to Turbo (raw 1) on models whose ordinary
+    // modes include Turbo, such as RZ09-0510; null where it has not been admitted.
+    public DeviceFeatureAccess? Turbo { get; init; }
 
     // Explicit cooling-pad entry baseline for models whose vendor path does not use Performance.
     // Omitted capabilities retain the legacy inferred Performance baseline.
@@ -187,6 +281,7 @@ public sealed record HyperBoostBaseModeCapabilities(
         PerformancePreset.Balanced => Balanced,
         PerformancePreset.Performance => Performance,
         PerformancePreset.Custom => Custom,
+        PerformancePreset.Turbo => Turbo,
         _ => null,
     };
 
@@ -195,11 +290,13 @@ public sealed record HyperBoostBaseModeCapabilities(
         && Enum.IsDefined(Balanced)
         && Enum.IsDefined(Performance)
         && (Custom is null || Enum.IsDefined(Custom.Value))
+        && (Turbo is null || Enum.IsDefined(Turbo.Value))
         && (CoolingPadEntryBaseMode is null
             || CoolingPadEntryBaseMode is PerformancePreset.Silent
                 or PerformancePreset.Balanced
                 or PerformancePreset.Performance
                 or PerformancePreset.Custom
+                or PerformancePreset.Turbo
                 && AccessFor(CoolingPadEntryBaseMode.Value) == DeviceFeatureAccess.ReadWrite);
 }
 
@@ -217,6 +314,15 @@ public sealed record DeviceCapabilities(
     /// that omit this member deserialize to the safe default of <see langword="false"/>.
     /// </summary>
     public bool SupportsDirectManualFanTransitions { get; init; }
+
+    /// <summary>
+    /// The exact backend reads and writes its charge limiter without the
+    /// temporary full charge flag. An unknown flag then blocks only the flag's
+    /// own enable and cancel; a confirmed active flag still blocks the limiter.
+    /// This is service-side admission metadata and is never sent over IPC.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool ChargePolicyIndependentOfTemporaryFullCharge { get; init; }
 
     public bool SupportsBatterySaverFanStop { get; init; }
 
@@ -314,15 +420,30 @@ public sealed record DeviceCapabilities(
 
     public CpuPowerLimitCapabilities? CpuPowerLimit { get; init; }
 
+    /// <summary>Intel PL1/PL2/tau limits, separate from the AMD package-power shape.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public IntelCpuPowerLimitCapabilities? IntelCpuPowerLimit { get; init; }
+
     public CpuVoltageOptimizerCapabilities? CpuVoltageOptimizer { get; init; }
 
     public GpuOverclockCapabilities? GpuOverclock { get; init; }
+
+    /// <summary>Firmware-stored GPU core/memory offsets that the vendor applies in Gaming mode.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public DeviceFeatureAccess? FirmwareGamingGpuOverclockAccess { get; init; }
+
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public LocalDimmingCapabilities? LocalDimming { get; init; }
 
     public DeviceFeatureAccess? HyperBoostAccess { get; init; }
 
     public DeviceFeatureAccess? HyperBoostWithoutCoolingPadAccess { get; init; }
 
     public HyperBoostBaseModeCapabilities? HyperBoostBaseModes { get; init; }
+
+    // Set when entry is declined for this laptop; exit and restoration keep
+    // HyperBoostAccess and HyperBoostBaseModes.
+    public HyperBoostEntryRestriction? HyperBoostEntryRestriction { get; init; }
 
     public DeviceFeatureAccess? SpecialKeyBindingsAccess { get; init; }
 
@@ -336,6 +457,12 @@ public sealed record DeviceCapabilities(
 
     /// <summary>Physical product-672 region from its edition getter; independent of input language.</summary>
     public byte? Blade18KeyboardLayoutId { get; init; }
+
+    /// <summary>
+    /// Raw RZ09-0530 keyboard-MCU edition byte from its read-only 00/86 getter.
+    /// Null means unread or unavailable: consumers use the common 74-slot map.
+    /// </summary>
+    public byte? Blade14KeyboardEdition { get; init; }
 
     public IReadOnlySet<LightingRefreshRate> SupportedLightingRefreshRates { get; init; } =
         new HashSet<LightingRefreshRate>();
@@ -386,8 +513,11 @@ public sealed record DeviceCapabilities(
         && (!FanModes.Any(IsManualFanMode) || FanSpeedRange is not null)
         && (CustomPerformance is null || CustomPerformance.IsWellFormed)
         && (CpuPowerLimit is null || CpuPowerLimit.IsWellFormed)
+        && (IntelCpuPowerLimit is null || IntelCpuPowerLimit.IsWellFormed)
         && (CpuVoltageOptimizer is null || CpuVoltageOptimizer.IsWellFormed)
         && (GpuOverclock is null || GpuOverclock.IsWellFormed)
+        && (FirmwareGamingGpuOverclockAccess is null || Enum.IsDefined(FirmwareGamingGpuOverclockAccess.Value))
+        && (LocalDimming is null || LocalDimming.IsWellFormed)
         && (HyperBoostAccess is null || Enum.IsDefined(HyperBoostAccess.Value))
         && (HyperBoostWithoutCoolingPadAccess is null
             || HyperBoostAccess is not null
@@ -400,7 +530,12 @@ public sealed record DeviceCapabilities(
                 && HyperBoostBaseModes.Balanced <= HyperBoostAccess.Value
                 && HyperBoostBaseModes.Performance <= HyperBoostAccess.Value
                 && (HyperBoostBaseModes.Custom is null
-                    || HyperBoostBaseModes.Custom <= HyperBoostAccess.Value))
+                    || HyperBoostBaseModes.Custom <= HyperBoostAccess.Value)
+                && (HyperBoostBaseModes.Turbo is null
+                    || HyperBoostBaseModes.Turbo <= HyperBoostAccess.Value))
+        && (HyperBoostEntryRestriction is null
+            || HyperBoostAccess is not null
+                && Enum.IsDefined(HyperBoostEntryRestriction.Value))
         && (SpecialKeyBindingsAccess is null
             || Enum.IsDefined(SpecialKeyBindingsAccess.Value))
         && HasValidSpecialKeySlots()
@@ -409,6 +544,8 @@ public sealed record DeviceCapabilities(
         && (ThxAudio is null || ThxAudio.IsWellFormed)
         && (Blade18KeyboardLayoutId is null
             || Blade18KeyboardLightingLayout.IsKnownLayout(Blade18KeyboardLayoutId.Value))
+        && (Blade14KeyboardEdition is null
+            || string.Equals(KeyboardLightingLayoutId, KeyboardLightingLayoutIds.Rz09_0530, StringComparison.Ordinal))
         && (KeyboardLightingLayoutId is null || KeyboardLightingLayoutIds.IsKnown(KeyboardLightingLayoutId))
         && (!LightingEffects.Contains(LightingEffect.Sequence)
             || KeyboardLightingLayoutId is not null)
@@ -420,8 +557,9 @@ public sealed record DeviceCapabilities(
         && IsValidEnumSet(HostManagedLaptopControls)
         && HostManagedLaptopControls.All(control => control is
             OneShotLaptopControl.FunctionKeyPrimary or OneShotLaptopControl.GamingMode)
-        && !HostManagedLaptopControls.Overlaps(OneShotLaptopControls)
+        // Check the set before Overlaps, which throws on a null set from the wire.
         && IsValidEnumSet(OneShotLaptopControls)
+        && !HostManagedLaptopControls.Overlaps(OneShotLaptopControls)
         && ObservedPowerSourceBehaviors is not null
         && ObservedPowerSourceBehaviors.All(
             observation => observation is not null && observation.IsWellFormed)
@@ -506,6 +644,11 @@ public sealed record ConfirmedDeviceState(
 
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public IndependentLightingSettings? IndependentLighting { get; init; }
+
+    // The local dimming bit (0x08) of a freshly decoded Power Mode Control read.
+    // Null means it was not read, never off.
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public bool? LocalDimmingActive { get; init; }
 }
 
 public sealed record GpuClockOffsetRange(

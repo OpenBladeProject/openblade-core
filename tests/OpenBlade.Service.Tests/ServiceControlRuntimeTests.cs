@@ -9470,6 +9470,53 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
             StringComparison.OrdinalIgnoreCase);
     }
 
+    // A firmware event can end ownership without a fault: an MCU that reports
+    // its journaled baseline again, or a renderer that simply disappears. The
+    // one recovery attempt per fault must not re-arm from the remembered owner
+    // when the device later reports None; only a new successful apply re-arms.
+    [Theory]
+    [InlineData(LightingRendererOwnershipState.Faulted)]
+    [InlineData(LightingRendererOwnershipState.None)]
+    public async Task FailedLightingRecoveryDoesNotReArmUntilASuccessfulApply(
+        LightingRendererOwnershipState firstObservation)
+    {
+        TestContext context = await CreateOwnedStaticLightingContextAsync();
+        context.Device.LightingRendererOwnership = firstObservation;
+        context.Device.LightingFailure = new IOException("custom selection lost");
+
+        await context.Runtime.RefreshPowerSourceClassificationAsync(CancellationToken.None);
+        Assert.Equal(2, context.Device.LightingSetCalls);
+
+        foreach (LightingRendererOwnershipState later in new[]
+        {
+            LightingRendererOwnershipState.None,
+            LightingRendererOwnershipState.Faulted,
+            LightingRendererOwnershipState.None,
+        })
+        {
+            context.Device.LightingRendererOwnership = later;
+            await context.Runtime.ObserveAsync(CancellationToken.None);
+            await context.Runtime.RefreshPowerSourceClassificationAsync(CancellationToken.None);
+        }
+        Assert.Equal(2, context.Device.LightingSetCalls);
+
+        // A new successful apply re-arms exactly one further attempt.
+        context.Device.LightingFailure = null;
+        context.Device.LightingRendererOwnership = LightingRendererOwnershipState.Static;
+        ControlOperationResult applied = await context.Runtime.SetLightingOverrideAsync(
+            new ManualOverride<LightingSettings>(
+                LightingSettingsFactory.Static(new RgbColor(10, 20, 30), brightness: 60),
+                OverrideLifetime.UntilPowerSourceChange),
+            CancellationToken.None);
+        Assert.Equal(ControlOperationStatus.Applied, applied.Status);
+        Assert.Equal(3, context.Device.LightingSetCalls);
+        context.Device.LightingRendererOwnership = LightingRendererOwnershipState.Faulted;
+        context.Device.LightingFailure = new IOException("custom selection lost");
+        await context.Runtime.RefreshPowerSourceClassificationAsync(CancellationToken.None);
+        await context.Runtime.RefreshPowerSourceClassificationAsync(CancellationToken.None);
+        Assert.Equal(4, context.Device.LightingSetCalls);
+    }
+
     [Theory]
     [InlineData(PowerSource.Battery)]
     [InlineData(PowerSource.UsbC)]
@@ -14696,7 +14743,10 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
                 {
                     Target = desired with { FanControl = FanControlSettings.FromLegacy(FanMode.Maximum) },
                 };
+                // The hidden preset is skipped; the disabled GPU half still needs
+                // the device's reset evidence.
                 confirmed = confirmed with { Fans = FanMode.Fixed, Performance = null };
+                context.Device.GpuClockOffsetManagementState = GpuClockOffsetManagementState.ResetConfirmed;
                 expected = PendingConfirmationResult.Match;
                 break;
             case "unknown-performance":
@@ -14749,7 +14799,7 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
 
         Assert.Equal(expected, Assert.IsType<PendingConfirmationResult>(result));
         Assert.Equal(
-            readsBefore + (scenario == "reset-evidence-required" ? 1 : 0),
+            readsBefore + (scenario is "reset-evidence-required" or "manual" ? 1 : 0),
             context.Device.GpuClockOffsetManagementStateReadCalls);
     }
 
@@ -28952,6 +29002,8 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
                 HyperBoostActive: false),
         };
         journal.Journal = original;
+        // Only a battery destination that the table doesn't list retires as a
+        // handoff. An unadmitted external-power intent stays pending.
         await context.Runtime.ObserveAsync(CancellationToken.None);
         int settersBeforeRecovery = context.Device.TotalSetterCalls;
 
@@ -32758,9 +32810,15 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
 
         public Exception? PerformanceFailure { get; set; }
 
+        // A port-side baseline gate evaluated against the current confirmed state.
+        public Func<PerformancePreset, Exception?>? PerformancePrecondition { get; set; }
+
         public int GpuClockSetCalls { get; private set; }
 
         public Action? AfterGpuClockSet { get; set; }
+
+        // GPU management calls in order: "rearm", "relinquish" and "gpuSet".
+        public List<string> GpuManagementCalls { get; } = [];
 
         public Queue<Exception> PerformanceFailures { get; } = new();
 
@@ -32769,6 +32827,13 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
         public Action? BeforeQueuedPerformanceFailure { get; set; }
 
         public bool SuppressHyperBoostMutation { get; set; }
+
+        // RZ09-0510 reports the battery exit's raw 6 as its DC Balanced preset.
+        public bool ReportsBatteryBalancedForBalancedExit { get; set; }
+
+        // The mode-7 port rule: an exit on battery submits Balanced (raw 6)
+        // whatever base the service passes, and clears Custom levels.
+        public Func<PowerSource>? HyperBoostExitPowerSource { get; set; }
 
         public Queue<Exception> HyperBoostFailures { get; } = new();
 
@@ -33156,6 +33221,24 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
                 AfterHyperBoostFailure?.Invoke();
                 return Task.FromException(failure);
             }
+            if (ClearsMaximumFansForHyperBoost)
+            {
+                // Like the experimental port: entry clears the Maximum Fans bit
+                // before mode 7, and exit restores only the base mode and levels.
+                if (enabled)
+                {
+                    hyperBoostStoredCustom = ConfirmedState.CustomPerformance is { } stored
+                        ? stored with { MaximumFans = false } : null;
+                }
+                ConfirmedState = ConfirmedState with
+                {
+                    Performance = enabled ? null : baseMode,
+                    CustomPerformance = enabled || baseMode == PerformancePreset.Custom ? hyperBoostStoredCustom : null,
+                    Fans = FanMode.Automatic,
+                    HyperBoostActive = enabled,
+                };
+                return Task.CompletedTask;
+            }
             ConfirmedState = enabled
                 ? ConfirmedState with
                 {
@@ -33163,12 +33246,22 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
                     Fans = FanMode.Automatic,
                     HyperBoostActive = true,
                 }
-                : ConfirmedState with
-                {
-                    Performance = baseMode,
-                    Fans = FanMode.Automatic,
-                    HyperBoostActive = false,
-                };
+                : HyperBoostExitPowerSource?.Invoke() == PowerSource.Battery
+                    ? ConfirmedState with
+                    {
+                        Performance = ReportsBatteryBalancedForBalancedExit
+                            ? PerformancePreset.BatteryBalanced : PerformancePreset.Balanced,
+                        CustomPerformance = null,
+                        Fans = FanMode.Automatic,
+                        HyperBoostActive = false,
+                    }
+                    : ConfirmedState with
+                    {
+                        Performance = ReportsBatteryBalancedForBalancedExit && baseMode == PerformancePreset.Balanced
+                            ? PerformancePreset.BatteryBalanced : baseMode,
+                        Fans = FanMode.Automatic,
+                        HyperBoostActive = false,
+                    };
             return Task.CompletedTask;
         }
 
@@ -33179,6 +33272,10 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
                 enabled,
                 baseMode,
                 cancellationToken);
+
+        public bool ClearsMaximumFansForHyperBoost { get; set; }
+
+        private CustomPerformanceSettings? hyperBoostStoredCustom;
 
         public List<bool> HyperBoostJournaledPadPaths { get; } = [];
 
@@ -33218,6 +33315,10 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
             if (PerformanceFailure is not null)
             {
                 throw PerformanceFailure;
+            }
+            if (PerformancePrecondition?.Invoke(value) is Exception refused)
+            {
+                throw refused;
             }
 
             if (SuppressConfirmationFor != DeviceSubsystem.Performance)
@@ -33263,6 +33364,7 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
                         "GPU clock tuning is unavailable in this test device."));
             }
 
+            GpuManagementCalls.Add("gpuSet");
             GpuClockSetCalls++;
             GpuClockOffsetManagementState = GpuClockOffsetManagementState.Managed;
             ConfirmedState = ConfirmedState with
@@ -33329,6 +33431,7 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
         public Task RelinquishGpuClockOffsetManagementAsync(
             CancellationToken cancellationToken)
         {
+            GpuManagementCalls.Add("relinquish");
             GpuClockOffsetManagementState =
                 GpuClockOffsetManagementState.Relinquished;
             ConfirmedState = ConfirmedState with { GpuClockOffsets = null };
@@ -33337,6 +33440,8 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
 
         public Task<bool> InvalidateGpuClockOffsetConfirmationAsync(
             CancellationToken cancellationToken) => Task.FromResult(false);
+
+        public void RearmUncertainGpuClockOffsetResolution() => GpuManagementCalls.Add("rearm");
 
         private async Task SetManagedPerformanceAsync(
             PerformancePreset value,
@@ -33399,10 +33504,17 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
                 : SetFanModeAsync(value.Mode, cancellationToken);
         }
 
+        // Thermal step-runner coordinators submit fans once; the single-step
+        // performance path does not, so a test can tell which path wrote fans.
+        public int SingleAttemptFanControlCalls { get; private set; }
+
         Task ISingleAttemptThermalDevice.SetFanControlOnceAsync(
             FanControlSettings value,
-            CancellationToken cancellationToken) =>
-            SetFanControlAsync(value, cancellationToken);
+            CancellationToken cancellationToken)
+        {
+            SingleAttemptFanControlCalls++;
+            return SetFanControlAsync(value, cancellationToken);
+        }
 
         public int OwnedStopReleaseCalls { get; private set; }
         public Action? BeforeOwnedStopRelease { get; set; }
@@ -33514,6 +33626,26 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
             }
 
             AfterSetter?.Invoke(DeviceSubsystem.Battery);
+            return Task.CompletedTask;
+        }
+
+        public int LocalDimmingClearCalls { get; private set; }
+
+        public Exception? LocalDimmingClearFailure { get; set; }
+
+        public Action? DuringLocalDimmingClear { get; set; }
+
+        public Task ClearLocalDimmingAsync(CancellationToken cancellationToken)
+        {
+            TotalCalls++;
+            LocalDimmingClearCalls++;
+            DuringLocalDimmingClear?.Invoke();
+            if (LocalDimmingClearFailure is not null)
+            {
+                throw LocalDimmingClearFailure;
+            }
+
+            ConfirmedState = ConfirmedState with { LocalDimmingActive = false };
             return Task.CompletedTask;
         }
 

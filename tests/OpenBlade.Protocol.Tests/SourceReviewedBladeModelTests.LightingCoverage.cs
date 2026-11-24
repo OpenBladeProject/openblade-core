@@ -27,7 +27,7 @@ public sealed partial class SourceReviewedBladeModelTests
         Assert.Equal(hasLogo ? 3 : 0, capabilities.LogoLightingModes.Count);
         Assert.Equal(product == 0x0245, capabilities.LightingEffects.Count > 0);
         Assert.NotEmpty(capabilities.ObservedLightingEffects);
-        Assert.False(capabilities.SupportsUniformLightingFrames);
+        Assert.Equal(product == 0x0245, capabilities.SupportsUniformLightingFrames);
         Assert.Null(capabilities.KeyboardLightingLayoutId);
         var session = new Session();
         await using var port = Create(product, session);

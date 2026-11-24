@@ -6,7 +6,9 @@ namespace OpenBlade.SessionAgent;
 
 internal static class SnapTapDriverLoop
 {
-    internal const int ForegroundPauseExitCode = 8;
+    // A clean pause after a focus loss or a deferred subscription. The supervisor
+    // rearms only with this code and the matching fresh unambiguous Paused status.
+    internal const int CleanPauseExitCode = 8;
 
     internal static int Run(int parentId, Func<bool> shouldStop,
         KeyboardDriverFeatures features = KeyboardDriverFeatures.SnapTap)
@@ -48,8 +50,11 @@ internal static class SnapTapDriverLoop
             stage = "HeartbeatOpen";
             using EventWaitHandle heartbeat = EventWaitHandle.OpenExisting(
                 SnapTapDriverSupervisor.HeartbeatName(parentId));
+            using EventWaitHandle admitting = EventWaitHandle.OpenExisting(
+                SnapTapDriverSupervisor.AdmissionName(parentId));
             stage = "TransportOpen";
-            transport = new RazerSnapTapDriverTransport(endpoint!.Path, () => admission.IsCurrent(endpoint),
+            transport = new RazerSnapTapDriverTransport(endpoint!.Path,
+                () => AdmitWithProgress(() => admission.IsCurrent(endpoint), () => heartbeat.Set(), admitting),
                 () => !shouldStop() && AllReleased() && (functionContext is null || functionContext.Ready), CanOutput, purpose);
             if (functionContext is not null)
             {
@@ -96,6 +101,14 @@ internal static class SnapTapDriverLoop
                 });
             if (!session.Start())
             {
+                if (session.SubscriptionDeferred)
+                {
+                    // A key, mouse button or metadata change during hook setup refused the
+                    // idle-only enable before submission. Exit like a focus pause: the
+                    // guardian clears and reads back the owned hooks, then rearms.
+                    publisher.Publish(SnapTapRuntimeState.Paused, SubscriptionDeferredFailure());
+                    return CleanPauseExitCode;
+                }
                 publisher.Publish(SnapTapRuntimeState.Failed, session.Failure
                     ?? SnapTapDiagnosticFailure.Create(
                         SnapTapDiagnosticFailure.Worker, "HookSession", stage, "HookSetupFailed",
@@ -127,11 +140,7 @@ internal static class SnapTapDriverLoop
                         // Close without reading queued input; only the guardian may rearm
                         // a fresh worker after verified cleanup of this subscription.
                         foregroundPause = CanPauseForForegroundLoss(processor) && functionProcessor?.HasTrackedKeys != true;
-                        loopFailure = SnapTapDiagnosticFailure.Create(
-                            SnapTapDiagnosticFailure.Worker, "Run", stage, "ForegroundUnavailable") with
-                        {
-                            Context = $"ForegroundAvailable={foreground != 0}; KeyboardLayoutAvailable={layout != 0}; PhysicallyReleased={processor.ArePhysicallyReleased}",
-                        };
+                        loopFailure = ForegroundUnavailableFailure(foreground != 0, layout != 0, processor.ArePhysicallyReleased);
                         break;
                     }
                 }
@@ -208,7 +217,7 @@ internal static class SnapTapDriverLoop
             if (foregroundPause && !failed && session.Failure is null && processor.Failure is null)
             {
                 publisher.Publish(SnapTapRuntimeState.Paused, loopFailure);
-                return ForegroundPauseExitCode;
+                return CleanPauseExitCode;
             }
             if (failed || terminalFailure is not null)
             {
@@ -278,6 +287,36 @@ internal static class SnapTapDriverLoop
         }
     }
 
+    // Brackets only the user-mode admission that precedes each driver mutation, never
+    // the driver request itself. Progress is signalled before the window flag is
+    // cleared so the supervisor cannot see a closed window with a stale heartbeat.
+    internal static bool AdmitWithProgress(Func<bool> admit, Action signalProgress, EventWaitHandle window)
+    {
+        signalProgress();
+        window.Set();
+        try
+        {
+            return admit();
+        }
+        finally
+        {
+            signalProgress();
+            window.Reset();
+        }
+    }
+
+    internal static DiagnosticFailure ForegroundUnavailableFailure(
+        bool foregroundAvailable, bool layoutAvailable, bool physicallyReleased) =>
+        SnapTapDiagnosticFailure.Create(
+            SnapTapDiagnosticFailure.Worker, "Run", "InputLoop", "ForegroundUnavailable") with
+        {
+            Context = $"ForegroundAvailable={foregroundAvailable}; KeyboardLayoutAvailable={layoutAvailable}; PhysicallyReleased={physicallyReleased}",
+        };
+
+    internal static DiagnosticFailure SubscriptionDeferredFailure() =>
+        SnapTapDiagnosticFailure.Create(
+            SnapTapDiagnosticFailure.Worker, "Run", "HookSetup", "SubscriptionDeferred");
+
     internal static bool CanPauseForForegroundLoss(SnapTapDriverInputProcessor processor) =>
         !processor.Faulted && processor.Winner == 0 && processor.ArePhysicallyReleased;
 
@@ -299,7 +338,7 @@ internal static class SnapTapDriverLoop
             scan => Native.MapVirtualKeyEx(scan, 3, layout), Native.GetAsyncKeyState);
     }
 
-    private static bool AllReleased()
+    internal static bool AllReleased()
     {
         // First aggregate enable can run RzCommon's pressed-key handoff. Admit
         // that transition only at an idle keyboard, including modifier keys and mouse buttons.

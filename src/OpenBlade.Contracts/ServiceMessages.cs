@@ -70,9 +70,11 @@ public sealed record ControlOperationResult(ControlOperationStatus Status, strin
 [JsonDerivedType(typeof(SetBatteryProtectionRequest), "setBatteryProtection")]
 [JsonDerivedType(typeof(SetFullChargeOverrideRequest), "setFullChargeOverride")]
 [JsonDerivedType(typeof(ApplyOneShotLaptopControlRequest), "applyOneShotLaptopControl")]
+[JsonDerivedType(typeof(ClearLocalDimmingRequest), "clearLocalDimming")]
 [JsonDerivedType(typeof(ShutdownOpenBladeRequest), "shutdownOpenBlade")]
 [JsonDerivedType(typeof(ReportSessionPowerTransitionRequest), "reportSessionPowerTransition")]
 [JsonDerivedType(typeof(ReportApplicationContextRequest), "reportApplicationContext")]
+[JsonDerivedType(typeof(ReportWindowsDynamicLightingAdvisoryRequest), "reportWindowsDynamicLightingAdvisory")]
 public abstract record ServiceRequest(int Version, Guid RequestId);
 
 public sealed record SetCoolingPadDemandLeaseRequest(int Version, Guid RequestId, Guid LeaseId, int Rpm, int DurationSeconds)
@@ -137,6 +139,19 @@ public sealed record ReportApplicationContextRequest(
     Guid InstanceId,
     long Sequence,
     string? ExecutablePath)
+    : ServiceRequest(Version, RequestId);
+
+/// <summary>
+/// Advisory Windows Dynamic Lighting observation from the active session's
+/// Session Agent. It names the exact model it observed so the service can
+/// reject a report for another laptop. Only Off and MayControl are
+/// reportable; the service binds the report to the reporting user's session.
+/// </summary>
+public sealed record ReportWindowsDynamicLightingAdvisoryRequest(
+    int Version,
+    Guid RequestId,
+    string ModelNumber,
+    WindowsDynamicLightingAdvisory Advisory)
     : ServiceRequest(Version, RequestId);
 
 public sealed record SetPerformanceOverrideRequest(
@@ -447,6 +462,10 @@ public sealed record ApplyOneShotLaptopControlRequest(
     ApplyOneShotLaptopControl Value)
     : ServiceRequest(Version, RequestId);
 
+/// <summary>Turns off display local dimming once. There is no request to turn it on.</summary>
+public sealed record ClearLocalDimmingRequest(int Version, Guid RequestId)
+    : ServiceRequest(Version, RequestId);
+
 public sealed record ShutdownOpenBladeRequest(int Version, Guid RequestId)
     : ServiceRequest(Version, RequestId);
 
@@ -577,6 +596,10 @@ public sealed record ServiceStatusSnapshot(
     public bool UnsupportedLaptop { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public CpuTuningStatus? CpuTuning { get; init; }
+
+    // Advisory only: the active user's Windows Dynamic Lighting switch and the
+    // exact model's LampArray presence. It never gates OpenBlade lighting.
+    public WindowsDynamicLightingAdvisory WindowsDynamicLightingAdvisory { get; init; }
 }
 
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "frame")]

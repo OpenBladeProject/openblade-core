@@ -53,6 +53,9 @@ internal sealed class RazerSnapTapHookSession
 
     internal RazerSnapTapHookSessionState State { get { lock (gate) { return state; } } }
     internal bool FailureMayHaveSubmitted { get; private set; }
+    // The subscription guard refused before submission: owned hooks are recorded
+    // and the subscription was never enabled, so the guardian can reconcile and rearm.
+    internal bool SubscriptionDeferred { get; private set; }
     internal bool SubscriptionClosed { get; private set; }
     internal string? FailureReason { get; private set; }
     internal OpenBlade.Contracts.DiagnosticFailure? Failure { get; private set; }
@@ -252,7 +255,8 @@ internal sealed class RazerSnapTapHookSession
 
     private bool Fail(Exception exception)
     {
-        FailureMayHaveSubmitted = mutationPending;
+        SubscriptionDeferred = exception is KeyboardSubmissionDeferredException;
+        FailureMayHaveSubmitted = mutationPending && !SubscriptionDeferred;
         FailureReason = exception.Message;
         Failure = SnapTapDiagnosticFailure.FromException(
             SnapTapDiagnosticFailure.Worker,

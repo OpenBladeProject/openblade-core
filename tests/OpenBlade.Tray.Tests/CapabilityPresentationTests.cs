@@ -550,7 +550,9 @@ public sealed class CapabilityPresentationTests
             .Where(element => element.Name.LocalName == "Slider"
                 && Attribute(element, "Tag") == "{x:Bind Mode=OneTime}")
             .ToArray();
-        Assert.Equal(2, curveSliders.Length);
+        // Laptop and cooling-pad curves share the one point template.
+        Assert.Single(curveSliders);
+        Assert.Equal(4, document.Descendants().Count(element => Attribute(element, "ItemTemplate") == "{StaticResource FanCurvePointTemplate}"));
         Assert.All(curveSliders, slider => Assert.Equal("120", Attribute(slider, "MinWidth")));
         Assert.All(curveSliders, slider =>
         {
@@ -558,12 +560,11 @@ public sealed class CapabilityPresentationTests
             Assert.Equal("{x:Bind MaximumRpm, Mode=OneTime}", Attribute(slider, "Maximum"));
             Assert.Equal("{x:Bind StepRpm, Mode=OneTime}", Attribute(slider, "StepFrequency"));
         });
-        XElement[] curveLists = curveSliders
-            .Select(slider => slider.Ancestors().First(element =>
-                element.Name.LocalName == "ItemsControl"))
-            .Distinct()
+        XElement[] curveLists = document.Descendants()
+            .Where(element => element.Name.LocalName == "ItemsControl"
+                && Attribute(element, "ItemTemplate") == "{StaticResource FanCurvePointTemplate}")
             .ToArray();
-        Assert.Equal(2, curveLists.Length);
+        Assert.Equal(4, curveLists.Length);
         Assert.All(curveLists, list => Assert.Equal(
             "{StaticResource FanCurveItemContainerStyle}",
             Attribute(list, "ItemContainerStyle")));
@@ -1329,6 +1330,20 @@ public sealed class CapabilityPresentationTests
         Assert.Equal(
             "OnExpandedSelectorSizeChanged",
             Attribute(expanded, "SizeChanged"));
+        // The Function key behavior selector sits in an Expander header button.
+        // An unhandled press reaches that button, which toggles the card and
+        // swallows the item's click.
+        Assert.Equal(
+            "OnExpandedSelectorPointerPressed",
+            Attribute(expanded, "PointerPressed"));
+        Assert.Matches(
+            @"void OnExpandedSelectorPointerPressed\(object sender, PointerRoutedEventArgs args\) =>\s+args\.Handled = true;",
+            selectorSource);
+        Assert.Contains(
+            mainWindow.Descendants().Where(element => element.Name.LocalName == "Expander"),
+            expander => expander.Descendants().Any(element =>
+                element.Name.LocalName == "Expander.Header"
+                && element.Descendants().Any(child => child.Name.LocalName == "ResponsiveChoiceSelector")));
         Assert.Equal(
             "OnCompactSelectionChanged",
             Attribute(compact, "SelectionChanged"));
@@ -1355,6 +1370,7 @@ public sealed class CapabilityPresentationTests
         foreach ((string name, string options, string selection) in new[]
                  {
                      ("CoolingPadFanSelector", "FanModes", "FanMode"),
+                     ("CoolingPadAutoProfile", "AutoProfiles", "AutoProfile"),
                      ("CoolingPadLightingSelector", "LightingModes", "LightingMode"),
                      ("CoolingPadTemperatureSource", "TemperatureSources", "TemperatureSource"),
                      ("CoolingPadWaveDirection", "WaveDirections", "WaveDirection"),
@@ -1468,6 +1484,19 @@ public sealed class CapabilityPresentationTests
             "selector.SelectedItem = ViewModel.SelectedWindowsPowerModeOption;",
             source,
             StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void MainWindow_ChromaImportPassesTheRegionalEditionOfTheConnectedLaptop()
+    {
+        // The import dialog cannot run in a unit test, so pin the capabilities it hands the adapter.
+        string source = ReadTraySource("MainWindow.xaml.cs");
+
+        Assert.Matches(
+            @"RazerChromaFileAdapter\.Deserialize\(\s*content,\s*Path\.GetFileNameWithoutExtension\(result\.Path\),\s*"
+            + @"ViewModel\.Capabilities\.KeyboardLightingLayoutId,\s*ViewModel\.Capabilities\.Blade18KeyboardLayoutId,\s*"
+            + @"ViewModel\.Capabilities\.Blade14KeyboardEdition\)",
+            source);
     }
 
     [Fact]
@@ -3746,7 +3775,9 @@ public sealed class CapabilityPresentationTests
     }
 
     [Fact]
-    public async Task UnknownTemporaryStateDisablesEveryBatteryMutation()
+    // Only a confirmed active override blocks the limiter in the tray. The
+    // service still refuses where a backend's limiter depends on the override.
+    public async Task UnknownTemporaryStateDisablesOnlyOverrideMutation()
     {
         var client = new PresentationClient();
         await using var viewModel = new MainViewModel(client, new ImmediateDispatcher());
@@ -3762,12 +3793,13 @@ public sealed class CapabilityPresentationTests
                 SupportsBatteryProtectionOff: true,
                 SupportsTemporaryFullCharge: true),
             confirmedBattery: new ConfirmedBatteryState(true, 80, null)));
-        await WaitUntilAsync(() => viewModel.ChargeLimitOptions.Count > 0);
+        await WaitUntilAsync(() => viewModel.ChargeLimitOptions.Count > 0
+            && viewModel.BatterySourceLabel.Contains("state unavailable", StringComparison.Ordinal));
 
-        Assert.False(viewModel.SetChargeLimitCommand.CanExecute(80));
-        Assert.False(viewModel.ToggleBatteryProtectionCommand.CanExecute(null));
+        Assert.True(viewModel.SetChargeLimitCommand.CanExecute(80));
+        Assert.True(viewModel.ToggleBatteryProtectionCommand.CanExecute(null));
         Assert.False(viewModel.ToggleFullChargeCommand.CanExecute(true));
-        Assert.Contains("state unavailable", viewModel.BatterySourceLabel);
+        Assert.False(viewModel.ToggleFullChargeCommand.CanExecute(false));
     }
 
     [Fact]

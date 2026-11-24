@@ -5,6 +5,10 @@ using Microsoft.Win32.SafeHandles;
 namespace OpenBlade.SessionAgent;
 
 /// <summary>One outstanding request, owned exclusively by the supervised input worker.</summary>
+/// <summary>A guarded mutation was refused before DeviceIoControl; nothing reached the driver.</summary>
+internal sealed class KeyboardSubmissionDeferredException()
+    : InvalidOperationException("Keyboard input ownership changed before submission.");
+
 internal sealed class RazerSnapTapNativeIo : IDisposable
 {
     private readonly SafeFileHandle handle;
@@ -54,7 +58,7 @@ internal sealed class RazerSnapTapNativeIo : IDisposable
             }, overlapped, false);
             if (canSubmit is not null && !canSubmit())
             {
-                throw new InvalidOperationException("Keyboard input ownership changed before submission.");
+                throw new KeyboardSubmissionDeferredException();
             }
             bool immediate = Native.DeviceIoControl(handle, code, inBuffer, input.Length,
                 outBuffer, outputLength, out _, overlapped);

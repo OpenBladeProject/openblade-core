@@ -60,27 +60,6 @@ public sealed partial class ExperimentalBladeBatteryIntegrationTests
             item => item.StartsWith("query:501:", StringComparison.Ordinal));
     }
 
-    [Fact]
-    public async Task FullChargeStatusFailure_RetainsQueryDiagnosticWithoutInventingBatteryState()
-    {
-        var io = new Io { Raw = 0xD0, RejectedGetter = (0x07, 0x8F) };
-        using WindowsVerifiedBladeDeviceProvider provider = CreateProvider(io);
-        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
-
-        RazerProtocolException failure = await Assert.ThrowsAsync<RazerProtocolException>(() =>
-            device.ReadStateAsync(CancellationToken.None));
-        PartialDeviceStateRead partial = Assert.IsType<PartialDeviceStateRead>(failure.PartialState);
-        Assert.Equal(DeviceStateQuery.TemporaryFullCharge, failure.StateQuery);
-        Assert.Equal(HidProtocolValidationFailure.Status, failure.ValidationFailure);
-        Assert.Equal(HidSessionFailurePhase.ProtocolValidation, failure.Diagnostic?.Phase);
-        Assert.Null(partial.State.Battery);
-        Assert.Equal(PerformancePreset.Balanced, partial.State.Performance);
-        Assert.Contains("Temporary full charge query (07/8F)", failure.Message);
-        Assert.DoesNotContain("Battery state query failed.", failure.Message);
-        Assert.Empty(io.Setters);
-        Assert.All(io.Commands, command => Assert.True(command.Id >= 0x80));
-    }
-
     [Theory]
     [InlineData("battery", 0x02A0)]
     [InlineData("battery", 0x029F)]
@@ -612,6 +591,9 @@ public sealed partial class ExperimentalBladeBatteryIntegrationTests
     {
         private byte[] request = [];
         internal byte Raw { get; set; }
+        internal byte SkuHardwareConfiguration { get; set; }
+        internal byte PowerModeControl { get; set; }
+        internal List<byte> PowerModeControlWrites { get; } = [];
         internal (byte Class, byte Id)? RejectedGetter { get; set; }
         internal int GetterFailureKind { get; set; }
         internal int GetterFailureAfter { get; set; }
@@ -632,6 +614,7 @@ public sealed partial class ExperimentalBladeBatteryIntegrationTests
         internal bool FailNextSetterResponse { get; set; }
         internal bool FailNextLightingSetterResponse { get; set; }
         internal Action? AfterLogoRead { get; set; }
+        internal Action? AfterPowerModeControlRead { get; set; }
         internal List<(byte Class, byte Id)> Commands { get; } = [];
         internal ConcurrentQueue<LightingTraffic> LightingTraffic { get; } = new();
         internal int LightingFrameGetRequests { get; private set; }
@@ -641,6 +624,12 @@ public sealed partial class ExperimentalBladeBatteryIntegrationTests
         internal TaskCompletionSource ReleaseLightingRow { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal List<byte> Setters { get; } = [];
+        // Temporary-full-charge tests name the shared Power Mode Control mask Mask: 07/0F
+        // stores it and 07/8F returns it, unless MaskReply supplies the nth (1-based) read.
+        internal byte Mask { get => PowerModeControl; set => PowerModeControl = value; }
+        internal Func<int, byte>? MaskReply { get; set; }
+        internal List<byte> MaskWrites => PowerModeControlWrites;
+        private int maskReads;
         internal List<byte> CustomReadProfiles { get; } = [];
         private int lightingRows;
         public Task<HidFeatureIoResult> ExecuteAsync(OpenedHidHandle handle, uint code,
@@ -697,6 +686,11 @@ public sealed partial class ExperimentalBladeBatteryIntegrationTests
                     Raw = request[9];
                     Setters.Add(Raw);
                 }
+                if (request[7] == 0x07 && request[8] == 0x0F)
+                {
+                    PowerModeControl = request[9];
+                    PowerModeControlWrites.Add(request[9]);
+                }
             }
             else
             {
@@ -726,6 +720,15 @@ public sealed partial class ExperimentalBladeBatteryIntegrationTests
                 if (buffer[7] == 0x07 && buffer[8] == 0x92)
                 {
                     buffer[9] = Raw;
+                }
+                else if (buffer[7] == 0x0D && buffer[8] == 0x8F)
+                {
+                    buffer[9] = SkuHardwareConfiguration;
+                }
+                else if (buffer[7] == 0x07 && buffer[8] == 0x8F)
+                {
+                    buffer[9] = MaskReply?.Invoke(++maskReads) ?? PowerModeControl;
+                    AfterPowerModeControlRead?.Invoke();
                 }
                 else if (buffer[7] == 0x07 && buffer[8] == 0x12 && FailNextSetterResponse)
                 {
