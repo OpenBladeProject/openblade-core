@@ -8,6 +8,8 @@ const OWNER: &str = "a";
 
 #[derive(Default)]
 struct Custody {
+    /// Refuses every custody admission.
+    refused: AtomicBool,
     record: StdMutex<Option<Record>>,
     fail: AtomicBool,
     delay: StdMutex<Option<Duration>>,
@@ -35,7 +37,13 @@ impl Custody {
 }
 impl ReadCustody for Custody {
     fn authorize(&self) -> Option<ReadAdmission> {
-        None
+        (!self.refused.load(Ordering::Acquire)).then_some(ReadAdmission {
+            lifecycle: 1,
+            generation: [7; 32],
+        })
+    }
+    fn authorize_cleanup(&self, _: CleanupScope) -> Option<ReadAdmission> {
+        ReadCustody::authorize(self)
     }
     fn revoke(&self) {}
     fn retire(&self) -> io::Result<()> {
@@ -209,4 +217,26 @@ fn a_claim_charges_the_floor_until_a_slower_replace_is_measured() {
     *custody.delay.lock().unwrap() = None;
     ledger.settle(Writer::Ordinary, Settled::Clear).unwrap();
     assert_eq!(ledger.claim_allowance(Intent::Acquire), REPLACE_FLOOR);
+}
+
+/// A settle whose custody admission is refused before anything is written
+/// keeps the intent and leaves the ledger open, so a later read or settle
+/// can still resolve it; a claim has no such pass.
+#[test]
+fn a_settle_refused_before_writing_keeps_the_intent_open() {
+    let custody = Arc::new(Custody::default());
+    let ledger = ledger(&custody);
+    let cleanup = Writer::Cleanup(CleanupScope::OwnedStop);
+    ledger.claim(cleanup, Intent::Release, IDS_A).unwrap();
+    custody.refused.store(true, Ordering::Release);
+    assert!(!ledger.settle(cleanup, Settled::Clear).unwrap());
+    assert!(!ledger.revert(cleanup).unwrap());
+    let intent = Standing::ReleaseIntent {
+        prior: Settled::Clear,
+    };
+    assert_eq!(ledger.standing(), intent);
+    assert_eq!(custody.writers.lock().unwrap().len(), 1);
+    custody.refused.store(false, Ordering::Release);
+    assert!(ledger.settle(Writer::Ordinary, Settled::Clear).unwrap());
+    assert_eq!(ledger.standing(), Standing::Clear);
 }

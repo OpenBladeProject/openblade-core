@@ -1861,6 +1861,11 @@ impl ReadSource {
         self.driver_mode
             .active_since(admission, Instant::now(), since)
     }
+    /// Whether this source has activated its write lease. Until it has, the
+    /// owner custody writes no Driver-mode record (`Store::driver_mode_record_owner`).
+    pub(super) fn mutation_activated(&self) -> bool {
+        self.activated.get()
+    }
     /// Whether this source can never activate a mutation: a recovery-only
     /// lease, whose every write would only stop and rebuild the reader.
     pub(super) fn recovery_only(&self) -> bool {

@@ -2076,7 +2076,9 @@ async fn the_release_checks_the_fans_after_joining_active_work() {
 
 /// The share bounds the whole release, the lane's join of the job included:
 /// a worker slow to retire ends the release at its share with the job's
-/// confirmed result.
+/// confirmed result. With the share over, nothing is recorded after the
+/// job: the record keeps the release's intent, owned before it, for a later
+/// read to resolve.
 #[tokio::test]
 async fn a_worker_slow_to_retire_ends_the_release_at_its_share() {
     use crate::installed::readiness::thermal_mutation::KEYBOARD_SHUTDOWN_BUDGET;
@@ -2092,7 +2094,8 @@ async fn a_worker_slow_to_retire_ends_the_release_at_its_share() {
         "{spent:?}"
     );
     assert_eq!((sets(&rig), mode(&rig)), (2, NORMAL));
-    assert_eq!(owner(&rig), (false, false, false));
+    assert_eq!(owner(&rig), (true, false, false));
+    assert!(rig.runtime.driver_mode_uncertain_for_tests());
     rig.stop().await;
 }
 

@@ -1,8 +1,9 @@
 //! The keyboard Driver-mode owner over its durable record
 //! (`owner\keyboard-driver-mode.bin`, the rig's `RecordModel`): the claim is
-//! written before the setter can be sent, settled after the job, closed by
-//! any failed write, and a later process over the same files resolves an
-//! intent read-only.
+//! written before the setter can be sent, an acquire's under the ordinary
+//! admission and a release's under its boundary's cleanup scope, settled
+//! after the job, closed by any failed write, and a later process over the
+//! same files resolves an intent read-only.
 use super::super::driver_mode_record_model::{Fault, RECORD, STAGE};
 use super::*;
 use openblade_domain::driver_mode_history::{Record, Settled, State};
@@ -360,5 +361,281 @@ async fn a_slow_record_write_is_charged_before_the_next_claim() {
     assert_eq!(rig.custody.driver_mode.writes().len(), 2);
     assert_eq!(held(&rig).unwrap().0, State::Owned);
     assert_eq!(rig.runtime.driver_mode_claims_for_tests(), 1);
+    rig.stop().await;
+}
+
+/// The record writes since the `from`th, by the scope they held.
+fn scopes_from(rig: &Rig, from: usize) -> Vec<Option<CleanupScope>> {
+    rig.custody.driver_mode.writes()[from..]
+        .iter()
+        .map(|(scope, _)| *scope)
+        .collect()
+}
+
+/// A release claims before its setter can be sent, as the acquire does: a
+/// `ReleaseIntent` over the owned record, naming the release job's IDs, is
+/// on disk when 00/04:0000 is sent, and the confirmed readback settles it
+/// `Clear`. Each write holds the boundary's own cleanup scope: Owned Stop at
+/// shutdown, the suspend generation in low power.
+#[tokio::test]
+async fn a_release_claims_under_its_boundary_scope_before_its_setter() {
+    for boundary in ["shutdown", "low power"] {
+        let (rig, _) = owner_rig(NORMAL).await;
+        tick(&rig).await;
+        let acquired = rig.custody.driver_mode.writes().len();
+        let sent = keyboard(&rig).len();
+        let files = rig.files.clone();
+        let at_setter = Arc::new(StdMutex::new(None));
+        let seen = at_setter.clone();
+        rig.port.state.lock().unwrap().device_mode_on_set = Some(Arc::new(move |id, mode| {
+            let record = files
+                .read(RECORD)
+                .unwrap()
+                .map(|b| Record::parse(&b).unwrap());
+            *seen.lock().unwrap() = Some((id, mode, record));
+        }));
+        let scope = if boundary == "shutdown" {
+            assert_eq!(release(&rig).await, Some(Release::Restored));
+            CleanupScope::OwnedStop
+        } else {
+            suspend(&rig);
+            tick(&rig).await;
+            assert_eq!(prepared(&rig), Some(Release::Restored));
+            let generation = rig.custody.lifecycle.low_power().unwrap().generation;
+            CleanupScope::LowPower { generation }
+        };
+        assert_eq!(mode(&rig), NORMAL, "{boundary}");
+        let job = &keyboard(&rig)[sent..];
+        let (setter, target, record) = at_setter.lock().unwrap().take().unwrap();
+        assert_eq!((setter, target), (job[1].2, NORMAL), "{boundary}");
+        let record = record.unwrap();
+        assert_eq!(record.state(), State::ReleaseIntent, "{boundary}");
+        assert_eq!(record.prior(), Settled::Owned, "{boundary}");
+        let ids = record.ids();
+        assert_eq!([ids[0], ids[1], ids[2]], [job[0].2, job[1].2, job[2].2]);
+        assert_eq!(held(&rig), Some((State::Clear, ids)), "{boundary}");
+        assert_eq!(owner(&rig), (false, false, false), "{boundary}");
+        assert_eq!(scopes_from(&rig, acquired), [Some(scope); 2], "{boundary}");
+        if boundary == "low power" {
+            rig.custody.lifecycle.ingress(POWER, RESUME);
+        }
+        rig.stop().await;
+    }
+}
+
+/// A release over an acquire in doubt records what its own baseline read,
+/// `AcquireIntent -> Owned`, before it claims, so the record never holds an
+/// intent over an intent; all three writes hold the cleanup scope.
+#[tokio::test]
+async fn a_release_over_an_acquire_in_doubt_records_it_owned_first() {
+    let (rig, _) = fenced_readback_rig().await;
+    let (state, acquire_ids) = held(&rig).unwrap();
+    assert_eq!(state, State::AcquireIntent);
+    let acquired = rig.custody.driver_mode.writes().len();
+    assert_eq!(release(&rig).await, Some(Release::Restored));
+    assert_eq!(mode(&rig), NORMAL);
+    let writes = rig.custody.driver_mode.writes();
+    let states: Vec<_> = writes[acquired..]
+        .iter()
+        .map(|(_, bytes)| Record::parse(bytes).unwrap().state())
+        .collect();
+    assert_eq!(states, [State::Owned, State::ReleaseIntent, State::Clear]);
+    assert_eq!(
+        Record::parse(&writes[acquired].1).unwrap().ids(),
+        acquire_ids
+    );
+    assert_eq!(
+        scopes_from(&rig, acquired),
+        [Some(CleanupScope::OwnedStop); 3]
+    );
+    rig.stop().await;
+}
+
+/// A release setter refused at its checkpoint after the claim was written
+/// is known not submitted: the intent reverts to its prior under the same
+/// cleanup scope, the mode is unchanged and nothing is in doubt.
+#[tokio::test]
+async fn a_release_claim_known_not_submitted_reverts_to_its_prior() {
+    let (rig, _) = owner_rig(NORMAL).await;
+    tick(&rig).await;
+    let acquired = rig.custody.driver_mode.writes().len();
+    let custody = Arc::downgrade(&rig.custody);
+    rig.custody.driver_mode.after_write(move || {
+        custody
+            .upgrade()
+            .unwrap()
+            .controller
+            .store(true, Ordering::Release);
+    });
+    assert_eq!(release(&rig).await, Some(Release::Unconfirmed));
+    rig.custody.controller.store(false, Ordering::Release);
+    assert_eq!((sets(&rig), mode(&rig)), (1, DRIVER));
+    let writes = rig.custody.driver_mode.writes();
+    let claim = Record::parse(&writes[acquired].1).unwrap();
+    assert_eq!(claim.state(), State::ReleaseIntent);
+    assert_eq!(held(&rig), Some((State::Owned, claim.ids())));
+    assert_eq!(
+        scopes_from(&rig, acquired),
+        [Some(CleanupScope::OwnedStop); 2]
+    );
+    assert_eq!(owner(&rig), (true, false, false));
+    assert!(!rig.runtime.driver_mode_uncertain_for_tests());
+}
+
+/// A release that may have submitted Normal unconfirmed leaves its
+/// `ReleaseIntent` on disk. A later Service over the same files reports
+/// its own release `Uncertain` and sends nothing. Its first step resolves
+/// the intent as a loaded acquire intent is, with one read-only job that
+/// activates its write lease: Driver records the intent's prior, and Normal
+/// records `Clear`, after which the next tick acquires through the ordinary
+/// claim on new IDs.
+#[tokio::test]
+async fn a_restart_over_a_release_intent_resolves_it_by_a_later_read() {
+    // (case, the keyboard before the release, the firmware after the restart)
+    for (case, before, firmware) in [
+        ("owned, read driver", NORMAL, DRIVER),
+        ("owned, read normal", NORMAL, NORMAL),
+        ("unclaimed, read driver", DRIVER, DRIVER),
+    ] {
+        let (rig, _) = owner_rig(before).await;
+        tick(&rig).await;
+        rig.port.state.lock().unwrap().device_mode_bad_ack = true;
+        assert_eq!(release(&rig).await, Some(Release::Unconfirmed), "{case}");
+        let (state, ids) = held(&rig).unwrap();
+        assert_eq!(state, State::ReleaseIntent, "{case}");
+        let prior = on_disk(&rig).unwrap().prior();
+        let expected_prior = if before == NORMAL {
+            Settled::Owned
+        } else {
+            Settled::Clear
+        };
+        assert_eq!(prior, expected_prior, "{case}");
+        // A later Stop over the intent sends nothing.
+        let stopped = restarted(&rig, firmware).await;
+        assert_eq!(release(&stopped).await, Some(Release::Uncertain), "{case}");
+        assert!(keyboard(&stopped).is_empty(), "{case}");
+        assert_eq!(held(&stopped), Some((State::ReleaseIntent, ids)), "{case}");
+        // A later step resolves it with one read-only job of its own, and
+        // acquires, if at all, only at the next tick.
+        let later_rig = restarted(&rig, firmware).await;
+        tick(&later_rig).await;
+        assert_eq!(sent_from(&later_rig, 0), [0x84], "{case}");
+        assert!(
+            !later_rig.runtime.driver_mode_uncertain_for_tests(),
+            "{case}"
+        );
+        let resolved = match (firmware, prior) {
+            (DRIVER, Settled::Owned) => State::Owned,
+            _ => State::Clear,
+        };
+        assert_eq!(held(&later_rig), Some((resolved, ids)), "{case}");
+        assert_eq!(owner(&later_rig).0, resolved == State::Owned, "{case}");
+        assert_eq!(
+            later_rig.runtime.driver_mode_claims_for_tests(),
+            0,
+            "{case}"
+        );
+        // The resolution holds the ordinary admission.
+        assert_eq!(scopes_from(&later_rig, 0), [None], "{case}");
+        if firmware == NORMAL {
+            tick(&later_rig).await;
+            assert_eq!(sent_from(&later_rig, 1), [0x84, 0x04, 0x84], "{case}");
+            let (state, fresh) = held(&later_rig).unwrap();
+            assert_eq!(state, State::Owned, "{case}");
+            assert!(fresh.iter().all(|id| !ids.contains(id)), "{fresh:?}");
+        } else {
+            assert_eq!(sets(&later_rig), 0, "{case}");
+        }
+        later_rig.stop().await;
+    }
+}
+
+/// A closed record cannot hold a release's claim, so the release sends no
+/// setter: a corrupt record found at Stop is kept byte for byte, and a
+/// claim that cannot be written closes the record after the baseline read
+/// with the mode unchanged.
+#[tokio::test]
+async fn a_release_without_a_written_claim_sends_no_setter() {
+    // A record refused at load.
+    let files = MemoryFiles::default();
+    files.profiles(1);
+    files
+        .bytes
+        .lock()
+        .unwrap()
+        .insert(RECORD.into(), b"not a record".to_vec());
+    let (corrupt, _) = wired(Rig::restarted(files.clone()), DRIVER).await;
+    assert_eq!(release(&corrupt).await, Some(Release::Unrecorded));
+    assert!(keyboard(&corrupt).is_empty());
+    assert!(corrupt.custody.driver_mode.writes().is_empty());
+    corrupt.stop().await;
+    assert_eq!(files.read(RECORD).unwrap(), Some(b"not a record".to_vec()));
+    // A claim that cannot be written.
+    for fault in [Fault::Refused, Fault::Written] {
+        let (rig, _) = owner_rig(NORMAL).await;
+        tick(&rig).await;
+        let sent = keyboard(&rig).len();
+        rig.custody.driver_mode.fail(1, fault);
+        assert_eq!(release(&rig).await, Some(Release::Unrecorded), "{fault:?}");
+        assert_eq!(sent_from(&rig, sent), [0x84], "{fault:?}");
+        assert_eq!((sets(&rig), mode(&rig)), (1, DRIVER), "{fault:?}");
+        assert!(closed(&rig), "{fault:?}");
+    }
+}
+
+/// Owned -> Clear after a release reads Normal is written only while the
+/// share has room for it: a worker slow to retire past the share reports
+/// the foreign change and leaves the record `Owned`.
+#[tokio::test]
+async fn a_foreign_change_is_recorded_only_within_the_share() {
+    let (rig, _) = owner_rig(NORMAL).await;
+    tick(&rig).await;
+    let (_, ids) = held(&rig).unwrap();
+    let acquired = rig.custody.driver_mode.writes().len();
+    {
+        let mut port = rig.port.state.lock().unwrap();
+        port.device_mode = NORMAL;
+        port.device_mode_retire_delay = Some(Duration::from_millis(2400));
+    }
+    assert_eq!(release(&rig).await, Some(Release::ForeignChange));
+    assert_eq!(held(&rig), Some((State::Owned, ids)));
+    assert_eq!(rig.custody.driver_mode.writes().len(), acquired);
+    rig.stop().await;
+}
+
+/// A low-power release its caller dropped leaves the record its job wrote:
+/// the intent, whatever the job then confirmed, since nothing settled it.
+/// After the resume a read made after the step that found it resolves it,
+/// and the step acquires again; the
+/// Stop then reads the dropped job without touching the newer record and
+/// releases the new claim itself.
+#[tokio::test]
+async fn a_dropped_low_power_release_leaves_its_intent_for_a_read() {
+    let (rig, _) = owner_rig(NORMAL).await;
+    tick(&rig).await;
+    rig.port.state.lock().unwrap().device_mode_retire_delay = Some(Duration::from_millis(300));
+    suspend(&rig);
+    let dropped = tokio::time::timeout(Duration::from_millis(100), tick(&rig)).await;
+    assert!(dropped.is_err(), "the release was still running");
+    rig.custody.lifecycle.ingress(POWER, RESUME);
+    std::thread::sleep(Duration::from_millis(400));
+    rig.port.state.lock().unwrap().device_mode_retire_delay = None;
+    assert_eq!(mode(&rig), NORMAL);
+    assert_eq!(held(&rig).unwrap().0, State::ReleaseIntent);
+    assert!(rig.runtime.driver_mode_uncertain_for_tests());
+    // The doubt dates from the first step that finds it, so only a read
+    // made after that step resolves it.
+    step(&rig).await;
+    assert_eq!(sets(&rig), 2);
+    record(&rig, DeviceMode::Normal);
+    step(&rig).await;
+    assert!(!rig.runtime.driver_mode_uncertain_for_tests());
+    assert_eq!((sets(&rig), mode(&rig)), (3, DRIVER));
+    let (state, ids) = held(&rig).unwrap();
+    assert_eq!(state, State::Owned);
+    assert_eq!(release(&rig).await, Some(Release::Restored));
+    assert_eq!((sets(&rig), mode(&rig)), (4, NORMAL));
+    assert_eq!(held(&rig).unwrap().0, State::Clear);
+    assert_ne!(held(&rig).unwrap().1, ids);
     rig.stop().await;
 }

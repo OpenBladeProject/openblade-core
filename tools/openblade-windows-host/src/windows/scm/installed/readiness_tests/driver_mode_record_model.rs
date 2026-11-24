@@ -38,6 +38,9 @@ pub(super) struct RecordModel {
     writes: StdMutex<Vec<(Option<CleanupScope>, Vec<u8>)>>,
     /// The replace attempt (1-based) that takes this much real time.
     delay: StdMutex<Option<(usize, std::time::Duration)>>,
+    /// Runs once after the next record is written, as the caller's next
+    /// step would observe the world changed.
+    after_write: StdMutex<Option<Box<dyn FnOnce() + Send>>>,
 }
 
 impl RecordModel {
@@ -60,6 +63,11 @@ impl RecordModel {
     /// Makes the `nth` replace attempt from now take `delay` of real time.
     pub(super) fn delay_at(&self, nth: usize, delay: std::time::Duration) {
         *self.delay.lock().unwrap() = Some((self.attempts.load(Ordering::Acquire) + nth, delay));
+    }
+
+    /// Runs `then` once, right after the next record is written.
+    pub(super) fn after_write(&self, then: impl FnOnce() + Send + 'static) {
+        *self.after_write.lock().unwrap() = Some(Box::new(then));
     }
 
     /// Every replace attempt so far.
@@ -133,6 +141,9 @@ impl RecordModel {
             .lock()
             .unwrap()
             .insert(RECORD.into(), next.bytes());
+        if let Some(then) = self.after_write.lock().unwrap().take() {
+            then();
+        }
         if fault == Some(Fault::Written as u8) {
             return Err(io::ErrorKind::StorageFull.into());
         }

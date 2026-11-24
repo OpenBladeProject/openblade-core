@@ -10,9 +10,13 @@
 //! Any write that fails, refused or not, closes the ledger for the rest of
 //! the process, and nothing reopens it: after an error the file may hold
 //! either the old record or the new one, and a closed ledger runs no
-//! acquire, maintain or release write. A record that cannot be read or is
-//! refused (corrupt, unknown, a leftover stage, an owner never Active) closes
-//! it too; the file is kept as it is. Fatal admission evidence is kept in
+//! acquire, maintain or release write. A settle, which follows a job and
+//! never admits a setter, first checks its writer's custody admission and,
+//! refused, writes nothing and keeps the ledger open: the record keeps its
+//! intent, and with it the doubt, for a later read. A claim has no such
+//! pass. A record that cannot be read or is refused (corrupt, unknown, a
+//! leftover stage, an owner never Active) closes it too; the file is kept
+//! as it is. Fatal admission evidence is kept in
 //! the Service's retained failure and still fails the caller.
 use super::*;
 use openblade_domain::driver_mode_history::{IDS, Intent, Record, Settled, State};
@@ -130,17 +134,21 @@ impl Ledger {
         }
     }
 
-    /// The time a claim of `intent` may take for its record writes: one
-    /// replace each, at the longest of `REPLACE_FLOOR` and the last measured
-    /// one. A release over an acquire in doubt writes twice
-    /// (`claim`).
+    /// One record write's allowance: the longest of `REPLACE_FLOOR` and the
+    /// last measured replace.
+    pub(super) fn write_allowance(&self) -> Duration {
+        REPLACE_FLOOR.max(Duration::from_nanos(self.measured.load(Ordering::Acquire)))
+    }
+
+    /// The time a claim of `intent` may take for its record writes, one
+    /// `write_allowance` each. A release over an acquire in doubt writes
+    /// twice (`claim`).
     pub(super) fn claim_allowance(&self, intent: Intent) -> Duration {
         let writes = match (intent, self.standing()) {
             (Intent::Release, Standing::AcquireIntent) => 2,
             _ => 1,
         };
-        let measured = Duration::from_nanos(self.measured.load(Ordering::Acquire));
-        REPLACE_FLOOR.max(measured) * writes
+        self.write_allowance() * writes
     }
 
     /// Records the claim of a job whose baseline read admitted its setter:
@@ -174,21 +182,39 @@ impl Ledger {
 
     /// Replaces the held record with the settled state `to`, keeping its
     /// IDs: an intent's settle, its revert to its prior, its read-only
-    /// resolution, or `Owned -> Clear` after a release read Normal.
-    pub(super) fn settle(&self, writer: Writer, to: Settled) -> io::Result<()> {
+    /// resolution, or `Owned -> Clear` after a release read Normal. `false`
+    /// when `writer`'s custody admission is refused before anything is
+    /// written: the record, and so the doubt, stay as they are, and the
+    /// ledger stays open for a later read to resolve it.
+    pub(super) fn settle(&self, writer: Writer, to: Settled) -> io::Result<bool> {
         let mut held = self.lock()?;
-        self.settle_held(&mut held, writer, to)
+        if !self.admits(writer) {
+            return Ok(false);
+        }
+        self.settle_held(&mut held, writer, to).map(|()| true)
     }
 
     /// `settle` to what the held intent reverts to when its setter is known
     /// not to have been submitted.
-    pub(super) fn revert(&self, writer: Writer) -> io::Result<()> {
+    pub(super) fn revert(&self, writer: Writer) -> io::Result<bool> {
         let mut held = self.lock()?;
         let prior = match &*held {
             Held::Open(Some(record)) if record.state().settled().is_none() => record.prior(),
-            _ => return self.close(&mut held, closed()),
+            _ => return self.close(&mut held, closed()).map(|()| false),
         };
-        self.settle_held(&mut held, writer, prior)
+        if !self.admits(writer) {
+            return Ok(false);
+        }
+        self.settle_held(&mut held, writer, prior).map(|()| true)
+    }
+
+    /// Whether the custody admission `writer` names holds now, as the
+    /// replace checks it first.
+    fn admits(&self, writer: Writer) -> bool {
+        match writer {
+            Writer::Ordinary => self.custody.authorize().is_some(),
+            Writer::Cleanup(scope) => self.custody.authorize_cleanup(scope).is_some(),
+        }
     }
 
     fn settle_held(&self, held: &mut Held, writer: Writer, to: Settled) -> io::Result<()> {
