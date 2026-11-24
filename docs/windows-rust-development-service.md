@@ -746,25 +746,36 @@ marker by name. A build without the feature still refuses the request with
   session (`nvmlInit_v2` to `nvmlShutdown`) stays open across consecutive
   valid samples of an active D0 GPU and at most 5 s after the last one; an
   idle, powered-down, unknown or failed sample, a sample cancelled after its
-  workload read and Stop end it. A missing driver, adapter or library, a
-  failed call and a value outside 10..=125 C are null, as in managed. A value
-  above the codec's 115 C bound is null where managed would refuse the reply.
+  D-state read and Stop end it. A sample that starts within 250 ms of the
+  lease's end ends the session first, and the D-state read ends one whose
+  lease ran out during the Windows reads, before NVML is called. Managed's
+  timer ends a session on time even during a sample; native keeps it past
+  5 s only while a PDH or SetupAPI read stalls. A missing driver, adapter or
+  library, a failed call and a value outside 10..=125 C are null, as in
+  managed. A value above the codec's 115 C bound is null where managed would
+  refuse the reply. No failure status is kept: a failed NVML, PDH or
+  SetupAPI call publishes null, and no diagnostics producer records why.
   `nvml.dll` is loaded with `LOAD_LIBRARY_SEARCH_SYSTEM32`, so neither the
   search path nor the current directory is searched for it or its
   dependencies, and it stays loaded for the process. Like managed's
-  `[DllImport]`, the load checks no signature.
+  `[DllImport]`, the load checks no signature. A signer check is queued with
+  the package import-allowlist review of `pdh.dll` and `dxgi.dll` below.
 
   The sample runs on its own worker thread, started by the first request,
   never on the read job. It starts beside the job, and the observation waits
-  for it only until 500 ms before its deadline, after the job's reading and
-  before the admission check; a sample whose reading is not accepted is
-  dropped. One request may wait behind a running sample and any other gets
-  none; a waiting request whose observation went is skipped. Stop does not
-  wait: a call in progress ends the session when it returns, and the worker
-  exits. Managed reads the GPU only after a successful device read; native
-  samples before the job ends, so a job that then fails may still have read
-  an active D0 GPU and renewed its session for up to 5 s. It never starts
-  NVML for an idle, powered-down or unknown GPU.
+  for it after the job's reading and before the admission check, at most
+  250 ms and never later than 500 ms before its deadline, so a slow sample
+  holds neither the reply nor the read source. A sample whose reading is not
+  accepted or that has not arrived by then is dropped, and a reading that
+  waited for its sample is never published over one from a later job. One
+  request may wait behind a running sample and any other gets none; a
+  waiting request whose observation went is skipped. Stop cancels without
+  waiting: a running sample makes no call after the one it is in, a waiting
+  request is skipped, and the worker ends the session when the call in
+  progress returns, then exits. Managed reads the GPU only after a
+  successful device read; native samples before the job ends, so a job that
+  then fails may still have read an active D0 GPU and renewed its session for
+  up to 5 s. It never starts NVML for an idle, powered-down or unknown GPU.
   `gpu-temperature-vectors.json` pins the activity decision, the power
   classification, the sampler's gate, session use and lease step by step,
   and the codec bound against managed
