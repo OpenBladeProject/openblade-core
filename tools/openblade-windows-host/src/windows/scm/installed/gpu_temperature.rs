@@ -22,8 +22,8 @@
 //! it to its lease, as managed's does. A sample starting within
 //! `SAMPLE_BUDGET` of the lease's end ends it first, and the D-state read
 //! ends one whose lease ran out during the Windows reads, so only a stalled
-//! Windows read can hold it past the lease. So a sample neither wakes an idle GPU nor keeps it awake
-//! past a workload by more than the lease.
+//! Windows read can hold it past the lease. So a sample neither wakes an
+//! idle GPU nor keeps it awake past a workload by more than the lease.
 //!
 //! The reads run on a worker thread this module owns, never on the HID read
 //! job. An observation waits for its sample at most `AFTER_READING` after
