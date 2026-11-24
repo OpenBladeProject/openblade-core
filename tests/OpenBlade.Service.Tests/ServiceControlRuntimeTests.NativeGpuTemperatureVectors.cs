@@ -7,11 +7,12 @@ namespace OpenBlade.Service.Tests;
 
 // The native Service's GPU temperature is pinned against managed. Activity rows replay
 // WindowsGpuActivitySource over scripted counter snapshots, and power rows replay
-// WindowsNvidiaGpuPowerState.ClassifyPowerData. Sampler rows drive the live-readings
-// path, SafeWindowsFanTemperatureSource.ReadAsync for the GPU alone, over a scripted
+// WindowsNvidiaGpuPowerState.ClassifyPowerData. Sampler rows drive
+// SafeWindowsFanTemperatureSource.ReadAsync for the GPU alone, or, when a step's reader
+// is live, ReadForLiveReadingsAsync, the live-readings path since 8331bbf4, over a scripted
 // activity source, power state, driver session and clock, and record what each step
 // returned, how the session was used and when its lease ends. Publication rows write a
-// status carrying the temperature through the real v85 status codec.
+// status carrying the temperature through the real v90 status codec.
 public sealed partial class ServiceControlRuntimeTests
 {
     private const string NativeGpuTemperatureVectors = "gpu-temperature-vectors.json";
@@ -25,11 +26,12 @@ public sealed partial class ServiceControlRuntimeTests
         + "snapshots (null is unavailable, otherwise each process's [pid, utilization]); its expect is "
         + "the result and the snapshot reads. A power row is WindowsNvidiaGpuPowerState.ClassifyPowerData. "
         + "A sampler row's steps advance the clock by advanceMs, then read the GPU alone through "
-        + "SafeWindowsFanTemperatureSource.ReadAsync, fire the session timer (fire) or dispose the source. "
+        + "SafeWindowsFanTemperatureSource.ReadAsync (ReadForLiveReadingsAsync when its reader is live), "
+        + "fire the session timer (fire) or dispose the source. "
         + "A read takes its workload state, its power states in call order and the session's reading, and "
         + "cancels during the named call. Each expect is the reading, whether it was cancelled, the power "
         + "reads of that step, the session's cumulative reads and releases and the timer's absolute due "
-        + "time in milliseconds. A publication row is whether the v85 codec writes a status carrying it.";
+        + "time in milliseconds. A publication row is whether the v90 codec writes a status carrying it.";
 
     private static readonly string[] NativeGpuTemperatureSections =
         ["activity", "power", "sampler", "publication"];
@@ -188,10 +190,18 @@ public sealed partial class ServiceControlRuntimeTests
                         powerReads = 0;
                         try
                         {
-                            FanTemperatureReadings readings = await source.ReadAsync(
-                                includeCpu: false,
-                                includeGpu: true,
-                                cancellation.Token);
+                            FanTemperatureReadings readings = (string?)step["reader"] switch
+                            {
+                                null => await source.ReadAsync(
+                                    includeCpu: false,
+                                    includeGpu: true,
+                                    cancellation.Token),
+                                "live" => await source.ReadForLiveReadingsAsync(
+                                    includeCpu: false,
+                                    includeGpu: true,
+                                    cancellation.Token),
+                                string reader => throw new InvalidDataException($"Unknown sampler reader {reader}."),
+                            };
                             expect["celsius"] = readings.GpuCelsius;
                             expect["cancelled"] = false;
                         }
