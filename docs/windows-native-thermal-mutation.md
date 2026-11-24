@@ -2089,8 +2089,11 @@ checkpoint, or Custom with a 126 ms one, start and overrun with setters
 submitted. Otherwise the intent stays saved, no setter is submitted, retirement settles the Prepared row as known not
 submitted, and the reply is Blocked with "The remaining request time cannot
 cover this recipe at the measured device pace; no thermal setter was
-submitted." (no fan setter, for a fan request). Owned Stop cleanup is not
-paced. The refused recipe's transaction IDs were reserved but never sent, so
+submitted." (no fan setter, for a fan request). Owned Stop fan cleanup is
+paced once, before its first row (`Pace::covers_before_rows`), against what is
+left of the source drain: with no append timed yet, every row left, its 31
+included, is charged at the second longest exchange, so one stall still counts
+once. When the recipe does not fit it writes no row and sends no setter. The refused recipe's transaction IDs were reserved but never sent, so
 retirement returns them to the pool. A fan record pins its IDs only once a
 setter may reach the device, so a refused fan recipe returns them too.
 

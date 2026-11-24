@@ -460,12 +460,15 @@ managed order (`ServiceControlRuntime.cs:12925-12950`,
   (`Fresh::capture_settle`), which reads and appends 51 on Automatic. A job
   that registered may already have sent the owner's reserved cleanup IDs,
   its baseline read's among them, so no later admission of the same Stop
-  runs the recipe again. Before row 31 the recipe is paced against the Stop
-  deadline, charging every exchange and row left at the slowest measured
-  exchange; when they do not fit it ends with no row and no setter. A job
-  that ends after 31 or 40-43 leaves a tail that cannot be closed in the
-  process (51 follows only 30), so Stop reports the handback unconfirmed and
-  the next start's read-only recovery reconciles it. That predates the
+  runs the recipe again. Before row 31 the recipe is paced once against what
+  is left of the source drain (`StatusSource::drain_by`: 2 s, or 2.9 s with
+  the keyboard share, from the drain's start), with each cleanup job also
+  bounded by its own 3 s. Every exchange left is charged as `Pace` charges
+  any recipe, and every row left at the second longest exchange; when they
+  do not fit it ends with no row and no setter. A job that ends after 31 or
+  40-43 leaves a tail that cannot be closed in the process (51 follows only
+  30), so Stop reports the handback unconfirmed. A restarted Service finds
+  that row unsettled and refuses; nothing settles it yet. That predates the
   low-power slice.
 - A fresh `00/84` read of Driver writes `00/04:0000` once, whoever set it, as
   managed does, and requires the exact acknowledgement and an independent
