@@ -1221,14 +1221,17 @@ impl Runtime {
             let fan_value = store.current_fan_override(query)?;
             let base = base.without_private_policy();
             #[cfg(feature = "service-profile-triggers-v1")]
-            let convergence = policy_runtime.thermal_convergence(
-                &base,
-                &store,
-                &policy_sid,
-                caller.session,
-                query,
-                profile.as_ref(),
-            )?;
+            let convergence = {
+                let class = convergence_power(query, policy_fresh.as_ref(), &store)?;
+                policy_runtime.thermal_convergence(
+                    &base,
+                    &store,
+                    &policy_sid,
+                    caller.session,
+                    class,
+                    layer.at(class)?.as_ref(),
+                )?
+            };
             let projected = base
                 .thermal_profiles(store.profiles()?)?
                 .thermal_intent(
@@ -1246,7 +1249,7 @@ impl Runtime {
                 )
                 .bind_private_user(&policy_sid);
             #[cfg(feature = "service-profile-triggers-v1")]
-            let projected = projected.with_thermal_convergence(Some(convergence));
+            let projected = projected.with_thermal_convergence(convergence);
             Ok(projected)
         }));
         // Retain before awaiting: cancellation cannot discard an owned Stop obligation.
@@ -1533,7 +1536,7 @@ impl Runtime {
             )?;
             #[cfg(feature = "service-profile-triggers-v1")]
             {
-                base = base.with_thermal_convergence(Some(convergence));
+                base = base.with_thermal_convergence(convergence);
             }
             base = base
                 .thermal_profiles(permit.storage.profiles()?)?

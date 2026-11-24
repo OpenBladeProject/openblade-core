@@ -1194,11 +1194,17 @@ impl Snapshot {
         self.external_changes = changes;
         self
     }
+    /// Whether this is the active client's view, the only one that carries
+    /// `thermalConvergence` (`ControlRequestHandler`).
+    #[cfg(feature = "service-profile-triggers-v1")]
+    pub(crate) fn carries_thermal_convergence(&self) -> bool {
+        self.control_access == 0
+    }
     /// Managed `ThermalConvergence`, which only the active client sees
     /// (`ControlRequestHandler`): set for an active status, removed otherwise.
     #[cfg(feature = "service-profile-triggers-v1")]
     pub(crate) fn with_thermal_convergence(mut self, value: Option<ThermalConvergence>) -> Self {
-        match value.filter(|_| self.control_access == 0) {
+        match value.filter(|_| self.carries_thermal_convergence()) {
             Some(value) => {
                 self.feature_fields.insert(
                     "thermalConvergence".into(),

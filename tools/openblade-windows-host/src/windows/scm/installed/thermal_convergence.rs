@@ -42,9 +42,10 @@ pub(super) struct Admission {
     pub(super) policy: SavedPolicy,
     /// Managed `lowPowerGate.IsActive`.
     pub(super) low_power: bool,
-    /// The power class saved intent is read at (`status_query_power`):
+    /// The power class the member is derived at (`convergence_power`):
     /// PluggedIn, Battery or UsbC only when fresh Windows power agrees with
-    /// the status; anything else is unsettled.
+    /// the status or with this user's last classified step; anything else
+    /// is unsettled.
     pub(super) power: i32,
     /// Managed `FanControllerAdmissionUnsafe`: the status names a possible
     /// competing controller.
@@ -230,7 +231,9 @@ impl Runtime {
     }
     /// The convergence status of the user `sid` whose store `storage` is,
     /// for the status `base`, with saved intent read at class `query` under
-    /// the application profile `profile`.
+    /// the application profile `profile`. `None` for a view that does not
+    /// carry it (`Snapshot::carries_thermal_convergence`), without reading
+    /// the store.
     pub(super) fn thermal_convergence(
         &self,
         base: &Snapshot,
@@ -239,7 +242,10 @@ impl Runtime {
         session: u32,
         query: i32,
         profile: Option<&Resolution<'_>>,
-    ) -> io::Result<ThermalConvergence> {
+    ) -> io::Result<Option<ThermalConvergence>> {
+        if !base.carries_thermal_convergence() {
+            return Ok(None);
+        }
         let admission = Admission {
             policy: storage.thermal_policy()?,
             low_power: self.status_low_power(),
@@ -265,6 +271,7 @@ impl Runtime {
                 owns_manual_fans,
             })
         })
+        .map(Some)
     }
 }
 
