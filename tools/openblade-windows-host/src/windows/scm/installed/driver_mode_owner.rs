@@ -327,15 +327,19 @@ impl Runtime {
         // A release that may have applied Normal unconfirmed is resolved
         // read-only, never replayed: a confirmed 00/84 read under the current
         // read admission, by a job that started after that release, says which
-        // mode the keyboard is in. Driver keeps the claim and any other mode
-        // clears it; the step then acquires through the normal cadence. A
+        // mode the keyboard is in. Driver keeps whatever claim there was, and
+        // a read never makes one: only an acquire's own setter claims. Any
+        // other mode clears it; the step then acquires through the normal
+        // cadence. A
         // low-power release's doubt can only be resolved after the resume,
         // whose epoch every such read admission carries.
         if let Some(since) = keyboard.uncertain.get() {
             let Some(driver) = reader.driver_mode_confirmed_since(since) else {
                 return Ok(());
             };
-            keyboard.ownership.owns.store(driver, Ordering::Release);
+            if !driver {
+                keyboard.ownership.owns.store(false, Ordering::Release);
+            }
             keyboard.uncertain.set(None);
         }
         if !reader.driver_mode_verified() {

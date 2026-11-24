@@ -1300,6 +1300,33 @@ async fn a_later_read_resolves_an_ambiguous_release() {
     assert_eq!(rig.runtime.driver_mode_release(), Some(Release::Restored));
 }
 
+/// A read that resolves an ambiguous release as Driver keeps the claim it
+/// finds and never makes one: a keyboard OpenBlade never claimed, put in
+/// Driver by someone else, is still unclaimed after the read, so a Stop that
+/// finds it Normal again reports `NotDriver`, not a foreign change.
+#[tokio::test]
+async fn a_read_of_driver_never_claims_the_keyboard() {
+    let (rig, _) = owner_rig(DRIVER).await;
+    tick(&rig).await;
+    assert_eq!(owner(&rig), (false, false, false));
+    rig.port.state.lock().unwrap().device_mode_bad_ack = true;
+    suspend(&rig);
+    tick(&rig).await;
+    assert_eq!(prepared(&rig), Some(Release::Unconfirmed));
+    assert!(rig.runtime.driver_mode_uncertain_for_tests());
+    rig.port.state.lock().unwrap().device_mode_bad_ack = false;
+    rig.custody.lifecycle.ingress(POWER, RESUME);
+    rig.port.state.lock().unwrap().device_mode = DRIVER;
+    record(&rig, DeviceMode::Driver);
+    step(&rig).await;
+    assert!(!rig.runtime.driver_mode_uncertain_for_tests());
+    assert_eq!(owner(&rig), (false, false, false));
+    assert_eq!(rig.runtime.driver_mode_claims_for_tests(), 0);
+    rig.port.state.lock().unwrap().device_mode = NORMAL;
+    shutdown(&rig).await.unwrap();
+    assert_eq!(rig.runtime.driver_mode_release(), Some(Release::NotDriver));
+}
+
 /// A session notice during the low-power release, at its baseline read or
 /// between the setter's acknowledgement and its readback (reviewer R2, R3),
 /// moves the lifecycle epoch but not the suspend generation, so the release
