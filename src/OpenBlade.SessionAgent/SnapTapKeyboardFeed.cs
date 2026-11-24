@@ -12,7 +12,7 @@ internal sealed class SnapTapKeyboardFeed
     private int count;
     private int overflowed;
 
-    /// <summary>Called on the observer's message thread; never blocks or throws.</summary>
+    /// <summary>Called on the observer's message thread; does not block.</summary>
     internal void Post(ushort makeCode, ushort flags)
     {
         if (Interlocked.Increment(ref count) > Capacity)
@@ -30,7 +30,7 @@ internal sealed class SnapTapKeyboardFeed
     /// </summary>
     internal void Drain(SnapTapDeliveryTracker tracker)
     {
-        while (packets.TryDequeue(out var packet))
+        for (int drained = 0; drained < Capacity && packets.TryDequeue(out var packet); drained++)
         {
             Interlocked.Decrement(ref count);
             tracker.Observe(packet.MakeCode, packet.IsUp);

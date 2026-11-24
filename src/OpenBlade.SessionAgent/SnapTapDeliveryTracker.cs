@@ -16,8 +16,10 @@ internal sealed class SnapTapDeliveryTracker
     // Both bounds must pass before a key counts as lost: the deadline covers
     // driver and Raw Input latency, including a Windows input thread stalled by a
     // slow low-level hook, and the pump count keeps a starved worker that has not
-    // yet drained its own queue from blaming the driver. A false loss turns the
-    // feature off until the user retries, so the deadline is generous.
+    // yet drained its queue from blaming the driver. With a shared Fn observer the
+    // pump count covers only the worker thread; the observer's own thread is
+    // covered by the deadline alone. A false loss turns the feature off until the
+    // user retries, so the deadline is generous.
     internal static readonly TimeSpan Deadline = TimeSpan.FromSeconds(2);
     internal const int MinimumPumps = 5;
     internal const int Capacity = 256;

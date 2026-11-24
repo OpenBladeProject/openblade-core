@@ -954,7 +954,16 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
             {
                 RawKeyboard observed = Marshal.PtrToStructure<RawKeyboard>(
                     nint.Add(buffer, checked((int)headerSize)));
-                observeKeyboardInput(observed.MakeCode, observed.Flags);
+                try
+                {
+                    observeKeyboardInput(observed.MakeCode, observed.Flags);
+                }
+                catch (Exception exception) when (exception is not OutOfMemoryException)
+                {
+                    // An observer failure must not change Fn or keyboard handling here.
+                    // The delivery check then sees no packet and fails closed.
+                    Trace.TraceWarning("Keyboard input observer failed: {0}", exception.GetType().Name);
+                }
             }
             ProcessKeyboard(buffer, headerSize, receivedSize, deviceKind, messageTime);
         }

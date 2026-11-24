@@ -286,7 +286,8 @@ internal static class SnapTapDriverLoop
             transport!.Send(stroke);
             // Start the deadline once the driver has accepted the key: each send first
             // repeats full admission, which can take over a second under load. Only
-            // this thread's Pump reads Raw Input, so the key cannot be observed earlier.
+            // this thread's Pump hands observed keys to the tracker, so a key that
+            // arrives during the send is still matched.
             if (deliveryObservable)
             {
                 deliveryTracker.Expect(stroke, deliveryClock.Elapsed);

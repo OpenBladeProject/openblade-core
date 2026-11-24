@@ -3,10 +3,11 @@ using System.Runtime.InteropServices;
 
 namespace OpenBlade.SessionAgent;
 
-/// <summary>Raw Input sink that reports keyboard events Windows actually received.</summary>
+/// <summary>Reports keyboard events Windows actually received.</summary>
 /// <remarks>
-/// Create, pump and dispose it on the worker's input-loop thread. The sink is
-/// passive: unlike a low-level hook it cannot delay or alter input.
+/// Create, pump and dispose it on the worker's input-loop thread. It uses its own
+/// Raw Input sink, or the shared feed of this process's Fn observer when one
+/// exists. Both are passive: unlike a low-level hook they cannot delay or alter input.
 /// </remarks>
 internal sealed class SnapTapDeliveryMonitor : IDisposable
 {
