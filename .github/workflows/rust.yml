@@ -387,6 +387,9 @@ jobs:
               # the Service cleanup admission with nobody signed in, and the pacing
               # before row 31.
               @('openblade-windows-service-candidate', 'service-fan-mutation-v2', 'fan_v2_owned_stop_cleanup'),
+              # A composition without Driver-mode ownership refuses to open the
+              # owner custody over its record, which it cannot honour.
+              @('openblade-windows-service-candidate', 'service-fan-mutation-v2', 'driver_mode_record_absent'),
               ($liveReadings + 'live_readings::tests'),
               ($liveReadings + 'live_readings::windows::tests'),
               ($liveReadings + 'firmware_versions'),
