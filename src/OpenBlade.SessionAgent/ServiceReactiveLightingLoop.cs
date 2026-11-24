@@ -59,6 +59,9 @@ public sealed record ReactiveKeyboardSourceOptions(
 
     public Action ResetFunctionRowInput { get; init; } = () => { };
 
+    /// <summary>Receives each keyboard packet from a real device: make code and Raw Input flags.</summary>
+    public Action<ushort, ushort>? ObserveKeyboardInput { get; init; }
+
     public Func<byte?> ReadBlade18KeyboardLayoutId { get; init; } = () => null;
 
     public Func<byte?> ReadBlade14KeyboardEdition { get; init; } = () => null;

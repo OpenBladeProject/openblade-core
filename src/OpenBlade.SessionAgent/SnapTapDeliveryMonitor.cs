@@ -31,14 +31,25 @@ internal sealed class SnapTapDeliveryMonitor : IDisposable
     private bool inputRegistered;
     private nint cachedWindow;
     private bool cachedObservable;
+    private readonly SnapTapKeyboardFeed? feed;
 
-    internal SnapTapDeliveryMonitor()
+    /// <param name="sharedFeed">
+    /// Keyboard packets from this process's existing Raw Input observer. Raw Input
+    /// routes each device class to one window per process, so registering a second
+    /// keyboard sink would take those packets away from that observer.
+    /// </param>
+    internal SnapTapDeliveryMonitor(SnapTapKeyboardFeed? sharedFeed = null)
     {
         module = Native.GetModuleHandleW(null);
         try
         {
             ownIntegrity = ProcessIntegrity(Native.GetCurrentProcess())
                 ?? throw new InvalidOperationException("The input helper's integrity level could not be read.");
+            feed = sharedFeed;
+            if (feed is not null)
+            {
+                return;
+            }
             nint defaultProcedure = Native.GetProcAddress(Native.GetModuleHandleW("user32.dll"), "DefWindowProcW");
             if (defaultProcedure == 0)
             {
@@ -95,11 +106,21 @@ internal sealed class SnapTapDeliveryMonitor : IDisposable
     /// <summary>Drains queued Raw Input into <paramref name="tracker"/>; bounded per call.</summary>
     internal void Pump(SnapTapDeliveryTracker tracker)
     {
+        if (feed is not null)
+        {
+            feed.Drain(tracker);
+            return;
+        }
         int headerSize = Marshal.SizeOf<Native.RawInputHeader>();
         int keyboardSize = headerSize + Marshal.SizeOf<Native.RawKeyboard>();
-        for (int count = 0; count < MessagesPerPump
-            && Native.PeekMessageW(out Native.Message message, 0, 0, 0, PeekRemove); count++)
+        bool drained = false;
+        for (int count = 0; count < MessagesPerPump; count++)
         {
+            if (!Native.PeekMessageW(out Native.Message message, 0, 0, 0, PeekRemove))
+            {
+                drained = true;
+                break;
+            }
             if (message.Id != WindowMessageInput || message.Window != window)
             {
                 Native.DispatchMessageW(ref message);
@@ -121,7 +142,11 @@ internal sealed class SnapTapDeliveryMonitor : IDisposable
             // Raw Input requires default processing to release the input handle.
             Native.DefWindowProcW(message.Window, message.Id, message.WParam, message.LParam);
         }
-        tracker.Pumped();
+        // Only an emptied queue proves every delivered key has been seen.
+        if (drained)
+        {
+            tracker.Pumped();
+        }
     }
 
     public void Dispose()

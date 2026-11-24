@@ -98,6 +98,7 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
     private readonly Blade18FnHookCorrelation blade18Correlation = new();
     private readonly HashSet<(uint ScanCode, bool Extended)> blade18ConfirmedPresses = [];
     private readonly Action resetFunctionRowInput;
+    private readonly Action<ushort, ushort>? observeKeyboardInput;
     private int blade18ResetRequested;
     private readonly RazerBladeFunctionRowInputState functionRowInput = new();
     private readonly SpecialKeyKeyboardSuppressionState specialKeyKeyboardInput = new();
@@ -156,6 +157,7 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
         readSpecialKeyInputAdmitted = options.IsSpecialKeyInputAdmitted
             ?? throw new ArgumentNullException(nameof(options.IsSpecialKeyInputAdmitted));
         resetFunctionRowInput = options.ResetFunctionRowInput;
+        observeKeyboardInput = options.ObserveKeyboardInput;
         readFunctionRowBackend = options.ReadFunctionRowBackend;
         observeOnly = options.ObserveOnly;
         publishBlade18FnShortcut = options.PublishBlade18FnShortcut;
@@ -946,6 +948,14 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
 
         if (receivedHeader.Type == RawInputTypeKeyboard)
         {
+            // SendInput packets carry no device; only real keyboard input is reported.
+            if (observeKeyboardInput is not null && receivedHeader.Device != 0
+                && receivedSize >= headerSize + Marshal.SizeOf<RawKeyboard>())
+            {
+                RawKeyboard observed = Marshal.PtrToStructure<RawKeyboard>(
+                    nint.Add(buffer, checked((int)headerSize)));
+                observeKeyboardInput(observed.MakeCode, observed.Flags);
+            }
             ProcessKeyboard(buffer, headerSize, receivedSize, deviceKind, messageTime);
         }
         else if (receivedHeader.Type == RawInputTypeHid

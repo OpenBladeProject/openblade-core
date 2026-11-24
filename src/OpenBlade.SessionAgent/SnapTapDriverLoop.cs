@@ -76,7 +76,7 @@ internal static class SnapTapDriverLoop
                 repeatInterval: TimeSpan.FromSeconds(1 / (2.5 + 27.5 * speed / 31)));
             // Before any hook exists, so a helper that cannot confirm delivery never consumes keys.
             stage = "DeliveryMonitor";
-            delivery = new SnapTapDeliveryMonitor();
+            delivery = new SnapTapDeliveryMonitor(functionContext?.DeliveryFeed);
             publisher.Publish(SnapTapRuntimeState.WaitingForRelease);
             stage = "WaitingForRelease";
             // Do not hook an in-flight hold whose initial down we did not see.
@@ -283,11 +283,14 @@ internal static class SnapTapDriverLoop
 
         void SendDriverOutput(SnapTapKeyStroke stroke)
         {
+            transport!.Send(stroke);
+            // Start the deadline once the driver has accepted the key: each send first
+            // repeats full admission, which can take over a second under load. Only
+            // this thread's Pump reads Raw Input, so the key cannot be observed earlier.
             if (deliveryObservable)
             {
                 deliveryTracker.Expect(stroke, deliveryClock.Elapsed);
             }
-            transport!.Send(stroke);
         }
 
         bool CanOutput() => IsOutputTargetCurrent(targetWindow, targetLayout,

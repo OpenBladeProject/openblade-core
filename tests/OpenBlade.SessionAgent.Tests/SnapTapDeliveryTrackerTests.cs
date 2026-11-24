@@ -42,7 +42,7 @@ public sealed class SnapTapDeliveryTrackerTests
         Assert.Equal("OutputNotDelivered", failure.Reason);
         Assert.True(failure.MayHaveSubmitted);
         Assert.Contains("Sent=1; Delivered=0; Pending=1", failure.Context);
-        Assert.Contains("OldestScanCode=0x1E; OldestDown=True", failure.Context);
+        Assert.DoesNotContain("0x1E", failure.Context);
     }
 
     [Fact]
