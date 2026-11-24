@@ -15,6 +15,19 @@ fn with_mcu(version: &str) -> Json {
     record
 }
 
+/// A session or power notice, such as a lock, an unlock or an AC change: it
+/// advances the lifecycle epoch and leaves the low-power gate.
+fn fence(rig: &Rig) {
+    rig.custody.lifecycle.fetch_add(1, Ordering::AcqRel);
+}
+
+/// A resume: the low-power gate leaves a suspend for a new active
+/// generation, and the notices that carried it advance the lifecycle epoch.
+fn resume(rig: &Rig) {
+    rig.custody.resume.fetch_add(2, Ordering::AcqRel);
+    fence(rig);
+}
+
 /// Waits for the job to send the query, and fails rather than hangs when it
 /// sends none.
 async fn until_queried(rig: &Rig) {
@@ -131,8 +144,8 @@ async fn an_unconfirmed_reply_leaves_unavailable_and_costs_no_other_reading() {
 }
 
 /// A device change while the query is outstanding discards the job's
-/// reading: its version is never kept. A query under the new admission has
-/// its own budget and reads it.
+/// reading: its version is never kept. The next query, under the new
+/// admission and within the same budget, reads it.
 #[tokio::test]
 async fn a_version_read_across_an_admission_change_is_discarded() {
     let rig = Rig::new(Some(Arc::new(Fake::healthy())));
@@ -176,6 +189,32 @@ async fn a_version_the_source_does_not_accept_is_not_kept() {
     assert_eq!(rig.io.mcu_queries(), 2);
 }
 
+/// Session and power notices fence every read admission but are no resume,
+/// so they leave the budget spent, as managed restores its attempts only at
+/// resume and device loss. Each query that gets no reply keeps its ID
+/// quarantined, so a fence that restored the budget would drain the pool.
+#[tokio::test]
+async fn only_a_resume_restores_the_budget() {
+    let rig = Rig::new(Some(Arc::new(Fake::healthy())));
+    rig.await_firmware();
+    answer(&rig, None);
+    for observation in 0..6 {
+        fence(&rig);
+        assert!(rig.snapshot(0).await.is_some(), "{observation}");
+    }
+    assert_eq!(rig.io.mcu_queries(), 3);
+    resume(&rig);
+    for observation in 0..4 {
+        fence(&rig);
+        assert!(rig.snapshot(0).await.is_some(), "{observation}");
+    }
+    assert_eq!(rig.io.mcu_queries(), 6);
+    answer(&rig, Some(VERSION));
+    resume(&rig);
+    assert_eq!(rig.observe(0).await["firmware"], with_mcu("1.5.0.0"));
+    assert_eq!(rig.io.mcu_queries(), 7);
+}
+
 /// Stop while the query is outstanding completes once the held SET returns,
 /// publishes no version and keeps none.
 #[tokio::test]
@@ -211,6 +250,8 @@ async fn stop_with_an_outstanding_query_keeps_no_version() {
         UNAVAILABLE
     );
     assert_eq!(rig.io.mcu_queries(), 1);
+    // The query counts from its SET, not from a reply that Stop discarded.
+    assert_eq!(rig.source.firmware.mcu_sends_for_tests(), 1);
 }
 
 fn vectors() -> Json {
@@ -222,8 +263,9 @@ fn vectors() -> Json {
 
 /// The managed budget rows (`NativeFirmwareVersionMcuVectors`): each Version
 /// step is an observation whose query is answered 1.5.0.0, each Failed step
-/// one whose query gets no reply, and Resume a new read admission. The
-/// published version and the number of queries sent match managed's.
+/// one whose query gets no reply, and Resume a resume, which advances both
+/// the low-power gate and the lifecycle epoch. The published version and the
+/// number of queries sent match managed's.
 #[tokio::test]
 async fn the_read_budget_matches_the_managed_vectors() {
     let vectors = vectors();
@@ -232,14 +274,12 @@ async fn the_read_budget_matches_the_managed_vectors() {
     for row in rows {
         let name = row["name"].as_str().unwrap();
         let rig = Rig::new(Some(Arc::new(Fake::healthy())));
-        let mut generation = 7;
         for step in row["steps"].as_array().unwrap() {
             match step.as_str().unwrap() {
                 "Version" => answer(&rig, Some(VERSION)),
                 "Failed" => answer(&rig, None),
                 "Resume" => {
-                    generation += 1;
-                    rig.custody.generation.store(generation, Ordering::Release);
+                    resume(&rig);
                     continue;
                 }
                 other => panic!("unknown step {other}"),

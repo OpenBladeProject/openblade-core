@@ -32,7 +32,7 @@
 use crate::{
     discovery::{
         catalog_model,
-        performance::{McuQuerySends, McuVersionRead, ReadAdmission},
+        performance::{McuQuerySends, McuVersionRead},
     },
     service_status::FirmwareVersions,
 };
@@ -517,20 +517,26 @@ impl Host {
         }
     }
 
-    /// The counter a read job under `admission` passes to the worker to send
-    /// the MCU version query, or None: without a source (managed reads no
-    /// MCU version without a record), once the version is known, or once the
-    /// budget is spent (`mcu_version::Inventory::query`).
-    pub(super) fn mcu_query(&self, admission: ReadAdmission) -> Option<McuQuerySends> {
+    /// The counter a read job passes to the worker to send the MCU version
+    /// query, or None: without a source (managed reads no MCU version without
+    /// a record), once the version is known, or once the budget since the
+    /// `resume` generation is spent (`mcu_version::Inventory::query`).
+    pub(super) fn mcu_query(&self, resume: impl FnOnce() -> Option<u64>) -> Option<McuQuerySends> {
         if matches!(*self.state.borrow(), State::Absent) {
             return None;
         }
-        self.mcu.query(admission)
+        self.mcu.query(resume)
     }
 
     /// What an accepted reading learned about the MCU version.
     pub(super) fn mcu_read(&self, read: McuVersionRead) {
         self.mcu.record(read);
+    }
+
+    /// The queries this source has sent.
+    #[cfg(test)]
+    pub(super) fn mcu_sends_for_tests(&self) -> u64 {
+        self.mcu.sends_for_tests().count()
     }
 
     /// Stops listening. A capture not yet started never starts, and a worker

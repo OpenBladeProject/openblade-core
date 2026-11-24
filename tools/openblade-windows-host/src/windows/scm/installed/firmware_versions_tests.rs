@@ -16,7 +16,7 @@ use std::{
     io,
     sync::{
         Mutex,
-        atomic::{AtomicBool, AtomicUsize, Ordering},
+        atomic::{AtomicUsize, Ordering},
         mpsc::{Receiver, Sender, channel},
     },
     time::Duration,
@@ -1042,10 +1042,7 @@ struct Rig {
 impl Rig {
     /// A source with the firmware capture `fake`, or none.
     fn new(fake: Option<Arc<dyn Capture>>) -> Self {
-        let custody = Arc::new(Custody {
-            live: AtomicBool::new(true),
-            generation: AtomicU8::new(7),
-        });
+        let custody = Arc::new(Custody::new());
         let worker_admission = Arc::new(Mutex::new(None));
         let io = FanIo::new([0x20, 0x1e]);
         let device = io.clone();
