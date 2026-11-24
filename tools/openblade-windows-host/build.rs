@@ -148,6 +148,10 @@ fn main() {
         let capabilities = if role == "service" && has("installed-service-candidate") {
             if metadata {
                 "private-service-custody-v1,service-metadata-only-v1"
+            } else if has("service-thermal-convergence-v1") {
+                // Thermal convergence carries its own marker beside the
+                // triggers it extends, refused by name in both readers.
+                "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1,service-fan-mutation-v2,service-battery-policy-v1,service-temporary-charge-v1,service-profiles-v1,service-profile-triggers-v1,service-thermal-convergence-v1"
             } else if has("service-profile-triggers-v1") {
                 // Automatic reconciliation carries its own marker, so a
                 // package reader refuses it by name whatever else it admits.

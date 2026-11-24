@@ -714,6 +714,17 @@ fn capabilities(schema: u8, role: &str, features: &str, value: &str) -> io::Resu
     {
         return Err(deny());
     }
+    // Maintain-desired-state convergence writes without a request. Refuse its
+    // feature and its capability marker by name, before the triggers it
+    // extends, until a packaging stage admits it.
+    const THERMAL_CONVERGENCE: &str = "service-thermal-convergence-v1";
+    if has(THERMAL_CONVERGENCE)
+        || value
+            .split(',')
+            .any(|capability| capability == THERMAL_CONVERGENCE)
+    {
+        return Err(deny());
+    }
     // Automatic reconciliation of saved intent is not admitted for packaging:
     // refuse its feature and its capability marker by name, whatever else the
     // record claims, until a packaging stage admits it (with the low-power
