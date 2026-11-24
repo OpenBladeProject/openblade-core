@@ -1047,6 +1047,54 @@ impl State {
         })
     }
 
+    /// Managed's observer `tombstoned`: a tombstone at the candidate's
+    /// destination, contradiction and policy, carrying the revision of each
+    /// component the contradiction names.
+    pub fn tombstoned(&self, candidate: &Candidate) -> bool {
+        let contradiction = candidate.contradiction;
+        self.tombstones.iter().any(|tombstone| {
+            tombstone.destination == candidate.destination
+                && tombstone.contradiction == contradiction
+                && Some(&tombstone.policy_revision) == self.policy_revision.as_ref()
+                && (!contradiction.has(Contradiction::PERFORMANCE)
+                    || tombstone.performance_desired_revision.as_ref()
+                        == Some(&candidate.performance_revision))
+                && (!contradiction.has(Contradiction::FAN_TOPOLOGY)
+                    || tombstone.fan_desired_revision.as_ref() == Some(&candidate.fan_revision))
+        })
+    }
+
+    /// Managed's observer `budgetExhausted`: an affected component whose
+    /// budget at the candidate's key has no claim left.
+    pub fn budget_exhausted(&self, candidate: &Candidate) -> bool {
+        candidate
+            .contradiction
+            .components()
+            .into_iter()
+            .any(|component| {
+                self.budget(candidate, component)
+                    .is_some_and(|budget| budget.consumed_claims >= budget.maximum_claims)
+            })
+    }
+
+    /// Managed `ReapplyChangedSettingsAsync`'s rearm: every tombstone,
+    /// budget and terminal record retired, so the next observation may
+    /// nominate again.
+    pub fn rearmed(&self) -> Self {
+        Self {
+            tombstones: vec![],
+            budgets: vec![],
+            terminal_disposition: None,
+            terminal_affected_components: vec![],
+            ..self.clone()
+        }
+    }
+
+    /// Whether a rearm has anything to retire.
+    pub fn suppresses(&self) -> bool {
+        !self.tombstones.is_empty() || !self.budgets.is_empty()
+    }
+
     /// Managed `ValidateState`.
     pub fn validate(&self, sid: &str, persisted: bool) -> Result<(), Invalid> {
         if !self.active_user_sid.eq_ignore_ascii_case(sid) {

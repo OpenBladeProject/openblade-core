@@ -302,3 +302,75 @@ fn decode_fails_closed_and_names_a_future_schema() {
     );
     assert!(encode(&State::empty(SID), SID).is_err());
 }
+
+#[test]
+fn a_tombstone_suppresses_only_its_own_key() {
+    let state = refreshed();
+    let performance = candidate(&state, Contradiction::PERFORMANCE);
+    let completed = reserved(&state).complete(
+        Power::BATTERY,
+        Contradiction::PERFORMANCE,
+        &[Component::PERFORMANCE],
+        Disposition::BLOCKED,
+    );
+    assert!(!state.tombstoned(&performance));
+    assert!(completed.tombstoned(&performance));
+    // Another contradiction, destination or performance revision is not
+    // suppressed; the fan revision is not compared for a performance key.
+    assert!(!completed.tombstoned(&candidate(&state, Contradiction::FAN_TOPOLOGY)));
+    assert!(!completed.tombstoned(&Candidate {
+        destination: Power::PLUGGED_IN,
+        ..performance.clone()
+    }));
+    assert!(!completed.tombstoned(&Candidate {
+        performance_revision: "other".into(),
+        ..performance.clone()
+    }));
+    assert!(completed.tombstoned(&Candidate {
+        fan_revision: "other".into(),
+        ..performance.clone()
+    }));
+    // Another policy revision is not the tombstone's.
+    let other_policy = State {
+        policy_revision: Some("other".into()),
+        ..completed.clone()
+    };
+    assert!(!other_policy.tombstoned(&performance));
+}
+
+#[test]
+fn a_spent_claim_exhausts_only_its_components_budget() {
+    let state = refreshed();
+    let performance = candidate(&state, Contradiction::PERFORMANCE);
+    let reserved = reserved(&state);
+    assert!(!state.budget_exhausted(&performance));
+    assert!(reserved.budget_exhausted(&performance));
+    assert!(!reserved.budget_exhausted(&candidate(&state, Contradiction::FAN_TOPOLOGY)));
+    // Both components are affected when both contradict.
+    let both = Contradiction(Contradiction::PERFORMANCE.0 | Contradiction::FAN_TOPOLOGY.0);
+    assert!(reserved.budget_exhausted(&candidate(&state, both)));
+    assert!(!reserved.budget_exhausted(&Candidate {
+        performance_revision: "other".into(),
+        ..performance
+    }));
+}
+
+#[test]
+fn a_rearm_retires_every_suppression_and_keeps_the_rest() {
+    let state = refreshed();
+    let completed = reserved(&state).complete(
+        Power::BATTERY,
+        Contradiction::PERFORMANCE,
+        &[Component::PERFORMANCE],
+        Disposition::EXTERNAL,
+    );
+    assert!(completed.suppresses());
+    let rearmed = completed.rearmed();
+    assert!(!rearmed.suppresses());
+    assert_eq!(rearmed.terminal_disposition, None);
+    assert!(rearmed.terminal_affected_components.is_empty());
+    assert_eq!(rearmed.intent_generation, completed.intent_generation);
+    assert_eq!(rearmed.effective_intent, completed.effective_intent);
+    assert!(rearmed.validate(SID, true).is_ok());
+    assert!(!state.suppresses());
+}
