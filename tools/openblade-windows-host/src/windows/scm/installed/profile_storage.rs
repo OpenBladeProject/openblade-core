@@ -612,12 +612,16 @@ impl Storage {
     }
 
     /// The saved thermal control policy and disclosure state, as managed
-    /// `PublishThermalConvergenceStatus` reports them. A preserved aggregate
-    /// is quarantined; an absent one is managed's safe defaults.
+    /// `PublishThermalConvergenceStatus` reports them. A preserved aggregate,
+    /// or a configuration this service failed to replace or saw change, is
+    /// quarantined, as managed quarantines its configuration; an absent one
+    /// is managed's safe defaults. A journal or battery fence leaves the
+    /// saved policy standing: it is pending reconciliation (`pending`), as
+    /// managed's pending write confirmations are.
     #[cfg(feature = "service-profile-triggers-v1")]
     pub(in super::super) fn thermal_policy(&self) -> io::Result<SavedPolicy> {
         let state = self.state.lock().map_err(|_| denied())?;
-        if state.quarantined {
+        if configuration_quarantined(&state) {
             return Ok(SavedPolicy::Quarantined);
         }
         let (_, validator) = validator();
@@ -635,14 +639,16 @@ impl Storage {
     /// preferences to the store: a change that leaves them as they are is
     /// not written; otherwise the staged preferences and the saved profiles
     /// are committed as one aggregate, as managed `SaveConfigurationAsync`
-    /// writes them, and read back before the change counts.
+    /// writes them, and read back before the change counts. Managed admits
+    /// the change with an admitted configuration only, so a journal or
+    /// battery fence does not refuse it (`configuration_quarantined`).
     #[cfg(feature = "service-profile-triggers-v1")]
     pub(in super::super) fn save_thermal_policy(
         &self,
         change: PolicyChange,
     ) -> io::Result<PolicySave> {
         let mut state = self.state.lock().map_err(|_| denied())?;
-        if state.quarantined {
+        if configuration_quarantined(&state) {
             return Ok(PolicySave::Quarantined);
         }
         let (_, validator) = validator();
@@ -692,6 +698,14 @@ impl Storage {
             Err(failure) => PolicySave::Rejected(settle_failure(&mut state, failure).into()),
         })
     }
+}
+
+/// Whether this service failed to replace the configuration or saw it
+/// change: managed's configuration quarantine. A journal or battery fence
+/// fences thermal writes only; the configuration itself stays admitted.
+#[cfg(feature = "service-profile-triggers-v1")]
+fn configuration_quarantined(state: &State) -> bool {
+    state.configuration_failed || state.configuration_changed
 }
 
 /// The reply for a failed transaction. One whose restore could not be

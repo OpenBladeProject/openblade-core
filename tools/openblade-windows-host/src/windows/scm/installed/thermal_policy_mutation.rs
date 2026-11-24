@@ -102,7 +102,17 @@ impl Runtime {
         // The projection a profile save retains, so this user's policy
         // shows in status even before any thermal request.
         reader.retain_policy(self.thermal_policy(sid.clone(), caller.session, reader.custody()));
-        Ok(match storage.save_thermal_policy(change)? {
+        // Every error `save_thermal_policy` returns comes from a read before
+        // its transaction, so nothing was written; fatal evidence still ends
+        // the Service, as a fatal capture does.
+        let saved = match storage.save_thermal_policy(change) {
+            Ok(saved) => saved,
+            Err(error) if is_fatal_admission(&error) => return Err(error),
+            Err(error) => PolicySave::Rejected(format!(
+                "The requested intent was rejected: The saved configuration could not be read: {error}. The saved configuration is unchanged."
+            )),
+        };
+        Ok(match saved {
             PolicySave::Unchanged(preferences) => (
                 Outcome {
                     status: STORED,
@@ -126,5 +136,13 @@ impl Runtime {
             ),
             PolicySave::Quarantined => (Outcome::blocked(replies.recovery), false),
         })
+    }
+}
+
+#[cfg(test)]
+impl Runtime {
+    /// The operation gate, for a test that holds it.
+    pub(in super::super) fn operation_gate_for_tests(&self) -> Rc<tokio::sync::Mutex<()>> {
+        self.gate.clone()
     }
 }

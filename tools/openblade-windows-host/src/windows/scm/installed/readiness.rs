@@ -817,6 +817,16 @@ fn mutation_budget(request: &StatusRequest) -> Duration {
     if reconciles(request) {
         return crate::service_frame::RECONCILE_BUDGET;
     }
+    // A policy request writes no hardware, but it waits for the operation
+    // gate, which a thermal request holds for up to its own recipe budget.
+    #[cfg(feature = "service-profile-triggers-v1")]
+    if matches!(
+        request,
+        StatusRequest::SetThermalControlPolicy { .. }
+            | StatusRequest::AcknowledgeThermalPolicyUpgradeDisclosure { .. }
+    ) {
+        return RECIPE_BUDGET;
+    }
     if request.battery_request().is_some()
         || matches!(
             request,
