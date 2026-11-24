@@ -1520,8 +1520,9 @@ impl ReadSource {
             let Some(reading) = reading else {
                 return Ok(None);
             };
-            // The sample ends `gpu_temperature::RESERVE` before the deadline,
-            // ahead of the admission and deadline checks below.
+            // The sample is waited for at most `gpu_temperature::AFTER_READING`
+            // and never past `RESERVE` before the deadline, ahead of the
+            // admission and deadline checks below.
             #[cfg(feature = "service-live-readings-v1")]
             let gpu = match gpu {
                 Some(pending) => pending.temperature().await,
@@ -1603,8 +1604,8 @@ impl ReadSource {
     pub(super) async fn stop(&self) -> io::Result<()> {
         self.lease.revoke();
         // A firmware capture still running ends after the read it is in, and
-        // the GPU worker ends its NVML session after the call it is in;
-        // neither is waited for.
+        // the GPU worker makes no call after the one it is in and then ends
+        // its NVML session; neither is waited for.
         #[cfg(feature = "service-live-readings-v1")]
         {
             self.firmware.stop();

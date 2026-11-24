@@ -17,18 +17,23 @@
 //! than D0 read again right after the call discards the value. The session
 //! (`nvmlInit_v2` to `nvmlShutdown`) stays open only across consecutive
 //! samples that read a valid temperature from an active, D0 GPU, and for at
-//! most `LEASE` after the last one; any other sample, one cancelled after its
-//! workload read and Stop shut it down at once. So a sample neither wakes an
-//! idle GPU nor keeps it awake past a workload by more than the lease, as
-//! managed's does.
+//! most `LEASE` after the last one. Any other sample ends it, and so does a
+//! cancellation after the D-state read; one during the workload read leaves
+//! it to its lease, as managed's does. A sample starting within
+//! `SAMPLE_BUDGET` of the lease's end ends it first, and the D-state read
+//! ends one whose lease ran out during the Windows reads, so only a stalled
+//! Windows read can hold it past the lease. So a sample neither wakes an idle GPU nor keeps it awake
+//! past a workload by more than the lease.
 //!
 //! The reads run on a worker thread this module owns, never on the HID read
-//! job, and an observation waits for its sample only until `RESERVE` before
-//! its own deadline. One sample runs at a time and one request may wait for
-//! it; any further request gets none. A request whose observation has gone is
-//! skipped, and a sample whose observation goes stops after the step it is
-//! in: the workload, a power read or the NVML read. Stop does not wait for
-//! the worker: a call still running ends the session when it returns.
+//! job. An observation waits for its sample at most `AFTER_READING` after
+//! its own reading and never later than `RESERVE` before its deadline. One
+//! sample runs at a time and one request may wait for it; any further
+//! request gets none. A request whose observation has gone is skipped, and a
+//! sample whose observation goes stops after the step it is in: the
+//! workload, a D-state read or the NVML read. Stop cancels the same way
+//! without waiting for the worker, which ends the session when the call it
+//! is in returns.
 //!
 //! A missing driver, adapter or NVML, a failed call, an idle or powered-down
 //! GPU and a sensor outside managed's 10..=125 C all publish null, as managed
@@ -37,7 +42,11 @@
 use std::{
     cell::RefCell,
     collections::BTreeMap,
-    sync::mpsc::{Receiver, RecvTimeoutError, SyncSender, TrySendError, sync_channel},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+        mpsc::{Receiver, RecvTimeoutError, SyncSender, TrySendError, sync_channel},
+    },
     thread,
     time::{Duration, Instant},
 };
@@ -55,6 +64,9 @@ pub(super) const LEASE: Duration = Duration::from_secs(5);
 /// The part of an observation's time the sample leaves to the reply: the
 /// read job's own reserve.
 pub(super) const RESERVE: Duration = Duration::from_millis(500);
+/// How long an observation whose reading has arrived still waits for its
+/// sample, so a slow sample holds neither the reply nor the read source.
+const AFTER_READING: Duration = Duration::from_millis(250);
 /// Managed's plausible sensor range (`ReadCoreAsync`).
 const PLAUSIBLE: std::ops::RangeInclusive<i32> = 10..=125;
 /// Managed `NvidiaNvmlTemperatureSession`'s own bound.
@@ -86,6 +98,9 @@ pub(super) trait Probes {
 
 /// Managed `WindowsGpuActivitySource.SampleDelayMilliseconds`.
 pub(super) const SAMPLE_WINDOW: Duration = Duration::from_millis(150);
+/// The workload window and the D-state read: a session whose lease ends
+/// within it ends before a sample starts.
+const SAMPLE_BUDGET: Duration = Duration::from_millis(250);
 /// The Windows System process, whose NVIDIA copy-engine entries are video
 /// memory paging at the adapter's own power transitions, not a workload.
 const SYSTEM_PROCESS: i32 = 4;
@@ -204,7 +219,7 @@ pub(super) trait TemperatureSession {
 
 /// Managed `NvidiaNvmlTemperatureSession`: initializes NVML on the first read
 /// and keeps it; a failed handle or temperature call shuts it down.
-pub(super) struct NvmlSession<N> {
+pub(super) struct NvmlSession<N: Nvml> {
     nvml: N,
     initialized: bool,
 }
@@ -215,6 +230,13 @@ impl<N: Nvml> NvmlSession<N> {
             nvml,
             initialized: false,
         }
+    }
+}
+
+/// Dropping the session ends it, so no owner can leave NVML started.
+impl<N: Nvml> Drop for NvmlSession<N> {
+    fn drop(&mut self) {
+        self.release();
     }
 }
 
@@ -280,7 +302,15 @@ impl Sampler {
     /// One sample (`ReadCoreAsync`). `cancelled` is checked where managed
     /// checks its token: a cancellation before the power read leaves the
     /// session as it is, and one after it releases the session.
+    ///
+    /// Managed's timer ends a session on time even while a sample reads
+    /// Windows state. Here a session whose lease would end within
+    /// `SAMPLE_BUDGET` ends before the workload read, and the D-state read
+    /// ends one whose lease ran out during the Windows reads, before NVML
+    /// is called. So the sampler's own reads keep a session past its lease
+    /// only while one Windows read stalls.
     pub(super) fn sample(&mut self, cancelled: &dyn Fn() -> bool) -> Option<i32> {
+        self.expire_within(SAMPLE_BUDGET);
         if cancelled() {
             return None;
         }
@@ -301,6 +331,7 @@ impl Sampler {
     /// active D0 GPU, or None.
     fn gated(&mut self, active: Option<bool>, cancelled: &dyn Fn() -> bool) -> Option<i32> {
         let power = self.probes.power();
+        self.expire();
         if cancelled() {
             return None;
         }
@@ -329,9 +360,16 @@ impl Sampler {
     /// Managed `ReleaseIdleGpuSession`: ends a held session whose lease has
     /// run out, and leaves a renewed one.
     pub(super) fn expire(&mut self) {
-        if self.remaining_lease() == Some(Duration::ZERO) {
-            self.renewed = None;
-            self.session.release();
+        self.expire_within(Duration::ZERO);
+    }
+
+    /// Ends a held session whose lease ends within `margin`.
+    fn expire_within(&mut self, margin: Duration) {
+        if self
+            .remaining_lease()
+            .is_some_and(|remaining| remaining <= margin)
+        {
+            self.release();
         }
     }
 
@@ -358,7 +396,10 @@ impl Request {
     }
 }
 
-fn run(factory: Factory, requests: Receiver<Request>) {
+/// The worker: one sample per request, ending a held session at the end of
+/// its lease between requests. Dropping the sampler when Stop disconnects it
+/// ends a held session.
+fn run(factory: Factory, requests: Receiver<Request>, stopped: Arc<AtomicBool>) {
     let mut sampler = factory();
     loop {
         let request = match sampler.remaining_lease() {
@@ -375,14 +416,12 @@ fn run(factory: Factory, requests: Receiver<Request>) {
                 Err(_) => break,
             },
         };
-        // A lease that ran out while the request waited ends first, as
-        // managed's timer ends it on time.
-        sampler.expire();
-        // A request whose observation went ends before the workload read.
-        let celsius = sampler.sample(&|| request.abandoned());
+        // Stop cancels a running sample and every waiting request, and a
+        // request whose observation went ends before the workload read.
+        let cancelled = || stopped.load(Ordering::Acquire) || request.abandoned();
+        let celsius = sampler.sample(&cancelled);
         let _ = request.reply.send(celsius);
     }
-    sampler.release();
 }
 
 enum State {
@@ -396,6 +435,8 @@ enum State {
 /// The installed read source's GPU temperature worker.
 pub(super) struct Host {
     state: RefCell<State>,
+    /// Set by Stop; the worker checks it at each step of a sample.
+    stopped: Arc<AtomicBool>,
 }
 
 /// A requested sample, published only if it arrives in time.
@@ -405,10 +446,13 @@ pub(super) struct Pending {
 }
 
 impl Pending {
-    /// The temperature to publish, or None when the sample read none or did
-    /// not arrive by its deadline.
+    /// The temperature to publish, asked for once the observation's reading
+    /// has arrived: None when the sample read none or did not arrive within
+    /// `AFTER_READING`, or by its deadline. Dropping the reply cancels the
+    /// sample.
     pub(super) async fn temperature(self) -> Option<i32> {
-        tokio::time::timeout_at(self.until, self.reply)
+        let until = self.until.min(tokio::time::Instant::now() + AFTER_READING);
+        tokio::time::timeout_at(until, self.reply)
             .await
             .ok()?
             .ok()
@@ -420,14 +464,17 @@ impl Pending {
 impl Host {
     /// No source: no sample is ever taken.
     pub(super) fn none() -> Self {
-        Self {
-            state: RefCell::new(State::Absent),
-        }
+        Self::with_state(State::Absent)
     }
 
     pub(super) fn new(factory: Factory) -> Self {
+        Self::with_state(State::Idle(factory))
+    }
+
+    fn with_state(state: State) -> Self {
         Self {
-            state: RefCell::new(State::Idle(factory)),
+            state: RefCell::new(state),
+            stopped: Arc::default(),
         }
     }
 
@@ -443,7 +490,7 @@ impl Host {
         if let State::Idle(_) = &*state
             && let State::Idle(factory) = std::mem::replace(&mut *state, State::Absent)
         {
-            *state = Self::start(factory);
+            *state = Self::start(factory, self.stopped.clone());
         }
         let State::Running(requests) = &*state else {
             return None;
@@ -465,18 +512,20 @@ impl Host {
         }
     }
 
-    /// Stops the worker without waiting for it: it ends the session and
-    /// exits after any call it is in.
+    /// Stops the worker without waiting for it: a running sample makes no
+    /// further call after the one it is in, a waiting request is skipped,
+    /// and the worker ends the session and exits.
     pub(super) fn stop(&self) {
+        self.stopped.store(true, Ordering::Release);
         *self.state.borrow_mut() = State::Absent;
     }
 
-    fn start(factory: Factory) -> State {
+    fn start(factory: Factory, stopped: Arc<AtomicBool>) -> State {
         // One request may wait while a sample runs; any other is refused.
         let (requests, receiver) = sync_channel(1);
         match thread::Builder::new()
             .name("gpu-temperature".into())
-            .spawn(move || run(factory, receiver))
+            .spawn(move || run(factory, receiver, stopped))
         {
             Ok(_) => State::Running(requests),
             Err(_) => State::Absent,

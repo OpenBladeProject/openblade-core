@@ -222,12 +222,18 @@ struct Script {
     cancelled: bool,
     reads: usize,
     releases: usize,
+    /// A step that advances the test clock, and by how much.
+    stall: Option<(&'static str, Duration, Rc<Cell<Duration>>)>,
 }
 
 impl Script {
-    fn cancel_at(&mut self, step: &str) {
+    /// Runs `step`: cancels or stalls there when the script says so.
+    fn reached(&mut self, step: &str) {
         if self.cancel.as_deref() == Some(step) {
             self.cancelled = true;
+        }
+        if let Some((_, by, elapsed)) = self.stall.as_ref().filter(|(at, ..)| *at == step) {
+            elapsed.set(elapsed.get() + *by);
         }
     }
 }
@@ -238,7 +244,7 @@ impl Probes for ScriptedProbes {
     fn workload(&mut self) -> Option<bool> {
         let mut script = self.0.borrow_mut();
         script.workloads += 1;
-        script.cancel_at("activity");
+        script.reached("activity");
         script.active
     }
 
@@ -246,8 +252,8 @@ impl Probes for ScriptedProbes {
         let mut script = self.0.borrow_mut();
         script.power_reads += 1;
         match script.power_reads {
-            1 => script.cancel_at("power"),
-            2 => script.cancel_at("recheck"),
+            1 => script.reached("power"),
+            2 => script.reached("recheck"),
             _ => {}
         }
         if let Some(power) = script.power.pop_front() {
@@ -263,7 +269,7 @@ impl TemperatureSession for ScriptedSession {
     fn try_read(&mut self) -> Option<i32> {
         let mut script = self.0.borrow_mut();
         script.reads += 1;
-        script.cancel_at("read");
+        script.reached("read");
         script.temperature
     }
 
@@ -392,14 +398,12 @@ struct NvmlScript {
     celsius: u32,
 }
 
-/// A fake NVML. `hold`, when set, blocks `init` until the test sends or
-/// drops its end, after reporting the entry on `entered`; `dropped` reports
-/// when this copy is dropped.
+/// A fake NVML. `hold`, when set, blocks `init`; `dropped` reports when
+/// this copy is dropped.
 #[derive(Clone)]
 struct FakeNvml {
     script: Arc<Mutex<NvmlScript>>,
-    hold: Option<Arc<Mutex<mpsc::Receiver<()>>>>,
-    entered: Option<mpsc::Sender<()>>,
+    hold: Option<Hold>,
     dropped: Option<mpsc::Sender<()>>,
 }
 
@@ -411,7 +415,6 @@ impl FakeNvml {
                 ..NvmlScript::default()
             })),
             hold: None,
-            entered: None,
             dropped: None,
         }
     }
@@ -440,11 +443,8 @@ impl Drop for FakeNvml {
 impl Nvml for FakeNvml {
     fn init(&mut self) -> i32 {
         self.call("init".into());
-        if let Some(entered) = &self.entered {
-            let _ = entered.send(());
-        }
         if let Some(hold) = &self.hold {
-            let _ = hold.lock().unwrap().recv();
+            hold.wait();
         }
         self.script.lock().unwrap().init
     }
@@ -629,6 +629,42 @@ fn the_nvml_session_follows_activity() {
     assert_eq!(nvml.calls(), expected);
 }
 
+/// A sample ends a held session whose lease ends within `SAMPLE_BUDGET`
+/// before its workload read, and one whose lease ran out during the Windows
+/// reads before NVML is called; either way the read opens a new session.
+#[test]
+fn a_sample_never_reads_on_a_session_past_its_lease() {
+    let on = [Power::On, Power::On];
+    let renewed = || {
+        let nvml = FakeNvml::new(52);
+        let script = Rc::new(RefCell::new(Script::default()));
+        let (mut sampler, elapsed) = nvml_sampler(&nvml, &script);
+        set(&script, Some(true), &on);
+        assert_eq!(sampler.sample(&|| false), Some(52));
+        set(&script, Some(true), &on);
+        (nvml, script, sampler, elapsed)
+    };
+    let kept = calls(&[&["init"], &READ, &READ]);
+    let renewed_session = calls(&[&["init"], &READ, &["shutdown", "init"], &READ]);
+
+    for (ahead, expected) in [
+        (LEASE - SAMPLE_BUDGET - Duration::from_millis(1), &kept),
+        (LEASE - SAMPLE_BUDGET, &renewed_session),
+    ] {
+        let (nvml, _script, mut sampler, elapsed) = renewed();
+        elapsed.set(elapsed.get() + ahead);
+        assert_eq!(sampler.sample(&|| false), Some(52), "{ahead:?}");
+        assert_eq!(&nvml.calls(), expected, "{ahead:?}");
+    }
+
+    for step in ["activity", "power"] {
+        let (nvml, script, mut sampler, elapsed) = renewed();
+        script.borrow_mut().stall = Some((step, LEASE, elapsed));
+        assert_eq!(sampler.sample(&|| false), Some(52), "{step}");
+        assert_eq!(nvml.calls(), renewed_session, "{step}");
+    }
+}
+
 /// Each step of a held session's sample ends it when its observation goes:
 /// no NVML call follows, and the session ends unless the sample was
 /// cancelled before its power read.
@@ -674,12 +710,34 @@ fn a_cancelled_sample_makes_no_further_call() {
     }
 }
 
-/// An always-active D0 GPU, counting its workload samples.
-struct ActiveProbes(Arc<AtomicUsize>);
+/// An always-active D0 GPU, counting its workload samples. `Hold`, when
+/// set, blocks each workload read as `FakeNvml` blocks `init`.
+struct ActiveProbes(Arc<AtomicUsize>, Option<Hold>);
+
+/// A blocked call: entries are reported on the sender, and each waits until
+/// the test sends or drops its end.
+#[derive(Clone)]
+struct Hold(Arc<Mutex<mpsc::Receiver<()>>>, mpsc::Sender<()>);
+
+impl Hold {
+    fn new() -> (Self, mpsc::Sender<()>, mpsc::Receiver<()>) {
+        let (release, hold) = mpsc::channel();
+        let (entered, entries) = mpsc::channel();
+        (Self(Arc::new(Mutex::new(hold)), entered), release, entries)
+    }
+
+    fn wait(&self) {
+        let _ = self.1.send(());
+        let _ = self.0.lock().unwrap().recv();
+    }
+}
 
 impl Probes for ActiveProbes {
     fn workload(&mut self) -> Option<bool> {
         self.0.fetch_add(1, Ordering::SeqCst);
+        if let Some(hold) = &self.1 {
+            hold.wait();
+        }
         Some(true)
     }
 
@@ -693,6 +751,7 @@ impl Probes for ActiveProbes {
 struct Worker {
     nvml: FakeNvml,
     workloads: Arc<AtomicUsize>,
+    workload_hold: Option<Hold>,
     started: Arc<AtomicUsize>,
     ahead: Arc<Mutex<Duration>>,
 }
@@ -702,6 +761,7 @@ impl Worker {
         Self {
             nvml: FakeNvml::new(52),
             workloads: Arc::new(AtomicUsize::new(0)),
+            workload_hold: None,
             started: Arc::new(AtomicUsize::new(0)),
             ahead: Arc::new(Mutex::new(Duration::ZERO)),
         }
@@ -710,10 +770,15 @@ impl Worker {
     /// Blocks NVML `init` until the returned sender sends or drops, and
     /// reports each entry on the returned receiver.
     fn hold_init(&mut self) -> (mpsc::Sender<()>, mpsc::Receiver<()>) {
-        let (release, hold) = mpsc::channel();
-        let (entered, entries) = mpsc::channel();
-        self.nvml.hold = Some(Arc::new(Mutex::new(hold)));
-        self.nvml.entered = Some(entered);
+        let (hold, release, entries) = Hold::new();
+        self.nvml.hold = Some(hold);
+        (release, entries)
+    }
+
+    /// Blocks each workload read as `hold_init` blocks `init`.
+    fn hold_workload(&mut self) -> (mpsc::Sender<()>, mpsc::Receiver<()>) {
+        let (hold, release, entries) = Hold::new();
+        self.workload_hold = Some(hold);
         (release, entries)
     }
 
@@ -728,8 +793,9 @@ impl Worker {
     fn factory(&mut self, lease: Duration) -> Factory {
         let nvml = self.nvml.clone();
         self.nvml.dropped = None;
-        let (workloads, started, ahead) = (
+        let (workloads, hold, started, ahead) = (
             self.workloads.clone(),
+            self.workload_hold.clone(),
             self.started.clone(),
             self.ahead.clone(),
         );
@@ -738,7 +804,7 @@ impl Worker {
             Sampler {
                 lease,
                 ..Sampler::new(
-                    Box::new(ActiveProbes(workloads)),
+                    Box::new(ActiveProbes(workloads, hold)),
                     Box::new(NvmlSession::new(nvml)),
                     Box::new(move || Instant::now() + *ahead.lock().unwrap()),
                 )
@@ -830,9 +896,9 @@ async fn a_request_whose_time_ran_out_while_it_waited_is_skipped() {
     let host = worker.host();
     let running = host.request(deadline()).unwrap();
     entries.recv_timeout(Duration::from_secs(5)).unwrap();
-    let short = tokio::time::Instant::now() + RESERVE + Duration::from_millis(20);
+    let short = tokio::time::Instant::now() + RESERVE + Duration::from_millis(200);
     let late = host.request(short).unwrap();
-    thread::sleep(Duration::from_millis(50));
+    thread::sleep(Duration::from_millis(400));
     release.send(()).unwrap();
     assert_eq!(running.temperature().await, Some(52));
     drop(release);
@@ -894,8 +960,8 @@ async fn the_worker_ends_a_held_session_when_it_stops() {
 }
 
 /// The worker ends a session at the end of its lease while no request
-/// comes, and a lease that ran out while a request waited ends before that
-/// sample, which starts a new session.
+/// comes, and a lease that ends within `SAMPLE_BUDGET` of a request ends
+/// before that sample, which starts a new session.
 #[tokio::test]
 async fn the_worker_ends_the_session_at_the_end_of_its_lease() {
     let mut worker = Worker::new();
@@ -914,11 +980,86 @@ async fn the_worker_ends_the_session_at_the_end_of_its_lease() {
     let host = worker.host();
     let pending = host.request(deadline()).unwrap();
     assert_eq!(pending.temperature().await, Some(52));
-    *worker.ahead.lock().unwrap() = LEASE;
+    *worker.ahead.lock().unwrap() = LEASE - SAMPLE_BUDGET;
     let pending = host.request(deadline()).unwrap();
     assert_eq!(pending.temperature().await, Some(52));
     assert_eq!(
         worker.nvml.calls(),
         calls(&[&["init"], &READ, &["shutdown", "init"], &READ])
     );
+}
+
+/// A lease that runs out while the workload read is held ends the session
+/// before NVML is called; the read then opens a new one.
+#[tokio::test]
+async fn a_lease_that_runs_out_during_a_held_workload_read_ends_before_nvml() {
+    let mut worker = Worker::new();
+    let (release, entries) = worker.hold_workload();
+    let lease = SAMPLE_BUDGET + Duration::from_millis(200);
+    let host = Host::new(worker.factory(lease));
+    release.send(()).unwrap();
+    let first = host.request(deadline()).unwrap();
+    assert_eq!(first.temperature().await, Some(52));
+    entries.recv_timeout(Duration::from_secs(5)).unwrap();
+    let held = host.request(deadline()).unwrap();
+    entries.recv_timeout(Duration::from_secs(5)).unwrap();
+    thread::sleep(lease + Duration::from_millis(100));
+    drop(release);
+    worker.wait_for("init", 2);
+    assert_eq!(
+        worker.nvml.calls(),
+        calls(&[&["init"], &READ, &["shutdown", "init"], &READ])
+    );
+    drop(held);
+}
+
+/// Stop during a held workload read makes no NVML call, and the request
+/// waiting behind it is skipped.
+#[tokio::test]
+async fn stop_during_a_held_workload_read_makes_no_nvml_call() {
+    let mut worker = Worker::new();
+    let (release, entries) = worker.hold_workload();
+    let exits = worker.watch_exit();
+    let host = worker.host();
+    let running = host.request(deadline()).unwrap();
+    entries.recv_timeout(Duration::from_secs(5)).unwrap();
+    let waiting = host.request(deadline()).unwrap();
+    host.stop();
+    drop(release);
+    exits.recv_timeout(Duration::from_secs(5)).unwrap();
+    assert_eq!(running.temperature().await, None);
+    assert_eq!(waiting.temperature().await, None);
+    assert_eq!(worker.workloads.load(Ordering::SeqCst), 1);
+    assert_eq!(worker.nvml.calls(), Vec::<String>::new());
+}
+
+/// Once the reading has arrived, the reply waits for its sample at most
+/// `AFTER_READING`, and never past the request's own time.
+#[tokio::test(start_paused = true)]
+async fn the_reply_waits_for_a_slow_sample_at_most_after_reading() {
+    for (until, waited) in [
+        (Duration::from_secs(10), AFTER_READING),
+        (Duration::from_millis(100), Duration::from_millis(100)),
+    ] {
+        let (_sample, reply) = oneshot::channel();
+        let asked = tokio::time::Instant::now();
+        let pending = Pending {
+            reply,
+            until: asked + until,
+        };
+        assert_eq!(pending.temperature().await, None);
+        assert_eq!(asked.elapsed(), waited);
+    }
+}
+
+/// Dropping an NVML session that is still started shuts it down.
+#[test]
+fn dropping_a_started_nvml_session_ends_it() {
+    let nvml = FakeNvml::new(52);
+    drop(NvmlSession::new(nvml.clone()));
+    assert_eq!(nvml.calls(), Vec::<String>::new());
+    let mut session = NvmlSession::new(nvml.clone());
+    assert_eq!(session.try_read(), Some(52));
+    drop(session);
+    assert_eq!(nvml.calls(), calls(&[&["init"], &READ, &["shutdown"]]));
 }
