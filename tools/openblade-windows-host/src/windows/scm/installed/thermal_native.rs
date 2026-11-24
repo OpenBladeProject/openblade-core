@@ -1,6 +1,6 @@
 //! Real Windows suppliers, compile-only during offline verification.
 #![allow(unsafe_code)]
-#[cfg(feature = "service-keyboard-driver-mode-v1")]
+#[cfg(feature = "service-fan-mutation-v2")]
 use super::mailbox_read::CleanupScope;
 use super::{mailbox_read::ReadCustody, thermal_storage::Files};
 use crate::discovery::performance::ReadAdmission;
@@ -397,7 +397,7 @@ impl SettleGuard {
 /// scope pinned, a known AC line status, fresh competing-controller absence,
 /// and the exact original mailbox custody and generation through
 /// `ReadCustody::authorize_cleanup`, which names the admitted device.
-#[cfg(feature = "service-keyboard-driver-mode-v1")]
+#[cfg(feature = "service-fan-mutation-v2")]
 #[cfg_attr(test, allow(dead_code))] // Test composition injects its own Cleanup; only the native factory builds the guard.
 pub(super) struct CleanupGuard {
     origin: Arc<Origin>,
@@ -407,7 +407,7 @@ pub(super) struct CleanupGuard {
     controllers:
         Mutex<openblade_platform_windows::controller_presence::admission::ReadOnlyAdmission>,
 }
-#[cfg(feature = "service-keyboard-driver-mode-v1")]
+#[cfg(feature = "service-fan-mutation-v2")]
 #[cfg_attr(test, allow(dead_code))] // Test composition injects its own Cleanup; only the native factory builds the guard.
 impl CleanupGuard {
     /// Pins the lifecycle fence `scope` is admitted at (`Lifecycle::fence_for`):
@@ -492,7 +492,7 @@ impl CleanupGuard {
 /// admitted device. Each refusal stops the checks after it. Only a competing
 /// controller is a typed refusal. The test model (`CleanupFresh`) runs the
 /// same function over its own suppliers.
-#[cfg(feature = "service-keyboard-driver-mode-v1")]
+#[cfg(feature = "service-fan-mutation-v2")]
 pub(super) fn admit_cleanup(
     verify: impl Fn() -> bool,
     committed: impl FnOnce() -> Option<bool>,

@@ -372,6 +372,10 @@ jobs:
               # the transaction pool pins of fan and temporary-charge writes.
               @('openblade-windows-service-candidate', 'service-temporary-charge-v1', 'tfc_release_a_cancel_whose_port'),
               @('openblade-windows-service-candidate', 'service-fan-mutation-v2', 'pool_pins'),
+              # Owned Stop fan cleanup with fan mutation alone: the handback under
+              # the Service cleanup admission with nobody signed in, and the pacing
+              # before row 31.
+              @('openblade-windows-service-candidate', 'service-fan-mutation-v2', 'fan_v2_owned_stop_cleanup'),
               ($liveReadings + 'live_readings::tests'),
               ($liveReadings + 'live_readings::windows::tests'),
               ($liveReadings + 'firmware_versions'),

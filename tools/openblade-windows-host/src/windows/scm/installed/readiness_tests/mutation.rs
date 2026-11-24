@@ -23,7 +23,7 @@ mod thermal_presets;
 #[path = "unclassified_external.rs"]
 mod unclassified_external;
 use crate::discovery::performance::{ReadAdmission, mutation_fixture::Fixture};
-#[cfg(feature = "service-keyboard-driver-mode-v1")]
+#[cfg(feature = "service-fan-mutation-v2")]
 use crate::installed::readiness::thermal_mutation::Cleanup;
 use crate::installed::readiness::thermal_storage::{Files, Storage};
 use crate::installed::readiness::{
@@ -968,16 +968,16 @@ impl Custody {
 /// fence, a known Windows AC line status, `fresh_refuse` (every refused
 /// Windows supplier) and `controller` for power and controllers, and the
 /// passed custody's cleanup admission of the scope.
-#[cfg(feature = "service-keyboard-driver-mode-v1")]
+#[cfg(feature = "service-fan-mutation-v2")]
 use crate::installed::readiness::thermal_native::{Denial, admit_cleanup};
-#[cfg(feature = "service-keyboard-driver-mode-v1")]
+#[cfg(feature = "service-fan-mutation-v2")]
 struct CleanupFresh {
     custody: Arc<Custody>,
     passed: Arc<dyn ReadCustody>,
     scope: CleanupScope,
     epoch: u64,
 }
-#[cfg(feature = "service-keyboard-driver-mode-v1")]
+#[cfg(feature = "service-fan-mutation-v2")]
 impl CleanupFresh {
     fn capture(
         custody: Arc<Custody>,
@@ -1022,7 +1022,7 @@ impl CleanupFresh {
         )
     }
 }
-#[cfg(feature = "service-keyboard-driver-mode-v1")]
+#[cfg(feature = "service-fan-mutation-v2")]
 impl Cleanup for CleanupFresh {
     fn scope(&self) -> CleanupScope {
         self.scope
@@ -4982,6 +4982,34 @@ async fn fan_v2_stop_refusal_is_one_shot_and_saved_nonfan_fields_survive() {
     assert_eq!(r.port.state.lock().unwrap().sent.len(), sent);
 }
 
+/// With nobody signed in, so the owner's own console capture refuses,
+/// owned Stop hands manual fans back under the Service's cleanup admission
+/// (`CleanupGuard`), which fan mutation composes without the keyboard owner;
+/// without it, only the settle-only permit runs, and manual fans stay.
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn fan_v2_owned_stop_cleanup_without_a_console_user_hands_fans_back() {
+    for composed in [true, false] {
+        let r = fan_rig_with(0, 0, 2);
+        r.custody.scoped_fresh.store(true, Ordering::Release);
+        r.get().await;
+        let outcome = r.request(fan_request(101, Some(1), 3700)).await;
+        assert_eq!(outcome["result"]["status"], 1, "{outcome}");
+        if composed {
+            let custody = r.custody.clone();
+            r.runtime.read_cleanup(move |passed, scope| {
+                CleanupFresh::capture(custody.clone(), passed, scope)
+            });
+        }
+        r.custody.current_console.store(false, Ordering::Release);
+        r.origin.stop();
+        let stopped = r.source.lock().await.drain().await;
+        assert_eq!(stopped.is_ok(), composed, "{composed}");
+        let fans = r.port.state.lock().unwrap().fans;
+        assert_eq!(fans, if composed { [0, 0] } else { [1, 1] }, "{composed}");
+    }
+}
+
 /// Owned Stop cleanup is paced before its 31: on a device too slow to finish
 /// the recipe by the Stop deadline it writes no row and sends no setter, so
 /// no 31/4x tail is left. Its job registered and its baseline reads used the
@@ -4989,7 +5017,7 @@ async fn fan_v2_stop_refusal_is_one_shot_and_saved_nonfan_fields_survive() {
 /// Stop runs the recipe again: no reserved ID is sent twice.
 #[cfg(feature = "service-fan-mutation-v2")]
 #[tokio::test]
-async fn fan_v2_a_stop_too_slow_for_its_recipe_writes_no_row_and_reuses_no_id() {
+async fn fan_v2_owned_stop_cleanup_too_slow_for_its_recipe_writes_no_row() {
     let r = fan_rig(0, 0);
     r.get().await;
     let applied = r.request(fan_request(141, Some(1), 3700)).await;

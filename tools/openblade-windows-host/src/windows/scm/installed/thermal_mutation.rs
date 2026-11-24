@@ -1,7 +1,7 @@
 //! One installed request composition. No fake or scenario transport is imported.
 #[cfg(feature = "service-profile-triggers-v1")]
 use super::thermal_drift;
-#[cfg(feature = "service-keyboard-driver-mode-v1")]
+#[cfg(feature = "service-fan-mutation-v2")]
 use super::thermal_native::CleanupGuard;
 #[cfg(feature = "service-profile-triggers-v1")]
 use super::thermal_native::StorageGuard;
@@ -204,11 +204,11 @@ impl Settle for SettleGuard {
 ///
 /// It is not a `Fresh` or a `Settle`, so no request, reconciliation, acquire
 /// or settle permit can hold one. Exactly two permits do, and each fixes what
-/// it may write: the keyboard release (`keyboard::DriverModePermit::release`,
+/// it may write: with the keyboard owner, its release (`keyboard::DriverModePermit::release`,
 /// Normal after a fresh read of Driver) and the owned fan handback
 /// (`fan::FanHandbackPermit`, the owner's own Automatic cleanup stages after a
 /// fresh read of its manual state).
-#[cfg(feature = "service-keyboard-driver-mode-v1")]
+#[cfg(feature = "service-fan-mutation-v2")]
 pub(super) trait Cleanup: Send + Sync {
     fn scope(&self) -> CleanupScope;
     fn authorize(&self) -> Option<ReadAdmission>;
@@ -216,7 +216,7 @@ pub(super) trait Cleanup: Send + Sync {
     fn on_battery(&self) -> Option<bool>;
     fn verify_health(&self) -> io::Result<()>;
 }
-#[cfg(feature = "service-keyboard-driver-mode-v1")]
+#[cfg(feature = "service-fan-mutation-v2")]
 impl Cleanup for CleanupGuard {
     fn scope(&self) -> CleanupScope {
         self.scope()
@@ -236,7 +236,7 @@ impl Cleanup for CleanupGuard {
 type NoticeAge = Box<dyn Fn(i64) -> Option<std::time::Duration>>;
 /// Captures the Service's cleanup admission over a mailbox custody
 /// (`CleanupGuard::capture`).
-#[cfg(feature = "service-keyboard-driver-mode-v1")]
+#[cfg(feature = "service-fan-mutation-v2")]
 type CleanupFactory =
     Box<dyn Fn(Arc<dyn ReadCustody>, CleanupScope) -> io::Result<Arc<dyn Cleanup>>>;
 impl Fresh for WindowsGuard {
@@ -380,10 +380,10 @@ pub(super) struct Runtime {
     // debt (`reconcile_locked`). Unset reads unknown: no such retry.
     #[cfg(feature = "service-profile-triggers-v1")]
     admission_epoch: Rc<std::cell::OnceCell<PowerProbe>>,
-    // The Service's owned-cleanup admission (`Cleanup`), for the keyboard
-    // release and the fan handback at Stop, shutdown and low power. Unset
-    // admits no cleanup.
-    #[cfg(feature = "service-keyboard-driver-mode-v1")]
+    // The Service's owned-cleanup admission (`Cleanup`), for the fan
+    // handback at Stop and shutdown and, with the keyboard owner, its
+    // release there and at low power. Unset admits no cleanup.
+    #[cfg(feature = "service-fan-mutation-v2")]
     cleanup: Rc<std::cell::OnceCell<CleanupFactory>>,
     // How long ago a gate transition's QPC timestamp was (`Lifecycle::age`).
     // Unset reads a fresh notice.
@@ -611,7 +611,7 @@ impl Runtime {
             console: Rc::default(),
             #[cfg(feature = "service-profile-triggers-v1")]
             admission_epoch: Rc::default(),
-            #[cfg(feature = "service-keyboard-driver-mode-v1")]
+            #[cfg(feature = "service-fan-mutation-v2")]
             cleanup: Rc::default(),
             #[cfg(feature = "service-keyboard-driver-mode-v1")]
             notice_age: Rc::default(),
@@ -670,7 +670,7 @@ impl Runtime {
     }
     /// Captures the Service's cleanup admission with `factory`
     /// (`Runtime::cleanup`); it may be set once.
-    #[cfg(all(test, feature = "service-keyboard-driver-mode-v1"))]
+    #[cfg(all(test, feature = "service-fan-mutation-v2"))]
     pub(super) fn read_cleanup(
         &self,
         factory: impl Fn(Arc<dyn ReadCustody>, CleanupScope) -> io::Result<Arc<dyn Cleanup>> + 'static,
@@ -727,7 +727,7 @@ impl Runtime {
             let origin = origin.clone();
             Box::new(move || origin.lifecycle.active())
         };
-        #[cfg(feature = "service-keyboard-driver-mode-v1")]
+        #[cfg(feature = "service-fan-mutation-v2")]
         let cleanup: CleanupFactory = {
             let origin = origin.clone();
             Box::new(move |custody, scope| {
@@ -811,7 +811,7 @@ impl Runtime {
             )),
             #[cfg(feature = "service-profile-triggers-v1")]
             admission_epoch: Rc::new(admission_epoch.into()),
-            #[cfg(feature = "service-keyboard-driver-mode-v1")]
+            #[cfg(feature = "service-fan-mutation-v2")]
             cleanup: Rc::new(cleanup.into()),
             #[cfg(feature = "service-keyboard-driver-mode-v1")]
             notice_age: Rc::new(notice_age.into()),

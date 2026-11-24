@@ -1501,28 +1501,6 @@ async fn a_stop_during_the_low_power_release_reads_the_dropped_job() {
     }
 }
 
-/// With nobody signed in, so the owner.s own console capture refuses,
-/// owned Stop hands manual fans back under the Service's cleanup admission;
-/// without it, only the settle-only permit runs, and manual fans stay.
-#[tokio::test]
-async fn owned_stop_hands_fans_back_without_a_console_user() {
-    for composed in [true, false] {
-        let rig = fan_rig_with(0, 0, 2);
-        rig.custody.scoped_fresh.store(true, Ordering::Release);
-        rig.get().await;
-        let outcome = rig.request(fan_request(101, Some(1), 3700)).await;
-        assert_eq!(outcome["result"]["status"], 1, "{outcome}");
-        if composed {
-            cleanup(&rig);
-        }
-        rig.custody.current_console.store(false, Ordering::Release);
-        let stopped = shutdown(&rig).await;
-        assert_eq!(stopped.is_ok(), composed, "{composed}");
-        let fans = rig.port.state.lock().unwrap().fans;
-        assert_eq!(fans, if composed { [0, 0] } else { [1, 1] }, "{composed}");
-    }
-}
-
 /// The handback holds no authority beyond the owner's cleanup recipe: it
 /// journals only cleanup stages, and it prepares, resolves and confirms no
 /// request intent.

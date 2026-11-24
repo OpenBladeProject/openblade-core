@@ -917,13 +917,13 @@ impl Permit for FanSettlePermit {
 /// Automatic setters' 40-43 and their confirmed 50 under the owner's
 /// selector and reserved cleanup IDs. It cannot prepare, resolve or store an
 /// intent, so it applies no saved destination and no manual value.
-#[cfg(feature = "service-keyboard-driver-mode-v1")]
+#[cfg(feature = "service-fan-mutation-v2")]
 struct FanHandbackPermit {
     owner: Arc<FanPermit>,
     cleanup: Arc<dyn Cleanup>,
     proof: ReadAdmission,
 }
-#[cfg(feature = "service-keyboard-driver-mode-v1")]
+#[cfg(feature = "service-fan-mutation-v2")]
 impl FanHandbackPermit {
     fn capture(owner: &Arc<FanPermit>, cleanup: Arc<dyn Cleanup>) -> Option<Arc<Self>> {
         // Owned Stop and shutdown only: a low-power boundary hands no fans
@@ -951,7 +951,7 @@ impl FanHandbackPermit {
         })
     }
 }
-#[cfg(feature = "service-keyboard-driver-mode-v1")]
+#[cfg(feature = "service-fan-mutation-v2")]
 impl Permit for FanHandbackPermit {
     fn mutation_registered(&self) {
         self.owner.cleanup_registered.store(true, Ordering::Release);
@@ -1057,7 +1057,7 @@ impl Permit for FanHandbackPermit {
         Ok(Settlement::Complete)
     }
 }
-#[cfg(feature = "service-keyboard-driver-mode-v1")]
+#[cfg(feature = "service-fan-mutation-v2")]
 impl Runtime {
     /// A fresh capture of the Service's cleanup admission for `scope`
     /// (`Runtime::cleanup`). `None` when it is not composed or refuses; only
@@ -1750,9 +1750,11 @@ impl Runtime {
         };
         // Always join original active work before checking positive ownership.
         reader.drain_active().await?;
-        let pending = self.fan_pending.borrow().clone();
-        let owner = self.fan_owner.borrow().clone();
-        let latest = pending.clone().or(owner.clone());
+        let latest = self
+            .fan_pending
+            .borrow()
+            .clone()
+            .or(self.fan_owner.borrow().clone());
         if latest.as_ref().is_some_and(|p| p.storage.pending()) {
             return Err(io::Error::other(
                 "Fan submission remains unresolved at Stop.",
@@ -1761,10 +1763,7 @@ impl Runtime {
         if latest.as_ref().is_none_or(|p| !p.storage.outstanding_fan()) {
             return Ok(());
         }
-        let Some(permit) = pending
-            .filter(|p| p.owned.load(Ordering::Acquire))
-            .or(owner.filter(|p| p.owned.load(Ordering::Acquire)))
-        else {
+        let Some(permit) = self.owned_fan_permit() else {
             return Err(io::Error::other(
                 "Original fan cleanup ownership is unavailable.",
             ));
@@ -1784,6 +1783,13 @@ impl Runtime {
     }
 }
 impl Runtime {
+    /// The fan permit owned Stop cleans up after: the pending one when it
+    /// owns a fan change, otherwise the confirmed owner when it does.
+    fn owned_fan_permit(&self) -> Option<Arc<FanPermit>> {
+        let owned = |p: &Arc<FanPermit>| p.owned.load(Ordering::Acquire);
+        let pending = self.fan_pending.borrow().clone().filter(owned);
+        pending.or_else(|| self.fan_owner.borrow().clone().filter(owned))
+    }
     /// The owner's one Stop cleanup under the first admission that still
     /// holds. The owner's own capture authorizes Stop only inside its
     /// lifecycle epoch and console session. After a power or session event,
@@ -1814,7 +1820,7 @@ impl Runtime {
                 return result;
             }
         }
-        #[cfg(feature = "service-keyboard-driver-mode-v1")]
+        #[cfg(feature = "service-fan-mutation-v2")]
         if let Some(handback) = self
             .capture_cleanup(reader, CleanupScope::OwnedStop)?
             .and_then(|cleanup| FanHandbackPermit::capture(permit, cleanup))
@@ -1839,12 +1845,7 @@ impl Runtime {
     /// The settle-only permit owned Stop would capture, after claiming the
     /// owner's one release attempt as Stop does.
     pub(in super::super) fn settle_permit_for_tests(&self) -> Option<Arc<dyn Permit>> {
-        let owner = self
-            .fan_pending
-            .borrow()
-            .clone()
-            .filter(|p| p.owned.load(Ordering::Acquire))
-            .or(self.fan_owner.borrow().clone())?;
+        let owner = self.owned_fan_permit()?;
         owner.release.store(true, Ordering::Release);
         Some(FanSettlePermit::capture(&owner)?)
     }
@@ -1857,12 +1858,7 @@ impl Runtime {
         &self,
         scope: CleanupScope,
     ) -> Option<Arc<dyn Permit>> {
-        let owner = self
-            .fan_pending
-            .borrow()
-            .clone()
-            .filter(|p| p.owned.load(Ordering::Acquire))
-            .or(self.fan_owner.borrow().clone())?;
+        let owner = self.owned_fan_permit()?;
         owner.release.store(true, Ordering::Release);
         let cleanup = (self.cleanup.get()?)(owner.custody.clone(), scope).ok()?;
         Some(FanHandbackPermit::capture(&owner, cleanup)?)

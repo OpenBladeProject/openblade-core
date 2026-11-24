@@ -90,13 +90,14 @@ pub(super) enum CleanupScope {
     LowPower { generation: u64 },
 }
 
-#[cfg(feature = "service-keyboard-driver-mode-v1")]
+#[cfg(feature = "service-fan-mutation-v2")]
 impl CleanupScope {
     /// The lifecycle write scope this cleanup pins its epoch under.
     pub(super) fn write_scope(self) -> openblade_domain::low_power_gate::WriteScope {
         use openblade_domain::low_power_gate::WriteScope;
         match self {
             Self::OwnedStop => WriteScope::Ordinary,
+            #[cfg(feature = "service-keyboard-driver-mode-v1")]
             Self::LowPower { generation } => WriteScope::LowPowerCleanup { generation },
         }
     }
@@ -1624,7 +1625,6 @@ impl ReadSource {
         self.driver_mode.active(admission, Instant::now())
     }
     /// `driver_mode_confirmed` for a job that started after `since`.
-    #[cfg(feature = "service-keyboard-driver-mode-v1")]
     pub(super) fn driver_mode_confirmed_since(&self, since: Instant) -> Option<bool> {
         let admission = self.lease.authorize()?;
         self.driver_mode
