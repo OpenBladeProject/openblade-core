@@ -452,7 +452,11 @@ present, and keeps its bytes; an `Owned` record is only reported. Letting
 managed resolve an intent at handback, a v2 handback item with a managed
 read-before-write, is a separate follow-up because it changes the managed
 Service and needs a versioned header. Until then an intent left by the last
-native Stop blocks retirement until a native Service resolves it.
+native Stop blocks retirement until a native Service resolves it. Setup also
+refuses an unreadable or unknown record and a leftover record stage, and it
+refuses to install any build over a record or its stage, because no packaged
+build can open the owner custody over them. See "Keyboard Driver-mode record
+in Setup" in `windows-rust-thermal-history.md`.
 
 ##### Cleanup admission
 
