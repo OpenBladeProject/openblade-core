@@ -565,7 +565,8 @@ async fn in_memory_candidate_shares_initial_refresh_with_get_and_drains_one_pend
 
 #[cfg(feature = "native-agent-entry-compile-check")]
 #[tokio::test]
-async fn in_memory_phase_10g_watcher_receives_native_observer_change_through_v85() {
+async fn in_memory_phase_10g_watcher_receives_native_observer_change_through_the_current_protocol()
+{
     use crate::session_native::service_client::{
         InstalledServiceAuthority, InstalledServiceGeneration, ServiceAuthorityError, StatusUpdate,
         watch_on,

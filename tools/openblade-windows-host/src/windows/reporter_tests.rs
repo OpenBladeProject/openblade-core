@@ -185,7 +185,7 @@ fn report_codec_requires_explicit_null_and_correlated_result() {
 }
 
 #[test]
-fn reporter_drives_unified_application_replay_over_private_v85_pipe() {
+fn reporter_drives_unified_application_replay_over_the_private_pipe() {
     runtime().block_on(async {
         let id = test_id();
         let path = format!("{PREFIX}{id}");

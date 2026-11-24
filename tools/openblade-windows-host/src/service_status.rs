@@ -1628,7 +1628,7 @@ impl Snapshot {
         observation: Option<(u8, Option<bool>)>,
         message: &str,
     ) -> Self {
-        // The existing IPC85 DesiredBatteryState cannot represent Off + TFC.
+        // The managed DesiredBatteryState cannot represent Off + TFC.
         // Keep that private intent internally and publish the established
         // unavailable projection; never turn it into firmware-confirmed false.
         let incompatible = desired.is_some_and(|d| d.temporary && !d.protection);

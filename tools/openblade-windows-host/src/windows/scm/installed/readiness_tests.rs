@@ -606,7 +606,7 @@ async fn readiness_serves_managed_setup_then_closes_partial_exchange_on_stop() {
 }
 
 #[test]
-fn closed_v85_get_status_contract_rejects_mutation_duplicates_and_uncorrelated_responses() {
+fn closed_get_status_contract_rejects_mutation_duplicates_and_uncorrelated_responses() {
     let id = "11111111-2222-4333-8444-555555555555";
     let contract: Value = serde_json::from_str(CONTRACT).unwrap();
     let input = &contract["requests"][0]["input"];

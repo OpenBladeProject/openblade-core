@@ -50,7 +50,7 @@ async fn receive(client: &mut DuplexStream, discriminator: &str) -> Value {
 }
 
 #[tokio::test]
-async fn replays_managed_v85_reads_and_the_full_status_event() {
+async fn replays_managed_current_reads_and_the_full_status_event() {
     let runtime: Value = serde_json::from_str(RUNTIME).unwrap();
     let fixture: Value = serde_json::from_str(CURRENT_FIXTURE).unwrap();
     let status = Arc::new(Status::fixture().unwrap());
@@ -157,7 +157,7 @@ async fn rejects_frozen_ipc79_ipc80_and_ipc85_requests_without_reply() {
 }
 
 #[tokio::test]
-async fn performance_mutation_requires_explicit_v85_mode_active_session_and_strict_fields() {
+async fn performance_mutation_requires_explicit_mode_active_session_and_strict_fields() {
     let (_advance, input) = tokio::sync::mpsc::channel(1);
     let (performance, _drive) = Status::fixture().unwrap().with_performance(input).unwrap();
     let performance = Arc::new(performance);
@@ -485,7 +485,7 @@ async fn fan_override_is_confined_to_the_active_current_fan_replay() {
 
 #[cfg(windows)]
 #[tokio::test]
-async fn fan_stop_requires_private_v85_mode_active_session_and_strict_mode() {
+async fn fan_stop_requires_private_mode_active_session_and_strict_mode() {
     use crate::fan_stop_fixture::Case;
     let (_advance, input) = tokio::sync::mpsc::channel(1);
     let (status, _drive) = Status::fixture()
