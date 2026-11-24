@@ -321,14 +321,26 @@ Acquire and maintain follow managed `ProductionLightingPort.MaintainDriverModeAs
   (`DeviceModeSet::acknowledge`), and an independent `00/84` readback on its
   own transaction ID must read Driver.
 - A setter that may have been submitted without both confirmations is
-  Indeterminate. That step publishes `null` and the owner sends no further
-  acquire or maintain exchange in this process; it never replays the write.
-  Managed treats it like any failure: it publishes `null`, runs its one
-  recovery on a fresh port and tries again at later steps. Native is
-  stricter, so a possibly submitted setter is never followed by another
-  acquire. The independent read job keeps its own `00/84` cadence, so a later
-  fresh read publishes the confirmed firmware mode, and the shutdown release
-  below still runs.
+  Indeterminate. That step publishes `null`, runs no recovery and never
+  replays the write. A power or session notice that moves the lifecycle
+  epoch between the acknowledgement and the readback is one way to get
+  there: the capture's fence refuses the readback.
+- Each later due step resolves an Indeterminate acquire read-only. One job
+  under a fresh capture, with the step's journal and fan skip conditions,
+  reads `00/84` and writes nothing; every checkpoint of that read checks the
+  capture's epoch again. Driver means the acquire took effect: the claim it
+  made before submission is kept unless a release has since ended it, and
+  the read never makes one. Normal means it did not take effect or was
+  undone: the claim ends, `false` is published, and the next tick acquires
+  through the ordinary claim-before-write job as a new write on new IDs. An
+  unreadable or fenced read stays Indeterminate and publishes `null`; one
+  refused before any exchange records nothing. Each such step reads at most
+  once and never writes in the same tick. Managed has no Indeterminate
+  state: it publishes `null`, and its one recovery on a fresh port reads
+  `00/84` and may write Driver again within the same step
+  (`ServiceControlRuntime.cs:12967-13066`). Native defers that write to the
+  next tick, after a confirmed read of Normal. The shutdown and low-power
+  releases run as usual while the acquire is Indeterminate.
 - A step that fails gets one recovery per failure streak: a fresh capture and
   read-before-write, never a replay. A confirmed mode or a lost device resets
   the latch (`ServiceControlRuntime.cs:12568-12665`).

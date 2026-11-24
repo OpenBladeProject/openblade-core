@@ -12,10 +12,17 @@
 //!   failure keeps it. The setter's exact acknowledgement and an independent
 //!   00/84 readback must both confirm.
 //! - An acquire setter that may have been submitted without that confirmation
-//!   is Indeterminate: the step publishes null and the owner sends no further
-//!   acquire or maintain exchange in this process; nothing is ever replayed.
-//!   The read job's own 00/84 cadence keeps publishing the confirmed mode, and
-//!   a release still restores Normal after a fresh read of Driver.
+//!   is Indeterminate: the step publishes null and nothing is ever replayed.
+//!   Each later due step resolves it read-only (`resolve_indeterminate`): one
+//!   job under a fresh capture reads 00/84 and writes nothing. Driver means
+//!   the acquire took effect and keeps the claim it made, if a release has
+//!   not ended it; a read never makes one. Normal means it did not, or was
+//!   undone: the claim ends, and the next tick acquires as a new write
+//!   through the ordinary claim-before-write job, never in the resolving
+//!   tick. An unreadable, fenced or refused read stays Indeterminate.
+//!   Managed has no Indeterminate state: its failed step publishes null and
+//!   its one recovery on a fresh port reads and may write again in the same
+//!   step. A release still restores Normal after a fresh read of Driver.
 //! - Each step captures the console user's ordinary write admission, the
 //!   candidate the lifecycle tick uses: fresh exact-device,
 //!   competing-controller, AC line, session, SID and lifecycle-epoch checks,
@@ -163,8 +170,9 @@ struct Ownership {
 #[derive(Default)]
 pub(super) struct Keyboard {
     ownership: Arc<Ownership>,
-    /// An acquire setter may have been submitted unconfirmed: no further
-    /// acquire or maintain exchange in this process.
+    /// An acquire setter may have been submitted unconfirmed. Until a later
+    /// step's own read resolves it (`resolve_indeterminate`), no acquire or
+    /// maintain write runs.
     indeterminate: Cell<bool>,
     /// When a release setter may have been submitted unconfirmed. Until a
     /// later read resolves it (`maintain_driver_mode`), no release, acquire
@@ -206,8 +214,9 @@ enum Acquired {
 }
 
 /// The admission one Driver-mode job holds. Its type fixes what the job may
-/// write: an acquire writes Driver from Normal under a console capture, and a
-/// release writes Normal from Driver under the Service's cleanup admission.
+/// write: an acquire writes Driver from Normal under a console capture (its
+/// resolution read writes nothing), and a release writes Normal from Driver
+/// under the Service's cleanup admission.
 enum Authority {
     Acquire(Arc<dyn Fresh>),
     Release(Arc<dyn Cleanup>),
@@ -233,6 +242,16 @@ impl DriverModePermit {
                 #[cfg(test)]
                 ownership.claims.fetch_add(1, Ordering::AcqRel);
             }),
+            fatal: fatal.clone(),
+        }
+    }
+    /// A fresh 00/84 read under a console capture that writes nothing and
+    /// claims nothing, whatever it reads: the resolution of an Indeterminate
+    /// acquire.
+    fn observe(fresh: Arc<dyn Fresh>, fatal: &Arc<Mutex<Option<&'static str>>>) -> Self {
+        Self {
+            authority: Authority::Acquire(fresh),
+            job: DeviceModeJob::new(DeviceMode::Driver, None, || {}),
             fatal: fatal.clone(),
         }
     }
@@ -286,6 +305,20 @@ impl Permit for DriverModePermit {
     }
 }
 
+/// Runs one console-admitted job, an acquire or its resolution read, through
+/// the mutation lane. How far it got is its step (`DeviceModeJob::step`);
+/// only fatal admission evidence is an error. The job's own budget starts
+/// after the lane wait (`Permit::budget`); the interval bounds the wait.
+async fn run_console_job(reader: &ReadSource, permit: &Arc<DriverModePermit>) -> io::Result<()> {
+    match reader
+        .mutate(permit.clone(), Instant::now() + INTERVAL)
+        .await
+    {
+        Err(error) if is_fatal_admission(&error) => Err(error),
+        _ => Ok(()),
+    }
+}
+
 impl Runtime {
     /// One maintenance step on the origin tick, after the power check. It is
     /// due at the first eligible tick and then `INTERVAL` after the last,
@@ -321,9 +354,6 @@ impl Runtime {
             return Ok(());
         };
         verify_retained_failure(&self.fatal)?;
-        if keyboard.indeterminate.get() {
-            return Ok(());
-        }
         // A release that may have applied Normal unconfirmed is resolved
         // read-only, never replayed: a confirmed 00/84 read under the current
         // read admission, by a job that started after that release, says which
@@ -347,6 +377,10 @@ impl Runtime {
             return Ok(());
         }
         keyboard.due.set(Some(now + INTERVAL));
+        // A step that resolves an Indeterminate acquire only reads.
+        if keyboard.indeterminate.get() {
+            return self.resolve_indeterminate(reader, now).await;
+        }
         let Some(first) = self.acquire_once(reader, now).await? else {
             return Ok(());
         };
@@ -434,16 +468,7 @@ impl Runtime {
             keyboard.ownership.clone(),
             &self.fatal,
         ));
-        // The job's own budget starts after the lane wait (`Permit::budget`);
-        // the interval bounds the wait.
-        let result = reader
-            .mutate(permit.clone(), Instant::now() + INTERVAL)
-            .await;
-        if let Err(error) = result
-            && is_fatal_admission(&error)
-        {
-            return Err(error);
-        }
+        run_console_job(reader, &permit).await?;
         let acquired = match permit.job.step() {
             // Refused before any exchange: nothing to record or recover.
             DeviceModeStep::Pending => return Ok(None),
@@ -473,6 +498,47 @@ impl Runtime {
             reader.record_driver_mode(admission, read, step);
         }
         Ok(Some(acquired))
+    }
+
+    /// Resolves an Indeterminate acquire read-only, never by replaying its
+    /// setter: one job under a fresh capture, with the acquire's own skip
+    /// conditions, reads 00/84 and writes nothing. Each of its checkpoints
+    /// checks the capture's lifecycle epoch, so a notice during the read
+    /// leaves it unconfirmed. Driver keeps whatever claim there is: the
+    /// acquire's own, unless a release since ended it; the read makes none.
+    /// Normal ends the claim, and the step is due again at the next tick,
+    /// whose acquire claims and writes afresh. Anything else stays
+    /// Indeterminate: a read sent without a confirmed reply publishes null,
+    /// and one refused before any exchange records nothing.
+    async fn resolve_indeterminate(&self, reader: &ReadSource, step: Instant) -> io::Result<()> {
+        let Some((storage, fresh)) = self.capture_console(reader)? else {
+            return Ok(());
+        };
+        if self.fan_unsettled() || storage.pending() {
+            return Ok(());
+        }
+        let admission = fresh.authorize();
+        let permit = Arc::new(DriverModePermit::observe(fresh, &self.fatal));
+        run_console_job(reader, &permit).await?;
+        let keyboard = &self.keyboard;
+        let read = match permit.job.step() {
+            DeviceModeStep::Pending => return Ok(()),
+            DeviceModeStep::Observed(mode) => {
+                if mode == DeviceMode::Normal {
+                    keyboard.ownership.owns.store(false, Ordering::Release);
+                    keyboard.due.set(None);
+                }
+                keyboard.indeterminate.set(false);
+                keyboard.recovered.set(false);
+                DeviceModeRead::Confirmed(mode)
+            }
+            // A job that writes nothing reaches no later step.
+            _ => DeviceModeRead::Unconfirmed,
+        };
+        if let Some(admission) = admission {
+            reader.record_driver_mode(admission, read, step);
+        }
+        Ok(())
     }
 
     /// The shutdown release before the fan handback (managed
