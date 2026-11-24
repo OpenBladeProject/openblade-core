@@ -189,7 +189,6 @@ pub(super) trait ReadCustody: Send + Sync {
     /// custody, `None` while there is none (`Store::driver_mode_record_read`).
     /// Reading it writes nothing, so a recovery-only custody reads it too.
     #[cfg(feature = "service-keyboard-driver-mode-v1")]
-    #[expect(dead_code, reason = "the transaction pool seed reads the record's IDs")]
     fn driver_mode_record_read(&self) -> io::Result<Option<DriverModeRecord>> {
         Err(deny())
     }
@@ -1798,11 +1797,20 @@ impl ReadSource {
     /// Adds the mutation lanes. Before any worker job runs, it quarantines
     /// the IDs whose replies, by the journal, an earlier process may have
     /// left in the mailbox (`transaction_seed`). It reads the journal as
-    /// release does, authenticating it without recovery, so composing a
-    /// source writes nothing.
+    /// release does, authenticating it without recovery, and the keyboard
+    /// Driver-mode record, which a recovery-only custody reads too, so
+    /// composing a source writes nothing.
     fn with_mutation(mut self, factories: MutationFactories) -> Self {
+        #[cfg(feature = "service-keyboard-driver-mode-v1")]
+        let driver_mode = || {
+            let record = self.lease.driver_mode_record_read()?;
+            Ok(record.map(|record| record.ids()))
+        };
+        #[cfg(not(feature = "service-keyboard-driver-mode-v1"))]
+        let driver_mode = || Ok(None);
         super::transaction_seed::quarantine_unanswered(
             &|| self.lease.journal_read_release(false),
+            &driver_mode,
             &self.fatal,
             &*factories.quarantine,
         );

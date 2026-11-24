@@ -1,5 +1,6 @@
 //! Transaction IDs whose replies an earlier Service process may have left in
-//! the mailbox, recovered from the thermal journal before the first job.
+//! the mailbox, recovered from the thermal journal and the keyboard
+//! Driver-mode record before the first job.
 //!
 //! The firmware reply mailbox outlives the handle and the process
 //! (`performance::transactions`), but the pool's quarantine lives in memory,
@@ -11,9 +12,18 @@
 //! answered nothing, so the newest answered ID of each command an earlier
 //! process sent is as exposed as one it sent without a reply.
 //!
-//! The journal is the only record that survives the process. It names fan,
-//! battery and temporary-charge IDs; performance rows and read-only Readers
-//! name none. These are the IDs it names that may bear such a reply:
+//! Two records survive the process. The keyboard Driver-mode record
+//! (`openblade_domain::driver_mode_history`) names the four IDs of the newest
+//! Driver-mode job that claimed: only a claiming job sends 00/04, and it
+//! records its IDs before it sends the setter, so the newest 00/04 reply
+//! always belongs to them. A settled record keeps them for this reason.
+//! They join the live set, ahead of the journal's. An absent, unreadable or
+//! refused record adds none: a refused one closes the keyboard owner for
+//! the process, so no 00/04 job runs to read a stale reply.
+//!
+//! The journal names fan, battery and temporary-charge IDs; performance rows
+//! and read-only Readers name none. These are the IDs it names that may bear
+//! such a reply:
 //!
 //! - every ID that each family's newest request may have sent, whatever its
 //!   progress: its replies are the newest for each command it sent;
@@ -52,10 +62,17 @@ const FAN_CLEANUP: usize = 2 * 5;
 /// A temporary-charge request may send its IDs and, as a fresh-ID cancel,
 /// the superseded IDs it replaces.
 const TEMPORARY: usize = 2 * temporary_charge_history::EXCHANGES;
-/// The largest live set: each family's newest request, and the reservations
-/// of a fan owner and a temporary-charge owner older than their family's
-/// newest request.
-const LIVE: usize = FAN
+/// The IDs the keyboard Driver-mode record names: its job's baseline,
+/// setter, readback and spare. Every build counts them, so the limit does
+/// not depend on the composition.
+const DRIVER_MODE: usize = 4;
+#[cfg(feature = "service-keyboard-driver-mode-v1")]
+const _: () = assert!(DRIVER_MODE == openblade_domain::driver_mode_history::IDS);
+/// The largest live set: the Driver-mode record's IDs, each family's newest
+/// request, and the reservations of a fan owner and a temporary-charge owner
+/// older than their family's newest request.
+const LIVE: usize = DRIVER_MODE
+    + FAN
     + battery_history::EXCHANGES
     + TEMPORARY
     + FAN_CLEANUP
@@ -68,7 +85,9 @@ const CUSTOM_LEVELS: usize = 2;
 /// - a live fan owner, which pins its whole record until it settles
 ///   (`FanPermit::settle_pins`), and a temporary-charge owner's cancellation;
 /// - the next request: a fan record is the largest, and its preflight
-///   reserves Custom levels beside it;
+///   reserves Custom levels beside it. Mutation jobs run one at a time
+///   (`ReadSource::mutate`), so a 00/04 Driver-mode job, which reserves
+///   four, is such a request too;
 /// - a read: a selector pair and its Custom levels, which this counts.
 ///
 /// A read job can hold more: with live readings and the Driver-mode read it
@@ -80,11 +99,11 @@ const DEMAND: usize =
     FAN + temporary_charge_history::EXCHANGES + FAN + CUSTOM_LEVELS + 2 + CUSTOM_LEVELS;
 
 /// The most IDs one start quarantines, so the pool never starves. It holds
-/// the largest live set (74), so the live set is always whole, and the rest
+/// the largest live set (78), so the live set is always whole, and the rest
 /// holds the newest history. 80 leaves 174 of the 254 IDs: twice the most
 /// reserved at once (66), so about 108 IDs can still be quarantined by
 /// exchanges that fail later before that peak could starve. Three peaks
-/// (198) fit beside no limit that holds the live set (254 - 74 = 180), so
+/// (198) fit beside no limit that holds the live set (254 - 78 = 176), so
 /// the margin is two.
 pub(super) const LIMIT: usize = 80;
 const _: () = assert!(LIMIT >= LIVE && 254 - LIMIT >= 2 * DEMAND);
@@ -92,32 +111,55 @@ const _: () = assert!(LIMIT >= LIVE && 254 - LIMIT >= 2 * DEMAND);
 /// Quarantines IDs in one transaction pool (`Transactions::quarantine`).
 pub(super) type Quarantine<'a> = dyn Fn(&[u8]) + 'a;
 
-/// Quarantines what `unanswered` finds in the journal `read` returns. A read
+/// Quarantines the IDs of the Driver-mode record `driver_mode` returns,
+/// then what `unanswered` finds in the journal `journal` returns. Each read
 /// that fails is retried once, unless it failed fatal admission, which
 /// `fatal` keeps as the source's own reads keep it. A journal that still
-/// cannot be read or validated quarantines nothing, as before this seed
-/// existed, and an absent one has nothing to find, so neither blocks startup.
+/// cannot be read or validated adds nothing, as before this seed existed,
+/// and an unreadable or refused record adds nothing either; an absent one
+/// has nothing to find, so none of them blocks startup.
 pub(super) fn quarantine_unanswered(
-    read: &dyn Fn() -> io::Result<Option<Vec<u8>>>,
+    journal: &dyn Fn() -> io::Result<Option<Vec<u8>>>,
+    driver_mode: &dyn Fn() -> io::Result<Option<[u8; DRIVER_MODE]>>,
     fatal: &Mutex<Option<&'static str>>,
     quarantine: &Quarantine<'_>,
 ) {
-    let journal = read().or_else(|error| {
-        if is_fatal_admission(&error) {
-            Err(error)
-        } else {
-            read()
-        }
-    });
-    match journal {
-        Ok(Some(journal)) => {
-            if let Ok(ids) = unanswered(&journal) {
-                quarantine(&ids);
-            }
-        }
-        Ok(None) => {}
-        Err(error) => remember_failure(fatal, &error),
+    let record = retried(driver_mode, fatal).flatten();
+    let journal = retried(journal, fatal)
+        .flatten()
+        .and_then(|journal| unanswered(&journal).ok());
+    if record.is_some() || journal.is_some() {
+        quarantine(&seeded(record, journal.unwrap_or_default()));
     }
+}
+
+/// `read`'s result, read again once after a failure that is not fatal
+/// admission. A failure that remains is kept in `fatal` when it is fatal.
+fn retried<T>(read: &dyn Fn() -> io::Result<T>, fatal: &Mutex<Option<&'static str>>) -> Option<T> {
+    read()
+        .or_else(|error| {
+            if is_fatal_admission(&error) {
+                Err(error)
+            } else {
+                read()
+            }
+        })
+        .map_err(|error| remember_failure(fatal, &error))
+        .ok()
+}
+
+/// The record's IDs ahead of the journal's, without repeats and at most
+/// `LIMIT`. The journal's start with its whole live set, and `LIVE` counts
+/// the record's beside it, so the live set stays whole.
+fn seeded(record: Option<[u8; DRIVER_MODE]>, journal: Vec<u8>) -> Vec<u8> {
+    let mut seen = [false; 256];
+    record
+        .into_iter()
+        .flatten()
+        .chain(journal)
+        .filter(|id| !std::mem::replace(&mut seen[usize::from(*id)], true))
+        .take(LIMIT)
+        .collect()
 }
 
 /// The IDs `journal` names that may bear a reply left in the mailbox (see

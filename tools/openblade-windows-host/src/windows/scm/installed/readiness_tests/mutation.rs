@@ -647,6 +647,19 @@ impl ReadCustody for Custody {
                 CUSTODY_JOURNAL
             })
     }
+    // The Driver-mode record the files hold, parsed as `Store` parses it,
+    // readable only where the journal is (`Rig::restarted`).
+    #[cfg(feature = "service-keyboard-driver-mode-v1")]
+    fn driver_mode_record_read(
+        &self,
+    ) -> io::Result<Option<openblade_domain::driver_mode_history::Record>> {
+        let files = self.journal.lock().unwrap().clone();
+        files
+            .ok_or(io::ErrorKind::PermissionDenied)?
+            .read("keyboard-driver-mode.bin")?
+            .map(|bytes| openblade_domain::driver_mode_history::Record::parse(&bytes))
+            .transpose()
+    }
     fn authorize_owned_stop(&self) -> Option<ReadAdmission> {
         if !self.live.load(Ordering::Acquire) || self.authority_for_fan.load(Ordering::Acquire) != 0
         {

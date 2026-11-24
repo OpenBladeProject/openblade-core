@@ -234,3 +234,67 @@ async fn a_fatal_journal_admission_failure_is_kept_by_the_restarted_source() {
     assert!(reply.is_err());
     assert_eq!(r.port.state.lock().unwrap().writes, 0);
 }
+
+/// The bytes and IDs of the Driver-mode record vector `name`, or the bytes
+/// of the rejected vector `name` with no IDs.
+#[cfg(feature = "service-keyboard-driver-mode-v1")]
+fn driver_mode_vector(name: &str) -> (Vec<u8>, Vec<u8>) {
+    let vectors: Value = serde_json::from_str(include_str!(
+        "../../../../../tests/data/driver-mode-record-v1.json"
+    ))
+    .unwrap();
+    if let Some(record) = vectors["records"].get(name) {
+        let ids = record["ids"].as_array().unwrap();
+        let ids = ids.iter().map(|id| id.as_u64().unwrap() as u8).collect();
+        return (record["bytes"].as_str().unwrap().into(), ids);
+    }
+    let rejected = vectors["rejected"].as_array().unwrap();
+    let rejected = rejected.iter().find(|v| v["name"] == name).unwrap();
+    (rejected["bytes"].as_str().unwrap().into(), Vec::new())
+}
+
+/// Files whose only history is the Driver-mode record `bytes`.
+#[cfg(feature = "service-keyboard-driver-mode-v1")]
+fn driver_mode_files(bytes: &[u8]) -> MemoryFiles {
+    let files = MemoryFiles::default();
+    files.profiles(1);
+    files
+        .bytes
+        .lock()
+        .unwrap()
+        .insert("keyboard-driver-mode.bin".into(), bytes.to_vec());
+    files
+}
+
+/// The keyboard Driver-mode record names the newest claiming job's IDs,
+/// whose 00/04 acknowledgement may still be in the mailbox, so a restart
+/// withholds them whatever the record's state.
+#[cfg(feature = "service-keyboard-driver-mode-v1")]
+#[tokio::test]
+async fn a_restart_withholds_the_driver_mode_records_ids() {
+    for name in ["acquireClaimed", "releaseConfirmed", "firstReleaseClaimed"] {
+        let (bytes, ids) = driver_mode_vector(name);
+        assert_eq!(ids.len(), 4, "{name}");
+        let (r, _) = withholds(Rig::restarted(driver_mode_files(&bytes)), &ids).await;
+        r.stop().await;
+    }
+}
+
+/// A record the parser refuses seeds nothing from it, is kept as it was,
+/// and does not block startup.
+#[cfg(feature = "service-keyboard-driver-mode-v1")]
+#[tokio::test]
+async fn a_refused_driver_mode_record_seeds_nothing_and_reads_still_run() {
+    for name in ["nextVersion", "otherModel", "duplicateId", "oversize"] {
+        let (bytes, _) = driver_mode_vector(name);
+        let r = Rig::restarted(driver_mode_files(&bytes));
+        assert!(ReadCustody::driver_mode_record_read(&*r.custody).is_err());
+        assert_eq!(r.port.free_transactions(), 254, "{name}");
+        assert_eq!(fresh_observe(&r).await["success"], true);
+        assert_eq!(
+            r.files.read("keyboard-driver-mode.bin").unwrap(),
+            Some(bytes)
+        );
+        r.stop().await;
+    }
+}

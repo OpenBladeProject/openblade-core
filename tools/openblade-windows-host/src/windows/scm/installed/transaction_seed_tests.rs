@@ -110,7 +110,8 @@ fn the_largest_fan_record_names_the_derived_maximum() {
     assert_eq!(sent(&entry), Some((0, range(1..=26))));
     assert_eq!(FAN_CLEANUP, entry.fan.unwrap().cleanup.len() * 2);
     // The sizes the limit's notes and the thermal history guide state.
-    assert_eq!((FAN, LIVE, DEMAND, LIMIT), (26, 74, 66, 80));
+    assert_eq!((FAN, LIVE, DEMAND, LIMIT), (26, 78, 66, 80));
+    assert_eq!(DRIVER_MODE, 4);
 }
 
 #[test]
@@ -276,20 +277,46 @@ fn the_seed_is_bounded_and_keeps_the_live_set_whole() {
     assert_eq!(seeded[14..28], ids_from(1 + 14 * 9));
 }
 
-/// Seeds from one result per journal read: what it quarantined, how many
-/// reads it made and the fatal failure it kept.
+/// Seeds from one result per journal read, with no Driver-mode record: what
+/// it quarantined, how many reads it made and the fatal failure it kept.
 fn seed(reads: Vec<io::Result<Option<Vec<u8>>>>) -> (Vec<Vec<u8>>, usize, Option<&'static str>) {
-    let offered = reads.len();
+    let (calls, made, _, fatal) = seed_with(vec![Ok(None)], reads);
+    (calls, made, fatal)
+}
+
+type RecordRead = io::Result<Option<[u8; DRIVER_MODE]>>;
+
+/// Seeds from one result per Driver-mode record read and per journal read:
+/// what it quarantined, how many journal and record reads it made and the
+/// fatal failure it kept.
+fn seed_with(
+    records: Vec<RecordRead>,
+    reads: Vec<io::Result<Option<Vec<u8>>>>,
+) -> (Vec<Vec<u8>>, usize, usize, Option<&'static str>) {
+    let (offered, offered_records) = (reads.len(), records.len());
     let reads = RefCell::new(VecDeque::from(reads));
+    let records = RefCell::new(VecDeque::from(records));
     let calls = RefCell::new(Vec::new());
     let fatal = Mutex::new(None);
     quarantine_unanswered(
         &|| reads.borrow_mut().pop_front().expect("one read too many"),
+        &|| {
+            records
+                .borrow_mut()
+                .pop_front()
+                .expect("one record read too many")
+        },
         &fatal,
         &|ids| calls.borrow_mut().push(ids.to_vec()),
     );
     let made = offered - reads.borrow().len();
-    (calls.into_inner(), made, fatal.into_inner().unwrap())
+    let made_records = offered_records - records.borrow().len();
+    (
+        calls.into_inner(),
+        made,
+        made_records,
+        fatal.into_inner().unwrap(),
+    )
 }
 
 fn failed(kind: io::ErrorKind) -> io::Result<Option<Vec<u8>>> {
@@ -349,5 +376,103 @@ fn a_fatal_journal_admission_failure_is_kept_and_not_retried() {
     assert_eq!(
         (seeded, reads, kept),
         (Vec::new(), 1, Some("journal owner changed"))
+    );
+}
+
+/// The IDs of a Driver-mode job: baseline, setter, readback and spare.
+const RECORD: [u8; DRIVER_MODE] = [240, 241, 242, 243];
+
+#[test]
+fn the_driver_mode_records_ids_come_first_and_the_live_set_stays_whole() {
+    // Alone, it is the whole seed.
+    assert_eq!(seeded(Some(RECORD), Vec::new()), RECORD);
+    // Ahead of a full journal seed, whose first `LIVE - DRIVER_MODE` IDs
+    // stand for the journal's largest live set: the record's four push only
+    // the oldest history out.
+    let journal: Vec<u8> = (1..=LIMIT as u8).collect();
+    let seed = seeded(Some(RECORD), journal.clone());
+    assert_eq!(seed.len(), LIMIT);
+    assert_eq!(seed[..DRIVER_MODE], RECORD);
+    assert_eq!(seed[DRIVER_MODE..], journal[..LIMIT - DRIVER_MODE]);
+    // An ID both name is quarantined once, in the record's place.
+    let shared = seeded(Some([1, 2, 3, 4]), journal.clone());
+    assert_eq!(shared, journal);
+    // Without a record, the journal's seed is unchanged.
+    assert_eq!(seeded(None, journal.clone()), journal);
+}
+
+#[test]
+fn a_driver_mode_record_is_seeded_beside_any_journal_outcome() {
+    let battery = journal("battery", "standalone");
+    // Absent, unreadable and invalid journals each leave the record alone.
+    for (reads, made) in [
+        (vec![Ok(None)], 1),
+        (
+            vec![
+                failed(io::ErrorKind::PermissionDenied),
+                failed(io::ErrorKind::PermissionDenied),
+            ],
+            2,
+        ),
+        (
+            vec![Ok(Some(
+                b"not a journal
+"
+                .to_vec(),
+            ))],
+            1,
+        ),
+    ] {
+        assert_eq!(
+            seed_with(vec![Ok(Some(RECORD))], reads),
+            (vec![RECORD.to_vec()], made, 1, None)
+        );
+    }
+    // Beside a journal, the record's IDs come first.
+    assert_eq!(
+        seed_with(vec![Ok(Some(RECORD))], vec![Ok(Some(battery))]),
+        (
+            vec![concat(&[RECORD.to_vec(), range(100..=113)])],
+            1,
+            1,
+            None
+        )
+    );
+}
+
+#[test]
+fn a_failed_driver_mode_record_read_is_retried_once_and_adds_nothing() {
+    let battery = journal("battery", "standalone");
+    let transient = || Err(io::ErrorKind::Interrupted.into());
+    // A corrupt, unknown or unbound record is refused (`PermissionDenied`),
+    // which a retry does not change.
+    let refused = || Err(io::ErrorKind::PermissionDenied.into());
+    assert_eq!(
+        seed_with(vec![transient(), Ok(Some(RECORD))], vec![Ok(None)]),
+        (vec![RECORD.to_vec()], 1, 2, None)
+    );
+    assert_eq!(
+        seed_with(vec![refused(), refused()], vec![Ok(None)]),
+        (Vec::new(), 1, 2, None)
+    );
+    // The journal is still seeded.
+    assert_eq!(
+        seed_with(vec![refused(), refused()], vec![Ok(Some(battery))]),
+        (vec![range(100..=113)], 1, 2, None)
+    );
+}
+
+#[test]
+fn a_fatal_driver_mode_record_failure_is_kept_and_not_retried() {
+    let fatal = super::super::thermal_mutation::fatal_admission("record identity changed");
+    let battery = journal("battery", "standalone");
+    assert_eq!(
+        seed_with(vec![Err(fatal)], vec![Ok(Some(battery))]),
+        (
+            vec![range(100..=113)],
+            1,
+            1,
+            Some("record identity changed")
+        )
     );
 }

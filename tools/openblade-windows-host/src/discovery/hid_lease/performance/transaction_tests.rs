@@ -875,3 +875,48 @@ fn quarantine_takes_only_free_ids() {
     }
     assert!(!issued.contains(&free));
 }
+
+// The keyboard Driver-mode record names its newest claiming job's four IDs
+// (`transaction_seed`), so a restarted pool seeded from it never issues them.
+// Reissued, the setter ID would accept the acknowledgement the earlier
+// process's 00/04 left in the mailbox, which echoes the same arguments.
+#[cfg(feature = "service-keyboard-driver-mode-v1")]
+#[test]
+fn a_restarted_pool_never_issues_the_driver_mode_records_ids() {
+    use openblade_protocol::device_mode::DeviceModeSet;
+    // A fresh pool issues 1 to 4 first: the earlier job's baseline, setter,
+    // readback and spare, as its record names them.
+    let earlier = Transactions::new();
+    let [baseline, set] = earlier.reserve_pair().unwrap();
+    let [readback, spare] = earlier.reserve_pair().unwrap();
+    let record = [baseline, set, readback, spare];
+    assert_eq!(record, [1, 2, 3, 4]);
+    // Its setter's success acknowledgement stays in the mailbox.
+    let mut stale = [0; FRAME_LENGTH];
+    stale[1..].copy_from_slice(
+        &DeviceModeSet::new(set, DeviceMode::Driver)
+            .request()
+            .encode(),
+    );
+    stale[1] = 2;
+    // Unseeded, the restarted pool reissues the setter ID, whose setter
+    // would take that acknowledgement as its own.
+    let unseeded = Transactions::new();
+    let [_, reissued] = unseeded.reserve_pair().unwrap();
+    assert_eq!(reissued, set);
+    let reused = DeviceModeSet::new(reissued, DeviceMode::Driver);
+    assert!(reused.acknowledge(&stale[1..]).is_ok());
+    // Seeded, none of the four is issued, and a setter on any ID it does
+    // issue refuses the stale acknowledgement.
+    let seeded = Transactions::new();
+    seeded.quarantine(&record);
+    assert_eq!(seeded.free(), 254 - record.len());
+    for _ in 0..3 {
+        let issued = drain(&seeded);
+        assert!(!issued.iter().any(|id| record.contains(id)), "{issued:?}");
+        for id in issued {
+            let fresh = DeviceModeSet::new(id, DeviceMode::Driver);
+            assert!(fresh.acknowledge(&stale[1..]).is_err(), "{id}");
+        }
+    }
+}

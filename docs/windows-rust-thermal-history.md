@@ -121,13 +121,18 @@ owner's settle-only 51, which sends no 07/8C, so the retired request's
 preflight can hold the newest 07/8C reply. Older settled requests, the
 reservations of replaced owners and performance rows add none. Neither does
 an earlier request's reply to a command that the newest request of its
-family did not send again, such as a setter it never reached. At most 80 are
-taken: the largest live set (74) always fits, and 174 of the 254 IDs stay
-free. That is twice the most IDs reserved at once (66: a live fan owner's
-whole record, a temporary-charge owner's cancellation, the next fan request
-with its Custom levels, and a read with its Custom levels). Three such peaks
-would not fit beside any limit that holds the live set. The journal format is
-unchanged.
+family did not send again, such as a setter it never reached. With
+keyboard Driver-mode ownership, the seed first takes the four IDs that
+`keyboard-driver-mode.bin` names: the newest claiming 00/04 job's
+baseline, setter, readback and spare, whatever the record's state. A
+record that is absent, unreadable or refused adds none. At most 80 are
+taken: the largest live set (78, the record's four included) always fits,
+and 174 of the 254 IDs stay free. That is twice the most IDs reserved at
+once (66: a live fan owner's whole record, a temporary-charge owner's
+cancellation, the next fan request with its Custom levels, and a read with
+its Custom levels). Mutation jobs run one at a time, so a Driver-mode job is
+such a next request. Three such peaks would not fit beside any limit that
+holds the live set. The journal format is unchanged.
 
 The seed reads the journal as release does (`journal_read_release`). That
 authenticates the active tail and every archived segment, opening the
