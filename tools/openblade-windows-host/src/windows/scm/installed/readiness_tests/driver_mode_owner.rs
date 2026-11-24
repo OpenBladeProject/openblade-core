@@ -1811,14 +1811,16 @@ async fn a_worker_slow_to_retire_ends_the_release_at_its_share() {
 }
 
 /// A keyboard worker that retires only after the keyboard's share has ended
-/// still leaves the fans their own drain time: the fan handback joins it and
+/// still leaves the fans the rest of the drain: the fan handback joins it and
 /// hands the fans back through the real listener-then-source retirement
 /// (`Ports::retire`), past the 2 s a source drain without the keyboard's
-/// share would allow.
+/// share would allow. The handback is paced to what is left of the drain,
+/// about 0.8 s after a 2.05 s join, which its fixture recipe needs about
+/// 0.36 s of; a later join leaves it too little, and it then writes no row.
 #[tokio::test]
 async fn the_fans_join_a_keyboard_worker_slow_to_retire_within_their_drain_time() {
     let rig = fan_owner_rig().await;
-    rig.port.state.lock().unwrap().device_mode_retire_delay = Some(Duration::from_millis(2400));
+    rig.port.state.lock().unwrap().device_mode_retire_delay = Some(Duration::from_millis(2050));
     let events = Events::default();
     let (mut ports, _tx) = ports(Fault::None, &events);
     ports.source = rig.source.clone();
