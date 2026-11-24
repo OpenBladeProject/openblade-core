@@ -967,3 +967,6 @@ async fn a_failed_or_stalled_periodic_read_leaves_the_tick_its_work() {
         abandon(rig).await;
     }
 }
+
+#[path = "thermal_reapply.rs"]
+mod reapply;
