@@ -1627,8 +1627,8 @@ observation reaches `EvaluateThermalConvergenceObservationAsync`
 (`ServiceControlRuntime.cs:17599`, `:19943`), and the 15 s periodic
 observation (`ServicePeriodicObservationLoop.cs:7`) repeats it. Only Strict
 waits for a power-source change, which runs `ApplyFullTransitionAsync`.
-Native has no convergence loop; the lifecycle tick after the gate clears
-reconciles a deferred debt in its place
+Without `service-thermal-convergence-v1` native has no convergence loop; the
+lifecycle tick after the gate clears reconciles a deferred debt in its place
 ([Lifecycle reconciliation](#lifecycle-reconciliation)). A deferral leaves the
 attempts unchanged, so that retry spends none of the budget.
 
@@ -2043,8 +2043,9 @@ Not ported:
 #### Thermal control policy and convergence status
 
 With `service-profile-triggers-v1`, native stores the thermal control policy
-and serves the convergence status member. It still has no convergence loop,
-so neither policy adds a write.
+and serves the convergence status member. Without
+`service-thermal-convergence-v1` it has no convergence loop, so neither policy
+adds a write.
 
 The policy and its upgrade disclosure are the managed preferences members
 `thermalControlPolicy` (Maintain desired state 0, the default, or Strict 1)
@@ -2212,10 +2213,86 @@ Native differs from managed in these ways:
   starts a new budget generation once, at most.
 - Record equality. Managed compares the ledger's lists by reference, so a
   loaded tombstone never equals a new one; native compares them by value.
-- The loop is not wired yet. Native neither reserves, retires a reservation
-  nor publishes a budget or tombstone, and it offers no explicit reapply.
-  A reservation managed left stays AwaitingObservation until the native loop
-  reconciles it read-only, or managed does.
+- Without `reapplyChangedSettings` (S5d), a tombstone or a spent budget is
+  published Paused with `InternalStateUnavailable` (D6), as a contradiction
+  native cannot hold, rather than Suppressed with its only exit.
+
+#### Convergence loop
+
+`thermal_convergence_loop.rs` ports managed's observer and executor
+(`EvaluateThermalConvergenceObservationAsync`,
+`ExecuteThermalConvergenceAsync`). It runs after the lifecycle tick, under
+the mutation gate, and evaluates only a reading newer than the last one it
+evaluated, as managed evaluates an observation. Every 15 s while Maintain is
+admitted it asks for its own reading through the same admitted read path,
+with no optional reading (D5). A due D7 retry asks for one too.
+
+An evaluation needs an authoritative ledger, the console user's settled pair
+with no lifecycle cause owed, no low power, settled power, no possible
+competing controller, no unsettled journal row, Maintain with no pending
+disclosure, and a safe HyperBoost journal. Managed's journal,
+`ProgramData\OpenBlade\hyperboost-ownership.json`, is read read-only through
+the protected path checks. It is safe when it is absent, or Relinquished in a
+schema managed recognizes with the members that schema requires. Anything
+else, including a read that fails, publishes RestorePending with
+`HyperBoostPending` and spends no claim (D8).
+
+A contradiction refreshes the ledger to current intent. Its tombstone or a
+spent budget suppresses it; otherwise it reserves one claim, persisted before
+any setter. The attempt runs the lifecycle's typed steps for the
+contradicting subsystems only, overwriting drift. Each step's journaled
+intent is admitted afresh: the ledger still holds the reservation, the
+HyperBoost journal is unchanged and safe, the policy is still Maintain and
+the Service is not stopping. Once one write is refused, no later write of the
+attempt is admitted.
+
+| Attempt outcome | Ledger |
+| --- | --- |
+| Every step confirmed by readback | Tombstoned Confirmed |
+| A possible submission whose journal row still fences the store | Tombstoned ReconciliationUnavailable |
+| A possible submission settled without a match | Tombstoned External |
+| Refused before any submission, for a cause that may clear | Reserved for one retry (D7) |
+| Any other refusal, or a retry refused or changed | Tombstoned Blocked |
+| Stop during the attempt | Reserved, reconciled read-only |
+
+A reservation this runtime did not make, or one a stop left, is reconciled
+read-only from the next reading: a match retires it Confirmed and a confirmed
+contradiction External. An unknown HyperBoost state or an incomplete reading
+keeps it, and so does a journal row that fences the store.
+
+Native differs from managed in these ways:
+
+- D7. A reservation whose steps were all refused before any submission is
+  kept and retried once, at least 5 s later, from a fresh reading under fresh
+  admission, with the claim it already spent. If the contradiction, intent,
+  policy or destination changed, it is tombstoned (Confirmed when the
+  reading now matches, Blocked otherwise), and so is a retry refused again.
+  Managed attempts once.
+- D9. A contradiction native has no recipe for is refused before reserving,
+  with no claim spent: for performance, no saved destination, an incomplete
+  GPU clock policy or an owned fan change still to hand back; for either, no
+  saved fan intent. A return to Automatic carries the saved preset in its
+  0D/02 pair, as managed's fan setter carries a performance selector, so a
+  fans-only attempt may write that preset.
+- The no-settle ambiguity. Native's steps cannot tell a possible submission
+  that did not settle by readback any further than its journal row does:
+  ReconciliationUnavailable while the row fences the store, External once it
+  settled without a match. Nothing is replayed, by the running Service or a
+  restarted one.
+- A reservation whose persistence fails closes the ledger, so the status
+  reports `ConfigurationQuarantined` where managed reports
+  `InternalStateUnavailable`.
+- Native does not track a device reconnect, so its refresh never invalidates
+  the device authority; a changed model is still a new one.
+
+`readiness_tests/thermal_convergence_loop.rs` drives the loop over the rig's
+store, lifecycle and scripted device: a drift converged once and its tombstone
+holding; Strict, an unsafe and an unreadable journal; a journal change, a
+competing controller and Strict arriving between two writes; Stop before and
+after a submission with a restart; a suspend and a lock refusing an attempt,
+then its retry, including one an external change resolved; an ambiguous
+submission and a restart with its row outstanding; a spent budget; and a
+damaged and a newer ledger, running and restarted.
 
 ## Submission, ambiguity and finite transport lifetime
 
