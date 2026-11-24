@@ -7,6 +7,8 @@
 use super::*;
 use openblade_domain::power_setting::{PBT_POWERSETTINGCHANGE, PowerSetting};
 
+#[path = "power_only_release.rs"]
+mod power_only_release;
 #[path = "request_triggers_startup.rs"]
 mod startup;
 

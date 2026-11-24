@@ -170,7 +170,8 @@ impl ObservedStatus {
         observed
     }
 
-    fn publish(&mut self, evidence: Option<Evidence>) -> io::Result<()> {
+    /// Publishes the observed metadata; false when it repeats the last one.
+    fn publish(&mut self, evidence: Option<Evidence>) -> io::Result<bool> {
         let message = match evidence.as_ref().map(|current| &current.device) {
             Some(DeviceMetadata::Unsupported) => {
                 "No verified supported device is available.".to_owned()
@@ -226,7 +227,7 @@ impl ObservedStatus {
         // changes (such as unknown versus unclassified external power) do not
         // create a new status revision.
         let revision = match &self.last {
-            Some((_, last)) if *last == fields => return Ok(()),
+            Some((_, last)) if *last == fields => return Ok(false),
             Some((revision, _)) => (*revision)
                 .max(
                     self.publisher
@@ -262,7 +263,7 @@ impl ObservedStatus {
             self.publisher = Some(watch::Sender::new(publication));
         }
         self.last = Some((revision, fields));
-        Ok(())
+        Ok(true)
     }
 }
 
@@ -363,6 +364,7 @@ pub(super) fn native_status_source(
     #[cfg(feature = "service-thermal-mutation-v1")]
     return Ok(Box::new(GuardedStatus {
         inner: ObservedStatus::new(read_windows),
+        power_epoch: None,
         mutation: Some(super::thermal_mutation::Runtime::native(
             origin.clone(),
             &mailbox,
@@ -387,6 +389,7 @@ fn compose_guarded_status(
     Box::new(GuardedStatus {
         inner,
         origin,
+        power_epoch: None,
         #[cfg(feature = "service-thermal-mutation-v1")]
         mutation: None,
         #[cfg(feature = "service-mailbox-observation-v1")]
@@ -395,8 +398,8 @@ fn compose_guarded_status(
 }
 
 pub(super) trait StatusOrigin: Send + Sync {
-    // Only the temporary-charge source events read the lifecycle epoch.
-    #[cfg_attr(not(feature = "service-temporary-charge-v1"), allow(dead_code))]
+    // The lifecycle epoch: `process_power_source` observes Windows power once
+    // per epoch, and the temporary-charge source events coalesce by it.
     fn power_epoch(&self) -> Option<u64> {
         None
     }
@@ -449,10 +452,55 @@ struct GuardedStatus {
     mutation: Option<super::thermal_mutation::Runtime>,
     inner: ObservedStatus,
     origin: Arc<dyn StatusOrigin>,
+    /// The lifecycle epoch whose Windows power the published metadata last
+    /// observed (`process_power_source`).
+    power_epoch: Option<u64>,
     #[cfg(feature = "service-mailbox-observation-v1")]
     mailbox: super::mailbox_read::MailboxSource,
 }
 impl GuardedStatus {
+    /// Managed classifies the new power source when its power-change handler
+    /// starts, before the transition, and releasing a stale power-only write
+    /// block publishes that source (`ChangePowerSourceCore`,
+    /// `ReleasePowerOnlyWriteBlockForClassifiedSource`). Native holds no such
+    /// block: each step reads 07/8C under its own fresh Windows power
+    /// admission. The published source is what the two share. Status metadata
+    /// otherwise follows Windows power only at the subscription refresh, so a
+    /// lifecycle reconciliation on the same origin tick rebased the new
+    /// destination on the previous source. Each lifecycle epoch (an SCM power,
+    /// session or suspend notice) is therefore observed once, before the tick
+    /// reconciles. `observed` says that the temporary-charge source event has
+    /// already published this observation. A refresh that yields no evidence
+    /// is retried at the next tick. The source is presentation only and admits
+    /// no write.
+    async fn publish_power_source(&mut self, epoch: Option<u64>, observed: bool) -> io::Result<()> {
+        if epoch.is_none() || epoch == self.power_epoch {
+            return Ok(());
+        }
+        if observed {
+            self.power_epoch = epoch;
+            return Ok(());
+        }
+        self.origin.verify()?;
+        let Some(evidence) = self.inner.refresh().await? else {
+            return Ok(());
+        };
+        self.power_epoch = epoch;
+        // Unchanged metadata, as across a lock or a notice that keeps the
+        // Windows power kind, publishes nothing.
+        let changed = self.inner.publish(Some(evidence))?;
+        // As `refresh_publications` does after its observation: project the
+        // retained thermal state and the user's policy over the new metadata.
+        #[cfg(feature = "service-mailbox-observation-v1")]
+        if changed
+            && let (Some(publisher), Some(metadata)) = (&self.inner.publisher, &self.inner.metadata)
+        {
+            self.mailbox.decorate(publisher, metadata.clone())?;
+        }
+        #[cfg(not(feature = "service-mailbox-observation-v1"))]
+        let _ = changed;
+        self.origin.verify()
+    }
     #[cfg(feature = "service-temporary-charge-v1")]
     fn publish_battery_update(
         &self,
@@ -540,8 +588,13 @@ impl StatusSource for GuardedStatus {
     }
     fn process_power_source(&mut self) -> Pending<'_, ()> {
         Box::pin(async move {
+            let epoch = self.origin.power_epoch();
+            // Whether the temporary-charge source event below already
+            // published fresh metadata at this epoch.
+            #[cfg_attr(not(feature = "service-temporary-charge-v1"), allow(unused_mut))]
+            let mut observed = false;
             #[cfg(feature = "service-temporary-charge-v1")]
-            if let (Some(runtime), Some(epoch)) = (&self.mutation, self.origin.power_epoch()) {
+            if let (Some(runtime), Some(epoch)) = (&self.mutation, epoch) {
                 let needed = match runtime.temporary_event_needed(epoch) {
                     Ok(needed) => needed,
                     Err(error) if super::thermal_storage::is_release_deferred(&error) => false,
@@ -563,6 +616,7 @@ impl StatusSource for GuardedStatus {
                             runtime.temporary_event_observed(epoch);
                         }
                         self.inner.publish(Some(evidence))?;
+                        observed = true;
                         if battery {
                             // The cancel rereads the epoch to tell a refusal
                             // caused by a later notice from a current one.
@@ -591,7 +645,7 @@ impl StatusSource for GuardedStatus {
                     self.origin.verify()?;
                 }
             }
-            Ok(())
+            self.publish_power_source(epoch, observed).await
         })
     }
 
@@ -1123,6 +1177,7 @@ pub(super) fn injected_mutation_source(
         origin,
         mailbox,
         mutation: Some(runtime),
+        power_epoch: None,
         inner: ObservedStatus::new(move |_| {
             observer();
             // The low bits select the metadata; `PRODUCTION_CONTROLLERS`
