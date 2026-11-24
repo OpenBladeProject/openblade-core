@@ -101,6 +101,8 @@ public sealed class IpcWireShapeManifestTests
             88 => "30A176D7BA27B101AD4317681A16B3AC3419096E239F9A4050F93E5046D60E30",
             // Protocol 89 adds the RZ09-0530 keyboard-MCU edition for regional key maps.
             89 => "DF84C6FAB3E8A12689F1F0CFC6AFECFC75A1411F8BA10B51757DE3FF5C931DE3",
+            // Protocol 90 admits confirmed Custom with unreported levels; JSON fields and types equal 89.
+            90 => "DF84C6FAB3E8A12689F1F0CFC6AFECFC75A1411F8BA10B51757DE3FF5C931DE3",
             _ => null,
         };
 
