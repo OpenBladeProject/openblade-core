@@ -98,6 +98,9 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
     private readonly Blade18FnHookCorrelation blade18Correlation = new();
     private readonly HashSet<(uint ScanCode, bool Extended)> blade18ConfirmedPresses = [];
     private readonly Action resetFunctionRowInput;
+    private readonly Action<ushort, ushort>? observeKeyboardInput;
+    private readonly Action? observeKeyboardInputCaughtUp;
+    private const uint QueueStatusRawInput = 0x0400;
     private int blade18ResetRequested;
     private readonly RazerBladeFunctionRowInputState functionRowInput = new();
     private readonly SpecialKeyKeyboardSuppressionState specialKeyKeyboardInput = new();
@@ -156,6 +159,8 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
         readSpecialKeyInputAdmitted = options.IsSpecialKeyInputAdmitted
             ?? throw new ArgumentNullException(nameof(options.IsSpecialKeyInputAdmitted));
         resetFunctionRowInput = options.ResetFunctionRowInput;
+        observeKeyboardInput = options.ObserveKeyboardInput;
+        observeKeyboardInputCaughtUp = options.ObserveKeyboardInputCaughtUp;
         readFunctionRowBackend = options.ReadFunctionRowBackend;
         observeOnly = options.ObserveOnly;
         publishBlade18FnShortcut = options.PublishBlade18FnShortcut;
@@ -531,6 +536,22 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
 
                 _ = TranslateMessage(ref message);
                 _ = DispatchMessage(ref message);
+                // Tell the delivery check that every keyboard packet Windows has
+                // queued for this thread so far has been reported.
+                if (observeKeyboardInputCaughtUp is not null
+                    && ((GetQueueStatus(QueueStatusRawInput) >> 16) & QueueStatusRawInput) == 0)
+                {
+                    try
+                    {
+                        observeKeyboardInputCaughtUp();
+                    }
+                    catch (Exception exception) when (exception is not OutOfMemoryException)
+                    {
+                        // Without a catch-up the delivery check counts no pumps, so it
+                        // never reports a loss; Fn handling here is unaffected.
+                        Trace.TraceWarning("Keyboard input catch-up observer failed: {0}", exception.GetType().Name);
+                    }
+                }
             }
         }
         catch (Exception exception)
@@ -961,6 +982,23 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
 
         if (receivedHeader.Type == RawInputTypeKeyboard)
         {
+            // SendInput packets carry no device; only real keyboard input is reported.
+            if (observeKeyboardInput is not null && receivedHeader.Device != 0
+                && receivedSize >= headerSize + Marshal.SizeOf<RawKeyboard>())
+            {
+                RawKeyboard observed = Marshal.PtrToStructure<RawKeyboard>(
+                    nint.Add(buffer, checked((int)headerSize)));
+                try
+                {
+                    observeKeyboardInput(observed.MakeCode, observed.Flags);
+                }
+                catch (Exception exception) when (exception is not OutOfMemoryException)
+                {
+                    // An observer failure must not change Fn or keyboard handling here.
+                    // The delivery check then sees no packet and fails closed.
+                    Trace.TraceWarning("Keyboard input observer failed: {0}", exception.GetType().Name);
+                }
+            }
             ProcessKeyboard(buffer, headerSize, receivedSize, deviceKind, messageTime);
         }
         else if (receivedHeader.Type == RawInputTypeHid
@@ -1630,6 +1668,9 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
         uint message,
         nuint windowParameter,
         nint messageParameter);
+
+    [DllImport("user32.dll")]
+    private static extern uint GetQueueStatus(uint flags);
 
     [DllImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
