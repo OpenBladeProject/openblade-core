@@ -143,7 +143,10 @@ impl Skipped {
     }
     /// The reply, after managed's skipped-restore reply (7833-7835): the
     /// laptop stays in Balanced, and the saved intent was not applied, with
-    /// native's own reason.
+    /// native's own reason. The reason is the one found at the class the exit
+    /// resolved: a classified class change between its setters keeps the exit
+    /// (`Permit::restores_only`) and its reason, as managed resolves its
+    /// restore intent and reply once.
     fn reply(self, saved: Option<Destination>) -> String {
         let saved = saved.map_or_else(|| "saved".to_owned(), |d| format!("saved {}", label(d)));
         let reason = match self {
@@ -260,9 +263,12 @@ impl RequestPermit {
             return refuse(JOURNAL_PENDING, 2);
         }
         let active = baseline == ObservedPerformance::HyperBoostObserved;
-        // 6965-7002: already in the requested state. Managed replies before
-        // its thermal setters and their pending-confirmation fence; nothing is
-        // read from the saved intent and nothing is written.
+        // 6965-7002: already in the requested state. Nothing is read from the
+        // saved intent and nothing is written. Native deviation in order:
+        // managed's WritesBlocked refusal (6943-6952), which includes an
+        // unconfirmed write, comes first; native replies here before its GPU
+        // fence, so a pending GPU confirmation does not turn this reply into
+        // a refusal. Neither side writes.
         if active == step.enable {
             return refuse(if active { ALREADY_ACTIVE } else { ALREADY_OFF }, 1);
         }
