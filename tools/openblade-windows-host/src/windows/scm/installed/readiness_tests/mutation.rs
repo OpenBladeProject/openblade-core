@@ -1285,19 +1285,24 @@ impl Rig {
             } else {
                 assert!(saved_intent(&persisted, &entry), "{entry}");
                 // Each setter is preceded by its own intent, which directly
-                // follows the prior step of the destination's chain.
-                let chain = openblade_domain::thermal_mutation::Progress::chain(
-                    entry["destination"].as_i64().unwrap() as i32,
-                )
-                .unwrap();
-                let at = chain
-                    .iter()
-                    .position(|step| Some(*step as u64) == entry["progress"].as_u64())
-                    .unwrap();
-                assert!(at % 2 == 1 && at + 1 < chain.len(), "{entry}");
+                // follows the prior step of one of the destination's chains
+                // (a battery preset's HyperBoost restore chain included).
                 let prior: Value = serde_json::from_slice(rows.next_back().unwrap()).unwrap();
                 assert_eq!(prior["request"], entry["request"]);
-                assert_eq!(prior["progress"], chain[at - 1] as u8);
+                let follows = openblade_domain::thermal_mutation::chains(
+                    entry["destination"].as_i64().unwrap() as i32,
+                )
+                .any(|chain| {
+                    chain
+                        .iter()
+                        .position(|step| Some(*step as u64) == entry["progress"].as_u64())
+                        .is_some_and(|at| {
+                            at % 2 == 1
+                                && at + 1 < chain.len()
+                                && prior["progress"] == chain[at - 1] as u8
+                        })
+                });
+                assert!(follows, "{entry} after {prior}");
             }
             assert_eq!(entry["user_sid"], SID);
         }));

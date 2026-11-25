@@ -1,5 +1,7 @@
 //! Typed mutation on the existing native port and process-wide transaction pool.
 use super::*;
+#[cfg(feature = "service-thermal-hyperboost-exit-v1")]
+use openblade_domain::thermal_mutation::restored;
 use openblade_domain::{
     automation::UNCLASSIFIED_EXTERNAL,
     thermal_mutation::{Destination, Plan, Progress, admits_class, confirms, pins_class},
@@ -193,6 +195,7 @@ pub(crate) enum Refusal {
     UnclassifiedBlocked,
     /// No admitted native sequence reaches the destination from the confirmed
     /// state (`Plan::NoDirectPath`); nothing was prepared or submitted.
+    #[cfg(not(feature = "service-thermal-hyperboost-exit-v1"))]
     NoDirectPath,
     /// The request's remaining time cannot cover the rest of the recipe at the
     /// pace this operation measured (`Pace`). Only the Prepared row was
@@ -390,26 +393,45 @@ impl<P: Port> Reader<P, ReadAdmission> {
         };
         let power_source = fence.admit(power)?;
         let destination = permit.resolve(power_source, baseline).ok()??;
-        match Plan::from_observation(baseline, destination) {
+        let restoring = match Plan::from_observation(baseline, destination) {
             Plan::Unchanged => return Some(baseline),
+            #[cfg(not(feature = "service-thermal-hyperboost-exit-v1"))]
             Plan::NoDirectPath => {
                 permit.refused(Refusal::NoDirectPath);
                 return None;
             }
-            Plan::Direct { .. } => {}
-        }
+            #[cfg(feature = "service-thermal-hyperboost-exit-v1")]
+            Plan::RestoreThenBattery { .. } => true,
+            Plan::Direct { .. } => false,
+        };
         // Managed `requireExternalPowerOnDirectHyperBoostExit`: a direct exit to
         // a non-Balanced preset needs every command's fresh reading in the same
         // classified external class, so a class change stops it without
-        // replay. Managed's Balanced exit applies no class rule.
+        // replay. Managed's Balanced exit applies no class rule, and neither
+        // does its restore sequence to a battery preset.
         if pins_class(baseline, destination) {
             fence.pin_class();
         }
+        // Every setter, the restore pair's included, is admitted by the
+        // destination's own class rule. Managed classifies the adapter once
+        // for the restore sequence and checks no later command; each fresh
+        // reading here must still admit the battery preset (stricter).
         fence.bind_destination(destination);
         // Reserve all remaining commands, including the independent final read
         // and its Custom level getters, before journaling/submitting.
         // Exhaustion cannot strand a partial recipe.
         let mut reserve = || self.reserve_pair();
+        // Leaving HyperBoost for a battery preset: the restore pair, its two
+        // power readings and the intermediate independent read come first.
+        #[cfg(feature = "service-thermal-hyperboost-exit-v1")]
+        let restore = match restoring {
+            true => Some(Restore {
+                pair: PresetPair::hyperboost_restore(reserve()?)?,
+                power: reserve()?,
+                read: reserve()?,
+            }),
+            false => None,
+        };
         let setters = Setters::new(destination, &mut reserve)?;
         let mut power_ids = Vec::new();
         for _ in 0..destination.setters().div_ceil(2) {
@@ -420,9 +442,12 @@ impl<P: Port> Reader<P, ReadAdmission> {
             Destination::Custom(_) => Some(reserve()?),
             Destination::Preset(_) => None,
         };
-        // Each setter is one power read and its own exchange; the final pair
-        // and any Custom levels follow.
-        let remaining = 2 * destination.setters() as u32 + 2 + 2 * u32::from(level_ids.is_some());
+        // Each setter is one power read and its own exchange; the restore
+        // pair's intermediate read, the final pair and any Custom levels
+        // follow.
+        let all_setters = destination.setters() as u32 + 2 * u32::from(restoring);
+        let remaining =
+            2 * all_setters + 2 + 2 * u32::from(level_ids.is_some()) + 2 * u32::from(restoring);
         let admission = self.admission;
         let mut attempt = Attempt {
             reader: self,
@@ -431,57 +456,62 @@ impl<P: Port> Reader<P, ReadAdmission> {
         attempt.checkpoint(&mut authorize, admission, limit).ok()?;
         pace.prepared(attempt.reader, || permit.record(Progress::Prepared))
             .ok()?;
+        let context = SetterContext {
+            permit,
+            fence: &fence,
+            pace: &pace,
+            source: power_source,
+            admission,
+            limit,
+            // Paced once, before the operation's first intent row (`Pace`).
+            remaining: (remaining - EXCHANGES_BEFORE_CHECK, all_setters),
+        };
+        #[cfg(feature = "service-thermal-hyperboost-exit-v1")]
+        if let Some(restore) = &restore {
+            for (index, command) in restore.pair.commands().iter().enumerate() {
+                let progress = Progress::restore_setter(index)?;
+                let power_id = restore.power[index];
+                let acknowledge = |reply: &[u8]| restore.pair.acknowledge(index, reply).ok();
+                attempt
+                    .submit_setter(
+                        &context,
+                        &mut authorize,
+                        power_id,
+                        command,
+                        progress,
+                        index == 0,
+                        acknowledge,
+                    )
+                    .await?;
+            }
+            // Managed reads the full state before any battery setter and
+            // requires Balanced with Automatic fans. Anything else, or no
+            // reading, stops with the restore pair's 83 row unsettled: the
+            // outcome is indeterminate, so no battery setter is sent and
+            // nothing is replayed.
+            let observed = attempt
+                .read_reserved_pair(&mut authorize, admission, limit, restore.read, false)
+                .await?;
+            if !restored(observed) {
+                return None;
+            }
+        }
         for (index, command) in setters.commands().enumerate() {
-            let (intent, acknowledged) = Progress::setter(destination, index)?;
-            attempt.checkpoint(&mut authorize, admission, limit).ok()?;
-            let power = attempt
-                .read_power(
-                    power_ids[index / 2][index % 2],
+            let progress = Progress::setter(destination, index)?;
+            let power_id = power_ids[index / 2][index % 2];
+            let paced = index == 0 && !restoring;
+            let acknowledge = |reply: &[u8]| setters.acknowledge(index, reply);
+            attempt
+                .submit_setter(
+                    &context,
                     &mut authorize,
-                    admission,
-                    limit,
+                    power_id,
+                    command,
+                    progress,
+                    paced,
+                    acknowledge,
                 )
                 .await?;
-            // Each command needs a fresh external reading from the exact decoder,
-            // never ACLineStatus alone, that agrees with Windows AC presence.
-            if !fence.admits(power, power_source) {
-                permit.refused(Refusal::PowerChanged);
-                return None;
-            }
-            // Paced once, before the first intent row (`Pace`). A refusal
-            // here submitted nothing: retirement settles the Prepared row as
-            // known not submitted. Retirement frees the IDs reserved above
-            // that were never sent.
-            if index == 0
-                && !pace.covers(
-                    attempt.reader,
-                    remaining - EXCHANGES_BEFORE_CHECK,
-                    destination.setters() as u32,
-                    Duration::ZERO,
-                    limit,
-                )
-            {
-                attempt.completed = true;
-                permit.refused(Refusal::Deadline);
-                return None;
-            }
-            attempt.checkpoint(&mut authorize, admission, limit).ok()?;
-            permit.record(intent).ok()?;
-            attempt.checkpoint(&mut authorize, admission, limit).ok()?;
-            let mut frame = [0; FRAME_LENGTH];
-            frame[1..].copy_from_slice(&command.encode());
-            attempt
-                .transfer(Transfer::SendMutation(frame), limit)
-                .await
-                .ok()?;
-            limit.wait(SETTLE).await.ok()?;
-            attempt.checkpoint(&mut authorize, admission, limit).ok()?;
-            let (length, frame) = attempt.transfer(Transfer::ReceiveReply, limit).await.ok()?;
-            if !matches!(length, REPORT_LENGTH | FRAME_LENGTH) || frame[0] != 0 {
-                return None;
-            }
-            setters.acknowledge(index, &frame[1..])?;
-            permit.record(acknowledged).ok()?;
         }
         // Custom settles only with its levels read back (managed
         // `verifyFinalState`); a mismatch or an unreadable level confirms
@@ -505,6 +535,82 @@ impl<P: Port> Reader<P, ReadAdmission> {
         permit.record(Progress::Confirmed).ok()?;
         attempt.completed = true;
         Some(observed)
+    }
+}
+/// What every setter of one performance recipe shares.
+struct SetterContext<'c> {
+    permit: &'c dyn Permit,
+    fence: &'c PowerFence<'c>,
+    pace: &'c Pace,
+    source: i32,
+    admission: ReadAdmission,
+    limit: Limit<'c>,
+    /// The exchanges and setters left at the pace check.
+    remaining: (u32, u32),
+}
+/// Managed's HyperBoost restore pair before a battery preset, with its
+/// reserved power readings and intermediate independent read.
+#[cfg(feature = "service-thermal-hyperboost-exit-v1")]
+struct Restore {
+    pair: PresetPair,
+    power: [u8; 2],
+    read: [u8; 2],
+}
+impl<P: Port> Attempt<'_, P, ReadAdmission> {
+    /// One setter: its own fresh 07/8C reading, which the fence must admit,
+    /// then its intent row, the send, the exact echo and its acknowledged
+    /// row. `paced` checks the operation's pace before the intent row.
+    #[allow(clippy::too_many_arguments)]
+    async fn submit_setter(
+        &mut self,
+        context: &SetterContext<'_>,
+        authorize: Authorize<'_, ReadAdmission>,
+        power_id: u8,
+        command: &RazerReport,
+        (intent, acknowledged): (Progress, Progress),
+        paced: bool,
+        acknowledge: impl FnOnce(&[u8]) -> Option<()>,
+    ) -> Option<()> {
+        let (admission, limit, permit) = (context.admission, context.limit, context.permit);
+        self.checkpoint(authorize, admission, limit).ok()?;
+        let power = self
+            .read_power(power_id, authorize, admission, limit)
+            .await?;
+        // Each command needs a fresh external reading from the exact decoder,
+        // never ACLineStatus alone, that agrees with Windows AC presence.
+        if !context.fence.admits(power, context.source) {
+            permit.refused(Refusal::PowerChanged);
+            return None;
+        }
+        // A refusal here submitted nothing: retirement settles the Prepared
+        // row as known not submitted. Retirement frees the IDs reserved
+        // above that were never sent.
+        let (exchanges, setters) = context.remaining;
+        if paced
+            && !context
+                .pace
+                .covers(self.reader, exchanges, setters, Duration::ZERO, limit)
+        {
+            self.completed = true;
+            permit.refused(Refusal::Deadline);
+            return None;
+        }
+        self.checkpoint(authorize, admission, limit).ok()?;
+        permit.record(intent).ok()?;
+        self.checkpoint(authorize, admission, limit).ok()?;
+        let mut frame = [0; FRAME_LENGTH];
+        frame[1..].copy_from_slice(&command.encode());
+        self.transfer(Transfer::SendMutation(frame), limit)
+            .await
+            .ok()?;
+        limit.wait(SETTLE).await.ok()?;
+        self.checkpoint(authorize, admission, limit).ok()?;
+        let (length, frame) = self.transfer(Transfer::ReceiveReply, limit).await.ok()?;
+        if !matches!(length, REPORT_LENGTH | FRAME_LENGTH) || frame[0] != 0 {
+            return None;
+        }
+        acknowledge(&frame[1..])?;
+        permit.record(acknowledged).ok()
     }
 }
 /// A destination's reviewed setters in submission order: its 0D/02 pair, then

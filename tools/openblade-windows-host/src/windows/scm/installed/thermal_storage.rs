@@ -1052,7 +1052,8 @@ impl Storage {
     /// resolved profile, from the active application (2) when its override
     /// sets the preset and from the power profile (1) otherwise. Native keeps
     /// no recovered HyperBoost layer: it never selects HyperBoost, and the
-    /// HyperBoost exit to a battery preset is refused as `Plan::NoDirectPath`.
+    /// HyperBoost exit to a battery preset is refused as `Plan::NoDirectPath`
+    /// (or, with the exit feature, runs the restore sequence first).
     fn selected(
         &self,
         power: i32,
@@ -1720,14 +1721,15 @@ impl Storage {
         };
         if progress == Progress::Prepared {
             // Reserve the exact request's largest legal branch, its whole chain
-            // (0..5, or Custom's 0..4, 7..10, 5). The Prepared row's progress is
+            // (0..5, Custom's 0..4, 7..10, 5, or a battery preset's HyperBoost
+            // restore chain 0, 80..83, 1..5). The Prepared row's progress is
             // one digit; each step adds its own extra digits. The 0->6
             // retirement path is shorter.
             let row = serde_json::to_vec(&entry)?
                 .len()
                 .checked_add(1)
                 .ok_or_else(denied)?;
-            let chain = Progress::chain(destination.wire()).ok_or_else(denied)?;
+            let chain = Progress::longest_chain(destination.wire()).ok_or_else(denied)?;
             let extra = |step: &Progress| (*step as u8).to_string().len() - 1;
             if chain
                 .iter()
@@ -1792,13 +1794,7 @@ impl Storage {
             s.preparation_failed = progress == Progress::Prepared;
             // An unsuccessful intent append may already be pending or published.
             // Cached Prepared is not proof that no intent evidence exists.
-            s.intent_append_failed = matches!(
-                progress,
-                Progress::FirstIntent
-                    | Progress::SecondIntent
-                    | Progress::ThirdIntent
-                    | Progress::FourthIntent
-            );
+            s.intent_append_failed = progress.is_intent();
             return Err(error);
         }
         s.journal = Some(bytes);

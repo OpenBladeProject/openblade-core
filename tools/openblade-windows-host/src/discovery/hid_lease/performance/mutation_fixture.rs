@@ -28,6 +28,9 @@ pub(crate) struct State {
     pub(crate) mismatch: bool,
     // Thermal mode reads report Custom once this many setters have been accepted.
     pub(crate) mismatch_after: Option<usize>,
+    // Thermal mode reads report this (selector, fans) once this many setters
+    // have been accepted, whatever the setters wrote.
+    pub(crate) reads_after: Option<(usize, u8, u8)>,
     pub(crate) final_read_timeout: bool,
     pub(crate) final_read_malformed: bool,
     pub(crate) on_power: Option<Arc<dyn Fn(usize) + Send + Sync>>,
@@ -495,12 +498,19 @@ impl Port for MemoryPort {
                         vec![
                             1,
                             payload[1],
-                            if s.mismatch && s.writes == 2 || s.mismatch_after == Some(s.writes) {
-                                4
-                            } else {
-                                s.selectors[index]
+                            match s.reads_after {
+                                Some((at, selector, _)) if at == s.writes => selector,
+                                _ if s.mismatch && s.writes == 2
+                                    || s.mismatch_after == Some(s.writes) =>
+                                {
+                                    4
+                                }
+                                _ => s.selectors[index],
                             },
-                            s.fans[index],
+                            match s.reads_after {
+                                Some((at, _, fans)) if at == s.writes => fans,
+                                _ => s.fans[index],
+                            },
                         ]
                     }
                     (13, 0x87) => vec![1, payload[1], s.custom_levels[(payload[1] - 1) as usize]],

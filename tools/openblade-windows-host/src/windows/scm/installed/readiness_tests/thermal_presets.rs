@@ -38,6 +38,10 @@ const SOURCE_REJECTED: &str =
 const COMBINATION_REJECTED: &str = "The requested intent was rejected: The performance and fan combination is not supported by the active validation policy.";
 const RESUBMIT: &str = "Performance intent stored. Performance is saved, not applied. Manual fan intent is preserved. Submit a new performance request after selecting Automatic fans.";
 
+#[cfg(feature = "service-thermal-hyperboost-exit-v1")]
+#[path = "hyperboost_exit.rs"]
+mod hyperboost_exit;
+
 fn rows(rig: &Rig) -> Vec<Value> {
     rig.files
         .read("thermal-mutation.journal")
@@ -100,6 +104,38 @@ async fn each_preset_is_one_direct_pair_from_every_confirmed_state() {
                 assert_eq!(result["result"]["status"], 1, "{case}");
                 assert!(setters(&rig).is_empty(), "{case}");
                 assert!(rows(&rig).is_empty(), "{case}");
+            } else if from == 7
+                && preset != SILENT.0
+                && cfg!(feature = "service-thermal-hyperboost-exit-v1")
+            {
+                // Managed leaves HyperBoost for a battery preset through the
+                // restore pair (the Balanced bytes), an intermediate read, then
+                // the battery pair.
+                assert_eq!(result["result"]["status"], 1, "{case}");
+                assert_eq!(
+                    setters(&rig),
+                    [
+                        vec![1, 1, 0, 0],
+                        vec![1, 2, 0, 0],
+                        vec![1, 1, selector, 0],
+                        vec![1, 2, selector, 0]
+                    ],
+                    "{case}"
+                );
+                assert_eq!(
+                    rows(&rig)
+                        .iter()
+                        .map(|r| r["progress"].as_u64().unwrap())
+                        .collect::<Vec<_>>(),
+                    [0, 80, 81, 82, 83, 1, 2, 3, 4, 5],
+                    "{case}"
+                );
+                assert!(
+                    rows(&rig).iter().all(|r| r["destination"] == preset),
+                    "{case}"
+                );
+                assert_eq!(status["status"]["confirmedState"]["performance"], preset);
+                assert_eq!(status["status"]["confirmedState"]["fans"], 0);
             } else if from == 7 && preset != SILENT.0 {
                 // Managed leaves HyperBoost for a battery preset through the
                 // unadmitted restore pair: intent is stored, nothing is written.
@@ -352,6 +388,7 @@ async fn saved_profile_presets_apply_when_explicitly_requested() {
     }
 }
 
+#[cfg(not(feature = "service-thermal-hyperboost-exit-v1"))]
 #[tokio::test]
 async fn the_resolved_application_preset_leaving_hyperboost_is_refused_as_no_direct_path() {
     // A clear under confirmed HyperBoost selects the resolved profile. The
