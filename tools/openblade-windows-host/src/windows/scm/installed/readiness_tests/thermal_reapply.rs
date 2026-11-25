@@ -4,7 +4,9 @@
 //! and the rearm's compare-and-swap and two blocking gates. No hardware or
 //! operating-system supplier is reached.
 use super::*;
-use crate::installed::readiness::thermal_mutation::{IN_FLIGHT, NOT_RETIRED, PENDING};
+use crate::installed::readiness::thermal_mutation::{
+    FANS_BRIDGE, IN_FLIGHT, NOT_RETIRED, PENDING, PERFORMANCE_BRIDGE, UNCLASSIFIED,
+};
 
 const VECTORS: &str = include_str!("../../../../../tests/data/thermal-reapply-vectors.json");
 
@@ -216,7 +218,10 @@ async fn a_rearm_that_cannot_persist_blocks_and_keeps_the_file() {
     // Subscribers see the closed ledger at once, not at the next reading.
     let published = rig.source.lock().await.publications().unwrap();
     let active = serde_json::to_value(&published.borrow().active).unwrap();
-    assert_eq!(active["thermalConvergence"]["reason"], QUARANTINED, "{active}");
+    assert_eq!(
+        active["thermalConvergence"]["reason"], QUARANTINED,
+        "{active}"
+    );
     let status = rig.get().await;
     assert_eq!(convergence(&status)["reason"], QUARANTINED, "{status}");
     rig.stop().await;
@@ -247,4 +252,166 @@ async fn a_pending_row_or_a_reservation_blocks_before_anything_is_written() {
         );
         abandon(rig).await;
     }
+}
+
+/// The convergence member subscribers see now.
+async fn published(rig: &Rig) -> Value {
+    let published = rig.source.lock().await.publications().unwrap();
+    let active = serde_json::to_value(&published.borrow().active).unwrap();
+    active["thermalConvergence"].clone()
+}
+
+/// A rearm is published before any step runs, as managed publishes right
+/// after its rearm: a client that disconnects while the first step's
+/// adapter read is held drops the request there, and subscribers already
+/// see the suppression retired. Nothing was written.
+#[tokio::test]
+async fn a_rearm_is_published_before_a_disconnect_drops_the_request() {
+    let (rig, _journal) = converging().await;
+    tombstoned(&rig).await;
+    drift(&rig, 2).await;
+    assert_eq!(published(&rig).await["state"], SUPPRESSED);
+    let written = writes(&rig);
+    let (mut client, server) = duplex(65536);
+    let source = rig.source.clone();
+    let publications = source.lock().await.publications();
+    // The read's job thread waits under the fixture's lock until the
+    // request was dropped, so no later step can run first.
+    let (reached, release) = (
+        Arc::new(AtomicBool::new(false)),
+        Arc::new(AtomicBool::new(false)),
+    );
+    let (at, held) = (reached.clone(), release.clone());
+    rig.port.state.lock().unwrap().on_power = Some(Arc::new(move |_| {
+        if !at.swap(true, Ordering::AcqRel) {
+            let end = std::time::Instant::now() + HANG_GUARD;
+            while !held.load(Ordering::Acquire) && std::time::Instant::now() < end {
+                std::thread::sleep(Duration::from_millis(1));
+            }
+        }
+    }));
+    let served = serve_connection(
+        Box::new(SidStream {
+            inner: test_stream(server, USER, Fault::None),
+            sid: SID.to_owned(),
+        }),
+        source,
+        publications,
+        Rc::new(Subscriptions::new(2)),
+    );
+    let payload = serde_json::to_vec(&reapply_request(1)).unwrap();
+    let exchange = async move {
+        crate::service_frame::write_payload(&mut client, &payload)
+            .await
+            .unwrap();
+        let end = Instant::now() + HANG_GUARD;
+        while !reached.load(Ordering::Acquire) {
+            assert!(Instant::now() < end);
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+        drop(client);
+    };
+    let (served, ()) = tokio::join!(served, exchange);
+    assert!(!matches!(served, Err(ExchangeError::Runtime(_))));
+    let member = published(&rig).await;
+    release.store(true, Ordering::Release);
+    assert_ne!(member["state"], SUPPRESSED, "{member}");
+    assert_eq!(member["explicitReapplyRequired"], false, "{member}");
+    rig.port.state.lock().unwrap().on_power = None;
+    assert_eq!(writes(&rig), written);
+    let state = ledger(&rig);
+    assert_eq!(state["tombstones"], json!([]), "{state}");
+    abandon(rig).await;
+}
+
+/// A rearm with no drift left replies Stored, and the published member is
+/// the rearmed ledger's: no suppression, no reapply asked for.
+#[tokio::test]
+async fn a_stored_reply_after_a_rearm_publishes_the_rearmed_ledger() {
+    let (rig, _journal) = converging().await;
+    tombstoned(&rig).await;
+    let written = writes(&rig);
+    let result = reapply(&rig, 1).await;
+    assert_eq!(
+        result,
+        json!({"status":0,"message":"No settings changed outside OpenBlade."})
+    );
+    assert_eq!(writes(&rig), written);
+    assert_eq!(summary(&rig)["tombstones"], 0);
+    let member = published(&rig).await;
+    assert_eq!(member["state"], MATCHED, "{member}");
+    assert_eq!(member["explicitReapplyRequired"], false, "{member}");
+    assert_eq!(member["reason"], 0, "{member}");
+    rig.stop().await;
+}
+
+/// Unknown Windows power after a drift blocks with managed's
+/// unclassified-adapter reply, before any step reads the device.
+#[tokio::test]
+async fn unknown_windows_power_blocks_the_reapply_unclassified() {
+    let (rig, _journal) = converging().await;
+    drift(&rig, 1).await;
+    let (written, frames) = (writes(&rig), sent(&rig));
+    rig.port.state.lock().unwrap().windows_on_battery = Some(None);
+    let result = reapply(&rig, 1).await;
+    rig.port.state.lock().unwrap().windows_on_battery = None;
+    assert_eq!(result, json!({"status":2,"message":UNCLASSIFIED}));
+    assert_eq!((writes(&rig), sent(&rig)), (written, frames));
+    rig.stop().await;
+}
+
+/// The frames a performance step sends over this rig: its capture, the
+/// write and the readback.
+const PERFORMANCE_STEP_FRAMES: usize = 9;
+
+/// A performance-only reapply runs the performance step alone: the fan
+/// step, which the drift does not name, reads nothing.
+#[tokio::test]
+async fn a_performance_reapply_runs_no_fan_step() {
+    let (rig, _journal) = converging().await;
+    drift(&rig, 1).await;
+    let frames = sent(&rig);
+    let result = reapply(&rig, 1).await;
+    assert_eq!(
+        result,
+        json!({"status":1,"message":"OpenBlade reapplied Power mode from the current settings."})
+    );
+    assert_eq!(sent(&rig) - frames, PERFORMANCE_STEP_FRAMES);
+    rig.stop().await;
+}
+
+/// Managed's manual-fan bridge on battery, where no performance step
+/// defers itself: manual fans read back and saved manual fans leave a
+/// performance reapply unconfirmable, so neither subsystem runs, each with
+/// managed's reason, and nothing is written.
+#[tokio::test]
+async fn manual_fans_on_both_sides_block_a_battery_reapply() {
+    let files = files_with_game(json!({"battery":{"performance":4}}));
+    let mut document = files.document("profiles.json");
+    document["profiles"]["battery"]["fans"] = json!(1);
+    files.put("profiles.json", document);
+    files.commit_configuration();
+    let rig = rig_at(files, 0);
+    rig.port.state.lock().unwrap().actual = 0;
+    rig.metadata.store(1, Ordering::Release);
+    report(&rig, 1, Some(r"C:\Games\Game.exe")).await;
+    wired(&rig).await;
+    let _journal = run_loop(&rig);
+    select(&rig, 0).await;
+    observe(&rig, 1).await;
+    moved(&rig, EXTERNAL, 1);
+    let status = observe(&rig, 2).await;
+    assert_eq!(
+        status["status"]["externalChanges"],
+        json!([0, 1]),
+        "{status}"
+    );
+    let written = writes(&rig);
+    let result = reapply(&rig, 1).await;
+    assert_eq!(
+        result,
+        json!({"status":2,"message":format!("OpenBlade could not reapply the changed settings. Still changed: Power mode, Fans. {PERFORMANCE_BRIDGE} {FANS_BRIDGE}")})
+    );
+    assert_eq!(writes(&rig), written);
+    rig.stop().await;
 }

@@ -968,5 +968,122 @@ async fn a_failed_or_stalled_periodic_read_leaves_the_tick_its_work() {
     }
 }
 
+/// A restarted Service after a crash, which handed nothing back: the
+/// earlier Service's owned fans are still to be handed back, over `rig`'s
+/// files and device, with the tick wired and the loop running.
+async fn crashed(rig: Rig) -> (Rig, Journal) {
+    let (selectors, fans) = device_state(&rig);
+    let files = rig.files.clone();
+    rig.origin.stop();
+    drop(rig);
+    let rig = Rig::restarted(files);
+    *rig.custody.origin_for_fan.lock().unwrap() = Some(rig.origin.clone());
+    {
+        let mut state = rig.port.state.lock().unwrap();
+        state.selectors = selectors;
+        state.fans = fans;
+    }
+    wired(&rig).await;
+    let journal = run_loop(&rig);
+    rig.get().await;
+    tick(&rig).await;
+    (rig, journal)
+}
+
+/// D9 for an owned fan row no live owner holds: after a crash, the Fixed
+/// fans the earlier Service owned are still to be handed back, which only
+/// that owner's continuity may do. Their contradiction against the power
+/// profile's Automatic intent is not shown converging, spends no claim and
+/// leaves no tombstone.
+#[tokio::test]
+async fn an_owned_fan_row_without_its_live_owner_spends_no_claim() {
+    let (rig, _journal) = fixed_fans().await;
+    tick(&rig).await;
+    assert_eq!(fans(&rig.get().await), 3);
+    let (rig, _journal) = crashed(rig).await;
+    // Nothing was handed back, and Balanced shows no preset under manual
+    // fans, so only the fans contradict.
+    assert_eq!(writes(&rig), 0);
+    moved(&rig, 0, 1);
+    let status = observe(&rig, 1).await;
+    assert_eq!(fans(&status), 3, "{status}");
+    assert_eq!(convergence(&status)["state"], PAUSED, "{status}");
+    assert_eq!(convergence(&status)["reason"], 21, "{status}");
+    let before = raw(&rig, LEDGER);
+    for n in 2..4 {
+        tick(&rig).await;
+        observe(&rig, n).await;
+    }
+    tick(&rig).await;
+    assert_eq!((writes(&rig), raw(&rig, LEDGER)), (0, before));
+    abandon(rig).await;
+}
+
+/// A step's own read between a publication and the tick that would
+/// evaluate it retires that publication as evidence: after a report
+/// applies the power profile, the next tick evaluates nothing, captures
+/// nothing and leaves the ledger as it was.
+#[tokio::test]
+async fn a_step_read_after_a_publication_retires_it_as_evidence() {
+    let (rig, _journal) = converging().await;
+    tick(&rig).await;
+    tick(&rig).await;
+    observe(&rig, 1).await;
+    let written = writes(&rig);
+    report(&rig, 2, None).await;
+    assert!(writes(&rig) > written);
+    let (captured, before) = (captures(&rig), raw(&rig, LEDGER));
+    tick(&rig).await;
+    assert_eq!((captures(&rig), raw(&rig, LEDGER)), (captured, before));
+    rig.stop().await;
+}
+
+/// An attempt whose first step was confirmed and whose last step was
+/// refused before submitting retires its claim Blocked: the target is
+/// known not to be applied, so it is not an External result. Manual fans
+/// another controller set under the Automatic intent run the fan step
+/// first; a suspend at the performance step's adapter read defers it.
+#[tokio::test]
+async fn a_last_step_refused_after_a_confirmed_one_is_blocked() {
+    let (rig, _journal) = converging().await;
+    tick(&rig).await;
+    moved(&rig, EXTERNAL, 1);
+    let status = observe(&rig, 1).await;
+    assert_eq!(
+        convergence(&status)["affectedComponents"],
+        json!([0, 1]),
+        "{status}"
+    );
+    let written = writes(&rig);
+    let setters = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let counted = setters.clone();
+    let mut state = rig.port.state.lock().unwrap();
+    let previous = state.before_write.take();
+    state.before_write = Some(Arc::new(move |number| {
+        if let Some(previous) = &previous {
+            previous(number);
+        }
+        counted.fetch_add(1, Ordering::AcqRel);
+    }));
+    let (custody, suspended) = (rig.custody.clone(), Arc::new(AtomicBool::new(false)));
+    state.on_power = Some(Arc::new(move |_| {
+        if setters.load(Ordering::Acquire) == FAN_SETTERS && !suspended.swap(true, Ordering::AcqRel)
+        {
+            custody.lifecycle.ingress(POWER, SUSPEND);
+        }
+    }));
+    drop(state);
+    tick(&rig).await;
+    rig.port.state.lock().unwrap().on_power = None;
+    rig.custody.lifecycle.ingress(POWER, RESUME);
+    let state = ledger(&rig);
+    assert_eq!(writes(&rig), written + FAN_SETTERS, "{state}");
+    assert!(state["inFlight"].is_null(), "{state}");
+    assert_eq!(state["tombstones"][0]["terminalDisposition"], 4, "{state}");
+    abandon(rig).await;
+}
+/// The fan step's setters returning manual fans to Automatic.
+const FAN_SETTERS: usize = 2;
+
 #[path = "thermal_reapply.rs"]
 mod reapply;

@@ -136,7 +136,9 @@ pub(super) use keyboard::{Boundary, INTERVAL, Release};
 #[cfg(all(test, feature = "service-keyboard-driver-mode-v1"))]
 pub(super) use low_power::MAXIMUM_AGE as LOW_POWER_MAXIMUM_AGE;
 #[cfg(all(test, feature = "service-thermal-convergence-v1"))]
-pub(super) use triggers::reapply::{IN_FLIGHT, NOT_RETIRED, PENDING};
+pub(super) use triggers::reapply::{
+    FANS_BRIDGE, IN_FLIGHT, NOT_RETIRED, PENDING, PERFORMANCE_BRIDGE, UNCLASSIFIED,
+};
 #[cfg(all(test, feature = "service-profile-triggers-v1"))]
 pub(super) use triggers::{
     APPLICATION_SESSION_REQUIRED, LOW_POWER_DEFERRED, LOW_POWER_PERFORMANCE, LOW_POWER_STEP,
