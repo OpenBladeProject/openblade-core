@@ -1219,7 +1219,7 @@ public sealed class CoolingPadControlRuntimeTests
     }
 
     [Fact]
-    public async Task FailedComparisonReadsDeferABoundedNumberOfTicksAndRefusalsStopAtOnce()
+    public async Task FailedComparisonReadsDeferABoundedNumberOfTicksThenReconnectAndRefusalsStopAtOnce()
     {
         var clock = new Clock();
         var provider = new Provider { Connection = CoolingPadConnectionState.PresentExact };
@@ -1246,12 +1246,32 @@ public sealed class CoolingPadControlRuntimeTests
             await runtime.MaintainAsync(() => true, default);
         }
         Assert.Equal("Cooling pad settings applied.", runtime.Status.Message);
-        // The next failure in a row reaches the ordinary failure path.
+        Assert.Single(provider.Pad.Writes);
+        // The next failure in a row is handled as a lost connection: Restore them reopens the
+        // pad and applies the saved settings again.
+        int opens = provider.Opens;
+        provider.OnOpen = () => provider.Pad.ReadFailure = null;
         clock.Now += CoolingPadControlRuntime.OutsideChangeCheckInterval;
         await runtime.MaintainAsync(() => true, default);
-        Assert.Equal("No reply.", runtime.Status.Message);
-        Assert.True(runtime.Status.RecoveryRequired);
-        Assert.Single(provider.Pad.Writes);
+        Assert.True(runtime.Status.Active);
+        Assert.False(runtime.Status.RecoveryRequired);
+        Assert.Equal("The cooling pad connection was reopened and its settings were applied again.", runtime.Status.Message);
+        Assert.Equal(opens + 1, provider.Opens);
+        Assert.Equal(1, provider.Pad.DisposeCalls);
+        Assert.Equal(2, provider.Pad.Writes.Count);
+
+        // Under Notify me the same failures stop control and keep the reason.
+        provider.OnOpen = null;
+        provider.Pad.ReadFailure = new TimeoutException("No reply.");
+        for (int tick = 1; tick <= CoolingPadControlRuntime.OutsideReadFailureLimit; tick++)
+        {
+            clock.Now += CoolingPadControlRuntime.OutsideChangeCheckInterval;
+            await runtime.MaintainAsync(() => true, default, restoreOutsideChanges: false);
+        }
+        Assert.False(runtime.Status.Active);
+        Assert.Equal("The connection to the cooling pad was lost. OpenBlade stopped controlling it; apply settings again to continue.",
+            runtime.Status.Message);
+        Assert.Equal(2, provider.Pad.Writes.Count);
 
         // A refusal from the device layer is never deferred.
         var refused = new Provider { Connection = CoolingPadConnectionState.PresentExact };
@@ -1462,7 +1482,14 @@ public sealed class CoolingPadControlRuntimeTests
         internal bool ReturnNull;
         internal CoolingPadConnectionState Connection = CoolingPadConnectionState.Unavailable;
         public CoolingPadConnectionState ObserveConnection() => Connection;
-        public Task<ICoolingPadDevice?> OpenAsync(CancellationToken token) { Opens++; Pad.Unusable = false; return Task.FromResult<ICoolingPadDevice?>(ReturnNull ? null : Pad); }
+        internal Action? OnOpen;
+        public Task<ICoolingPadDevice?> OpenAsync(CancellationToken token)
+        {
+            Opens++;
+            Pad.Unusable = false;
+            OnOpen?.Invoke();
+            return Task.FromResult<ICoolingPadDevice?>(ReturnNull ? null : Pad);
+        }
     }
     private sealed class Pad : ICoolingPadDevice
     {

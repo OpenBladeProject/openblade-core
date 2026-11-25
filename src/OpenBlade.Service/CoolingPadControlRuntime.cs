@@ -46,7 +46,7 @@ internal sealed class CoolingPadControlRuntime(
     private readonly Queue<DateTimeOffset> outsideRestorations = new();
     // Each check is one full configuration read (about eight short HID queries).
     internal static readonly TimeSpan OutsideChangeCheckInterval = TimeSpan.FromSeconds(5);
-    // Consecutive comparison reads that may fail before the failure stops control.
+    // Consecutive comparison reads that may fail before the session is handled as a lost connection.
     internal const int OutsideReadFailureLimit = 3;
     private int outsideReadFailures;
     // Set when the session used for the last confirmed write was replaced during control.
@@ -424,15 +424,22 @@ internal sealed class CoolingPadControlRuntime(
                 }
                 CoolingPadDeviceSnapshot current;
                 try { current = FreezeSnapshot(await ReadDeviceAsync(token).ConfigureAwait(false)); }
-                catch (Exception exception) when ((exception is TimeoutException
+                catch (Exception exception) when (exception is TimeoutException
                     or IOException and not CoolingPadOperationException
                     // The session retired itself without a submission; the next check reconnects.
                     || exception is CoolingPadOperationException { SubmissionUnknown: false } && device is { Usable: false })
-                    && ++outsideReadFailures < OutsideReadFailureLimit)
                 {
                     // A transient read failure is not a change and submitted nothing. Keep control
-                    // and defer this tick's write; repeated failures or a refusal stop control.
+                    // and defer this tick's write. A refusal is not caught here and stops control.
                     DiagnosticTrace.TraceException(nameof(CoolingPadControlRuntime), nameof(MaintainAsync), exception);
+                    if (++outsideReadFailures < OutsideReadFailureLimit) { return; }
+                    // Repeated failures are handled as a lost connection: Restore them reopens the pad
+                    // and applies the saved settings again within the restore allowance, and Notify me
+                    // stops control with that reason. The reopen gets its own failure allowance.
+                    outsideReadFailures = 0;
+                    await CloseDeviceAsync(token).ConfigureAwait(false);
+                    await RecoverLostConnectionAsync(expected, settings, restoreOutsideChanges, restoreOutsideLighting,
+                        admission, token).ConfigureAwait(false);
                     return;
                 }
                 if (connectionLost)

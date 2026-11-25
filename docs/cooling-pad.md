@@ -105,8 +105,9 @@ both effect records, raw brightness and device mode with the read taken after
 the last confirmed write; the fan demand and ramping speed are not compared.
 A fan write in maintenance runs only after a fresh comparison, because selecting
 a preset would otherwise hide the change. A failed comparison read defers that
-tick, up to three in a row; a further failure, or a refusal such as a competing
-controller, stops control as a failed operation. Checks run every five seconds,
+tick, up to two in a row. A third failed read is handled like a lost
+connection, described below: the session is closed and reopened. A refusal, such
+as from a competing controller, stops control as a failed operation. Checks run every five seconds,
 each one full configuration read. The restore allowance is held in memory and
 starts again after a service restart or an accepted Apply. A policy upgraded from
 an earlier version restores nothing, and does not resume, until its disclosure
@@ -142,7 +143,8 @@ it keeps that reason. Otherwise it reports that the configuration was read.
 
 A timed-out exchange retires the HID session, and its later commands fail as
 `Disposed` without reaching the pad. Reads, Apply and Release then open a fresh
-exact-device session. A new session cannot tell which fan owner or effect record
+exact-device session. Three failed comparison reads in a row close the
+session the same way, even when it has not retired itself. A new session cannot tell which fan owner or effect record
 the old one confirmed, so during control it does not compare those. **Restore
 them** applies the saved settings again, counted against the same restore
 allowance; **Notify me** stops control. Without the lighting opt-in, lighting is
