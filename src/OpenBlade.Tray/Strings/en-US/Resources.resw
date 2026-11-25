@@ -2806,6 +2806,9 @@ OpenBlade did not retry any stop request.</value>
   <data name="KeyboardBackend_Recovery" xml:space="preserve">
     <value>Switch input methods to retry. If this keeps appearing, restart Windows.</value>
   </data>
+  <data name="KeyboardBackend_DriverStillOwns" xml:space="preserve">
+    <value>Razer driver is still holding these keys. Switch to Razer driver, then back to Windows hook. If this keeps appearing, restart Windows.</value>
+  </data>
   <data name="KeyboardBackend_SnapTapSelector.AccessibleName" xml:space="preserve">
     <value>SnapTap input</value>
   </data>
