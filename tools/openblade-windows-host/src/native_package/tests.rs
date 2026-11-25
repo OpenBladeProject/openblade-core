@@ -2259,3 +2259,37 @@ fn a_thermal_convergence_service_is_not_admitted_by_feature_or_marker() {
     assert!(capabilities(2, "service", &extended, &marker_only).is_err());
     assert!(capabilities(1, "service", &extended, &marker_only).is_err());
 }
+
+#[test]
+fn a_fan_stop_service_is_not_admitted_by_feature_or_marker() {
+    // The features and the capability build.rs gives a build with
+    // service-fan-stop-v1 beside updateProfiles. Packaging has not admitted
+    // Fan Stop, so the reader refuses it by name in either role or schema,
+    // whatever else the record claims.
+    const MARKER: &str = "service-fan-stop-v1";
+    let profiles = "controller-admission-compile-check,firmware-performance-compile-check,hid-identity-compile-check,installed-service-candidate,lifecycle-evidence-compile-check,service-battery-policy-v1,service-fan-mutation-v2,service-hardware-compile-check,service-mailbox-observation-v1,service-profiles-v1,service-temporary-charge-v1,service-thermal-mutation-v1,startup-custody-v1";
+    let features = profiles.replace(
+        "service-fan-mutation-v2,",
+        "service-fan-mutation-v2,service-fan-stop-v1,",
+    );
+    let temporary = "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1,service-fan-mutation-v2,service-battery-policy-v1,service-temporary-charge-v1";
+    let marked = format!("{temporary},service-profiles-v1,{MARKER}");
+    for role in ["service", "agent"] {
+        for claimed in [marked.as_str(), temporary, "none"] {
+            assert!(capabilities(2, role, &features, claimed).is_err());
+            assert!(capabilities(1, role, &features, claimed).is_err());
+        }
+    }
+    // Neither the feature nor the marker alone is admitted beside the
+    // otherwise admitted temporary-charge composition.
+    let admitted = profiles.replace("service-profiles-v1,", "");
+    assert!(capabilities(2, "service", &admitted, temporary).is_ok());
+    let feature_only = admitted.replace(
+        "service-fan-mutation-v2,",
+        "service-fan-mutation-v2,service-fan-stop-v1,",
+    );
+    assert!(capabilities(2, "service", &feature_only, temporary).is_err());
+    let marker_only = format!("{temporary},{MARKER}");
+    assert!(capabilities(2, "service", &admitted, &marker_only).is_err());
+    assert!(capabilities(1, "service", &admitted, &marker_only).is_err());
+}

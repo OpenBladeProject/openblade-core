@@ -70,6 +70,12 @@ service-thermal-convergence-v1 = ["service-profile-triggers-v1", "openblade-doma
 # updateProfiles and a session's first admitted report. No packaged
 # composition implies it, and both package readers refuse it by name.
 service-profile-triggers-v1 = ["service-profiles-v1"]
+# Fan Stop requests served as managed serves them while its guardian is
+# unavailable: Stop and Resume are refused, Fan Stop settings and the
+# Battery Saver preference are stored in the configuration aggregate, and
+# no hardware is touched. No packaged composition implies it, and both
+# package readers refuse it by name.
+service-fan-stop-v1 = ["service-profiles-v1"]
 # updateProfiles: the typed managed ProfileSet, validated for exact RZ09-0581
 # and committed as the managed aggregate. Saving profiles applies no hardware.
 service-profiles-v1 = ["service-temporary-charge-v1", "openblade-domain/profile-set"]
