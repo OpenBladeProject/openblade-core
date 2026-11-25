@@ -587,7 +587,7 @@
     <value>OpenBlade 有新版本</value>
   </data>
   <data name="MainWindow_Notification_ControllerDetectedTitle" xml:space="preserve">
-    <value>检测到 Razer 控制器</value>
+    <value>Razer 软件正在运行</value>
   </data>
   <data name="MainWindow_Notification_FirmwareUpdateTitle" xml:space="preserve">
     <value>有可用的 Razer 固件更新</value>

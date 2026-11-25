@@ -183,15 +183,6 @@
   <data name="Ambient Awareness, full screen" xml:space="preserve">
     <value>[!! Ámbíént Áwárénéss, fúll scréén ~~~~~~~~~~ !!]</value>
   </data>
-  <data name="OpenBlade shows changes made by another Razer app without changing them back." xml:space="preserve">
-    <value>[!! OpenBlade shóws chángés mádé bý ánóthér Razer ápp wíthóút chángíng thém báck. ~~~~~~~~~~~~~~~~~~ !!]</value>
-  </data>
-  <data name="Another Razer app is running" xml:space="preserve">
-    <value>[!! Ánóthér Razer ápp ís rúnníng ~~~~~~~ !!]</value>
-  </data>
-  <data name="Another Razer app may be using the laptop’s lighting interface. OpenBlade will enable these controls when it becomes available." xml:space="preserve">
-    <value>[!! Ánóthér Razer ápp máý bé úsíng thé láptóp’s líghtíng íntérfácé. OpenBlade wíll énáblé thésé cóntróls whén ít bécómés áváíláblé. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
-  </data>
   <data name="Another user is controlling OpenBlade" xml:space="preserve">
     <value>[!! Ánóthér úsér ís cóntróllíng OpenBlade ~~~~~~~~~ !!]</value>
   </data>
@@ -957,9 +948,6 @@
   <data name="Operation failed: {0}" xml:space="preserve">
     <value>[!! Ópérátíón fáíléd: {0} ~~~~~~ !!]</value>
   </data>
-  <data name="Other controller may be active" xml:space="preserve">
-    <value>[!! Óthér cóntróllér máý bé áctívé ~~~~~~~~~~ !!]</value>
-  </data>
   <data name="Outward" xml:space="preserve">
     <value>[!! Óútwárd ~~~ !!]</value>
   </data>
@@ -1485,12 +1473,6 @@
   <data name="Restoration is paused while Windows enters or leaves low power." xml:space="preserve">
     <value>[!! Réstórátíón ís páúséd whílé Windows éntérs ór léávés lów pówér. ~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
-  <data name="Another Razer controller is active, so OpenBlade will not compete for these settings." xml:space="preserve">
-    <value>[!! Ánóthér Razer cóntróllér ís áctívé, só OpenBlade wíll nót cómpété fór thésé séttíngs. ~~~~~~~~~~~~~~~~~~~~ !!]</value>
-  </data>
-  <data name="OpenBlade could not confirm whether another Razer controller is active." xml:space="preserve">
-    <value>[!! OpenBlade cóúld nót cónfírm whéthér ánóthér Razer cóntróllér ís áctívé. ~~~~~~~~~~~~~~~~~ !!]</value>
-  </data>
   <data name="HyperBoost controls performance and fans right now." xml:space="preserve">
     <value>[!! HýpérBóóst cóntróls pérfórmáncé ánd fáns ríght nów. ~~~~~~~~~~~~~~~~ !!]</value>
   </data>
@@ -1989,5 +1971,41 @@ Détáíls: {1} ~~~ !!]</value>
   </data>
   <data name="Check the cooling-pad settings and try again." xml:space="preserve">
     <value>[!! Chéck thé cóólíng-pád séttíngs ánd trý ágáín. ~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Razer Synapse is running" xml:space="preserve">
+    <value>[!! Razer Sýnápsé ís rúnníng ~~~~~~ !!]</value>
+  </data>
+  <data name="Other Razer software is running" xml:space="preserve">
+    <value>[!! Óthér Razer sóftwáré ís rúnníng ~~~~~~~~ !!]</value>
+  </data>
+  <data name="Synapse running" xml:space="preserve">
+    <value>[!! Sýnápsé rúnníng ~~~~~ !!]</value>
+  </data>
+  <data name="Synapse may change lighting" xml:space="preserve">
+    <value>[!! Sýnápsé máý chángé líghtíng ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="If this notice stays after you quit Synapse, open About &gt; Troubleshooting to see which Razer software is still running." xml:space="preserve">
+    <value>[!! Íf thís nótícé stáýs áftér ýóú qúít Sýnápsé, ópén Ábóút &gt; Tróúbléshóótíng tó séé whích Razer sóftwáré ís stíll rúnníng. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Synapse may be blocking OpenBlade’s access to the laptop. Quit Synapse from its tray icon to use OpenBlade’s controls." xml:space="preserve">
+    <value>[!! Sýnápsé máý bé blóckíng OpenBlade’s áccéss tó thé láptóp. Qúít Sýnápsé fróm íts tráý ícón tó úsé OpenBlade’s cóntróls. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Synapse can also change performance, fans and lighting, and it may undo changes you make in OpenBlade. Some automatic features pause while it runs. To stop this, quit Synapse from its tray icon." xml:space="preserve">
+    <value>[!! Sýnápsé cán álsó chángé pérfórmáncé, fáns ánd líghtíng, ánd ít máý úndó chángés ýóú máké ín OpenBlade. Sómé áútómátíc féátúrés páúsé whílé ít rúns. Tó stóp thís, qúít Sýnápsé fróm íts tráý ícón. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Razer software found: {0}. It may be blocking OpenBlade’s access to the laptop. Close it to use OpenBlade’s controls." xml:space="preserve">
+    <value>[!! Razer sóftwáré fóúnd: {0}. Ít máý bé blóckíng OpenBlade’s áccéss tó thé láptóp. Clósé ít tó úsé OpenBlade’s cóntróls. ~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Razer software found: {0}. It may also change laptop settings, and some automatic features pause while it runs. To stop this, close it." xml:space="preserve">
+    <value>[!! Razer sóftwáré fóúnd: {0}. Ít máý álsó chángé láptóp séttíngs, ánd sómé áútómátíc féátúrés páúsé whílé ít rúns. Tó stóp thís, clósé ít. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Other Razer software, such as Synapse, is running, so OpenBlade won’t restore these settings until it closes." xml:space="preserve">
+    <value>[!! Óthér Razer sóftwáré, súch ás Sýnápsé, ís rúnníng, só OpenBlade wón’t réstóré thésé séttíngs úntíl ít clósés. ~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="OpenBlade couldn’t check for other Razer software, so it won’t restore these settings yet." xml:space="preserve">
+    <value>[!! OpenBlade cóúldn’t chéck fór óthér Razer sóftwáré, só ít wón’t réstóré thésé séttíngs ýét. ~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Another Razer app, such as Synapse, may be using the laptop’s lighting. Close it to use these controls." xml:space="preserve">
+    <value>[!! Ánóthér Razer ápp, súch ás Sýnápsé, máý bé úsíng thé láptóp’s líghtíng. Clósé ít tó úsé thésé cóntróls. ~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
 </root>

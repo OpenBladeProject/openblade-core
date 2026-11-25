@@ -598,7 +598,7 @@ Reported failures:
     <value>OpenBlade update available</value>
   </data>
   <data name="MainWindow_Notification_ControllerDetectedTitle" xml:space="preserve">
-    <value>Razer controller detected</value>
+    <value>Razer software is running</value>
   </data>
   <data name="MainWindow_Notification_FirmwareUpdateTitle" xml:space="preserve">
     <value>Razer firmware update available</value>

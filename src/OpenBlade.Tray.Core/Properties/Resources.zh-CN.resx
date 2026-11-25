@@ -183,15 +183,6 @@
   <data name="Ambient Awareness, full screen" xml:space="preserve">
     <value>环境感知，全屏</value>
   </data>
-  <data name="OpenBlade shows changes made by another Razer app without changing them back." xml:space="preserve">
-    <value>OpenBlade 会显示其他 Razer 应用所做的更改，但不会改回。</value>
-  </data>
-  <data name="Another Razer app is running" xml:space="preserve">
-    <value>另一个 Razer 应用正在运行</value>
-  </data>
-  <data name="Another Razer app may be using the laptop’s lighting interface. OpenBlade will enable these controls when it becomes available." xml:space="preserve">
-    <value>其他 Razer 应用可能正在占用笔记本电脑的灯光接口。接口恢复可用后，OpenBlade 将启用灯光控制。</value>
-  </data>
   <data name="Another user is controlling OpenBlade" xml:space="preserve">
     <value>另一位用户正在控制 OpenBlade</value>
   </data>
@@ -957,9 +948,6 @@
   <data name="Operation failed: {0}" xml:space="preserve">
     <value>操作失败：{0}</value>
   </data>
-  <data name="Other controller may be active" xml:space="preserve">
-    <value>其他控制器可能正在运行</value>
-  </data>
   <data name="Outward" xml:space="preserve">
     <value>向外</value>
   </data>
@@ -1423,8 +1411,6 @@
   <data name="OpenBlade could not verify which laptop this is." xml:space="preserve"><value>OpenBlade 无法确认这是哪一款笔记本电脑。</value></data>
   <data name="Restoration waits until the power source is confirmed and stable." xml:space="preserve"><value>恢复会等待电源来源得到确认并稳定下来。</value></data>
   <data name="Restoration is paused while Windows enters or leaves low power." xml:space="preserve"><value>Windows 进入或退出低功耗状态时，恢复会暂停。</value></data>
-  <data name="Another Razer controller is active, so OpenBlade will not compete for these settings." xml:space="preserve"><value>另一个 Razer 控制器处于活动状态，因此 OpenBlade 不会争夺这些设置。</value></data>
-  <data name="OpenBlade could not confirm whether another Razer controller is active." xml:space="preserve"><value>OpenBlade 无法确认是否有另一个 Razer 控制器处于活动状态。</value></data>
   <data name="HyperBoost controls performance and fans right now." xml:space="preserve"><value>目前由 HyperBoost 控制性能与风扇。</value></data>
   <data name="OpenBlade is finishing the HyperBoost change before restoring other settings." xml:space="preserve"><value>OpenBlade 正在完成 HyperBoost 更改，然后再恢复其他设置。</value></data>
   <data name="The laptop reports manual fan control without the exact curve, so OpenBlade will not guess it." xml:space="preserve"><value>笔记本电脑只报告手动风扇控制而不提供准确曲线，因此 OpenBlade 不会猜测该曲线。</value></data>
@@ -1875,5 +1861,41 @@
   </data>
   <data name="Check the cooling-pad settings and try again." xml:space="preserve">
     <value>请检查散热底座设置后重试。</value>
+  </data>
+  <data name="Razer Synapse is running" xml:space="preserve">
+    <value>Razer Synapse 正在运行</value>
+  </data>
+  <data name="Other Razer software is running" xml:space="preserve">
+    <value>其他 Razer 软件正在运行</value>
+  </data>
+  <data name="Synapse running" xml:space="preserve">
+    <value>Synapse 正在运行</value>
+  </data>
+  <data name="Synapse may change lighting" xml:space="preserve">
+    <value>Synapse 可能会更改灯光</value>
+  </data>
+  <data name="If this notice stays after you quit Synapse, open About &gt; Troubleshooting to see which Razer software is still running." xml:space="preserve">
+    <value>如果退出 Synapse 后此提示仍未消失，请打开“关于 &gt; 故障排除”，查看仍在运行的 Razer 软件。</value>
+  </data>
+  <data name="Synapse may be blocking OpenBlade’s access to the laptop. Quit Synapse from its tray icon to use OpenBlade’s controls." xml:space="preserve">
+    <value>Synapse 可能正在阻止 OpenBlade 访问笔记本电脑。请通过 Synapse 的托盘图标退出它，以使用 OpenBlade 的控制功能。</value>
+  </data>
+  <data name="Synapse can also change performance, fans and lighting, and it may undo changes you make in OpenBlade. Some automatic features pause while it runs. To stop this, quit Synapse from its tray icon." xml:space="preserve">
+    <value>Synapse 也可以更改性能、风扇和灯光，并可能撤销你在 OpenBlade 中所做的更改。它运行期间，部分自动功能会暂停。如需避免这种情况，请通过 Synapse 的托盘图标退出它。</value>
+  </data>
+  <data name="Razer software found: {0}. It may be blocking OpenBlade’s access to the laptop. Close it to use OpenBlade’s controls." xml:space="preserve">
+    <value>发现 Razer 软件：{0}。它可能正在阻止 OpenBlade 访问笔记本电脑。请关闭它，以使用 OpenBlade 的控制功能。</value>
+  </data>
+  <data name="Razer software found: {0}. It may also change laptop settings, and some automatic features pause while it runs. To stop this, close it." xml:space="preserve">
+    <value>发现 Razer 软件：{0}。它也可能更改笔记本电脑设置，运行期间部分自动功能会暂停。如需避免这种情况，请关闭它。</value>
+  </data>
+  <data name="Other Razer software, such as Synapse, is running, so OpenBlade won’t restore these settings until it closes." xml:space="preserve">
+    <value>其他 Razer 软件（例如 Synapse）正在运行，因此在它关闭之前，OpenBlade 不会恢复这些设置。</value>
+  </data>
+  <data name="OpenBlade couldn’t check for other Razer software, so it won’t restore these settings yet." xml:space="preserve">
+    <value>OpenBlade 无法检查是否有其他 Razer 软件在运行，因此暂不恢复这些设置。</value>
+  </data>
+  <data name="Another Razer app, such as Synapse, may be using the laptop’s lighting. Close it to use these controls." xml:space="preserve">
+    <value>其他 Razer 应用（例如 Synapse）可能正在使用笔记本电脑的灯光。请关闭它以使用这些控制。</value>
   </data>
 </root>

@@ -598,7 +598,7 @@
     <value>Доступно обновление OpenBlade</value>
   </data>
   <data name="MainWindow_Notification_ControllerDetectedTitle" xml:space="preserve">
-    <value>Обнаружен контроллер Razer</value>
+    <value>Запущено ПО Razer</value>
   </data>
   <data name="MainWindow_Notification_FirmwareUpdateTitle" xml:space="preserve">
     <value>Доступно обновление прошивки Razer</value>

@@ -35,7 +35,7 @@ public sealed partial class MainViewModelTests
         Assert.False(viewModel.CanRequestHardwareControl);
         Assert.True(viewModel.CanCheckCurrentState);
         Assert.True(viewModel.HasAttention);
-        Assert.Equal("Another Razer app is running", viewModel.AttentionSummary);
+        Assert.Equal("Razer Synapse is running", viewModel.AttentionSummary);
         Assert.Equal("RazerAppEngine, razerwdl", viewModel.TroubleshootingOtherRazerSoftwareStatus);
         Assert.Contains("Close Synapse", viewModel.HardwareControlUnavailableMessage);
         Assert.Contains("Check current state", viewModel.HardwareControlUnavailableMessage);

@@ -598,7 +598,7 @@ Répórtéd fáílúrés:
     <value>[!! OpenBlade úpdáté áváíláblé ~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_Notification_ControllerDetectedTitle" xml:space="preserve">
-    <value>[!! Razer cóntróllér détéctéd ~~~~~~~ !!]</value>
+    <value>[!! Razer sóftwáré ís rúnníng ~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_Notification_FirmwareUpdateTitle" xml:space="preserve">
     <value>[!! Razer fírmwáré úpdáté áváíláblé ~~~~~~~~~ !!]</value>
