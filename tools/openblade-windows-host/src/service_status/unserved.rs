@@ -130,7 +130,7 @@ mod tests {
     }
 
     // One valid request per variant: each decodes wherever it is compiled.
-    fn variants() -> [StatusRequest; 13] {
+    fn variants() -> [StatusRequest; 14] {
         let id = || ID.to_owned();
         let version = PROTOCOL_VERSION;
         [
