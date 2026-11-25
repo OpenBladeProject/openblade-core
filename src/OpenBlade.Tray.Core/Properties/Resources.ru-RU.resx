@@ -183,15 +183,6 @@
   <data name="Ambient Awareness, full screen" xml:space="preserve">
     <value>Цвета экрана, весь экран</value>
   </data>
-  <data name="OpenBlade shows changes made by another Razer app without changing them back." xml:space="preserve">
-    <value>OpenBlade показывает изменения, внесённые другим приложением Razer, и не отменяет их.</value>
-  </data>
-  <data name="Another Razer app is running" xml:space="preserve">
-    <value>Запущено другое приложение Razer</value>
-  </data>
-  <data name="Another Razer app may be using the laptop’s lighting interface. OpenBlade will enable these controls when it becomes available." xml:space="preserve">
-    <value>Другое приложение Razer может использовать интерфейс подсветки ноутбука. OpenBlade включит эти элементы управления, когда интерфейс станет доступен.</value>
-  </data>
   <data name="Another user is controlling OpenBlade" xml:space="preserve">
     <value>OpenBlade управляет другой пользователь</value>
   </data>
@@ -957,9 +948,6 @@
   <data name="Operation failed: {0}" xml:space="preserve">
     <value>Сбой операции: {0}</value>
   </data>
-  <data name="Other controller may be active" xml:space="preserve">
-    <value>Возможно, активен другой контроллер</value>
-  </data>
   <data name="Outward" xml:space="preserve">
     <value>Наружу</value>
   </data>
@@ -1423,8 +1411,6 @@
   <data name="OpenBlade could not verify which laptop this is." xml:space="preserve"><value>OpenBlade не удалось определить модель этого ноутбука.</value></data>
   <data name="Restoration waits until the power source is confirmed and stable." xml:space="preserve"><value>Восстановление ждёт подтверждения и стабилизации источника питания.</value></data>
   <data name="Restoration is paused while Windows enters or leaves low power." xml:space="preserve"><value>Восстановление приостановлено, пока Windows переходит в режим низкого энергопотребления или выходит из него.</value></data>
-  <data name="Another Razer controller is active, so OpenBlade will not compete for these settings." xml:space="preserve"><value>Активен другой контроллер Razer, поэтому OpenBlade не будет конкурировать за эти настройки.</value></data>
-  <data name="OpenBlade could not confirm whether another Razer controller is active." xml:space="preserve"><value>OpenBlade не удалось подтвердить, активен ли другой контроллер Razer.</value></data>
   <data name="HyperBoost controls performance and fans right now." xml:space="preserve"><value>Сейчас производительностью и вентиляторами управляет HyperBoost.</value></data>
   <data name="OpenBlade is finishing the HyperBoost change before restoring other settings." xml:space="preserve"><value>OpenBlade завершает изменение HyperBoost перед восстановлением остальных настроек.</value></data>
   <data name="The laptop reports manual fan control without the exact curve, so OpenBlade will not guess it." xml:space="preserve"><value>Ноутбук сообщает о ручном управлении вентиляторами без точной кривой, поэтому OpenBlade не будет её угадывать.</value></data>
@@ -1878,5 +1864,41 @@
   </data>
   <data name="Check the cooling-pad settings and try again." xml:space="preserve">
     <value>Проверьте настройки подставки и повторите попытку.</value>
+  </data>
+  <data name="Razer Synapse is running" xml:space="preserve">
+    <value>Запущен Razer Synapse</value>
+  </data>
+  <data name="Other Razer software is running" xml:space="preserve">
+    <value>Запущено другое ПО Razer</value>
+  </data>
+  <data name="Synapse running" xml:space="preserve">
+    <value>Запущен Synapse</value>
+  </data>
+  <data name="Synapse may change lighting" xml:space="preserve">
+    <value>Synapse может менять подсветку</value>
+  </data>
+  <data name="If this notice stays after you quit Synapse, open About &gt; Troubleshooting to see which Razer software is still running." xml:space="preserve">
+    <value>Если это уведомление не исчезает после выхода из Synapse, откройте «О программе &gt; Устранение неполадок», чтобы узнать, какое ПО Razer ещё запущено.</value>
+  </data>
+  <data name="Synapse may be blocking OpenBlade’s access to the laptop. Quit Synapse from its tray icon to use OpenBlade’s controls." xml:space="preserve">
+    <value>Synapse может блокировать доступ OpenBlade к ноутбуку. Закройте Synapse через его значок в области уведомлений, чтобы пользоваться элементами управления OpenBlade.</value>
+  </data>
+  <data name="Synapse can also change performance, fans and lighting, and it may undo changes you make in OpenBlade. Some automatic features pause while it runs. To stop this, quit Synapse from its tray icon." xml:space="preserve">
+    <value>Synapse тоже может менять производительность, вентиляторы и подсветку и может отменить изменения, сделанные в OpenBlade. Пока он запущен, некоторые автоматические функции приостановлены. Чтобы это прекратить, закройте Synapse через его значок в области уведомлений.</value>
+  </data>
+  <data name="Razer software found: {0}. It may be blocking OpenBlade’s access to the laptop. Close it to use OpenBlade’s controls." xml:space="preserve">
+    <value>Найдено ПО Razer: {0}. Оно может блокировать доступ OpenBlade к ноутбуку. Закройте его, чтобы пользоваться элементами управления OpenBlade.</value>
+  </data>
+  <data name="Razer software found: {0}. It may also change laptop settings, and some automatic features pause while it runs. To stop this, close it." xml:space="preserve">
+    <value>Найдено ПО Razer: {0}. Оно тоже может менять настройки ноутбука, и пока оно запущено, некоторые автоматические функции приостановлены. Чтобы это прекратить, закройте его.</value>
+  </data>
+  <data name="Other Razer software, such as Synapse, is running, so OpenBlade won’t restore these settings until it closes." xml:space="preserve">
+    <value>Запущено другое ПО Razer, например Synapse, поэтому OpenBlade не будет восстанавливать эти настройки, пока оно не закроется.</value>
+  </data>
+  <data name="OpenBlade couldn’t check for other Razer software, so it won’t restore these settings yet." xml:space="preserve">
+    <value>OpenBlade не удалось проверить, запущено ли другое ПО Razer, поэтому эти настройки пока не будут восстановлены.</value>
+  </data>
+  <data name="Another Razer app, such as Synapse, may be using the laptop’s lighting. Close it to use these controls." xml:space="preserve">
+    <value>Другое приложение Razer, например Synapse, может использовать подсветку ноутбука. Закройте его, чтобы пользоваться этими элементами управления.</value>
   </data>
 </root>
