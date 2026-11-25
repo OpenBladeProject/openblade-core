@@ -460,6 +460,9 @@ jobs:
               ($shortcut + 'native_package'),
               ($shortcutTriggers + 'shortcut'),
               ($shortcutTriggers + 'request_triggers'),
+              # The compiled identity the profile store declares, which the
+              # shortcut's marker follows.
+              ($shortcutTriggers + 'profiles::'),
               @('openblade-windows-service-candidate', 'service-mailbox-observation-v1', 'capability_tests'),
               @('openblade-windows-service-candidate', 'service-mailbox-observation-v1', 'readiness::tests::observation'),
               @('openblade-windows-service-candidate', 'service-mailbox-observation-v1', 'driver_mode_absent'),
