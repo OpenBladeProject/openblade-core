@@ -38,6 +38,17 @@ enum HidMetadata {
     Unavailable,
 }
 
+/// Whether managed's production factory would publish reviewed Fan Stop
+/// evidence for this host: only the exact model it admits
+/// (`FAN_STOP_EVIDENCE_MODEL`), whatever its HID metadata says.
+fn has_fan_stop_evidence(device: Option<&DeviceMetadata>) -> bool {
+    matches!(
+        device,
+        Some(DeviceMetadata::MatchedHost { model, .. })
+            if model == crate::service_status::FAN_STOP_EVIDENCE_MODEL
+    )
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Power {
     Battery,
@@ -232,11 +243,8 @@ impl ObservedStatus {
             evidence.as_ref().map(|current| &current.device),
             Some(DeviceMetadata::Unsupported)
         );
-        let fan_stop_evidence = matches!(
-            evidence.as_ref().map(|current| &current.device),
-            Some(DeviceMetadata::MatchedHost { model, .. })
-                if model == crate::service_status::FAN_STOP_EVIDENCE_MODEL
-        );
+        let fan_stop_evidence =
+            has_fan_stop_evidence(evidence.as_ref().map(|current| &current.device));
         let (power, controllers, controller_warning) = evidence.map_or(
             (Power::Unknown, vec![], Some(CONTROLLER_UNKNOWN)),
             |current| {
