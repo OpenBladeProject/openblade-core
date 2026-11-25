@@ -219,8 +219,10 @@ internal static class SnapTapDriverLoop
             // a stop refused output before submission with nothing else failed, or after
             // an ordinary stop whose drain passed later A/D keys through. Never after
             // uncertain output. Release before media cleanup, which can throw.
+            // A function-row fault without uncertain output, such as a rejected media edge,
+            // still releases keys the drain delivered.
             bool ordinaryClean = !processor.Faulted && functionDrained && functionProcessor?.OutputUncertain != true
-                && functionProcessor?.Faulted != true && session.Failure is null && !publisher.Failed;
+                && session.Failure is null && !publisher.Failed;
             bool releaseAttempted = stopExit.MayRelease || ordinaryClean;
             bool keysReleased = releaseAttempted && output.TryReleaseDelivered();
             functionProcessor?.ReleaseMedia();
