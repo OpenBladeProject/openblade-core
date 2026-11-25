@@ -4902,6 +4902,11 @@ fn fan_rig(selector: u8, manual: u8) -> Rig {
 fn fan_rig_with(selector: u8, manual: u8, preset: i32) -> Rig {
     let files = MemoryFiles::default();
     files.profiles_with(preset, Some(preset));
+    fan_rig_files(selector, manual, files)
+}
+/// A rig over `files` whose custody admits fan requests.
+#[cfg(feature = "service-fan-mutation-v2")]
+fn fan_rig_files(selector: u8, manual: u8, files: MemoryFiles) -> Rig {
     let rig = Rig::new(files);
     *rig.custody.origin_for_fan.lock().unwrap() = Some(rig.origin.clone());
     {

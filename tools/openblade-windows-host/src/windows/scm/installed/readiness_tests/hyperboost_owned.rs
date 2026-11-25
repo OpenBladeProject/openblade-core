@@ -18,6 +18,8 @@ const ENTRY_BASE: &str = "HyperBoost requires confirmed Balanced performance wit
 const PAD_ABSENCE: &str = "Pad-less HyperBoost requires a fresh observation confirming that no target cooling-pad device is present. Ambiguous or failed enumeration is blocked.";
 const PAD_PRESENT: &str = "HyperBoost with the cooling pad connected is not available in this build. Disconnect the cooling pad to use pad-less HyperBoost.";
 const JOURNAL_PENDING: &str = "HyperBoost recovery from the previous OpenBlade service is pending. Start that service once so it can finish, then try again.";
+#[cfg(feature = "service-fan-mutation-v2")]
+const FAN_HANDBACK_EXIT: &str = "HyperBoost was not turned off because OpenBlade still owns an earlier fan change. The fans are already on firmware Automatic. Restart OpenBlade to hand them back, then turn HyperBoost off.";
 
 impl Rig {
     async fn hyperboost(&self, n: u8, enabled: bool) -> Value {
@@ -462,39 +464,66 @@ async fn the_restore_only_exit_continues_across_a_classified_class_change() {
     }
 }
 
-/// The one saved-state refusal an exit keeps, with its concrete reason: the
-/// durable thermal journal admits no performance row while a fan change this
-/// Service owns is outstanding (`thermal_history` refuses it on read), so an
-/// exit row would leave the journal unreadable and owned Stop unable to hand
-/// the fans back. HyperBoost entered outside native after an owned fan change
-/// is refused before any row, the journal stays readable, and owned Stop still
-/// hands the fans back. Managed has no such journal (a native deviation).
+/// An outstanding owned fan change refuses the exit before any row, whatever
+/// the saved intent: the durable thermal journal admits no performance row
+/// while a fan change this Service owns is outstanding (`thermal_history`
+/// refuses it on read), so a restore or a restore-only exit row would leave
+/// the journal unreadable and owned Stop unable to hand the fans back. The
+/// guard precedes the saved-intent causes a GPU clock effect or a missing
+/// destination would otherwise turn into a restore-only exit. The reply says
+/// what to do: HyperBoost reads Automatic fans, so owned Stop closes the
+/// change without a setter, and after a restart the exit is admitted.
+/// Managed has no such journal (a native deviation).
 #[cfg(feature = "service-fan-mutation-v2")]
 #[tokio::test]
 async fn an_owned_fan_change_refuses_the_exit_before_any_row() {
-    let rig = fan_rig(0, 0);
-    rig.get().await;
-    let fan = rig.request(fan_request(180, Some(1), 3700)).await;
-    assert_eq!(fan["result"]["status"], 1, "{fan}");
-    assert!(rig.storage.outstanding_fan());
-    {
-        let mut s = rig.port.state.lock().unwrap();
-        s.selectors = [7; 2];
-        s.fans = [0; 2];
+    let saved = MemoryFiles::default();
+    saved.profiles_with(1, Some(1));
+    let gpu = MemoryFiles::default();
+    gpu.profiles_gpu(2);
+    for (case, files) in [
+        ("saved", saved),
+        ("gpu", gpu),
+        ("no aggregate", MemoryFiles::default()),
+    ] {
+        let rig = fan_rig_files(0, 0, files);
+        rig.get().await;
+        let fan = rig.request(fan_request(180, Some(1), 3700)).await;
+        assert_eq!(fan["result"]["status"], 1, "{case}: {fan}");
+        assert!(rig.storage.outstanding_fan(), "{case}");
+        {
+            let mut s = rig.port.state.lock().unwrap();
+            s.selectors = [7; 2];
+            s.fans = [0; 2];
+        }
+        let rows_before = rows(&rig).len();
+        let sent_before = setters(&rig).len();
+        let result = rig.hyperboost(1, false).await;
+        assert_eq!(
+            result["result"],
+            json!({"status":2,"message":FAN_HANDBACK_EXIT}),
+            "{case}: {result}"
+        );
+        assert_eq!(rows(&rig).len(), rows_before, "{case}");
+        assert_eq!(setters(&rig).len(), sent_before, "{case}");
+        assert!(
+            Storage::open(Box::new(rig.files.clone()), SID).is_ok(),
+            "{case}"
+        );
+        // Owned Stop closes the change on the Automatic fans it reads.
+        rig.origin.stop();
+        rig.stop().await;
+        assert_eq!(fan_rows(&rig).last().unwrap()["progress"], 51, "{case}");
+        assert!(!rig.storage.outstanding_fan(), "{case}");
+        assert!(!rig.storage.pending(), "{case}");
+        assert_eq!(setters(&rig).len(), sent_before, "{case}");
+        // After the restart the exit is admitted.
+        let restarted = rig_at(7, 0, FULL, rig.files.clone());
+        let exit = restarted.hyperboost(2, false).await;
+        assert_eq!(exit["result"]["status"], 1, "{case}: {exit}");
+        assert_eq!(hyperboost_active(&restarted.get().await), false, "{case}");
+        restarted.stop().await;
     }
-    let rows_before = rows(&rig).len();
-    let sent_before = setters(&rig).len();
-    let result = rig.hyperboost(1, false).await;
-    assert_eq!(
-        result["result"],
-        json!({"status":2,"message":"OpenBlade still owns a fan change that has not been handed back to firmware Automatic; no thermal setter was submitted."}),
-        "{result}"
-    );
-    assert_eq!(rows(&rig).len(), rows_before);
-    assert_eq!(setters(&rig).len(), sent_before);
-    assert!(Storage::open(Box::new(rig.files.clone()), SID).is_ok());
-    rig.origin.stop();
-    rig.stop().await;
 }
 
 /// A readback that does not confirm HyperBoost settles nothing: the

@@ -60,6 +60,10 @@ pub(super) const ENTRY_BASE: &str = "HyperBoost requires confirmed Balanced perf
 /// Native replies with no managed counterpart.
 pub(super) const PAD_PRESENT: &str = "HyperBoost with the cooling pad connected is not available in this build. Disconnect the cooling pad to use pad-less HyperBoost.";
 pub(super) const JOURNAL_PENDING: &str = "HyperBoost recovery from the previous OpenBlade service is pending. Start that service once so it can finish, then try again.";
+/// An exit refused while a fan change this Service owns is outstanding. A
+/// HyperBoost reading reports Automatic fans, so owned Stop closes that
+/// change without a setter, and the exit is admitted after a restart.
+pub(super) const FAN_HANDBACK_EXIT: &str = "HyperBoost was not turned off because OpenBlade still owns an earlier fan change. The fans are already on firmware Automatic. Restart OpenBlade to hand them back, then turn HyperBoost off.";
 
 /// A read-only observation of the cooling pad.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -126,14 +130,10 @@ pub(super) enum Skipped {
 impl Skipped {
     /// The saved-intent cause `select` blocked the destination with, when
     /// the exit skips the restore for it. None for every other cause, which
-    /// still refuses the exit:
-    /// - `Cause::FanHandbackPending`: the durable thermal journal admits no
-    ///   performance row while a fan change this Service owns is outstanding
-    ///   (`thermal_history` refuses such a row on read), so an exit row would
-    ///   leave the journal unreadable and owned Stop unable to hand the fans
-    ///   back. Native deviation: managed has no such journal.
-    /// - `Cause::ManualDeferred` never reaches an exit: HyperBoost reads with
-    ///   Automatic fans (`defer_manual_performance`).
+    /// still refuses the exit. An outstanding owned fan change never gets
+    /// here: the exit refuses it before `select` (`resolve_hyperboost`).
+    /// `Cause::ManualDeferred` never reaches an exit either: HyperBoost reads
+    /// with Automatic fans (`defer_manual_performance`).
     fn from_cause(cause: &Cause) -> Option<Self> {
         match cause {
             Cause::Gpu => Some(Self::Gpu),
@@ -274,6 +274,17 @@ impl RequestPermit {
             // Unclassified power already refused (managed's exit needs a
             // classified source). A battery class is a battery preset's restore
             // sequence (`Plan::RestoreThenBattery`).
+            //
+            // Native only, before any saved intent is resolved: the durable
+            // thermal journal admits no performance row while a fan change this
+            // Service owns is outstanding (`thermal_history` refuses it on
+            // read), so an exit row, restore or skipped, would leave the journal
+            // unreadable and owned Stop unable to hand the fans back. Checked
+            // here rather than through `select`, whose saved-intent causes come
+            // first. Managed has no such journal.
+            if self.storage.outstanding_fan() {
+                return refuse(FAN_HANDBACK_EXIT, 2);
+            }
             let selection = select(&self.storage, power, profile.as_ref(), baseline, false)?;
             let Some(cause) = selection.blocked else {
                 let Some(desired) = selection.desired else {
@@ -287,8 +298,8 @@ impl RequestPermit {
             // saved intent cannot complete still leaves HyperBoost through
             // managed's unowned exit, the Balanced restore, and stores nothing.
             // Every admission but the saved intent's still applies: journal,
-            // GPU fence, custody, device, power class and readback, and an
-            // outstanding owned fan change (`Skipped::from_cause`).
+            // GPU fence, custody, device, power class and readback
+            // (`Skipped::from_cause`).
             let Some(skipped) = Skipped::from_cause(&cause) else {
                 self.set_cause(cause);
                 return Ok(None);
