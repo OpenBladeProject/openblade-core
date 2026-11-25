@@ -34,6 +34,17 @@
 //!   write authority.
 //! - An explicit request served in the 500 ms before the next tick still
 //!   publishes the source of the last observation.
+//!
+//! One deviation has no native path to pin. Managed's periodic 15 s
+//! observation (`ServicePeriodicObservationLoop`) is a second release path
+//! through `ChangePowerSourceCore`. Native retries the owed step only at a
+//! later lifecycle epoch, and the debt settles after `RETRIES` (2). If the
+//! first 07/8C reading after a plug-in conflicts and no further notice
+//! arrives, native keeps the previous profile until the next notice or
+//! request, where managed applies the destination within about 15 s.
+//!
+//! Each epoch's observation is attempted once: one that yields no evidence
+//! waits for the 2 s subscription refresh, and one that fails closes the feed.
 use super::*;
 
 const VECTORS: &str = include_str!("../../../../../tests/data/power-only-release-vectors.json");
@@ -284,4 +295,71 @@ async fn windows_power_is_observed_once_per_epoch() {
     assert_eq!(published(&rig).await["activePowerSource"], 3);
     assert_eq!(writes(&rig), written);
     rig.stop().await;
+}
+
+/// One attempt settles an epoch's observation. A refresh that yields no
+/// evidence is not retried at later ticks, each of which could hold the
+/// source lock for the refresh budget; the 2 s subscription refresh publishes
+/// the source instead.
+#[tokio::test]
+async fn windows_power_without_evidence_is_not_retried_within_its_epoch() {
+    use crate::installed::readiness::status_source::OBSERVER_EXPIRES;
+    let rig = blocked(false).await;
+    let before = published(&rig).await;
+    unplug(&rig);
+    rig.metadata.store(1 | OBSERVER_EXPIRES, Ordering::Release);
+    let started = std::time::Instant::now();
+    rig.source
+        .lock()
+        .await
+        .process_power_source()
+        .await
+        .unwrap();
+    assert!(started.elapsed() >= std::time::Duration::from_secs(1));
+    assert_eq!(published(&rig).await, before);
+    // Windows power is observable again within the epoch; no tick retries it.
+    rig.metadata.store(1, Ordering::Release);
+    for _ in 0..2 {
+        origin_tick(&rig).await;
+        let status = published(&rig).await;
+        assert_eq!(status["activePowerSource"], 3, "{status}");
+    }
+    let due = rig
+        .source
+        .lock()
+        .await
+        .refresh_publications()
+        .await
+        .unwrap();
+    tokio::time::sleep_until(due).await;
+    rig.source
+        .lock()
+        .await
+        .refresh_publications()
+        .await
+        .unwrap();
+    assert_eq!(published(&rig).await["activePowerSource"], 1);
+    rig.stop().await;
+}
+
+/// A failed observation closes the feed, as a failed subscription refresh
+/// does, so no connection can reuse the last successful publication.
+#[tokio::test]
+async fn a_failed_power_observation_closes_the_feed() {
+    use crate::installed::readiness::status_source::OBSERVER_PANICS;
+    let rig = blocked(false).await;
+    let feed = rig.source.lock().await.publications().unwrap();
+    unplug(&rig);
+    rig.metadata.store(1 | OBSERVER_PANICS, Ordering::Release);
+    assert!(
+        rig.source
+            .lock()
+            .await
+            .process_power_source()
+            .await
+            .is_err()
+    );
+    assert!(feed.has_changed().is_err());
+    assert!(rig.source.lock().await.publications().is_none());
+    abandon(&rig).await;
 }

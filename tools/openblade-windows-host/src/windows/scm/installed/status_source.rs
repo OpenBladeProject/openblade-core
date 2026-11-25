@@ -161,13 +161,37 @@ impl ObservedStatus {
         }
         .await;
         if observed.is_err() {
-            // A fatal observer failure closes the feed before any other
-            // connection can reuse its last successful publication.
-            self.read = None;
-            self.observed_at = None;
-            self.publisher = None;
+            self.close();
         }
         observed
+    }
+
+    /// One Windows power observation outside `observe_since`, as the
+    /// lifecycle power-source pass and the temporary-charge source event make
+    /// it: the observed power and whether its publication changed, or `None`
+    /// when the refresh yields no evidence. A failure closes the feed as
+    /// `observe_since` does.
+    async fn observe_power(&mut self) -> io::Result<Option<(Power, bool)>> {
+        let observed = async {
+            let Some(evidence) = self.refresh().await? else {
+                return Ok(None);
+            };
+            let power = evidence.power;
+            Ok(Some((power, self.publish(Some(evidence))?)))
+        }
+        .await;
+        if observed.is_err() {
+            self.close();
+        }
+        observed
+    }
+
+    /// A fatal observer failure closes the feed before any other connection
+    /// can reuse its last successful publication.
+    fn close(&mut self) {
+        self.read = None;
+        self.observed_at = None;
+        self.publisher = None;
     }
 
     /// Publishes the observed metadata; false when it repeats the last one.
@@ -470,25 +494,26 @@ impl GuardedStatus {
     /// destination on the previous source. Each lifecycle epoch (an SCM power,
     /// session or suspend notice) is therefore observed once, before the tick
     /// reconciles. `observed` says that the temporary-charge source event has
-    /// already published this observation. A refresh that yields no evidence
-    /// is retried at the next tick. The source is presentation only and admits
-    /// no write.
+    /// already attempted this tick's observation. One attempt settles the
+    /// epoch: a refresh that yields no evidence is not retried, because each
+    /// attempt can hold the source lock for the refresh budget, and the 2 s
+    /// subscription refresh publishes the source instead. The source admits
+    /// no thermal write; the Agent's display automation and display-power
+    /// admission act on it.
     async fn publish_power_source(&mut self, epoch: Option<u64>, observed: bool) -> io::Result<()> {
         if epoch.is_none() || epoch == self.power_epoch {
             return Ok(());
         }
+        self.power_epoch = epoch;
         if observed {
-            self.power_epoch = epoch;
             return Ok(());
         }
         self.origin.verify()?;
-        let Some(evidence) = self.inner.refresh().await? else {
-            return Ok(());
-        };
-        self.power_epoch = epoch;
         // Unchanged metadata, as across a lock or a notice that keeps the
         // Windows power kind, publishes nothing.
-        let changed = self.inner.publish(Some(evidence))?;
+        let Some((_, changed)) = self.inner.observe_power().await? else {
+            return Ok(());
+        };
         // As `refresh_publications` does after its observation: project the
         // retained thermal state and the user's policy over the new metadata.
         #[cfg(feature = "service-mailbox-observation-v1")]
@@ -590,7 +615,7 @@ impl StatusSource for GuardedStatus {
         Box::pin(async move {
             let epoch = self.origin.power_epoch();
             // Whether the temporary-charge source event below already
-            // published fresh metadata at this epoch.
+            // attempted this tick's Windows power observation.
             #[cfg_attr(not(feature = "service-temporary-charge-v1"), allow(unused_mut))]
             let mut observed = false;
             #[cfg(feature = "service-temporary-charge-v1")]
@@ -606,17 +631,17 @@ impl StatusSource for GuardedStatus {
                 }
                 if needed {
                     self.origin.verify()?;
-                    let evidence = self.inner.refresh().await?;
-                    if let Some(evidence) = evidence {
-                        let battery = evidence.power == Power::Battery;
-                        let known_source = evidence.power != Power::Unknown;
+                    // One observation per tick: with or without evidence, the
+                    // power-source pass below does not refresh again.
+                    observed = true;
+                    if let Some((power, _)) = self.inner.observe_power().await? {
+                        let battery = power == Power::Battery;
+                        let known_source = power != Power::Unknown;
                         // The SCM ingress already advanced the fence. Coalesce
                         // hints by epoch; metadata never authorizes a HID write.
                         if known_source {
                             runtime.temporary_event_observed(epoch);
                         }
-                        self.inner.publish(Some(evidence))?;
-                        observed = true;
                         if battery {
                             // The cancel rereads the epoch to tell a refusal
                             // caused by a later notice from a current one.
@@ -1163,6 +1188,14 @@ pub(super) use tests::in_memory_guarded_no_reader;
 /// evidence: no SCM scan, so a detection warning is always published.
 #[cfg(all(test, feature = "service-thermal-mutation-v1"))]
 pub(super) const PRODUCTION_CONTROLLERS: u8 = 0x10;
+/// The injected source's metadata bit that holds each observation until its
+/// refresh budget expires, so the refresh yields no evidence.
+#[cfg(all(test, feature = "service-thermal-mutation-v1"))]
+pub(super) const OBSERVER_EXPIRES: u8 = 0x20;
+/// The injected source's metadata bit that panics each observation, the
+/// native observer failure.
+#[cfg(all(test, feature = "service-thermal-mutation-v1"))]
+pub(super) const OBSERVER_PANICS: u8 = 0x40;
 
 #[cfg(all(test, feature = "service-thermal-mutation-v1"))]
 pub(super) fn injected_mutation_source(
@@ -1178,11 +1211,16 @@ pub(super) fn injected_mutation_source(
         mailbox,
         mutation: Some(runtime),
         power_epoch: None,
-        inner: ObservedStatus::new(move |_| {
+        inner: ObservedStatus::new(move |cancel| {
             observer();
             // The low bits select the metadata; `PRODUCTION_CONTROLLERS`
             // adds the detection warning production evidence always carries.
-            let metadata = metadata.load(std::sync::atomic::Ordering::Acquire);
+            let flags = metadata.load(std::sync::atomic::Ordering::Acquire);
+            assert!(flags & OBSERVER_PANICS == 0, "injected observer failure");
+            while flags & OBSERVER_EXPIRES != 0 && !cancel.load(Ordering::Acquire) {
+                std::thread::park_timeout(Duration::from_millis(1));
+            }
+            let metadata = flags & !(OBSERVER_EXPIRES | OBSERVER_PANICS);
             Evidence {
                 device: if metadata & !PRODUCTION_CONTROLLERS == 3 {
                     DeviceMetadata::Unavailable
