@@ -22,16 +22,22 @@ when **If settings change outside OpenBlade** is set to **Restore them**.
 
 While OpenBlade controls the pad, it reads the pad every few seconds. If its fan
 mode, lighting effect or brightness changes elsewhere, such as in Synapse or
-with the pad's own controls, **Restore them** applies your settings again, up to
+with the pad's lighting button, **Restore them** applies your settings again, up to
 three times in ten minutes. Lighting is restored only when **Override external
 lighting changes** is on. Otherwise the pad's new lighting stays and OpenBlade
-keeps controlling the fan, so pressing the pad's fan button, which also resets
-its lighting, still gets your fan setting back. Choose a lighting setting again
+keeps controlling the fan. Choose a lighting setting again
 to manage it. OpenBlade releases control instead under **Notify me**, after a
 fourth change, for a lighting change when it controls only the lighting, or when
 your settings cannot be applied again. The
 changed part stays as it is, the parts OpenBlade changed return to the pad's
 own settings, and control stays off until you choose a setting.
+
+OpenBlade can't see the pad's fan button. In Automatic and with a curve,
+OpenBlade keeps setting the fan speed, so a press lasts only a moment. To use
+the fan button, choose Fixed: the pad keeps the speed you pick with the button,
+and the page still shows your Fixed speed. **Release control** hands the fan
+back to the pad. The fan button also changes the pad's lighting, which OpenBlade
+handles like any other lighting change.
 
 A change the service refuses before sending it, for example while Windows
 settles after waking, is tried again a few times. An unconfirmed change pauses
@@ -106,6 +112,17 @@ starts again after a service restart or an accepted Apply. A policy upgraded fro
 an earlier version restores nothing, and does not resume, until its disclosure
 has been seen. The firmware cannot report which owner's fan
 record is running, so a change written under the other owner is not detected.
+The pad's own fan button is not detected either. On firmware 1.10.00 the fan
+changed on a press while the record OpenBlade compares stayed the same: the
+firmware owner's in Automatic and the Synapse owner's in Fixed. The product
+middleware declares input report 5 for pad button events (`CycleFanSpeedMode`,
+`TurnOnFan`, `TurnOffFan`), and Synapse writes a button mapping mode (`209` for
+the fan button). In Normal mode, a read-only listener on the readable input
+collections received no report during fan and lighting presses; the
+consumer-control collection is held by Windows. OpenBlade adds no button-mapping write or
+Driver-mode entry to detect the button. In Automatic and a host curve, the next
+`0D/01` demand replaces the button's speed; Fixed sends no demand, so the
+button's speed stays while status reports the confirmed record.
 
 Without the lighting opt-in, a lighting change found during fan control is kept:
 the ownership journal drops its lighting part, so **Release control** and service
