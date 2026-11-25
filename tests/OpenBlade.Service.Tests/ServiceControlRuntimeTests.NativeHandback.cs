@@ -226,6 +226,31 @@ public sealed partial class ServiceControlRuntimeTests
         Assert.Equal(0, context.Device.TotalSetterCalls);
     }
 
+    // Native owned HyperBoost's enable pair is confirmed as managed confirms its
+    // own entry: HyperBoost with Automatic fans. HyperBoost that is off, or that
+    // reads with manual fans, is a definite other state; unknown HyperBoost
+    // activity keeps the item pending. Nothing is written either way.
+    [Theory]
+    [InlineData(1, true, FanMode.Automatic, "matched")]
+    [InlineData(4, true, FanMode.Automatic, "matched")]
+    [InlineData(2, false, FanMode.Automatic, "mismatched")]
+    [InlineData(3, true, FanMode.Fixed, "mismatched")]
+    [InlineData(2, null, FanMode.Automatic, null)]
+    public async Task NativeHandback_PendingHyperBoostIsConfirmedAsManagedEntry(int progress, bool? active, FanMode fans, string? outcome)
+    {
+        NativeHandbackStore store = HandbackStore(PendingHandback(HandbackItem("hyperBoost", progress)), out WindowsNativeEpochFiles files);
+        TestContext context = await StartWithHandbackAsync(store,
+            new ConfirmedDeviceState(PerformancePreset.Balanced, fans, ConfirmedBattery(80), null) { HyperBoostActive = active });
+        await context.Runtime.ReconcileUnexpectedExitAsync(CancellationToken.None);
+
+        Assert.Equal(outcome, Outcome(files, "pending"));
+        Assert.Equal(outcome is null, context.Runtime.GetStatus().UnconfirmedWrites.Contains(DeviceSubsystem.Performance));
+        Assert.Equal(outcome == "mismatched", context.Runtime.GetStatus().ExternalChanges.Contains(DeviceSubsystem.Performance));
+        if (outcome == "matched") { Assert.True(HistoryHas(context, "Confirmed the Performance change the previous native service was making.")); }
+        Assert.Equal(outcome is null, StoreFor(files, Bound(PendingHandback(HandbackItem("hyperBoost", progress)))).Load().RequiresRecovery);
+        AssertNoHardwareWrite(context);
+    }
+
     // Native fan targets compare by Automatic versus manual topology.
     [Theory]
     [InlineData(12, "Automatic", FanMode.Automatic, "matched")]
@@ -280,11 +305,16 @@ public sealed partial class ServiceControlRuntimeTests
     [InlineData("fan", true)]
     [InlineData("performance", false)]
     [InlineData("fan", false)]
+    [InlineData("hyperBoost", true)]
+    [InlineData("hyperBoost", false)]
     public async Task NativeHandback_DisagreeingThermalChannelsResolveAsAMismatch(string family, bool disagreement)
     {
-        NativeHandbackItem item = family == "performance"
-            ? HandbackItem("performance", 2, performance: "Balanced")
-            : HandbackItem("fan", 12, fanMode: "Automatic");
+        NativeHandbackItem item = family switch
+        {
+            "performance" => HandbackItem("performance", 2, performance: "Balanced"),
+            "hyperBoost" => HandbackItem("hyperBoost", 2),
+            _ => HandbackItem("fan", 12, fanMode: "Automatic"),
+        };
         WindowsNativeHandback record = PendingHandback(item);
         NativeHandbackStore store = HandbackStore(record, out WindowsNativeEpochFiles files);
         var state = new ConfirmedDeviceState(PerformancePreset.Balanced, FanMode.Automatic, ConfirmedBattery(80), null);
@@ -297,7 +327,7 @@ public sealed partial class ServiceControlRuntimeTests
         await context.Runtime.ObserveAsync(CancellationToken.None);
         await context.Runtime.ObserveAsync(CancellationToken.None);
 
-        DeviceSubsystem subsystem = family == "performance" ? DeviceSubsystem.Performance : DeviceSubsystem.Fans;
+        DeviceSubsystem subsystem = family == "fan" ? DeviceSubsystem.Fans : DeviceSubsystem.Performance;
         Assert.Equal(disagreement ? "mismatched" : null, Outcome(files, "pending"));
         Assert.Equal(!disagreement, context.Runtime.GetStatus().UnconfirmedWrites.Contains(subsystem));
         Assert.Equal(disagreement, context.Runtime.GetStatus().ExternalChanges.Contains(subsystem));
@@ -390,12 +420,16 @@ public sealed partial class ServiceControlRuntimeTests
     // Prepared (0) and release preparation (31) precede any setter.
     [Theory]
     [InlineData("performance", 0)]
+    [InlineData("hyperBoost", 0)]
     [InlineData("fan", 31)]
     public async Task NativeHandback_UnsentPreparationIsReportedOnly(string family, int progress)
     {
-        NativeHandbackItem item = family == "performance"
-            ? HandbackItem("performance", progress, performance: "Performance")
-            : HandbackItem("fan", progress, fanMode: "Automatic");
+        NativeHandbackItem item = family switch
+        {
+            "performance" => HandbackItem("performance", progress, performance: "Performance"),
+            "hyperBoost" => HandbackItem("hyperBoost", progress),
+            _ => HandbackItem("fan", progress, fanMode: "Automatic"),
+        };
         WindowsNativeHandback record = new(HandbackEpoch, null, null, null, item, null);
         NativeHandbackStore store = HandbackStore(record, out WindowsNativeEpochFiles files);
         TestContext context = await StartWithHandbackAsync(store,

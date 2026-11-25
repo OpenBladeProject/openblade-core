@@ -61,6 +61,16 @@ internal static class WriteConfirmationPolicy
         }
         return subsystem switch
         {
+            // Native owned HyperBoost's enable pair: HyperBoost with Automatic
+            // fans, as managed confirms its own entry. A pair that still
+            // disagrees is a definite state other than the target.
+            DeviceSubsystem.Performance when expectation.HyperBoostActive is true =>
+                MatchPendingHyperBoost(expectation, confirmed) switch
+                {
+                    PendingConfirmationResult.Unavailable when thermalChannelsDisagree => PendingConfirmationResult.Mismatch,
+                    { } result => result,
+                    null => PendingConfirmationResult.Unavailable,
+                },
             DeviceSubsystem.Performance => DeviceSubsystemOrder.IsManualFanMode(confirmed.Fans)
                 ? PendingConfirmationResult.Mismatch
                 : confirmed.Performance is not { } preset
