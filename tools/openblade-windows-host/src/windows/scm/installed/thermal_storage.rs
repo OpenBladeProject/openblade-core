@@ -203,6 +203,11 @@ pub(super) trait Files: Send + Sync {
         Err(denied())
     }
 }
+/// Whether the journal holds a fan change this Service owns without its
+/// handback; a journal the history cannot read counts as outstanding.
+fn fan_owner_outstanding(journal: Option<&[u8]>) -> bool {
+    !crate::thermal_history::handback_complete(journal.unwrap_or_default()).unwrap_or(false)
+}
 fn denied() -> io::Error {
     io::Error::new(
         io::ErrorKind::PermissionDenied,
@@ -803,10 +808,9 @@ impl Storage {
         }))
     }
     pub(super) fn outstanding_fan(&self) -> bool {
-        self.state.lock().map_or(true, |s| {
-            !crate::thermal_history::handback_complete(s.journal.as_deref().unwrap_or_default())
-                .unwrap_or(false)
-        })
+        self.state
+            .lock()
+            .map_or(true, |s| fan_owner_outstanding(s.journal.as_deref()))
     }
     pub(super) fn pending(&self) -> bool {
         self.state.lock().map_or(true, |s| {
@@ -1744,6 +1748,14 @@ impl Storage {
     ) -> io::Result<()> {
         let mut s = self.state.lock().map_err(|_| denied())?;
         if s.quarantined {
+            return Err(denied());
+        }
+        // The history refuses a performance row while a fan change this
+        // Service owns is outstanding (`thermal_history`), so such a row is
+        // refused before it is written rather than leaving the journal
+        // unreadable. A request's later rows follow its Prepared row, and no
+        // fan owner can open in between.
+        if progress == Progress::Prepared && fan_owner_outstanding(s.journal.as_deref()) {
             return Err(denied());
         }
         if progress == Progress::KnownNotSubmitted

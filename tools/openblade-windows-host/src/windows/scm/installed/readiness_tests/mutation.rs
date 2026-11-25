@@ -6811,6 +6811,39 @@ async fn fan_noop_closes_an_owner_recorded_under_another_selector_without_a_sett
         }
     }
 }
+/// The history refuses a performance row while a fan change this Service
+/// owns is outstanding, so the store refuses to append one: the journal is
+/// unchanged and still opens, and owned Stop still hands the fans back.
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn a_performance_row_is_refused_while_an_owned_fan_change_is_outstanding() {
+    use openblade_domain::thermal_mutation::{Destination, Preset, Progress};
+    let r = fan_rig(0, 0);
+    r.get().await;
+    let fan = r.request(fan_request(180, Some(1), 3700)).await;
+    assert_eq!(fan["result"]["status"], 1, "{fan}");
+    assert!(r.storage.outstanding_fan());
+    let journal = r.files.read("thermal-mutation.journal").unwrap();
+    let recorded = r.storage.record(
+        "aaaaaaaa-bbbb-cccc-dddd-000000000181",
+        "owner",
+        Destination::Preset(Preset::Balanced),
+        "intent",
+        &None,
+        1,
+        1,
+        Progress::Prepared,
+    );
+    assert_eq!(
+        recorded.unwrap_err().kind(),
+        io::ErrorKind::PermissionDenied
+    );
+    assert_eq!(r.files.read("thermal-mutation.journal").unwrap(), journal);
+    assert!(Storage::open(Box::new(r.files.clone()), SID).is_ok());
+    r.origin.stop();
+    r.stop().await;
+    assert!(!r.storage.outstanding_fan());
+}
 #[cfg(feature = "service-fan-mutation-v2")]
 #[tokio::test]
 async fn fan_stop_settles_an_owner_already_automatic_under_any_selector_without_a_setter() {
