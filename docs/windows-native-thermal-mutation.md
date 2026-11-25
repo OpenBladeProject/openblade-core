@@ -492,8 +492,10 @@ integers, an optional `maximumFans` flag, and optional legacy
 outside the range is stored and replies Blocked with the no-eligible-destination
 cause; managed replies with its capability message instead. On unclassified
 external power it is rejected before storage, as managed
-`ValidateUnclassifiedPerformanceOverride` does. Non-null `gpuClockOffsets` has
-no native writer and blocks with the GPU cause.
+`ValidateUnclassifiedPerformanceOverride` does. Non-null `gpuClockOffsets`
+blocks with the GPU cause unless `service-gpu-clock-tuning-v1` composes the
+writer, which applies them as managed's legacy enabled tuning
+([GPU clock tuning](#gpu-clock-tuning-service-gpu-clock-tuning-v1)).
 
 Saved and profile Custom use their stored levels. An application profile's
 `customPerformance` replaces the power profile's, whichever of the two selected
@@ -748,9 +750,11 @@ Stored-only publication merges onto the latest hardware without renewing a read
 witness or timestamp. Late accepted persistence becomes visible on a later fresh
 read without replaying a write.
 
-Configured GPU clock effects are saved without a thermal pair and reply Blocked
-with managed's committed-intent prefix, `Performance override intent was stored.
-Hardware result: GPU clock handling is incomplete...`. GPU clocks, manual fan
+Without `service-gpu-clock-tuning-v1`, configured GPU clock effects are saved
+without a thermal pair and reply Blocked with managed's committed-intent prefix,
+`Performance override intent was stored. Hardware result: GPU clock handling is
+incomplete...`; with it, the explicit requests apply them
+([GPU clock tuning](#gpu-clock-tuning-service-gpu-clock-tuning-v1)). Manual fan
 application, display, lighting, and other native controls are not implemented
 here. Their saved fields are not confirmation. The broad capabilities snapshot
 remains null. Applied means this bounded thermal preset was independently
@@ -980,11 +984,13 @@ Differences from managed:
 
 - Native cycles from the fresh 0D/82 reading on unclassified power and when
   drift marks Performance, where managed uses its cached confirmed state.
-- On classified power native stages the saved override's GPU clock tuning
-  only. Managed stages the resolved desired tuning
-  (`current.DesiredState.GpuClockTuning`), which can come from the profile.
-  Native has no GPU clock writer, so either reaches the GPU refusal; the
-  slice that adds the writer must stage the resolved tuning as managed does.
+- On classified power native stages the resolved tuning, as managed stages
+  `current.DesiredState.GpuClockTuning` (`ServiceControlRuntime.cs:2742`,
+  `:2818`): the eligible persistent override's, then the eligible temporary
+  override's, then the active profile's, then the selected Custom settings'
+  legacy offsets as enabled tuning (`Storage::gpu_tuning`, after managed
+  `ProfileAutomationState.Resolve`). Without `service-gpu-clock-tuning-v1`
+  any of them reaches the GPU refusal.
 - Under the low-power gate a cycle reads no firmware and stages from the
   saved intent at Windows battery. Managed also honours its cached
   `ExternalChanges` and `ConfirmedState` there; the native runtime keeps no
@@ -1011,6 +1017,63 @@ Differences from managed:
 
 Both package readers refuse the feature and its marker by name ("The
 performance shortcut is not admitted for packaging.").
+
+### GPU clock tuning (`service-gpu-clock-tuning-v1`)
+
+The feature composes the RZ09-0581 NVML writer (`thermal_gpu.rs` over
+`gpu_clock_offsets.rs`) into the explicit performance requests:
+`setPerformanceOverride`, a profile save that reaches the paired setter, and
+the performance shortcut. Its image carries the `service-gpu-clock-tuning-v1`
+marker, and both package readers refuse the feature and the marker by name: a
+WinVerifyTrust and catalog check of the loaded `nvml.dll` path is still
+required before packaging. NVML loads from System32 only. There is no durable
+journal for GPU offsets (parity with managed). Stop, shutdown and low power
+restore nothing, as in managed.
+
+The decisions follow managed `ControlCoordinator.ApplyPerformanceOutcomeAsync`
+(`ControlCoordinator.cs:591-698`) and the RZ09-0581 provider's paired and
+GPU-only setters (`WindowsVerifiedBladeDeviceProvider.cs:1780-2050`):
+
+- No tuning relinquishes management without restoring the driver (`:2052-2121`).
+  An unreadable uncertain submission refuses the step.
+- A confirmed preset with matching offsets writes nothing; with other offsets
+  it takes the GPU-only setter and writes no firmware row
+  (`CanApplyGpuClockOffsetsOnly`).
+- Otherwise the paired write preflights the offsets against the policy
+  envelope before any firmware row: a refused preflight stores the intent and
+  replies Blocked with managed's `Performance is unavailable: <message>` or
+  `Performance write was not applied: <message>` cause. A disabled request
+  reuses a confirmed reset (`PairedReuse`).
+- An NVML failure after the firmware half is indeterminate with managed's
+  `The power mode was applied, but GPU clock tuning failed.` detail, and is
+  resolved by one fresh read, never replayed (`ResolveIndeterminateWriteByReadbackAsync`,
+  `:3172-3268`).
+- While the management state is an unresolved uncertain submission, every next
+  explicit step is refused before any firmware row with managed's pending
+  reply, `A thermal write requires read-only reconciliation before the
+  performance command can be submitted.` A resume withdraws a confirmed reset
+  and a power change allows one more ungated query (`:2123-2180`).
+
+Native deviations:
+
+- The NVML preflight runs on the HID job after the intent is saved and every
+  firmware refusal has passed; the NVML submission runs after the independent
+  firmware readback and re-checks write admission, where managed submits
+  before its final read.
+- Resume invalidation and the power-change rearm are applied at the next GPU
+  call, from the gate's clear generation and the Windows power generation,
+  where managed applies them when the event arrives.
+- The pending block is the management machine's own uncertain state, read
+  only after a read-only resolution attempt; managed keeps a separate
+  `pendingWriteConfirmations` tracker.
+- Each NVML call has a fixed 5-second budget on the worker thread, not the
+  request deadline. A call that never started refuses the step; one that did
+  not finish is indeterminate.
+- Triggers, convergence, fan handback and drift reconciliation keep the GPU
+  refusal. Managed's fan handback preserves GPU management
+  (`ApplyPerformancePreservingGpuClockManagementOutcomeAsync`).
+- `setGpuClockTuning` and the status projection of confirmed offsets are not
+  served yet.
 
 ## Saved profiles (`service-profiles-v1`)
 

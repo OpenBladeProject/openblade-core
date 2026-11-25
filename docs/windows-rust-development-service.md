@@ -993,9 +993,13 @@ marker by name. A build without the feature still refuses the request with
   has not been compared with the managed Service on the device.
 
 - **GPU clock offsets.** `gpu_clock_offsets.rs`, in thermal-mutation
-  compositions only, is a backend that no request reaches yet: `setGpuClockTuning` and the
-  performance integration that would replace `Storage::gpu_incomplete` are a
-  later slice. The controller ports managed `NvidiaGpuClockOffsetController`:
+  compositions only, is the backend. Only `service-gpu-clock-tuning-v1`
+  composes its production writer (`thermal_gpu.rs`), and only for the
+  explicit performance requests (see
+  [native thermal mutation](windows-native-thermal-mutation.md#gpu-clock-tuning-service-gpu-clock-tuning-v1)).
+  Without that feature, and on every reconciliation path with it,
+  `Storage::gpu_incomplete` still refuses a GPU effect. `setGpuClockTuning`
+  is not served yet. The controller ports managed `NvidiaGpuClockOffsetController`:
   exactly one NVIDIA GPU, its exact RZ09-0581 name, the P0 ranges read with
   the versioned structure, core then memory written and read back, and each
   channel restored independently after a failure, with the fresh reading
@@ -2037,7 +2041,7 @@ managed vector:
 |---|---|---|
 | 85182893 | A pending write block is released on a power change | thermal mutation, drift. Native holds no published write block for a power change to release: admission never reads `writesBlocked`, and the pending-confirmation fence (`Storage::pending`, which makes `admit_trigger` return Fenced) deliberately outlasts a power change until read-only reconciliation, so porting this would mean releasing that fence |
 | 3b692b95, 445f17b7, 2b141ccd | HyperBoost journal handoff retirement and exit submission | thermal history store, thermal mutation |
-| 374e4847, 66c6e902, 72137077, 26db283c, cc2dea76 | GPU clock offset confirmation, resend and NVML submission recovery | the RZ09-0581 NVML backend ports the controller's submission recovery and the management states, but no request reaches it: the confirmation, resend and paired-write integration with the performance subsystem are pending, and stored offsets are only validated |
+| 374e4847, 66c6e902, 72137077, 26db283c, cc2dea76 | GPU clock offset confirmation, resend and NVML submission recovery | the RZ09-0581 NVML backend ports the controller's submission recovery and the management states. With `service-gpu-clock-tuning-v1` the explicit performance requests reach it through the paired and GPU-only setters; `setGpuClockTuning`, the reconciliation paths and the status projection of confirmed offsets are pending, and that feature is refused by both package readers |
 | 24966354, c91181b8 | GPU clock offsets and the NVIDIA laptop form on RZ09-0529 and RZ09-0530 | no native GPU clock offset writer; stored offsets are only validated |
 | a26e1519 | A HyperBoost exit whose Maximum Fans restore was refused and whose journal cannot be retired reports the restore failure and blocked writes | HyperBoost exit reporting |
 | 0cf60756 | Writes stay open after a refused Maximum Fans restore | HyperBoost exit, Custom capability |
