@@ -245,10 +245,21 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
 
     public void ResetFunctionPInput()
     {
-        functionKeyObservation.Invalidate();
-        blade18Fn.InvalidateKnowledge();
+        ResetFunctionKeyKnowledge(functionKeyObservation, blade18Fn);
         rz090528FunctionPInput.RequestReset();
         Interlocked.Exchange(ref blade18ResetRequested, 1);
+    }
+
+    // Status, driver-mode and device arrival or removal resets treat Blade 16
+    // Fn like a fresh start, released, so the F-row prompt does not return and
+    // a missed release cannot stick. Unlike this helper, the Windows hook never
+    // resets and keeps a held Fn. RZ09-0484 binds Fn to the collection that
+    // first reports it, so it has no collection to seed and stays unknown.
+    internal static void ResetFunctionKeyKnowledge(FunctionKeyObservation functionKey,
+        Rz090484FnInputState blade18)
+    {
+        functionKey.AssumeReleased();
+        blade18.InvalidateKnowledge();
     }
 
     private bool ReadBlade18Admission()
@@ -558,6 +569,8 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
         finally
         {
             ResetFunctionPInput();
+            // A source whose thread is exiting no longer observes Fn reports.
+            functionKeyObservation.Invalidate();
             bool hookCleanupConfirmed = keyboardHooks.ReleaseAll();
             Interlocked.CompareExchange(ref keyboardHookOwner, null, this);
             ReleaseRawInputBuffer();
@@ -625,6 +638,8 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
             {
                 source.rz090528FunctionPInput.Reset();
                 source.ResetFunctionPInput();
+                // A failed packet may have hidden an Fn transition.
+                source.functionKeyObservation.Invalidate();
                 Trace.TraceError(
                     "Reactive keyboard packet processing failed: {0}",
                     exception.GetType().Name);
