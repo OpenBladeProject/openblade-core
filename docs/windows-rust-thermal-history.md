@@ -383,7 +383,16 @@ is therefore refused before anything is stopped (OpenForSetupAsync with an
 incoming package), and again under the epoch writer in Begin, after owner
 admission has named any intent or unknown record. The install gate checks
 presence only, so it never holds the record open while a native Service may be
-replacing it. Repair and uninstall still open the selection.
+replacing it. Any record or stage blocks every later native install, a settled
+Clear record included, and nothing in the product removes it. Only uninstall
+opens the selection without an incoming package: re-running Install passes the
+incoming package, and the product registers no Repair. On a development
+machine the remedy is by hand: uninstall, confirm that the keyboard reads
+Normal, and, with no native Service running, move owner\keyboard-driver-mode.bin
+and any .pending stage out of %ProgramData%\OpenBlade.NativeEpochs as an
+administrator before the next native install. This applies to a settled
+record only: an intent, an unknown record or a stage also refuses the
+uninstall's retirement and stays until it is resolved, as below.
 
 Still deferred (stage 6a-5 D2 option a): a versioned handback item for the
 record, pending for an intent and reported for Owned, with a managed 00/84 read

@@ -34,6 +34,8 @@ public sealed partial class NativeHandbackTests
             case "record-directory": Directory.CreateDirectory(record); break;
             case "stage": crash.Epochs.Publish(record, DriverMode("Owned", "Owned")); crash.Epochs.Publish(stage, DriverMode("Clear", "Clear", sequence: 3)); break;
             case "stage-directory": crash.Epochs.Publish(record, DriverMode("Owned", "Owned")); Directory.CreateDirectory(stage); break;
+            case "stage-only": crash.Epochs.Publish(stage, DriverMode("AcquireIntent", "Clear", sequence: 1)); break;
+            case "stage-directory-only": Directory.CreateDirectory(stage); break;
             case "owned": crash.Epochs.Publish(record, DriverMode("Owned", "Owned")); break;
             case "clear": crash.Epochs.Publish(record, DriverMode("Clear", "Clear")); break;
             default: throw new ArgumentOutOfRangeException(nameof(kind));
@@ -52,6 +54,8 @@ public sealed partial class NativeHandbackTests
     [InlineData("record-directory", 5, "unknown")]
     [InlineData("stage", 2, "stage")]
     [InlineData("stage-directory", 5, "stage")]
+    [InlineData("stage-only", 2, "stage")]
+    [InlineData("stage-directory-only", 5, "stage")]
     public async Task DriverModeDoubtRefusesRetirementAndHandbackAndKeepsItsBytes(string kind, int progress, string named)
     {
         using var crash = await Crashed(progress);
@@ -116,8 +120,9 @@ public sealed partial class NativeHandbackTests
     }
 
     // No admitted native build opens owner custody over the record or its
-    // stage, so an install is refused before anything is stopped. Repair and
-    // uninstall still open the selection.
+    // stage, so an install is refused before anything is stopped, a settled
+    // Clear record included. Only uninstall opens the selection without an
+    // incoming package; re-running Install passes one, and there is no Repair.
     [Theory]
     [InlineData("owned", "keyboard Driver-mode record,")]
     [InlineData("clear", "keyboard Driver-mode record,")]
@@ -125,6 +130,8 @@ public sealed partial class NativeHandbackTests
     [InlineData("corrupt", "keyboard Driver-mode record,")]
     [InlineData("stage", "keyboard Driver-mode record stage,")]
     [InlineData("stage-directory", "keyboard Driver-mode record stage,")]
+    [InlineData("stage-only", "keyboard Driver-mode record stage,")]
+    [InlineData("stage-directory-only", "keyboard Driver-mode record stage,")]
     public async Task IncomingBuildIsRefusedBeforeAnythingStopsOverTheRecord(string kind, string named)
     {
         using var crash = await Crashed(5);
@@ -167,5 +174,35 @@ public sealed partial class NativeHandbackTests
         Assert.Contains(named, refusal.Message, StringComparison.Ordinal);
         Assert.Equal(owner, OwnerSnapshot(crash));
         Assert.Equal(entries, RootEntries(crash));
+    }
+
+    // The install gate refuses a settled Clear record by its presence alone.
+    // That is sound only while packaging refuses keyboard Driver-mode
+    // ownership, so no incoming build can open owner custody over the record.
+    // A packaging stage that admits the feature fails here until the gate reads
+    // the record instead (WindowsNativeDriverModeHistory.RequireAbsentForIncoming).
+    [Fact]
+    public async Task TheIncomingGateIsPresenceOnlyOnlyWhilePackagingRefusesTheOwner()
+    {
+        // The features and capabilities build.rs gives a Service with keyboard
+        // Driver-mode ownership beside the admitted composition.
+        const string admittedFeatures = "controller-admission-compile-check,firmware-performance-compile-check,hid-identity-compile-check,installed-service-candidate,lifecycle-evidence-compile-check,service-battery-policy-v1,service-fan-mutation-v2,service-hardware-compile-check,service-mailbox-observation-v1,service-temporary-charge-v1,service-thermal-mutation-v1,startup-custody-v1";
+        const string admitted = "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1,service-fan-mutation-v2,service-battery-policy-v1,service-temporary-charge-v1";
+        string features = admittedFeatures.Replace("service-mailbox-observation-v1,", "service-keyboard-driver-mode-read-v1,service-keyboard-driver-mode-v1,service-mailbox-observation-v1,", StringComparison.Ordinal);
+        string capabilities = admitted + ",service-keyboard-driver-mode-read-v1,service-keyboard-driver-mode-v1";
+        string source = new('a', 40);
+        // Without the owner the same image is admitted, so a refusal below is the owner's.
+        Assert.Equal("service-temporary-charge-v1", NativeArtifact.Inspect([.. WindowsNativeEpochTests.Image("service", schema: 2, features: admittedFeatures, capabilities: admitted)], "service", source).StartupPolicy);
+        var packaging = Record.Exception(() => NativeArtifact.Inspect([.. WindowsNativeEpochTests.Image("service", schema: 2, features: features, capabilities: capabilities)], "service", source));
+        if (packaging is not null) { Assert.Equal("Keyboard Driver-mode ownership is not admitted for packaging.", Assert.IsType<InvalidDataException>(packaging).Message); }
+
+        using var crash = await Crashed(5);
+        PlaceDriverMode(crash, "clear");
+        var gate = await Record.ExceptionAsync(async () =>
+        {
+            using var selection = await WindowsNativeInstalledSelection.OpenForSetupAsync(crash.Epochs.RetainFixtureView(), default, incoming: crash.Packages.Native);
+        });
+        bool presenceOnly = gate is NativeRecoveryException { Reason: NativeRecoveryReason.FirmwareOwnerUnresolved };
+        Assert.False(packaging is null && presenceOnly, "Packaging admits keyboard Driver-mode ownership while the install gate still refuses a settled record by its presence.");
     }
 }

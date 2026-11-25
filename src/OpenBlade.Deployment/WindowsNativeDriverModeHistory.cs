@@ -148,6 +148,9 @@ internal sealed class WindowsNativeDriverModeHistory
     // WindowsNativePackage refuses that feature for packaging, so no incoming
     // build can open it: refuse before anything is stopped or installed.
     // Presence only, so a running native Service's replace is never disturbed.
+    // That is sound only while the packaging refusal stands; a test fails if
+    // packaging admits the feature while this gate is presence-only
+    // (NativeHandbackTests.TheIncomingGateIsPresenceOnlyOnlyWhilePackagingRefusesTheOwner).
     internal static void RequireAbsentForIncoming(WindowsNativeEpochFiles files)
     {
         string owner = Path.Combine(files.Root, "owner");
