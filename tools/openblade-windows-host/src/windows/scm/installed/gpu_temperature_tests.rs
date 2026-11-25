@@ -328,10 +328,11 @@ fn power_states(states: &Value) -> VecDeque<Power> {
 
 /// Managed's sampler replay over the native sampler: a read is `read` with
 /// its reader (no `reader` for ReadAsync, `live` for
-/// ReadForLiveReadingsAsync, the Service's `sample`), the session timer is
-/// `expire` and disposal is `release`. Any other reader is a recorder this
-/// replay does not know. A step's `cancel` is managed's token, which a
-/// closure stands for.
+/// ReadForLiveReadingsAsync, the Service's `sample`) that advances the clock
+/// by `readMs` during the session's read, the session timer is `expire` and
+/// disposal is `release`. Any other reader is a recorder this replay does
+/// not know. A step's `cancel` is managed's token, which a closure stands
+/// for.
 fn replay(steps: &[Value]) -> Vec<Value> {
     let script = Rc::new(RefCell::new(Script::default()));
     let (base, elapsed, clock) = clock();
@@ -361,6 +362,9 @@ fn replay(steps: &[Value]) -> Vec<Value> {
                         script.temperature = step["session"].as_i64().map(|c| c as i32);
                         script.cancel = step["cancel"].as_str().map(str::to_owned);
                         script.cancelled = false;
+                        script.stall = step["readMs"]
+                            .as_u64()
+                            .map(|ms| ("read", Duration::from_millis(ms), elapsed.clone()));
                     }
                     let celsius = sampler.read(reader, &|| script.borrow().cancelled);
                     let script = script.borrow();

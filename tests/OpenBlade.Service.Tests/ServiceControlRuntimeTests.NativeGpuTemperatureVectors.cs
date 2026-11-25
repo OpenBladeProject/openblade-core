@@ -28,8 +28,9 @@ public sealed partial class ServiceControlRuntimeTests
         + "A sampler row's steps advance the clock by advanceMs, then read the GPU alone through "
         + "SafeWindowsFanTemperatureSource.ReadAsync (ReadForLiveReadingsAsync when its reader is live), "
         + "fire the session timer (fire) or dispose the source. "
-        + "A read takes its workload state, its power states in call order and the session's reading, and "
-        + "cancels during the named call. Each expect is the reading, whether it was cancelled, the power "
+        + "A read takes its workload state, its power states in call order and the session's reading, "
+        + "advances the clock by readMs during the session's read and cancels during the named call. "
+        + "Each expect is the reading, whether it was cancelled, the power "
         + "reads of that step, the session's cumulative reads and releases and the timer's absolute due "
         + "time in milliseconds. A publication row is whether the v90 codec writes a status carrying it.";
 
@@ -175,7 +176,15 @@ public sealed partial class ServiceControlRuntimeTests
                         activity.Active = (bool?)step["active"];
                         activity.OnSample = cancel == "activity" ? cancellation.Cancel : null;
                         session.Temperature = (int?)step["session"];
-                        session.BeforeRead = cancel == "read" ? cancellation.Cancel : null;
+                        TimeSpan readTime = TimeSpan.FromMilliseconds((int?)step["readMs"] ?? 0);
+                        session.BeforeRead = () =>
+                        {
+                            time.Advance(readTime);
+                            if (cancel == "read")
+                            {
+                                cancellation.Cancel();
+                            }
+                        };
                         power.Clear();
                         foreach (JsonNode? state in step["power"]!.AsArray())
                         {
