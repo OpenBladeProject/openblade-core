@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using OpenBlade.Contracts;
 using OpenBlade.Tray;
@@ -28,6 +29,11 @@ internal static class SnapTapDriverLoop
         SnapTapDriverInputProcessor? processor = null;
         FunctionRowDriverContext? functionContext = null;
         FunctionRowDriverInputProcessor? functionProcessor = null;
+        SnapTapDeliveryMonitor? delivery = null;
+        var deliveryTracker = new SnapTapDeliveryTracker();
+        var deliveryClock = Stopwatch.StartNew();
+        bool deliveryObservable = false;
+        TimeSpan lastDeliveryPass = TimeSpan.Zero;
         try
         {
             if (!admission.TryGetEndpointWithFailure(out endpoint, out _, out DiagnosticFailure? admissionFailure))
@@ -57,7 +63,7 @@ internal static class SnapTapDriverLoop
             transport = new RazerSnapTapDriverTransport(endpoint!.Path,
                 () => AdmitWithProgress(() => admission.IsCurrent(endpoint), () => heartbeat.Set(), admitting),
                 () => !shouldStop() && AllReleased() && (functionContext is null || functionContext.Ready), CanOutput, purpose);
-            output = new DriverKeyboardOutput(DecideOutput, stroke => transport!.Send(stroke));
+            output = new DriverKeyboardOutput(DecideOutput, SendDriverOutput);
             if (functionContext is not null)
             {
                 functionProcessor = new(output.SendFunctionRow, functionContext.Publish, functionContext.Reset);
@@ -71,6 +77,9 @@ internal static class SnapTapDriverLoop
             }
             processor = new SnapTapDriverInputProcessor(output.SendBatch,
                 repeatInterval: TimeSpan.FromSeconds(1 / (2.5 + 27.5 * speed / 31)));
+            // Before any hook exists, so a helper that cannot confirm delivery never consumes keys.
+            stage = "DeliveryMonitor";
+            delivery = new SnapTapDeliveryMonitor(functionContext?.DeliveryFeed);
             publisher.Publish(SnapTapRuntimeState.WaitingForRelease);
             stage = "WaitingForRelease";
             // Do not hook an in-flight hold whose initial down we did not see.
@@ -87,6 +96,7 @@ internal static class SnapTapDriverLoop
                     break;
                 }
                 publisher.Publish(hasForeground ? SnapTapRuntimeState.WaitingForRelease : SnapTapRuntimeState.Paused);
+                delivery.Pump(deliveryTracker);
                 heartbeat.Set();
                 Thread.Sleep(10);
             }
@@ -152,6 +162,11 @@ internal static class SnapTapDriverLoop
                 {
                     processor.Enable();
                 }
+                deliveryObservable = delivery.CanObserve(targetWindow);
+                if (!deliveryObservable)
+                {
+                    deliveryTracker.Clear();
+                }
                 if (transport.TryRead(out SnapTapKeyStroke stroke))
                 {
                     if (!Handle(stroke))
@@ -163,6 +178,22 @@ internal static class SnapTapDriverLoop
                     confirmedInput = true;
                 }
                 processor.RepeatRestoredWinner();
+                TimeSpan deliveryPass = deliveryClock.Elapsed;
+                if (deliveryPass - lastDeliveryPass > SnapTapDeliveryTracker.FreezeGap)
+                {
+                    deliveryTracker.Rebase(deliveryPass);
+                }
+                lastDeliveryPass = deliveryPass;
+                delivery.Pump(deliveryTracker);
+                if (deliveryTracker.Check(deliveryPass) is { } lost)
+                {
+                    // The driver accepted a key that Windows never received. Stop all
+                    // output and let the guardian clear the hooks so Windows gets the
+                    // keys directly; the lost keys may still arrive late.
+                    processor.Poison();
+                    loopFailure = lost;
+                    break;
+                }
                 KeyboardDriverStatusStore.SetFunctionKeyKnown(functionContext?.FunctionKeyKnown ?? true);
                 publisher.Publish((processor.Enabled || !snapEnabled) ? (confirmedInput ? SnapTapRuntimeState.Active : SnapTapRuntimeState.Armed)
                     : foreground == 0 ? SnapTapRuntimeState.Paused : SnapTapRuntimeState.WaitingForRelease);
@@ -286,6 +317,20 @@ internal static class SnapTapDriverLoop
             transport?.Dispose();
             functionProcessor?.ReleaseMedia();
             functionContext?.Dispose();
+            delivery?.Dispose();
+        }
+
+        void SendDriverOutput(SnapTapKeyStroke stroke)
+        {
+            transport!.Send(stroke);
+            // Start the deadline once the driver has accepted the key: each send first
+            // repeats full admission, which can take over a second under load. Only
+            // this thread's Pump hands observed keys to the tracker, so a key that
+            // arrives during the send is still matched.
+            if (deliveryObservable)
+            {
+                deliveryTracker.Expect(stroke, deliveryClock.Elapsed);
+            }
         }
 
         DriverOutputDecision DecideOutput() => OutputDecision(targetWindow, targetLayout,

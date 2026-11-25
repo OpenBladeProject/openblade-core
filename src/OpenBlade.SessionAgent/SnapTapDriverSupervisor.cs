@@ -263,9 +263,8 @@ internal static class SnapTapDriverSupervisor
                     int exitCode = clean ? worker.ExitCode : 4;
                     if (!clean)
                     {
-                        DiagnosticFailure cleanupFailure = SnapTapDiagnosticFailure.Create(
-                            SnapTapDiagnosticFailure.Supervisor, "ReconcileHooks", stage,
-                            "RecoveryRequired", observedWorkerFailure?.MayHaveSubmitted == true, observedWorkerFailure);
+                        DiagnosticFailure cleanupFailure = RecoveryRequiredFailure(stage, observedWorkerFailure,
+                            worker.ExitCode, MatchingTerminalFailure(finalStatus, worker.Id, workerStartedAt));
                         return PublishTerminal(endpoint.Profile, SnapTapRuntimeState.RecoveryRequired,
                             cleanupFailure, exitCode);
                     }
@@ -372,6 +371,19 @@ internal static class SnapTapDriverSupervisor
         recent.Enqueue(now);
         return true;
     }
+
+    // A supervisor-observed cause, such as a heartbeat timeout, hides why the
+    // worker itself exited; keep both for diagnostics.
+    internal static DiagnosticFailure RecoveryRequiredFailure(
+        string stage, DiagnosticFailure? observedWorkerFailure, int workerExitCode, DiagnosticFailure? workerReported) =>
+        (SnapTapDiagnosticFailure.Create(
+            SnapTapDiagnosticFailure.Supervisor, "ReconcileHooks", stage, "RecoveryRequired",
+            observedWorkerFailure?.MayHaveSubmitted == true, observedWorkerFailure,
+            processExitCode: workerExitCode) with
+        {
+            Context = $"WorkerReason={workerReported?.Reason ?? "None"}; "
+                + $"WorkerStage={workerReported?.Stage ?? "None"}; WorkerContext={workerReported?.Context ?? "None"}",
+        }).LimitDetails();
 
     internal static bool TryReconcileHooks(
         IRazerSnapTapHookTransport guardian,

@@ -36,6 +36,13 @@ state and blocks another backend from bypassing it. Missing-driver admission
 before any write permits an explicit switch to the Windows hook. No failure
 automatically changes the saved choice.
 
+Keys the driver helper sends back must reach Windows. The helper watches
+Windows keyboard input and stops if a key it sent has not arrived within two
+seconds, so the driver's hooks are cleared and Windows receives A, D and the
+function row directly. The check runs as keys are handled, so a key lost just
+before typing stops is noticed at the next key press. Turn the feature off and
+on to retry. Keys sent to an app running as administrator are not checked.
+
 The source contract is the pinned [driver review](snap-tap-driver-review.md)
 and [per-file subscriber review](snap-tap-0255-catalog-api-review.md#subscriber-lifetime-and-restoration-limits).
 The function-row extension uses the same reviewed keyboard record type and
