@@ -264,24 +264,32 @@ async fn a_final_mismatch_fences_the_battery_pair_without_replay() {
 }
 
 #[tokio::test]
-async fn a_power_change_during_or_between_the_pairs_stops_without_replay() {
+async fn a_power_change_mid_exit_continues_only_while_the_battery_preset_is_admitted() {
     // (first class, power read, changed class, Windows change, last row,
     // setters, completes). Power read 2 is the first restore setter's own,
-    // 3 the second's, 4 the first battery setter's. Managed checks no
-    // command after classifying the adapter for the restore sequence, so it
-    // would complete these; native stops at the next command (stricter).
-    // A full-to-limited change keeps the battery preset and continues.
+    // 3 the second's, 4 the first battery setter's and 5 the second's. With
+    // no Windows change the fixture derives Windows from the adapter, so a
+    // changed class is a real unplug or plug-in. Managed admits a battery
+    // selector on Windows battery and an agreeing external reading alike
+    // (`AdmitOrdinaryThermalCommandAsync`), so a persistent battery preset
+    // completes across either; so does every native setter, each admitted
+    // by its own fresh reading.
     for (actual, read, changed, windows, progress, writes, completes) in [
-        (FULL, 2, BATTERY, None, 6, 0, false),
-        (FULL, 3, BATTERY, None, 81, 1, false),
-        (FULL, 4, BATTERY, None, 83, 2, false),
-        (BATTERY, 4, FULL, None, 83, 2, false),
-        (FULL, 4, FULL, Some(Some(true)), 83, 2, false),
-        // The restore setters are fenced on their own readings too.
+        (FULL, 2, BATTERY, None, 5, 4, true),
+        (FULL, 3, BATTERY, None, 5, 4, true),
+        (FULL, 4, BATTERY, None, 5, 4, true),
+        (FULL, 5, BATTERY, None, 5, 4, true),
+        (BATTERY, 3, FULL, None, 5, 4, true),
+        (BATTERY, 4, FULL, None, 5, 4, true),
+        (LIMITED, 4, BATTERY, None, 5, 4, true),
+        (FULL, 4, LIMITED, None, 5, 4, true),
+        // An adapter reading that disagrees with Windows admits no setter
+        // (managed refuses that command), so the exit stops at that setter,
+        // the restore setters included, without replay.
         (FULL, 2, FULL, Some(Some(true)), 6, 0, false),
         (FULL, 3, FULL, Some(Some(true)), 81, 1, false),
-        (BATTERY, 3, FULL, None, 81, 1, false),
-        (FULL, 4, LIMITED, None, 5, 4, true),
+        (FULL, 4, FULL, Some(Some(true)), 83, 2, false),
+        (BATTERY, 4, BATTERY, Some(Some(false)), 83, 2, false),
     ] {
         let files = MemoryFiles::default();
         let rig = hyperboost_rig(actual, files.clone()).await;
@@ -354,20 +362,51 @@ async fn an_unclassified_reading_at_any_setter_stops_the_exit_without_replay() {
 }
 
 #[tokio::test]
-async fn a_full_to_limited_change_retires_a_temporary_exit_and_stops_after_the_restore_pair() {
-    // A persistent request continues on the new class (above); a temporary
-    // override is retired by the source change, so the battery pair is not
-    // written and the restore pair's 83 row stays unsettled.
-    let files = MemoryFiles::default();
-    let rig = hyperboost_rig(FULL, files.clone()).await;
-    rig.port.state.lock().unwrap().change_power = Some((4, LIMITED));
-    let result = rig.set(1, value(BATTERY_SAVER.0, 0)).await;
-    let case = format!("{result}");
-    assert_eq!(result["result"]["status"], 2, "{case}");
-    assert_eq!(setters(&rig), restore_then(BATTERY_SAVER.1)[..2], "{case}");
-    assert_eq!(progress_values(&rig), [0, 80, 81, 82, 83], "{case}");
-    rig.port.state.lock().unwrap().change_power = None;
-    fenced(rig, files, BATTERY_SAVER.0, &case).await;
+async fn a_windows_change_between_a_setters_admission_and_its_send_stops_the_exit() {
+    // Managed `OrdinarySourceUnchanged` rechecks the Windows source between
+    // a command's admission and its SET, so a change there stops that
+    // command; only the source a setter was admitted with is held, until
+    // its SET is sent. Power read 3 is the second restore setter's and
+    // 5 the second battery setter's.
+    for (actual, read, windows, progress, writes) in [
+        (FULL, 3, Some(true), 81, 1),
+        (FULL, 5, Some(true), 2, 3),
+        (BATTERY, 3, Some(false), 81, 1),
+        (BATTERY, 5, None, 2, 3),
+    ] {
+        let files = MemoryFiles::default();
+        let rig = hyperboost_rig(actual, files.clone()).await;
+        rig.port.state.lock().unwrap().change_windows_after_reply = Some((read, windows));
+        let result = rig.set(1, value(BATTERY_SAVER.0, 1)).await;
+        let case = format!("{actual} at read {read} {windows:?}: {result}");
+        assert_eq!(result["result"]["status"], 2, "{case}");
+        assert_eq!(result["result"]["message"], PENDING, "{case}");
+        assert_eq!(setters(&rig).len(), writes, "{case}");
+        assert_eq!(*progress_values(&rig).last().unwrap(), progress, "{case}");
+        rig.port.state.lock().unwrap().windows_on_battery = None;
+        fenced(rig, files, BATTERY_SAVER.0, &case).await;
+    }
+}
+
+#[tokio::test]
+async fn a_source_change_retires_a_temporary_exit_and_stops_after_the_restore_pair() {
+    // A persistent request continues on the new class (above). A temporary
+    // override is retired by the source change, full to limited or an
+    // unplug, so the request it carried no longer stands: the battery pair
+    // is not written and the restore pair's 83 row stays unsettled.
+    for changed in [LIMITED, BATTERY] {
+        let files = MemoryFiles::default();
+        let rig = hyperboost_rig(FULL, files.clone()).await;
+        rig.port.state.lock().unwrap().change_power = Some((4, changed));
+        let result = rig.set(1, value(BATTERY_SAVER.0, 0)).await;
+        let case = format!("{changed}: {result}");
+        assert_eq!(result["result"]["status"], 2, "{case}");
+        assert_eq!(setters(&rig), restore_then(BATTERY_SAVER.1)[..2], "{case}");
+        assert_eq!(progress_values(&rig), [0, 80, 81, 82, 83], "{case}");
+        rig.port.state.lock().unwrap().change_power = None;
+        rig.port.state.lock().unwrap().actual = FULL;
+        fenced(rig, files, BATTERY_SAVER.0, &case).await;
+    }
 }
 
 #[tokio::test]

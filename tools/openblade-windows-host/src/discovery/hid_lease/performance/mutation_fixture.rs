@@ -64,6 +64,9 @@ pub(crate) struct State {
     // Applied at the first port check after that power read's reply was
     // received: after the Reader's setter-time class decision, before its SET.
     pub(crate) change_windows_after_reply: Option<(usize, Option<bool>)>,
+    // Applied when that 0D setter (1-based) is received: after its
+    // submission, before its reply.
+    pub(crate) change_windows_after_write: Option<(usize, Option<bool>)>,
     // Edits every raw 07/8C reply frame (byte 0 is the HID report ID).
     pub(crate) power_edit: Option<PowerEdit>,
     // That power read's reply completes with a receive timeout.
@@ -478,6 +481,11 @@ impl Port for MemoryPort {
                             s.custom_levels[index] = payload[2];
                         }
                         s.writes += 1;
+                        if let Some((at, windows)) = s.change_windows_after_write
+                            && at == s.writes
+                        {
+                            s.windows_on_battery = Some(windows);
+                        }
                         if let Some((number, release)) = &s.held_write
                             && *number == s.writes
                         {

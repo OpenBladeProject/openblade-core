@@ -413,9 +413,11 @@ impl<P: Port> Reader<P, ReadAdmission> {
             fence.pin_class();
         }
         // Every setter, the restore pair's included, is admitted by the
-        // destination's own class rule. Managed classifies the adapter once
-        // for the restore sequence and checks no later command; each fresh
-        // reading here must still admit the battery preset (stricter).
+        // destination's own class rule on its own fresh reading. Managed
+        // classifies the adapter once for the restore sequence and checks no
+        // later command: an unplug or a plug-in that still admits the battery
+        // preset continues here as there, while an unclassified reading or a
+        // Windows disagreement stops before the next command (stricter).
         fence.bind_destination(destination);
         // Reserve all remaining commands, including the independent final read
         // and its Custom level getters, before journaling/submitting.
@@ -572,6 +574,9 @@ impl<P: Port> Attempt<'_, P, ReadAdmission> {
         acknowledge: impl FnOnce(&[u8]) -> Option<()>,
     ) -> Option<()> {
         let (admission, limit, permit) = (context.admission, context.limit, context.permit);
+        // This setter is admitted by its own reading, not by the source an
+        // earlier reading carried (`PowerFence::release`).
+        context.fence.release();
         self.checkpoint(authorize, admission, limit).ok()?;
         let power = self
             .read_power(power_id, authorize, admission, limit)
@@ -603,6 +608,9 @@ impl<P: Port> Attempt<'_, P, ReadAdmission> {
         self.transfer(Transfer::SendMutation(frame), limit)
             .await
             .ok()?;
+        // Submitted: a power change from here on makes this setter no more
+        // ambiguous, so it no longer stops the recipe (`PowerFence::release`).
+        context.fence.release();
         limit.wait(SETTLE).await.ok()?;
         self.checkpoint(authorize, admission, limit).ok()?;
         let (length, frame) = self.transfer(Transfer::ReceiveReply, limit).await.ok()?;
@@ -657,12 +665,15 @@ impl Setters {
 /// class (`allowBattery: false`), and so does a fan setter that carries a
 /// performance preset. Other fan setters need it only on unclassified power,
 /// since managed admits such a classified command while Windows reports
-/// battery (`allowBattery: true`). The presence a reading was admitted with must hold
-/// at every later checkpoint (managed `OrdinarySourceUnchanged` rechecks the
-/// Windows source at submission), so losing it stops before the next command.
-/// A battery preset's pair is also admitted on battery, read with Windows
-/// battery (`thermal_mutation::admits_class`); that Windows battery reading
-/// must then hold at every later checkpoint in the same way.
+/// battery (`allowBattery: true`). A battery preset's setters are also
+/// admitted on battery, read with Windows battery
+/// (`thermal_mutation::admits_class`). The Windows source a reading was
+/// admitted with must hold at every later checkpoint until it is released
+/// (managed `OrdinarySourceUnchanged` rechecks it at submission), so losing it
+/// stops before the command is sent. A performance setter releases it once
+/// its SET is sent (`release`): managed admits each command on its own fresh
+/// reading, so the next setter's reading decides again. A fan operation
+/// keeps it to its end.
 pub(super) struct PowerFence<'a> {
     permit: &'a dyn Permit,
     // Whether Windows battery admits a classified reading with no check: a fan
@@ -739,12 +750,24 @@ impl<'a> PowerFence<'a> {
         Some(source)
     }
     /// A setter-time reading against the first reading's class `source`.
-    /// Managed admits any fresh external reading that agrees with Windows AC
-    /// presence; a class change between setters, either way between full,
-    /// limited and unclassified, continues only while the class is not pinned
-    /// and the permit's destination is the same for the new class, so a
-    /// profile that differs there stops the pair. A change to or from battery
-    /// always stops it. Battery itself admits only a bound battery preset.
+    /// Managed admits each command on its own fresh reading: an external
+    /// reading that agrees with Windows AC presence, or for a battery preset
+    /// Windows battery (`AdmitOrdinaryThermalCommandAsync`). A class change
+    /// between setters, among full, limited, unclassified and battery,
+    /// therefore continues whenever the new reading still admits the
+    /// destination. What stops, with its reason:
+    /// - a reading the destination's class rule refuses: unclassified power
+    ///   for a battery preset, battery for any other destination, or a
+    ///   reading that disagrees with Windows (managed refuses that command);
+    /// - any change while the class is pinned (managed
+    ///   `requireExternalPowerOnDirectHyperBoostExit` and the fan acPreset);
+    /// - a change after which the permit's destination no longer holds: the
+    ///   request was resolved for the first class, so a profile that differs
+    ///   on the new class, or a temporary override that the change retired,
+    ///   no longer stands (native deviation; managed resolves once).
+    ///
+    /// Fan permits bind no destination and admit no battery reading; their
+    /// recipes start only on external power (`fan_recipe::Plan::select`).
     pub(super) fn admits(&self, power: Power, source: i32) -> bool {
         let Some((current, windows)) = self.source(power) else {
             return false;
@@ -755,16 +778,24 @@ impl<'a> PowerFence<'a> {
         };
         let admitted = class_admitted
             && (current == source
-                || !self.pinned.load(Ordering::Acquire)
-                    && current != 1
-                    && source != 1
-                    && self.permit.destination_holds(current));
+                || !self.pinned.load(Ordering::Acquire) && self.permit.destination_holds(current));
         if admitted {
             self.external
                 .store(windows == Some(false) && current != 1, Ordering::Release);
             self.battery.store(current == 1, Ordering::Release);
         }
         admitted
+    }
+    /// Ends the Windows source a performance setter was admitted with, once
+    /// its SET is sent and again before the next setter's own reading.
+    /// Managed checks it only between a command's admission and its
+    /// submission (`OrdinarySourceUnchanged`), so a change after a submitted
+    /// setter stops nothing by itself: its reply is still read, the next
+    /// setter's fresh reading is admitted again, and the independent reads
+    /// after the last setter confirm what firmware holds, as managed's do.
+    pub(super) fn release(&self) {
+        self.external.store(false, Ordering::Release);
+        self.battery.store(false, Ordering::Release);
     }
 }
 /// One fresh 07/8C adapter query.

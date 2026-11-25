@@ -252,21 +252,34 @@ async fn power_classes_follow_the_ordinary_and_battery_selector_rules() {
 }
 
 #[tokio::test]
-async fn a_class_change_between_setters_stops_the_pair_without_replay() {
-    // (preset, first class, second-setter class, completes). Battery to an
-    // adapter, or an adapter to battery, always stops; a battery preset keeps
-    // full-to-limited continuity as ordinary presets do.
-    for (preset, actual, changed, completes) in [
-        (BATTERY_SAVER, BATTERY, FULL, false),
-        (BATTERY_SAVER, FULL, BATTERY, false),
-        (BATTERY_BALANCED, FULL, LIMITED, true),
-        (SILENT, FULL, LIMITED, true),
-        (SILENT, FULL, BATTERY, false),
+async fn a_class_change_between_setters_continues_only_while_the_preset_is_admitted() {
+    // (preset, first class, second-setter class, Windows change, completes).
+    // With no Windows change the fixture derives Windows from the adapter, so
+    // a changed class is a real unplug or plug-in. Managed admits each
+    // command on its own fresh reading (`AdmitOrdinaryThermalCommandAsync`):
+    // a battery preset on Windows battery or an agreeing adapter, so it
+    // completes across an unplug, a plug-in or full-to-limited, as ordinary
+    // presets do between external classes. An ordinary preset is refused on
+    // battery, and a reading that disagrees with Windows admits no command,
+    // so both stop after the first setter without replay.
+    for (preset, actual, changed, windows, completes) in [
+        (BATTERY_SAVER, BATTERY, FULL, None, true),
+        (BATTERY_SAVER, FULL, BATTERY, None, true),
+        (BATTERY_BALANCED, LIMITED, BATTERY, None, true),
+        (BATTERY_BALANCED, BATTERY, LIMITED, None, true),
+        (BATTERY_BALANCED, FULL, LIMITED, None, true),
+        (SILENT, FULL, LIMITED, None, true),
+        (SILENT, FULL, BATTERY, None, false),
+        (BATTERY_SAVER, FULL, FULL, Some(Some(true)), false),
+        (BATTERY_SAVER, BATTERY, BATTERY, Some(Some(false)), false),
     ] {
         let rig = rig_at(2, 0, actual, MemoryFiles::default());
-        rig.port.state.lock().unwrap().change_power = Some((3, changed));
+        match windows {
+            Some(windows) => rig.port.state.lock().unwrap().change_windows = Some((3, windows)),
+            None => rig.port.state.lock().unwrap().change_power = Some((3, changed)),
+        }
         let result = rig.set(1, value(preset.0, 1)).await;
-        let case = format!("{preset:?} {actual} -> {changed}: {result}");
+        let case = format!("{preset:?} {actual} -> {changed} {windows:?}: {result}");
         let progress = Storage::open(Box::new(rig.files.clone()), SID)
             .unwrap()
             .progress();
@@ -282,8 +295,95 @@ async fn a_class_change_between_setters_stops_the_pair_without_replay() {
             assert_eq!(progress, Some(2), "{case}");
             // The open pair fences every later request; nothing is replayed.
             rig.port.state.lock().unwrap().change_power = None;
+            rig.port.state.lock().unwrap().change_windows = None;
             assert_eq!(rig.set(2, value(preset.0, 1)).await["result"]["status"], 2);
             assert_eq!(setters(&rig).len(), 1, "{case}");
+        }
+        rig.stop().await;
+    }
+}
+
+#[tokio::test]
+async fn a_balanced_to_battery_pair_completes_across_an_unplug_or_a_plug_in() {
+    // The shared fence admits each setter of a direct Balanced-to-battery
+    // pair on its own reading: power read 2 is the first setter's and 3 the
+    // second's. An unplug or a plug-in at either completes the pair with
+    // nothing pending; a reading that disagrees with Windows still stops at
+    // that setter.
+    for (actual, read, changed, windows, writes) in [
+        (FULL, 2, BATTERY, None, 2),
+        (FULL, 3, BATTERY, None, 2),
+        (LIMITED, 3, BATTERY, None, 2),
+        (BATTERY, 2, FULL, None, 2),
+        (BATTERY, 3, LIMITED, None, 2),
+        (FULL, 2, FULL, Some(Some(true)), 0),
+        (BATTERY, 3, BATTERY, Some(Some(false)), 1),
+    ] {
+        let files = MemoryFiles::default();
+        let rig = rig_at(0, 0, actual, files.clone());
+        match windows {
+            Some(windows) => rig.port.state.lock().unwrap().change_windows = Some((read, windows)),
+            None => rig.port.state.lock().unwrap().change_power = Some((read, changed)),
+        }
+        let result = rig.set(1, value(BATTERY_SAVER.0, 1)).await;
+        let case = format!("{actual} -> {changed} at read {read} {windows:?}: {result}");
+        let pair = [
+            vec![1, 1, BATTERY_SAVER.1, 0],
+            vec![1, 2, BATTERY_SAVER.1, 0],
+        ];
+        assert_eq!(setters(&rig), pair[..writes], "{case}");
+        let reopened = Storage::open(Box::new(files), SID).unwrap();
+        match writes {
+            2 => {
+                assert_eq!(result["result"]["status"], 1, "{case}");
+                assert!(!reopened.pending(), "{case}");
+                assert_eq!(reopened.progress(), Some(5), "{case}");
+            }
+            // Nothing was submitted: the Prepared row retires.
+            0 => {
+                assert_eq!(result["result"]["status"], 2, "{case}");
+                assert!(!reopened.pending(), "{case}");
+                assert_eq!(reopened.progress(), Some(6), "{case}");
+            }
+            _ => {
+                assert_eq!(result["result"]["message"], PENDING, "{case}");
+                assert!(reopened.pending(), "{case}");
+                assert_eq!(reopened.progress(), Some(2), "{case}");
+            }
+        }
+        rig.stop().await;
+    }
+}
+
+#[tokio::test]
+async fn a_windows_change_after_a_setters_send_is_left_to_the_next_reading() {
+    // Managed checks the Windows source only up to a command's SET. A change
+    // while the SET is in flight leaves that setter's reply to be read: after
+    // the last setter the pair completes, confirmed by its final read, and
+    // after the first the second setter's own reading decides, here a full
+    // adapter under Windows battery, which admits no command.
+    for (preset, actual, write, windows, completes) in [
+        (SILENT, FULL, 2, Some(true), true),
+        (BATTERY_SAVER, FULL, 2, Some(true), true),
+        (BATTERY_SAVER, BATTERY, 2, Some(false), true),
+        (SILENT, FULL, 1, Some(true), false),
+        (BATTERY_SAVER, BATTERY, 1, Some(false), false),
+    ] {
+        let rig = rig_at(2, 0, actual, MemoryFiles::default());
+        rig.port.state.lock().unwrap().change_windows_after_write = Some((write, windows));
+        let result = rig.set(1, value(preset.0, 1)).await;
+        let case = format!("{preset:?} {actual} after write {write} {windows:?}: {result}");
+        let progress = Storage::open(Box::new(rig.files.clone()), SID)
+            .unwrap()
+            .progress();
+        if completes {
+            assert_eq!(result["result"]["status"], 1, "{case}");
+            assert_eq!(setters(&rig).len(), 2, "{case}");
+            assert_eq!(progress, Some(5), "{case}");
+        } else {
+            assert_eq!(result["result"]["message"], PENDING, "{case}");
+            assert_eq!(setters(&rig).len(), 1, "{case}");
+            assert_eq!(progress, Some(2), "{case}");
         }
         rig.stop().await;
     }
@@ -331,8 +431,8 @@ async fn setter_ack_timeout_and_mismatch_failures_fence_restart_without_replay()
                     "first-ack" => s.corrupt_ack = Some(1),
                     "final-timeout" => s.final_read_timeout = true,
                     "final-mismatch" => s.mismatch_after = Some(2),
-                    // The first setter's own reading changes class.
-                    _ => s.change_power = Some((2, if actual == BATTERY { FULL } else { BATTERY })),
+                    // The first setter's own reading disagrees with Windows.
+                    _ => s.change_windows = Some((2, Some(actual != BATTERY))),
                 }
             }
             let result = rig.set(1, value(preset.0, 1)).await;

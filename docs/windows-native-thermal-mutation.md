@@ -397,12 +397,14 @@ confirms it. Power admission follows managed `AdmitOrdinaryThermalCommandAsync`
   admitted on battery, read with Windows battery, and on a classified adapter
   that agrees with Windows AC. Unclassified power refuses them. Managed skips
   the adapter read on Windows battery; native still reads 07/8C and needs it to
-  read battery. The Windows battery reading must hold at every later
-  checkpoint, as Windows AC must for an external reading.
+  read battery. The Windows battery reading must hold until that setter's SET
+  is sent, as Windows AC must for an external reading.
 
 A class change between setters follows the rules under
-[unclassified external power](#unclassified-external-power); a change to or
-from battery always stops the pair without replay. Saved-intent selection is
+[unclassified external power](#unclassified-external-power). Each setter is
+admitted by its own reading, so a battery preset continues across an unplug
+or a plug-in while its destination holds on the new class, as in managed, and
+an AC preset stops on battery without replay. Saved-intent selection is
 unchanged: battery selects only the battery presets
 (`automation::performance_source_eligible`), so an override saved on AC is kept
 and not written on battery.
@@ -494,12 +496,15 @@ Native differs from managed here in these ways:
 - Managed admits no command of the recipe after classifying the adapter: no
   per-command ordinary admission after the exit (2450,
   `ordinaryControl && !exitedHyperBoost`). Native reads 07/8C before every
-  setter, so a change to or from battery, or a Windows kind change, between or
-  during the pairs stops it where managed completes: at the first setter
-  nothing is submitted and the row retires, later 81 or 83 stays unsettled. A
-  full-to-limited change continues a persistent request, since the battery
-  preset holds there. It retires a temporary override (a shortcut's
-  included), which then stops with 83 unsettled.
+  setter and admits it as it would admit that battery preset's own command.
+  An unplug, a plug-in or a full-to-limited change between or during the pairs
+  therefore continues a persistent request, as managed's recipe does. A
+  reading that disagrees with Windows, an unclassified reading, or a Windows
+  kind change between a setter's reading and its send stops it where managed
+  completes: at the first setter nothing is submitted and the row retires,
+  later 81 or 83 stays unsettled. A source change retires a temporary
+  override (a shortcut's included), so the request no longer stands and the
+  exit stops with 83 unsettled.
 - Managed's exit classification ignores Windows; native refuses a class that
   disagrees with Windows (for example a battery reading under Windows AC)
   before storing, as for every battery preset.
@@ -622,9 +627,10 @@ so does a fan return to Automatic that carries a saved destination, which
 managed applies through `SetPerformanceAsync` or `SetCustomPerformanceAsync`. Other fan setters on a classified class
 need Windows AC that agrees with the reading, or Windows battery, where managed
 admits them unchecked. The presence a reading
-was admitted with must hold at every later checkpoint (managed
+was admitted with must hold at every later checkpoint until that performance
+setter's SET is sent, or for a fan operation until its end (managed
 `AdmitOrdinaryThermalCommandAsync` and `OrdinarySourceUnchanged`), so losing it
-stops before the next command. A class change between setters, either way
+stops before the command is sent. A class change between setters, either way
 between full, limited and unclassified, continues while the new class selects
 the same destination. A persistent explicit override does, and so does a
 temporary saved unclassified within one Windows power generation. A temporary
@@ -697,10 +703,12 @@ Native differs from managed here in these ways:
   Managed skips the pin on its first command, so a class change there gives
   managed one write and an Indeterminate result; native writes nothing, and an
   owned Stop leaves its 31 row pending for read-only reconciliation.
-- Native requires the presence a reading was admitted with at every later
-  checkpoint of the operation; managed requires it only until that command's
-  own SET. A Performance entry admitted on Windows AC whose later commands see
-  Windows battery completes its four writes in managed and stops in native.
+- A fan operation requires the presence a reading was admitted with at every
+  later checkpoint of the operation; managed requires it only until that
+  command's own SET. A Performance entry admitted on Windows AC whose later
+  commands see Windows battery completes its four writes in managed and stops
+  in native. A performance setter holds it only until its SET is sent, as
+  managed does.
 - Managed admits a fan command with no reading check while Windows reports
   battery; native still reads 07/8C before each setter and stops on a battery
   reading, which no fan destination holds, and on an unclassified reading,
