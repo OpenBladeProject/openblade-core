@@ -28,6 +28,9 @@ pub(crate) struct State {
     pub(crate) mismatch: bool,
     // Thermal mode reads report Custom once this many setters have been accepted.
     pub(crate) mismatch_after: Option<usize>,
+    // Thermal mode reads report this (selector, fans) once this many setters
+    // have been accepted, whatever the setters wrote.
+    pub(crate) reads_after: Option<(usize, u8, u8)>,
     pub(crate) final_read_timeout: bool,
     pub(crate) final_read_malformed: bool,
     pub(crate) on_power: Option<Arc<dyn Fn(usize) + Send + Sync>>,
@@ -61,6 +64,13 @@ pub(crate) struct State {
     // Applied at the first port check after that power read's reply was
     // received: after the Reader's setter-time class decision, before its SET.
     pub(crate) change_windows_after_reply: Option<(usize, Option<bool>)>,
+    // Applied when that 0D setter (1-based) is received: after its
+    // submission, before its reply.
+    pub(crate) change_windows_after_write: Option<(usize, Option<bool>)>,
+    // The adapter level from that 0D setter (1-based) on, applied with
+    // `change_windows_after_write`: Windows, when derived from the level,
+    // changes before the next setter samples it.
+    pub(crate) change_power_after_write: Option<(usize, u8)>,
     // Edits every raw 07/8C reply frame (byte 0 is the HID report ID).
     pub(crate) power_edit: Option<PowerEdit>,
     // That power read's reply completes with a receive timeout.
@@ -475,6 +485,16 @@ impl Port for MemoryPort {
                             s.custom_levels[index] = payload[2];
                         }
                         s.writes += 1;
+                        if let Some((at, windows)) = s.change_windows_after_write
+                            && at == s.writes
+                        {
+                            s.windows_on_battery = Some(windows);
+                        }
+                        if let Some((at, actual)) = s.change_power_after_write
+                            && at == s.writes
+                        {
+                            s.actual = actual;
+                        }
                         if let Some((number, release)) = &s.held_write
                             && *number == s.writes
                         {
@@ -495,12 +515,19 @@ impl Port for MemoryPort {
                         vec![
                             1,
                             payload[1],
-                            if s.mismatch && s.writes == 2 || s.mismatch_after == Some(s.writes) {
-                                4
-                            } else {
-                                s.selectors[index]
+                            match s.reads_after {
+                                Some((at, selector, _)) if at == s.writes => selector,
+                                _ if s.mismatch && s.writes == 2
+                                    || s.mismatch_after == Some(s.writes) =>
+                                {
+                                    4
+                                }
+                                _ => s.selectors[index],
                             },
-                            s.fans[index],
+                            match s.reads_after {
+                                Some((at, _, fans)) if at == s.writes => fans,
+                                _ => s.fans[index],
+                            },
                         ]
                     }
                     (13, 0x87) => vec![1, payload[1], s.custom_levels[(payload[1] - 1) as usize]],

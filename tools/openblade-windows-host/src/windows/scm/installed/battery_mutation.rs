@@ -499,9 +499,10 @@ impl Permit for BatteryPermit {
             // refusals; a battery permit never plans one.
             Refusal::CurrentAdmission
             | Refusal::UnclassifiedBlocked
-            | Refusal::NoDirectPath
             | Refusal::Deadline
             | Refusal::ThermalPending => "Fresh battery admission is unavailable.",
+            #[cfg(not(feature = "service-thermal-hyperboost-exit-v1"))]
+            Refusal::NoDirectPath => "Fresh battery admission is unavailable.",
         });
     }
     fn retired(&self) -> io::Result<Settlement> {

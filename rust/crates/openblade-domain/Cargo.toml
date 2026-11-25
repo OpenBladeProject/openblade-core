@@ -22,6 +22,10 @@ profile-set = []
 # The native Service's durable keyboard Driver-mode ownership record: its
 # strict line codec and transitions. Pure std; the host owns the file.
 driver-mode-history = []
+# Leaving HyperBoost for a battery preset through managed's restore pair:
+# the RestoreThenBattery plan and the restore setters' progress 80-83 in the
+# shared thermal grammar. Readers built without it refuse those rows.
+hyperboost-exit = []
 
 [dependencies]
 openblade-types.workspace = true

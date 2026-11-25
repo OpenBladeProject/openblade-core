@@ -1864,6 +1864,8 @@ enum Cause {
     /// outstanding or uncertain. Managed's scoped block reason.
     ThermalPending(&'static str),
     ManualDeferred,
+    /// Leaving HyperBoost for a battery preset without the restore sequence.
+    #[cfg(not(feature = "service-thermal-hyperboost-exit-v1"))]
     NoDirectPath,
     NoEligiblePolicy,
     TransactionCapacity,
@@ -1902,6 +1904,7 @@ impl Cause {
             // so that build keeps the explicit resubmission instruction.
             Self::ManualDeferred if cfg!(feature = "service-fan-mutation-v2") => "Performance intent was stored and will be applied when fans return to Automatic.".into(),
             Self::ManualDeferred => "Performance intent stored. Performance is saved, not applied. Manual fan intent is preserved. Submit a new performance request after selecting Automatic fans.".into(),
+            #[cfg(not(feature = "service-thermal-hyperboost-exit-v1"))]
             Self::NoDirectPath => "Leaving HyperBoost for a battery preset needs the HyperBoost restore sequence, which this build does not submit; no thermal setter was submitted.".into(),
             Self::NoEligiblePolicy => "No supported performance destination is selected by the current power and profile policy.".into(),
             Self::TransactionCapacity => "Thermal transaction ID capacity is exhausted; no setter was submitted.".into(),
@@ -1971,7 +1974,9 @@ impl RequestPermit {
     /// The GPU half's first step for the destination `desired` selected at
     /// class `power` from the fresh `baseline` (`thermal_gpu::Lane::prepare`),
     /// or the cause that refuses the step with nothing written. A step the
-    /// Reader refuses as `Plan::NoDirectPath` takes none.
+    /// Reader refuses as `Plan::NoDirectPath` takes none. With the HyperBoost
+    /// exit, the restore sequence's battery destination takes the half a
+    /// direct step to it would, after the battery pair's readback.
     #[cfg(feature = "service-gpu-clock-tuning-v1")]
     fn prepare_gpu(
         &self,
@@ -1985,6 +1990,7 @@ impl RequestPermit {
             return Ok(None);
         };
         let plan = Plan::from_observation(baseline, destination);
+        #[cfg(not(feature = "service-thermal-hyperboost-exit-v1"))]
         if plan == Plan::NoDirectPath {
             return Ok(None);
         }
@@ -2542,6 +2548,7 @@ impl Permit for RequestPermit {
             Refusal::CurrentAdmission => Cause::CurrentAdmission,
             Refusal::PowerChanged => Cause::PowerChanged,
             Refusal::UnclassifiedBlocked => Cause::UnclassifiedBlocked,
+            #[cfg(not(feature = "service-thermal-hyperboost-exit-v1"))]
             Refusal::NoDirectPath => Cause::NoDirectPath,
             Refusal::Deadline => Cause::Deadline,
             Refusal::ThermalPending if self.reconcile.is_some() => {
@@ -2577,14 +2584,7 @@ impl Permit for RequestPermit {
         // A convergence attempt admits each setter's intent afresh, before
         // its row (`thermal_drift::Scope::admits`).
         #[cfg(feature = "service-profile-triggers-v1")]
-        if matches!(
-            progress,
-            Progress::FirstIntent
-                | Progress::SecondIntent
-                | Progress::ThirdIntent
-                | Progress::FourthIntent
-        ) && self.transition.as_ref().is_some_and(|t| !t.admits(false))
-        {
+        if progress.is_intent() && self.transition.as_ref().is_some_and(|t| !t.admits(false)) {
             self.set_cause(Cause::CurrentAdmission);
             return Err(io::ErrorKind::PermissionDenied.into());
         }
@@ -2595,16 +2595,19 @@ impl Permit for RequestPermit {
         // next reading decides whether the write landed (`submitted`); the
         // row it leaves unsettled still fences writes.
         #[cfg(feature = "service-profile-triggers-v1")]
-        if matches!(
-            progress,
-            Progress::FirstIntent
-                | Progress::SecondIntent
-                | Progress::ThirdIntent
-                | Progress::FourthIntent
-        ) && let Some(destination) =
-            *self.destination.lock().map_err(|_| io::ErrorKind::Other)?
+        if progress.is_intent()
+            && let Some(destination) = *self.destination.lock().map_err(|_| io::ErrorKind::Other)?
         {
             let from = *self.baseline.lock().map_err(|_| io::ErrorKind::Other)?;
+            // The HyperBoost restore pair writes Balanced, so a stop after
+            // one of its setters leaves Balanced as OpenBlade's own write.
+            #[cfg(feature = "service-thermal-hyperboost-exit-v1")]
+            let destination = match progress {
+                Progress::RestoreFirstIntent | Progress::RestoreSecondIntent => {
+                    Destination::Preset(Preset::Balanced)
+                }
+                _ => destination,
+            };
             self.drift
                 .lock()
                 .map_err(|_| io::ErrorKind::Other)?

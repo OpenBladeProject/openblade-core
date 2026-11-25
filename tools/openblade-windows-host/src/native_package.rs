@@ -810,6 +810,18 @@ fn capabilities(schema: u8, role: &str, features: &str, value: &str) -> io::Resu
     {
         return Err(deny());
     }
+    // The HyperBoost exit to a battery preset writes managed's restore pair
+    // in HyperBoost, which has no capture evidence on battery. Admitting it
+    // is a separate packaging decision. Refuse the feature and its marker by
+    // name (docs/windows-rust-development-service.md).
+    const HYPERBOOST_EXIT: &str = "service-thermal-hyperboost-exit-v1";
+    if has(HYPERBOOST_EXIT)
+        || value
+            .split(',')
+            .any(|capability| capability == HYPERBOOST_EXIT)
+    {
+        return Err(deny());
+    }
     // The application-context reporter is not admitted for packaging either:
     // refuse its feature and its capability marker by name, whatever else the
     // record claims, until a packaging stage admits both.

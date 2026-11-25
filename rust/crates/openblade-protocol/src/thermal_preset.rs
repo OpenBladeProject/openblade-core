@@ -20,6 +20,12 @@ impl PresetPair {
     pub fn custom(ids: [u8; 2]) -> Option<Self> {
         Self::with_selector(ids, CUSTOM_SELECTOR)
     }
+    /// The HyperBoost restore pair (`hyperboost-restore-balanced-channel-N`):
+    /// managed writes it before leaving HyperBoost for a battery preset. Its
+    /// bytes are the Balanced pair's; no new firmware command is admitted.
+    pub fn hyperboost_restore(ids: [u8; 2]) -> Option<Self> {
+        Self::with_selector(ids, InstalledThermalPreset::Balanced.selector())
+    }
     fn with_selector(ids: [u8; 2], selector: u8) -> Option<Self> {
         if ids[0] == 0 || ids[1] == 0 || ids[0] == ids[1] {
             return None;
@@ -164,6 +170,36 @@ mod tests {
             }
         }
         out
+    }
+    /// The HyperBoost restore pair is the managed RZ09-0581 HyperBoost
+    /// production fixture, byte for byte, and equal to the Balanced pair.
+    #[test]
+    fn the_hyperboost_restore_pair_is_the_managed_fixture_and_the_balanced_pair() {
+        let fixture: Vec<Entry> = serde_json::from_str(include_str!(
+            "../../../../src/OpenBlade.Protocol/Fixtures/Rz09_0581_02e0_4_00_HyperBoostProduction.json"
+        ))
+        .unwrap();
+        let restore = PresetPair::hyperboost_restore([19, 20]).unwrap();
+        let balanced = PresetPair::new([19, 20], InstalledThermalPreset::Balanced).unwrap();
+        for (index, command) in restore.commands().iter().enumerate() {
+            let entry = fixture_entry(
+                &fixture,
+                &format!("hyperboost-restore-balanced-channel-{}", index + 1),
+            );
+            let encoded = command.encode();
+            assert_eq!((encoded[6], encoded[7], encoded[5]), (entry.0, entry.1, 4));
+            assert_eq!(base64(&encoded[8..12]), entry.2);
+            assert_eq!(encoded, balanced.commands()[index].encode());
+            let mut reply = encoded;
+            reply[0] = 2;
+            assert!(restore.acknowledge(index, &reply).is_ok());
+            assert!(restore.acknowledge(1 - index, &reply).is_err());
+        }
+        // The enable pair is HyperBoost's own selector, never a restore.
+        let enable = fixture_entry(&fixture, "hyperboost-enable-channel-1");
+        assert_ne!(base64(&restore.commands()[0].encode()[8..12]), enable.2);
+        assert!(PresetPair::hyperboost_restore([1, 1]).is_none());
+        assert!(PresetPair::hyperboost_restore([0, 1]).is_none());
     }
     #[test]
     fn complete_pair_uses_requested_destination_and_exact_echo() {

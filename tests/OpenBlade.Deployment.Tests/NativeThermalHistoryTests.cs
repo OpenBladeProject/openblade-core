@@ -161,6 +161,22 @@ public sealed class NativeThermalHistoryTests : IDisposable
         Thermal(files, Bytes(complete));
         _ = WindowsNativeThermalHistory.Read(files, [original]);
         Assert.Equal("Custom", WindowsNativeThermalHistory.PresetName(5));
+        // Leaving HyperBoost for a battery preset journals the restore pair as
+        // 80-83 before the battery pair (hyperBoostExitRows). An unsettled
+        // journal is classified for handback; only a complete one is settled.
+        foreach (var (key, admitted) in new[] { ("admitted", true), ("refused", false) })
+        {
+            foreach (var journal in v.GetProperty("hyperBoostExitRows").GetProperty(key).EnumerateArray())
+            {
+                string text = journal.GetProperty("journal").GetString()!;
+                Thermal(files, Bytes(text));
+                bool settled = text.EndsWith("\"progress\":5}\n", StringComparison.Ordinal);
+                if (admitted) { Assert.NotNull(WindowsNativeThermalHistory.Read(files, [original], original).Handback); }
+                else { Assert.ThrowsAny<IOException>(() => WindowsNativeThermalHistory.Read(files, [original], original)); }
+                if (admitted && settled) { _ = WindowsNativeThermalHistory.Read(files, [original]); }
+                else { Assert.ThrowsAny<IOException>(() => WindowsNativeThermalHistory.Read(files, [original])); }
+            }
+        }
         Thermal(files, segment);
         Roll(files, segment, []);
         var segmented = WindowsNativeThermalHistory.Read(files, [original]);
@@ -175,6 +191,40 @@ public sealed class NativeThermalHistoryTests : IDisposable
             using var badFiles = ManagedMailboxCorrectionTests.Bootstrap(); Thermal(badFiles, Bytes(bad.GetString()!));
             Assert.ThrowsAny<Exception>(() => WindowsNativeThermalHistory.Read(badFiles, [original]));
         }
+    }
+    [Fact]
+    public void HyperBoostExitRowsRequireTheirProducingArtifact()
+    {
+        // Rows 80-83 come only from a Service built with
+        // service-thermal-hyperboost-exit-v1, whose build.rs capability marker
+        // retirement binds as it binds the fan, battery and temporary-charge
+        // families. Any other artifact is denied the generation, settled or
+        // handed back. Packaging refuses the marker for now, so the producer
+        // here is the inspected artifact with the marker added.
+        using var vector = JsonDocument.Parse(File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "thermal-history-v1.json")));
+        var v = vector.RootElement;
+        using var files = ManagedMailboxCorrectionTests.Bootstrap();
+        string[] f = NativeCanonical.ParseLines(Bytes(v.GetProperty("owner").GetString()!), "OpenBlade.NativeOwner.v1", 9);
+        var original = new WindowsNativeTrustLifecycle.OwnerReference(f[3], f[4], f[5], f[6], f[7], NativeCanonical.Digest(Bytes(v.GetProperty("owner").GetString()!)));
+        var record = new NativeEpochRecord(NativeEpochPhase.Retired, f[4], new string('0', 64), 1, f[3], new string('a', 64), new string('b', 32), f[5], new string('c', 64) + "-agent", new string('0', 64), new string('d', 64));
+        var launches = new Dictionary<string, byte[]> { ["17-1.bin"] = [] };
+        var old = NativeArtifact.Inspect([.. WindowsNativeEpochTests.Image("service", nonce: '3', schema: 2, mutation: true)], "service", new string('a', 40));
+        var producer = old with { Capabilities = old.Capabilities + ",service-thermal-hyperboost-exit-v1" };
+        Assert.False(old.HyperBoostExitMutation);
+        Assert.True(producer.HyperBoostExitMutation);
+        int journals = 0;
+        foreach (var journal in v.GetProperty("hyperBoostExitRows").GetProperty("admitted").EnumerateArray())
+        {
+            Thermal(files, Bytes(journal.GetProperty("journal").GetString()!));
+            var history = WindowsNativeThermalHistory.Read(files, [original], original);
+            Assert.Throws<IOException>(() => history.Generation(record, old, [original], launches));
+            Assert.NotEmpty(history.Generation(record, producer, [original], launches));
+            journals++;
+        }
+        Assert.True(journals > 1);
+        // A pair-only history needs no exit producer.
+        Thermal(files, Bytes(v.GetProperty("segment").GetString()!));
+        Assert.Equal(v.GetProperty("generation").GetString(), WindowsNativeThermalHistory.Read(files, [original]).Generation(record, old, [original], launches));
     }
     [Theory]
     [InlineData("pending")]

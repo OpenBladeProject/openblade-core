@@ -1205,6 +1205,22 @@ path; a preview publishes status and reaches no firmware. See
 [Performance shortcut](windows-native-thermal-mutation.md#performance-shortcut-service-performance-shortcut-v1)
 for the selection, replies and differences from managed.
 
+#### HyperBoost exit to a battery preset
+
+A Service built with `service-thermal-hyperboost-exit-v1` leaves confirmed
+HyperBoost for Battery Saver or Battery Balanced through managed's restore
+recipe (the Balanced pair, an independent read that must confirm Balanced with
+Automatic fans, then the battery pair) instead of storing the request and
+replying Blocked. The feature implies `service-thermal-mutation-v1`, adds no
+IPC operation, journals the restore setters as progress 80-83 and adds the
+capability marker `service-thermal-hyperboost-exit-v1` after the performance
+shortcut's. Both package readers refuse the feature and the marker by name
+("The HyperBoost exit is not admitted for packaging."), so no packaged image
+carries it. The recipe is source-reviewed and has not been run on a laptop.
+See
+[the HyperBoost exit](windows-native-thermal-mutation.md#hyperboost-exit-to-a-battery-preset-service-thermal-hyperboost-exit-v1)
+for the recipe, the replies and the differences from managed.
+
 ### Phase 10n ownership binding
 
 The installed candidate's conditional firmware factory now requires a private

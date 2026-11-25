@@ -98,6 +98,13 @@ service-temporary-charge-v1 = ["service-battery-policy-v1"]
 service-performance-shortcut-v1 = ["service-fan-mutation-v2"]
 service-battery-policy-v1 = ["service-fan-mutation-v2"]
 service-fan-mutation-v2 = ["service-thermal-mutation-v1"]
+# Leaving HyperBoost for a battery preset on exact RZ09-0581: managed's
+# restore pair (the Balanced bytes), an independent read that must confirm
+# Balanced with Automatic fans, then the battery pair, journaled as 0, 80-83,
+# 1-4, 5. Without it that request is refused as NoDirectPath. The restore pair
+# in HyperBoost on battery has no capture evidence, so no packaged composition
+# implies it, and both package readers refuse it by name.
+service-thermal-hyperboost-exit-v1 = ["service-thermal-mutation-v1", "openblade-domain/hyperboost-exit"]
 # Thermal overrides are checked with the managed ProfileSetValidator thermal
 # rules before anything is stored, so this lane needs the domain profile set.
 service-thermal-mutation-v1 = ["service-mailbox-observation-v1", "controller-admission-compile-check", "openblade-domain/profile-set"]
