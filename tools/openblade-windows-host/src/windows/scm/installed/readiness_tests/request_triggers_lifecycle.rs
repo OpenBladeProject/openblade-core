@@ -7,11 +7,11 @@
 use super::*;
 use openblade_domain::power_setting::{PBT_POWERSETTINGCHANGE, PowerSetting};
 
-#[path = "power_only_release.rs"]
-mod power_only_release;
 #[cfg(feature = "service-thermal-convergence-v1")]
 #[path = "thermal_convergence_loop.rs"]
 mod convergence_loop;
+#[path = "power_only_release.rs"]
+mod power_only_release;
 #[path = "request_triggers_startup.rs"]
 mod startup;
 
