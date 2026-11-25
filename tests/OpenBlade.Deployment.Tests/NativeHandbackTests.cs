@@ -8,7 +8,7 @@ namespace OpenBlade.Deployment.Tests;
 // thermal history. These tests cover classification per progress, the exit
 // marker under reacquired custody, the immutable record and proof v4.
 [System.Runtime.Versioning.SupportedOSPlatform("windows")]
-public sealed class NativeHandbackTests : IDisposable
+public sealed partial class NativeHandbackTests : IDisposable
 {
     private readonly string? ownedRoot;
 

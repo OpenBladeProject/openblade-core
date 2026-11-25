@@ -29,10 +29,36 @@ use windows_sys::{
 #[path = "thermal_history_store.rs"]
 mod thermal_history_store;
 
+#[cfg(feature = "service-keyboard-driver-mode-v1")]
+#[path = "driver_mode_record_store.rs"]
+mod driver_mode_record_store;
+
+#[cfg(all(
+    test,
+    feature = "service-thermal-mutation-v1",
+    not(feature = "service-keyboard-driver-mode-v1")
+))]
+#[path = "driver_mode_record_absent_tests.rs"]
+mod driver_mode_record_absent_tests;
+#[cfg(all(test, feature = "service-thermal-mutation-v1"))]
+#[path = "durable_owner_fixture.rs"]
+mod fixture;
+
 #[cfg(all(test, feature = "service-thermal-mutation-v1"))]
 type RecordCheck = Arc<dyn Fn(&Record, bool) -> io::Result<()> + Send + Sync>;
 #[cfg(test)]
 type BoundaryCheck = Arc<dyn Fn(&str) -> io::Result<()> + Send + Sync>;
+
+/// Where `Store::replace_staged` publishes.
+#[cfg(feature = "service-thermal-mutation-v1")]
+struct Staged {
+    stage: &'static str,
+    target: &'static str,
+    /// The `history_boundary` label of its crash points.
+    boundary: &'static str,
+    /// The fatal admission a stage of the wrong identity or protection is.
+    protection: &'static str,
+}
 
 pub(in crate::installed) struct Store {
     root: File,
@@ -105,16 +131,7 @@ impl Store {
         let mut entries = Vec::new();
         for entry in std::fs::read_dir(&self.path)? {
             let name = entry?.file_name();
-            #[cfg(feature = "service-thermal-mutation-v1")]
-            if matches!(
-                name.to_str(),
-                Some(
-                    "thermal-mutation.journal"
-                        | "thermal-mutation.journal.pending"
-                        | "thermal-mutation.journal.rollover"
-                        | "thermal-history"
-                )
-            ) {
+            if name.to_str().is_some_and(separately_validated) {
                 continue;
             }
             // Preserve the old 4096-entry owner budget including writer.lock;
@@ -131,16 +148,7 @@ impl Store {
             if name == "writer.lock" {
                 continue;
             }
-            // Older compositions must retain their complete-set refusal. Only
-            // this composition owns and validates the separate submission log.
-            #[cfg(feature = "service-thermal-mutation-v1")]
-            if matches!(
-                name,
-                "thermal-mutation.journal"
-                    | "thermal-mutation.journal.pending"
-                    | "thermal-mutation.journal.rollover"
-                    | "thermal-history"
-            ) {
+            if separately_validated(name) {
                 continue;
             }
             let mut held = self.open_record(name, false)?;
@@ -375,9 +383,36 @@ impl Store {
         if self.journal_read(false)?.as_deref() != expected {
             return Err(deny());
         }
+        self.replace_staged(
+            Staged {
+                stage: "thermal-mutation.journal.pending",
+                target: "thermal-mutation.journal",
+                boundary: "journal",
+                protection: "Thermal settlement staging protection is invalid.",
+            },
+            &physical,
+            &|| Ok(self.journal_read(false)?.as_deref() == expected),
+            &|| Ok(self.journal_read(false)?.as_deref() == Some(bytes)),
+        )
+    }
+    /// Publishes `physical` as `names.target` through its same-directory
+    /// stage: created new (a stage left behind refuses), its identity and
+    /// protection checked, written, flushed and read back, then renamed over
+    /// the target only while `unchanged` still holds, and flushed again. It
+    /// succeeds only when `published` then confirms the result. A failure at
+    /// any point leaves the stage, or the renamed target, as evidence:
+    /// nothing is cleaned up.
+    #[cfg(feature = "service-thermal-mutation-v1")]
+    fn replace_staged(
+        &self,
+        names: Staged,
+        physical: &[u8],
+        unchanged: &dyn Fn() -> io::Result<bool>,
+        published: &dyn Fn() -> io::Result<bool>,
+    ) -> io::Result<()> {
         let mut file = paths::open_relative(
             &self.root,
-            OsStr::new("thermal-mutation.journal.pending"),
+            OsStr::new(names.stage),
             FILE_GENERIC_READ
                 | FILE_GENERIC_WRITE
                 | windows_sys::Win32::Storage::FileSystem::DELETE,
@@ -388,23 +423,34 @@ impl Store {
         paths::check_regular_file(&file)
             .and_then(|_| self.check(&file, Policy::Record))
             .map_err(|_| {
-                crate::installed::readiness::thermal_mutation::fatal_admission(
-                    "Thermal settlement staging protection is invalid.",
-                )
+                crate::installed::readiness::thermal_mutation::fatal_admission(names.protection)
             })?;
-        file.write_all(&physical)?;
+        self.boundary(names.boundary, "created")?;
+        file.write_all(physical)?;
+        self.boundary(names.boundary, "written")?;
         file.sync_all()?;
+        self.boundary(names.boundary, "flushed")?;
         file.rewind()?;
         let mut check = vec![];
         file.read_to_end(&mut check)?;
-        if check != physical || self.journal_read(false)?.as_deref() != expected {
+        if check != physical || !unchanged()? {
             return Err(deny());
         }
-        paths::rename_same_directory(&file, "thermal-mutation.journal", true)?;
+        self.boundary(names.boundary, "readback")?;
+        paths::rename_same_directory(&file, names.target, true)?;
+        self.boundary(names.boundary, "renamed")?;
         file.sync_all()?;
         drop(file);
-        if self.journal_read(false)?.as_deref() != Some(bytes) {
+        if !published()? {
             return Err(deny());
+        }
+        self.boundary(names.boundary, "verified")
+    }
+    /// The test-only crash point `history_boundary` at `label:stage`.
+    fn boundary(&self, _label: &str, _stage: &str) -> io::Result<()> {
+        #[cfg(test)]
+        if let Some(hook) = &self.history_boundary {
+            hook(&format!("{_label}:{_stage}"))?;
         }
         Ok(())
     }
@@ -483,6 +529,30 @@ impl Store {
         self.last = Some(next);
         Ok(())
     }
+}
+
+/// Whether `name` in the owner directory belongs to a family this
+/// composition validates on its own: the thermal submission log and, with
+/// keyboard Driver-mode ownership, its record. Older compositions must
+/// retain their complete-set refusal, so a family they cannot honour is read
+/// as an owner record and refused.
+fn separately_validated(name: &str) -> bool {
+    #[cfg(feature = "service-thermal-mutation-v1")]
+    if matches!(
+        name,
+        "thermal-mutation.journal"
+            | "thermal-mutation.journal.pending"
+            | "thermal-mutation.journal.rollover"
+            | "thermal-history"
+    ) {
+        return true;
+    }
+    #[cfg(feature = "service-keyboard-driver-mode-v1")]
+    if driver_mode_record_store::NAMES.contains(&name) {
+        return true;
+    }
+    let _ = name;
+    false
 }
 
 // Observation retains the real global owner serialization boundary. Empty

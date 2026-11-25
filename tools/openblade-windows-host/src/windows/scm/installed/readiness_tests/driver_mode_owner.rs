@@ -31,7 +31,10 @@ const TRAILING_CHECKPOINT: usize = 9;
 async fn owner_rig(mode: u8) -> (Rig, Rc<Cell<bool>>) {
     let files = MemoryFiles::default();
     files.profiles(1);
-    let rig = Rig::new(files);
+    wired(Rig::new(files), mode).await
+}
+/// `rig` wired as `owner_rig` wires it, its keyboard in `mode`.
+async fn wired(rig: Rig, mode: u8) -> (Rig, Rc<Cell<bool>>) {
     rig.port.state.lock().unwrap().device_mode = mode;
     observe(&rig).await;
     let custody = rig.custody.clone();
@@ -277,8 +280,9 @@ async fn the_startup_call_always_reads() {
 
 /// Ownership is claimed before the setter can be submitted: a setter whose
 /// submission fails, so it may have reached the firmware, leaves the claim
-/// and stops the owner (Indeterminate) with null published. The shutdown
-/// release still restores Normal after a fresh read of Driver.
+/// and makes the owner Indeterminate with null published and no recovery.
+/// Before a later step resolves it, the shutdown release still restores
+/// Normal after a fresh read of Driver.
 #[tokio::test]
 async fn the_claim_precedes_submission_and_a_failed_submission_is_indeterminate() {
     let (rig, _) = owner_rig(DRIVER).await;
@@ -289,17 +293,12 @@ async fn the_claim_precedes_submission_and_a_failed_submission_is_indeterminate(
         port.device_mode = NORMAL;
         port.device_mode_fail_set = true;
     }
+    let sent = keyboard(&rig).len();
     later(&rig).await;
-    assert_eq!(sets(&rig), 1);
+    assert_eq!((keyboard(&rig).len(), sets(&rig)), (sent + 2, 1));
     assert_eq!(owner(&rig), (true, true, false));
     assert_eq!(published(&rig).await, None);
-    // The owner stops: no read, no write and no recovery, ever again.
-    let sent = keyboard(&rig).len();
     rig.port.state.lock().unwrap().device_mode_fail_set = false;
-    for _ in 0..3 {
-        later(&rig).await;
-    }
-    assert_eq!((keyboard(&rig).len(), sets(&rig)), (sent, 1));
     rig.port.state.lock().unwrap().device_mode = DRIVER;
     shutdown(&rig).await.unwrap();
     assert_eq!((sets(&rig), mode(&rig)), (2, NORMAL));
@@ -349,7 +348,8 @@ async fn the_checkpoint_before_the_first_send_refuses_with_nothing_sent() {
 
 /// The checkpoints after the setter's submission and before the readback:
 /// refused at either, the setter may have been applied, so the step is
-/// Indeterminate with the claim kept and nothing replayed.
+/// Indeterminate with the claim kept and nothing replayed. The next due
+/// step's read of Driver resolves it and keeps that claim.
 #[tokio::test]
 async fn a_checkpoint_refused_after_submission_is_indeterminate() {
     // (authorization after the first query's send, exchanges sent)
@@ -362,7 +362,9 @@ async fn a_checkpoint_refused_after_submission_is_indeterminate() {
         assert_eq!(published(&rig).await, None, "{nth}");
         rig.custody.fresh_refuse.store(false, Ordering::Release);
         later(&rig).await;
-        assert_eq!(keyboard(&rig).len(), sent, "{nth}");
+        assert_eq!((keyboard(&rig).len(), sets(&rig)), (sent + 1, 1), "{nth}");
+        assert_eq!(owner(&rig), (true, false, false), "{nth}");
+        assert_eq!(published(&rig).await, Some(true), "{nth}");
         rig.stop().await;
         assert_eq!(mode(&rig), NORMAL, "{nth}");
     }
@@ -370,10 +372,16 @@ async fn a_checkpoint_refused_after_submission_is_indeterminate() {
 
 /// An acknowledgement that does not echo the setter, and a readback that
 /// does not confirm Driver or times out, are Indeterminate: null is
-/// published, the claim is kept and nothing is ever replayed.
+/// published, the claim is kept and nothing is ever replayed. The next due
+/// step's read resolves each from the mode the keyboard is in: Driver keeps
+/// the claim, and Normal (the ignored setter) ends it.
 #[tokio::test]
-async fn an_ambiguous_acknowledgement_or_readback_publishes_null_and_stops_writes() {
-    for case in ["bad ack", "ignored setter", "readback timeout"] {
+async fn an_ambiguous_acknowledgement_or_readback_publishes_null_until_a_read_resolves_it() {
+    for (case, driver) in [
+        ("bad ack", true),
+        ("ignored setter", false),
+        ("readback timeout", true),
+    ] {
         let (rig, _) = owner_rig(DRIVER).await;
         tick(&rig).await;
         assert_eq!(published(&rig).await, Some(true), "{case}");
@@ -391,16 +399,280 @@ async fn an_ambiguous_acknowledgement_or_readback_publishes_null_and_stops_write
         assert_eq!(owner(&rig), (true, true, false), "{case}");
         assert_eq!(published(&rig).await, None, "{case}");
         let sent = keyboard(&rig).len();
-        for _ in 0..3 {
-            later(&rig).await;
-        }
-        assert_eq!((keyboard(&rig).len(), sets(&rig)), (sent, 1), "{case}");
         {
             let mut port = rig.port.state.lock().unwrap();
             port.device_mode_bad_ack = false;
             port.device_mode_ignore_set = false;
             port.device_mode_timeout = None;
         }
+        later(&rig).await;
+        assert_eq!((keyboard(&rig).len(), sets(&rig)), (sent + 1, 1), "{case}");
+        assert_eq!(owner(&rig), (driver, false, false), "{case}");
+        assert_eq!(published(&rig).await, Some(driver), "{case}");
+        rig.stop().await;
+    }
+}
+
+/// The keyboard exchanges sent from the `from`th on: (command, payload).
+fn commands(rig: &Rig, from: usize) -> Vec<(u8, Vec<u8>)> {
+    keyboard(rig)[from..]
+        .iter()
+        .map(|(command, payload, _)| (*command, payload.clone()))
+        .collect()
+}
+/// The 00/84 query.
+fn query() -> (u8, Vec<u8>) {
+    (0x84, vec![0, 0])
+}
+/// A power-status notice, which moves the lifecycle epoch, while the next
+/// job's `nth` 00/84 query is sent.
+fn notice_at_query(rig: &Rig, nth: usize) {
+    let custody = Arc::downgrade(&rig.custody);
+    let query = rig.port.state.lock().unwrap().device_mode_queries + nth;
+    rig.port.state.lock().unwrap().device_mode_on_query = Some(Arc::new(move |sent| {
+        if sent == query {
+            custody.upgrade().unwrap().lifecycle.ingress(POWER, SETTING);
+        }
+    }));
+}
+/// That notice delivered inside the `nth` fresh authorization after the
+/// next job's first 00/84 query is sent, once the authorization has read
+/// the epoch it checks.
+fn notice_after_first_query(rig: &Rig, nth: usize) {
+    let custody = Arc::downgrade(&rig.custody);
+    let start = rig.port.state.lock().unwrap().device_mode_queries + 1;
+    rig.port.state.lock().unwrap().device_mode_on_query = Some(Arc::new(move |query| {
+        if query == start {
+            let custody = custody.upgrade().unwrap();
+            custody.notice_skip.store(nth - 1, Ordering::Release);
+            *custody.notice_during_authorize.lock().unwrap() = Some((POWER, SETTING, None));
+        }
+    }));
+}
+/// The queued defect: an acquire whose setter was applied and exactly
+/// acknowledged, with a power notice moving the epoch its capture pins while
+/// the independent readback is sent. The readback is fenced, so the owner is
+/// Indeterminate with the claim kept and null published.
+async fn fenced_readback_rig() -> (Rig, Rc<Cell<bool>>) {
+    let (rig, named) = owner_rig(NORMAL).await;
+    rig.custody.pinned_fresh.store(true, Ordering::Release);
+    notice_at_query(&rig, 2);
+    tick(&rig).await;
+    rig.port.state.lock().unwrap().device_mode_on_query = None;
+    assert_eq!(commands(&rig, 0), [query(), (0x04, vec![3, 0]), query()]);
+    assert_eq!((sets(&rig), mode(&rig)), (1, DRIVER));
+    assert_eq!(owner(&rig), (true, true, false));
+    assert_eq!(published(&rig).await, None);
+    (rig, named)
+}
+
+/// A later due step resolves a fenced readback read-only: its own 00/84
+/// read under a fresh capture finds Driver, so the acquire took effect. The
+/// claim the acquire made is kept and no new one is made, true is published,
+/// and maintenance resumes on the ordinary cadence with no further write.
+#[tokio::test]
+async fn a_later_read_of_driver_resolves_a_fenced_readback() {
+    let (rig, _) = fenced_readback_rig().await;
+    let sent = keyboard(&rig).len();
+    let start = captures(&rig);
+    later(&rig).await;
+    assert_eq!(commands(&rig, sent), [query()]);
+    assert_eq!(captures(&rig), start + 1);
+    assert_eq!(owner(&rig), (true, false, false));
+    assert_eq!(rig.runtime.driver_mode_claims_for_tests(), 1);
+    assert_eq!(published(&rig).await, Some(true));
+    later(&rig).await;
+    assert_eq!(commands(&rig, sent + 1), [query()]);
+    assert_eq!(sets(&rig), 1);
+    shutdown(&rig).await.unwrap();
+    assert_eq!(rig.runtime.driver_mode_release(), Some(Release::Restored));
+    assert_eq!(mode(&rig), NORMAL);
+}
+
+/// A later read of Normal says the acquire did not take effect (a failed
+/// submission) or was undone (a fenced readback, then a foreign Normal). The
+/// claim ends and false is published. The next tick acquires as a new write:
+/// a fresh capture, read-before-write, a new claim and a setter on a new ID.
+#[tokio::test]
+async fn a_later_read_of_normal_ends_the_claim_and_the_next_tick_acquires_afresh() {
+    for case in ["not applied", "undone"] {
+        let rig = if case == "undone" {
+            let (rig, _) = fenced_readback_rig().await;
+            rig.port.state.lock().unwrap().device_mode = NORMAL;
+            rig
+        } else {
+            let (rig, _) = owner_rig(NORMAL).await;
+            rig.port.state.lock().unwrap().device_mode_fail_set = true;
+            tick(&rig).await;
+            rig.port.state.lock().unwrap().device_mode_fail_set = false;
+            assert_eq!(owner(&rig), (true, true, false), "{case}");
+            rig
+        };
+        let first = keyboard(&rig)[1].clone();
+        assert_eq!(
+            (first.0, sets(&rig), mode(&rig)),
+            (0x04, 1, NORMAL),
+            "{case}"
+        );
+        let sent = keyboard(&rig).len();
+        later(&rig).await;
+        assert_eq!(commands(&rig, sent), [query()], "{case}");
+        assert_eq!(owner(&rig), (false, false, false), "{case}");
+        assert_eq!(rig.runtime.driver_mode_claims_for_tests(), 1, "{case}");
+        assert_eq!(published(&rig).await, Some(false), "{case}");
+        let start = captures(&rig);
+        tick(&rig).await;
+        assert_eq!(captures(&rig), start + 1, "{case}");
+        assert_eq!(
+            commands(&rig, sent + 1),
+            [query(), (0x04, vec![3, 0]), query()],
+            "{case}"
+        );
+        assert_ne!(keyboard(&rig)[sent + 2].2, first.2, "{case}: a new ID");
+        assert_eq!((sets(&rig), mode(&rig)), (2, DRIVER), "{case}");
+        assert_eq!(owner(&rig), (true, false, false), "{case}");
+        assert_eq!(rig.runtime.driver_mode_claims_for_tests(), 2, "{case}");
+        assert_eq!(published(&rig).await, Some(true), "{case}");
+        rig.stop().await;
+    }
+}
+
+/// A resolution read that is unreadable stays Indeterminate and publishes
+/// null, as the Indeterminate step did, with no recovery and no write. One
+/// refused before any exchange, at the capture or by the lane, records
+/// nothing. Each later due step reads again until one confirms the mode.
+#[tokio::test]
+async fn an_unreadable_resolution_read_stays_indeterminate() {
+    let (rig, named) = fenced_readback_rig().await;
+    rig.port.state.lock().unwrap().device_mode_mute = true;
+    let sent = keyboard(&rig).len();
+    let start = captures(&rig);
+    later(&rig).await;
+    assert_eq!(commands(&rig, sent), [query()]);
+    assert_eq!(captures(&rig), start + 1, "no recovery");
+    assert_eq!(owner(&rig), (true, true, false));
+    assert_eq!(published(&rig).await, None);
+    later(&rig).await;
+    assert_eq!(commands(&rig, sent), [query(), query()]);
+    assert_eq!(owner(&rig), (true, true, false));
+    rig.port.state.lock().unwrap().device_mode_mute = false;
+    // No console user, then an admission the lane refuses: nothing is sent.
+    named.set(false);
+    later(&rig).await;
+    named.set(true);
+    rig.custody.fresh_refuse.store(true, Ordering::Release);
+    let start = captures(&rig);
+    later(&rig).await;
+    assert_eq!(captures(&rig), start + 1);
+    rig.custody.fresh_refuse.store(false, Ordering::Release);
+    assert_eq!(keyboard(&rig).len(), sent + 2);
+    assert_eq!(owner(&rig), (true, true, false));
+    later(&rig).await;
+    assert_eq!(commands(&rig, sent + 2), [query()]);
+    assert_eq!(sets(&rig), 1);
+    assert_eq!(owner(&rig), (true, false, false));
+    assert_eq!(published(&rig).await, Some(true));
+    rig.stop().await;
+}
+
+/// The resolution read is fenced by the epoch its fresh capture pins: a
+/// notice while its query is sent, or inside any of the four authorizations
+/// of the checkpoints after its settle and after its reply, leaves it
+/// unconfirmed, so the owner stays Indeterminate with null published. The
+/// next due step resolves it.
+#[tokio::test]
+async fn a_notice_during_the_resolution_read_leaves_it_indeterminate() {
+    // `None`: at the send; otherwise the nth authorization after it.
+    for during in [None, Some(1), Some(2), Some(3), Some(4)] {
+        let (rig, _) = fenced_readback_rig().await;
+        match during {
+            None => notice_at_query(&rig, 1),
+            Some(nth) => notice_after_first_query(&rig, nth),
+        }
+        let sent = keyboard(&rig).len();
+        later(&rig).await;
+        rig.port.state.lock().unwrap().device_mode_on_query = None;
+        assert!(
+            rig.custody
+                .notice_during_authorize
+                .lock()
+                .unwrap()
+                .is_none(),
+            "{during:?}: the notice was delivered"
+        );
+        assert_eq!(commands(&rig, sent), [query()], "{during:?}");
+        assert_eq!(owner(&rig), (true, true, false), "{during:?}");
+        assert_eq!(published(&rig).await, None, "{during:?}");
+        later(&rig).await;
+        assert_eq!(commands(&rig, sent + 1), [query()], "{during:?}");
+        assert_eq!(sets(&rig), 1, "{during:?}");
+        assert_eq!(owner(&rig), (true, false, false), "{during:?}");
+        rig.stop().await;
+    }
+}
+
+/// A release while Indeterminate still restores Normal and ends the claim.
+/// Its confirmed Normal also settles the acquire's doubt: the record is
+/// `Clear`, so nothing stays Indeterminate (with only memory, the doubt
+/// outlived the release). A later read of Driver, set by someone else, keeps
+/// the keyboard unclaimed: a read never claims, so a Stop that finds it
+/// Normal again reports `NotDriver`, not a foreign change.
+#[tokio::test]
+async fn a_resolution_read_of_driver_never_claims_the_keyboard() {
+    let (rig, _) = fenced_readback_rig().await;
+    suspend(&rig);
+    tick(&rig).await;
+    assert_eq!(prepared(&rig), Some(Release::Restored));
+    assert_eq!((sets(&rig), mode(&rig)), (2, NORMAL));
+    assert_eq!(owner(&rig), (false, false, false));
+    rig.custody.lifecycle.ingress(POWER, RESUME);
+    rig.port.state.lock().unwrap().device_mode = DRIVER;
+    later(&rig).await;
+    assert_eq!(owner(&rig), (false, false, false));
+    assert_eq!(rig.runtime.driver_mode_claims_for_tests(), 1);
+    assert_eq!(sets(&rig), 2);
+    assert_eq!(published(&rig).await, Some(true));
+    rig.port.state.lock().unwrap().device_mode = NORMAL;
+    shutdown(&rig).await.unwrap();
+    assert_eq!(rig.runtime.driver_mode_release(), Some(Release::NotDriver));
+}
+
+/// The resolution keeps the step's skip conditions (managed
+/// `RequiresReconciliation`): while a laptop-control journal row is
+/// unsettled it reads nothing and the owner stays Indeterminate.
+#[tokio::test]
+async fn an_unsettled_journal_row_defers_the_resolution() {
+    let (rig, _) = fenced_readback_rig().await;
+    rig.custody.pinned_fresh.store(false, Ordering::Release);
+    let writes = rig.port.state.lock().unwrap().writes;
+    rig.port.state.lock().unwrap().fail_write = Some(writes + 1);
+    assert_eq!(rig.set(1, value(1, 1)).await["result"]["status"], 2);
+    assert!(rig.storage.pending());
+    let sent = keyboard(&rig).len();
+    later(&rig).await;
+    assert_eq!(keyboard(&rig).len(), sent);
+    assert_eq!(owner(&rig), (true, true, false));
+}
+
+/// The resolving step's read is its first exchange and its only one: it
+/// writes nothing before it, and nothing after it in the same tick, whatever
+/// it reads, with the recovery latch unspent.
+#[tokio::test]
+async fn the_resolving_step_reads_before_any_write_and_writes_nothing() {
+    for (keyboard_mode, muted) in [(DRIVER, false), (NORMAL, false), (DRIVER, true)] {
+        let (rig, _) = fenced_readback_rig().await;
+        {
+            let mut port = rig.port.state.lock().unwrap();
+            port.device_mode = keyboard_mode;
+            port.device_mode_mute = muted;
+        }
+        assert!(!owner(&rig).2, "the recovery latch is unspent");
+        let sent = keyboard(&rig).len();
+        let case = (keyboard_mode, muted);
+        later(&rig).await;
+        assert_eq!(commands(&rig, sent), [query()], "{case:?}");
+        assert_eq!((sets(&rig), mode(&rig)), (1, keyboard_mode), "{case:?}");
+        rig.port.state.lock().unwrap().device_mode_mute = false;
         rig.stop().await;
     }
 }
@@ -709,6 +981,11 @@ async fn long_runs_of_acquisitions_never_drain_the_pool() {
     let free = rig.port.free_transactions();
     for _ in 0..200 {
         rig.port.state.lock().unwrap().device_mode = NORMAL;
+        // Each step levels the test clock with real time, so on a loaded
+        // host the run outlasts the retained read (`RETENTION_WINDOW`) and
+        // an unverified device runs no step. A fresh read keeps each step
+        // verified; its read job sends no 00/84, so every step acquires.
+        observe(&rig).await;
         later(&rig).await;
         assert_eq!(mode(&rig), DRIVER);
     }
@@ -1033,6 +1310,180 @@ async fn a_late_suspend_on_a_slow_device_leaves_the_fan_owner_whole() {
     assert_eq!(automatic["result"]["status"], 1, "{automatic}");
     assert_eq!(rig.port.state.lock().unwrap().fans, [0, 0]);
     shutdown(&rig).await.unwrap();
+}
+
+/// The suspend notice as the SCM dispatcher thread delivers it, after the
+/// rig's preparation armed the hold on this, the runtime's, thread: the
+/// notice's hold, which only another thread can wait on.
+fn held_suspend(rig: &Rig) -> crate::origin_lifetime::PendingHold {
+    rig.custody
+        .lifecycle
+        .notice(POWER, SUSPEND, None)
+        .expect("a new suspend generation is held")
+}
+/// Waits on `hold` from a thread that is not the runtime's, as the SCM
+/// dispatcher does: whether the preparation recorded its generation, and
+/// how long the wait took.
+fn wait_elsewhere(hold: crate::origin_lifetime::PendingHold) -> (bool, Duration) {
+    std::thread::spawn(move || {
+        let at = Instant::now();
+        (hold.wait(), at.elapsed())
+    })
+    .join()
+    .unwrap()
+}
+
+/// The SCM callback that delivered a suspend is held, on its own thread,
+/// until the preparation running on the runtime's thread has released the
+/// keyboard and recorded the generation, well within `MAXIMUM_AGE`. The
+/// hold sends nothing and changes no admission: the release is the same
+/// three exchanges under the same cleanup scope.
+#[tokio::test]
+async fn a_held_suspend_callback_ends_when_the_preparation_records_it() {
+    let (rig, _) = owner_rig(NORMAL).await;
+    tick(&rig).await;
+    rig.runtime.hold_suspend_for_tests(&rig.custody.lifecycle);
+    let sent = keyboard(&rig).len();
+    let runtime_thread = std::thread::current().id();
+    let custody = rig.custody.clone();
+    let (accepted, delivered) = std::sync::mpsc::channel();
+    let dispatcher = std::thread::spawn(move || {
+        assert_ne!(std::thread::current().id(), runtime_thread);
+        let hold = custody.lifecycle.notice(POWER, SUSPEND, None).unwrap();
+        accepted.send(()).unwrap();
+        let at = Instant::now();
+        (hold.wait(), at.elapsed())
+    });
+    delivered.recv().unwrap();
+    std::thread::sleep(Duration::from_millis(50));
+    assert!(!dispatcher.is_finished(), "held until the preparation runs");
+    tick(&rig).await;
+    let (recorded, waited) = dispatcher.join().unwrap();
+    assert!(recorded);
+    assert!(
+        waited >= Duration::from_millis(50)
+            && waited < crate::installed::readiness::thermal_mutation::LOW_POWER_MAXIMUM_AGE,
+        "{waited:?}"
+    );
+    assert_eq!(prepared(&rig), Some(Release::Restored));
+    assert_eq!(
+        keyboard(&rig)[sent..]
+            .iter()
+            .map(|(command, ..)| *command)
+            .collect::<Vec<_>>(),
+        [0x84, 0x04, 0x84]
+    );
+    assert_eq!(mode(&rig), NORMAL);
+    rig.custody.lifecycle.ingress(POWER, RESUME);
+    rig.stop().await;
+}
+
+/// Every exit of the preparation records its generation, so the held
+/// callback returns at once: a notice too old to prepare, a refused
+/// release, fatal admission evidence and a preparation dropped mid-release.
+#[tokio::test]
+async fn every_exit_of_the_preparation_ends_the_hold() {
+    let fast =
+        |(recorded, waited): (bool, Duration)| recorded && waited < Duration::from_millis(100);
+    // Aged out.
+    let (rig, _) = owner_rig(NORMAL).await;
+    tick(&rig).await;
+    rig.runtime.read_notice_age(|_| {
+        Some(crate::installed::readiness::thermal_mutation::LOW_POWER_MAXIMUM_AGE)
+    });
+    rig.runtime.hold_suspend_for_tests(&rig.custody.lifecycle);
+    let hold = held_suspend(&rig);
+    tick(&rig).await;
+    assert_eq!(prepared(&rig), Some(Release::Exhausted));
+    assert!(fast(wait_elsewhere(hold)), "aged");
+    // Refused by the cleanup admission.
+    let (rig, _) = owner_rig(NORMAL).await;
+    tick(&rig).await;
+    rig.runtime.hold_suspend_for_tests(&rig.custody.lifecycle);
+    rig.custody.controller.store(true, Ordering::Release);
+    let hold = held_suspend(&rig);
+    tick(&rig).await;
+    assert_eq!(prepared(&rig), Some(Release::Unadmitted));
+    assert!(fast(wait_elsewhere(hold)), "unadmitted");
+    assert_eq!(mode(&rig), DRIVER);
+    rig.custody.controller.store(false, Ordering::Release);
+    // Fatal admission evidence fails the step after recording.
+    let (rig, _) = owner_rig(NORMAL).await;
+    tick(&rig).await;
+    rig.runtime.hold_suspend_for_tests(&rig.custody.lifecycle);
+    rig.port.state.lock().unwrap().mutation_worker_error = Some(Arc::new(|| {
+        crate::installed::readiness::thermal_mutation::fatal_admission("injected")
+    }));
+    let hold = held_suspend(&rig);
+    assert!(try_tick(&rig).await.is_err());
+    assert_eq!(prepared(&rig), None, "the error records no outcome");
+    assert!(fast(wait_elsewhere(hold)), "error");
+    rig.port.state.lock().unwrap().mutation_worker_error = None;
+    // A preparation dropped while its release runs.
+    let (rig, _) = owner_rig(NORMAL).await;
+    tick(&rig).await;
+    rig.runtime.hold_suspend_for_tests(&rig.custody.lifecycle);
+    rig.port.state.lock().unwrap().device_mode_retire_delay = Some(Duration::from_millis(300));
+    let hold = held_suspend(&rig);
+    let dropped = tokio::time::timeout(Duration::from_millis(100), tick(&rig)).await;
+    assert!(dropped.is_err(), "the release was still running");
+    assert!(fast(wait_elsewhere(hold)), "dropped");
+    rig.port.state.lock().unwrap().device_mode_retire_delay = None;
+}
+
+/// WTSSESSION_NOTIFICATION codes Windows sends as it logs every user off
+/// before a shutdown or a Fast Startup hibernate.
+const WTS_CONSOLE_DISCONNECT: u32 = 2;
+const WTS_SESSION_LOGOFF: u32 = 6;
+/// Windows logs every user off: the logoff and console-disconnect notices,
+/// then nobody is signed in and the console has no session.
+fn log_everyone_off(rig: &Rig, named: &Cell<bool>) {
+    rig.custody
+        .lifecycle
+        .ingress(SESSION_CHANGE, WTS_SESSION_LOGOFF);
+    rig.custody
+        .lifecycle
+        .ingress(SESSION_CHANGE, WTS_CONSOLE_DISCONNECT);
+    named.set(false);
+    rig.custody.current_console.store(false, Ordering::Release);
+}
+
+/// A full shutdown logs every user off before SHUTDOWN reaches the
+/// Service; the Owned Stop release is captured after those notices, holds
+/// the Service's cleanup admission and restores Normal with nobody signed
+/// in and no console capture.
+#[tokio::test]
+async fn a_shutdown_after_logoff_releases() {
+    let (rig, named) = owner_rig(NORMAL).await;
+    tick(&rig).await;
+    assert_eq!((owner(&rig), mode(&rig)), ((true, false, false), DRIVER));
+    log_everyone_off(&rig, &named);
+    let captured = captures(&rig);
+    shutdown(&rig).await.unwrap();
+    assert_eq!(rig.runtime.driver_mode_release(), Some(Release::Restored));
+    assert_eq!((sets(&rig), mode(&rig)), (2, NORMAL));
+    assert_eq!(captures(&rig), captured, "no console capture");
+}
+
+/// A shutdown while the low-power gate is still set, a missed resume,
+/// refuses the Owned Stop release with nothing sent, as managed blocks its
+/// Stop cleanup in low power: Owned Stop pins the ordinary epoch, which the
+/// gate refuses. Here the suspend's own preparation came too late to run,
+/// so the keyboard is still in Driver mode.
+#[tokio::test]
+async fn a_shutdown_while_suspended_refuses_the_release() {
+    use crate::installed::readiness::thermal_mutation::LOW_POWER_MAXIMUM_AGE;
+    let (rig, _) = owner_rig(NORMAL).await;
+    tick(&rig).await;
+    rig.runtime.read_notice_age(|_| Some(LOW_POWER_MAXIMUM_AGE));
+    suspend(&rig);
+    tick(&rig).await;
+    assert_eq!(prepared(&rig), Some(Release::Exhausted));
+    let sent = keyboard(&rig).len();
+    shutdown(&rig).await.unwrap();
+    assert_eq!(rig.runtime.driver_mode_release(), Some(Release::Unadmitted));
+    assert_eq!(keyboard(&rig).len(), sent, "nothing sent");
+    assert_eq!((sets(&rig), mode(&rig)), (1, DRIVER));
 }
 
 /// An observeState request with request number `n`, as a client's status
@@ -1478,8 +1929,12 @@ async fn a_suspend_while_a_write_is_in_flight() {
             let maintain = rig.source.lock().await.maintain_driver_mode().unwrap();
             maintain.await.unwrap();
         };
+        // The request is held only until the release has had time to reach
+        // the gate, so the release keeps nearly its whole share for its job
+        // however loaded the host is. A release that reached the gate later
+        // would still find the request refused at the epoch the suspend moved.
         let unhold = async {
-            tokio::time::sleep(Duration::from_millis(300)).await;
+            tokio::time::sleep(Duration::from_millis(20)).await;
             held.store(true, Ordering::Release);
             rig.port.state.lock().unwrap().held_read = None;
         };
@@ -1804,7 +2259,9 @@ async fn the_release_checks_the_fans_after_joining_active_work() {
 
 /// The share bounds the whole release, the lane's join of the job included:
 /// a worker slow to retire ends the release at its share with the job's
-/// confirmed result.
+/// confirmed result. With the share over, nothing is recorded after the
+/// job: the record keeps the release's intent, owned before it, for a later
+/// read to resolve.
 #[tokio::test]
 async fn a_worker_slow_to_retire_ends_the_release_at_its_share() {
     use crate::installed::readiness::thermal_mutation::KEYBOARD_SHUTDOWN_BUDGET;
@@ -1820,7 +2277,8 @@ async fn a_worker_slow_to_retire_ends_the_release_at_its_share() {
         "{spent:?}"
     );
     assert_eq!((sets(&rig), mode(&rig)), (2, NORMAL));
-    assert_eq!(owner(&rig), (false, false, false));
+    assert_eq!(owner(&rig), (true, false, false));
+    assert!(rig.runtime.driver_mode_uncertain_for_tests());
     rig.stop().await;
 }
 
@@ -2147,3 +2605,6 @@ fn the_compiled_identity_carries_the_refused_owner_marker() {
         crate::native_package::startup_policy_for_tests(&crate::NATIVE_ARTIFACT_IDENTITY).is_err()
     );
 }
+
+#[path = "driver_mode_record_tests.rs"]
+mod record;

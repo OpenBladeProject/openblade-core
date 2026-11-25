@@ -113,10 +113,14 @@ public static class WindowsNativeTrustLifecycle
             writer = files.AcquireOwnerWriter();
             var references = new List<OwnerReference>();
             (string ownerCommitment, OwnerReference? exited, PendingExit? pending) = RequireOwnerRetiredCore(files, references, exitedUnderCustody);
+            // Before thermal: a Driver-mode doubt refuses even an exited owner.
+            var driverMode = WindowsNativeDriverModeHistory.Read(files, references);
+            driverMode.RequireSettled();
             var thermal = WindowsNativeThermalHistory.Read(files, references, exited);
             string commitment = thermal.Present ? NativeCanonical.Digest(NativeCanonical.Lines("OpenBlade.NativeOwnerHistory.v2", ownerCommitment, thermal.Commitment)) : ownerCommitment;
-            return new OwnerLease(directory, writer, commitment, references.ToImmutableArray(), thermal, pending);
+            return new OwnerLease(directory, writer, driverMode.Commit(commitment), references.ToImmutableArray(), thermal, driverMode, pending);
         }
+        catch (NativeRecoveryException) { writer?.Dispose(); directory?.Dispose(); throw; }
         catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or System.Text.Json.JsonException or InvalidOperationException or KeyNotFoundException or FormatException or OverflowException)
         { writer?.Dispose(); directory?.Dispose(); throw new NativeRecoveryException(NativeRecoveryReason.FirmwareOwnerUnresolved, "Native firmware ownership history is active, partial or unknown; no drain was inferred.", error); }
     }
@@ -124,10 +128,12 @@ public static class WindowsNativeTrustLifecycle
     // An exit proven under custody but not yet durable. Admission treats it as
     // present; it is published only after every refusal check has passed.
     internal sealed record PendingExit(string Epoch, string Path, byte[] Bytes);
-    internal sealed class OwnerLease(IDisposable directory, IDisposable writer, string commitment, ImmutableArray<OwnerReference> references, WindowsNativeThermalHistory thermal, PendingExit? pendingExit = null) : IDisposable
+    internal sealed class OwnerLease(IDisposable directory, IDisposable writer, string commitment, ImmutableArray<OwnerReference> references, WindowsNativeThermalHistory thermal, WindowsNativeDriverModeHistory driverMode, PendingExit? pendingExit = null) : IDisposable
     {
         internal string Commitment { get; } = commitment;
         internal WindowsNativeThermalHistory Thermal { get; } = thermal;
+        // Absent, Clear or Owned: an admitted lease never holds a Driver-mode doubt.
+        internal WindowsNativeDriverModeHistory DriverMode { get; } = driverMode;
         internal ImmutableArray<OwnerReference> References { get; } = references;
         internal PendingExit? PendingExit { get; } = pendingExit;
         internal bool IsKnownEmpty => References.IsEmpty;
@@ -159,6 +165,7 @@ public static class WindowsNativeTrustLifecycle
         {
             if (Path.GetFileName(path) == "writer.lock") { continue; }
             if (WindowsNativeThermalHistory.IsNamespace(Path.GetFileName(path))) { continue; }
+            if (WindowsNativeDriverModeHistory.IsNamespace(Path.GetFileName(path))) { continue; }
             if (++count > 4096) { throw new IOException("Native owner history exceeds its bound."); }
             using var held = files.OpenFile(path);
             byte[] bytes = WindowsNativeEpochFiles.ReadBounded(held, 4096);

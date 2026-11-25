@@ -19,6 +19,9 @@ thermal-convergence = ["thermal-history"]
 # The managed ProfileSet model, codec and validator. Pure rules over std
 # collections with their own JSON reader and writer; no serde, no platform APIs.
 profile-set = []
+# The native Service's durable keyboard Driver-mode ownership record: its
+# strict line codec and transitions. Pure std; the host owns the file.
+driver-mode-history = []
 
 [dependencies]
 openblade-types.workspace = true

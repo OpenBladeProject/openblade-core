@@ -17,6 +17,7 @@
     <Using Include="Xunit" />
     <None Include="../../tools/openblade-windows-host/tests/data/temporary-charge-history-v1.json" Link="temporary-charge-history-v1.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../tools/openblade-windows-host/tests/data/battery-history-v1.json" Link="battery-history-v1.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../tools/openblade-windows-host/tests/data/driver-mode-record-v1.json" Link="driver-mode-record-v1.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../tools/openblade-windows-host/tests/data/fan-history-v2.json" Link="fan-history-v2.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../tools/openblade-windows-host/tests/data/fan-history-v3.json" Link="fan-history-v3.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../tools/openblade-windows-host/tests/data/fan-history-v3-limited-source.json" Link="fan-history-v3-limited-source.json" CopyToOutputDirectory="PreserveNewest" />

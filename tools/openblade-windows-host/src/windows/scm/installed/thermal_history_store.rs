@@ -24,12 +24,9 @@ impl Backend for ReleaseHistory<'_> {
     }
 }
 impl History<'_> {
-    fn boundary(&self, _name: &str, _stage: &str) -> io::Result<()> {
-        #[cfg(test)]
-        if let Some(hook) = &self.0.history_boundary {
-            hook(&format!("{}:{}", _name.split('-').next().unwrap(), _stage))?;
-        }
-        Ok(())
+    fn boundary(&self, name: &str, stage: &str) -> io::Result<()> {
+        self.0
+            .boundary(name.split('-').next().unwrap_or_default(), stage)
     }
     fn directory(&self, create: bool) -> io::Result<Option<File>> {
         let file = match paths::open_directory(&self.0.root, OsStr::new("thermal-history")) {

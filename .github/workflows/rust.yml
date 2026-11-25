@@ -201,9 +201,9 @@ jobs:
       - name: Clippy
         run: cargo clippy --locked --workspace --all-targets --target ${{ matrix.target }} -- -D warnings
 
-      # The workspace build leaves openblade-domain's thermal-history feature off;
-      # it carries the history grammar that tools/openblade-windows-host enables.
-      - name: Test and lint the domain thermal-history, profile-set and thermal-convergence features
+      # The workspace build leaves openblade-domain's optional features off;
+      # they carry the history grammars that tools/openblade-windows-host enables.
+      - name: Test and lint the domain thermal-history, profile-set, thermal-convergence and driver-mode-history features
         run: |
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true
@@ -219,6 +219,9 @@ jobs:
           # Service tests record through the real ledger and state store.
           cargo test --locked -p openblade-domain --features thermal-convergence --target ${{ matrix.target }}
           cargo clippy --locked -p openblade-domain --features thermal-convergence,profile-set --all-targets --target ${{ matrix.target }} -- -D warnings
+          # The native keyboard Driver-mode record codec against its shared vectors.
+          cargo test --locked -p openblade-domain --features driver-mode-history --target ${{ matrix.target }}
+          cargo clippy --locked -p openblade-domain --features driver-mode-history --all-targets --target ${{ matrix.target }} -- -D warnings
 
       # The workspace build leaves the production Session GPU close backend
       # off. Its tests drive scripted process seams only; none opens, signals
@@ -410,6 +413,9 @@ jobs:
               # the Service cleanup admission with nobody signed in, and the pacing
               # before row 31.
               @('openblade-windows-service-candidate', 'service-fan-mutation-v2', 'fan_v2_owned_stop_cleanup'),
+              # A composition without Driver-mode ownership refuses to open the
+              # owner custody over its record, which it cannot honour.
+              @('openblade-windows-service-candidate', 'service-fan-mutation-v2', 'driver_mode_record_absent'),
               ($liveReadings + 'live_readings::tests'),
               ($liveReadings + 'live_readings::windows::tests'),
               ($liveReadings + 'firmware_versions'),

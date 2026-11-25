@@ -262,9 +262,10 @@ try {
             $domainFeatures = @($package.features.PSObject.Properties | ForEach-Object {
                 $_.Name + '=' + (@($_.Value | Sort-Object) -join '+')
             }) -join ','
-            # profile-set is pure std code with no dependency of its own, and
-            # thermal-convergence adds only pure ledger rules over thermal-history.
-            if ($domainFeatures -cne 'profile-set=,thermal-convergence=thermal-history,thermal-history=dep:serde+dep:serde_json+dep:sha2') {
+            # profile-set and driver-mode-history are pure std code with no
+            # dependency of their own, and thermal-convergence adds only pure
+            # ledger rules over thermal-history.
+            if ($domainFeatures -cne 'driver-mode-history=,profile-set=,thermal-convergence=thermal-history,thermal-history=dep:serde+dep:serde_json+dep:sha2') {
                 throw "Unreviewed openblade-domain features: $domainFeatures"
             }
         }

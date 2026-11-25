@@ -10,6 +10,13 @@
 //! hibernates the Service instead of stopping it, so its PBT_APMSUSPEND runs
 //! this path, not the shutdown release.
 //!
+//! The SCM callback that delivered the suspend is held until this
+//! preparation has recorded an outcome for that generation, at most
+//! `MAXIMUM_AGE` from the notice (`Lifecycle::arm_suspend_hold`), so Windows
+//! does not suspend under the release. Every exit records it, through a drop
+//! guard. Managed's SCM callback returns at once; its Session Agent relay
+//! waits the same way for the Service (`SessionPowerTransitionRelay.cs:101-108`).
+//!
 //! The fans are not touched. AGENTS.md rule 1 names only the keyboard's
 //! Normal release at a low-power boundary, and managed restores fans there
 //! only for a Battery Saver fan stop it owns (`OwnsBatterySaverFanStop`,
@@ -22,21 +29,53 @@
 //! pre-check; do not copy the one owned Stop's handback recipe needs.
 use super::keyboard::{Boundary, Release};
 use super::*;
-use std::{cell::Cell, time::Duration};
+use crate::origin_lifetime::HoldArm;
+use std::{
+    cell::{Cell, OnceCell},
+    time::Duration,
+};
 
 /// Managed `SessionPowerTransition.MaximumAgeMilliseconds`: a transition
-/// older than this from its notice's QPC timestamp is not prepared.
-/// The SCM handler returns at once, as managed's does, so this bounds the
-/// work's staleness and is not time Windows waits for.
+/// older than this from its notice's QPC timestamp is not prepared. It is
+/// also the longest the suspend's SCM callback is held for this
+/// preparation, counted from the same stamp, as the managed Session Agent
+/// relay bounds its wait.
 pub(in super::super) const MAXIMUM_AGE: Duration = Duration::from_millis(1500);
 /// The keyboard's largest share, its shutdown one.
 const KEYBOARD_SHARE: Duration = keyboard::SHUTDOWN_BUDGET;
 
-/// The suspend generation last prepared and how it ended.
+/// The suspend generation last prepared, how it ended, and the arm of the
+/// suspend hold this preparation releases.
 #[derive(Default)]
 pub(super) struct Prepared {
     generation: Cell<Option<u64>>,
     outcome: Cell<Option<Release>>,
+    // Unset holds nothing: the SCM callback returns at once.
+    hold: OnceCell<HoldArm>,
+}
+
+impl Prepared {
+    /// Releases the suspend hold of `arm`'s lifecycle as each generation is
+    /// prepared. `None` holds nothing.
+    #[cfg(not(test))]
+    pub(super) fn holding(arm: Option<HoldArm>) -> Self {
+        Self {
+            hold: arm.map_or_else(OnceCell::new, OnceCell::from),
+            ..Self::default()
+        }
+    }
+}
+
+/// Records `generation` in the suspend hold when the preparation exits,
+/// however it exits: prepared, aged out, already prepared, refused, an
+/// error or a dropped future.
+struct Recorded<'a>(&'a Prepared, u64);
+impl Drop for Recorded<'_> {
+    fn drop(&mut self) {
+        if let Some(hold) = self.0.hold.get() {
+            hold.prepared(self.1);
+        }
+    }
 }
 
 impl Runtime {
@@ -44,7 +83,8 @@ impl Runtime {
     /// suspend wake before the keyboard step. Nothing runs while the gate is
     /// clear, unreadable or exhausted, or for a generation already prepared.
     /// The outcome is a diagnostic; only fatal admission evidence is an
-    /// error.
+    /// error. Every exit after the gate is read releases the hold of the
+    /// generation it read.
     pub(in super::super) async fn prepare_for_low_power(
         &self,
         mailbox: &MailboxSource,
@@ -53,6 +93,7 @@ impl Runtime {
             return Ok(());
         };
         let prepared = &self.low_power_prepared;
+        let _recorded = Recorded(prepared, transition.generation);
         if !transition.suspending() || prepared.generation.get() == Some(transition.generation) {
             return Ok(());
         }
@@ -85,5 +126,14 @@ impl Runtime {
     /// The last prepared generation's outcome.
     pub(in super::super) fn low_power_outcome_for_tests(&self) -> Option<Release> {
         self.low_power_prepared.outcome.get()
+    }
+    /// Arms `lifecycle`'s suspend hold for this preparation, on this thread,
+    /// as `Runtime::native` arms the origin's; it may be set once.
+    pub(in super::super) fn hold_suspend_for_tests(
+        &self,
+        lifecycle: &crate::origin_lifetime::Lifecycle,
+    ) {
+        let arm = lifecycle.arm_suspend_hold(MAXIMUM_AGE).unwrap();
+        assert!(self.low_power_prepared.hold.set(arm).is_ok());
     }
 }

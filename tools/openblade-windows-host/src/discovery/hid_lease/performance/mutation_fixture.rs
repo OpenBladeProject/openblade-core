@@ -92,6 +92,9 @@ pub(crate) struct State {
     /// Called with each 00/84 query's number (1-based) as it is sent, with
     /// the fixture state locked.
     pub(crate) device_mode_on_query: Option<Arc<dyn Fn(usize) + Send + Sync>>,
+    /// Called with each 00/04 setter's ID and mode byte as it is sent, with
+    /// the fixture state locked.
+    pub(crate) device_mode_on_set: Option<Arc<dyn Fn(u8, u8) + Send + Sync>>,
     /// That 00/84 query (1-based) completes with a receive timeout.
     pub(crate) device_mode_timeout: Option<usize>,
     /// The 00/04 setter fails at submission, applying nothing.
@@ -604,6 +607,10 @@ impl Port for MemoryPort {
                     (0, 0x04) => {
                         assert!(matches!(payload, [0 | 3, 0]), "{payload:?}");
                         s.device_mode_sets += 1;
+                        if let Some(hook) = &s.device_mode_on_set {
+                            let mode = payload[0];
+                            self.fixture.hooked(|| hook(id, mode));
+                        }
                         if s.device_mode_fail_set {
                             return Err(io::ErrorKind::Other.into());
                         }

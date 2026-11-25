@@ -78,7 +78,10 @@ internal sealed record NativeArtifact(string Id, string Role, string Target, str
         // Keyboard Driver-mode ownership writes 00/04, which no admitted composition sends, and its
         // low-power release and D1 fan handback are a later slice. Refuse its feature and its capability
         // marker by name, before the read and trigger features built with it, until a packaging stage
-        // admits it (docs/windows-rust-development-service.md).
+        // admits it (docs/windows-rust-development-service.md). Setup's install gate over the
+        // Driver-mode record checks presence only because of this refusal
+        // (WindowsNativeDriverModeHistory.RequireAbsentForIncoming); admitting the feature needs that
+        // gate to read the record (NativeHandbackTests.TheIncomingGateIsPresenceOnlyOnlyWhilePackagingRefusesTheOwner).
         if (features.Contains("service-keyboard-driver-mode-v1", StringComparer.Ordinal) || capabilities.Split(',').Contains("service-keyboard-driver-mode-v1", StringComparer.Ordinal))
         { throw new InvalidDataException("Keyboard Driver-mode ownership is not admitted for packaging."); }
         // Maintain-desired-state convergence writes without a request. Refuse its feature and its

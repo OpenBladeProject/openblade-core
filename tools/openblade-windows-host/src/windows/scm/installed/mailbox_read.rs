@@ -6,6 +6,8 @@ use crate::{
     native_package::{create_attempt_record, digest, encode, encode64, lines},
     windows_protected_path::{self as paths, Policy},
 };
+#[cfg(feature = "service-keyboard-driver-mode-v1")]
+use openblade_domain::driver_mode_history::Record as DriverModeRecord;
 use sha2::{Digest, Sha256};
 use std::{cell::RefCell, rc::Rc};
 use std::{
@@ -183,6 +185,42 @@ pub(super) trait ReadCustody: Send + Sync {
     fn journal_replace(&self, _: Option<&[u8]>, _: &[u8]) -> io::Result<()> {
         Err(deny())
     }
+    /// The keyboard Driver-mode ownership record in the original owner
+    /// custody, `None` while there is none (`Store::driver_mode_record_read`).
+    /// Reading it writes nothing, so a recovery-only custody reads it too.
+    #[cfg(feature = "service-keyboard-driver-mode-v1")]
+    fn driver_mode_record_read(&self) -> io::Result<Option<DriverModeRecord>> {
+        Err(deny())
+    }
+    /// The Active owner nonce a replace of that record names
+    /// (`Store::driver_mode_record_owner`): only a custody this process
+    /// activated has one, so a recovery-only custody refuses.
+    #[cfg(feature = "service-keyboard-driver-mode-v1")]
+    fn driver_mode_record_owner(&self) -> io::Result<String> {
+        Err(deny())
+    }
+    /// Replaces that record with `next` while it holds `expected`, under the
+    /// ordinary admission (`authorize`): the acquire and its read-only
+    /// resolution. A recovery-only custody refuses.
+    #[cfg(feature = "service-keyboard-driver-mode-v1")]
+    fn driver_mode_record_replace(
+        &self,
+        _expected: Option<&DriverModeRecord>,
+        _next: &DriverModeRecord,
+    ) -> io::Result<()> {
+        Err(deny())
+    }
+    /// `driver_mode_record_replace` under the owned cleanup admission of
+    /// `scope` (`authorize_cleanup`): the releases at Stop and at a suspend.
+    #[cfg(feature = "service-keyboard-driver-mode-v1")]
+    fn driver_mode_record_replace_cleanup(
+        &self,
+        _scope: CleanupScope,
+        _expected: Option<&DriverModeRecord>,
+        _next: &DriverModeRecord,
+    ) -> io::Result<()> {
+        Err(deny())
+    }
 }
 
 // Every reader factory and repeated native checkpoint receives this same
@@ -276,6 +314,36 @@ impl ReadCustody for GuardedReadCustody {
     fn journal_replace(&self, expected: Option<&[u8]>, bytes: &[u8]) -> io::Result<()> {
         self.verify_integrity()?;
         self.original.journal_replace(expected, bytes)
+    }
+    #[cfg(feature = "service-keyboard-driver-mode-v1")]
+    fn driver_mode_record_read(&self) -> io::Result<Option<DriverModeRecord>> {
+        self.verify_integrity()?;
+        self.original.driver_mode_record_read()
+    }
+    #[cfg(feature = "service-keyboard-driver-mode-v1")]
+    fn driver_mode_record_owner(&self) -> io::Result<String> {
+        self.verify_integrity()?;
+        self.original.driver_mode_record_owner()
+    }
+    #[cfg(feature = "service-keyboard-driver-mode-v1")]
+    fn driver_mode_record_replace(
+        &self,
+        expected: Option<&DriverModeRecord>,
+        next: &DriverModeRecord,
+    ) -> io::Result<()> {
+        self.verify_integrity()?;
+        self.original.driver_mode_record_replace(expected, next)
+    }
+    #[cfg(feature = "service-keyboard-driver-mode-v1")]
+    fn driver_mode_record_replace_cleanup(
+        &self,
+        scope: CleanupScope,
+        expected: Option<&DriverModeRecord>,
+        next: &DriverModeRecord,
+    ) -> io::Result<()> {
+        self.verify_integrity()?;
+        self.original
+            .driver_mode_record_replace_cleanup(scope, expected, next)
     }
 }
 
@@ -873,6 +941,68 @@ impl ReadCustody for ReadLease {
     #[cfg(feature = "service-keyboard-driver-mode-v1")]
     fn recovery_only(&self) -> bool {
         self.recovery_only
+    }
+    #[cfg(feature = "service-keyboard-driver-mode-v1")]
+    fn driver_mode_record_read(&self) -> io::Result<Option<DriverModeRecord>> {
+        self.resources
+            .lock()
+            .map_err(|_| deny())?
+            .as_ref()
+            .ok_or_else(deny)?
+            ._owner
+            .driver_mode_record_read()
+    }
+    // The owner Store refuses a custody this process never activated as
+    // well; the recovery-only check names the reason here.
+    #[cfg(feature = "service-keyboard-driver-mode-v1")]
+    fn driver_mode_record_owner(&self) -> io::Result<String> {
+        if self.recovery_only {
+            return Err(deny());
+        }
+        self.resources
+            .lock()
+            .map_err(|_| deny())?
+            .as_ref()
+            .ok_or_else(deny)?
+            ._owner
+            .driver_mode_record_owner()
+    }
+    #[cfg(feature = "service-keyboard-driver-mode-v1")]
+    fn driver_mode_record_replace(
+        &self,
+        expected: Option<&DriverModeRecord>,
+        next: &DriverModeRecord,
+    ) -> io::Result<()> {
+        if self.recovery_only {
+            return Err(deny());
+        }
+        self.authorize().ok_or_else(deny)?;
+        self.resources
+            .lock()
+            .map_err(|_| deny())?
+            .as_ref()
+            .ok_or_else(deny)?
+            ._owner
+            .driver_mode_record_replace(expected, next)
+    }
+    #[cfg(feature = "service-keyboard-driver-mode-v1")]
+    fn driver_mode_record_replace_cleanup(
+        &self,
+        scope: CleanupScope,
+        expected: Option<&DriverModeRecord>,
+        next: &DriverModeRecord,
+    ) -> io::Result<()> {
+        if self.recovery_only {
+            return Err(deny());
+        }
+        self.authorize_cleanup(scope).ok_or_else(deny)?;
+        self.resources
+            .lock()
+            .map_err(|_| deny())?
+            .as_ref()
+            .ok_or_else(deny)?
+            ._owner
+            .driver_mode_record_replace(expected, next)
     }
     #[cfg(feature = "service-thermal-mutation-v1")]
     fn activate_mutation(&self) -> Result<(), ActivationFailure> {
@@ -1684,11 +1814,20 @@ impl ReadSource {
     /// Adds the mutation lanes. Before any worker job runs, it quarantines
     /// the IDs whose replies, by the journal, an earlier process may have
     /// left in the mailbox (`transaction_seed`). It reads the journal as
-    /// release does, authenticating it without recovery, so composing a
-    /// source writes nothing.
+    /// release does, authenticating it without recovery, and the keyboard
+    /// Driver-mode record, which a recovery-only custody reads too, so
+    /// composing a source writes nothing.
     fn with_mutation(mut self, factories: MutationFactories) -> Self {
+        #[cfg(feature = "service-keyboard-driver-mode-v1")]
+        let driver_mode = || {
+            let record = self.lease.driver_mode_record_read()?;
+            Ok(record.map(|record| record.ids()))
+        };
+        #[cfg(not(feature = "service-keyboard-driver-mode-v1"))]
+        let driver_mode = || Ok(None);
         super::transaction_seed::quarantine_unanswered(
             &|| self.lease.journal_read_release(false),
+            &driver_mode,
             &self.fatal,
             &*factories.quarantine,
         );
@@ -1721,6 +1860,11 @@ impl ReadSource {
         let admission = self.lease.authorize()?;
         self.driver_mode
             .active_since(admission, Instant::now(), since)
+    }
+    /// Whether this source has activated its write lease. Until it has, the
+    /// owner custody writes no Driver-mode record (`Store::driver_mode_record_owner`).
+    pub(super) fn mutation_activated(&self) -> bool {
+        self.activated.get()
     }
     /// Whether this source can never activate a mutation: a recovery-only
     /// lease, whose every write would only stop and rebuild the reader.

@@ -30,6 +30,7 @@ internal sealed class WindowsNativeInstalledSelection : IDisposable
         var writer = files.AcquireWriter();
         try
         {
+            if (incoming is not null) { WindowsNativeDriverModeHistory.RequireAbsentForIncoming(files); }
             var inspection = WindowsNativeRecoveryState.Inspect(files);
             if (inspection.State == NativeInstallationState.VerifiedBootstrap)
             {
@@ -183,6 +184,8 @@ internal sealed class WindowsNativeInstalledSelection : IDisposable
         using var originals = AcquireThermalPredecessors();
         // Only a thermal producer journals every firmware write it may have
         // submitted, so only its exit can hand an unretired owner to managed.
+        // Its keyboard 00/04 writes are journaled by the Driver-mode record,
+        // which has no handback item: an intent refuses even this exit.
         using var owner = WindowsNativeTrustLifecycle.AcquireRetiredOwner(files, exitedUnderCustody: package.Service.ThermalMutation ? Record.Epoch : null);
         originals.RequireDrained(files, owner, Record.Epoch);
         byte[] proof = Recover(NativeRecoveryReason.UnknownAttemptHistory,
@@ -203,6 +206,10 @@ internal sealed class WindowsNativeInstalledSelection : IDisposable
             PublishRetirement(directory, owner);
             return true;
         });
+        // Owned is reported only: the record stays, and managed reads the
+        // keyboard mode before any Driver-mode write of its own.
+        if (owner.DriverMode.Finding == NativeDriverModeFinding.Owned)
+        { System.Diagnostics.Trace.TraceWarning("Native generation {0} retired with keyboard Driver mode Owned; the record was preserved.", Record.Epoch); }
     }
     private IDisposable AcquireRetirementProof(NativeEpochRecord proofRecord)
     {

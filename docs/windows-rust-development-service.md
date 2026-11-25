@@ -290,7 +290,7 @@ A Service built with `service-keyboard-driver-mode-v1` acquires and maintains
 RZ09-0581 keyboard Driver mode and restores Normal at a confirmed suspend and
 at shutdown. The feature
 implies `service-keyboard-driver-mode-read-v1`, `service-fan-mutation-v2` (the
-fan guardian and the fan handback it runs before) and the protocol crate's
+fan guardian, and the fan handback the shutdown release runs before) and the protocol crate's
 `device-mode-setters`, and adds the capability marker
 `service-keyboard-driver-mode-v1`. It does not imply profile triggers. Both
 package readers refuse the feature and the marker by name, before the read and
@@ -309,26 +309,38 @@ Acquire and maintain follow managed `ProductionLightingPort.MaintainDriverModeAs
 
 - One mutation job reads `00/84` first. A keyboard already in Driver mode is
   reported `true` with no write and no claim.
-- From Normal, ownership is claimed before the setter can be submitted. A
-  refusal before submission (managed `KnownNotApplied`) clears the claim; any
-  later failure keeps it.
+- From Normal, ownership is claimed before the setter can be submitted, as
+  the durable `AcquireIntent` described below. A refusal before submission
+  (managed `KnownNotApplied`) reverts the claim; any later failure keeps it.
 - The job has a 2 s budget from its own start, after the lane wait. The
   setter is sent only when that budget still covers its acknowledgement and
   the readback, each charged at the baseline exchange's measured length
-  (`mutation::Pace::covers`). Too little time is known not applied, before any
-  claim.
+  (`mutation::Pace::covers`), and the claim's record write is charged too.
+  Too little time is known not applied, before any claim.
 - The setter's reply must correlate and echo `0300` byte for byte
   (`DeviceModeSet::acknowledge`), and an independent `00/84` readback on its
   own transaction ID must read Driver.
 - A setter that may have been submitted without both confirmations is
-  Indeterminate. That step publishes `null` and the owner sends no further
-  acquire or maintain exchange in this process; it never replays the write.
-  Managed treats it like any failure: it publishes `null`, runs its one
-  recovery on a fresh port and tries again at later steps. Native is
-  stricter, so a possibly submitted setter is never followed by another
-  acquire. The independent read job keeps its own `00/84` cadence, so a later
-  fresh read publishes the confirmed firmware mode, and the shutdown release
-  below still runs.
+  Indeterminate. That step publishes `null`, runs no recovery and never
+  replays the write. A power or session notice that moves the lifecycle
+  epoch between the acknowledgement and the readback is one way to get
+  there: the capture's fence refuses the readback.
+- Each later due step resolves an Indeterminate acquire read-only. One job
+  under a fresh capture, with the step's journal and fan skip conditions,
+  reads `00/84` and writes nothing; every checkpoint of that read checks the
+  capture's epoch again. Driver means the acquire took effect: the claim it
+  made before submission is kept unless a release has since ended it, and
+  the read never makes one. Normal means it did not take effect or was
+  undone: the claim ends, `false` is published, and the next tick acquires
+  through the ordinary claim-before-write job as a new write on new IDs. An
+  unreadable or fenced read stays Indeterminate and publishes `null`; one
+  refused before any exchange records nothing. Each such step reads at most
+  once and never writes in the same tick. Managed has no Indeterminate
+  state: it publishes `null`, and its one recovery on a fresh port reads
+  `00/84` and may write Driver again within the same step
+  (`ServiceControlRuntime.cs:12967-13066`). Native defers that write to the
+  next tick, after a confirmed read of Normal. The shutdown and low-power
+  releases run as usual while the acquire is Indeterminate.
 - A step that fails gets one recovery per failure streak: a fresh capture and
   read-before-write, never a replay. A confirmed mode or a lost device resets
   the latch (`ServiceControlRuntime.cs:12568-12665`).
@@ -386,9 +398,73 @@ The step publishes through the read cadence that every fresh status projects
 or Indeterminate step. It never edits the subscription feed, so an unchanged
 status is never republished. The feed stays unverified as described above.
 
-Ownership lives in memory, as it does in managed. It decides only whether a
-release's read of Normal is a foreign change; a restart reads `00/84` again. A
-durable owned-or-uncertain record and crash recovery are stage 6a-5.
+Ownership is durable, a deliberate deviation from managed, which keeps
+`ownsDriverMode` and `driverModeReleaseUncertain` in memory
+(`ProductionLightingPort.cs:68`). A restart, a crash or a handback must not
+lose an owned claim or a write that may have applied unconfirmed: Setup's
+handback assumes every firmware write is journaled, and a doubt must stop
+writes across processes too. The record is its own file in the original
+owner custody, `owner\keyboard-driver-mode.bin`
+(`openblade_domain::driver_mode_history`): `Clear`, `Owned`, `AcquireIntent`
+or `ReleaseIntent`, an intent's prior settled state, and the four IDs of the
+job that wrote it. Only this process's own Active owner, once its write lease
+has activated, replaces it, by compare-and-swap along the domain's edges
+(`Store::driver_mode_record_replace`). The owner's flags are derived from the
+record its ledger holds (`driver_mode_ledger`) and change only after a
+replace returned `Ok`, so memory never runs ahead of the file.
+
+- Each job that may write claims before its setter can be sent. An acquire
+  whose baseline reads Normal writes an `AcquireIntent` under the custody's
+  ordinary admission. A release whose baseline reads Driver writes a
+  `ReleaseIntent` under its boundary's cleanup scope, Owned Stop or the
+  suspend generation. A release that finds an acquire in doubt first records
+  what its own baseline read, `AcquireIntent -> Owned`, so an intent never
+  follows an intent. A claim that cannot be written sends no setter; a
+  release then reports `Unrecorded`.
+- After the job the owner settles the claim. Confirmed, an acquire becomes
+  `Owned` and a release `Clear`; known not submitted, the intent reverts to
+  its prior; otherwise it stays in doubt. A release settles only while its
+  share still has room for one record write, and so does `Owned -> Clear`
+  after a release reads Normal. Otherwise the record keeps what it holds for
+  a later read to resolve.
+- Before it claims, the job's pace charges a 25 ms floor for each of the
+  claim's record writes, never a measured replace: a refused job writes
+  nothing, so a slow sample charged there could never be replaced and would
+  refuse every later claim. Once the claim has returned, the pace is checked
+  again with its real time spent. When the setter, its acknowledgement and
+  the readback no longer fit, no setter is sent, the claim reverts as known
+  not submitted, and a release reports `Exhausted`, or `Unadmitted` when
+  its admission has ended. A release's settle is charged at the longer of
+  the floor and the last measured replace, which is its own claim's when it
+  made one. The floor is an estimate pending an attended timing on
+  RZ09-0581. The keyboard's share is unchanged.
+- Any failed record write closes the record for the process, and nothing
+  reopens it: after an error the file may hold the old record or the new one.
+  A record that cannot be read or is refused (corrupt, another version, a
+  leftover stage) closes it at load and is kept byte for byte; startup does
+  not fail. A closed owner runs no acquire, maintain or release write, and
+  the status projects confirmed reads only. A settle whose custody admission
+  is refused before anything is written leaves the record, and its doubt, as
+  they are without closing it.
+- An intent is resolved read-only, never replayed. An intent a later process
+  loads is resolved by that process's first due step with one `00/84` read
+  and no `00/04` (`resolve_indeterminate`), and that job also activates the
+  write lease the record write needs. Driver records `Owned` for an acquire
+  intent and the prior for a release intent; Normal records `Clear`, and any
+  acquire waits for the next tick, on fresh IDs. A release doubt this process
+  left is resolved from the read cadence, as below. While a release intent
+  stands, every release reports `Uncertain` and sends nothing.
+
+Setup refuses to retire the custody or hand back while an intent record is
+present, and keeps its bytes; an `Owned` record is only reported. Letting
+managed resolve an intent at handback, a v2 handback item with a managed
+read-before-write, is a separate follow-up because it changes the managed
+Service and needs a versioned header. Until then an intent left by the last
+native Stop blocks retirement until a native Service resolves it. Setup also
+refuses an unreadable or unknown record and a leftover record stage, and it
+refuses to install any build over a record or its stage, because no packaged
+build can open the owner custody over them. See "Keyboard Driver-mode record
+in Setup" in `windows-rust-thermal-history.md`.
 
 ##### Cleanup admission
 
@@ -472,20 +548,24 @@ managed order (`ServiceControlRuntime.cs:12925-12950`,
   low-power slice.
 - A fresh `00/84` read of Driver writes `00/04:0000` once, whoever set it, as
   managed does, and requires the exact acknowledgement and an independent
-  `00/84` readback of Normal. A read of Normal ends an owned claim as a
-  foreign change and writes nothing.
+  `00/84` readback of Normal, after its `ReleaseIntent` is written. A read of
+  Normal ends an owned claim as a foreign change and sends no setter. An
+  acquire intent read Normal is resolved `Clear`, as its read-only
+  resolution is, and reported as not Driver: its setter never took effect.
 - Each boundary releases at most once: the shutdown, and each suspend
   generation. A job whose measured pace could not fit the setter, its
   acknowledgement and the readback in its time sends nothing and reports
   `Exhausted`; a lane refusal before the job registered keeps the attempt.
 - A release that may have submitted Normal without confirming it
-  (`Submitted` or `Acknowledged`) stops every later release, acquire and
-  maintain write until a confirmed `00/84` read under the current read
-  admission, by a job that started after that release, shows the mode
-  (`ReadSource::driver_mode_confirmed_since`). Driver keeps the claim and
-  any other mode clears it; the next due step then acquires through the
-  normal cadence. Until then later releases report `Uncertain` and send
-  nothing. The uncertain write is never replayed.
+  (`Submitted` or `Acknowledged`) leaves its `ReleaseIntent` on disk. It
+  stops every later release, acquire and maintain write until a confirmed
+  `00/84` read under the current read admission, by a job that started after
+  that release, shows the mode (`ReadSource::driver_mode_confirmed_since`).
+  Driver records the intent's prior, the claim there was before the release,
+  and any other mode records `Clear`; the next due step then acquires through
+  the normal cadence. Until then later releases report `Uncertain` and send
+  nothing, in this process and in a later one, which resolves the intent with
+  its own read-only step. The uncertain write is never replayed.
 - A release job whose caller was dropped, as by a Stop during the low-power
   release, stays registered. The next release joins it with the active work
   and reads how far it got before it decides anything.
@@ -525,17 +605,34 @@ lost custody integrity, before it is reported as `Unadmitted`. The Service
 has no diagnostics sink yet, so the outcome is dropped at process exit, as an
 unregistration failure is.
 
-The setter and readback IDs are not journaled until 6a-5, so none is pinned.
-The job reserves both pairs before its first send. A sent ID stays quarantined
-until a correlated reply is read, and retirement frees the unsent one, so long
-runs keep at most one answered ID per command out of the pool
-(`driver_mode_owner` tests). A stale reply across a restart fails closed: the
+The record's claim names the job's baseline, setter, readback and spare IDs
+before the setter is sent. A settle or a read-only resolution keeps them,
+and a revert, whose job sent no setter, returns to the IDs of the record the
+claim replaced, so the newest `00/04` reply belongs to the IDs on disk. The
+exception is an intent whose setter was never sent and that was not
+reverted: a claim whose write failed after it landed, a release whose share
+had no room for the revert, a revert its writer's admission refused (a
+suspend that refused an acquire's setter also ends the ordinary admission
+its revert holds), or a process that ended between the claim and its setter
+or revert. It names IDs that sent no `00/04`, so the newest reply, the
+earlier record's, is not seeded, and a later setter that read it would
+still need its independent `00/84` readback to confirm. The seed is exact
+for `00/04` only: a revert also drops the reverted job's answered baseline
+`00/84` ID. That reply names the mode the job read, which its unsent setter
+did not change, read-only `00/84` IDs are not seeded either, and a `00/84`
+read never confirms a write on its own. The store admits a replace by the
+domain's edges and compare-and-swap alone, so keeping a settle or a
+resolution on the intent's IDs, and building a revert from the replaced
+record, is the ledger's job. The next process quarantines the record's IDs in its transaction pool
+beside the journal's (`transaction_seed`); managed restarts its IDs at 1
+per port. No ID is pinned: the job reserves
+both pairs before its first send, and the pool skips the seeded ones. A sent
+ID stays quarantined until a correlated reply is read, and retirement frees
+the unsent one, so long runs keep at most one answered ID per command out of
+the pool (`driver_mode_owner` tests). A stale reply still fails closed: the
 acknowledgement must match the request's ID, class, command, status and
 checksum and echo the arguments byte for byte, and the independent readback
-uses a different ID and must read the target. The residual is that the
-journal seed does not cover these IDs. A late reply to an earlier process's
-exchange on a reused ID could pass one check, but not both unless it also
-named the target mode.
+uses a different ID and must read the target.
 
 A write port that fails to open is known not applied for every mutation job
 (`windows::mutation_worker`): the lane and owned Stop keep working.
@@ -562,7 +659,11 @@ intent is unchanged: the next active reconciliation or request applies it.
   lands, restore an owned Battery Saver fan stop here, after the keyboard and
   under the same generation's cleanup admission, as managed does. Managed's
   restore has no Windows-AC-only pre-check; do not copy the one owned Stop's
-  handback recipe needs (`fan_mutation.rs`).
+  handback recipe needs (`fan_mutation.rs`). An earlier revision handed
+  owned manual fans back at suspend too (the D1 suspend fan handback);
+  commit `874b7c07` removed it, which is managed parity. On Fast Startup,
+  too, the fans are not handed back at suspend, and owned fans continue in
+  the resumed process.
 - The keyboard gets the rest of the window, at most its 0.9 s shutdown
   share. Unlike the shutdown release's 150 ms entry, it waits on the gate and
   the join of active work for that whole share, as managed's
@@ -578,6 +679,17 @@ intent is unchanged: the next active reconciliation or request applies it.
 - Fast Startup hibernates the system session instead of stopping services,
   so its PBT_APMSUSPEND runs this path, not the shutdown release. Windows
   logs users off first, which the cleanup admission does not depend on.
+  After the hybrid boot the same process resumes, so an in-flight release
+  job and a release left in doubt survive it.
+
+The console-identity half of packaging blocker 2 is resolved: every release
+holds the Service's cleanup admission, which names no console session, SID
+or logon. Both Windows orders are pinned with nobody signed in: logoff and
+console-disconnect notices, then PBT_APMSUSPEND with late session notices
+during the release, restores Normal under the suspend generation's scope
+(`a_fast_startup_order_releases_with_nobody_signed_in`), and logoff notices
+before SHUTDOWN leave the Owned Stop release admitted
+(`a_shutdown_after_logoff_releases`). Neither takes a console capture.
 
 The preparation's healthy release has three exchanges and 20 cleanup
 authorizations, counted in the test rig. Each authorization reads the
@@ -585,14 +697,87 @@ Windows AC line status and competing-controller presence; their cost on
 RZ09-0581 is not measured, so the preparation's time is unknown until an
 attended timing. For comparison, the owned fan handback recipe counted 60
 authorizations with its nine exchanges and six journal writes when it still
-ran at suspend. The SCM handler returns at once, as managed's does, so the
-window bounds staleness, not time Windows waits for; a system that sleeps
-first ends the work at its next authorization after resume.
+ran at suspend.
 
-Remaining before packaging admission: an attended timing of a real release
-at suspend and at shutdown and of the fan handback at shutdown on RZ09-0581, observation that Fast
-Startup delivers PBT_APMSUSPEND to the native Service, the durable owned and
-uncertain record and journaled IDs of stage 6a-5, and physical validation.
+The SCM control callback that delivered the suspend is held until the
+preparation has recorded an outcome for that generation, and never past the
+notice's QPC stamp plus `MAXIMUM_AGE` (`origin_lifetime::suspend_hold`).
+Windows suspends once the callback returns, so without the hold the release
+raced the suspend. This deviates from the managed Service, whose callback
+returns at once (`WindowsServiceLifecycleEventSource.cs:678-689`), and
+matches the managed Session Agent relay, which waits for the Service the
+same way (`SessionPowerTransitionRelay.cs:101-108`). The native Agent serves
+no `reportSessionPowerTransition`, so before the hold native held nothing on
+any suspend, and managed holds nothing on Fast Startup, where no Agent runs.
+
+- Only `SERVICE_CONTROL_POWEREVENT` with PBT_APMSUSPEND that starts a new
+  suspend generation waits, and only while the preparation has armed the
+  hold (`Runtime::native`). STOP, SHUTDOWN, SESSIONCHANGE, a resume, a
+  power-setting read and a repeated or stale suspend return at once.
+- Every exit of the preparation records its generation through a drop
+  guard: a release with any outcome, a notice too old to prepare, a
+  generation already prepared, fatal admission evidence and a preparation
+  dropped mid-release.
+- The callback runs on the SCM dispatcher thread, and the preparation on the
+  runtime that the ServiceMain thread runs (`scm_host::registered_service`),
+  so the wait cannot block the work it waits for. A wait on the preparer's
+  own thread returns at once. The wait holds neither the ingress slot's lock
+  nor the lifecycle's.
+- The hold changes no write admission, fence or budget and sends nothing.
+  The SCM serializes controls, so a STOP that arrives during the hold is
+  delivered after it, at most 1.5 s later.
+- A preparation still running when the cap ends goes on; a system that
+  sleeps first ends the work at its next authorization after resume.
+
+Known limits, pinned by tests and left for the attended checks below:
+
+- G3, an unactivated write lease. Only a console-captured mutation
+  activates this process's write lease (`ReadSource::mutate`), and the record
+  custody writes nothing before it. A process in which nobody has signed in
+  since it started, such as a shutdown from the logon screen after a cold
+  boot, therefore refuses the shutdown release over a loaded `Owned` record
+  or a keyboard left in Driver mode: `Unadmitted`, nothing sent, and the
+  record stays `Owned` and open, which Setup admits
+  (`an_unactivated_process_refuses_the_shutdown_release`). Managed releases a
+  fresh Driver read there, whoever set it. A Service-scoped activation bound
+  to the loaded record would widen owner custody at the shutdown boundary;
+  it waits for V6, whether Driver mode survives a cold boot.
+- G4, the Owned Stop fence. Owned Stop pins the ordinary epoch, so a session
+  or power notice that arrives during the 0.9 s shutdown release ends it at
+  its next authorization. Notices before SHUTDOWN do not, because the
+  release captures after them. Whether late logoff notices reach the Service
+  during SHUTDOWN is not known; a session-tolerant fence waits for the V3
+  trace.
+- A shutdown while the gate is still set, after a missed resume, refuses the
+  release with nothing sent, as managed blocks its Stop cleanup in low power
+  (`a_shutdown_while_suspended_refuses_the_release`).
+- A Fast Startup release left in doubt (`ReleaseIntent`) is not resolved
+  after the hybrid boot while nobody is signed in. After this process's own
+  release, only a confirmed `00/84` read by a client's ObserveState read job
+  can resolve it, and no client runs at the logon screen. The first client
+  read after sign-in resolves it, and that settle needs no console user
+  (`a_fast_startup_release_intent_waits_for_a_client_read`). Until then
+  every release reports `Uncertain` and sends nothing, Setup refuses
+  retirement and handback, and a full shutdown leaves the intent for the
+  next process, whose first console-captured step resolves it read-only.
+
+Packaging blocker 2, the Driver-mode release at shutdown and Fast Startup
+with no console user, is code-complete: the cleanup admission resolves the
+identity half and the suspend hold the timing half. Remaining before
+packaging admission, attended on RZ09-0581:
+
+- V2: a Fast Startup shutdown with Driver mode owned. PBT_APMSUSPEND
+  reaches the native Service, the release lands within the hold, the record
+  is `Clear` after the hybrid boot and the keyboard reads Normal at the
+  logon screen, with no reacquire before sign-in.
+- V3: a full shutdown and a restart. The release and the fan handback land
+  within WaitToKillServiceTimeout, the record is `Clear`, and the session
+  notices seen during the release are recorded (G4).
+- V4: a shutdown from the logon screen once after a sign-in and sign-out in
+  the same boot (`Restored` expected) and once with no sign-in since boot
+  (`Unadmitted` expected, G3).
+- An attended timing of the Driver-mode record write against its 25 ms
+  floor, and physical validation.
 
 #### Live readings (read-only)
 

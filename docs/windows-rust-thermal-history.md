@@ -121,13 +121,19 @@ owner's settle-only 51, which sends no 07/8C, so the retired request's
 preflight can hold the newest 07/8C reply. Older settled requests, the
 reservations of replaced owners and performance rows add none. Neither does
 an earlier request's reply to a command that the newest request of its
-family did not send again, such as a setter it never reached. At most 80 are
-taken: the largest live set (74) always fits, and 174 of the 254 IDs stay
-free. That is twice the most IDs reserved at once (66: a live fan owner's
-whole record, a temporary-charge owner's cancellation, the next fan request
-with its Custom levels, and a read with its Custom levels). Three such peaks
-would not fit beside any limit that holds the live set. The journal format is
-unchanged.
+family did not send again, such as a setter it never reached. With
+keyboard Driver-mode ownership, the seed first takes the four IDs that
+`keyboard-driver-mode.bin` names: the newest claiming 00/04 job's
+baseline, setter, readback and spare, whatever the record's state, or,
+after a revert, the IDs of the record that job's claim replaced. A
+record that is absent, unreadable or refused adds none. At most 80 are
+taken: the largest live set (78, the record's four included) always fits,
+and 174 of the 254 IDs stay free. That is twice the most IDs reserved at
+once (66: a live fan owner's whole record, a temporary-charge owner's
+cancellation, the next fan request with its Custom levels, and a read with
+its Custom levels). Mutation jobs run one at a time, so a Driver-mode job is
+such a next request. Three such peaks would not fit beside any limit that
+holds the live set. The journal format is unchanged.
 
 The seed reads the journal as release does (`journal_read_release`). That
 authenticates the active tail and every archived segment, opening the
@@ -336,6 +342,63 @@ shutdown until the user reapplies a fan setting.
 Still deferred: the Rust reader does not accept the exit marker, inherited fan
 ownership is not adopted, and an interrupted rollover is not handed back.
 Performance confirmation compares the preset only, not native GPU offsets.
+
+## Keyboard Driver-mode record in Setup
+
+The native Service journals its keyboard 00/04 setters in
+owner\keyboard-driver-mode.bin, beside the thermal journal, and stages each
+replace as keyboard-driver-mode.bin.pending. WindowsNativeDriverModeHistory
+reads both names under the owner writer, and the owner-chain walk skips them as
+it skips the thermal namespace. NativeDriverModeRecord parses the record with
+the grammar of openblade-domain driver_mode_history.rs and replays its shared
+vectors, tools/openblade-windows-host/tests/data/driver-mode-record-v1.json:
+the same accepted records and fields, the same rejections, and the canonical
+re-encoding. Setup never writes, renames or removes either name.
+
+AcquireRetiredOwner classifies the record before thermal history, so every owner
+admission applies the same rule: retirement, a crashed generation's handback,
+managed mailbox custody and Begin.
+
+- Absent: unchanged. Commitments, proofs and handback records keep their bytes.
+- Clear or Owned: admitted. The record's SHA-256 joins the owner commitment
+  under OpenBlade.NativeOwnerDriverMode.v1, so the retirement proof attests it.
+  The handback record is the one the thermal history alone gives. Owned is
+  reported only, as a setup-log warning at retirement: managed reads the
+  keyboard mode before any Driver-mode write of its own.
+- AcquireIntent or ReleaseIntent: refused. The setter may have reached firmware,
+  and the handback has no item for it, so even a proven exit does not retire the
+  generation. The refusal names the intent.
+- Unknown: a record that does not parse, is a directory or reparse point,
+  exceeds 2048 bytes, or names an owner the chain never made Active. Refused.
+- A leftover stage, file or directory: refused, whatever the record holds. It
+  may belong to a replace that never finished.
+
+Each refusal is FirmwareOwnerUnresolved, names the case and leaves every owner,
+attempt and generation byte as it was.
+
+No admitted build can open owner custody over either name: a Service built
+without service-keyboard-driver-mode-v1 refuses the record names in its owner
+history, and WindowsNativePackage refuses that feature for packaging. An install
+is therefore refused before anything is stopped (OpenForSetupAsync with an
+incoming package), and again under the epoch writer in Begin, after owner
+admission has named any intent or unknown record. The install gate checks
+presence only, so it never holds the record open while a native Service may be
+replacing it. Any record or stage blocks every later native install, a settled
+Clear record included, and nothing in the product removes it. Only uninstall
+opens the selection without an incoming package: re-running Install passes the
+incoming package, and the product registers no Repair. On a development
+machine the remedy is by hand: uninstall, confirm that the keyboard reads
+Normal, and, with no native Service running, move owner\keyboard-driver-mode.bin
+and any .pending stage out of %ProgramData%\OpenBlade.NativeEpochs as an
+administrator before the next native install. This applies to a settled
+record only: an intent, an unknown record or a stage also refuses the
+uninstall's retirement and stays until it is resolved, as below.
+
+Still deferred (stage 6a-5 D2 option a): a versioned handback item for the
+record, pending for an intent and reported for Owned, with a managed 00/84 read
+before its first Driver-mode write. Until then an intent fences retirement,
+handback and managed mailbox custody until a native generation with keyboard
+Driver-mode ownership resolves it read-only, and that build cannot be packaged.
 
 ## Verification limits
 

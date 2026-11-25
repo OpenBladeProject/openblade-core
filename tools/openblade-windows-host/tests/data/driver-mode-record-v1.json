@@ -1,0 +1,503 @@
+{
+  "header": "OpenBlade.NativeDriverMode.v1",
+  "contract": "service-keyboard-driver-mode-v1/rz09-0581-v1",
+  "maxBytes": 2048,
+  "records": {
+    "acquireClaimed": {
+      "bytes": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n1\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nAcquireIntent\nClear\n11,12,13,14\n",
+      "sequence": "1",
+      "owner": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "state": "AcquireIntent",
+      "prior": "Clear",
+      "ids": [11, 12, 13, 14]
+    },
+    "acquireConfirmed": {
+      "bytes": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n2\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nOwned\nOwned\n11,12,13,14\n",
+      "sequence": "2",
+      "owner": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "state": "Owned",
+      "prior": "Owned",
+      "ids": [11, 12, 13, 14]
+    },
+    "releaseClaimed": {
+      "bytes": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n3\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nReleaseIntent\nOwned\n21,22,23,24\n",
+      "sequence": "3",
+      "owner": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "state": "ReleaseIntent",
+      "prior": "Owned",
+      "ids": [21, 22, 23, 24]
+    },
+    "releaseConfirmed": {
+      "bytes": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n4\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nClear\nClear\n21,22,23,24\n",
+      "sequence": "4",
+      "owner": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "state": "Clear",
+      "prior": "Clear",
+      "ids": [21, 22, 23, 24]
+    },
+    "releaseReverted": {
+      "bytes": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n4\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nOwned\nOwned\n21,22,23,24\n",
+      "sequence": "4",
+      "owner": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "state": "Owned",
+      "prior": "Owned",
+      "ids": [21, 22, 23, 24]
+    },
+    "reacquireClaimed": {
+      "bytes": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n3\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nAcquireIntent\nOwned\n41,42,43,44\n",
+      "sequence": "3",
+      "owner": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "state": "AcquireIntent",
+      "prior": "Owned",
+      "ids": [41, 42, 43, 44]
+    },
+    "reacquireResolvedDriver": {
+      "bytes": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n4\n0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\nOwned\nOwned\n41,42,43,44\n",
+      "sequence": "4",
+      "owner": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "state": "Owned",
+      "prior": "Owned",
+      "ids": [41, 42, 43, 44]
+    },
+    "reacquireResolvedNormal": {
+      "bytes": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n4\n0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\nClear\nClear\n41,42,43,44\n",
+      "sequence": "4",
+      "owner": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "state": "Clear",
+      "prior": "Clear",
+      "ids": [41, 42, 43, 44]
+    },
+    "foreignNormal": {
+      "bytes": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n3\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nClear\nClear\n11,12,13,14\n",
+      "sequence": "3",
+      "owner": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "state": "Clear",
+      "prior": "Clear",
+      "ids": [11, 12, 13, 14]
+    },
+    "firstReleaseClaimed": {
+      "bytes": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n1\n0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\nReleaseIntent\nClear\n251,252,253,254\n",
+      "sequence": "1",
+      "owner": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "state": "ReleaseIntent",
+      "prior": "Clear",
+      "ids": [251, 252, 253, 254]
+    },
+    "firstReleaseConfirmed": {
+      "bytes": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n2\n0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\nClear\nClear\n251,252,253,254\n",
+      "sequence": "2",
+      "owner": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "state": "Clear",
+      "prior": "Clear",
+      "ids": [251, 252, 253, 254]
+    },
+    "acquireAfterClear": {
+      "bytes": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n5\n0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\nAcquireIntent\nClear\n1,2,3,4\n",
+      "sequence": "5",
+      "owner": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "state": "AcquireIntent",
+      "prior": "Clear",
+      "ids": [1, 2, 3, 4]
+    },
+    "largestSequence": {
+      "bytes": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n18446744073709551615\n0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\nClear\nClear\n9,8,7,6\n",
+      "sequence": "18446744073709551615",
+      "owner": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "state": "Clear",
+      "prior": "Clear",
+      "ids": [9, 8, 7, 6]
+    }
+  },
+  "rejected": [
+    {
+      "name": "empty",
+      "bytes": ""
+    },
+    {
+      "name": "missingFinalNewline",
+      "bytes": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n1\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nAcquireIntent\nClear\n11,12,13,14"
+    },
+    {
+      "name": "extraLine",
+      "bytes": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n1\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nAcquireIntent\nClear\n11,12,13,14\n\n"
+    },
+    {
+      "name": "extraField",
+      "bytes": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n1\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nAcquireIntent\nClear\n11,12,13,14\nClear\n"
+    },
+    {
+      "name": "crlf",
+      "bytes": "OpenBlade.NativeDriverMode.v1\r\nservice-keyboard-driver-mode-v1/rz09-0581-v1\r\n1\r\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\r\nAcquireIntent\r\nClear\r\n11,12,13,14\r\n"
+    },
+    {
+      "name": "byteOrderMark",
+      "bytes": "﻿OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n1\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nAcquireIntent\nClear\n11,12,13,14\n"
+    },
+    {
+      "name": "nextVersion",
+      "bytes": "OpenBlade.NativeDriverMode.v2\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n1\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nAcquireIntent\nClear\n11,12,13,14\n"
+    },
+    {
+      "name": "headerCase",
+      "bytes": "openblade.nativedrivermode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n1\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nAcquireIntent\nClear\n11,12,13,14\n"
+    },
+    {
+      "name": "otherModel",
+      "bytes": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0528-v1\n1\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nAcquireIntent\nClear\n11,12,13,14\n"
+    },
+    {
+      "name": "nextContract",
+      "bytes": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v2/rz09-0581-v1\n1\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nAcquireIntent\nClear\n11,12,13,14\n"
+    },
+    {
+      "name": "sequenceZero",
+      "bytes": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n0\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nAcquireIntent\nClear\n11,12,13,14\n"
+    },
+    {
+      "name": "sequenceLeadingZero",
+      "bytes": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n01\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nAcquireIntent\nClear\n11,12,13,14\n"
+    },
+    {
+      "name": "sequenceSign",
+      "bytes": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n+1\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nAcquireIntent\nClear\n11,12,13,14\n"
+    },
+    {
+      "name": "sequenceNegative",
+      "bytes": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n-1\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nAcquireIntent\nClear\n11,12,13,14\n"
+    },
+    {
+      "name": "sequenceOverflow",
+      "bytes": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n18446744073709551616\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nAcquireIntent\nClear\n11,12,13,14\n"
+    },
+    {
+      "name": "sequenceEmpty",
+      "bytes": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nAcquireIntent\nClear\n11,12,13,14\n"
+    },
+    {
+      "name": "ownerUppercase",
+      "bytes": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n1\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\nAcquireIntent\nClear\n11,12,13,14\n"
+    },
+    {
+      "name": "ownerShort",
+      "bytes": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n1\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nAcquireIntent\nClear\n11,12,13,14\n"
+    },
+    {
+      "name": "ownerLong",
+      "bytes": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n1\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nAcquireIntent\nClear\n11,12,13,14\n"
+    },
+    {
+      "name": "ownerNotHex",
+      "bytes": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n1\ngggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg\nAcquireIntent\nClear\n11,12,13,14\n"
+    },
+    {
+      "name": "stateUnknown",
+      "bytes": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n1\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nAcquired\nClear\n11,12,13,14\n"
+    },
+    {
+      "name": "stateCase",
+      "bytes": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n1\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nacquireintent\nClear\n11,12,13,14\n"
+    },
+    {
+      "name": "priorIntent",
+      "bytes": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n1\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nAcquireIntent\nAcquireIntent\n11,12,13,14\n"
+    },
+    {
+      "name": "priorUnknown",
+      "bytes": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n1\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nAcquireIntent\nNone\n11,12,13,14\n"
+    },
+    {
+      "name": "settledPriorMismatch",
+      "bytes": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n2\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nOwned\nClear\n11,12,13,14\n"
+    },
+    {
+      "name": "threeIds",
+      "bytes": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n1\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nAcquireIntent\nClear\n11,12,13\n"
+    },
+    {
+      "name": "fiveIds",
+      "bytes": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n1\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nAcquireIntent\nClear\n11,12,13,14,15\n"
+    },
+    {
+      "name": "duplicateId",
+      "bytes": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n1\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nAcquireIntent\nClear\n11,12,13,11\n"
+    },
+    {
+      "name": "idZero",
+      "bytes": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n1\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nAcquireIntent\nClear\n0,12,13,14\n"
+    },
+    {
+      "name": "id255",
+      "bytes": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n1\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nAcquireIntent\nClear\n11,12,13,255\n"
+    },
+    {
+      "name": "id256",
+      "bytes": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n1\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nAcquireIntent\nClear\n11,12,13,256\n"
+    },
+    {
+      "name": "idLeadingZero",
+      "bytes": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n1\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nAcquireIntent\nClear\n011,12,13,14\n"
+    },
+    {
+      "name": "idSign",
+      "bytes": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n1\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nAcquireIntent\nClear\n+11,12,13,14\n"
+    },
+    {
+      "name": "idSpace",
+      "bytes": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n1\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nAcquireIntent\nClear\n11, 12,13,14\n"
+    },
+    {
+      "name": "idTrailingComma",
+      "bytes": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n1\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nAcquireIntent\nClear\n11,12,13,14,\n"
+    },
+    {
+      "name": "idHex",
+      "bytes": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n1\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nAcquireIntent\nClear\n0xb,12,13,14\n"
+    },
+    {
+      "name": "nonAscii",
+      "bytes": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n1\néééééééééééééééééééééééééééééééé\nAcquireIntent\nClear\n11,12,13,14\n"
+    },
+    {
+      "name": "nul",
+      "bytes": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n1\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nAcquireIntent\nCl\u0000ar\n11,12,13,14\n"
+    },
+    {
+      "name": "tab",
+      "bytes": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n\t1\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nAcquireIntent\nClear\n11,12,13,14\n"
+    },
+    {
+      "name": "oversize",
+      "bytes": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n1\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nAcquireIntent\nClear\n11,12,13,14\n"
+    }
+  ],
+  "transitions": [
+    {
+      "name": "acquire claim from no record",
+      "prior": null,
+      "next": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n1\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nAcquireIntent\nClear\n11,12,13,14\n",
+      "follows": true
+    },
+    {
+      "name": "release claim from no record",
+      "prior": null,
+      "next": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n1\n0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\nReleaseIntent\nClear\n251,252,253,254\n",
+      "follows": true
+    },
+    {
+      "name": "acquire confirmed",
+      "prior": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n1\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nAcquireIntent\nClear\n11,12,13,14\n",
+      "next": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n2\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nOwned\nOwned\n11,12,13,14\n",
+      "follows": true
+    },
+    {
+      "name": "release claim while owned",
+      "prior": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n2\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nOwned\nOwned\n11,12,13,14\n",
+      "next": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n3\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nReleaseIntent\nOwned\n21,22,23,24\n",
+      "follows": true
+    },
+    {
+      "name": "release confirmed",
+      "prior": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n3\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nReleaseIntent\nOwned\n21,22,23,24\n",
+      "next": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n4\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nClear\nClear\n21,22,23,24\n",
+      "follows": true
+    },
+    {
+      "name": "release reverted to owned",
+      "prior": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n3\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nReleaseIntent\nOwned\n21,22,23,24\n",
+      "next": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n4\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nOwned\nOwned\n21,22,23,24\n",
+      "follows": true
+    },
+    {
+      "name": "reacquire claim while owned",
+      "prior": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n2\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nOwned\nOwned\n11,12,13,14\n",
+      "next": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n3\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nAcquireIntent\nOwned\n41,42,43,44\n",
+      "follows": true
+    },
+    {
+      "name": "a later generation resolves Driver",
+      "prior": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n3\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nAcquireIntent\nOwned\n41,42,43,44\n",
+      "next": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n4\n0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\nOwned\nOwned\n41,42,43,44\n",
+      "follows": true
+    },
+    {
+      "name": "a later generation resolves Normal",
+      "prior": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n3\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nAcquireIntent\nOwned\n41,42,43,44\n",
+      "next": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n4\n0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\nClear\nClear\n41,42,43,44\n",
+      "follows": true
+    },
+    {
+      "name": "owned found Normal",
+      "prior": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n2\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nOwned\nOwned\n11,12,13,14\n",
+      "next": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n3\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nClear\nClear\n11,12,13,14\n",
+      "follows": true
+    },
+    {
+      "name": "first release confirmed",
+      "prior": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n1\n0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\nReleaseIntent\nClear\n251,252,253,254\n",
+      "next": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n2\n0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\nClear\nClear\n251,252,253,254\n",
+      "follows": true
+    },
+    {
+      "name": "acquire claim after clear",
+      "prior": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n4\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nClear\nClear\n21,22,23,24\n",
+      "next": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n5\n0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\nAcquireIntent\nClear\n1,2,3,4\n",
+      "follows": true
+    },
+    {
+      "name": "acquire claim keeping the last IDs",
+      "prior": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n4\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nClear\nClear\n21,22,23,24\n",
+      "next": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n5\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nAcquireIntent\nClear\n21,22,23,24\n",
+      "follows": true
+    },
+    {
+      "name": "acquire reverted to clear",
+      "prior": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n1\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nAcquireIntent\nClear\n11,12,13,14\n",
+      "next": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n2\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nClear\nClear\n11,12,13,14\n",
+      "follows": true
+    },
+    {
+      "name": "release reverted to owned on the replaced record's IDs",
+      "prior": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n3\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nReleaseIntent\nOwned\n21,22,23,24\n",
+      "next": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n4\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nOwned\nOwned\n11,12,13,14\n",
+      "follows": true
+    },
+    {
+      "name": "reacquire reverted to owned on the replaced record's IDs",
+      "prior": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n3\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nAcquireIntent\nOwned\n41,42,43,44\n",
+      "next": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n4\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nOwned\nOwned\n11,12,13,14\n",
+      "follows": true
+    },
+    {
+      "name": "acquire reverted to clear on the replaced record's IDs",
+      "prior": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n5\n0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\nAcquireIntent\nClear\n1,2,3,4\n",
+      "next": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n6\n0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\nClear\nClear\n21,22,23,24\n",
+      "follows": true
+    },
+    {
+      "name": "first release reverted to clear on other IDs",
+      "prior": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n1\n0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\nReleaseIntent\nClear\n251,252,253,254\n",
+      "next": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n2\n0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\nClear\nClear\n1,2,3,4\n",
+      "follows": true
+    },
+    {
+      "name": "reacquire found Normal on other IDs",
+      "prior": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n3\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nAcquireIntent\nOwned\n41,42,43,44\n",
+      "next": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n4\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nClear\nClear\n11,12,13,14\n",
+      "follows": false
+    },
+    {
+      "name": "settled first record",
+      "prior": null,
+      "next": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n1\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nClear\nClear\n11,12,13,14\n",
+      "follows": false
+    },
+    {
+      "name": "owned first record",
+      "prior": null,
+      "next": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n1\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nOwned\nOwned\n11,12,13,14\n",
+      "follows": false
+    },
+    {
+      "name": "first record not at one",
+      "prior": null,
+      "next": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n2\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nAcquireIntent\nClear\n11,12,13,14\n",
+      "follows": false
+    },
+    {
+      "name": "first claim with an owned prior",
+      "prior": null,
+      "next": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n1\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nAcquireIntent\nOwned\n11,12,13,14\n",
+      "follows": false
+    },
+    {
+      "name": "sequence repeated",
+      "prior": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n1\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nAcquireIntent\nClear\n11,12,13,14\n",
+      "next": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n1\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nOwned\nOwned\n11,12,13,14\n",
+      "follows": false
+    },
+    {
+      "name": "sequence skipped",
+      "prior": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n1\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nAcquireIntent\nClear\n11,12,13,14\n",
+      "next": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n3\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nOwned\nOwned\n11,12,13,14\n",
+      "follows": false
+    },
+    {
+      "name": "acquire intent over acquire intent",
+      "prior": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n1\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nAcquireIntent\nClear\n11,12,13,14\n",
+      "next": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n2\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nAcquireIntent\nClear\n31,32,33,34\n",
+      "follows": false
+    },
+    {
+      "name": "release intent over acquire intent",
+      "prior": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n1\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nAcquireIntent\nClear\n11,12,13,14\n",
+      "next": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n2\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nReleaseIntent\nClear\n31,32,33,34\n",
+      "follows": false
+    },
+    {
+      "name": "acquire intent over release intent",
+      "prior": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n3\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nReleaseIntent\nOwned\n21,22,23,24\n",
+      "next": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n4\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nAcquireIntent\nOwned\n31,32,33,34\n",
+      "follows": false
+    },
+    {
+      "name": "release intent over release intent",
+      "prior": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n3\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nReleaseIntent\nOwned\n21,22,23,24\n",
+      "next": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n4\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nReleaseIntent\nOwned\n31,32,33,34\n",
+      "follows": false
+    },
+    {
+      "name": "acquire settle on other IDs",
+      "prior": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n1\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nAcquireIntent\nClear\n11,12,13,14\n",
+      "next": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n2\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nOwned\nOwned\n11,12,13,15\n",
+      "follows": false
+    },
+    {
+      "name": "release settle on other IDs",
+      "prior": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n3\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nReleaseIntent\nOwned\n21,22,23,24\n",
+      "next": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n4\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nClear\nClear\n21,22,23,25\n",
+      "follows": false
+    },
+    {
+      "name": "owned found Normal on other IDs",
+      "prior": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n2\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nOwned\nOwned\n11,12,13,14\n",
+      "next": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n3\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nClear\nClear\n21,22,23,24\n",
+      "follows": false
+    },
+    {
+      "name": "release revert to owned from a clear prior",
+      "prior": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n1\n0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\nReleaseIntent\nClear\n251,252,253,254\n",
+      "next": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n2\n0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\nOwned\nOwned\n251,252,253,254\n",
+      "follows": false
+    },
+    {
+      "name": "claim from owned with a clear prior",
+      "prior": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n2\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nOwned\nOwned\n11,12,13,14\n",
+      "next": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n3\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nReleaseIntent\nClear\n21,22,23,24\n",
+      "follows": false
+    },
+    {
+      "name": "claim from clear with an owned prior",
+      "prior": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n4\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nClear\nClear\n21,22,23,24\n",
+      "next": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n5\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nAcquireIntent\nOwned\n1,2,3,4\n",
+      "follows": false
+    },
+    {
+      "name": "owned repeated",
+      "prior": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n2\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nOwned\nOwned\n11,12,13,14\n",
+      "next": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n3\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nOwned\nOwned\n11,12,13,14\n",
+      "follows": false
+    },
+    {
+      "name": "clear repeated",
+      "prior": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n4\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nClear\nClear\n21,22,23,24\n",
+      "next": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n5\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nClear\nClear\n21,22,23,24\n",
+      "follows": false
+    },
+    {
+      "name": "clear to owned",
+      "prior": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n4\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nClear\nClear\n21,22,23,24\n",
+      "next": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n5\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nOwned\nOwned\n21,22,23,24\n",
+      "follows": false
+    }
+  ]
+}
