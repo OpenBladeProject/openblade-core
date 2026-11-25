@@ -567,6 +567,7 @@ gate:
 | 6965-7002 | Already in the requested state | Applied, `HyperBoost is already active.` (settled on its own reading) or `HyperBoost is already off.` (nothing prepared) |
 | 7004-7023 | Pad path selection | A connected pad refuses: native admits the pad-less path only |
 | 7024-7032 | Fresh confirmed state | Holds for every reading the Reader decodes |
+| 7134-7140, first for an unclassified external reading | Managed resolves ExternalUnknown's intent and then refuses the source; native's saved layer has no destination for that class | Blocked, `HyperBoost requires a confirmed external power source.` |
 | 7121-7132 | Admitted saved intent at the class: no outstanding owned fan change, a saved aggregate, no GPU clock effect | The fan handback reply, or Blocked, managed's intent text |
 | 7134-7140 | `PowerSourcePolicy.IsExternal` | Blocked, `HyperBoost requires a confirmed external power source.` |
 | 7142-7159 | Fresh pad absence | Blocked, managed's pad-absence text |
@@ -626,6 +627,9 @@ Native differs from managed here in these ways:
   managed cannot build a well-formed ownership journal for that pair and
   fails before any write.
 - Controller and custody refusals use native's shared replies.
+- An exit on an external source neither side can classify is refused
+  before any write by both. Managed names its preserved ownership journal;
+  native gives its shared unclassified-power refusal.
 - A class change between the request's reading and a setter's reading stops
   an entry, because HyperBoost is never the saved destination.
 - Native records no HyperBoost ownership of its own: the battery boundary,
@@ -637,7 +641,8 @@ Native differs from managed here in these ways:
 `ServiceControlRuntimeTests.NativeHyperBoostOwnedVectors` records managed's
 reply and writes for entry and exit from each confirmed state the getter
 decodes, on PluggedIn, UsbC and Battery, with the pad absent, plus a present
-and an unobservable pad
+and an unobservable pad, and on an external source the adapter table cannot
+classify
 (`tools/openblade-windows-host/tests/data/hyperboost-owned-vectors.json`).
 `hyperboost_owned::managed_owned_hyperboost_vectors_replay_through_the_dispatcher`
 replays every row and asserts each deviation above literally. Both package
