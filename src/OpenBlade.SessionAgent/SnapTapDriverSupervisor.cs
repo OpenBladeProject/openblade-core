@@ -151,6 +151,7 @@ internal static class SnapTapDriverSupervisor
             start.ArgumentList.Add(WorkerMode);
             start.ArgumentList.Add(Environment.ProcessId.ToString(CultureInfo.InvariantCulture));
             start.ArgumentList.Add(SnapTapInputHost.FeaturesArgument(requestedFeatures));
+            var stallRearms = new Queue<long>();
             while (true)
             {
                 Process? worker = null;
@@ -189,9 +190,7 @@ internal static class SnapTapDriverSupervisor
                             interrupted = true;
                             if (timedOut)
                             {
-                                observedWorkerFailure = SnapTapDiagnosticFailure.Create(
-                                    SnapTapDiagnosticFailure.Supervisor, "SuperviseWorker",
-                                    started ? "InputLoop" : "WorkerStartup", "HeartbeatTimeout", started);
+                                observedWorkerFailure = HeartbeatTimeoutFailure(started);
                             }
                             stop.Set();
                             if (!worker.WaitForExit(6000))
@@ -236,6 +235,19 @@ internal static class SnapTapDriverSupervisor
                                 "ReconcileHooks", stage, cleanupReason!, true, observedWorkerFailure), 1);
                     }
                     clean = worker.ExitCode is 0 or 3 || cleanPause;
+                    if (IsCleanStall(observedWorkerFailure, worker.ExitCode, finalStatus, worker.Id, workerStartedAt))
+                    {
+                        if (shouldStop())
+                        {
+                            return 0;
+                        }
+                        if (TryAdmitStallRearm(stallRearms, Environment.TickCount64))
+                        {
+                            Trace.TraceInformation("SnapTap worker stall reconciled; rearming: {0}", observedWorkerFailure);
+                            clean = false;
+                            continue;
+                        }
+                    }
                     if (cleanPause)
                     {
                         Trace.TraceInformation("SnapTap clean pause reconciled; waiting to rearm: {0}", finalStatus?.Failure);
@@ -251,9 +263,8 @@ internal static class SnapTapDriverSupervisor
                     int exitCode = clean ? worker.ExitCode : 4;
                     if (!clean)
                     {
-                        DiagnosticFailure cleanupFailure = SnapTapDiagnosticFailure.Create(
-                            SnapTapDiagnosticFailure.Supervisor, "ReconcileHooks", stage,
-                            "RecoveryRequired", observedWorkerFailure?.MayHaveSubmitted == true, observedWorkerFailure);
+                        DiagnosticFailure cleanupFailure = RecoveryRequiredFailure(stage, observedWorkerFailure,
+                            worker.ExitCode, MatchingTerminalFailure(finalStatus, worker.Id, workerStartedAt));
                         return PublishTerminal(endpoint.Profile, SnapTapRuntimeState.RecoveryRequired,
                             cleanupFailure, exitCode);
                     }
@@ -318,6 +329,61 @@ internal static class SnapTapDriverSupervisor
         }
         && failure is { Stage: "InputLoop", Reason: "ForegroundUnavailable" }
             or { Stage: "HookSetup", Reason: "SubscriptionDeferred" };
+
+    internal static DiagnosticFailure HeartbeatTimeoutFailure(bool started) => SnapTapDiagnosticFailure.Create(
+        SnapTapDiagnosticFailure.Supervisor, "SuperviseWorker",
+        started ? "InputLoop" : "WorkerStartup", "HeartbeatTimeout", started);
+
+    // A late heartbeat alone proves only a stall: a worker under CPU or paging load
+    // can miss the input budget while it is still healthy. Every path that leaves
+    // output uncertain (a timed-out send, an uncancelled request, a faulted or
+    // poisoned processor, an unconfirmed hook close) exits non-zero or publishes
+    // Failed. The one faulted case that exits 0 is output refused before submission
+    // because of the stop, after the worker released every key it delivered
+    // (StopRefusalExit). So a worker that honours the stop with a fresh Off of its
+    // own, or with the dedicated clean-pause exit (a stop during hook setup defers the enable
+    // before submission), submitted nothing ambiguous. Startup stalls keep their
+    // own budget and are not admitted. The caller must also confirm reconciliation.
+    internal static bool IsCleanStall(
+        DiagnosticFailure? observed, int exitCode, SnapTapRuntimeStatus? status, int processId,
+        DateTimeOffset startedAt) =>
+        observed is not null && observed == HeartbeatTimeoutFailure(started: true)
+        && ((exitCode == 0
+                && status is { State: SnapTapRuntimeState.Off, Failure: null }
+                && status.ProcessId == processId && status.UpdatedAt >= startedAt)
+            || IsCleanPause(exitCode, status, processId, startedAt));
+
+    // Bounds automatic stall recovery so a worker that keeps stalling still latches
+    // a visible failure instead of restarting indefinitely.
+    internal const int StallRearmLimit = 3;
+    internal const long StallRearmWindowMilliseconds = 10 * 60 * 1000;
+
+    internal static bool TryAdmitStallRearm(Queue<long> recent, long now)
+    {
+        while (recent.Count != 0 && now - recent.Peek() >= StallRearmWindowMilliseconds)
+        {
+            recent.Dequeue();
+        }
+        if (recent.Count >= StallRearmLimit)
+        {
+            return false;
+        }
+        recent.Enqueue(now);
+        return true;
+    }
+
+    // A supervisor-observed cause, such as a heartbeat timeout, hides why the
+    // worker itself exited; keep both for diagnostics.
+    internal static DiagnosticFailure RecoveryRequiredFailure(
+        string stage, DiagnosticFailure? observedWorkerFailure, int workerExitCode, DiagnosticFailure? workerReported) =>
+        (SnapTapDiagnosticFailure.Create(
+            SnapTapDiagnosticFailure.Supervisor, "ReconcileHooks", stage, "RecoveryRequired",
+            observedWorkerFailure?.MayHaveSubmitted == true, observedWorkerFailure,
+            processExitCode: workerExitCode) with
+        {
+            Context = $"WorkerReason={workerReported?.Reason ?? "None"}; "
+                + $"WorkerStage={workerReported?.Stage ?? "None"}; WorkerContext={workerReported?.Context ?? "None"}",
+        }).LimitDetails();
 
     internal static bool TryReconcileHooks(
         IRazerSnapTapHookTransport guardian,

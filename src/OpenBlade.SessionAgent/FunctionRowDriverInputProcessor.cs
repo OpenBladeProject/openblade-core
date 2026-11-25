@@ -16,6 +16,9 @@ internal sealed class FunctionRowDriverInputProcessor(
     internal bool Faulted { get; private set; }
     internal bool OutputUncertain { get; private set; }
     internal bool HasTrackedKeys => held.Count != 0;
+
+    /// <summary>True when every physically held key that this processor tracks satisfies <paramref name="allowed"/>.</summary>
+    internal bool TracksOnly(Func<ushort, bool> allowed) => held.All(allowed);
     internal DiagnosticFailure? Failure { get; private set; }
 
     internal bool Handle(SnapTapKeyStroke stroke, RazerBladeInputDeviceKind deviceKind,

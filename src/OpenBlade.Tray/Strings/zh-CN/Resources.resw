@@ -2801,6 +2801,9 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
   <data name="KeyboardBackend_Recovery" xml:space="preserve">
     <value>请切换输入方式以重试。如果仍然出现此提示，请重启 Windows。</value>
   </data>
+  <data name="KeyboardBackend_DriverStillOwns" xml:space="preserve">
+    <value>Razer 驱动仍在占用这些按键。请切换到 Razer 驱动，再切换回 Windows 钩子。如果仍然出现此提示，请重启 Windows。</value>
+  </data>
   <data name="KeyboardBackend_Unknown" xml:space="preserve">
     <value>请选择输入方式以恢复。</value>
   </data>
