@@ -593,6 +593,7 @@ async fn serve_connection(
                 | StatusRequest::SetPerformanceOverride { .. }
                 | StatusRequest::CyclePerformanceShortcut { .. }
                 | StatusRequest::SetPerformanceShortcutPreview { .. }
+                | StatusRequest::SetHyperBoost { .. }
                 | StatusRequest::ReportApplicationContext { .. }
                 | StatusRequest::UpdateProfiles { .. }
                 | StatusRequest::SetThermalControlPolicy { .. }
@@ -918,6 +919,7 @@ fn mutation_budget(request: &StatusRequest) -> Duration {
             StatusRequest::SetPerformanceOverride { .. }
                 | StatusRequest::SetFanOverride { .. }
                 | StatusRequest::CyclePerformanceShortcut { .. }
+                | StatusRequest::SetHyperBoost { .. }
         )
     {
         RECIPE_BUDGET

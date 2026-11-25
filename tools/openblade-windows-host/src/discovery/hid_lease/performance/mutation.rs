@@ -137,6 +137,13 @@ pub(crate) trait Permit: Send + Sync {
     fn thermal_fenced(&self, _budget: std::time::Duration) -> bool {
         false
     }
+    /// A fresh admission a performance setter needs immediately before its
+    /// intent row, after its own power reading: managed revalidates HyperBoost
+    /// eligibility before each enable command (`requiredPadStatePerCommand`).
+    /// A refusal sets its own cause; that setter is not submitted.
+    fn admits_setter(&self) -> bool {
+        true
+    }
     /// Time the pace must leave after this recipe's setters for work that
     /// follows them inside the request, such as a paired NVML submission.
     fn reserve(&self) -> std::time::Duration {
@@ -464,7 +471,7 @@ impl<P: Port> Reader<P, ReadAdmission> {
         let final_ids = reserve()?;
         let level_ids = match destination {
             Destination::Custom(_) => Some(reserve()?),
-            Destination::Preset(_) => None,
+            _ => None,
         };
         // Each setter is one power read and its own exchange; the restore
         // pair's intermediate read, the final pair and any Custom levels
@@ -626,6 +633,12 @@ impl<P: Port> Attempt<'_, P, ReadAdmission> {
             permit.refused(Refusal::Deadline);
             return None;
         }
+        // Refused as a power change is: nothing is submitted for this setter,
+        // and an earlier one keeps its acknowledged row unsettled, so nothing
+        // is replayed.
+        if !permit.admits_setter() {
+            return None;
+        }
         self.checkpoint(authorize, admission, limit).ok()?;
         permit.record(intent).ok()?;
         self.checkpoint(authorize, admission, limit).ok()?;
@@ -667,6 +680,11 @@ impl Setters {
             Destination::Custom(levels) => Self {
                 pair: PresetPair::custom(reserve()?)?,
                 levels: Some(CustomLevelPair::new(reserve()?, levels.cpu, levels.gpu)?),
+            },
+            #[cfg(feature = "service-hyperboost-v1")]
+            Destination::HyperBoost => Self {
+                pair: PresetPair::hyperboost_enable(reserve()?)?,
+                levels: None,
             },
         })
     }

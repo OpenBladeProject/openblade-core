@@ -126,6 +126,15 @@ pub(super) use shortcut::Source as ShortcutSource;
 #[cfg(feature = "service-profile-triggers-v1")]
 #[path = "thermal_convergence.rs"]
 mod convergence;
+#[cfg(feature = "service-hyperboost-v1")]
+#[path = "hyperboost_mutation.rs"]
+mod hyperboost;
+#[cfg(any(
+    feature = "service-thermal-convergence-v1",
+    feature = "service-hyperboost-v1"
+))]
+#[path = "hyperboost_journal.rs"]
+mod hyperboost_journal;
 #[cfg(feature = "service-keyboard-driver-mode-v1")]
 #[path = "driver_mode_owner.rs"]
 mod keyboard;
@@ -141,6 +150,8 @@ mod profiles;
 #[cfg(feature = "service-profile-triggers-v1")]
 #[path = "request_triggers.rs"]
 mod triggers;
+#[cfg(all(test, feature = "service-hyperboost-v1"))]
+pub(super) use hyperboost::{Pad, Probes};
 #[cfg(feature = "service-keyboard-driver-mode-v1")]
 pub(super) use keyboard::SHUTDOWN_BUDGET as KEYBOARD_SHUTDOWN_BUDGET;
 #[cfg(all(test, feature = "service-keyboard-driver-mode-v1"))]
@@ -425,6 +436,11 @@ pub(super) struct Runtime {
     // status publishes what it did before the loop existed.
     #[cfg(feature = "service-thermal-convergence-v1")]
     convergence_loop: Rc<std::cell::OnceCell<triggers::convergence_loop::Loop>>,
+    // Owned HyperBoost's read-only probes (`hyperboost::Probes`): set by
+    // the native composition and by tests. Unset refuses every HyperBoost
+    // request before any read or write.
+    #[cfg(feature = "service-hyperboost-v1")]
+    hyperboost: Rc<std::cell::OnceCell<hyperboost::Probes>>,
     // GPU clock tuning on the explicit performance path (`thermal_gpu`).
     // The native composition sets it when its worker starts; unset keeps
     // every GPU clock effect refused as incomplete (`Cause::Gpu`). Every
@@ -490,6 +506,10 @@ struct ThermalStep {
     // from the fresh reading; `value` is then None.
     #[cfg(feature = "service-performance-shortcut-v1")]
     shortcut: Option<ShortcutSource>,
+    // `Some` for an owned HyperBoost request (`hyperboost`), which stores
+    // nothing; `value` is then None.
+    #[cfg(feature = "service-hyperboost-v1")]
+    hyperboost: Option<hyperboost::Step>,
     deadline: Instant,
     status: Snapshot,
 }
@@ -722,6 +742,8 @@ impl Runtime {
             drift: mailbox.drift(),
             #[cfg(feature = "service-thermal-convergence-v1")]
             convergence_loop: Rc::default(),
+            #[cfg(feature = "service-hyperboost-v1")]
+            hyperboost: Rc::default(),
             fan_owner: Rc::default(),
             temporary_owner: Rc::default(),
             temporary_pending: Rc::default(),
@@ -808,6 +830,12 @@ impl Runtime {
     ))]
     pub(super) fn read_console(&self, probe: impl Fn() -> Option<(String, u32)> + 'static) {
         assert!(self.console.set(Box::new(probe)).is_ok());
+    }
+    /// Reads owned HyperBoost's pad and journal from `probes`
+    /// (`Runtime::hyperboost`); they may be set once.
+    #[cfg(all(test, feature = "service-hyperboost-v1"))]
+    pub(super) fn read_hyperboost(&self, probes: hyperboost::Probes) {
+        assert!(self.hyperboost.set(probes).is_ok());
     }
     #[cfg(not(test))]
     pub(super) fn native(origin: Arc<Origin>, mailbox: &MailboxSource) -> Self {
@@ -951,10 +979,10 @@ impl Runtime {
             drift: mailbox.drift(),
             #[cfg(feature = "service-thermal-convergence-v1")]
             convergence_loop: Rc::new(std::cell::OnceCell::from(
-                triggers::convergence_loop::Loop::new(Arc::new(
-                    triggers::convergence_loop::hyperboost_journal,
-                )),
+                triggers::convergence_loop::Loop::new(Arc::new(hyperboost_journal::read)),
             )),
+            #[cfg(feature = "service-hyperboost-v1")]
+            hyperboost: Rc::new(std::cell::OnceCell::from(hyperboost::Probes::native())),
             fan_owner: Rc::default(),
             temporary_owner: Rc::default(),
             temporary_pending: Rc::default(),
@@ -1136,6 +1164,8 @@ impl Runtime {
                 transition: None,
                 #[cfg(feature = "service-performance-shortcut-v1")]
                 shortcut: None,
+                #[cfg(feature = "service-hyperboost-v1")]
+                hyperboost: None,
                 deadline,
                 status,
             },
@@ -1173,6 +1203,8 @@ impl Runtime {
                 #[cfg(feature = "service-profile-triggers-v1")]
                 transition: None,
                 shortcut: Some(source),
+                #[cfg(feature = "service-hyperboost-v1")]
+                hyperboost: None,
                 deadline,
                 status,
             },
@@ -1195,6 +1227,8 @@ impl Runtime {
             transition,
             #[cfg(feature = "service-performance-shortcut-v1")]
             shortcut,
+            #[cfg(feature = "service-hyperboost-v1")]
+            hyperboost,
             deadline,
             status,
         } = step;
@@ -1224,8 +1258,13 @@ impl Runtime {
             ));
         };
         reader.custody().verify_integrity()?;
+        // A reconciliation and a HyperBoost request store no intent.
+        #[cfg(feature = "service-hyperboost-v1")]
+        let stores_nothing = reconcile.is_some() || hyperboost.is_some();
+        #[cfg(not(feature = "service-hyperboost-v1"))]
+        let stores_nothing = reconcile.is_some();
         // A reconciliation step writes, so it never takes a storage capture.
-        let captured = if reconcile.is_some() {
+        let captured = if stores_nothing {
             self.capture(&sid, caller.session, reader.custody())
         } else {
             self.capture_intent(&sid, caller.session, reader.custody())
@@ -1256,7 +1295,7 @@ impl Runtime {
             // intent without any read or write, as managed stores it before
             // its write admission refuses (`store_performance_deferred`).
             #[cfg(feature = "service-profile-triggers-v1")]
-            if reconcile.is_none() && self.in_low_power() {
+            if !stores_nothing && self.in_low_power() {
                 reader.retain_policy(self.thermal_policy(
                     sid.clone(),
                     caller.session,
@@ -1283,7 +1322,7 @@ impl Runtime {
         // a request the gate overtakes later (`overtaken_by_gate`). A
         // reconciliation reads its own before each step.
         #[cfg(feature = "service-profile-triggers-v1")]
-        let mark = reconcile.is_none().then(|| self.gate_mark());
+        let mark = (!stores_nothing).then(|| self.gate_mark());
         let application = self.foreground(&sid, caller.session);
         #[cfg(feature = "service-profile-triggers-v1")]
         if let Some(classes) = reconcile
@@ -1327,11 +1366,11 @@ impl Runtime {
             cause: Mutex::new(Cause::CurrentAdmission),
             fatal: self.fatal.clone(),
             #[cfg(feature = "service-gpu-clock-tuning-v1")]
-            gpu: self.gpu.get().filter(|_| reconcile.is_none()).cloned(),
+            gpu: self.gpu.get().filter(|_| !stores_nothing).cloned(),
             #[cfg(feature = "service-gpu-clock-tuning-v1")]
             // Read only for a composed lane, so a build without one reads the
             // gate exactly as it did.
-            gpu_boundary: Mutex::new(if self.gpu.get().is_some() && reconcile.is_none() {
+            gpu_boundary: Mutex::new(if self.gpu.get().is_some() && !stores_nothing {
                 self.gpu_boundary()
             } else {
                 thermal_gpu::Boundary::default()
@@ -1343,6 +1382,8 @@ impl Runtime {
             #[cfg(feature = "service-gpu-clock-tuning-v1")]
             deadline,
             gpu_fence: self.gpu_fence(),
+            #[cfg(feature = "service-hyperboost-v1")]
+            hyperboost,
         });
         let result = reader.mutate(permit.clone(), deadline).await;
         permit.verify_failure()?;
@@ -1426,7 +1467,11 @@ impl Runtime {
         let requested_applied = permit
             .value()
             .is_none_or(|v| destination.is_some_and(|d| v.value == d.wire()));
-        let outcome = if observed.is_some() && requested_applied && gpu_applied {
+        let outcome = if let Some(outcome) =
+            permit.hyperboost_reply(observed.is_some(), destination)?
+        {
+            outcome
+        } else if observed.is_some() && requested_applied && gpu_applied {
             #[cfg(feature = "service-gpu-clock-tuning-v1")]
             let message = if permit.gpu_composed() {
                 thermal_gpu::confirmed(gpu.as_ref())
@@ -1546,9 +1591,12 @@ impl Runtime {
             .selected_source
             .lock()
             .map_err(|_| io::ErrorKind::Other)?;
+        // The destination the status projects as desired: a HyperBoost
+        // entry changes no saved intent.
+        let projected = permit.projected_destination(destination)?;
         let project = |status: Snapshot| -> io::Result<Option<Snapshot>> {
             // A reconciliation reports the override layer it applied over.
-            let intent_value = match power.filter(|_| reconcile.is_some()) {
+            let intent_value = match power.filter(|_| stores_nothing) {
                 Some(power) => permit.storage.current_override(power)?,
                 None => permit.value().cloned(),
             };
@@ -1568,7 +1616,7 @@ impl Runtime {
             };
             Ok(accepted.then(|| {
                 status
-                    .thermal_intent(intent_value.as_ref(), destination, &outcome.message, power)
+                    .thermal_intent(intent_value.as_ref(), projected, &outcome.message, power)
                     .bind_private_user(&sid)
                     .thermal_provenance(selected_source)
                     .thermal_write_admission(outcome.status == 1)
@@ -1747,6 +1795,9 @@ struct RequestPermit {
     #[cfg(feature = "service-gpu-clock-tuning-v1")]
     deadline: Instant,
     gpu_fence: GpuFence,
+    // An owned HyperBoost request (`hyperboost::Step`), which stores nothing.
+    #[cfg(feature = "service-hyperboost-v1")]
+    hyperboost: Option<hyperboost::Step>,
 }
 /// The fence every native thermal writer reads before its rows
 /// (`Permit::thermal_fenced`): with `service-gpu-clock-tuning-v1` composed,
@@ -1888,6 +1939,13 @@ enum Cause {
     /// nothing is stored or written.
     #[cfg(feature = "service-performance-shortcut-v1")]
     Shortcut(&'static str),
+    /// A HyperBoost step refused, or already in its state, with managed's
+    /// reply and status (`hyperboost`); nothing is stored or written.
+    #[cfg(feature = "service-hyperboost-v1")]
+    HyperBoost {
+        message: &'static str,
+        status: u8,
+    },
 }
 impl Cause {
     fn message(&self) -> String {
@@ -1920,10 +1978,39 @@ impl Cause {
             Self::Excluded(exclusion) => exclusion.message("Performance"),
             #[cfg(feature = "service-performance-shortcut-v1")]
             Self::Shortcut(message) => (*message).into(),
+            #[cfg(feature = "service-hyperboost-v1")]
+            Self::HyperBoost { message, .. } => (*message).into(),
         }
     }
 }
 impl RequestPermit {
+    /// A HyperBoost step's reply (`hyperboost`); None for any other step.
+    fn hyperboost_reply(
+        &self,
+        confirmed: bool,
+        destination: Option<Destination>,
+    ) -> io::Result<Option<Outcome>> {
+        #[cfg(feature = "service-hyperboost-v1")]
+        if let Some(step) = &self.hyperboost {
+            return self
+                .hyperboost_outcome(step, confirmed, destination)
+                .map(Some);
+        }
+        let _ = (confirmed, destination);
+        Ok(None)
+    }
+    /// The destination a step's status projects as desired: the step's own,
+    /// but for a HyperBoost entry the saved one, which it does not change.
+    fn projected_destination(
+        &self,
+        destination: Option<Destination>,
+    ) -> io::Result<Option<Destination>> {
+        #[cfg(feature = "service-hyperboost-v1")]
+        if let Some(step) = self.hyperboost.as_ref().filter(|step| step.enable) {
+            return step.saved();
+        }
+        Ok(destination)
+    }
     /// The override this request stores; none for a clear, or for a
     /// shortcut that has not staged one.
     fn value(&self) -> Option<&Override> {
@@ -2328,6 +2415,13 @@ pub(super) fn fan_override_rejected(
     thermal_combination(performance, requested.unwrap_or(profile_fans), power).err()
 }
 impl Permit for RequestPermit {
+    fn admits_setter(&self) -> bool {
+        #[cfg(feature = "service-hyperboost-v1")]
+        if let Some(step) = &self.hyperboost {
+            return self.hyperboost_admits_setter(step);
+        }
+        true
+    }
     fn failed(&self, error: &io::Error) {
         self.remember_failure(error);
     }
@@ -2432,6 +2526,12 @@ impl Permit for RequestPermit {
             {
                 self.set_cause(Cause::Unchanged);
                 return Ok(None);
+            }
+            // An owned HyperBoost request resolves its own destination and
+            // stores nothing (`hyperboost`).
+            #[cfg(feature = "service-hyperboost-v1")]
+            if let Some(step) = &self.hyperboost {
+                return self.resolve_hyperboost(step, power, baseline);
             }
             // The profile layer is resolved before the override is stored, as
             // the fan path does: a saved document the domain decoder refuses

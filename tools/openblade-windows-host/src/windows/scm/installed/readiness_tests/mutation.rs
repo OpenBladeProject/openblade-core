@@ -34,6 +34,8 @@ mod unclassified_external;
 use crate::discovery::performance::{ReadAdmission, mutation_fixture::Fixture};
 #[cfg(feature = "service-fan-mutation-v2")]
 use crate::installed::readiness::thermal_mutation::Cleanup;
+#[cfg(feature = "service-hyperboost-v1")]
+use crate::installed::readiness::thermal_mutation::{Pad, Probes};
 use crate::installed::readiness::thermal_storage::{Files, Storage};
 use crate::installed::readiness::{
     mailbox_read::{CleanupScope, MailboxSource, MutationFactories, ReadCustody, ReadSource},
@@ -1204,7 +1206,57 @@ enum HeldClock {
     /// clock measured; the time the exchange lost stays lost.
     Keep,
 }
+/// Owned HyperBoost's injected cooling-pad observation and managed journal
+/// (`hyperboost::Probes`): the pad is absent and the journal is absent until a
+/// test changes them. `script` answers the next observations in order.
+#[cfg(feature = "service-hyperboost-v1")]
+#[derive(Clone)]
+struct HyperBoostProbes {
+    pad: Arc<std::sync::Mutex<Pad>>,
+    script: Arc<std::sync::Mutex<std::collections::VecDeque<Pad>>>,
+    observations: Arc<AtomicUsize>,
+    /// `None`: a read that fails.
+    journal: Arc<std::sync::Mutex<Option<Option<Vec<u8>>>>>,
+    journal_reads: Arc<AtomicUsize>,
+}
+#[cfg(feature = "service-hyperboost-v1")]
+impl HyperBoostProbes {
+    fn new() -> Self {
+        Self {
+            pad: Arc::new(std::sync::Mutex::new(Pad::Absent)),
+            script: Arc::default(),
+            observations: Arc::default(),
+            journal: Arc::new(std::sync::Mutex::new(Some(None))),
+            journal_reads: Arc::default(),
+        }
+    }
+    fn probes(&self) -> Probes {
+        let (pad, script, observations) = (
+            self.pad.clone(),
+            self.script.clone(),
+            self.observations.clone(),
+        );
+        let (journal, reads) = (self.journal.clone(), self.journal_reads.clone());
+        Probes::new(
+            move || {
+                observations.fetch_add(1, Ordering::AcqRel);
+                let next = script.lock().unwrap().pop_front();
+                next.unwrap_or(*pad.lock().unwrap())
+            },
+            Arc::new(move || {
+                reads.fetch_add(1, Ordering::AcqRel);
+                journal
+                    .lock()
+                    .unwrap()
+                    .clone()
+                    .ok_or_else(|| io::Error::other("injected journal read failure"))
+            }),
+        )
+    }
+}
 struct Rig {
+    #[cfg(feature = "service-hyperboost-v1")]
+    hyperboost: HyperBoostProbes,
     #[cfg(feature = "service-fan-mutation-v2")]
     runtime: Runtime,
     #[cfg(feature = "service-fan-mutation-v2")]
@@ -1236,6 +1288,13 @@ fn saved_intent(files: &MemoryFiles, entry: &Value) -> bool {
         let _ = entry;
         false
     };
+    // An owned HyperBoost request (`hyperboost_owned::Rig::hyperboost`'s
+    // request ids) stores nothing: its rows write saved profile intent.
+    #[cfg(feature = "service-hyperboost-v1")]
+    let reconciled = reconciled
+        || entry["request"]
+            .as_str()
+            .is_some_and(|r| r.starts_with("aaaaaaaa-bbbb-cccc-eeee-"));
     let saved = if reconciled {
         "profiles.json"
     } else {
@@ -1375,6 +1434,10 @@ impl Rig {
         #[cfg(feature = "service-battery-policy-v1")]
         let battery_clock = runtime.battery_clock_for_tests();
         let entered = runtime.entered.clone();
+        #[cfg(feature = "service-hyperboost-v1")]
+        let hyperboost = HyperBoostProbes::new();
+        #[cfg(feature = "service-hyperboost-v1")]
+        runtime.read_hyperboost(hyperboost.probes());
         let metadata = Arc::new(AtomicU8::new(0));
         let origin = Arc::new(crate::loaded_origin::lifetime::Lifetime::default());
         let source = injected_mutation_source(
@@ -1388,6 +1451,8 @@ impl Rig {
             },
         );
         Self {
+            #[cfg(feature = "service-hyperboost-v1")]
+            hyperboost,
             #[cfg(feature = "service-fan-mutation-v2")]
             runtime,
             #[cfg(feature = "service-fan-mutation-v2")]

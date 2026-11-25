@@ -130,7 +130,7 @@ mod tests {
     }
 
     // One valid request per variant: each decodes wherever it is compiled.
-    fn variants() -> [StatusRequest; 20] {
+    fn variants() -> [StatusRequest; 21] {
         let id = || ID.to_owned();
         let version = PROTOCOL_VERSION;
         [
@@ -237,6 +237,11 @@ mod tests {
                 session_id: id(),
                 generation: 1,
                 preset: None,
+            },
+            StatusRequest::SetHyperBoost {
+                version,
+                request_id: id(),
+                enabled: true,
             },
         ]
     }

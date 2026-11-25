@@ -954,6 +954,8 @@ impl Runtime {
                                 transition: Some(transition.clone()),
                                 #[cfg(feature = "service-performance-shortcut-v1")]
                                 shortcut: None,
+                                #[cfg(feature = "service-hyperboost-v1")]
+                                hyperboost: None,
                                 deadline,
                                 status: status.clone(),
                             },

@@ -105,6 +105,14 @@ service-fan-mutation-v2 = ["service-thermal-mutation-v1"]
 # in HyperBoost on battery has no capture evidence, so no packaged composition
 # implies it, and both package readers refuse it by name.
 service-thermal-hyperboost-exit-v1 = ["service-thermal-mutation-v1", "openblade-domain/hyperboost-exit"]
+# Owned HyperBoost on exact RZ09-0581 (`setHyperBoost`): pad-less entry with
+# the enable pair from a confirmed admitted state, confirmed by an independent
+# read, and the exit to saved intent through the direct or restore recipe.
+# It reads managed's HyperBoost journal read-only and refuses while it is
+# pending (its schema check reads the pure domain convergence ledger). No
+# capture evidence covers a native entry, so no packaged
+# composition implies it, and both package readers refuse it by name.
+service-hyperboost-v1 = ["service-thermal-hyperboost-exit-v1", "openblade-domain/hyperboost", "openblade-domain/thermal-convergence"]
 # Thermal overrides are checked with the managed ProfileSetValidator thermal
 # rules before anything is stored, so this lane needs the domain profile set.
 service-thermal-mutation-v1 = ["service-mailbox-observation-v1", "controller-admission-compile-check", "openblade-domain/profile-set"]

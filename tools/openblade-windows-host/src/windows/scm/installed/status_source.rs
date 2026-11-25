@@ -574,7 +574,8 @@ impl GuardedStatus {
 #[cfg(any(
     feature = "service-profile-triggers-v1",
     feature = "service-fan-stop-v1",
-    feature = "service-performance-shortcut-v1"
+    feature = "service-performance-shortcut-v1",
+    feature = "service-hyperboost-v1"
 ))]
 fn publish_reconciled(
     publisher: &watch::Sender<Arc<Publication>>,
@@ -603,7 +604,8 @@ fn publish_preview(
 #[cfg(any(
     feature = "service-profile-triggers-v1",
     feature = "service-fan-stop-v1",
-    feature = "service-performance-shortcut-v1"
+    feature = "service-performance-shortcut-v1",
+    feature = "service-hyperboost-v1"
 ))]
 fn publish_next(
     publisher: &watch::Sender<Arc<Publication>>,
@@ -1115,6 +1117,32 @@ impl StatusSource for GuardedStatus {
                             sid,
                             request_id,
                             source,
+                            deadline,
+                            status,
+                        )
+                        .await?;
+                    let Some(status) = status else {
+                        return Ok((outcome, None));
+                    };
+                    let status = publish_reconciled(&publisher, &mailbox, status)?;
+                    Ok((outcome, Some(status)))
+                }
+                // Managed `SetHyperBoostCoreAsync`: one owned entry or exit
+                // under the thermal gate (`Runtime::set_hyperboost`).
+                #[cfg(feature = "service-hyperboost-v1")]
+                crate::service_status::StatusRequest::SetHyperBoost {
+                    request_id,
+                    enabled,
+                    ..
+                } => {
+                    let status = publisher.borrow().active.clone();
+                    let (outcome, status) = runtime
+                        .set_hyperboost(
+                            mailbox.clone(),
+                            caller,
+                            sid,
+                            request_id,
+                            enabled,
                             deadline,
                             status,
                         )
