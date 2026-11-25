@@ -226,6 +226,28 @@ public sealed partial class ServiceControlRuntimeTests
         Assert.Equal(0, context.Device.TotalSetterCalls);
     }
 
+    // A native HyperBoost exit stopped before its first setter leaves a pending
+    // Performance item while firmware still reports HyperBoost, which reads with
+    // no preset. That is a definite other state, so the item is latched for a
+    // reapply instead of waiting for a preset that never comes; a reading with no
+    // preset and no HyperBoost still waits. Nothing is written either way.
+    [Theory]
+    [InlineData(true, "mismatched")]
+    [InlineData(null, null)]
+    public async Task NativeHandback_PendingPerformanceUnderHyperBoostIsAMismatch(bool? hyperBoost, string? outcome)
+    {
+        WindowsNativeHandback record = PendingHandback(HandbackItem("performance", 2, performance: "Balanced"));
+        NativeHandbackStore store = HandbackStore(record, out WindowsNativeEpochFiles files);
+        TestContext context = await StartWithHandbackAsync(store,
+            new ConfirmedDeviceState(null, FanMode.Automatic, ConfirmedBattery(80), null) { HyperBoostActive = hyperBoost });
+        await context.Runtime.ReconcileUnexpectedExitAsync(CancellationToken.None);
+
+        Assert.Equal(outcome, Outcome(files, "pending"));
+        Assert.Equal(outcome is null, context.Runtime.GetStatus().UnconfirmedWrites.Contains(DeviceSubsystem.Performance));
+        Assert.Equal(outcome is null, StoreFor(files, Bound(record)).Load().RequiresRecovery);
+        AssertNoHardwareWrite(context);
+    }
+
     // Native owned HyperBoost's enable pair is confirmed as managed confirms its
     // own entry: HyperBoost with Automatic fans. HyperBoost that is off, or that
     // reads with manual fans, is a definite other state; unknown HyperBoost
