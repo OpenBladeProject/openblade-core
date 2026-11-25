@@ -555,6 +555,61 @@ async fn a_restart_over_a_release_intent_resolves_it_by_a_later_read() {
     }
 }
 
+/// A resolution whose settle is refused before anything is written leaves
+/// the owner at the intent (`Ledger::settle` returns `false`): the record
+/// keeps its `ReleaseIntent` and IDs, the release stays in doubt, and the
+/// ledger stays open, so a later confirmed read resolves it. The read
+/// itself is still published as confirmed. Here the read
+/// admission ends once the read-only job has retired, between its read and
+/// its settle, and returns before the next step.
+#[tokio::test]
+async fn a_refused_resolution_settle_keeps_the_intent_for_a_later_read() {
+    let (rig, _) = owner_rig(NORMAL).await;
+    tick(&rig).await;
+    rig.port.state.lock().unwrap().device_mode_bad_ack = true;
+    assert_eq!(release(&rig).await, Some(Release::Unconfirmed));
+    let (state, ids) = held(&rig).unwrap();
+    assert_eq!(state, State::ReleaseIntent);
+    let later_rig = restarted(&rig, DRIVER).await;
+    let custody = Arc::downgrade(&later_rig.custody);
+    let once = std::sync::atomic::AtomicBool::new(true);
+    later_rig.port.state.lock().unwrap().on_mutation_retired = Some(Arc::new(move || {
+        if once.swap(false, Ordering::AcqRel) {
+            let custody = custody.upgrade().unwrap();
+            custody.live.store(false, Ordering::Release);
+        }
+    }));
+    tick(&later_rig).await;
+    later_rig.custody.live.store(true, Ordering::Release);
+    assert_eq!(sent_from(&later_rig, 0), [0x84]);
+    assert!(later_rig.custody.driver_mode.writes().is_empty());
+    assert_eq!(held(&later_rig), Some((State::ReleaseIntent, ids)));
+    assert!(later_rig.runtime.driver_mode_uncertain_for_tests());
+    assert!(!closed(&later_rig));
+    assert_eq!(owner(&later_rig), (true, false, false));
+    // The read was confirmed under the admission the job started with, so
+    // it is published; the doubt is the record's, not the read cadence's.
+    assert_eq!(published(&later_rig).await, Some(true));
+    // The job activated this process's write lease, so the doubt now waits,
+    // as after a release of its own, for a confirmed read made after the
+    // step that finds it; that step sends nothing.
+    step(&later_rig).await;
+    assert!(sent_from(&later_rig, 1).is_empty());
+    assert!(later_rig.runtime.driver_mode_uncertain_for_tests());
+    // A later read of Driver settles the intent's prior on its IDs, and the
+    // step then maintains Driver as a first start does, with a read only.
+    record(&later_rig, DeviceMode::Driver);
+    step(&later_rig).await;
+    assert_eq!(sent_from(&later_rig, 1), [0x84]);
+    assert_eq!(held(&later_rig), Some((State::Owned, ids)));
+    assert!(!later_rig.runtime.driver_mode_uncertain_for_tests());
+    assert_eq!(owner(&later_rig), (true, false, false));
+    assert_eq!(published(&later_rig).await, Some(true));
+    assert_eq!(scopes_from(&later_rig, 0), [None]);
+    assert_eq!(sets(&later_rig), 0);
+    later_rig.stop().await;
+}
+
 /// A closed record cannot hold a release's claim, so the release sends no
 /// setter: a corrupt record found at Stop is kept byte for byte, and a
 /// claim that cannot be written closes the record after the baseline read
