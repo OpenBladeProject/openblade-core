@@ -130,6 +130,18 @@ pub(crate) trait Permit: Send + Sync {
     fn destination_holds(&self, _power: i32) -> bool {
         false
     }
+    /// Whether a thermal submission this recipe does not own is still
+    /// unresolved, after at most one read-only resolution attempt within
+    /// `budget` (managed `PendingWriteConfirmationTracker.Blocks`): every
+    /// thermal writer refuses then, before any row or setter.
+    fn thermal_fenced(&self, _budget: std::time::Duration) -> bool {
+        false
+    }
+    /// Time the pace must leave after this recipe's setters for work that
+    /// follows them inside the request, such as a paired NVML submission.
+    fn reserve(&self) -> std::time::Duration {
+        std::time::Duration::ZERO
+    }
     fn resolve(&self, power: i32, baseline: ObservedPerformance)
     -> io::Result<Option<Destination>>;
     fn refused(&self, _cause: Refusal) {}
@@ -204,6 +216,10 @@ pub(crate) enum Refusal {
     /// written and the first setter's power reading taken; no setter was
     /// submitted.
     Deadline,
+    /// An earlier thermal submission outside this recipe, such as an NVML
+    /// clock-offset write, is still unresolved after a read-only attempt
+    /// (`Permit::thermal_fenced`): nothing was prepared or submitted.
+    ThermalPending,
 }
 
 /// The journal rows each setter appends after the pace check: its intent row
@@ -395,6 +411,10 @@ impl<P: Port> Reader<P, ReadAdmission> {
         };
         let power_source = fence.admit(power)?;
         let destination = permit.resolve(power_source, baseline).ok()??;
+        if permit.thermal_fenced(limit.deadline.saturating_duration_since(Instant::now())) {
+            permit.refused(Refusal::ThermalPending);
+            return None;
+        }
         let restoring = match Plan::from_observation(baseline, destination) {
             Plan::Unchanged => return Some(baseline),
             #[cfg(not(feature = "service-thermal-hyperboost-exit-v1"))]
@@ -600,7 +620,7 @@ impl<P: Port> Attempt<'_, P, ReadAdmission> {
         if paced
             && !context
                 .pace
-                .covers(self.reader, exchanges, setters, Duration::ZERO, limit)
+                .covers(self.reader, exchanges, setters, permit.reserve(), limit)
         {
             self.completed = true;
             permit.refused(Refusal::Deadline);

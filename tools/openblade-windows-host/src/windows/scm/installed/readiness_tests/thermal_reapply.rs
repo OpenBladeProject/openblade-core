@@ -415,3 +415,56 @@ async fn manual_fans_on_both_sides_block_a_battery_reapply() {
     assert_eq!(writes(&rig), written);
     rig.stop().await;
 }
+
+/// Delta review F1 for `reapplyChangedSettings`: a pending GPU clock
+/// confirmation blocks with managed's pending-confirmation reply before the
+/// ledger is rearmed or any firmware is read, as an unsettled journal row
+/// does (`ServiceControlRuntime.cs:3842`).
+#[cfg(feature = "service-gpu-clock-tuning-v1")]
+#[tokio::test]
+async fn a_pending_gpu_confirmation_blocks_a_reapply_before_anything_is_read() {
+    use crate::installed::readiness::gpu_clock_offsets::fake::Fake;
+    use crate::installed::readiness::tests::mutation::gpu_clock_tuning::{
+        compose, leave_uncertain,
+    };
+    let (rig, _journal) = converging().await;
+    tombstoned(&rig).await;
+    drift(&rig, 2).await;
+    let fake = Fake::new(0, 0);
+    let lane = compose(&rig, &fake, Arc::default());
+    leave_uncertain(&rig, &lane, &fake);
+    let (kept, frames) = (raw(&rig, LEDGER), sent(&rig));
+    let result = reapply(&rig, 1).await;
+    assert_eq!(result, json!({"status":2,"message":PENDING}));
+    assert_eq!((raw(&rig, LEDGER), sent(&rig)), (kept, frames));
+    abandon(rig).await;
+}
+
+/// Delta review N2: in low power the reapply's fence starts no GPU call, so
+/// a power change there leaves the rearmed ungated query for after the
+/// boundary and the uncertain submission still blocks with managed's
+/// pending-confirmation reply. Before the fix the fence spent that query in
+/// low power, and a readable driver released the reapply there.
+#[cfg(feature = "service-gpu-clock-tuning-v1")]
+#[tokio::test]
+async fn a_reapply_in_low_power_starts_no_gpu_call() {
+    use crate::installed::readiness::gpu_clock_offsets::fake::Fake;
+    use crate::installed::readiness::tests::mutation::gpu_clock_tuning::{
+        compose, fenced, leave_uncertain,
+    };
+    let (rig, _journal) = converging().await;
+    tombstoned(&rig).await;
+    drift(&rig, 2).await;
+    let fake = Fake::new(0, 0);
+    let lane = compose(&rig, &fake, Arc::default());
+    leave_uncertain(&rig, &lane, &fake);
+    fake.with(|d| d.queries_fail = false);
+    suspend(&rig);
+    unplug(&rig);
+    let (kept, frames) = (raw(&rig, LEDGER), sent(&rig));
+    let result = reapply(&rig, 1).await;
+    assert_eq!(result, json!({"status":2,"message":PENDING}));
+    assert_eq!((raw(&rig, LEDGER), sent(&rig)), (kept, frames));
+    assert!(fenced(&rig, std::time::Duration::ZERO));
+    abandon(rig).await;
+}

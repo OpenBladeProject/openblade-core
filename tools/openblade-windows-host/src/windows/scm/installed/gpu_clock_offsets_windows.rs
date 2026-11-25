@@ -153,3 +153,27 @@ fn load() -> Option<Library> {
         }
     })
 }
+
+/// Managed `WindowsGpuActivitySource.IsActiveAsync` over one fresh WDDM
+/// GPU-engine counter query: the first read primes it and is ignored, and
+/// the read after 150 ms decides. A process other than System (PID 4) above
+/// 0.1 % of an NVIDIA engine is a workload; System's copy-engine entries are
+/// paging at the adapter's own power transitions. None when the query cannot
+/// be opened or read. It opens no GPU device and calls no NVIDIA API. The
+/// GPU temperature reader keeps its own copy of this rule
+/// (`gpu_temperature::workload`), which only `service-live-readings-v1`
+/// compiles.
+pub(in super::super) fn activity() -> super::Activity {
+    use openblade_platform_windows::gpu_apps::NvidiaActivityQuery;
+    Box::new(|| {
+        let mut query = NvidiaActivityQuery::open().ok()?;
+        let _ = query.read();
+        std::thread::sleep(std::time::Duration::from_millis(150));
+        let processes = query.read().ok()?;
+        Some(
+            processes
+                .iter()
+                .any(|(pid, percent)| *pid != 4 && *percent > 0.1),
+        )
+    })
+}

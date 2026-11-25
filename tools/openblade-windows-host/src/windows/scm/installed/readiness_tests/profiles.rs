@@ -709,6 +709,9 @@ fn this_composition_declares_profile_serving_in_its_compiled_identity() {
     // Fan Stop with its guardian unavailable.
     #[cfg(feature = "service-fan-stop-v1")]
     let expected = format!("{expected},service-fan-stop-v1");
+    // GPU clock tuning, before the shortcut (build.rs).
+    #[cfg(feature = "service-gpu-clock-tuning-v1")]
+    let expected = format!("{expected},service-gpu-clock-tuning-v1");
     // The performance shortcut appends its own refused marker after them.
     #[cfg(feature = "service-performance-shortcut-v1")]
     let expected = format!("{expected},service-performance-shortcut-v1");

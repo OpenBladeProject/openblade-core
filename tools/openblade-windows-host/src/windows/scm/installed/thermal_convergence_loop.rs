@@ -825,6 +825,14 @@ impl Runtime {
         if self.gate() == Gate::Low {
             return Ok(None);
         }
+        // A pending GPU clock confirmation blocks the attempt as a journal
+        // row does, before it reserves or spends anything.
+        if self
+            .gpu_fenced(Instant::now() + crate::service_frame::RECONCILE_BUDGET)
+            .await
+        {
+            return Ok(None);
+        }
         let Some(proof) = fresh.authorize() else {
             return Ok(None);
         };
@@ -941,6 +949,15 @@ impl Runtime {
             complete(storage, &held, disposition);
             return Ok(None);
         };
+        // The same contradiction under a pending GPU clock confirmation is
+        // refused as one under a journal row is (`same`).
+        if self
+            .gpu_fenced(Instant::now() + crate::service_frame::RECONCILE_BUDGET)
+            .await
+        {
+            complete(storage, &held, ledger::Disposition::BLOCKED);
+            return Ok(None);
+        }
         self.run_attempt(
             mailbox,
             loop_,

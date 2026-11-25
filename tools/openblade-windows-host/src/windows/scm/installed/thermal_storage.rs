@@ -417,14 +417,21 @@ pub(super) fn custom_destination(settings: &Value) -> Option<Destination> {
             .map_or(Some(false), Value::as_bool)?,
     )
 }
+/// Offsets in the saved override's JSON form.
+fn offsets_value(offsets: openblade_domain::profile_set::model::GpuClockOffsets) -> Value {
+    json!({
+        "coreMegahertz": offsets.core_megahertz,
+        "memoryMegahertz": offsets.memory_megahertz,
+    })
+}
 /// A selected wire value, the destination it names on exact RZ09-0581 and
-/// its provenance. `custom_offsets` is legacy offsets saved inside the
+/// its provenance. `legacy_offsets` is legacy offsets saved inside the
 /// selected Custom settings, a GPU clock effect (managed
-/// `NormalizeLegacyGpuClockTuning`).
+/// `NormalizeLegacyGpuClockTuning`), in the saved offsets' JSON form.
 struct Selected {
     value: i32,
     destination: Option<Destination>,
-    custom_offsets: bool,
+    legacy_offsets: Option<Value>,
     source: i32,
 }
 impl Selected {
@@ -439,8 +446,10 @@ impl Selected {
             } else {
                 Preset::from_wire(value).map(Destination::Preset)
             },
-            custom_offsets: custom
-                .is_some_and(|c| c.get("gpuClockOffsets").is_some_and(|o| !o.is_null())),
+            legacy_offsets: custom
+                .and_then(|c| c.get("gpuClockOffsets"))
+                .filter(|o| !o.is_null())
+                .cloned(),
             source,
         }
     }
@@ -466,7 +475,7 @@ impl Selected {
                 Some(c) => Destination::custom(level(c.cpu.0), level(c.gpu.0), c.maximum_fans),
                 None => Preset::from_wire(value).map(Destination::Preset),
             },
-            custom_offsets: custom.is_some_and(|c| c.gpu_clock_offsets.is_some()),
+            legacy_offsets: custom.and_then(|c| c.gpu_clock_offsets).map(offsets_value),
             source,
         }
     }
@@ -1148,7 +1157,7 @@ impl Storage {
         drop(s);
         if self
             .selected(power, profile)?
-            .is_some_and(|s| s.custom_offsets)
+            .is_some_and(|s| s.legacy_offsets.is_some())
         {
             return Ok(true);
         }
@@ -1161,6 +1170,66 @@ impl Storage {
             UNCLASSIFIED_EXTERNAL => false,
             _ => profile_layer(profile, power).is_none_or(|r| r.profile.gpu_clock_tuning.is_some()),
         })
+    }
+    /// The GPU clock tuning managed `ProfileAutomationState.Resolve` selects
+    /// at class `power`, in the saved override's JSON form: on a classified
+    /// adapter only (`PowerSourcePolicy.IsExternal`), the active persistent
+    /// override's tuning, then the active temporary one's, then the resolved
+    /// profile's (an application's replaces its power profile's), and else,
+    /// for a selected Custom, its legacy offsets as enabled tuning (managed
+    /// `NormalizeLegacyGpuClockTuning`). An override is active where its
+    /// preset is (`override_source_eligible`), whichever layer supplies the
+    /// preset, so a profile's tuning applies beneath an override's preset.
+    #[cfg(any(
+        feature = "service-performance-shortcut-v1",
+        feature = "service-gpu-clock-tuning-v1"
+    ))]
+    pub(super) fn gpu_tuning(
+        &self,
+        power: i32,
+        profile: Option<&Resolution<'_>>,
+    ) -> io::Result<Option<Value>> {
+        // `PluggedIn` and `UsbC`; battery and unclassified power select none.
+        if !matches!(power, 0 | 2) {
+            return Ok(None);
+        }
+        let mut s = self.state.lock().map_err(|_| denied())?;
+        // The same class expiry as `desired`.
+        if s.temporary
+            .as_ref()
+            .is_some_and(|(_, p)| temporary_expired(*p, power))
+        {
+            s.temporary = None;
+        }
+        let eligible =
+            |value: i32| openblade_domain::automation::override_source_eligible(value, power);
+        let overrides = &s.document["overrides"];
+        let persistent = overrides["performance"]
+            .as_i64()
+            .filter(|value| eligible(*value as i32))
+            .map(|_| &overrides["gpuClockTuning"])
+            .filter(|tuning| !tuning.is_null());
+        let temporary = s
+            .temporary
+            .as_ref()
+            .filter(|(v, _)| eligible(v.value))
+            .and_then(|(v, _)| v.gpu_clock_tuning.as_ref());
+        if let Some(tuning) = persistent.or(temporary) {
+            return Ok(Some(tuning.clone()));
+        }
+        drop(s);
+        if let Some(tuning) = profile_layer(profile, power).and_then(|r| r.profile.gpu_clock_tuning)
+        {
+            return Ok(Some(json!({
+                "enabled": tuning.enabled,
+                "offsets": tuning.offsets.map(offsets_value),
+            })));
+        }
+        Ok(self
+            .selected(power, profile)?
+            .filter(|s| s.value == CUSTOM)
+            .and_then(|s| s.legacy_offsets)
+            .map(|offsets| json!({"enabled": true, "offsets": offsets})))
     }
     pub(super) fn pending_reason(&self) -> io::Result<&'static str> {
         let s = self.state.lock().map_err(|_| {

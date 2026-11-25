@@ -150,15 +150,18 @@ pub(super) fn stage(reading: &Reading<'_>) -> io::Result<Result<Override, Cause>
         value: next,
         lifetime: 0,
         custom_performance,
-        // Managed carries the desired GPU tuning on classified power and
-        // none on unclassified power, where it is not admitted.
+        // Managed stages the desired state's GPU tuning
+        // (`current.DesiredState.GpuClockTuning`) and none on unclassified
+        // power, where it is not admitted: what `ProfileAutomationState.Resolve`
+        // selects at the reading's class, the overrides' and the profile's
+        // tuning and a selected Custom's legacy offsets included
+        // (`Storage::gpu_tuning`).
         gpu_clock_tuning: if unclassified {
             None
         } else {
             reading
                 .storage
-                .current_override(reading.power)?
-                .and_then(|current| current.gpu_clock_tuning)
+                .gpu_tuning(reading.power, reading.layer.at(reading.power)?.as_ref())?
         },
     };
     staged.validate()?;

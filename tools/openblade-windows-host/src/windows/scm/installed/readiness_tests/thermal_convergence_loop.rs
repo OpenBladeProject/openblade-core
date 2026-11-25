@@ -1087,5 +1087,68 @@ async fn a_last_step_refused_after_a_confirmed_one_is_blocked() {
 /// The fan step's setters returning manual fans to Automatic.
 const FAN_SETTERS: usize = 2;
 
+/// Delta review F1 for convergence: a pending GPU clock confirmation holds
+/// a drift before its reservation, so no claim is spent and nothing is
+/// written, and the drift converges once a read resolves the management.
+/// Before the fix the attempt reserved, its step was refused, and the claim
+/// was tombstoned Blocked.
+#[cfg(feature = "service-gpu-clock-tuning-v1")]
+#[tokio::test]
+async fn a_pending_gpu_confirmation_holds_a_drift_with_no_claim_spent() {
+    use crate::installed::readiness::gpu_clock_offsets::fake::Fake;
+    use crate::installed::readiness::tests::mutation::gpu_clock_tuning::{
+        compose, leave_uncertain,
+    };
+    let (rig, _journal) = converging().await;
+    let fake = Fake::new(0, 0);
+    let lane = compose(&rig, &fake, Arc::default());
+    leave_uncertain(&rig, &lane, &fake);
+    drift(&rig, 1).await;
+    let (written, before) = (writes(&rig), raw(&rig, LEDGER));
+    tick(&rig).await;
+    tick(&rig).await;
+    assert_eq!((writes(&rig), raw(&rig, LEDGER)), (written, before));
+    fake.with(|d| d.queries_fail = false);
+    let _ = lane.call_for_tests(|m| {
+        m.rearm();
+        let _ = m.read();
+    });
+    drift(&rig, 2).await;
+    tick(&rig).await;
+    let state = ledger(&rig);
+    assert!(state["inFlight"].is_null(), "{state}");
+    assert_eq!(state["tombstones"][0]["terminalDisposition"], 0, "{state}");
+    assert_eq!(performance(&rig.get().await), 2);
+    rig.stop().await;
+}
+
+/// Delta review F1 for a D7 retry: a retry due under a pending GPU clock
+/// confirmation is retired Blocked without running, as one under an
+/// unsettled journal row is, and reads nothing for its attempt.
+#[cfg(feature = "service-gpu-clock-tuning-v1")]
+#[tokio::test]
+async fn a_retry_due_under_a_pending_gpu_confirmation_is_blocked_unrun() {
+    use crate::installed::readiness::gpu_clock_offsets::fake::Fake;
+    use crate::installed::readiness::tests::mutation::gpu_clock_tuning::{
+        compose, leave_uncertain,
+    };
+    let (rig, _journal) = converging().await;
+    let (written, held) = refused_once(&rig).await;
+    let fake = Fake::new(0, 0);
+    let lane = compose(&rig, &fake, Arc::default());
+    leave_uncertain(&rig, &lane, &fake);
+    rig.runtime.age_convergence(Duration::from_secs(5));
+    // Due: the tick asks for the reading the next one evaluates.
+    tick(&rig).await;
+    let frames = sent(&rig);
+    tick(&rig).await;
+    assert_eq!((writes(&rig), sent(&rig)), (written, frames));
+    let state = ledger(&rig);
+    assert!(state["inFlight"].is_null(), "{state}");
+    assert_eq!(state["tombstones"][0]["terminalDisposition"], 4, "{state}");
+    assert_eq!(state["budgets"], held["budgets"]);
+    abandon(rig).await;
+}
+
 #[path = "thermal_reapply.rs"]
 mod reapply;

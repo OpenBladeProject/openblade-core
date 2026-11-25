@@ -5,7 +5,8 @@
 //! Under the operation gate, in managed's order:
 //!
 //! - a caller outside the control session is refused;
-//! - an unsettled journal row (managed `pendingWriteConfirmations`) and a
+//! - an unsettled journal row or a pending GPU clock confirmation (managed
+//!   `pendingWriteConfirmations`; in low power checked without a read) and a
 //!   reservation still in the ledger each block before anything is written;
 //! - a ledger that holds tombstones or budgets is rearmed: both lists and
 //!   the terminal result are cleared by compare-and-swap on the bytes the
@@ -210,7 +211,7 @@ impl Runtime {
             }
         };
         reader.retain_policy(self.thermal_policy(sid.clone(), caller.session, reader.custody()));
-        if storage.pending() {
+        if storage.pending() || self.gpu_fenced(deadline).await {
             return Ok(Reapplied::blocked(PENDING));
         }
         // A ledger the store cannot admit holds no reservation native knows

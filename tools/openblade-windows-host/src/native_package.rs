@@ -714,6 +714,19 @@ fn capabilities(schema: u8, role: &str, features: &str, value: &str) -> io::Resu
     {
         return Err(deny());
     }
+    // GPU clock tuning writes NVIDIA driver state through an NVML module
+    // loaded from System32. Refuse its feature and its capability marker by
+    // name, before the triggers it extends, until a WinVerifyTrust and
+    // catalog gate checks the loaded module path and a packaging stage admits
+    // it (docs/windows-native-thermal-mutation.md).
+    const GPU_CLOCK_TUNING: &str = "service-gpu-clock-tuning-v1";
+    if has(GPU_CLOCK_TUNING)
+        || value
+            .split(',')
+            .any(|capability| capability == GPU_CLOCK_TUNING)
+    {
+        return Err(deny());
+    }
     // Maintain-desired-state convergence writes without a request. Refuse its
     // feature and its capability marker by name, before the triggers it
     // extends, until a packaging stage admits it.

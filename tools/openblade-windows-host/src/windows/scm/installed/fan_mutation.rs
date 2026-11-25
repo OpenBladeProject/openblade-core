@@ -29,6 +29,10 @@ const FAN_DEADLINE_STORED: &str = "Fan override intent was stored. Hardware resu
 const FAN_CUSTOM_UNSUPPORTED_STORED: &str = "Fan override intent was stored. Hardware result: Fans could not return to Automatic with the saved Custom performance intent. Performance value is not supported by the verified capability table.";
 const FAN_CUSTOM_UNSUPPORTED_CLEARED: &str = "Fan override was cleared. Hardware result: Fans could not return to Automatic with the saved Custom performance intent. Performance value is not supported by the verified capability table.";
 const FAN_DEADLINE_CLEARED: &str = "Fan override was cleared. Hardware result: The remaining request time cannot cover this recipe at the measured device pace; no fan setter was submitted.";
+/// A fan request refused by the shared thermal fence (`Refusal::ThermalPending`)
+/// after its intent was saved: managed `ScopedThermalWriteBlockReason`.
+const FAN_PENDING_STORED: &str = "Fan override intent was stored. Hardware result: A thermal write requires read-only reconciliation before another command can be submitted.";
+const FAN_PENDING_CLEARED: &str = "Fan override was cleared. Hardware result: A thermal write requires read-only reconciliation before another command can be submitted.";
 pub(super) struct FanPermit {
     storage: Arc<Storage>,
     fresh: Arc<dyn Fresh>,
@@ -88,6 +92,11 @@ pub(super) struct FanPermit {
     // Refused before the first setter: the remaining request time cannot cover
     // the recipe at the measured device pace (`Refusal::Deadline`).
     deadline: AtomicBool,
+    // Refused before any row or setter by the shared thermal fence
+    // (`Refusal::ThermalPending`): a GPU clock submission is outstanding or
+    // uncertain.
+    thermal_pending: AtomicBool,
+    gpu_fence: GpuFence,
     // This request returns saved manual fans to Automatic (`previousManual`).
     returning: AtomicBool,
     record: Mutex<Option<FanRecord>>,
@@ -363,12 +372,16 @@ const FAN_NOT_ACCEPTED: &str =
 #[cfg(feature = "service-profile-triggers-v1")]
 const FAN_HANDBACK_OWED: &str = "Fan intent was not stored: OpenBlade still owns a fan change that has not been handed back to firmware Automatic, and the laptop is in a low-power transition.";
 impl Permit for FanPermit {
+    fn thermal_fenced(&self, budget: std::time::Duration) -> bool {
+        self.gpu_fence.as_ref().is_some_and(|fenced| fenced(budget))
+    }
     fn refused(&self, cause: Refusal) {
         match cause {
             Refusal::UnclassifiedBlocked => {
                 self.unclassified_blocked.store(true, Ordering::Release);
             }
             Refusal::Deadline => self.deadline.store(true, Ordering::Release),
+            Refusal::ThermalPending => self.thermal_pending.store(true, Ordering::Release),
             _ => {}
         }
     }
@@ -805,9 +818,12 @@ struct FanSettlePermit {
     owner: Arc<FanPermit>,
     fresh: Arc<dyn Settle>,
     proof: ReadAdmission,
+    // Built at Stop (`Runtime::gpu_fence`), not the owner request's: the
+    // power change that moved the owner's epoch rearms its one ungated query.
+    gpu_fence: GpuFence,
 }
 impl FanSettlePermit {
-    fn capture(owner: &Arc<FanPermit>) -> Option<Arc<Self>> {
+    fn capture(owner: &Arc<FanPermit>, gpu_fence: GpuFence) -> Option<Arc<Self>> {
         verify_retained_failure(&owner.fatal).ok()?;
         if !owner.owned.load(Ordering::Acquire) || !owner.release.load(Ordering::Acquire) {
             return None;
@@ -832,6 +848,7 @@ impl FanSettlePermit {
                 owner: owner.clone(),
                 fresh,
                 proof,
+                gpu_fence,
             })
         })
     }
@@ -867,6 +884,15 @@ impl Permit for FanSettlePermit {
     }
     fn cleanup(&self) -> bool {
         true
+    }
+    // An owned handback is fenced as every thermal writer is (managed
+    // blocks prior-authority cleanup while a thermal confirmation is
+    // pending), by the fence built at Stop.
+    fn thermal_fenced(&self, budget: std::time::Duration) -> bool {
+        self.gpu_fence.as_ref().is_some_and(|fenced| fenced(budget))
+    }
+    fn refused(&self, cause: Refusal) {
+        self.owner.refused(cause);
     }
     fn fan_record(&self) -> Option<FanRecord> {
         // Only the owner's exact retained record, never a default.
@@ -939,10 +965,16 @@ struct FanHandbackPermit {
     owner: Arc<FanPermit>,
     cleanup: Arc<dyn Cleanup>,
     proof: ReadAdmission,
+    // Built at Stop, as the settle-only permit's is.
+    gpu_fence: GpuFence,
 }
 #[cfg(feature = "service-fan-mutation-v2")]
 impl FanHandbackPermit {
-    fn capture(owner: &Arc<FanPermit>, cleanup: Arc<dyn Cleanup>) -> Option<Arc<Self>> {
+    fn capture(
+        owner: &Arc<FanPermit>,
+        cleanup: Arc<dyn Cleanup>,
+        gpu_fence: GpuFence,
+    ) -> Option<Arc<Self>> {
         // Owned Stop and shutdown only: a low-power boundary hands no fans
         // back (`low_power_cleanup.rs`).
         if cleanup.scope() != CleanupScope::OwnedStop {
@@ -964,6 +996,7 @@ impl FanHandbackPermit {
                 owner: owner.clone(),
                 cleanup,
                 proof,
+                gpu_fence,
             })
         })
     }
@@ -1001,6 +1034,15 @@ impl Permit for FanHandbackPermit {
     }
     fn cleanup(&self) -> bool {
         true
+    }
+    // An owned handback is fenced as every thermal writer is (managed
+    // blocks prior-authority cleanup while a thermal confirmation is
+    // pending), by the fence built at Stop.
+    fn thermal_fenced(&self, budget: std::time::Duration) -> bool {
+        self.gpu_fence.as_ref().is_some_and(|fenced| fenced(budget))
+    }
+    fn refused(&self, cause: Refusal) {
+        self.owner.refused(cause);
     }
     fn windows_on_battery(&self) -> Option<bool> {
         self.cleanup.on_battery()
@@ -1439,6 +1481,8 @@ impl Runtime {
             rejected: Mutex::new(None),
             custom_unsupported: AtomicBool::new(false),
             deadline: AtomicBool::new(false),
+            thermal_pending: AtomicBool::new(false),
+            gpu_fence: self.gpu_fence(),
             verified: Mutex::new(None),
             returning: AtomicBool::new(false),
             record: Mutex::new(None),
@@ -1550,6 +1594,15 @@ impl Runtime {
             } else {
                 FAN_CUSTOM_UNSUPPORTED_STORED
             }
+        } else if permit.thermal_pending.load(Ordering::Acquire) {
+            match (
+                permit.accepted.load(Ordering::Acquire),
+                permit.value.is_none(),
+            ) {
+                (true, true) => FAN_PENDING_CLEARED,
+                (true, false) => FAN_PENDING_STORED,
+                (false, _) => PENDING_OTHER,
+            }
         } else if permit.accepted.load(Ordering::Acquire) && permit.deadline.load(Ordering::Acquire)
         {
             if permit.value.is_none() {
@@ -1603,6 +1656,7 @@ impl Runtime {
         let transient = observed_none(&result)
             && (!permit.accepted.load(Ordering::Acquire)
                 || permit.deadline.load(Ordering::Acquire)
+                || permit.thermal_pending.load(Ordering::Acquire)
                 || permit.prepared.load(Ordering::Acquire));
         let class = *permit.class.lock().map_err(|_| io::ErrorKind::Other)?;
         // A return to Automatic that carried the saved destination reports it as
@@ -1926,6 +1980,10 @@ impl Runtime {
     /// admission then runs the same handback recipe. Without it, only the
     /// settle-only permit may run: it reads, and appends 51 on Automatic.
     ///
+    /// The owner's capture reads the fence its request built, which no
+    /// power change has passed while that capture still authorizes; the
+    /// Service's cleanup and the settle-only permit read one built here.
+    ///
     /// A job the lane refused before registering sent nothing, so the next
     /// admission may run the attempt. A registered job may have sent the
     /// owner's reserved cleanup IDs, its baseline read's even before row 31,
@@ -1952,14 +2010,14 @@ impl Runtime {
         #[cfg(feature = "service-fan-mutation-v2")]
         if let Some(handback) = self
             .capture_cleanup(reader, CleanupScope::OwnedStop)?
-            .and_then(|cleanup| FanHandbackPermit::capture(permit, cleanup))
+            .and_then(|cleanup| FanHandbackPermit::capture(permit, cleanup, self.gpu_fence()))
         {
             result = reader.mutate_cleanup(handback, deadline).await;
             if ran(&result) {
                 return result;
             }
         }
-        if let Some(settle) = FanSettlePermit::capture(permit) {
+        if let Some(settle) = FanSettlePermit::capture(permit, self.gpu_fence()) {
             result = reader.mutate_cleanup(settle, deadline).await;
             if ran(&result) {
                 return result;
@@ -1976,7 +2034,7 @@ impl Runtime {
     pub(in super::super) fn settle_permit_for_tests(&self) -> Option<Arc<dyn Permit>> {
         let owner = self.owned_fan_permit()?;
         owner.release.store(true, Ordering::Release);
-        Some(FanSettlePermit::capture(&owner)?)
+        Some(FanSettlePermit::capture(&owner, self.gpu_fence())?)
     }
 }
 #[cfg(all(test, feature = "service-keyboard-driver-mode-v1"))]
@@ -1990,7 +2048,11 @@ impl Runtime {
         let owner = self.owned_fan_permit()?;
         owner.release.store(true, Ordering::Release);
         let cleanup = (self.cleanup.get()?)(owner.custody.clone(), scope).ok()?;
-        Some(FanHandbackPermit::capture(&owner, cleanup)?)
+        Some(FanHandbackPermit::capture(
+            &owner,
+            cleanup,
+            self.gpu_fence(),
+        )?)
     }
 }
 /// Whether a fan job returned no reading.

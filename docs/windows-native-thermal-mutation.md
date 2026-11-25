@@ -561,8 +561,10 @@ integers, an optional `maximumFans` flag, and optional legacy
 outside the range is stored and replies Blocked with the no-eligible-destination
 cause; managed replies with its capability message instead. On unclassified
 external power it is rejected before storage, as managed
-`ValidateUnclassifiedPerformanceOverride` does. Non-null `gpuClockOffsets` has
-no native writer and blocks with the GPU cause.
+`ValidateUnclassifiedPerformanceOverride` does. Non-null `gpuClockOffsets`
+blocks with the GPU cause unless `service-gpu-clock-tuning-v1` composes the
+writer, which applies them as managed's legacy enabled tuning
+([GPU clock tuning](#gpu-clock-tuning-service-gpu-clock-tuning-v1)).
 
 Saved and profile Custom use their stored levels. An application profile's
 `customPerformance` replaces the power profile's, whichever of the two selected
@@ -834,9 +836,11 @@ Stored-only publication merges onto the latest hardware without renewing a read
 witness or timestamp. Late accepted persistence becomes visible on a later fresh
 read without replaying a write.
 
-Configured GPU clock effects are saved without a thermal pair and reply Blocked
-with managed's committed-intent prefix, `Performance override intent was stored.
-Hardware result: GPU clock handling is incomplete...`. GPU clocks, manual fan
+Without `service-gpu-clock-tuning-v1`, configured GPU clock effects are saved
+without a thermal pair and reply Blocked with managed's committed-intent prefix,
+`Performance override intent was stored. Hardware result: GPU clock handling is
+incomplete...`; with it, the explicit requests apply them
+([GPU clock tuning](#gpu-clock-tuning-service-gpu-clock-tuning-v1)). Manual fan
 application, display, lighting, and other native controls are not implemented
 here. Their saved fields are not confirmation. The broad capabilities snapshot
 remains null. Applied means this bounded thermal preset was independently
@@ -1066,11 +1070,13 @@ Differences from managed:
 
 - Native cycles from the fresh 0D/82 reading on unclassified power and when
   drift marks Performance, where managed uses its cached confirmed state.
-- On classified power native stages the saved override's GPU clock tuning
-  only. Managed stages the resolved desired tuning
-  (`current.DesiredState.GpuClockTuning`), which can come from the profile.
-  Native has no GPU clock writer, so either reaches the GPU refusal; the
-  slice that adds the writer must stage the resolved tuning as managed does.
+- On classified power native stages the resolved tuning, as managed stages
+  `current.DesiredState.GpuClockTuning` (`ServiceControlRuntime.cs:2742`,
+  `:2818`): the eligible persistent override's, then the eligible temporary
+  override's, then the active profile's, then the selected Custom settings'
+  legacy offsets as enabled tuning (`Storage::gpu_tuning`, after managed
+  `ProfileAutomationState.Resolve`). Without `service-gpu-clock-tuning-v1`
+  any of them reaches the GPU refusal.
 - Under the low-power gate a cycle reads no firmware and stages from the
   saved intent at Windows battery. Managed also honours its cached
   `ExternalChanges` and `ConfirmedState` there; the native runtime keeps no
@@ -1101,6 +1107,113 @@ Differences from managed:
 
 Both package readers refuse the feature and its marker by name ("The
 performance shortcut is not admitted for packaging.").
+
+### GPU clock tuning (`service-gpu-clock-tuning-v1`)
+
+The feature composes the RZ09-0581 NVML writer (`thermal_gpu.rs` over
+`gpu_clock_offsets.rs`) into the explicit performance requests:
+`setPerformanceOverride` and the performance shortcut. A profile save
+(`updateProfiles`) is a reconciliation, so it keeps the GPU refusal with the
+other reconciliation paths below. Its image carries the `service-gpu-clock-tuning-v1`
+marker, and both package readers refuse the feature and the marker by name: a
+WinVerifyTrust and catalog check of the loaded `nvml.dll` path is still
+required before packaging. NVML loads from System32 only. There is no durable
+journal for GPU offsets (parity with managed). Stop, shutdown and low power
+restore nothing, as in managed.
+
+The decisions follow managed `ControlCoordinator.ApplyPerformanceOutcomeAsync`
+(`ControlCoordinator.cs:591-698`) and the RZ09-0581 provider's paired and
+GPU-only setters (`WindowsVerifiedBladeDeviceProvider.cs:1780-2050`):
+
+- No tuning relinquishes management without restoring the driver (`:2052-2121`).
+  An unreadable uncertain submission refuses the step.
+- A confirmed preset with matching offsets writes nothing; with other offsets
+  it takes the GPU-only setter and writes no firmware row
+  (`CanApplyGpuClockOffsetsOnly`).
+- Otherwise the paired write preflights the offsets against the policy
+  envelope before any firmware row: a refused preflight stores the intent and
+  replies Blocked with managed's `Performance is unavailable: <message>`
+  (`CapabilityRefused`), or Failed with `Performance write was not applied:
+  <message>` (`WriteRejected`). A disabled request reuses a confirmed reset
+  (`PairedReuse`).
+- An NVML failure after the firmware half is indeterminate with managed's
+  `The power mode was applied, but GPU clock tuning failed.` detail, and is
+  resolved by one fresh read, never replayed (`ResolveIndeterminateWriteByReadbackAsync`,
+  `:3172-3268`). Indeterminate and not-applied results reply Failed (status
+  3) and an unavailable GPU-only setter replies Blocked, each after the same
+  committed `Performance override intent was stored. Hardware result: `
+  prefix (`ServiceControlRuntime.cs:14989-14991`).
+- While a GPU submission is uncertain, or an NVML call that outlived its request
+  is still running, every native thermal writer refuses before any row or setter
+  (managed `PendingWriteConfirmationTracker.Blocks`). With
+  `service-thermal-hyperboost-exit-v1`, the restore recipe that leaves
+  HyperBoost for a battery preset is refused with them, before its first row,
+  and its battery destination takes the GPU half a direct step to it would. An
+  explicit performance step replies `A thermal write requires read-only
+  reconciliation before the performance command can be submitted.` A fan
+  request, a return to Automatic and owned Stop's handback reply `A thermal
+  write requires read-only reconciliation before another command can be
+  submitted.`; an explicit fan request stores its intent first and prefixes that
+  result as its other hardware results. A reconciliation is refused at its
+  admission, before any firmware read, and what it owes is kept, as managed
+  keeps its pending transition for after the confirmation resolves
+  (`ServiceControlRuntime.cs:16985`, `:18200-18241`): a report replies Blocked
+  with its own prefix and that message, a profile save is Stored with `Profiles
+  were stored.` and that message, a lifecycle attempt keeps its cause and runs
+  again at the first tick after the fence clears, convergence reserves nothing
+  and retires a due retry Blocked unrun, and `reapplyChangedSettings` replies
+  its pending-confirmation block (`:3842`). In low power a trigger's fence
+  starts no GPU call and fences on the recorded state alone, as managed's
+  tracker is in memory. Once a read resolves the management, the next report or
+  lifecycle retry applies the owed intent. A resume withdraws a confirmed reset,
+  and a power change or a change between classified sources (PluggedIn and
+  USB-C, `ServiceControlRuntime.cs:18684`) allows one more ungated query
+  (`:2123-2180`).
+
+Native deviations:
+
+- The NVML preflight runs on the HID job after the intent is saved and every
+  firmware refusal has passed; the NVML submission runs after the independent
+  firmware readback and re-checks write admission, where managed submits
+  before its final read.
+- Resume invalidation and the power-change rearm are applied at the next GPU
+  call, from the gate's clear generation, the Windows power generation and the
+  power class the explicit step resolved, where managed applies them when the
+  event arrives.
+- The pending block is the management machine's own uncertain state and its
+  outstanding calls, checked on the shared Reader write path
+  (`Permit::thermal_fenced`) after one read-only resolution attempt within the
+  request; managed keeps a separate `pendingWriteConfirmations` tracker. The
+  attempt first crosses the gate and Windows power generations its writer or
+  trigger was admitted under, so after a power change the first fence takes the
+  rearmed query, where managed rearms at the event. Owned Stop's settle-only and
+  handback permits build their fence at Stop, after the change that moved the
+  owner's epoch. A lifecycle cause the fence refused is checked against the
+  fence at each tick, where managed reruns its deferred transition after each
+  observation. A fence resolves no power class and keeps the class last seen, so
+  a change between PluggedIn and USB-C within one Windows power generation is
+  rearmed only by the next explicit performance step. The writers are released
+  only by a finished read that leaves nothing uncertain, never while a call
+  runs.
+- An explicit fan request stores its intent before the GPU fence refuses it,
+  where managed's `ScopedThermalWriteBlockReason` refuses it before storing.
+- A reconciliation under a pending GPU clock confirmation is refused before it
+  reads anything, where managed's transition reads its pre-write state and
+  keeps each subsystem as deferred and not submitted. Its reply names the
+  pending confirmation alone, without any step's reply.
+- Each NVML call is bounded by what remains of the request less a 500 ms reply
+  margin, and by 5 seconds; a paired step reserves 1 second of the pace for
+  its submission. A call that never started refuses the step. A call that did
+  not finish replies Failed and indeterminate before the deadline, keeps
+  running on the worker, and fences every thermal writer until it ends.
+- Triggers, profile saves, convergence, fan handback and drift reconciliation
+  keep the GPU refusal. Managed's fan handback preserves GPU management
+  (`ApplyPerformancePreservingGpuClockManagementOutcomeAsync`).
+- `Storage::gpu_incomplete` treats a saved GPU clock effect as one at every
+  power class, where managed selects no tuning off external power. That
+  battery case is left with the reconciliation paths.
+- `setGpuClockTuning` and the status projection of confirmed offsets are not
+  served yet.
 
 ## Saved profiles (`service-profiles-v1`)
 
@@ -1649,21 +1762,22 @@ With it, three requests apply saved intent, as managed
   application profile is active." and applies nothing. A reporter outside the
   active local session is Blocked "Application context requires the active
   local Windows session."
-- A report while the pair still owes a reconciliation. A `(sid, session)`
-  owes one at every class from Service start and after each change of its
-  active pair or saved thermal intent (`Runtime::debts`, `Debt`). A refusal
-  before any step (unknown Windows power, a refused admission, a fenced store)
-  reads no firmware and leaves the debt as it was. Every reconciliation whose
-  steps ran settles it, as managed attempts each change once, with one
-  exception: when each step that needed a change was confirmed or was refused
-  for a cause that may clear by itself (`Stepped::transient`: the measured
-  pace, an adapter not classified yet, a store or profile read that failed,
-  or time or admission that ran out before the intent row), no row of it was
-  possibly submitted and the store is not fenced, the debt stays owed for at
-  most two later reports (`RETRIES`). One change therefore reads firmware
-  for at most three reconciliations, though a renewal arrives every 5 s; an
-  unbounded debt would read firmware and draw transaction pairs on each one.
-  A fresh Service holds no temporary override, so none is replayed.
+- A report while the pair still owes a reconciliation. A `(sid, session)` owes
+  one at every class from Service start and after each change of its active
+  pair or saved thermal intent (`Runtime::debts`, `Debt`). A refusal before any
+  step (unknown Windows power, a refused admission, a fenced store, a pending
+  GPU clock confirmation) reads no firmware and leaves the debt as it was.
+  Every reconciliation whose steps ran settles it, as managed attempts each
+  change once, with one exception: when each step that needed a change was
+  confirmed or was refused for a cause that may clear by itself
+  (`Stepped::transient`: the measured pace, an adapter not classified yet, a
+  store or profile read that failed, or time or admission that ran out before
+  the intent row), no row of it was possibly submitted and the store is not
+  fenced, the debt stays owed for at most two later reports (`RETRIES`). One
+  change therefore reads firmware for at most three reconciliations, though a
+  renewal arrives every 5 s; an unbounded debt would read firmware and draw
+  transaction pairs on each one. A fresh Service holds no temporary override,
+  so none is replayed.
 - A profile save (`Runtime::save_profiles_locked`, managed
   `UpdateProfilesAsync`) while an application profile is active, when the save
   changes the active id or the performance or fan members at a class fresh
@@ -2058,14 +2172,15 @@ budget is the debt's own, as a report's is:
   a later unchanged source once it leaves. The next cause or changed report
   owes afresh.
 - An attempt refused before any step for any other reason spends nothing.
-  Causes include no console user, a refused capture (such as a locked
-  session at resume, or a per-user store the native Service cannot open), a
-  fenced store and unknown Windows power. Such an attempt reads no firmware
-  and takes at most one capture per epoch move. Unrelated notices, such as a
-  battery-level power notice or another session's notice, therefore cannot
-  use the cause up before an unlock. A fenced store keeps the cause because
-  the fence is OpenBlade's own unsettled journal row or a document changed
-  outside the Service, not another controller. A missing per-user store
+  Causes include no console user, a refused capture (such as a locked session
+  at resume, or a per-user store the native Service cannot open), a fenced
+  store, a pending GPU clock confirmation and unknown Windows power. Such an
+  attempt reads no firmware and takes at most one capture per epoch move.
+  Unrelated notices, such as a battery-level power notice or another session's
+  notice, therefore cannot use the cause up before an unlock. A fenced store
+  keeps the cause because the fence is OpenBlade's own unsettled journal row or
+  a document changed outside the Service, not another controller; a pending GPU
+  clock confirmation keeps it for the same reason. A missing per-user store
   directory keeps it because the native Service never creates one: only a
   Service switch, which starts a new runtime, provides it.
 - An attempt whose steps leave the debt owed has spent the debt's budget

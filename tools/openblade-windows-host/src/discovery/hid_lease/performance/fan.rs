@@ -81,6 +81,13 @@ impl<P: Port> Reader<P, ReadAdmission> {
             if !owned.confirms(baseline) || owned.selector != r.selector {
                 return None;
             }
+            // A thermal submission still unresolved fences the handback too
+            // (managed `ScopedThermalWriteBlockReason`, prior-authority cleanup
+            // included).
+            if permit.thermal_fenced(limit.deadline.saturating_duration_since(Instant::now())) {
+                permit.refused(Refusal::ThermalPending);
+                return None;
+            }
             let plan = Plan::select(baseline, FanIntent::checked(0, 3700)?, source)?;
             (plan, r.cleanup[2..].to_vec(), None, None)
         } else {
@@ -101,6 +108,10 @@ impl<P: Port> Reader<P, ReadAdmission> {
                 return Some(baseline);
             } // No ownership, no journal or setter.
             let plan = plan?;
+            if permit.thermal_fenced(limit.deadline.saturating_duration_since(Instant::now())) {
+                permit.refused(Refusal::ThermalPending);
+                return None;
+            }
             // A carried destination is applied through managed
             // `SetPerformanceAsync` or `SetCustomPerformanceAsync`, which
             // refuse Windows battery before any ordinary command

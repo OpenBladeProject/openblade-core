@@ -9,9 +9,9 @@
 //! reconciliation that reads firmware settles the debt, as managed attempts a
 //! changed pair once, except a refusal that may clear by itself and
 //! submitted nothing (`RETRIES`). Refusals before any step (unknown power,
-//! no admission, a fenced store) read no firmware and leave the debt as it
-//! was; a step refused by saved intent alone reads none either
-//! (`refused_by_saved_intent`).
+//! no admission, a fenced store, a pending GPU clock confirmation) read no
+//! firmware and leave the debt as it was; a step refused by saved intent
+//! alone reads none either (`refused_by_saved_intent`).
 //!
 //! Each step runs under its own journal id (`step_request`), with every
 //! per-write admission, `destination_holds` re-check, readback and
@@ -77,19 +77,26 @@ enum TriggerAdmission {
     /// Unclassified Windows power, nothing owed at a class it admits, or a
     /// refused fresh authorization: the owed classes it admits.
     Refused(Classes),
+    /// The GPU clock lane holds an outstanding or uncertain submission
+    /// (`Runtime::gpu_fenced`), for which managed's pending Performance
+    /// confirmation blocks the transition before it reads anything.
+    ThermalPending,
     /// The owed classes to reconcile.
     Admitted(Classes),
 }
 
 /// Managed applies only on classified power with a verified device and
 /// writes not blocked (`ActivePowerSource`, `DeviceVerified`,
-/// `WritesBlocked`). Every write still passes its own admission, and each
-/// step refuses an adapter its own reading finds unclassified. A refusal
-/// here reads no firmware and leaves the debt as it was.
-fn admit_trigger(
+/// `WritesBlocked`, `pendingWriteConfirmations`). Every write still passes
+/// its own admission, and each step refuses an adapter its own reading
+/// finds unclassified. A refusal here reads no firmware and leaves the debt
+/// as it was. `gpu_fenced` is awaited last, so only a trigger admitted
+/// otherwise reads the GPU clock lane.
+async fn admit_trigger(
     storage: &Storage,
     fresh: &dyn Fresh,
     owed: Classes,
+    gpu_fenced: impl Future<Output = bool>,
 ) -> io::Result<TriggerAdmission> {
     let classes = owed.intersection(Classes::admitted(fresh));
     if storage.pending() {
@@ -98,10 +105,12 @@ fn admit_trigger(
     fresh.verify_health()?;
     let admitted = !classes.is_empty() && fresh.authorize().is_some();
     fresh.verify_health()?;
-    Ok(if admitted {
-        TriggerAdmission::Admitted(classes)
-    } else {
+    Ok(if !admitted {
         TriggerAdmission::Refused(classes)
+    } else if gpu_fenced.await {
+        TriggerAdmission::ThermalPending
+    } else {
+        TriggerAdmission::Admitted(classes)
     })
 }
 /// Managed `DeferLightingIntentForLowPower` (`ServiceControlRuntime.cs:19471`):
@@ -591,7 +600,9 @@ impl Runtime {
             return stored(idle);
         };
         let unapplied = if changed { RECORDED } else { idle };
-        let classes = match admit_trigger(&storage, fresh.as_ref(), owed)? {
+        let admission =
+            admit_trigger(&storage, fresh.as_ref(), owed, self.gpu_fenced(deadline)).await?;
+        let classes = match admission {
             // A fenced store, such as an override document changed outside
             // the Service, names its storage reconciliation before any
             // submission.
@@ -614,6 +625,15 @@ impl Runtime {
                     ));
                 }
                 return stored(unapplied);
+            }
+            // Managed keeps the transition for after the confirmation
+            // resolves: the debt is kept as it was for the next report, which
+            // runs it once a read resolves the GPU clock management.
+            TriggerAdmission::ThermalPending => {
+                return Ok((
+                    Outcome::blocked(format!("{unapplied} {PENDING_OTHER}")),
+                    None,
+                ));
             }
             TriggerAdmission::Admitted(classes) => classes,
         };
@@ -769,6 +789,19 @@ impl Runtime {
                 ));
             }
             return stored();
+        }
+        // A pending GPU clock confirmation runs nothing either: the change
+        // stays owed to the report after a read resolves it
+        // (`TriggerAdmission::ThermalPending`).
+        if self.gpu_fenced(deadline).await {
+            return Ok((
+                Outcome {
+                    status: 0,
+                    message: format!("Profiles were stored. {PENDING_OTHER}"),
+                },
+                true,
+                None,
+            ));
         }
         let reconciled = self
             .reconcile_locked(
@@ -1140,6 +1173,46 @@ impl Runtime {
             }
             Some(_) => Gate::Low,
         }
+    }
+
+    /// The lifecycle a GPU clock step is admitted under
+    /// (`thermal_gpu::Boundary`): the gate's clear generation, which a
+    /// suspend and resume move, and the Windows power generation. Neither
+    /// admits anything; the lane only compares them with what it last saw.
+    #[cfg(feature = "service-gpu-clock-tuning-v1")]
+    pub(super) fn gpu_boundary(&self) -> super::thermal_gpu::Boundary {
+        super::thermal_gpu::Boundary {
+            gate: match self.gate() {
+                Gate::Clear(generation) => Some(generation),
+                Gate::Low => None,
+            },
+            power: self.power_generation.get().and_then(|read| read()),
+            // The class the step resolves (`RequestPermit::prepare_gpu`); a
+            // writer's fence resolves none, which keeps the class last seen.
+            source: None,
+        }
+    }
+
+    /// Whether the GPU clock lane fences every native thermal writer now
+    /// (`Runtime::gpu_fence`), for a trigger's admission before any firmware
+    /// read. Its one read-only resolution attempt, bounded by what is left
+    /// before `deadline`, runs on a pool thread, so the Service runtime never
+    /// waits on NVML; an attempt that ended without a result fences. In low
+    /// power it starts no call, as no GPU call runs there: a zero budget
+    /// leaves only the recorded state to fence, and keeps the ungated query
+    /// for after the boundary.
+    async fn gpu_fenced(&self, deadline: Instant) -> bool {
+        let Some(fenced) = self.gpu_fence() else {
+            return false;
+        };
+        let budget = if self.gate() == Gate::Low {
+            std::time::Duration::ZERO
+        } else {
+            deadline.saturating_duration_since(Instant::now())
+        };
+        tokio::task::spawn_blocking(move || fenced(budget))
+            .await
+            .unwrap_or(true)
     }
 
     /// The lifecycle's ordinary write epoch now (`Lifecycle::active`), `None`

@@ -353,12 +353,24 @@ jobs:
           # operations are answered with managed's unsupported reply.
           $shortcut = @('openblade-windows-service-candidate', 'service-performance-shortcut-v1')
           $shortcutTriggers = @('openblade-windows-service-candidate', 'service-performance-shortcut-v1,service-profile-triggers-v1')
+          # GPU clock tuning on the explicit performance path, over scripted NVML
+          # (the triggers it implies are compiled in). The lanes without it pin
+          # the incomplete GPU refusal.
+          $gpuTuning = @('openblade-windows-service-candidate', 'service-gpu-clock-tuning-v1')
+          # Beside thermal convergence, whose loop and reapply refuse a pending
+          # GPU clock confirmation, and beside the fan writes, whose owned Stop
+          # handback reads the fence; those tests compile only there.
+          $gpuConvergence = @('openblade-windows-service-candidate', 'service-gpu-clock-tuning-v1,service-thermal-convergence-v1')
+          $gpuFans = @('openblade-windows-service-candidate', 'service-gpu-clock-tuning-v1,service-fan-mutation-v2')
           # Leaving HyperBoost for a battery preset through the restore pair,
           # alone, beside the performance shortcut that can select it and
           # beside the lifecycle triggers whose low-power gate stores it.
           $hyperboostExit = @('openblade-windows-service-candidate', 'service-thermal-hyperboost-exit-v1')
           $hyperboostExitShortcut = @('openblade-windows-service-candidate', 'service-thermal-hyperboost-exit-v1,service-performance-shortcut-v1')
           $hyperboostExitTriggers = @('openblade-windows-service-candidate', 'service-thermal-hyperboost-exit-v1,service-performance-shortcut-v1,service-profile-triggers-v1')
+          # Beside GPU clock tuning, whose fence refuses the restore recipe and
+          # whose half follows its battery pair.
+          $hyperboostExitGpu = @('openblade-windows-service-candidate', 'service-gpu-clock-tuning-v1,service-thermal-hyperboost-exit-v1')
           # One run per filter, so a filter that matches no test fails the step.
           foreach ($run in @(
               @('openblade-windows-service-candidate', 'service-temporary-charge-v1', 'service_status::object_tests'),
@@ -487,6 +499,14 @@ jobs:
               # The compiled identity the profile store declares, which the
               # shortcut's marker follows.
               ($shortcutTriggers + 'profiles::'),
+              ($gpuTuning + 'gpu_clock_tuning'),
+              ($gpuTuning + 'thermal_gpu'),
+              ($gpuTuning + 'gpu_clock_offsets'),
+              ($gpuTuning + 'native_package'),
+              ($gpuTuning + 'request_triggers'),
+              ($gpuConvergence + 'convergence_loop'),
+              ($gpuConvergence + 'gpu_clock_tuning'),
+              ($gpuFans + 'gpu_clock_tuning'),
               ($hyperboostExit + 'hyperboost'),
               ($hyperboostExit + 'thermal_presets'),
               ($hyperboostExit + 'native_package'),
@@ -494,6 +514,8 @@ jobs:
               ($hyperboostExitTriggers + 'hyperboost'),
               # The compiled identity, which the HyperBoost exit marker follows.
               ($hyperboostExitTriggers + 'profiles::'),
+              ($hyperboostExitGpu + 'hyperboost'),
+              ($hyperboostExitGpu + 'gpu_clock_tuning'),
               @('openblade-windows-service-candidate', 'service-mailbox-observation-v1', 'capability_tests'),
               @('openblade-windows-service-candidate', 'service-mailbox-observation-v1', 'readiness::tests::observation'),
               @('openblade-windows-service-candidate', 'service-mailbox-observation-v1', 'driver_mode_absent'),
@@ -561,8 +583,12 @@ jobs:
               @('openblade-windows-service-candidate', 'service-keyboard-driver-mode-v1,service-thermal-convergence-v1'),
               @('openblade-windows-service-candidate', 'service-performance-shortcut-v1'),
               @('openblade-windows-service-candidate', 'service-performance-shortcut-v1,service-profile-triggers-v1'),
+              @('openblade-windows-service-candidate', 'service-gpu-clock-tuning-v1'),
+              @('openblade-windows-service-candidate', 'service-gpu-clock-tuning-v1,service-thermal-convergence-v1'),
+              @('openblade-windows-service-candidate', 'service-gpu-clock-tuning-v1,service-fan-mutation-v2'),
               @('openblade-windows-service-candidate', 'service-thermal-hyperboost-exit-v1'),
               @('openblade-windows-service-candidate', 'service-thermal-hyperboost-exit-v1,service-performance-shortcut-v1,service-profile-triggers-v1'),
+              @('openblade-windows-service-candidate', 'service-gpu-clock-tuning-v1,service-thermal-hyperboost-exit-v1'),
               @('openblade-windows-agent-candidate', 'agent-display-brightness-write-v1'),
               @('openblade-windows-agent-candidate', 'agent-display-profile-apply-v1'),
               @('openblade-windows-agent-candidate', 'agent-battery-report-v1'),

@@ -38,8 +38,9 @@
 //! Nothing here writes at Stop, shutdown or a low-power transition: managed
 //! leaves the offsets in the driver then, and only a resume invalidates its
 //! confirmation ([`Management::invalidate`]).
-// No request composes the backend yet: the thermal integration and
-// `setGpuClockTuning` are a later slice.
+// Only `service-gpu-clock-tuning-v1` composes the backend, through the
+// explicit performance path (`thermal_gpu`); `setGpuClockTuning` is a later
+// slice.
 #![cfg_attr(not(test), allow(dead_code))]
 
 use openblade_domain::profile_set::model::GpuClockOffsets;
@@ -57,7 +58,7 @@ use std::{
 use tokio::sync::oneshot;
 
 #[cfg(windows)]
-// No production caller until the thermal integration composes the writer.
+// Only `service-gpu-clock-tuning-v1` composes the writer (`production`).
 #[allow(dead_code)]
 #[path = "gpu_clock_offsets_windows.rs"]
 mod windows;
@@ -141,6 +142,32 @@ pub(super) trait Nvml {
     fn clock_offsets(&mut self, device: usize, info: &mut ClockOffset) -> i32;
     /// `nvmlDeviceSetClockOffsets`.
     fn set_clock_offsets(&mut self, device: usize, info: &mut ClockOffset) -> i32;
+}
+
+/// A boxed backend, so the composition can hold production NVML or a
+/// scripted one behind one worker type.
+impl<T: Nvml + ?Sized> Nvml for Box<T> {
+    fn init(&mut self) -> i32 {
+        (**self).init()
+    }
+    fn shutdown(&mut self) -> i32 {
+        (**self).shutdown()
+    }
+    fn device_count(&mut self) -> Result<u32, i32> {
+        (**self).device_count()
+    }
+    fn device(&mut self, index: u32) -> Result<usize, i32> {
+        (**self).device(index)
+    }
+    fn name(&mut self, device: usize, name: &mut [u8; NAME_CAPACITY]) -> i32 {
+        (**self).name(device, name)
+    }
+    fn clock_offsets(&mut self, device: usize, info: &mut ClockOffset) -> i32 {
+        (**self).clock_offsets(device, info)
+    }
+    fn set_clock_offsets(&mut self, device: usize, info: &mut ClockOffset) -> i32 {
+        (**self).set_clock_offsets(device, info)
+    }
 }
 
 /// Managed `GpuClockOffsetRange`, in the editable unit.
@@ -972,6 +999,54 @@ impl<N: Nvml + 'static> Worker<N> {
             },
         }
     }
+
+    /// [`call`](Self::call) for a caller off the async runtime, or one that
+    /// must measure `budget` on the real clock: it blocks this thread until
+    /// the call ends or `budget` runs out, with the same withdrawal,
+    /// abandonment and panic rules.
+    #[cfg(feature = "service-gpu-clock-tuning-v1")]
+    pub(super) fn call_blocking<R: Send + 'static>(
+        &self,
+        budget: Duration,
+        job: impl FnOnce(&mut Management<N>) -> R + Send + 'static,
+    ) -> Called<R> {
+        let claim = Claim(Arc::new(AtomicU8::new(QUEUED)));
+        let (reply, result) = sync_channel(1);
+        let job: Run<N> = Box::new(move |management| {
+            let _ = reply.send(job(management));
+        });
+        match self.jobs.try_send((claim.0.clone(), job)) {
+            Ok(()) => {}
+            Err(TrySendError::Full(_) | TrySendError::Disconnected(_)) => {
+                return Called::NotStarted;
+            }
+        }
+        use std::sync::mpsc::RecvTimeoutError;
+        match result.recv_timeout(budget) {
+            Ok(value) => Called::Done(value),
+            // As in `call`: a started call that sent nothing panicked.
+            Err(RecvTimeoutError::Disconnected) if claim.started() => Called::Abandoned,
+            Err(RecvTimeoutError::Disconnected) => Called::NotStarted,
+            Err(RecvTimeoutError::Timeout) if claim.withdraw() => Called::NotStarted,
+            Err(RecvTimeoutError::Timeout) => match result.try_recv() {
+                Ok(value) => Called::Done(value),
+                Err(_) => Called::Abandoned,
+            },
+        }
+    }
+}
+
+/// The production worker: System32 NVML and the WDDM activity counters on
+/// exact RZ09-0581's envelope, both built on the worker thread.
+#[cfg(all(windows, not(test)))]
+pub(super) fn production() -> std::io::Result<Worker<Box<dyn Nvml>>> {
+    Worker::spawn(|| {
+        Management::new(
+            Box::new(windows::WindowsNvml::default()) as Box<dyn Nvml>,
+            windows::activity(),
+            RZ09_0581,
+        )
+    })
 }
 
 fn run<N: Nvml>(mut management: Management<N>, queue: Receiver<Job<N>>, stopped: &AtomicBool) {
@@ -997,6 +1072,9 @@ fn run<N: Nvml>(mut management: Management<N>, queue: Receiver<Job<N>>, stopped:
     }
 }
 
+#[cfg(test)]
+#[path = "gpu_clock_offsets_fake.rs"]
+pub(super) mod fake;
 #[cfg(test)]
 #[path = "gpu_clock_offsets_tests.rs"]
 mod tests;

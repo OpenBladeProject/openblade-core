@@ -86,6 +86,11 @@ internal sealed record NativeArtifact(string Id, string Role, string Target, str
         // gate to read the record (NativeHandbackTests.TheIncomingGateIsPresenceOnlyOnlyWhilePackagingRefusesTheOwner).
         if (features.Contains("service-keyboard-driver-mode-v1", StringComparer.Ordinal) || capabilities.Split(',').Contains("service-keyboard-driver-mode-v1", StringComparer.Ordinal))
         { throw new InvalidDataException("Keyboard Driver-mode ownership is not admitted for packaging."); }
+        // GPU clock tuning writes NVIDIA driver state through an NVML module loaded from System32.
+        // Refuse its feature and its capability marker by name, before the triggers it extends, until
+        // a WinVerifyTrust and catalog gate checks the loaded module path and a packaging stage admits it.
+        if (features.Contains("service-gpu-clock-tuning-v1", StringComparer.Ordinal) || capabilities.Split(',').Contains("service-gpu-clock-tuning-v1", StringComparer.Ordinal))
+        { throw new InvalidDataException("GPU clock tuning is not admitted for packaging."); }
         // Maintain-desired-state convergence writes without a request. Refuse its feature and its
         // capability marker by name, before the triggers it extends, until a packaging stage admits it.
         if (features.Contains("service-thermal-convergence-v1", StringComparer.Ordinal) || capabilities.Split(',').Contains("service-thermal-convergence-v1", StringComparer.Ordinal))
