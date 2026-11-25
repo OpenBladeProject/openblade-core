@@ -153,7 +153,9 @@ fn gpu_clock_offsets(json: &Json) -> Decoded<GpuClockOffsets> {
     }
 }
 
-fn gpu_clock_tuning(json: &Json) -> Decoded<GpuClockTuning> {
+/// `GpuClockTuningSettings` as a stored document binds it; other readers of
+/// managed records (the HyperBoost ownership journal) reuse it.
+pub fn gpu_clock_tuning(json: &Json) -> Decoded<GpuClockTuning> {
     let object = Object::of(json, &["enabled", "offsets", "effectiveOffsets"])?;
     Ok(GpuClockTuning {
         enabled: boolean(object.required("enabled")?)?,
@@ -161,7 +163,8 @@ fn gpu_clock_tuning(json: &Json) -> Decoded<GpuClockTuning> {
     })
 }
 
-fn custom_performance(json: &Json) -> Decoded<CustomPerformance> {
+/// `CustomPerformanceSettings` with its constructor's level checks.
+pub fn custom_performance(json: &Json) -> Decoded<CustomPerformance> {
     let object = Object::of(json, &["cpu", "gpu", "maximumFans", "gpuClockOffsets"])?;
     let settings = CustomPerformance {
         cpu: CustomPerformanceLevel(wire(object.required("cpu")?)?),
@@ -214,7 +217,9 @@ fn manual_fan_curve(json: &Json) -> Decoded<ManualFanCurve> {
     })
 }
 
-fn fan_control(json: &Json) -> Decoded<FanControl> {
+/// `FanControlSettings` with its required members and its constructor's
+/// speed and curve checks.
+pub fn fan_control(json: &Json) -> Decoded<FanControl> {
     let object = Object::of(json, &["mode", "fixedSpeedRpm", "manualCurve"])?;
     let mode = FanMode(wire(object.required("mode")?)?);
     let fixed_speed_rpm = int(object.required("fixedSpeedRpm")?)?;

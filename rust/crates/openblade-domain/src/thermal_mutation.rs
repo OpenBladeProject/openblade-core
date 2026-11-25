@@ -237,6 +237,21 @@ pub fn admits_class(
         _ => false,
     }
 }
+/// Whether a fresh setter-time class admits managed's unowned HyperBoost exit,
+/// the Balanced restore an exit writes when the saved intent cannot be
+/// restored. Managed's exit makes no ordinary per-command power admission
+/// (`ProductionBatteryPort.SetHyperBoostCoreAsync` checks only its
+/// precondition and final readback), and it refuses an unclassified source
+/// before any write. Native admits each setter on a classified class that
+/// agrees with Windows: full or limited external with Windows AC, or battery
+/// with Windows battery.
+#[cfg(feature = "hyperboost")]
+pub fn admits_restore_class(class: i32, windows_on_battery: Option<bool>) -> bool {
+    matches!(
+        (class, windows_on_battery),
+        (0 | 2, Some(false)) | (1, Some(true))
+    )
+}
 /// Whether the Windows power kind sampled before a setter's 07/8C query can
 /// still admit this destination's command, as managed
 /// `AdmitOrdinaryThermalCommandAsync` captures it before querying the
@@ -575,6 +590,29 @@ mod tests {
                 );
             }
         }
+    }
+    /// Managed's unowned HyperBoost exit admits no ordinary command power and
+    /// refuses an unclassified source: native admits the Balanced restore on
+    /// a classified class that agrees with Windows, battery included, where
+    /// the Balanced destination's own rule refuses battery.
+    #[cfg(feature = "hyperboost")]
+    #[test]
+    fn the_restore_only_exit_needs_a_classified_class_that_agrees_with_windows() {
+        for windows in [Some(false), Some(true), None] {
+            for class in [-1, 0, 1, 2, crate::automation::UNCLASSIFIED_EXTERNAL, 4] {
+                assert_eq!(
+                    admits_restore_class(class, windows),
+                    matches!(class, 0 | 2) && windows == Some(false)
+                        || class == 1 && windows == Some(true),
+                    "{class} {windows:?}"
+                );
+            }
+        }
+        assert!(!admits_class(
+            Destination::Preset(Preset::Balanced),
+            1,
+            Some(true)
+        ));
     }
     /// The admitted Custom range is the managed RZ09-0581 capability vector,
     /// which the managed composition test pins against its factories.
