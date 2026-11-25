@@ -691,6 +691,9 @@ fn this_composition_declares_profile_serving_in_its_compiled_identity() {
     let expected = format!(
         "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1,service-fan-mutation-v2,service-battery-policy-v1,service-temporary-charge-v1,service-profiles-v1{triggers}"
     );
+    // Thermal convergence follows the triggers it implies with its own.
+    #[cfg(feature = "service-thermal-convergence-v1")]
+    let expected = format!("{expected},service-thermal-convergence-v1");
     // The read-only Driver-mode build appends its own refused marker.
     #[cfg(feature = "service-keyboard-driver-mode-read-v1")]
     let expected = format!("{expected},service-keyboard-driver-mode-read-v1");

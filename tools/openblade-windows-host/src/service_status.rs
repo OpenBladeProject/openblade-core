@@ -108,6 +108,11 @@ pub(crate) enum StatusRequest {
         version: i32,
         request_id: String,
     },
+    /// Managed `ReapplyChangedSettingsRequest`.
+    ReapplyChangedSettings {
+        version: i32,
+        request_id: String,
+    },
     GetStatus {
         version: i32,
         request_id: String,
@@ -189,7 +194,7 @@ impl StatusRequest {
     /// The discriminator of every variant. `operation` maps each variant to
     /// its entry, so a new variant cannot be added without listing it here.
     #[cfg(feature = "installed-service-candidate")]
-    pub(crate) const OPERATIONS: [&'static str; 13] = [
+    pub(crate) const OPERATIONS: [&'static str; 14] = [
         "setBatteryPolicy",
         "setBatteryProtection",
         "setFullChargeOverride",
@@ -203,6 +208,7 @@ impl StatusRequest {
         "setThermalControlPolicy",
         "acknowledgeThermalPolicyUpgradeDisclosure",
         "exportDiagnostics",
+        "reapplyChangedSettings",
     ];
 
     #[cfg(all(test, feature = "installed-service-candidate"))]
@@ -221,6 +227,7 @@ impl StatusRequest {
             Self::SetThermalControlPolicy { .. } => 10,
             Self::AcknowledgeThermalPolicyUpgradeDisclosure { .. } => 11,
             Self::ExportDiagnostics { .. } => 12,
+            Self::ReapplyChangedSettings { .. } => 13,
         }]
     }
 
@@ -236,9 +243,22 @@ impl StatusRequest {
         const PROFILES: bool = cfg!(feature = "service-profiles-v1");
         const EXPORT: bool = cfg!(feature = "service-diagnostics-export-v1");
         const POLICY: bool = cfg!(feature = "service-profile-triggers-v1");
-        const COMPILED: [bool; 13] = [
-            BATTERY, BATTERY, BATTERY, FAN, THERMAL, THERMAL, true, true, true, PROFILES, POLICY,
-            POLICY, EXPORT,
+        const CONVERGENCE: bool = cfg!(feature = "service-thermal-convergence-v1");
+        const COMPILED: [bool; 14] = [
+            BATTERY,
+            BATTERY,
+            BATTERY,
+            FAN,
+            THERMAL,
+            THERMAL,
+            true,
+            true,
+            true,
+            PROFILES,
+            POLICY,
+            POLICY,
+            EXPORT,
+            CONVERGENCE,
         ];
         Self::OPERATIONS
             .iter()
@@ -398,6 +418,10 @@ impl StatusRequest {
                 version,
                 request_id,
             }
+            | Self::ReapplyChangedSettings {
+                version,
+                request_id,
+            }
             | Self::GetStatus {
                 version,
                 request_id,
@@ -462,6 +486,13 @@ impl StatusRequest {
         ) && !cfg!(feature = "service-profile-triggers-v1")
         {
             return Err(invalid("signed thermal policy composition is unavailable"));
+        }
+        if matches!(self, Self::ReapplyChangedSettings { .. })
+            && !cfg!(feature = "service-thermal-convergence-v1")
+        {
+            return Err(invalid(
+                "signed thermal convergence composition is unavailable",
+            ));
         }
         // Managed `IpcMessageCodec`: `Enum.IsDefined(set.Policy)`.
         if let Self::SetThermalControlPolicy { policy, .. } = self
@@ -1314,6 +1345,28 @@ impl Snapshot {
                 .and_then(Value::as_bool),
         }
     }
+    /// The members of managed `DesiredDeviceState` that the shared thermal
+    /// convergence ledger keeps as its effective intent, as this status
+    /// carries them (`thermal_convergence_loop`).
+    #[cfg(feature = "service-thermal-convergence-v1")]
+    pub(crate) fn effective_intent_members(&self) -> serde_json::Map<String, Value> {
+        const MEMBERS: [&str; 7] = [
+            "performance",
+            "fans",
+            "lighting",
+            "battery",
+            "customPerformance",
+            "gpuClockTuning",
+            "fanControl",
+        ];
+        match serde_json::to_value(&self.desired_state) {
+            Ok(Value::Object(state)) => state
+                .into_iter()
+                .filter(|(name, _)| MEMBERS.contains(&name.as_str()))
+                .collect(),
+            _ => serde_json::Map::new(),
+        }
+    }
     pub(crate) fn has_fresh_mailbox_read(&self) -> bool {
         self.read_confirmation
             .as_ref()
@@ -1461,7 +1514,10 @@ impl Snapshot {
     /// The verified laptop's `firmware.modelNumber`. Managed
     /// `ServiceReactiveLightingLoop` classifies the input device from this
     /// field, and only while `deviceVerified`; an unverified status has none.
-    #[cfg(feature = "agent-function-row-v1")]
+    #[cfg(any(
+        feature = "agent-function-row-v1",
+        feature = "service-thermal-convergence-v1"
+    ))]
     pub(crate) fn verified_model_number(&self) -> Option<&str> {
         if !self.device_verified {
             return None;

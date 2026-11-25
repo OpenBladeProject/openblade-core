@@ -61,6 +61,11 @@ gpu-close-fixture = ["openblade-platform-windows/scripted-gpu-close"]
 vm-scm-fixture = []
 startup-custody-v1 = []
 service-metadata-only-v1 = ["installed-service-candidate"]
+# Maintain-desired-state thermal convergence: the managed ledger shared with
+# managed (thermal-convergence.json), its read-only reconciliation of a
+# reservation, and its convergence writes. No packaged composition implies
+# it, and both package readers refuse it by name.
+service-thermal-convergence-v1 = ["service-profile-triggers-v1", "openblade-domain/thermal-convergence"]
 # Automatic reconciliation of saved intent on reportApplicationContext,
 # updateProfiles and a session's first admitted report. No packaged
 # composition implies it, and both package readers refuse it by name.

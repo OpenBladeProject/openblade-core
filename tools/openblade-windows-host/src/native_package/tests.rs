@@ -2224,3 +2224,38 @@ fn selected_session_gpu_capability_is_exact_and_composes_after_display() {
         );
     }
 }
+
+#[test]
+fn a_thermal_convergence_service_is_not_admitted_by_feature_or_marker() {
+    // The features and the capability build.rs gives a build with
+    // service-thermal-convergence-v1. Packaging has not admitted convergence
+    // writes, so the reader refuses them by name in either role or schema,
+    // whatever else the record claims, and before the triggers they extend.
+    let triggers = "controller-admission-compile-check,firmware-performance-compile-check,hid-identity-compile-check,installed-service-candidate,lifecycle-evidence-compile-check,service-battery-policy-v1,service-fan-mutation-v2,service-hardware-compile-check,service-mailbox-observation-v1,service-profile-triggers-v1,service-profiles-v1,service-temporary-charge-v1,service-thermal-mutation-v1,startup-custody-v1";
+    let features = triggers.replace(
+        "service-thermal-mutation-v1,",
+        "service-thermal-convergence-v1,service-thermal-mutation-v1,",
+    );
+    let temporary = "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1,service-fan-mutation-v2,service-battery-policy-v1,service-temporary-charge-v1";
+    let marked = format!(
+        "{temporary},service-profiles-v1,service-profile-triggers-v1,service-thermal-convergence-v1"
+    );
+    for role in ["service", "agent"] {
+        for claimed in [marked.as_str(), temporary, "none"] {
+            assert!(capabilities(2, role, &features, claimed).is_err());
+            assert!(capabilities(1, role, &features, claimed).is_err());
+        }
+    }
+    // Neither the feature nor the marker alone is admitted beside the
+    // otherwise admitted temporary-charge composition.
+    let extended = triggers.replace("service-profile-triggers-v1,service-profiles-v1,", "");
+    assert!(capabilities(2, "service", &extended, temporary).is_ok());
+    let feature_only = extended.replace(
+        "service-thermal-mutation-v1,",
+        "service-thermal-convergence-v1,service-thermal-mutation-v1,",
+    );
+    assert!(capabilities(2, "service", &feature_only, temporary).is_err());
+    let marker_only = format!("{temporary},service-thermal-convergence-v1");
+    assert!(capabilities(2, "service", &extended, &marker_only).is_err());
+    assert!(capabilities(1, "service", &extended, &marker_only).is_err());
+}

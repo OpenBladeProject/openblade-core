@@ -601,6 +601,32 @@ impl StatusSource for GuardedStatus {
             if let Some(status) = runtime.reconcile_lifecycle(&mailbox, status).await? {
                 publish_reconciled(&publisher, &mailbox, status)?;
             }
+            // Then the convergence loop, which may ask for its own periodic
+            // read (D5): outside any ObserveState, so it requests no live
+            // reading.
+            #[cfg(feature = "service-thermal-convergence-v1")]
+            {
+                let status = || publisher.borrow().active.clone();
+                let converged = runtime.converge(&mailbox, status).await?;
+                if let Some(status) = converged.snapshot {
+                    publish_reconciled(&publisher, &mailbox, status)?;
+                }
+                if converged.observe {
+                    let deadline =
+                        Instant::now() + super::thermal_mutation::CONVERGENCE_OBSERVE_BUDGET;
+                    let current = publisher.borrow().active.clone();
+                    let observe = mailbox.observe(current, deadline, publisher.clone());
+                    // As an ObserveState's read: bounded by its deadline, and
+                    // a failed or late read is no reading, so the tick goes on
+                    // carrying low-power and lifecycle work. Only fatal
+                    // admission evidence ends the Service.
+                    if let Ok(Err(error)) = timeout_at(deadline, observe).await
+                        && super::thermal_mutation::is_fatal_admission(&error)
+                    {
+                        return Err(error);
+                    }
+                }
+            }
             Ok(())
         }))
     }
@@ -829,6 +855,34 @@ impl StatusSource for GuardedStatus {
                     };
                     let status = publish_reconciled(&publisher, &mailbox, status)?;
                     Ok((outcome, Some(status)))
+                }
+                #[cfg(feature = "service-thermal-convergence-v1")]
+                crate::service_status::StatusRequest::ReapplyChangedSettings {
+                    request_id, ..
+                } => {
+                    let status = publisher.borrow().active.clone();
+                    // The latest status, projected again with the ledger the
+                    // rearm left, published before any step runs.
+                    let republish = || {
+                        let latest = publisher.borrow().active.clone();
+                        publish_reconciled(&publisher, &mailbox, latest).map(drop)
+                    };
+                    let reapplied = runtime
+                        .reapply_changed(
+                            mailbox.clone(),
+                            caller,
+                            sid,
+                            request_id,
+                            deadline,
+                            status,
+                            &republish,
+                        )
+                        .await?;
+                    let Some(status) = reapplied.snapshot else {
+                        return Ok((reapplied.outcome, None));
+                    };
+                    let status = publish_reconciled(&publisher, &mailbox, status)?;
+                    Ok((reapplied.outcome, Some(status)))
                 }
                 #[cfg(feature = "service-profiles-v1")]
                 crate::service_status::StatusRequest::UpdateProfiles {
@@ -1079,6 +1133,11 @@ impl StatusSource for GuardedStatus {
         // guards outlive listener/worker drain. It grants no firmware authority.
         Box::pin(async move {
             self.origin.normal_stop();
+            // No convergence write is admitted once Stop begins.
+            #[cfg(feature = "service-thermal-convergence-v1")]
+            if let Some(runtime) = &self.mutation {
+                runtime.stop_convergence();
+            }
             let mut result = self.inner.drain().await;
             #[cfg(feature = "service-thermal-mutation-v1")]
             if let Some(runtime) = &self.mutation {

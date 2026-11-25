@@ -203,7 +203,7 @@ jobs:
 
       # The workspace build leaves openblade-domain's thermal-history feature off;
       # it carries the history grammar that tools/openblade-windows-host enables.
-      - name: Test and lint the domain thermal-history and profile-set features
+      - name: Test and lint the domain thermal-history, profile-set and thermal-convergence features
         run: |
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true
@@ -215,6 +215,10 @@ jobs:
           cargo test --locked -p openblade-domain --features profile-set,thermal-history --target ${{ matrix.target }}
           cargo clippy --locked -p openblade-domain --features profile-set,thermal-history --all-targets --target ${{ matrix.target }} -- -D warnings
           cargo clippy --locked -p openblade-domain --features profile-set --all-targets --target ${{ matrix.target }} -- -D warnings
+          # The shared thermal convergence ledger, against the vectors the managed
+          # Service tests record through the real ledger and state store.
+          cargo test --locked -p openblade-domain --features thermal-convergence --target ${{ matrix.target }}
+          cargo clippy --locked -p openblade-domain --features thermal-convergence,profile-set --all-targets --target ${{ matrix.target }} -- -D warnings
 
       # The workspace build leaves the production Session GPU close backend
       # off. Its tests drive scripted process seams only; none opens, signals
@@ -311,6 +315,11 @@ jobs:
           # Beside the lifecycle triggers, whose tick takes the source lock again
           # after the keyboard step (`readiness.rs`); that path compiles only here.
           $driverModeOwnerTriggers = @('openblade-windows-service-candidate', 'service-keyboard-driver-mode-v1,service-profile-triggers-v1')
+          # Thermal convergence, which implies the lifecycle triggers: the shared
+          # ledger and its status, alone and beside the keyboard Driver-mode
+          # owner, whose tick it shares.
+          $convergence = @('openblade-windows-service-candidate', 'service-thermal-convergence-v1')
+          $convergenceDriverMode = @('openblade-windows-service-candidate', 'service-keyboard-driver-mode-v1,service-thermal-convergence-v1')
           # The read-only live readings alone and beside every Service write.
           # The lanes without it pin that ObserveState still refuses them.
           $liveReadings = @('openblade-windows-service-candidate', 'service-live-readings-v1')
@@ -339,6 +348,8 @@ jobs:
               @('openblade-windows-service-candidate', 'service-profiles-v1', 'profiles::'),
               # Automatic reconciliation of saved intent: the request triggers.
               @('openblade-windows-service-candidate', 'service-profile-triggers-v1', 'request_triggers'),
+              # The lifecycle causes and their pacing.
+              @('openblade-windows-service-candidate', 'service-profile-triggers-v1', 'triggers::lifecycle::tests'),
               # The thermal control policy: its store, requests and the
               # convergence status member with the managed vector replays.
               @('openblade-windows-service-candidate', 'service-profile-triggers-v1', 'convergence'),
@@ -384,6 +395,13 @@ jobs:
               ($driverModeOwner + 'a_serving_loop_tick_runs_the_keyboard_driver_mode_step'),
               ($driverModeOwnerTriggers + 'driver_mode'),
               ($driverModeOwnerTriggers + 'a_serving_loop_tick_runs_the_keyboard_driver_mode_step'),
+              ($convergence + 'convergence'),
+              ($convergence + 'request_triggers'),
+              # The explicit reapply's summaries.
+              ($convergence + 'triggers::reapply'),
+              ($convergence + 'native_package'),
+              ($convergenceDriverMode + 'convergence'),
+              ($convergenceDriverMode + 'a_serving_loop_tick_runs_the_keyboard_driver_mode_step'),
               # A temporary-charge cancel whose write port failed to open, and
               # the transaction pool pins of fan and temporary-charge writes.
               @('openblade-windows-service-candidate', 'service-temporary-charge-v1', 'tfc_release_a_cancel_whose_port'),
@@ -486,6 +504,8 @@ jobs:
               @('openblade-windows-service-candidate', 'service-profile-triggers-v1'),
               @('openblade-windows-service-candidate', 'service-keyboard-driver-mode-v1'),
               @('openblade-windows-service-candidate', 'service-keyboard-driver-mode-v1,service-profile-triggers-v1'),
+              @('openblade-windows-service-candidate', 'service-thermal-convergence-v1'),
+              @('openblade-windows-service-candidate', 'service-keyboard-driver-mode-v1,service-thermal-convergence-v1'),
               @('openblade-windows-agent-candidate', 'agent-display-brightness-write-v1'),
               @('openblade-windows-agent-candidate', 'agent-display-profile-apply-v1'),
               @('openblade-windows-agent-candidate', 'agent-battery-report-v1'),

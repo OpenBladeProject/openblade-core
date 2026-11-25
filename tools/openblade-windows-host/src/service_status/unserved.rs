@@ -203,6 +203,10 @@ mod tests {
                 version,
                 request_id: id(),
             },
+            StatusRequest::ReapplyChangedSettings {
+                version,
+                request_id: id(),
+            },
         ]
     }
 

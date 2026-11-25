@@ -81,6 +81,10 @@ internal sealed record NativeArtifact(string Id, string Role, string Target, str
         // admits it (docs/windows-rust-development-service.md).
         if (features.Contains("service-keyboard-driver-mode-v1", StringComparer.Ordinal) || capabilities.Split(',').Contains("service-keyboard-driver-mode-v1", StringComparer.Ordinal))
         { throw new InvalidDataException("Keyboard Driver-mode ownership is not admitted for packaging."); }
+        // Maintain-desired-state convergence writes without a request. Refuse its feature and its
+        // capability marker by name, before the triggers it extends, until a packaging stage admits it.
+        if (features.Contains("service-thermal-convergence-v1", StringComparer.Ordinal) || capabilities.Split(',').Contains("service-thermal-convergence-v1", StringComparer.Ordinal))
+        { throw new InvalidDataException("Thermal convergence is not admitted for packaging."); }
         // Automatic reconciliation of saved intent is not admitted for packaging. Refuse its
         // feature and its capability marker by name, whatever else the record claims.
         if (features.Contains("service-profile-triggers-v1", StringComparer.Ordinal) || capabilities.Split(',').Contains("service-profile-triggers-v1", StringComparer.Ordinal))

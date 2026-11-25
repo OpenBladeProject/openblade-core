@@ -579,6 +579,7 @@ async fn serve_connection(
                 | StatusRequest::UpdateProfiles { .. }
                 | StatusRequest::SetThermalControlPolicy { .. }
                 | StatusRequest::AcknowledgeThermalPolicyUpgradeDisclosure { .. }
+                | StatusRequest::ReapplyChangedSettings { .. }
         )
     {
         #[cfg(feature = "service-thermal-mutation-v1")]
@@ -902,7 +903,9 @@ fn reconciles(request: &StatusRequest) -> bool {
     cfg!(feature = "service-profile-triggers-v1")
         && matches!(
             request,
-            StatusRequest::ReportApplicationContext { .. } | StatusRequest::UpdateProfiles { .. }
+            StatusRequest::ReportApplicationContext { .. }
+                | StatusRequest::UpdateProfiles { .. }
+                | StatusRequest::ReapplyChangedSettings { .. }
         )
 }
 

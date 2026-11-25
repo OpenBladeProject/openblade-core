@@ -37,8 +37,14 @@ use crate::installed::readiness::thermal_storage::ProfileSave;
 use openblade_domain::profile_set::{ProfileSet, update::STORED_MESSAGE};
 use tokio::time::timeout_at;
 
+#[cfg(feature = "service-thermal-convergence-v1")]
+#[path = "thermal_convergence_loop.rs"]
+pub(super) mod convergence_loop;
 #[path = "lifecycle_triggers.rs"]
 pub(super) mod lifecycle;
+#[cfg(feature = "service-thermal-convergence-v1")]
+#[path = "thermal_reapply.rs"]
+pub(super) mod reapply;
 
 /// Managed `ReportApplicationContextAsync` (Blocked) for a reporter that no
 /// longer controls the active local session.
@@ -290,7 +296,7 @@ pub(in super::super) fn fans_first(confirmed_manual: bool, next_manual: bool) ->
 }
 
 /// One subsystem step of a reconciliation.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Eq, PartialEq)]
 enum Step {
     Performance,
     Fans,
@@ -346,6 +352,10 @@ struct Reconcile<'a> {
     // (`thermal_drift`).
     mode: thermal_drift::Mode,
     resume: bool,
+    // A convergence attempt's scope: only its declared subsystems run, and
+    // each write is admitted by its reservation (`convergence_loop`).
+    #[cfg(feature = "service-thermal-convergence-v1")]
+    scope: Option<Arc<dyn thermal_drift::Scope>>,
 }
 /// What one reconciliation did, managed `ServiceTransitionApplicationOutcome`.
 struct Reconciled {
@@ -374,6 +384,16 @@ struct Reconciled {
     // A step had not finished at the bound (`RECONCILE_MARGIN`) and was not
     // a deferral: its worker may still submit.
     unfinished: bool,
+    // The last step that needed a change was refused with nothing of it
+    // possibly submitted, as managed's last attempt is KnownNotApplied
+    // (`ThermalTransitionExecutor.Disposition`): the convergence loop's
+    // Blocked.
+    #[cfg(feature = "service-thermal-convergence-v1")]
+    refused_last: bool,
+    // Each step that ran or was deferred, with its reply, in step order
+    // (`reapply`).
+    #[cfg(feature = "service-thermal-convergence-v1")]
+    outcomes: Vec<(Step, Outcome)>,
     message: String,
     snapshot: Option<Snapshot>,
 }
@@ -610,6 +630,8 @@ impl Runtime {
                     status,
                     mode,
                     resume: false,
+                    #[cfg(feature = "service-thermal-convergence-v1")]
+                    scope: None,
                 },
             )
             .await?;
@@ -761,6 +783,8 @@ impl Runtime {
                     status,
                     mode,
                     resume: false,
+                    #[cfg(feature = "service-thermal-convergence-v1")]
+                    scope: None,
                 },
             )
             .await?;
@@ -820,6 +844,8 @@ impl Runtime {
             status,
             mode,
             resume,
+            #[cfg(feature = "service-thermal-convergence-v1")]
+            scope,
         } = step;
         // One drift decision for both steps, from the first step's own
         // fresh reading (`thermal_drift::Transition`). The user's startup
@@ -832,12 +858,11 @@ impl Runtime {
         } else {
             mode
         };
-        let transition = Arc::new(thermal_drift::Transition::new(
-            self.drift.clone(),
-            mode,
-            resume,
-            Instant::now(),
-        ));
+        let transition =
+            thermal_drift::Transition::new(self.drift.clone(), mode, resume, Instant::now());
+        #[cfg(feature = "service-thermal-convergence-v1")]
+        let transition = transition.scoped(scope);
+        let transition = Arc::new(transition);
         // The confirmed fans are the retained thermal observation's: the
         // published status is rebuilt from observed metadata and carries no
         // firmware fans. An owned fan change not yet handed back is manual
@@ -855,6 +880,11 @@ impl Runtime {
         } else {
             [Step::Performance, Step::Fans]
         };
+        // A scoped attempt runs only the subsystems it declared.
+        let order: Vec<Step> = order
+            .into_iter()
+            .filter(|kind| transition.declares(*kind == Step::Fans))
+            .collect();
         // The trigger answers by this bound even when a step's transfer has
         // not retired (`RECONCILE_MARGIN`).
         let bound = deadline + crate::service_frame::RECONCILE_MARGIN;
@@ -862,7 +892,7 @@ impl Runtime {
         let mut steps: Vec<(Stepped, bool)> = Vec::with_capacity(order.len());
         let mut unfinished = false;
         let mut deferred = false;
-        for kind in order {
+        for &kind in &order {
             if storage.pending() {
                 break;
             }
@@ -1053,6 +1083,10 @@ impl Runtime {
                 .iter()
                 .all(|(s, possible)| s.outcome.status == 1 || (s.transient && !possible));
         let read = Classes::of(needed.iter().filter_map(|(s, _)| s.class));
+        #[cfg(feature = "service-thermal-convergence-v1")]
+        let refused_last = needed
+            .last()
+            .is_some_and(|(s, possible)| s.outcome.status != 1 && !possible);
         // Both steps can refuse for one cause, which is said once.
         let mut said: Vec<&str> = Vec::with_capacity(steps.len());
         for (stepped, _) in if needed.is_empty() {
@@ -1065,6 +1099,15 @@ impl Runtime {
             }
         }
         let message = said.join(" ");
+        // Each step is pushed in `order`: a step that breaks the loop before
+        // it runs pushes nothing, and the deferral pushed after the loop is
+        // the step the gate stopped.
+        #[cfg(feature = "service-thermal-convergence-v1")]
+        let outcomes = order
+            .iter()
+            .copied()
+            .zip(steps.iter().map(|(s, _)| s.outcome.clone()))
+            .collect();
         Ok(Reconciled {
             applied,
             submitted,
@@ -1073,6 +1116,10 @@ impl Runtime {
             deferred,
             read,
             unfinished,
+            #[cfg(feature = "service-thermal-convergence-v1")]
+            refused_last,
+            #[cfg(feature = "service-thermal-convergence-v1")]
+            outcomes,
             message,
             snapshot: steps.into_iter().rev().find_map(|(s, _)| s.snapshot),
         })

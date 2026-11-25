@@ -106,6 +106,8 @@ pub(super) fn remember_failure(fatal: &Mutex<Option<&'static str>>, error: &io::
 mod battery;
 #[cfg(feature = "service-temporary-charge-v1")]
 pub(super) use battery::BatteryUpdate;
+#[cfg(feature = "service-thermal-convergence-v1")]
+pub(super) use triggers::convergence_loop::OBSERVE_BUDGET as CONVERGENCE_OBSERVE_BUDGET;
 #[path = "fan_mutation.rs"]
 mod fan;
 pub(super) use fan::FanRequest;
@@ -133,6 +135,10 @@ pub(super) use keyboard::SHUTDOWN_BUDGET as KEYBOARD_SHUTDOWN_BUDGET;
 pub(super) use keyboard::{Boundary, INTERVAL, Release};
 #[cfg(all(test, feature = "service-keyboard-driver-mode-v1"))]
 pub(super) use low_power::MAXIMUM_AGE as LOW_POWER_MAXIMUM_AGE;
+#[cfg(all(test, feature = "service-thermal-convergence-v1"))]
+pub(super) use triggers::reapply::{
+    FANS_BRIDGE, IN_FLIGHT, NOT_RETIRED, PENDING, PERFORMANCE_BRIDGE, UNCLASSIFIED,
+};
 #[cfg(all(test, feature = "service-profile-triggers-v1"))]
 pub(super) use triggers::{
     APPLICATION_SESSION_REQUIRED, LOW_POWER_DEFERRED, LOW_POWER_PERFORMANCE, LOW_POWER_STEP,
@@ -402,6 +408,11 @@ pub(super) struct Runtime {
     // (`thermal_drift`).
     #[cfg(feature = "service-profile-triggers-v1")]
     drift: Arc<Mutex<thermal_drift::Tracker>>,
+    // The convergence loop (`triggers::convergence_loop`): set by the native
+    // composition, and by tests that run it. Unset runs no loop, and the
+    // status publishes what it did before the loop existed.
+    #[cfg(feature = "service-thermal-convergence-v1")]
+    convergence_loop: Rc<std::cell::OnceCell<triggers::convergence_loop::Loop>>,
     fan_owner: Rc<RefCell<Option<Arc<fan::FanPermit>>>>,
     temporary_owner: Rc<RefCell<Option<Arc<battery::BatteryPermit>>>>,
     temporary_pending: Rc<RefCell<Option<Arc<battery::BatteryPermit>>>>,
@@ -671,6 +682,8 @@ impl Runtime {
             low_power_prepared: Rc::default(),
             #[cfg(feature = "service-profile-triggers-v1")]
             drift: mailbox.drift(),
+            #[cfg(feature = "service-thermal-convergence-v1")]
+            convergence_loop: Rc::default(),
             fan_owner: Rc::default(),
             temporary_owner: Rc::default(),
             temporary_pending: Rc::default(),
@@ -873,6 +886,12 @@ impl Runtime {
             low_power_prepared: Rc::default(),
             #[cfg(feature = "service-profile-triggers-v1")]
             drift: mailbox.drift(),
+            #[cfg(feature = "service-thermal-convergence-v1")]
+            convergence_loop: Rc::new(std::cell::OnceCell::from(
+                triggers::convergence_loop::Loop::new(Arc::new(
+                    triggers::convergence_loop::hyperboost_journal,
+                )),
+            )),
             fan_owner: Rc::default(),
             temporary_owner: Rc::default(),
             temporary_pending: Rc::default(),
@@ -1783,6 +1802,12 @@ impl Permit for RequestPermit {
     }
     fn authorize(&self) -> Option<ReadAdmission> {
         self.verify_failure().ok()?;
+        // A convergence attempt's scope closes at Stop or at a refusal
+        // (`thermal_drift::Scope::open`).
+        #[cfg(feature = "service-profile-triggers-v1")]
+        if self.transition.as_ref().is_some_and(|t| !t.open()) {
+            return None;
+        }
         self.fresh.authorize()
     }
     fn windows_on_battery(&self) -> Option<bool> {
@@ -1973,6 +1998,20 @@ impl Permit for RequestPermit {
     fn record(&self, progress: Progress) -> io::Result<()> {
         self.verify_failure()?;
         self.authorize().ok_or(io::ErrorKind::PermissionDenied)?;
+        // A convergence attempt admits each setter's intent afresh, before
+        // its row (`thermal_drift::Scope::admits`).
+        #[cfg(feature = "service-profile-triggers-v1")]
+        if matches!(
+            progress,
+            Progress::FirstIntent
+                | Progress::SecondIntent
+                | Progress::ThirdIntent
+                | Progress::FourthIntent
+        ) && self.transition.as_ref().is_some_and(|t| !t.admits(false))
+        {
+            self.set_cause(Cause::CurrentAdmission);
+            return Err(io::ErrorKind::PermissionDenied.into());
+        }
         self.record_progress(progress)
             .inspect_err(|e| self.set_cause(Cause::Storage(e.to_string())))?;
         // A journaled intent precedes its setter. A step dropped at its bound

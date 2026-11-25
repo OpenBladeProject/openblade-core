@@ -1692,8 +1692,8 @@ observation reaches `EvaluateThermalConvergenceObservationAsync`
 (`ServiceControlRuntime.cs:17599`, `:19943`), and the 15 s periodic
 observation (`ServicePeriodicObservationLoop.cs:7`) repeats it. Only Strict
 waits for a power-source change, which runs `ApplyFullTransitionAsync`.
-Native has no convergence loop; the lifecycle tick after the gate clears
-reconciles a deferred debt in its place
+Without `service-thermal-convergence-v1` native has no convergence loop; the
+lifecycle tick after the gate clears reconciles a deferred debt in its place
 ([Lifecycle reconciliation](#lifecycle-reconciliation)). A deferral leaves the
 attempts unchanged, so that retry spends none of the budget.
 
@@ -2013,17 +2013,22 @@ and stops on ambiguity.
 Native differs from managed in these ways:
 
 - Convergence. Managed's convergence loop reconverges confirmed drift under
-  MaintainDesiredState (above). Native has none, so a subsystem stays
-  excluded until a reconciliation reads OpenBlade's intent again, an
-  explicit request writes it, or the Service restarts. This is the remaining
-  divergence from Architecture rule 5.
+  MaintainDesiredState (above). Without `service-thermal-convergence-v1`
+  native has none, so a subsystem stays excluded until a reconciliation
+  reads OpenBlade's intent again, an explicit request writes it, or the
+  Service restarts. With it, the loop reconverges it
+  ([Convergence loop](#convergence-loop)).
 - Own state at a report and at lease expiry. Managed publishes the new
   desired state before the transition reads it as the prior one, so a
   report that leaves a rule (`otherReportedWithOwnPreset`) and the lease
   expiry (`leaseExpired`) both pause over OpenBlade's own preset, and
   managed's convergence loop repairs that later. Native compares OpenBlade's
-  own confirmed state and applies at once, a deliberate deviation while it
-  has no convergence loop. The vectors keep managed's rows, and
+  own confirmed state and applies at once. This is a permanent, declared
+  divergence, kept when native gains its convergence loop: managed's repair
+  spends the one convergence claim for that destination and policy revision
+  on OpenBlade's own preset, and under Strict, where nothing converges, the
+  pause strands OpenBlade's own Fixed fans until an explicit reapply. The
+  vectors keep managed's rows, and
   `a_report_over_its_own_preset_applies_where_managed_pauses` and
   `an_expired_lease_applies_the_power_profile_once` pin native's outcome.
   A reconciliation deferred or retried before any submission keeps its
@@ -2104,8 +2109,9 @@ Not ported:
 #### Thermal control policy and convergence status
 
 With `service-profile-triggers-v1`, native stores the thermal control policy
-and serves the convergence status member. It still has no convergence loop,
-so neither policy adds a write.
+and serves the convergence status member. Without
+`service-thermal-convergence-v1` it has no convergence loop, so neither policy
+adds a write.
 
 The policy and its upgrade disclosure are the managed preferences members
 `thermalControlPolicy` (Maintain desired state 0, the default, or Strict 1)
@@ -2221,6 +2227,242 @@ and checks that native classifies the same components where managed
 converges. `readiness_tests/thermal_policy.rs` replays the replies through
 the framed dispatcher. `tests/data/profile-migration-vectors.json` carries
 managed's Strict and Acknowledged rows that survive migration.
+
+#### Shared convergence ledger
+
+With `service-thermal-convergence-v1`, which implies the lifecycle triggers,
+the store also reads the user's convergence ledger. Native shares managed's
+`thermal-convergence.json` (`ThermalConvergenceStateStore`): the same
+per-user directory, schema 1 and members. `openblade_domain::thermal_convergence`
+ports the document, its validation and managed's ledger transitions
+(`ThermalConvergenceLedgerTransitions`: refresh, reserve, complete), and the
+revision hash byte for byte: SHA-256 of the default PascalCase serialization,
+read as a .NET `Guid`. The feature has its own package marker and both
+package readers refuse it by feature and by marker, so no package carries it
+yet.
+
+`tests/data/thermal-convergence-ledger-vectors.json` holds the revisions,
+documents and transition states, recorded through managed's own transitions
+and store by `NativeThermalConvergenceLedgerVectorsTests`. Its native rows are
+documents the Rust encoder wrote, which managed loads.
+`thermal_convergence_vectors.rs` replays all four sections.
+
+The store reads the ledger once, when it opens, and fails closed
+(`thermal_convergence_ledger.rs`). A file that is unreadable, unparsable,
+duplicate-keyed, of another user, invalid or of a newer schema closes
+convergence for this user, and the store never writes over it. So does any
+write it cannot confirm, since a reservation that may be durable must never
+be mistaken for one that is not. A closed ledger stays closed until the store
+opens again, at a user switch or a Service restart, as managed reloads it
+only at activation. A write is a compare-and-swap on the bytes the store
+holds, through its own atomic `Files::replace`, so a ledger changed outside
+the Service is never overwritten. An empty state is never written, as managed
+never persists one.
+
+The status reads the ledger at each publication:
+
+| Condition | State | Reason |
+| --- | --- | --- |
+| Ledger not authoritative, after a quarantined configuration | Paused, policy published as Strict with the saved disclosure | ConfigurationQuarantined |
+| A reservation, power settled and not low power, under either policy | AwaitingObservation, its declared components | AwaitingFreshObservation |
+
+A reservation comes before the Strict, disclosure, controller and pending
+rows, as managed reconciles one whatever the policy
+(`ThermalConvergenceReconciliationAdmitted`).
+
+Native differs from managed in these ways:
+
+- Revisions. Native's intent comes from its own resolution: Custom
+  performance never carries `maximumFans`, and GPU clock tuning is never
+  set. Where that differs from managed's `ResolveHardwareDesired`, the
+  revisions differ, so a switch between the managed and native Service
+  starts a new budget generation once, at most.
+- Record equality. Managed compares the ledger's lists by reference, so a
+  loaded tombstone never equals a new one; native compares them by value.
+
+#### Convergence loop
+
+`thermal_convergence_loop.rs` ports managed's observer and executor
+(`EvaluateThermalConvergenceObservationAsync`,
+`ExecuteThermalConvergenceAsync`). It runs after the lifecycle tick, under
+the mutation gate, and evaluates each reading the mailbox published once, as
+managed evaluates an observation. A reconciliation step's own baseline read
+or readback is no evidence, so a status that publishes a step's snapshot is
+not evaluated again. Every 15 s while Maintain is admitted the loop asks for
+its own reading through the same admitted read path, with no optional
+reading (D5); Strict reads nothing. That read is bounded by its deadline,
+and a failed or late read is no reading: the tick goes on with its low-power
+and lifecycle work. A due D7 retry asks for a reading once per 5 s until one
+is evaluated. A tick with none of these reads no console user and captures
+nothing.
+
+An evaluation needs an authoritative ledger, the console user's settled pair
+with no lifecycle cause owed or pending, no low power, settled power, no possible
+competing controller, no unsettled journal row, Maintain with no pending
+disclosure, and a safe HyperBoost journal. Managed's journal,
+`ProgramData\OpenBlade\hyperboost-ownership.json`, is read read-only through
+the protected path checks. It is safe when it is absent, or Relinquished in a
+schema managed recognizes with the members that schema requires. Anything
+else, including a read that fails, publishes RestorePending with
+`HyperBoostPending` and spends no claim (D8). While the user is starting or
+a lifecycle cause is owed or pending, the status shows Awaiting with
+`AwaitingFreshObservation` rather than Converging, since the lifecycle's
+reconciliation runs first. Each status projection reads the journal again,
+a small protected-path read, so the status never shows a stale journal.
+
+A contradiction refreshes the ledger to current intent. Its tombstone or a
+spent budget suppresses it; otherwise it reserves one claim, persisted before
+any setter. The attempt runs the lifecycle's typed steps for the
+contradicting subsystems only, overwriting drift. Each step's journaled
+intent is admitted afresh: the ledger still holds the reservation, the
+HyperBoost journal is unchanged and safe, the policy is still Maintain and
+the Service is not stopping. Once one write is refused, no later write of the
+attempt is admitted.
+
+| Attempt outcome | Ledger |
+| --- | --- |
+| Every step confirmed by readback | Tombstoned Confirmed |
+| A possible submission whose journal row still fences the store | Tombstoned ReconciliationUnavailable |
+| Every submission settled, and the last step was refused before submitting | Tombstoned Blocked |
+| Every submission settled, and a readback showed another state | Tombstoned External |
+| Refused before any submission, for a cause that may clear | Reserved for one retry (D7) |
+| Any other refusal, or a retry refused or changed | Tombstoned Blocked |
+| Stop during the attempt | Reserved, reconciled read-only |
+
+A reservation this runtime did not make, or one a stop left, is reconciled
+read-only from the next reading: a match retires it Confirmed and a confirmed
+contradiction External. An unknown HyperBoost state or an incomplete reading
+keeps it. A journal row that still fences the store keeps it too, also after
+a restart: the reservation stays until that row settles, its claim stays
+spent, and nothing is replayed.
+
+Native differs from managed in these ways:
+
+- D7. A reservation whose steps were all refused before any submission is
+  kept and retried once, at least 5 s later, from a fresh reading under fresh
+  admission, with the claim it already spent. If the contradiction, intent,
+  policy or destination changed, it is tombstoned (Confirmed when the
+  reading now matches, Blocked otherwise), and so is a retry refused again.
+  Managed attempts once.
+- D9. A contradiction native has no recipe for is refused before reserving,
+  with no claim spent: for performance, no saved destination, an incomplete
+  GPU clock policy or an owned fan change still to hand back; for fans, fan
+  intent native has no recipe for (ManualCurve, Stop, or Fixed and Maximum on
+  battery or under a destination other than Balanced or Performance) or an
+  owned fan row no live owner holds; for either, no saved fan intent. Before
+  reserving, a fan contradiction over an owned fan row also needs the
+  continuity the fan step itself checks (`Runtime::holds_fan_continuity`:
+  the live owner, its proof generation, custody and authentication), so the
+  attempt is never reserved only for its fan step to refuse it. Managed
+  projects unsupported fan intent onto a confirmed Automatic reading, and so
+  does native, so such intent contradicts nothing then and a performance
+  drift still converges. A return to Automatic carries the saved preset in
+  its 0D/02 pair, as managed's fan setter carries a performance selector, so
+  a fans-only attempt may write that preset.
+- The no-settle ambiguity. Native's steps cannot tell a possible submission
+  that did not settle by readback any further than its journal row does:
+  ReconciliationUnavailable while the row fences the store. Once every
+  submission settled, the attempt takes its last step's disposition, as
+  managed's does. Nothing is replayed, by the running Service or a restarted
+  one.
+- A reservation whose persistence fails closes the ledger, so the status
+  reports `ConfigurationQuarantined` where managed reports
+  `InternalStateUnavailable`.
+- Native does not track a device reconnect, so its refresh never invalidates
+  the device authority; a changed model is still a new one.
+
+`readiness_tests/thermal_convergence_loop.rs` drives the loop over the rig's
+store, lifecycle and scripted device: a drift converged once and its tombstone
+holding; Strict, an unsafe and an unreadable journal; a journal change, a
+competing controller and Strict arriving between two writes; Stop before and
+after a submission with a restart; a suspend and a lock refusing an attempt,
+then its retry, including one an external change resolved; an ambiguous
+submission and a restart with its row outstanding; a spent budget; and a
+damaged and a newer ledger, running and restarted. It also pins the review
+fixes: ManualCurve on AC and Fixed on battery projected onto Automatic while
+a performance drift converges; no evaluation from a reconciliation's own
+readings; the console probe, captures and frames over idle ticks under
+Strict and Maintain; a due retry asking once per interval, a retry refused
+again, and Strict retiring one unread; an unsettled row, a refused admission,
+a ledger changed between writes and one refusal refusing every later step;
+the fan step's convergence, mid-step refusal and Stop; the drain stopping
+the loop; a left reservation retired Confirmed; a tombstone holding without
+its budget; a failed and a stalled periodic read; an owned fan row a crash
+left without its live owner spending no claim; a step's own read retiring a
+publication as evidence; and a last step refused after a confirmed one
+retiring Blocked.
+
+#### Explicit reapply
+
+A tombstone or a spent budget suppresses its contradiction, and the status
+publishes Suppressed with its components, `Tombstoned` or `BudgetExhausted`
+and `explicitReapplyRequired`, as managed does. With
+`service-thermal-convergence-v1`, native serves managed's
+`reapplyChangedSettings` at protocol 90 (`thermal_reapply.rs`), its only
+exit. It needs no wire change: the request carries only its version and
+request ID, and the reply is an ordinary operation result with the status
+the request published.
+
+Under the operation gate, in managed's order (`ReapplyChangedSettingsAsync`):
+
+| Condition | Reply | Ledger |
+| --- | --- | --- |
+| An unsettled journal row (managed's pending write confirmation) | Blocked, confirm the current laptop state | Kept |
+| A reservation in the ledger | Blocked, reconcile the reserved transition | Kept |
+| Tombstones or budgets, and the replacement fails | Blocked, the suppression could not be retired | Kept; a failed write closes the store |
+| Tombstones or budgets | Rearmed, then the rows below | Tombstones, budgets and the terminal result cleared |
+| No drift | Stored, no settings changed outside OpenBlade | |
+| Drift | Applied, or Blocked or Failed with what is still changed | |
+
+The rearm is a compare-and-swap on the bytes the store holds
+(`Storage::replace_convergence_ledger`), so a ledger the store no longer
+holds as read, or one the encoder refuses, is kept without closing anything.
+A failed write, including one refused because the file changed under the
+running Service, closes the store, which the status then reports
+quarantined. Once a rearm is attempted, the status
+is republished from the ledger at once, before any step runs, as managed
+publishes `AwaitingObservation` right after its rearm, so a request a client
+disconnect drops later still leaves the rearmed status published. After a
+rearm the next evaluation of the same drift reserves a fresh claim.
+The drift reapply is one reconciliation scoped to the drifted
+subsystems native tracks, performance and fans, ordered as managed's
+transition order and overwriting the drift. Each step keeps its own capture,
+write admission, readback and stop-on-ambiguity path, and spends no claim.
+Manual fans on both sides of a performance reapply block both, with
+managed's per-subsystem reasons. The reply names what was reapplied and
+what is still changed, with each remaining subsystem's reason.
+
+Native differs from managed in these ways:
+
+- A caller outside the control session is closed without a reply, as for
+  every mutation, where managed replies Blocked.
+- The request capture precedes the pending and ledger checks, so a
+  competing controller, a locked session or an unknown AC status refuses the
+  request before them, as it refuses a policy change.
+- Unknown Windows power blocks with managed's unclassified-adapter reply.
+  An adapter only a step's own reading finds unclassified is that step's
+  refusal.
+- A power class changed since the last reconciliation is the lifecycle
+  tick's, so no full transition runs first, and native has no automatic
+  fan-stop arming to pause.
+- The manual-fan bridge is stricter than managed's. Native counts an
+  outstanding fan row as manual fans and treats saved manual fans at either
+  AC class as manual, because the step's own adapter reading is what tells
+  the two classes apart. Managed reads the confirmed fans and the class it
+  resolved. Native therefore blocks every performance reapply managed
+  blocks, and may block one managed would apply.
+
+`tests/data/thermal-reapply-vectors.json` holds managed's replies, the
+ledger each leaves and whether it wrote, recorded by
+`ServiceControlRuntimeTests.NativeThermalReapplyVectors.cs`.
+`readiness_tests/thermal_reapply.rs` replays each row through the framed
+dispatcher over the convergence rig, and pins a rearm followed by the same
+drift converging again with a fresh claim, a rearm that cannot persist and
+its immediate quarantined publication, the pending and in-flight blocks
+writing nothing, a rearm still published when a client disconnect drops the
+request at its first step, a Stored reply after a rearm, unknown Windows
+power, a performance-only reapply running no fan step, and the manual-fan
+bridge on battery. `thermal_reapply.rs` checks the three reply summaries.
 
 ## Submission, ambiguity and finite transport lifetime
 

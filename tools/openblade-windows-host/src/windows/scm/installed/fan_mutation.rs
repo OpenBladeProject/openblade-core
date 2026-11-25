@@ -492,6 +492,12 @@ impl Permit for FanPermit {
                 *self.verified.lock().ok()? = Some(inputs);
             }
         }
+        // A convergence attempt's scope closes at Stop or at a refusal
+        // (`thermal_drift::Scope::open`).
+        #[cfg(feature = "service-profile-triggers-v1")]
+        if self.transition.as_ref().is_some_and(|t| !t.open()) {
+            return None;
+        }
         proof
     }
     fn resolve(&self, _: i32, _: ObservedPerformance) -> io::Result<Option<Destination>> {
@@ -707,6 +713,17 @@ impl Permit for FanPermit {
     }
     fn record_fan(&self, progress: u8) -> io::Result<()> {
         self.authorize().ok_or(io::ErrorKind::PermissionDenied)?;
+        // A convergence attempt admits each setter's intent afresh, before
+        // its row: its reservation, the HyperBoost journal and the policy
+        // must still hold (`thermal_drift::Scope::admits`).
+        #[cfg(feature = "service-profile-triggers-v1")]
+        if (10..30).contains(&progress)
+            && progress.is_multiple_of(2)
+            && let Some(transition) = &self.transition
+            && !transition.admits(true)
+        {
+            return Err(io::ErrorKind::PermissionDenied.into());
+        }
         self.write(progress)?;
         // A journaled setter intent (10, 12, ...; 30 and 50 are the
         // confirmations) precedes its setter. A request dropped at its bound
@@ -1082,6 +1099,50 @@ impl Runtime {
         }
     }
 }
+impl FanPermit {
+    /// Whether this permit still owns its manual fans for `sid` in
+    /// `session`: owned and not being handed back.
+    fn live_for(&self, sid: &str, session: u32) -> bool {
+        self.owned.load(Ordering::Acquire)
+            && !self.release.load(Ordering::Acquire)
+            && self.sid == sid
+            && self.session == session
+    }
+}
+#[cfg(feature = "service-thermal-convergence-v1")]
+impl Runtime {
+    /// Whether a live owner of the outstanding fan row holds it for `sid`
+    /// in `session` (`FanPermit::live_for`): the part of the fan step's
+    /// continuity check a status projection knows without an admission.
+    pub(super) fn holds_live_fan_owner(&self, sid: &str, session: u32) -> bool {
+        self.fan_owner
+            .borrow()
+            .as_ref()
+            .is_some_and(|owner| owner.live_for(sid, session))
+    }
+}
+impl Runtime {
+    /// Whether the live owner of the outstanding fan row holds it for `sid`
+    /// in `session` under this exact continuity: the admission generation
+    /// of `proof`, the same `custody` and the same `authentication`. A fan
+    /// step refuses to write over an outstanding row without it, and a
+    /// convergence attempt checks it before it reserves a claim.
+    pub(super) fn holds_fan_continuity(
+        &self,
+        sid: &str,
+        session: u32,
+        proof: &ReadAdmission,
+        custody: &Arc<dyn ReadCustody>,
+        authentication: Option<(u32, i32)>,
+    ) -> bool {
+        self.fan_owner.borrow().as_ref().is_some_and(|owner| {
+            owner.live_for(sid, session)
+                && owner.proof.generation == proof.generation
+                && Arc::ptr_eq(&owner.custody, custody)
+                && owner.authentication == authentication
+        })
+    }
+}
 impl Runtime {
     /// Managed `IsExactFanIntentOwned` for the saved fan `desired` settings
     /// of `sid` at class `power`: this user's fan owner has not handed its
@@ -1313,15 +1374,13 @@ impl Runtime {
         }
         let prior = self.fan_owner.borrow().clone();
         if storage.outstanding_fan()
-            && prior.as_ref().is_none_or(|p| {
-                !p.owned.load(Ordering::Acquire)
-                    || p.release.load(Ordering::Acquire)
-                    || p.sid != sid
-                    || p.session != caller.session
-                    || p.proof.generation != proof.generation
-                    || !Arc::ptr_eq(&p.custody, &reader.custody())
-                    || p.authentication != fresh.authentication()
-            })
+            && !self.holds_fan_continuity(
+                &sid,
+                caller.session,
+                &proof,
+                &reader.custody(),
+                fresh.authentication(),
+            )
         {
             return Ok(Stepped::new(
                 Outcome::blocked(
