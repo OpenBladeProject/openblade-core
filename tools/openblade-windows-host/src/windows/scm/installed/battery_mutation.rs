@@ -497,10 +497,11 @@ impl Permit for BatteryPermit {
             Refusal::PowerChanged => "Battery operation source changed before submission.",
             // NoDirectPath and Deadline are thermal-recipe refusals; a battery permit
             // never plans one.
-            Refusal::CurrentAdmission
-            | Refusal::UnclassifiedBlocked
-            | Refusal::NoDirectPath
-            | Refusal::Deadline => "Fresh battery admission is unavailable.",
+            Refusal::CurrentAdmission | Refusal::UnclassifiedBlocked | Refusal::Deadline => {
+                "Fresh battery admission is unavailable."
+            }
+            #[cfg(not(feature = "service-thermal-hyperboost-exit-v1"))]
+            Refusal::NoDirectPath => "Fresh battery admission is unavailable.",
         });
     }
     fn retired(&self) -> io::Result<Settlement> {

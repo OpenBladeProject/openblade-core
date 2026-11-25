@@ -375,6 +375,11 @@ public sealed partial class NativeHandbackTests : IDisposable
         ("pending", Item("performance", 0, performance: "Balanced")),
         ("pending", Item("performance", 7, performance: "Balanced")),
         ("pending", Item("performance", 11, performance: "Custom")),
+        ("pending", Item("performance", 79, performance: "BatterySaver")),
+        ("pending", Item("performance", 84, performance: "BatteryBalanced")),
+        ("pending", Item("performance", 80, performance: "Balanced")),
+        ("pending", Item("performance", 83, performance: "Custom")),
+        ("abandonedPrepared", Item("performance", 80, performance: "BatterySaver")),
         ("pending", Item("fan", 30, fanMode: "Fixed")),
         ("pending", Item("fan", 31, fanMode: "Automatic")),
         ("pending", Item("fan", 41, fanMode: "Fixed")),
@@ -415,6 +420,59 @@ public sealed partial class NativeHandbackTests : IDisposable
         Assert.True(WindowsNativeHandback.ValidSlot("pending", item));
         var handback = new WindowsNativeHandback(new string('2', 32), item, null, null, null, null);
         Assert.Equal(item, WindowsNativeHandback.Parse(handback.Serialize([])).Handback.Pending);
+    }
+
+    // The HyperBoost restore pair before a battery preset (progress 80-83) is a
+    // pending row of that battery preset only.
+    [Theory]
+    [InlineData(80, "BatterySaver")]
+    [InlineData(81, "BatteryBalanced")]
+    [InlineData(82, "BatterySaver")]
+    [InlineData(83, "BatteryBalanced")]
+    public void HyperBoostRestoreSettersArePendingBatteryRows(int progress, string performance)
+    {
+        var item = Item("performance", progress, performance: performance);
+        Assert.True(WindowsNativeHandback.ValidSlot("pending", item));
+        var handback = new WindowsNativeHandback(new string('2', 32), item, null, null, null, null);
+        Assert.Equal(item, WindowsNativeHandback.Parse(handback.Serialize([])).Handback.Pending);
+        foreach (string other in new[] { "Silent", "Balanced", "Performance", "Custom" })
+        { Assert.False(WindowsNativeHandback.ValidSlot("pending", item with { Performance = other })); }
+    }
+
+    // A crash at every row of the HyperBoost-to-battery chain (0, 80-83, 1-4, 5)
+    // is classified; only Confirmed passes the strict reader.
+    public static TheoryData<int, int> HyperBoostExitPrefixes()
+    {
+        var data = new TheoryData<int, int>();
+        foreach (int destination in new[] { 3, 4 }) { for (int rows = 1; rows <= 10; rows++) { data.Add(destination, rows); } }
+        return data;
+    }
+
+    [Theory]
+    [MemberData(nameof(HyperBoostExitPrefixes))]
+    public void HyperBoostExitCrashAtEachRowIsClassifiedAndStrictReaderStillRefuses(int destination, int count)
+    {
+        int[] chain = [0, 80, 81, 82, 83, 1, 2, 3, 4, 5];
+        using var stream = new MemoryStream();
+        foreach (int progress in chain[..count])
+        {
+            stream.Write(JsonSerializer.SerializeToUtf8Bytes(new { request = "aaaaaaaa-bbbb-cccc-dddd-000000000001", owner = Original.Nonce, user_sid = "S-1-5-21-111-222-333-1002", caller_pid = 42, session = 7, requested = (object?)null, destination, intent = NativeCanonical.Digest("null"u8), progress }));
+            stream.WriteByte(10);
+        }
+        byte[] journal = stream.ToArray();
+        using var files = ManagedMailboxCorrectionTests.Bootstrap();
+        Thermal(files, journal);
+        var handback = WindowsNativeThermalHistory.Read(files, [Original], Original).Handback!;
+        AssertClassified(Lines(Encoding.UTF8.GetString(journal)), handback);
+        int last = chain[count - 1];
+        if (last is not (0 or 5)) { Assert.Equal(("performance", destination == 3 ? "BatterySaver" : "BatteryBalanced", last), (handback.Pending!.Family, handback.Pending.Performance, handback.Pending.Progress)); }
+        Assert.Equal(last == 5, handback.IsEmpty);
+        if (last == 5) { _ = WindowsNativeThermalHistory.Read(files, [Original]); }
+        else { Assert.Throws<IOException>(() => WindowsNativeThermalHistory.Read(files, [Original])); }
+        // A restore row on any other destination is not native chronology.
+        string balanced = Encoding.UTF8.GetString(journal).Replace("\"destination\":" + destination.ToString(CultureInfo.InvariantCulture), "\"destination\":1", StringComparison.Ordinal);
+        Thermal(files, Bytes(balanced));
+        if (count >= 2) { Assert.ThrowsAny<IOException>(() => WindowsNativeThermalHistory.Read(files, [Original], Original)); }
     }
 
     // Every pair destination native journals hands back under its managed name.

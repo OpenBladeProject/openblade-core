@@ -712,6 +712,9 @@ fn this_composition_declares_profile_serving_in_its_compiled_identity() {
     // The performance shortcut appends its own refused marker after them.
     #[cfg(feature = "service-performance-shortcut-v1")]
     let expected = format!("{expected},service-performance-shortcut-v1");
+    // And the HyperBoost exit to a battery preset, last.
+    #[cfg(feature = "service-thermal-hyperboost-exit-v1")]
+    let expected = format!("{expected},service-thermal-hyperboost-exit-v1");
     assert_eq!(fields[8], expected);
 }
 

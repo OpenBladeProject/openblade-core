@@ -1,8 +1,12 @@
 //! Typed mutation on the existing native port and process-wide transaction pool.
 use super::*;
+#[cfg(feature = "service-thermal-hyperboost-exit-v1")]
+use openblade_domain::thermal_mutation::restored;
 use openblade_domain::{
     automation::UNCLASSIFIED_EXTERNAL,
-    thermal_mutation::{Destination, Plan, Progress, admits_class, confirms, pins_class},
+    thermal_mutation::{
+        Destination, Plan, Progress, admits_class, admits_windows, confirms, pins_class,
+    },
 };
 use openblade_protocol::{custom_performance::CustomLevelPair, thermal_preset::PresetPair};
 use std::sync::{Arc, Mutex, atomic::Ordering};
@@ -193,6 +197,7 @@ pub(crate) enum Refusal {
     UnclassifiedBlocked,
     /// No admitted native sequence reaches the destination from the confirmed
     /// state (`Plan::NoDirectPath`); nothing was prepared or submitted.
+    #[cfg(not(feature = "service-thermal-hyperboost-exit-v1"))]
     NoDirectPath,
     /// The request's remaining time cannot cover the rest of the recipe at the
     /// pace this operation measured (`Pace`). Only the Prepared row was
@@ -390,26 +395,47 @@ impl<P: Port> Reader<P, ReadAdmission> {
         };
         let power_source = fence.admit(power)?;
         let destination = permit.resolve(power_source, baseline).ok()??;
-        match Plan::from_observation(baseline, destination) {
+        let restoring = match Plan::from_observation(baseline, destination) {
             Plan::Unchanged => return Some(baseline),
+            #[cfg(not(feature = "service-thermal-hyperboost-exit-v1"))]
             Plan::NoDirectPath => {
                 permit.refused(Refusal::NoDirectPath);
                 return None;
             }
-            Plan::Direct { .. } => {}
-        }
+            #[cfg(feature = "service-thermal-hyperboost-exit-v1")]
+            Plan::RestoreThenBattery { .. } => true,
+            Plan::Direct { .. } => false,
+        };
         // Managed `requireExternalPowerOnDirectHyperBoostExit`: a direct exit to
         // a non-Balanced preset needs every command's fresh reading in the same
         // classified external class, so a class change stops it without
-        // replay. Managed's Balanced exit applies no class rule.
+        // replay. Managed's Balanced exit applies no class rule, and neither
+        // does its restore sequence to a battery preset.
         if pins_class(baseline, destination) {
             fence.pin_class();
         }
+        // Every setter, the restore pair's included, is admitted by the
+        // destination's own class rule on its own fresh reading. Managed
+        // classifies the adapter once for the restore sequence and checks no
+        // later command: an unplug or a plug-in that still admits the battery
+        // preset continues here as there, while an unclassified reading or a
+        // Windows disagreement stops before the next command (stricter).
         fence.bind_destination(destination);
         // Reserve all remaining commands, including the independent final read
         // and its Custom level getters, before journaling/submitting.
         // Exhaustion cannot strand a partial recipe.
         let mut reserve = || self.reserve_pair();
+        // Leaving HyperBoost for a battery preset: the restore pair, its two
+        // power readings and the intermediate independent read come first.
+        #[cfg(feature = "service-thermal-hyperboost-exit-v1")]
+        let restore = match restoring {
+            true => Some(Restore {
+                pair: PresetPair::hyperboost_restore(reserve()?)?,
+                power: reserve()?,
+                read: reserve()?,
+            }),
+            false => None,
+        };
         let setters = Setters::new(destination, &mut reserve)?;
         let mut power_ids = Vec::new();
         for _ in 0..destination.setters().div_ceil(2) {
@@ -420,9 +446,12 @@ impl<P: Port> Reader<P, ReadAdmission> {
             Destination::Custom(_) => Some(reserve()?),
             Destination::Preset(_) => None,
         };
-        // Each setter is one power read and its own exchange; the final pair
-        // and any Custom levels follow.
-        let remaining = 2 * destination.setters() as u32 + 2 + 2 * u32::from(level_ids.is_some());
+        // Each setter is one power read and its own exchange; the restore
+        // pair's intermediate read, the final pair and any Custom levels
+        // follow.
+        let all_setters = destination.setters() as u32 + 2 * u32::from(restoring);
+        let remaining =
+            2 * all_setters + 2 + 2 * u32::from(level_ids.is_some()) + 2 * u32::from(restoring);
         let admission = self.admission;
         let mut attempt = Attempt {
             reader: self,
@@ -431,57 +460,62 @@ impl<P: Port> Reader<P, ReadAdmission> {
         attempt.checkpoint(&mut authorize, admission, limit).ok()?;
         pace.prepared(attempt.reader, || permit.record(Progress::Prepared))
             .ok()?;
+        let context = SetterContext {
+            permit,
+            fence: &fence,
+            pace: &pace,
+            source: power_source,
+            admission,
+            limit,
+            // Paced once, before the operation's first intent row (`Pace`).
+            remaining: (remaining - EXCHANGES_BEFORE_CHECK, all_setters),
+        };
+        #[cfg(feature = "service-thermal-hyperboost-exit-v1")]
+        if let Some(restore) = &restore {
+            for (index, command) in restore.pair.commands().iter().enumerate() {
+                let progress = Progress::restore_setter(index)?;
+                let power_id = restore.power[index];
+                let acknowledge = |reply: &[u8]| restore.pair.acknowledge(index, reply).ok();
+                attempt
+                    .submit_setter(
+                        &context,
+                        &mut authorize,
+                        power_id,
+                        command,
+                        progress,
+                        index == 0,
+                        acknowledge,
+                    )
+                    .await?;
+            }
+            // Managed reads the full state before any battery setter and
+            // requires Balanced with Automatic fans. Anything else, or no
+            // reading, stops with the restore pair's 83 row unsettled: the
+            // outcome is indeterminate, so no battery setter is sent and
+            // nothing is replayed.
+            let observed = attempt
+                .read_reserved_pair(&mut authorize, admission, limit, restore.read, false)
+                .await?;
+            if !restored(observed) {
+                return None;
+            }
+        }
         for (index, command) in setters.commands().enumerate() {
-            let (intent, acknowledged) = Progress::setter(destination, index)?;
-            attempt.checkpoint(&mut authorize, admission, limit).ok()?;
-            let power = attempt
-                .read_power(
-                    power_ids[index / 2][index % 2],
+            let progress = Progress::setter(destination, index)?;
+            let power_id = power_ids[index / 2][index % 2];
+            let paced = index == 0 && !restoring;
+            let acknowledge = |reply: &[u8]| setters.acknowledge(index, reply);
+            attempt
+                .submit_setter(
+                    &context,
                     &mut authorize,
-                    admission,
-                    limit,
+                    power_id,
+                    command,
+                    progress,
+                    paced,
+                    acknowledge,
                 )
                 .await?;
-            // Each command needs a fresh external reading from the exact decoder,
-            // never ACLineStatus alone, that agrees with Windows AC presence.
-            if !fence.admits(power, power_source) {
-                permit.refused(Refusal::PowerChanged);
-                return None;
-            }
-            // Paced once, before the first intent row (`Pace`). A refusal
-            // here submitted nothing: retirement settles the Prepared row as
-            // known not submitted. Retirement frees the IDs reserved above
-            // that were never sent.
-            if index == 0
-                && !pace.covers(
-                    attempt.reader,
-                    remaining - EXCHANGES_BEFORE_CHECK,
-                    destination.setters() as u32,
-                    Duration::ZERO,
-                    limit,
-                )
-            {
-                attempt.completed = true;
-                permit.refused(Refusal::Deadline);
-                return None;
-            }
-            attempt.checkpoint(&mut authorize, admission, limit).ok()?;
-            permit.record(intent).ok()?;
-            attempt.checkpoint(&mut authorize, admission, limit).ok()?;
-            let mut frame = [0; FRAME_LENGTH];
-            frame[1..].copy_from_slice(&command.encode());
-            attempt
-                .transfer(Transfer::SendMutation(frame), limit)
-                .await
-                .ok()?;
-            limit.wait(SETTLE).await.ok()?;
-            attempt.checkpoint(&mut authorize, admission, limit).ok()?;
-            let (length, frame) = attempt.transfer(Transfer::ReceiveReply, limit).await.ok()?;
-            if !matches!(length, REPORT_LENGTH | FRAME_LENGTH) || frame[0] != 0 {
-                return None;
-            }
-            setters.acknowledge(index, &frame[1..])?;
-            permit.record(acknowledged).ok()?;
         }
         // Custom settles only with its levels read back (managed
         // `verifyFinalState`); a mismatch or an unreadable level confirms
@@ -505,6 +539,92 @@ impl<P: Port> Reader<P, ReadAdmission> {
         permit.record(Progress::Confirmed).ok()?;
         attempt.completed = true;
         Some(observed)
+    }
+}
+/// What every setter of one performance recipe shares.
+struct SetterContext<'c> {
+    permit: &'c dyn Permit,
+    fence: &'c PowerFence<'c>,
+    pace: &'c Pace,
+    source: i32,
+    admission: ReadAdmission,
+    limit: Limit<'c>,
+    /// The exchanges and setters left at the pace check.
+    remaining: (u32, u32),
+}
+/// Managed's HyperBoost restore pair before a battery preset, with its
+/// reserved power readings and intermediate independent read.
+#[cfg(feature = "service-thermal-hyperboost-exit-v1")]
+struct Restore {
+    pair: PresetPair,
+    power: [u8; 2],
+    read: [u8; 2],
+}
+impl<P: Port> Attempt<'_, P, ReadAdmission> {
+    /// One setter: its own fresh 07/8C reading, which the fence must admit,
+    /// then its intent row, the send, the exact echo and its acknowledged
+    /// row. `paced` checks the operation's pace before the intent row.
+    #[allow(clippy::too_many_arguments)]
+    async fn submit_setter(
+        &mut self,
+        context: &SetterContext<'_>,
+        authorize: Authorize<'_, ReadAdmission>,
+        power_id: u8,
+        command: &RazerReport,
+        (intent, acknowledged): (Progress, Progress),
+        paced: bool,
+        acknowledge: impl FnOnce(&[u8]) -> Option<()>,
+    ) -> Option<()> {
+        let (admission, limit, permit) = (context.admission, context.limit, context.permit);
+        // This setter is admitted by its own reading, not by the source an
+        // earlier reading carried (`PowerFence::release`).
+        context.fence.release();
+        self.checkpoint(authorize, admission, limit).ok()?;
+        let Some(windows) = context.fence.before_query() else {
+            permit.refused(Refusal::PowerChanged);
+            return None;
+        };
+        let power = self
+            .read_power(power_id, authorize, admission, limit)
+            .await?;
+        // Each command needs a fresh external reading from the exact decoder,
+        // never ACLineStatus alone, that agrees with Windows AC presence.
+        if !context.fence.admits(power, context.source, windows) {
+            permit.refused(Refusal::PowerChanged);
+            return None;
+        }
+        // A refusal here submitted nothing: retirement settles the Prepared
+        // row as known not submitted. Retirement frees the IDs reserved
+        // above that were never sent.
+        let (exchanges, setters) = context.remaining;
+        if paced
+            && !context
+                .pace
+                .covers(self.reader, exchanges, setters, Duration::ZERO, limit)
+        {
+            self.completed = true;
+            permit.refused(Refusal::Deadline);
+            return None;
+        }
+        self.checkpoint(authorize, admission, limit).ok()?;
+        permit.record(intent).ok()?;
+        self.checkpoint(authorize, admission, limit).ok()?;
+        let mut frame = [0; FRAME_LENGTH];
+        frame[1..].copy_from_slice(&command.encode());
+        self.transfer(Transfer::SendMutation(frame), limit)
+            .await
+            .ok()?;
+        // Submitted: a power change from here on makes this setter no more
+        // ambiguous, so it no longer stops the recipe (`PowerFence::release`).
+        context.fence.release();
+        limit.wait(SETTLE).await.ok()?;
+        self.checkpoint(authorize, admission, limit).ok()?;
+        let (length, frame) = self.transfer(Transfer::ReceiveReply, limit).await.ok()?;
+        if !matches!(length, REPORT_LENGTH | FRAME_LENGTH) || frame[0] != 0 {
+            return None;
+        }
+        acknowledge(&frame[1..])?;
+        permit.record(acknowledged).ok()
     }
 }
 /// A destination's reviewed setters in submission order: its 0D/02 pair, then
@@ -551,12 +671,17 @@ impl Setters {
 /// class (`allowBattery: false`), and so does a fan setter that carries a
 /// performance preset. Other fan setters need it only on unclassified power,
 /// since managed admits such a classified command while Windows reports
-/// battery (`allowBattery: true`). The presence a reading was admitted with must hold
-/// at every later checkpoint (managed `OrdinarySourceUnchanged` rechecks the
-/// Windows source at submission), so losing it stops before the next command.
-/// A battery preset's pair is also admitted on battery, read with Windows
-/// battery (`thermal_mutation::admits_class`); that Windows battery reading
-/// must then hold at every later checkpoint in the same way.
+/// battery (`allowBattery: true`). A battery preset's setters are also
+/// admitted on battery, read with Windows battery
+/// (`thermal_mutation::admits_class`). The Windows source a reading was
+/// admitted with must hold at every later checkpoint until it is released
+/// (managed `OrdinarySourceUnchanged` rechecks it at submission), so losing it
+/// stops before the command is sent. A performance setter releases it once
+/// its SET is sent (`release`): managed admits each command on its own fresh
+/// reading, so the next setter's reading decides again. A fan operation
+/// keeps it to its end. Each setter's reading is bracketed by Windows samples,
+/// as managed brackets its query: one before the query that must admit the
+/// command (`before_query`) and one after the reply that must equal it.
 pub(super) struct PowerFence<'a> {
     permit: &'a dyn Permit,
     // Whether Windows battery admits a classified reading with no check: a fan
@@ -602,9 +727,12 @@ impl<'a> PowerFence<'a> {
         self.pinned.store(true, Ordering::Release);
     }
     /// A fan return to Automatic that carries a saved preset applies it
-    /// through managed `SetPerformanceAsync` (`allowBattery: false`): the
-    /// operation needs fresh Windows AC presence now and at every later
-    /// reading and checkpoint. False when presence is missing.
+    /// through managed `SetPerformanceAsync`, which refuses Windows battery
+    /// for its ordinary commands: the operation needs fresh Windows AC
+    /// presence now and at every later reading and checkpoint. Managed admits
+    /// a carried battery preset's selectors on Windows battery; native
+    /// requires presence for it too (stricter, documented). False when
+    /// presence is missing.
     pub(super) fn require_presence(&self) -> bool {
         self.unchecked.store(false, Ordering::Release);
         let presence = self.permit.external_presence();
@@ -632,27 +760,65 @@ impl<'a> PowerFence<'a> {
             .store(windows == Some(false) && source != 1, Ordering::Release);
         Some(source)
     }
-    /// A setter-time reading against the first reading's class `source`.
-    /// Managed admits any fresh external reading that agrees with Windows AC
-    /// presence; a class change between setters, either way between full,
-    /// limited and unclassified, continues only while the class is not pinned
-    /// and the permit's destination is the same for the new class, so a
-    /// profile that differs there stops the pair. A change to or from battery
-    /// always stops it. Battery itself admits only a bound battery preset.
-    pub(super) fn admits(&self, power: Power, source: i32) -> bool {
+    /// Samples Windows before a setter's 07/8C query, as managed
+    /// `AdmitOrdinaryThermalCommandAsync` captures its source first. None when
+    /// that sample already refuses the command, which then stops before its
+    /// query: an unknown kind, or Windows battery for any destination but a
+    /// battery preset (`thermal_mutation::admits_windows`). Such a sample
+    /// admits no reading after an unchanged reply either; refusing here sends
+    /// no query that cannot admit the command, as managed throws before
+    /// querying. Fan permits bind no destination; a fan setter keeps the
+    /// presence it was admitted with (`authorize`), so its checkpoints refuse
+    /// a lost presence as before.
+    pub(super) fn before_query(&self) -> Option<WindowsSample> {
+        let windows = self.permit.windows_on_battery();
+        let admitted = match self.destination.get() {
+            Some(destination) => admits_windows(*destination, windows),
+            None => windows.is_some(),
+        };
+        admitted.then_some(WindowsSample(windows))
+    }
+    /// A setter-time reading against the first reading's class `source`,
+    /// with the Windows kind sampled `before` its query.
+    /// Managed admits each command on its own fresh reading: an external
+    /// reading that agrees with Windows AC presence, or for a battery preset
+    /// Windows battery (`AdmitOrdinaryThermalCommandAsync`). A class change
+    /// between setters, among full, limited, unclassified and battery,
+    /// therefore continues whenever the new reading still admits the
+    /// destination. What stops, with its reason:
+    /// - a Windows kind after the reply that differs from the one sampled
+    ///   before the query (managed `capturePowerSource() != source`). A kind
+    ///   that changes and returns while the query is in flight is seen by
+    ///   neither side;
+    /// - a reading the destination's class rule refuses: unclassified power
+    ///   for a battery preset, battery for any other destination, or a
+    ///   reading that disagrees with Windows (managed refuses that command).
+    ///   It is decided before `destination_holds`, so such a reading never
+    ///   becomes the current class and retires no temporary override
+    ///   (`battery_reading_contradicts_windows`);
+    /// - any change while the class is pinned (managed
+    ///   `requireExternalPowerOnDirectHyperBoostExit` and the fan acPreset);
+    /// - a change after which the permit's destination no longer holds: the
+    ///   request was resolved for the first class, so a profile that differs
+    ///   on the new class, or a temporary override that the change retired,
+    ///   no longer stands (native deviation; managed resolves once).
+    ///
+    /// Fan permits bind no destination and admit no battery reading; their
+    /// recipes start only on external power (`fan_recipe::Plan::select`).
+    pub(super) fn admits(&self, power: Power, source: i32, before: WindowsSample) -> bool {
         let Some((current, windows)) = self.source(power) else {
             return false;
         };
+        if windows != before.0 {
+            return false;
+        }
         let class_admitted = match self.destination.get() {
             Some(destination) => admits_class(*destination, current, windows),
             None => current != 1,
         };
         let admitted = class_admitted
             && (current == source
-                || !self.pinned.load(Ordering::Acquire)
-                    && current != 1
-                    && source != 1
-                    && self.permit.destination_holds(current));
+                || !self.pinned.load(Ordering::Acquire) && self.permit.destination_holds(current));
         if admitted {
             self.external
                 .store(windows == Some(false) && current != 1, Ordering::Release);
@@ -660,7 +826,26 @@ impl<'a> PowerFence<'a> {
         }
         admitted
     }
+    /// Ends the Windows source a performance setter was admitted with, once
+    /// its SET is sent and again before the next setter's own reading.
+    /// Managed checks it only between a command's admission and its
+    /// submission (`OrdinarySourceUnchanged`), so a change after a submitted
+    /// setter stops nothing by itself: its reply is still read, and the
+    /// independent reads after the last setter confirm what firmware holds,
+    /// as managed's do. The next setter is not admitted on the released
+    /// source: its Windows sample before the query must admit the command,
+    /// and its reading must agree with an unchanged sample after the reply
+    /// (`before_query`, `admits`), as managed brackets each query.
+    pub(super) fn release(&self) {
+        self.external.store(false, Ordering::Release);
+        self.battery.store(false, Ordering::Release);
+    }
 }
+/// The Windows power kind sampled before a setter's 07/8C query
+/// (`PowerFence::before_query`), which its reading must still see after the
+/// reply (`PowerFence::admits`).
+#[derive(Clone, Copy)]
+pub(super) struct WindowsSample(Option<bool>);
 /// One fresh 07/8C adapter query.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum Power {

@@ -1027,6 +1027,27 @@ mod tests {
         assert!(complete.contains("\"cpu\":3"));
         rows(complete.as_bytes(), |_, _| Ok(())).unwrap();
     }
+    /// Leaving HyperBoost for a battery preset journals the restore pair as
+    /// 80-83 first; a reader without the restore sequence refuses every such
+    /// journal. The managed reader consumes the same journals.
+    #[test]
+    fn hyperboost_exit_rows_journal_the_restore_pair_first() {
+        let v = vector();
+        let rows_vector = &v["hyperBoostExitRows"];
+        for (key, admitted) in [("admitted", true), ("refused", false)] {
+            let cases = rows_vector[key].as_array().unwrap();
+            assert!(!cases.is_empty());
+            for case in cases {
+                let journal = case["journal"].as_str().unwrap().as_bytes();
+                assert_eq!(
+                    rows(journal, |_, _| Ok(())).is_ok(),
+                    admitted && cfg!(feature = "hyperboost-exit"),
+                    "{}",
+                    case["name"]
+                );
+            }
+        }
+    }
     #[test]
     fn canonical_shared_grammar_and_original_generation_commitment() {
         let v = vector();

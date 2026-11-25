@@ -451,6 +451,45 @@ async fn an_uncertain_submission_fences_and_is_never_replayed() {
 }
 
 #[tokio::test]
+async fn a_cycle_leaving_hyperboost_for_a_battery_preset_follows_the_restore_build() {
+    // On battery the cycle starts from the saved Battery Balanced and selects
+    // Battery Saver while firmware reports HyperBoost. With the HyperBoost
+    // exit, managed's restore pair and its Balanced read precede the battery
+    // pair; without it nothing is written.
+    let rig = rig_at(7, 0, BATTERY, saved(4, None));
+    let result = rig.cycle(1, 1).await;
+    if cfg!(feature = "service-thermal-hyperboost-exit-v1") {
+        assert_eq!(result["result"]["status"], 1, "{result}");
+        assert_eq!(result["result"]["message"], "Fn+P selected BatterySaver.");
+        assert_eq!(
+            setters(&rig),
+            [
+                vec![1, 1, 0, 0],
+                vec![1, 2, 0, 0],
+                vec![1, 1, 3, 0],
+                vec![1, 2, 3, 0]
+            ]
+        );
+        assert_eq!(
+            rows(&rig)
+                .iter()
+                .map(|r| r["progress"].as_u64().unwrap())
+                .collect::<Vec<_>>(),
+            [0, 80, 81, 82, 83, 1, 2, 3, 4, 5]
+        );
+        assert_eq!(
+            rig.get().await["status"]["confirmedState"]["performance"],
+            3
+        );
+    } else {
+        assert_eq!(result["result"]["status"], 2, "{result}");
+        assert!(setters(&rig).is_empty());
+        assert!(rows(&rig).is_empty());
+    }
+    rig.stop().await;
+}
+
+#[tokio::test]
 async fn a_readback_mismatch_reports_no_application() {
     let rig = rig_at(2, 0, FULL, saved(1, None));
     rig.port.state.lock().unwrap().mismatch = true;

@@ -133,6 +133,7 @@ internal sealed class WindowsNativeThermalHistory
     private readonly HashSet<string> batteryGenerations = new(StringComparer.Ordinal);
     private readonly HashSet<string> fanGenerations = new(StringComparer.Ordinal);
     private readonly HashSet<string> temporaryGenerations = new(StringComparer.Ordinal);
+    private readonly HashSet<string> hyperBoostExitGenerations = new(StringComparer.Ordinal);
     private sealed record Row(string Request, string Owner, string Sid, uint Pid, uint Session, int Destination, string Intent, byte Progress, string? Fan, string? Battery, string? Temporary);
     // Each segment ends positively settled; chronology cannot be split by rolling.
     private ulong Rows(byte[] bytes, IReadOnlyList<WindowsNativeTrustLifecycle.OwnerReference> owners, bool requireSettled)
@@ -206,6 +207,8 @@ internal sealed class WindowsNativeThermalHistory
             string key = original.Epoch;
             if (temporary is not null) { temporaryGenerations.Add(key); }
             if (fan is not null) { fanGenerations.Add(key); }
+            // The HyperBoost restore pair's rows (thermal_mutation.rs Progress 80-83).
+            if (fan is null && battery is null && temporary is null && row.Progress is >= 80 and <= 83) { hyperBoostExitGenerations.Add(key); }
             if (battery is not null || fan is not null && f.GetProperty("contract").GetString() == WindowsNativeFanHistory.CoexistenceContract) { batteryGenerations.Add(key); }
             string prior = generations.GetValueOrDefault(key) ?? Empty(original.Installation, original.Epoch, original.Service);
             generations[key] = NativeCanonical.Digest(NativeCanonical.Lines("OpenBlade.ThermalGenerationRow.v1", prior, NativeCanonical.Digest(raw), original.Active));
@@ -223,6 +226,7 @@ internal sealed class WindowsNativeThermalHistory
         if (temporaryGenerations.Contains(record.Epoch) && !service.TemporaryChargeMutation) { throw Denied(); }
         if (batteryGenerations.Contains(record.Epoch) && !service.BatteryMutation) { throw Denied(); }
         if (fanGenerations.Contains(record.Epoch) && !service.FanMutation) { throw Denied(); }
+        if (hyperBoostExitGenerations.Contains(record.Epoch) && !service.HyperBoostExitMutation) { throw Denied(); }
         if (service.Id != record.ServiceId) { throw Denied(); }
         var original = owners.Where(o => o.Epoch == record.Epoch).ToArray();
         foreach (var owner in original.Where(_ => service.ThermalMutation || generations.ContainsKey(record.Epoch)))
@@ -245,15 +249,27 @@ internal sealed class WindowsNativeThermalHistory
         _ => null,
     };
     private const int Custom = 5;
-    // thermal_mutation.rs Progress::chain: each destination's setter chain. A
+    // thermal_mutation.rs Progress::chain: each destination's setter chains. A
     // preset is one pair (0, 1-4, 5); Custom adds the 0D/07 CPU and GPU level
-    // setters (7-10) before its final read. Prepared (0) may also retire as 6.
+    // setters (7-10) before its final read. Leaving HyperBoost for a battery
+    // preset (3 or 4) first writes the restore pair (80-83), then its own pair.
+    // Prepared (0) may also retire as 6.
     private static readonly byte[] PairChain = [0, 1, 2, 3, 4, 5];
     private static readonly byte[] CustomChain = [0, 1, 2, 3, 4, 7, 8, 9, 10, 5];
-    private static byte[]? Chain(int destination) => destination == Custom ? CustomChain : PresetName(destination) is null ? null : PairChain;
-    internal static bool ValidPerformanceProgress(int destination, byte progress) => Chain(destination) is { } chain && (progress == 6 || chain.Contains(progress));
-    internal static bool PerformanceFollows(int destination, byte prior, byte next) => Chain(destination) is { } chain
-        && (prior == 0 && next == 6 || Array.IndexOf(chain, prior) is int at && at >= 0 && at + 1 < chain.Length && chain[at + 1] == next);
+    private static readonly byte[] RestoreChain = [0, 80, 81, 82, 83, 1, 2, 3, 4, 5];
+    private static readonly byte[][] PairChains = [PairChain];
+    private static readonly byte[][] CustomChains = [CustomChain];
+    private static readonly byte[][] BatteryChains = [PairChain, RestoreChain];
+    private static byte[][]? Chains(int destination) => destination switch
+    {
+        Custom => CustomChains,
+        3 or 4 => BatteryChains,
+        _ => PresetName(destination) is null ? null : PairChains,
+    };
+    internal static bool ValidPerformanceProgress(int destination, byte progress) => Chains(destination) is { } chains
+        && (progress == 6 || chains.Any(chain => chain.Contains(progress)));
+    internal static bool PerformanceFollows(int destination, byte prior, byte next) => Chains(destination) is { } chains
+        && (prior == 0 && next == 6 || chains.Any(chain => Array.IndexOf(chain, prior) is int at && at >= 0 && at + 1 < chain.Length && chain[at + 1] == next));
     private static void Members(JsonElement value, string[] allowed)
     {
         if (value.ValueKind != JsonValueKind.Object) { throw Denied(); }
