@@ -57,6 +57,10 @@ Lighting supports Off, Static, Breathing, Spectrum and Wave, with brightness and
 colors. Keyboard sync projects OpenBlade's host-rendered keyboard frames onto
 the pad's 18-LED strip. Firmware-rendered keyboard effects have no host frame to
 mirror. The projection averages keyboard columns; it is not a physical key map.
+The pad's lighting button can also select built-in effects OpenBlade can't read.
+While one shows, OpenBlade keeps controlling the fan and leaves the lighting as it
+is. To change the lighting in OpenBlade, first choose another effect with the
+pad's button.
 
 **Release control** restores the saved fan preset, configured target, lighting
 effect and exact raw brightness for the fields OpenBlade changed. It leaves
@@ -115,7 +119,9 @@ lighting, there is nothing left to control and the change releases control.
 A status read submits nothing. When one times out or finds the session retired,
 control and the last confirmed status, including its message, are kept and
 maintenance reconnects. A control port that cannot be opened, or a refusal, is
-still reported.
+still reported. While control runs, a successful status read keeps the latest
+control message, and after an outside change or a lost connection stops control
+it keeps that reason. Otherwise it reports that the configuration was read.
 
 A timed-out exchange retires the HID session, and its later commands fail as
 `Disposed` without reaching the pad. Reads, Apply and Release then open a fresh
@@ -232,7 +238,13 @@ replies:
   every request. Slots beyond the count keep earlier bytes.
 
 Readback compares only those stored fields. The firmware also accepts effects
-7 and 9, which OpenBlade does not admit.
+7 and 9, which OpenBlade does not admit. The pad's lighting button selects them,
+so a well-formed `0F/82` record holding 7 or 9 is accepted and read as unknown
+lighting: the snapshot's effect configuration and lighting mode are null, and the
+fan, brightness and device mode still read. Any other effect id fails the reply.
+A lighting Apply is refused while either record is unknown, because Release could
+not restore it; a lighting readback that reads as unknown fails as a readback
+mismatch.
 
 Brightness GET resolves requested region 0 through the regional descriptor to
 the first actual region (historically 5), while SET retains region 0. That is a
