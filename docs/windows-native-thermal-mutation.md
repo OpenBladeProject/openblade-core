@@ -2284,7 +2284,11 @@ Native differs from managed in these ways:
   GPU clock policy or an owned fan change still to hand back; for fans, fan
   intent native has no recipe for (ManualCurve, Stop, or Fixed and Maximum on
   battery or under a destination other than Balanced or Performance) or an
-  owned fan row no live owner holds; for either, no saved fan intent. Managed
+  owned fan row no live owner holds; for either, no saved fan intent. Before
+  reserving, a fan contradiction over an owned fan row also needs the
+  continuity the fan step itself checks (`Runtime::holds_fan_continuity`:
+  the live owner, its proof generation, custody and authentication), so the
+  attempt is never reserved only for its fan step to refuse it. Managed
   projects unsupported fan intent onto a confirmed Automatic reading, and so
   does native, so such intent contradicts nothing then and a performance
   drift still converges. A return to Automatic carries the saved preset in
@@ -2318,7 +2322,10 @@ again, and Strict retiring one unread; an unsettled row, a refused admission,
 a ledger changed between writes and one refusal refusing every later step;
 the fan step's convergence, mid-step refusal and Stop; the drain stopping
 the loop; a left reservation retired Confirmed; a tombstone holding without
-its budget; and a failed and a stalled periodic read.
+its budget; a failed and a stalled periodic read; an owned fan row a crash
+left without its live owner spending no claim; a step's own read retiring a
+publication as evidence; and a last step refused after a confirmed one
+retiring Blocked.
 
 #### Explicit reapply
 
@@ -2337,17 +2344,22 @@ Under the operation gate, in managed's order (`ReapplyChangedSettingsAsync`):
 | --- | --- | --- |
 | An unsettled journal row (managed's pending write confirmation) | Blocked, confirm the current laptop state | Kept |
 | A reservation in the ledger | Blocked, reconcile the reserved transition | Kept |
-| Tombstones or budgets, and the replacement fails | Blocked, the suppression could not be retired | Kept, store closed |
+| Tombstones or budgets, and the replacement fails | Blocked, the suppression could not be retired | Kept; a failed write closes the store |
 | Tombstones or budgets | Rearmed, then the rows below | Tombstones, budgets and the terminal result cleared |
 | No drift | Stored, no settings changed outside OpenBlade | |
 | Drift | Applied, or Blocked or Failed with what is still changed | |
 
 The rearm is a compare-and-swap on the bytes the store holds
-(`Storage::replace_convergence_ledger`), so a ledger changed under the
-running Service is kept, and the failed write closes the store, which the
-status then reports quarantined. A rearm, or that failed write,
-republishes the status from the ledger at once, and after a rearm the next
-evaluation of the same drift reserves a fresh claim. The drift reapply is one reconciliation scoped to the drifted
+(`Storage::replace_convergence_ledger`), so a ledger the store no longer
+holds as read, or one the encoder refuses, is kept without closing anything.
+A failed write, including one refused because the file changed under the
+running Service, closes the store, which the status then reports
+quarantined. Once a rearm is attempted, the status
+is republished from the ledger at once, before any step runs, as managed
+publishes `AwaitingObservation` right after its rearm, so a request a client
+disconnect drops later still leaves the rearmed status published. After a
+rearm the next evaluation of the same drift reserves a fresh claim.
+The drift reapply is one reconciliation scoped to the drifted
 subsystems native tracks, performance and fans, ordered as managed's
 transition order and overwriting the drift. Each step keeps its own capture,
 write admission, readback and stop-on-ambiguity path, and spends no claim.
@@ -2368,6 +2380,12 @@ Native differs from managed in these ways:
 - A power class changed since the last reconciliation is the lifecycle
   tick's, so no full transition runs first, and native has no automatic
   fan-stop arming to pause.
+- The manual-fan bridge is stricter than managed's. Native counts an
+  outstanding fan row as manual fans and treats saved manual fans at either
+  AC class as manual, because the step's own adapter reading is what tells
+  the two classes apart. Managed reads the confirmed fans and the class it
+  resolved. Native therefore blocks every performance reapply managed
+  blocks, and may block one managed would apply.
 
 `tests/data/thermal-reapply-vectors.json` holds managed's replies, the
 ledger each leaves and whether it wrote, recorded by
@@ -2375,8 +2393,11 @@ ledger each leaves and whether it wrote, recorded by
 `readiness_tests/thermal_reapply.rs` replays each row through the framed
 dispatcher over the convergence rig, and pins a rearm followed by the same
 drift converging again with a fresh claim, a rearm that cannot persist and
-its immediate quarantined publication, and the pending and in-flight blocks
-writing nothing. `thermal_reapply.rs` checks the three reply summaries.
+its immediate quarantined publication, the pending and in-flight blocks
+writing nothing, a rearm still published when a client disconnect drops the
+request at its first step, a Stored reply after a rearm, unknown Windows
+power, a performance-only reapply running no fan step, and the manual-fan
+bridge on battery. `thermal_reapply.rs` checks the three reply summaries.
 
 ## Submission, ambiguity and finite transport lifetime
 
