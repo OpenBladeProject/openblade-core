@@ -238,6 +238,31 @@ impl Script {
     }
 }
 
+/// A closure is managed's token alone: every sample is wanted.
+impl<F: Fn() -> bool> Cancellation for F {
+    fn cancelled(&self) -> bool {
+        self()
+    }
+
+    fn unwanted(&self) -> bool {
+        false
+    }
+}
+
+/// The script's cancellation as an observation that stopped waiting, never
+/// managed's token.
+struct Unwanted<'a>(&'a RefCell<Script>);
+
+impl Cancellation for Unwanted<'_> {
+    fn cancelled(&self) -> bool {
+        false
+    }
+
+    fn unwanted(&self) -> bool {
+        self.0.borrow().cancelled
+    }
+}
+
 struct ScriptedProbes(Rc<RefCell<Script>>);
 
 impl Probes for ScriptedProbes {
@@ -301,12 +326,13 @@ fn power_states(states: &Value) -> VecDeque<Power> {
         .collect()
 }
 
-/// Managed's sampler replay over the native sampler: a read is `sample`,
-/// the session timer is `expire` and disposal is `release`. The native
-/// sampler has one read path, so both managed readers (no `reader` for
-/// ReadAsync, `live` for ReadForLiveReadingsAsync) replay through `sample`,
-/// and [`PENDING_PARITY`] lists the live rows that differ. Any other reader
-/// is a recorder this replay does not know.
+/// Managed's sampler replay over the native sampler: a read is `read` with
+/// its reader (no `reader` for ReadAsync, `live` for
+/// ReadForLiveReadingsAsync, the Service's `sample`) that advances the clock
+/// by `readMs` during the session's read, the session timer is `expire` and
+/// disposal is `release`. Any other reader is a recorder this replay does
+/// not know. A step's `cancel` is managed's token, which a closure stands
+/// for.
 fn replay(steps: &[Value]) -> Vec<Value> {
     let script = Rc::new(RefCell::new(Script::default()));
     let (base, elapsed, clock) = clock();
@@ -323,11 +349,11 @@ fn replay(steps: &[Value]) -> Vec<Value> {
             let mut expect = Map::new();
             match step["action"].as_str().unwrap_or("read") {
                 "read" => {
-                    match &step["reader"] {
-                        Value::Null => {}
-                        Value::String(reader) if reader == "live" => {}
+                    let reader = match &step["reader"] {
+                        Value::Null => Reader::Ordinary,
+                        Value::String(reader) if reader == "live" => Reader::LiveReadings,
                         reader => panic!("unknown sampler reader {reader}"),
-                    }
+                    };
                     {
                         let mut script = script.borrow_mut();
                         script.active = step["active"].as_bool();
@@ -336,8 +362,11 @@ fn replay(steps: &[Value]) -> Vec<Value> {
                         script.temperature = step["session"].as_i64().map(|c| c as i32);
                         script.cancel = step["cancel"].as_str().map(str::to_owned);
                         script.cancelled = false;
+                        script.stall = step["readMs"]
+                            .as_u64()
+                            .map(|ms| ("read", Duration::from_millis(ms), elapsed.clone()));
                     }
-                    let celsius = sampler.sample(&|| script.borrow().cancelled);
+                    let celsius = sampler.read(reader, &|| script.borrow().cancelled);
                     let script = script.borrow();
                     expect.insert("celsius".into(), json!(celsius));
                     expect.insert("cancelled".into(), json!(script.cancelled));
@@ -359,90 +388,12 @@ fn replay(steps: &[Value]) -> Vec<Value> {
         .collect()
 }
 
-/// The managed commit that gave live readings their own GPU read.
-const IDLE_D0_LIVE_READINGS: &str = "8331bbf476ab4f17a2c70d4945a77782049aa4a8";
-
-/// Sampler rows the native sampler does not match yet, each with the managed
-/// commit that introduced the behavior. Managed live readings since
-/// [`IDLE_D0_LIVE_READINGS`] call
-/// `SafeWindowsFanTemperatureSource.ReadForLiveReadingsAsync` (`reader:
-/// live` rows). An idle sample of a GPU held in D0 reuses the last D0
-/// reading of any read, active or ordinary, for up to 10 s, and otherwise
-/// reads NVML once the GPU has been in D0 for 3 s. A non-D0 sample drops
-/// the reading and restarts the dwell. The native sampler has one read path
-/// with ReadAsync's workload gate, so its idle samples read nothing.
-/// docs/windows-rust-development-service.md lists every pending gap; remove
-/// a row here when its port lands.
-const PENDING_PARITY: &[(&str, &str)] = &[
-    (
-        "live readings read an idle D0 GPU after the dwell, then at most every 10 s",
-        IDLE_D0_LIVE_READINGS,
-    ),
-    (
-        "a non-D0 live-reading sample restarts the dwell",
-        IDLE_D0_LIVE_READINGS,
-    ),
-    (
-        "live readings read D0 with unavailable counters after the dwell",
-        IDLE_D0_LIVE_READINGS,
-    ),
-    (
-        "the power recheck drops an idle D0 live reading",
-        IDLE_D0_LIVE_READINGS,
-    ),
-    (
-        "an ordinary read does not reuse an idle D0 live reading",
-        IDLE_D0_LIVE_READINGS,
-    ),
-    (
-        "live readings reuse an active reading for idle samples for 10 s",
-        IDLE_D0_LIVE_READINGS,
-    ),
-    (
-        "a live idle sample reuses an ordinary active reading",
-        IDLE_D0_LIVE_READINGS,
-    ),
-    (
-        "the live reader keeps an active reading at the first idle sample",
-        IDLE_D0_LIVE_READINGS,
-    ),
-];
-
-fn pending_parity(name: &str) -> bool {
-    PENDING_PARITY.iter().any(|(case, _)| *case == name)
-}
-
-/// Every allowlisted case exists and still differs from managed, so a port
-/// that closes a gap must also remove its row, and no row can hide a case
-/// that matches or was renamed.
-#[test]
-fn every_pending_parity_case_still_fails() {
-    let vectors = vectors();
-    let sampler = rows(&vectors, "sampler");
-    for (case, commit) in PENDING_PARITY {
-        assert_eq!(commit.len(), 40, "{case}");
-        let row = sampler
-            .iter()
-            .find(|row| row["name"] == *case)
-            .unwrap_or_else(|| panic!("allowlisted case {case} is not in the vectors"));
-        let observed = replay(row["steps"].as_array().unwrap());
-        assert_ne!(
-            observed.as_slice(),
-            row["expect"].as_array().unwrap().as_slice(),
-            "{case} now matches managed {commit}; remove it from PENDING_PARITY"
-        );
-    }
-}
-
 /// The gate, the reading, the session's use and its lease match managed's
-/// sampler step by step, except the allowlisted pending-parity cases.
+/// sampler step by step, on both managed readers.
 #[test]
 fn the_sampler_matches_the_managed_sampler_vectors() {
     let vectors = vectors();
     for row in rows(&vectors, "sampler") {
-        if pending_parity(row["name"].as_str().unwrap()) {
-            continue;
-        }
         let observed = replay(row["steps"].as_array().unwrap());
         let expected = row["expect"].as_array().unwrap();
         assert_eq!(observed.len(), expected.len(), "{}", row["name"]);
@@ -633,29 +584,164 @@ fn set(script: &Rc<RefCell<Script>>, active: Option<bool>, power: &[Power]) {
     script.power_reads = 0;
 }
 
-/// No sample loads, starts or reads NVML unless the counters report a
-/// workload on a D0 adapter, whatever the other read says.
+/// No sample loads, starts or reads NVML for a GPU outside D0, whatever the
+/// counters report and however long the samples go on.
 #[test]
-fn no_nvml_call_while_the_gpu_is_idle_powered_down_or_unknown() {
+fn no_nvml_call_while_the_gpu_is_powered_down_or_unknown() {
     for (active, power) in [
-        (Some(false), Power::On),
-        (None, Power::On),
         (Some(true), Power::Down),
         (Some(true), Power::Unknown),
         (Some(false), Power::Down),
+        (Some(false), Power::Unknown),
+        (None, Power::Down),
         (None, Power::Unknown),
     ] {
         let nvml = FakeNvml::new(52);
         let script = Rc::new(RefCell::new(Script::default()));
-        let (mut sampler, _) = nvml_sampler(&nvml, &script);
+        let (mut sampler, elapsed) = nvml_sampler(&nvml, &script);
         for _ in 0..3 {
             set(&script, active, &[power]);
             assert_eq!(sampler.sample(&|| false), None);
             sampler.expire();
+            elapsed.set(elapsed.get() + IDLE_DWELL);
         }
         sampler.release();
         assert_eq!(nvml.calls(), Vec::<String>::new(), "{active:?} {power:?}");
     }
+}
+
+const MILLISECOND: Duration = Duration::from_millis(1);
+
+/// An idle sample, with idle or unavailable counters, of a GPU that has
+/// reported D0 for `IDLE_DWELL` reads NVML in a session that ends before the
+/// sample returns. Until that reading is `IDLE_INTERVAL` old the samples
+/// reuse it without an NVML call; the first at that age reads again.
+#[test]
+fn an_idle_d0_gpu_is_read_after_the_dwell_at_most_once_per_interval() {
+    for active in [Some(false), None] {
+        let nvml = FakeNvml::new(52);
+        let script = Rc::new(RefCell::new(Script::default()));
+        let (mut sampler, elapsed) = nvml_sampler(&nvml, &script);
+        let advance = |by| elapsed.set(elapsed.get() + by);
+        set(&script, active, &[Power::On]);
+        assert_eq!(sampler.sample(&|| false), None, "{active:?}");
+        advance(IDLE_DWELL - MILLISECOND);
+        set(&script, active, &[Power::On]);
+        assert_eq!(sampler.sample(&|| false), None, "{active:?}");
+        assert_eq!(nvml.calls(), Vec::<String>::new(), "{active:?}");
+
+        advance(MILLISECOND);
+        set(&script, active, &[Power::On, Power::On]);
+        assert_eq!(sampler.sample(&|| false), Some(52), "{active:?}");
+        let mut expected = calls(&[&["init"], &READ, &["shutdown"]]);
+        assert_eq!(nvml.calls(), expected, "{active:?}");
+        assert_eq!(sampler.remaining_lease(), None, "{active:?}");
+
+        nvml.script(|script| script.celsius = 53);
+        advance(IDLE_INTERVAL - MILLISECOND);
+        set(&script, active, &[Power::On]);
+        assert_eq!(sampler.sample(&|| false), Some(52), "{active:?}");
+        assert_eq!(nvml.calls(), expected, "{active:?}");
+
+        advance(MILLISECOND);
+        set(&script, active, &[Power::On, Power::On]);
+        assert_eq!(sampler.sample(&|| false), Some(53), "{active:?}");
+        expected.extend(calls(&[&["init"], &READ, &["shutdown"]]));
+        assert_eq!(nvml.calls(), expected, "{active:?}");
+    }
+}
+
+/// A sample outside D0 drops the last reading, active or idle, and restarts
+/// the dwell: the D0 samples after it reuse nothing and make no NVML call
+/// until the GPU has again reported D0 for `IDLE_DWELL`.
+#[test]
+fn a_sample_outside_d0_drops_the_reading_and_restarts_the_dwell() {
+    for (first, power) in [
+        (Some(true), Power::Down),
+        (Some(true), Power::Unknown),
+        (Some(false), Power::Down),
+        (Some(false), Power::Unknown),
+    ] {
+        let nvml = FakeNvml::new(52);
+        let script = Rc::new(RefCell::new(Script::default()));
+        let (mut sampler, elapsed) = nvml_sampler(&nvml, &script);
+        let advance = |by| elapsed.set(elapsed.get() + by);
+        let name = format!("{first:?} {power:?}");
+        set(&script, Some(false), &[Power::On]);
+        assert_eq!(sampler.sample(&|| false), None, "{name}");
+        advance(IDLE_DWELL);
+        set(&script, first, &[Power::On, Power::On]);
+        assert_eq!(sampler.sample(&|| false), Some(52), "{name}");
+        let read = nvml.calls();
+
+        advance(Duration::from_secs(1));
+        set(&script, Some(false), &[power]);
+        assert_eq!(sampler.sample(&|| false), None, "{name}");
+        for wait in [MILLISECOND, IDLE_DWELL - MILLISECOND] {
+            advance(wait);
+            set(&script, Some(false), &[Power::On]);
+            assert_eq!(sampler.sample(&|| false), None, "{name}");
+        }
+        // Only the active reading's session was still open.
+        let ended = &nvml.calls()[read.len()..];
+        assert!(ended.iter().all(|call| call == "shutdown"), "{name}");
+
+        advance(MILLISECOND);
+        set(&script, Some(false), &[Power::On, Power::On]);
+        assert_eq!(sampler.sample(&|| false), Some(52), "{name}");
+        assert_eq!(
+            nvml.calls().iter().filter(|call| *call == "init").count(),
+            2
+        );
+    }
+}
+
+/// A recheck outside D0 after an idle read drops the value, ends the session,
+/// keeps nothing to reuse and restarts the dwell.
+#[test]
+fn the_power_recheck_drops_an_idle_d0_reading() {
+    for recheck in [Power::Down, Power::Unknown] {
+        let nvml = FakeNvml::new(52);
+        let script = Rc::new(RefCell::new(Script::default()));
+        let (mut sampler, elapsed) = nvml_sampler(&nvml, &script);
+        let advance = |by| elapsed.set(elapsed.get() + by);
+        set(&script, Some(false), &[Power::On]);
+        assert_eq!(sampler.sample(&|| false), None, "{recheck:?}");
+        advance(IDLE_DWELL);
+        set(&script, Some(false), &[Power::On, recheck]);
+        assert_eq!(sampler.sample(&|| false), None, "{recheck:?}");
+        let expected = calls(&[&["init"], &READ, &["shutdown"]]);
+        assert_eq!(nvml.calls(), expected, "{recheck:?}");
+
+        for wait in [MILLISECOND, IDLE_DWELL - MILLISECOND] {
+            advance(wait);
+            set(&script, Some(false), &[Power::On]);
+            assert_eq!(sampler.sample(&|| false), None, "{recheck:?}");
+        }
+        assert_eq!(nvml.calls(), expected, "{recheck:?}");
+    }
+}
+
+/// An ordinary (`ReadAsync`) idle sample neither reuses a live reading nor
+/// reads NVML, and its D0 report keeps the reading for the next live sample.
+#[test]
+fn an_ordinary_read_does_not_reuse_a_live_reading() {
+    let nvml = FakeNvml::new(52);
+    let script = Rc::new(RefCell::new(Script::default()));
+    let (mut sampler, elapsed) = nvml_sampler(&nvml, &script);
+    set(&script, Some(false), &[Power::On]);
+    assert_eq!(sampler.sample(&|| false), None);
+    elapsed.set(elapsed.get() + IDLE_DWELL);
+    set(&script, Some(false), &[Power::On, Power::On]);
+    assert_eq!(sampler.sample(&|| false), Some(52));
+    let expected = calls(&[&["init"], &READ, &["shutdown"]]);
+
+    set(&script, Some(false), &[Power::On]);
+    assert_eq!(sampler.read(Reader::Ordinary, &|| false), None);
+    assert_eq!(nvml.calls(), expected);
+    set(&script, Some(false), &[Power::On]);
+    assert_eq!(sampler.sample(&|| false), Some(52));
+    assert_eq!(nvml.calls(), expected);
 }
 
 /// The session spans consecutive active samples and ends with the workload,
@@ -673,8 +759,9 @@ fn the_nvml_session_follows_activity() {
     assert_eq!(sampler.sample(&|| false), Some(52));
     assert_eq!(nvml.calls(), calls(&[&["init"], &READ, &READ]));
 
+    // The idle sample reuses the active reading and still ends the session.
     set(&script, Some(false), &[Power::On]);
-    assert_eq!(sampler.sample(&|| false), None);
+    assert_eq!(sampler.sample(&|| false), Some(52));
     assert_eq!(
         nvml.calls(),
         calls(&[&["init"], &READ, &READ, &["shutdown"]])
@@ -797,9 +884,58 @@ fn a_cancelled_sample_makes_no_further_call() {
     }
 }
 
-/// An always-active D0 GPU, counting its workload samples. `Hold`, when
-/// set, blocks each workload read as `FakeNvml` blocks `init`.
-struct ActiveProbes(Arc<AtomicUsize>, Option<Hold>);
+/// A dwelled idle sample that becomes unwanted before its NVML read stops
+/// there and keeps the dwell. One that becomes unwanted during or after the
+/// read still rechecks the D-state and keeps the reading. Either way the
+/// next idle sample reads NVML once at most.
+#[test]
+fn an_unwanted_sample_stops_before_the_nvml_read_and_keeps_one_it_made() {
+    for (step, power_reads, reads, kept) in [
+        ("activity", 0, 0, false),
+        ("power", 1, 0, false),
+        ("read", 2, 1, true),
+        ("recheck", 2, 1, true),
+    ] {
+        let script = Rc::new(RefCell::new(Script {
+            temperature: Some(52),
+            ..Script::default()
+        }));
+        let (_, elapsed, clock) = clock();
+        let mut sampler = Sampler::new(
+            Box::new(ScriptedProbes(script.clone())),
+            Box::new(ScriptedSession(script.clone())),
+            clock,
+        );
+        set(&script, Some(false), &[Power::On]);
+        assert_eq!(sampler.sample(&|| false), None, "{step}");
+        elapsed.set(elapsed.get() + IDLE_DWELL);
+        set(&script, Some(false), &[Power::On, Power::On]);
+        script.borrow_mut().cancel = Some(step.into());
+        // The worker publishes nothing for an unwanted sample.
+        let celsius = sampler.sample(&Unwanted(&script));
+        assert_eq!(celsius, kept.then_some(52), "{step}");
+        {
+            let mut script = script.borrow_mut();
+            assert!(script.cancelled, "{step}");
+            assert_eq!(script.power_reads, power_reads, "{step}");
+            assert_eq!(script.reads, reads, "{step}");
+            script.cancel = None;
+            script.cancelled = false;
+        }
+
+        set(&script, Some(false), &[Power::On, Power::On]);
+        assert_eq!(sampler.sample(&|| false), Some(52), "{step}");
+        assert_eq!(script.borrow().reads, 1, "{step}");
+    }
+}
+
+/// A D0 GPU with a workload or always idle, counting its workload samples.
+/// `hold`, when set, blocks each workload read as `FakeNvml` blocks `init`.
+struct D0Probes {
+    active: bool,
+    workloads: Arc<AtomicUsize>,
+    hold: Option<Hold>,
+}
 
 /// A blocked call: entries are reported on the sender, and each waits until
 /// the test sends or drops its end.
@@ -819,13 +955,13 @@ impl Hold {
     }
 }
 
-impl Probes for ActiveProbes {
+impl Probes for D0Probes {
     fn workload(&mut self) -> Option<bool> {
-        self.0.fetch_add(1, Ordering::SeqCst);
-        if let Some(hold) = &self.1 {
+        self.workloads.fetch_add(1, Ordering::SeqCst);
+        if let Some(hold) = &self.hold {
             hold.wait();
         }
-        Some(true)
+        Some(self.active)
     }
 
     fn power(&mut self) -> Power {
@@ -833,9 +969,11 @@ impl Probes for ActiveProbes {
     }
 }
 
-/// A worker over `ActiveProbes` and a fake NVML. Its clock is the real one
-/// plus `ahead`, and `started` counts the factory's runs.
+/// A worker over `D0Probes`, active unless built `idle`, and a fake NVML.
+/// Its clock is the real one plus `ahead`, and `started` counts the
+/// factory's runs.
 struct Worker {
+    active: bool,
     nvml: FakeNvml,
     workloads: Arc<AtomicUsize>,
     workload_hold: Option<Hold>,
@@ -846,11 +984,19 @@ struct Worker {
 impl Worker {
     fn new() -> Self {
         Self {
+            active: true,
             nvml: FakeNvml::new(52),
             workloads: Arc::new(AtomicUsize::new(0)),
             workload_hold: None,
             started: Arc::new(AtomicUsize::new(0)),
             ahead: Arc::new(Mutex::new(Duration::ZERO)),
+        }
+    }
+
+    fn idle() -> Self {
+        Self {
+            active: false,
+            ..Self::new()
         }
     }
 
@@ -880,6 +1026,7 @@ impl Worker {
     fn factory(&mut self, lease: Duration) -> Factory {
         let nvml = self.nvml.clone();
         self.nvml.dropped = None;
+        let active = self.active;
         let (workloads, hold, started, ahead) = (
             self.workloads.clone(),
             self.workload_hold.clone(),
@@ -891,7 +1038,11 @@ impl Worker {
             Sampler {
                 lease,
                 ..Sampler::new(
-                    Box::new(ActiveProbes(workloads, hold)),
+                    Box::new(D0Probes {
+                        active,
+                        workloads,
+                        hold,
+                    }),
                     Box::new(NvmlSession::new(nvml)),
                     Box::new(move || Instant::now() + *ahead.lock().unwrap()),
                 )
@@ -1149,4 +1300,65 @@ fn dropping_a_started_nvml_session_ends_it() {
     assert_eq!(session.try_read(), Some(52));
     drop(session);
     assert_eq!(nvml.calls(), calls(&[&["init"], &READ, &["shutdown"]]));
+}
+
+/// An idle sample whose NVML read outlasts its observation's wait publishes
+/// nothing but keeps the reading, so the idle samples after it within
+/// `IDLE_INTERVAL` reuse it instead of each opening a session of their own.
+#[tokio::test]
+async fn an_idle_read_that_outlasts_the_wait_is_reused_by_the_next_samples() {
+    let mut worker = Worker::idle();
+    let (release, entries) = worker.hold_init();
+    let host = worker.host();
+    // The first sample starts the dwell and reads nothing.
+    assert_eq!(host.request(deadline()).unwrap().temperature().await, None);
+    *worker.ahead.lock().unwrap() = IDLE_DWELL;
+    let slow = accepted(&host);
+    entries.recv_timeout(Duration::from_secs(5)).unwrap();
+    // The observation stops waiting `AFTER_READING` after its reading, well
+    // before its deadline, while `init` is held.
+    assert_eq!(slow.temperature().await, None);
+    drop(release);
+    worker.wait_for("shutdown", 1);
+    for _ in 0..2 {
+        assert_eq!(accepted(&host).temperature().await, Some(52));
+    }
+    assert_eq!(
+        worker.nvml.calls(),
+        calls(&[&["init"], &READ, &["shutdown"]])
+    );
+    assert_eq!(worker.workloads.load(Ordering::SeqCst), 4);
+}
+
+/// An idle NVML read that ends after its request's time, `RESERVE` before
+/// the observation's deadline, publishes nothing even to an observation
+/// that asks for it only then, but keeps the reading as managed does: the
+/// next idle samples reuse it without a session of their own.
+#[tokio::test]
+async fn an_idle_read_past_its_requests_time_is_kept_but_not_published() {
+    let mut worker = Worker::idle();
+    let (release, entries) = worker.hold_init();
+    let host = worker.host();
+    assert_eq!(host.request(deadline()).unwrap().temperature().await, None);
+    *worker.ahead.lock().unwrap() = IDLE_DWELL;
+    let short = Duration::from_millis(200);
+    let late = loop {
+        if let Some(late) = host.request(tokio::time::Instant::now() + RESERVE + short) {
+            break late;
+        }
+        thread::sleep(Duration::from_millis(1));
+    };
+    entries.recv_timeout(Duration::from_secs(5)).unwrap();
+    thread::sleep(short + Duration::from_millis(100));
+    drop(release);
+    worker.wait_for("shutdown", 1);
+    // The observation asks only after the sample ended.
+    assert_eq!(late.temperature().await, None);
+    for _ in 0..2 {
+        assert_eq!(accepted(&host).temperature().await, Some(52));
+    }
+    assert_eq!(
+        worker.nvml.calls(),
+        calls(&[&["init"], &READ, &["shutdown"]])
+    );
 }
