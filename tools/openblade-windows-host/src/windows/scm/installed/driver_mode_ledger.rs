@@ -57,8 +57,9 @@ pub(super) enum Standing {
 }
 
 impl Standing {
-    /// Whether OpenBlade has claimed Driver mode, which a release that reads
-    /// Normal reports as a foreign change.
+    /// Whether OpenBlade has claimed Driver mode or may have: an owned
+    /// claim, an acquire in doubt, or a release in doubt over an owned one.
+    #[cfg(test)]
     pub(super) fn owns(self) -> bool {
         matches!(
             self,
