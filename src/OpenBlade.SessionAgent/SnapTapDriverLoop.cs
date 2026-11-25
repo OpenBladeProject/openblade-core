@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using OpenBlade.Contracts;
 using OpenBlade.Tray;
@@ -20,6 +21,7 @@ internal static class SnapTapDriverLoop
         nint targetWindow = 0;
         nint targetLayout = 0;
         bool stopping = false;
+        bool outputDeferredForStop = false;
         bool confirmedInput = false;
         string stage = "Admission";
         RazerSnapTapDriverTransport? transport = null;
@@ -154,6 +156,7 @@ internal static class SnapTapDriverLoop
                 {
                     if (!Handle(stroke))
                     {
+                        outputDeferredForStop |= functionProcessor?.OutputDeferred == true && IsStopDeferral();
                         loopFailure = functionProcessor?.Failure ?? processor.Failure ?? SnapTapDiagnosticFailure.Create(
                             SnapTapDiagnosticFailure.Worker, "Run", stage, "InputProcessingFailed");
                         break;
@@ -215,6 +218,14 @@ internal static class SnapTapDriverLoop
             bool stopped = !processor.Faulted && closed && functionDrained && functionStopped
                 && functionProcessor?.OutputUncertain != true;
             DiagnosticFailure? terminalFailure = session.Failure ?? functionProcessor?.Failure ?? processor.Failure ?? loopFailure;
+            if (IsStopDeferredExit(outputDeferredForStop, closed, functionStopped, publisher.Failed,
+                session.Failure, processor.Failure, functionProcessor?.Failure,
+                functionProcessor?.OutputUncertain == true, loopFailure))
+            {
+                Trace.TraceInformation("Keyboard output refused before submission for a stop: {0}", terminalFailure);
+                publisher.Publish(SnapTapRuntimeState.Off);
+                return 0;
+            }
             bool failed = !stopped || publisher.Failed;
             if (foregroundPause && !failed && session.Failure is null && processor.Failure is null)
             {
@@ -273,21 +284,49 @@ internal static class SnapTapDriverLoop
                 functionContext.Ready && functionKey.HasValue);
         }
 
+        // A refusal caused only by the supervisor's stop request, before any submission.
+        bool IsStopDeferral() => !stopping && shouldStop() && IsOutputTargetCurrent(targetWindow, targetLayout,
+            Native.GetForegroundWindow(), KeyboardLayout(targetWindow), true);
+
         int Send(SnapTapOutputBatch batch)
         {
-            if (!CanOutput())
-            {
-                return 0;
-            }
             int sent = 0;
-            for (int index = 0; index < batch.Count; index++)
+            try
             {
-                transport!.Send(index == 0 ? batch.First : batch.Second);
-                sent++;
+                if (!CanOutput())
+                {
+                    outputDeferredForStop |= IsStopDeferral();
+                    return 0;
+                }
+                for (int index = 0; index < batch.Count; index++)
+                {
+                    transport!.Send(index == 0 ? batch.First : batch.Second);
+                    sent++;
+                }
+            }
+            catch (KeyboardSubmissionDeferredException)
+            {
+                // Refused before DeviceIoControl: this stroke never reached the driver,
+                // so report the accepted count instead of an uncertain submission.
+                outputDeferredForStop |= sent == 0 && IsStopDeferral();
             }
             return sent;
         }
     }
+
+    // After the supervisor asks the worker to stop, the input loop refuses new output
+    // before submission. That faults the processor, but nothing reached the driver, so
+    // the stop is clean and a stalled worker can be rearmed like any other clean stall.
+    // Any other failure, or output that may have been submitted, keeps the failure.
+    internal static bool IsStopDeferredExit(bool deferredForStop, bool closed, bool functionStopped,
+        bool publishFailed, DiagnosticFailure? sessionFailure, DiagnosticFailure? snapFailure,
+        DiagnosticFailure? functionFailure, bool functionOutputUncertain, DiagnosticFailure? loopFailure) =>
+        deferredForStop && closed && functionStopped && !publishFailed && sessionFailure is null
+        && !functionOutputUncertain
+        && (snapFailure is null || snapFailure is { Reason: "OutputCountMismatch", MayHaveSubmitted: false })
+        && (functionFailure is null || functionFailure is { Reason: "OutputDeferred", MayHaveSubmitted: false })
+        && (snapFailure is not null || functionFailure is not null)
+        && (loopFailure is null || ReferenceEquals(loopFailure, snapFailure) || ReferenceEquals(loopFailure, functionFailure));
 
     // Brackets only the user-mode admission that precedes each driver mutation, never
     // the driver request itself. Progress is signalled before the window flag is

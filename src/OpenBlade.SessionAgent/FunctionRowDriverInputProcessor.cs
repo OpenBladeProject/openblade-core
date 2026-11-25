@@ -15,6 +15,7 @@ internal sealed class FunctionRowDriverInputProcessor(
 
     internal bool Faulted { get; private set; }
     internal bool OutputUncertain { get; private set; }
+    internal bool OutputDeferred { get; private set; }
     internal bool HasTrackedKeys => held.Count != 0;
     internal DiagnosticFailure? Failure { get; private set; }
 
@@ -66,6 +67,16 @@ internal sealed class FunctionRowDriverInputProcessor(
                 OutputUncertain = false;
             }
             return true;
+        }
+        catch (KeyboardSubmissionDeferredException exception) when (OutputUncertain)
+        {
+            // The send was refused before DeviceIoControl, so the original was not submitted.
+            OutputUncertain = false;
+            OutputDeferred = true;
+            Faulted = true;
+            Failure = SnapTapDiagnosticFailure.FromException("FunctionRowDriver", "ProcessInput", "InputLoop",
+                "OutputDeferred", exception);
+            return false;
         }
         catch (Exception exception)
         {
