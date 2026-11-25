@@ -506,6 +506,52 @@ async fn a_firmware_exit_before_the_request_is_one_direct_battery_pair() {
     }
 }
 
+#[cfg(feature = "service-profile-triggers-v1")]
+async fn observe(rig: &Rig, n: u8) -> Value {
+    rig.request(json!({"operation":"observeState","version":90,"requestId":format!("eeeeeeee-bbbb-cccc-dddd-{n:012}"),"includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0}))
+        .await
+}
+#[cfg(feature = "service-profile-triggers-v1")]
+#[tokio::test]
+async fn a_stop_after_the_restore_pair_reads_balanced_as_openblades_own_write() {
+    // The restore pair writes Balanced, so its intents (80, 82) name Balanced
+    // for drift attribution. Firmware read Performance, then entered
+    // HyperBoost, which reports no preset. After a stop at 83 a Balanced
+    // reading is OpenBlade's own write, which a battery-preset attribution
+    // would report as a change outside OpenBlade; Silent set outside
+    // OpenBlade is one.
+    for (outside, changes) in [(None, json!([])), (Some([5; 2]), json!([0]))] {
+        let rig = rig_at(2, 0, FULL, MemoryFiles::default());
+        rig.get().await;
+        let first = observe(&rig, 1).await;
+        assert_eq!(first["success"], true, "{first}");
+        {
+            let mut s = rig.port.state.lock().unwrap();
+            s.selectors = [7; 2];
+            s.change_windows = Some((4, Some(true)));
+        }
+        let result = rig.set(1, value(BATTERY_SAVER.0, 1)).await;
+        assert_eq!(result["result"]["status"], 2, "{outside:?}: {result}");
+        assert_eq!(progress_values(&rig), [0, 80, 81, 82, 83], "{outside:?}");
+        {
+            let mut s = rig.port.state.lock().unwrap();
+            assert_eq!(s.selectors, [0; 2], "{outside:?}");
+            s.windows_on_battery = None;
+            if let Some(selectors) = outside {
+                s.selectors = selectors;
+            }
+        }
+        let observed = observe(&rig, 2).await;
+        assert_eq!(observed["success"], true, "{outside:?}: {observed}");
+        let status = rig.get().await;
+        assert_eq!(
+            status["status"]["externalChanges"], changes,
+            "{outside:?}: {status}"
+        );
+        rig.stop().await;
+    }
+}
+
 #[cfg(all(
     feature = "service-profile-triggers-v1",
     feature = "service-fan-mutation-v2"

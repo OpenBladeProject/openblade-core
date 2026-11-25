@@ -2272,6 +2272,15 @@ impl Permit for RequestPermit {
             && let Some(destination) = *self.destination.lock().map_err(|_| io::ErrorKind::Other)?
         {
             let from = *self.baseline.lock().map_err(|_| io::ErrorKind::Other)?;
+            // The HyperBoost restore pair writes Balanced, so a stop after
+            // one of its setters leaves Balanced as OpenBlade's own write.
+            #[cfg(feature = "service-thermal-hyperboost-exit-v1")]
+            let destination = match progress {
+                Progress::RestoreFirstIntent | Progress::RestoreSecondIntent => {
+                    Destination::Preset(Preset::Balanced)
+                }
+                _ => destination,
+            };
             self.drift
                 .lock()
                 .map_err(|_| io::ErrorKind::Other)?
