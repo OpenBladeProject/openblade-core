@@ -727,9 +727,12 @@ impl<'a> PowerFence<'a> {
         self.pinned.store(true, Ordering::Release);
     }
     /// A fan return to Automatic that carries a saved preset applies it
-    /// through managed `SetPerformanceAsync` (`allowBattery: false`): the
-    /// operation needs fresh Windows AC presence now and at every later
-    /// reading and checkpoint. False when presence is missing.
+    /// through managed `SetPerformanceAsync`, which refuses Windows battery
+    /// for its ordinary commands: the operation needs fresh Windows AC
+    /// presence now and at every later reading and checkpoint. Managed admits
+    /// a carried battery preset's selectors on Windows battery; native
+    /// requires presence for it too (stricter, documented). False when
+    /// presence is missing.
     pub(super) fn require_presence(&self) -> bool {
         self.unchecked.store(false, Ordering::Release);
         let presence = self.permit.external_presence();

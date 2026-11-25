@@ -102,9 +102,13 @@ impl<P: Port> Reader<P, ReadAdmission> {
             } // No ownership, no journal or setter.
             let plan = plan?;
             // A carried destination is applied through managed
-            // `SetPerformanceAsync` or `SetCustomPerformanceAsync`
-            // (`allowBattery: false`), which refuse Windows battery before any
-            // write; nothing is prepared.
+            // `SetPerformanceAsync` or `SetCustomPerformanceAsync`, which
+            // refuse Windows battery before any ordinary command
+            // (`allowBattery: IsBatterySelectorCommand`) but admit a battery
+            // preset's selectors there unchecked. Native requires Windows AC
+            // presence for every carried destination, a battery preset
+            // included (stricter; a documented deviation). Without it nothing
+            // is prepared.
             if performance.is_some() && !fence.require_presence() {
                 permit.refused(Refusal::PowerChanged);
                 return None;

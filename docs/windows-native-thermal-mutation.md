@@ -724,6 +724,10 @@ Native differs from managed here in these ways:
   setters without an adapter query. Native also stops such a fan command when
   the Windows kind after its reply differs from the one before its query,
   which managed does not check there.
+- A fan return to Automatic that carries a saved battery preset needs fresh
+  Windows AC presence in native. Managed applies the carried preset through
+  `SetPerformanceAsync`, which admits a battery preset's selectors on Windows
+  battery unchecked (`allowBattery: IsBatterySelectorCommand`).
 - A battery preset's setter on Windows battery: managed admits it without an
   adapter query; native queries 07/8C and needs a battery reading, with
   Windows battery before the query and after the reply.
