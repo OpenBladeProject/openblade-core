@@ -603,8 +603,14 @@ has no diagnostics sink yet, so the outcome is dropped at process exit, as an
 unregistration failure is.
 
 The record's claim names the job's baseline, setter, readback and spare IDs
-before the setter is sent, and a settled record keeps them, so the newest
-`00/04` reply always belongs to the IDs on disk. The next process quarantines
+before the setter is sent. A settle or a read-only resolution keeps them,
+and a revert, whose job sent no setter, returns to the IDs of the record the
+claim replaced, so the newest `00/04` reply belongs to the IDs on disk. The
+exception is an intent whose setter was never sent and that was not
+reverted: a claim whose write failed after it landed, or a release whose
+share had no room for the revert. It names IDs that sent no `00/04`, so the
+newest reply, the earlier record's, is not seeded, and a later setter that
+read it would still need its independent `00/84` readback to confirm. The next process quarantines
 them in its transaction pool beside the journal's (`transaction_seed`);
 managed restarts its IDs at 1 per port. No ID is pinned: the job reserves
 both pairs before its first send, and the pool skips the seeded ones. A sent

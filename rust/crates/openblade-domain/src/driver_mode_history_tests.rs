@@ -168,11 +168,14 @@ fn expected(prior: Option<&Record>, next: &Record) -> bool {
         return false;
     }
     let kept = next.ids == p.ids;
+    // Back to the intent's prior: a revert, on any IDs.
+    let to_prior = next.prior == p.prior;
     match (p.state, next.state) {
         (C, A | R) => next.prior == Settled::Clear,
         (O, A | R) => next.prior == Settled::Owned,
-        (A, O) | (A, C) | (R, C) | (O, C) => kept,
-        (R, O) => kept && p.prior == Settled::Owned,
+        (A, O) | (A, C) | (R, C) => kept || to_prior,
+        (O, C) => kept,
+        (R, O) => p.prior == Settled::Owned,
         _ => false,
     }
 }
@@ -195,10 +198,46 @@ fn follows_admits_exactly_the_documented_edges() {
     assert_eq!(first, 4);
     // Over 3 sequences and 2 ID sets: a Clear prior claims either intent on
     // either ID set (4 edges); Owned the same and its Normal read (5);
-    // AcquireIntent, under either prior, settles to Owned or Clear (2 each);
-    // ReleaseIntent reverts to an Owned prior or clears (2), and with a
-    // Clear prior only clears (1).
-    assert_eq!(admitted, 3 * 2 * (4 + 5 + 2 * 2 + 2 + 1));
+    // AcquireIntent, under either prior, reverts to it on either ID set (2)
+    // and settles to the other state on its own (1); ReleaseIntent reverts
+    // to an Owned prior on either ID set or clears (3), and with a Clear
+    // prior reverts or clears on either ID set (2).
+    assert_eq!(admitted, 3 * 2 * (4 + 5 + 2 * 3 + 3 + 2));
+}
+
+/// A revert returns the intent to its prior on the IDs of the record the
+/// claim replaced, whose 00/04 reply is still the newest, and only over
+/// that record: its predecessor, in the intent's prior state.
+#[test]
+fn a_revert_restores_the_replaced_records_ids() {
+    let owner = "d".repeat(64);
+    let first = Record::claim(None, Intent::Acquire, &owner, [1, 2, 3, 4]).unwrap();
+    // No record before the first claim: the intent keeps its own IDs.
+    let none = first.revert(None, &owner).unwrap();
+    assert_eq!((none.state(), none.ids()), (State::Clear, [1, 2, 3, 4]));
+    let owned = first.settle(Settled::Owned, &owner).unwrap();
+    for intent in [Intent::Release, Intent::Acquire] {
+        let claimed = Record::claim(Some(&owned), intent, &owner, [5, 6, 7, 8]).unwrap();
+        let reverted = claimed.revert(Some(&owned), &owner).unwrap();
+        assert_eq!(
+            (reverted.state(), reverted.sequence(), reverted.ids()),
+            (State::Owned, 4, [1, 2, 3, 4])
+        );
+        assert!(follows(Some(&claimed), &reverted));
+        assert_eq!(Record::parse(&reverted.bytes()).unwrap(), reverted);
+        // Not the record it was claimed over, or no record at all.
+        assert!(claimed.revert(Some(&first), &owner).is_err());
+        assert!(claimed.revert(Some(&none), &owner).is_err());
+        assert!(claimed.revert(None, &owner).is_err());
+        // A settled record has nothing to revert.
+        assert!(reverted.revert(Some(&claimed), &owner).is_err());
+    }
+    // A settle or resolution into the prior keeps the intent's IDs.
+    let claimed = Record::claim(Some(&owned), Intent::Release, &owner, [5, 6, 7, 8]).unwrap();
+    assert_eq!(
+        claimed.settle(Settled::Owned, &owner).unwrap().ids(),
+        [5, 6, 7, 8]
+    );
 }
 
 #[test]

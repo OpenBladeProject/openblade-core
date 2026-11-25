@@ -17,11 +17,17 @@
 //! <ids>       b,s,r,x: the job's baseline, setter, readback and spare IDs
 //! ```
 //!
-//! The four IDs are distinct and in 1..=254. A settled record keeps the IDs
-//! of the intent it settles, so the newest 00/04 reply always belongs to the
-//! IDs the record names. Anything else, another header, contract or state
-//! name included, is refused: a later version needs a new header, which this
-//! reader refuses.
+//! The four IDs are distinct and in 1..=254. A settle or a read-only
+//! resolution keeps the IDs of the intent it settles, whose setter may have
+//! been sent. A revert, whose job is known to have sent no setter, takes the
+//! IDs of the record its claim replaced (`Record::revert`). Either way the
+//! newest 00/04 reply belongs to the IDs the record names, except after an
+//! intent whose setter was never sent and that was not reverted: a claim
+//! whose write failed after it landed, which closes the writer, or a revert
+//! that a release's share had no room for. That intent names IDs that sent
+//! no 00/04, and the newest 00/04 reply is the earlier record's. Anything
+//! else, another header, contract or state name included, is refused: a
+//! later version needs a new header, which this reader refuses.
 use std::prelude::rust_2024::*;
 use std::{format, io};
 
@@ -119,7 +125,7 @@ fn deny() -> io::Error {
     )
 }
 
-/// One valid record. Only `parse`, `claim` and `settle` make one, so every
+/// One valid record. Only `parse`, `claim`, `settle` and `revert` make one, so every
 /// value is canonical and its `bytes` are exactly what a reader admitted.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Record {
@@ -229,7 +235,8 @@ impl Record {
     }
 
     /// The settled record that follows this one, with its IDs: an intent's
-    /// settle, revert or resolution, or an owned record found Normal.
+    /// settle or resolution, or an owned record found Normal. A revert, which
+    /// takes the IDs of the record the claim replaced, is `revert`.
     pub fn settle(&self, to: Settled, owner: &str) -> io::Result<Self> {
         let next = Self {
             sequence: next_sequence(Some(self)).ok_or_else(deny)?,
@@ -237,6 +244,36 @@ impl Record {
             state: to.into(),
             prior: to,
             ids: self.ids,
+        };
+        next.admitted_after(Some(self))
+    }
+
+    /// The revert of this intent, its setter known not to have been sent:
+    /// its prior, on the IDs of `replaced`, the record its claim replaced
+    /// (`None`: there was none, and the intent keeps its own), so the newest
+    /// 00/04 reply still belongs to the IDs the record names. Refused unless
+    /// `replaced` is the record this intent was claimed over: its
+    /// predecessor in sequence, in the intent's prior state.
+    pub fn revert(&self, replaced: Option<&Self>, owner: &str) -> io::Result<Self> {
+        if self.state.settled().is_some() {
+            return Err(deny());
+        }
+        let ids = match replaced {
+            None if self.sequence == 1 => self.ids,
+            Some(replaced)
+                if next_sequence(Some(replaced)) == Some(self.sequence)
+                    && replaced.state.settled() == Some(self.prior) =>
+            {
+                replaced.ids
+            }
+            _ => return Err(deny()),
+        };
+        let next = Self {
+            sequence: next_sequence(Some(self)).ok_or_else(deny)?,
+            owner: owner.into(),
+            state: self.prior.into(),
+            prior: self.prior,
+            ids,
         };
         next.admitted_after(Some(self))
     }
@@ -287,13 +324,18 @@ fn next_sequence(prior: Option<&Record>) -> Option<u64> {
 /// - a claim, from no record, `Clear` or `Owned`, into either intent whose
 ///   prior is that settled state (`Clear` for no record), on new IDs;
 /// - out of `AcquireIntent`, into `Owned` (confirmed, or read Driver) or
-///   `Clear` (read Normal, or its revert to a `Clear` prior);
+///   `Clear` (read Normal), or back to its prior (known not submitted);
 /// - out of `ReleaseIntent`, into `Clear` (confirmed, or read Normal), or
-///   back to an `Owned` prior (known not submitted, or read Driver);
+///   back to its prior (known not submitted, or read Driver over an `Owned`
+///   prior);
 /// - `Owned` into `Clear`, a release that read Normal.
 ///
-/// Every edge out of a record keeps its IDs unless it enters an intent. An
-/// intent never follows an intent, and no settled state repeats itself.
+/// Every edge out of a record keeps its IDs unless it enters an intent or
+/// returns to the intent's prior. A revert takes the IDs of the record the
+/// claim replaced (`Record::revert`), which this table cannot see, so an
+/// edge into the prior admits any IDs; the writer keeps a settle or a
+/// resolution into that state on the intent's IDs. An intent never follows
+/// an intent, and no settled state repeats itself.
 pub fn follows(prior: Option<&Record>, next: &Record) -> bool {
     if next.validate().is_err() || next_sequence(prior) != Some(next.sequence) {
         return false;
@@ -302,13 +344,15 @@ pub fn follows(prior: Option<&Record>, next: &Record) -> bool {
         return next.state.settled().is_none() && next.prior == Settled::Clear;
     };
     let kept = next.ids == prior.ids;
+    let reverted = next.state == State::from(prior.prior);
     match (prior.state, next.state) {
         (State::Clear | State::Owned, State::AcquireIntent | State::ReleaseIntent) => {
             prior.state.settled() == Some(next.prior)
         }
         (State::AcquireIntent, State::Owned | State::Clear)
-        | (State::ReleaseIntent | State::Owned, State::Clear) => kept,
-        (State::ReleaseIntent, State::Owned) => kept && prior.prior == Settled::Owned,
+        | (State::ReleaseIntent, State::Clear) => kept || reverted,
+        (State::Owned, State::Clear) => kept,
+        (State::ReleaseIntent, State::Owned) => reverted,
         _ => false,
     }
 }

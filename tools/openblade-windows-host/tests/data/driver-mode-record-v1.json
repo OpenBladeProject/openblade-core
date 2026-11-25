@@ -356,6 +356,30 @@
       "follows": true
     },
     {
+      "name": "release reverted to owned on the replaced record's IDs",
+      "prior": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n3\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nReleaseIntent\nOwned\n21,22,23,24\n",
+      "next": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n4\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nOwned\nOwned\n11,12,13,14\n",
+      "follows": true
+    },
+    {
+      "name": "reacquire reverted to owned on the replaced record's IDs",
+      "prior": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n3\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nAcquireIntent\nOwned\n41,42,43,44\n",
+      "next": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n4\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nOwned\nOwned\n11,12,13,14\n",
+      "follows": true
+    },
+    {
+      "name": "acquire reverted to clear on the replaced record's IDs",
+      "prior": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n5\n0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\nAcquireIntent\nClear\n1,2,3,4\n",
+      "next": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n6\n0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\nClear\nClear\n21,22,23,24\n",
+      "follows": true
+    },
+    {
+      "name": "reacquire found Normal on other IDs",
+      "prior": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n3\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nAcquireIntent\nOwned\n41,42,43,44\n",
+      "next": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n4\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nClear\nClear\n11,12,13,14\n",
+      "follows": false
+    },
+    {
       "name": "settled first record",
       "prior": null,
       "next": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n1\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nClear\nClear\n11,12,13,14\n",

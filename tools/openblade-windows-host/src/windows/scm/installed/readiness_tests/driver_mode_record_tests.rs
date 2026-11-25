@@ -453,14 +453,16 @@ async fn a_release_over_an_acquire_in_doubt_records_it_owned_first() {
 
 /// A release setter refused at its checkpoint after the claim was written
 /// is known not submitted: the intent reverts to its prior under the same
-/// cleanup scope, the mode is unchanged and nothing is in doubt. The
-/// competing controller that refused it ended the cleanup admission, so the
-/// release reports `Unadmitted`: nothing was sent.
+/// cleanup scope, on the acquire's IDs, whose 00/04 reply is still the
+/// newest, so a later process seeds them. The mode is unchanged and nothing
+/// is in doubt. The competing controller that refused it ended the cleanup
+/// admission, so the release reports `Unadmitted`: nothing was sent.
 #[tokio::test]
 async fn a_release_claim_known_not_submitted_reverts_to_its_prior() {
     let (rig, _) = owner_rig(NORMAL).await;
     tick(&rig).await;
     let acquired = rig.custody.driver_mode.writes().len();
+    let owned = held(&rig).unwrap().1;
     let custody = Arc::downgrade(&rig.custody);
     rig.custody.driver_mode.after_write(move || {
         custody
@@ -475,7 +477,8 @@ async fn a_release_claim_known_not_submitted_reverts_to_its_prior() {
     let writes = rig.custody.driver_mode.writes();
     let claim = Record::parse(&writes[acquired].1).unwrap();
     assert_eq!(claim.state(), State::ReleaseIntent);
-    assert_eq!(held(&rig), Some((State::Owned, claim.ids())));
+    assert_ne!(claim.ids(), owned);
+    assert_eq!(held(&rig), Some((State::Owned, owned)));
     assert_eq!(
         scopes_from(&rig, acquired),
         [Some(CleanupScope::OwnedStop); 2]
@@ -685,6 +688,7 @@ async fn a_release_claim_slower_than_its_allowance_sends_no_setter() {
         let (rig, _) = owner_rig(NORMAL).await;
         tick(&rig).await;
         let acquired = rig.custody.driver_mode.writes().len();
+        let owned = held(&rig).unwrap().1;
         rig.port.state.lock().unwrap().device_mode_latency = Some(Duration::from_millis(latency));
         rig.custody
             .driver_mode
@@ -704,14 +708,15 @@ async fn a_release_claim_slower_than_its_allowance_sends_no_setter() {
             "{latency}"
         );
         if reverted {
-            assert_eq!(held(&rig).unwrap().0, State::Owned, "{latency}");
+            assert_eq!(held(&rig), Some((State::Owned, owned)), "{latency}");
             assert_eq!(owner(&rig), (true, false, false), "{latency}");
         } else {
             assert_eq!(held(&rig).unwrap().0, State::ReleaseIntent, "{latency}");
-            // A read after the release resolves the doubt to its prior.
+            // A read after the release resolves the doubt to its prior, on the
+            // intent's IDs: a resolution cannot know that no setter was sent.
             record(&rig, DeviceMode::Driver);
             step(&rig).await;
-            assert_eq!(held(&rig).unwrap().0, State::Owned, "{latency}");
+            assert_eq!(held(&rig), Some((State::Owned, claimed.ids())), "{latency}");
             assert!(!rig.runtime.driver_mode_uncertain_for_tests());
             assert_eq!(sets(&rig), 1, "{latency}");
         }

@@ -201,6 +201,9 @@ fn a_release_over_an_acquire_in_doubt_resolves_it_first() {
     );
     ledger.revert(cleanup).unwrap();
     assert_eq!(ledger.standing(), Standing::Owned);
+    // On the IDs of the record the claim replaced, the resolved acquire's.
+    let held = custody.record.lock().unwrap().clone().unwrap();
+    assert_eq!(held.ids(), IDS_A);
 }
 
 /// A claim is charged the floor whatever a replace measured, so a slow
@@ -248,4 +251,42 @@ fn a_settle_refused_before_writing_keeps_the_intent_open() {
     custody.refused.store(false, Ordering::Release);
     assert!(ledger.settle(Writer::Ordinary, Settled::Clear).unwrap());
     assert_eq!(ledger.standing(), Standing::Clear);
+}
+
+/// A revert writes the intent's prior on the IDs of the record this
+/// process's claim replaced, whose 00/04 reply is still the newest. An
+/// intent this process did not claim over a record it holds has no such
+/// record, so its revert is refused by the domain and closes the ledger.
+#[test]
+fn a_revert_restores_the_ids_of_the_record_the_claim_replaced() {
+    let custody = Arc::new(Custody::default());
+    let ledger = ledger(&custody);
+    let held = || custody.record.lock().unwrap().clone().unwrap();
+    ledger
+        .claim(Writer::Ordinary, Intent::Acquire, IDS_A)
+        .unwrap();
+    assert!(ledger.revert(Writer::Ordinary).unwrap());
+    // The first claim replaced no record, so it keeps its own IDs.
+    assert_eq!((held().state(), held().ids()), (State::Clear, IDS_A));
+    ledger
+        .claim(Writer::Ordinary, Intent::Acquire, [5, 6, 7, 8])
+        .unwrap();
+    assert!(ledger.revert(Writer::Ordinary).unwrap());
+    assert_eq!((held().state(), held().ids()), (State::Clear, IDS_A));
+    // A settle keeps the intent's own IDs.
+    ledger
+        .claim(Writer::Ordinary, Intent::Acquire, [9, 10, 11, 12])
+        .unwrap();
+    assert!(ledger.settle(Writer::Ordinary, Settled::Owned).unwrap());
+    assert_eq!(held().ids(), [9, 10, 11, 12]);
+    // An intent loaded from an earlier process.
+    let cleanup = Writer::Cleanup(CleanupScope::OwnedStop);
+    ledger
+        .claim(cleanup, Intent::Release, [13, 14, 15, 16])
+        .unwrap();
+    let loaded = self::ledger(&custody);
+    let writes = custody.writers.lock().unwrap().len();
+    assert!(loaded.revert(cleanup).is_err());
+    assert_eq!(loaded.standing(), Standing::Closed);
+    assert_eq!(custody.writers.lock().unwrap().len(), writes);
 }

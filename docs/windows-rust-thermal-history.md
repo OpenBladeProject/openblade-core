@@ -124,7 +124,8 @@ an earlier request's reply to a command that the newest request of its
 family did not send again, such as a setter it never reached. With
 keyboard Driver-mode ownership, the seed first takes the four IDs that
 `keyboard-driver-mode.bin` names: the newest claiming 00/04 job's
-baseline, setter, readback and spare, whatever the record's state. A
+baseline, setter, readback and spare, whatever the record's state, or,
+after a revert, the IDs of the record that job's claim replaced. A
 record that is absent, unreadable or refused adds none. At most 80 are
 taken: the largest live set (78, the record's four included) always fits,
 and 174 of the 254 IDs stay free. That is twice the most IDs reserved at

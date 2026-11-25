@@ -72,9 +72,24 @@ impl Standing {
 }
 
 enum Held {
-    /// The record the file holds, `None` while there is none.
-    Open(Option<Record>),
+    Open {
+        /// The record the file holds, `None` while there is none.
+        record: Option<Record>,
+        /// While `record` is an intent this process claimed: the record the
+        /// claim replaced, whose IDs its revert restores (`None` when there
+        /// was none, or for any other record).
+        replaced: Option<Record>,
+    },
     Closed,
+}
+
+impl Held {
+    fn record(&self) -> Option<&Record> {
+        match self {
+            Self::Open { record, .. } => record.as_ref(),
+            Self::Closed => None,
+        }
+    }
 }
 
 pub(super) struct Ledger {
@@ -97,7 +112,10 @@ impl Ledger {
         fatal: &Arc<Mutex<Option<&'static str>>>,
     ) -> io::Result<Self> {
         let held = match custody.driver_mode_record_read() {
-            Ok(record) => Held::Open(record),
+            Ok(record) => Held::Open {
+                record,
+                replaced: None,
+            },
             Err(error) if is_fatal_admission(&error) => {
                 remember_failure(fatal, &error);
                 return Err(error);
@@ -118,7 +136,7 @@ impl Ledger {
         let Ok(held) = self.held.lock() else {
             return Standing::Closed;
         };
-        let Held::Open(record) = &*held else {
+        let Held::Open { record, .. } = &*held else {
             return Standing::Closed;
         };
         let Some(record) = record else {
@@ -170,15 +188,15 @@ impl Ledger {
         if intent == Intent::Release && held_state(&held) == Some(State::AcquireIntent) {
             self.settle_held(&mut held, writer, Settled::Owned)?;
         }
-        let prior = match &*held {
-            Held::Open(record) => record.clone(),
-            Held::Closed => return Err(closed()),
+        let Held::Open { record: prior, .. } = &*held else {
+            return Err(closed());
         };
+        let prior = prior.clone();
         let next = self
             .custody
             .driver_mode_record_owner()
             .and_then(|owner| Record::claim(prior.as_ref(), intent, &owner, ids));
-        self.replace(&mut held, writer, next)?;
+        self.replace(&mut held, writer, next, prior)?;
         #[cfg(test)]
         if intent == Intent::Acquire {
             self.claims.fetch_add(1, Ordering::AcqRel);
@@ -187,11 +205,11 @@ impl Ledger {
     }
 
     /// Replaces the held record with the settled state `to`, keeping its
-    /// IDs: an intent's settle, its revert to its prior, its read-only
-    /// resolution, or `Owned -> Clear` after a release read Normal. `false`
-    /// when `writer`'s custody admission is refused before anything is
-    /// written: the record, and so the doubt, stay as they are, and the
-    /// ledger stays open for a later read to resolve it.
+    /// IDs: an intent's settle, its read-only resolution, or `Owned -> Clear`
+    /// after a release read Normal. `false` when `writer`'s custody admission
+    /// is refused before anything is written: the record, and so the doubt,
+    /// stay as they are, and the ledger stays open for a later read to
+    /// resolve it.
     pub(super) fn settle(&self, writer: Writer, to: Settled) -> io::Result<bool> {
         let mut held = self.lock()?;
         if !self.admits(writer) {
@@ -200,18 +218,26 @@ impl Ledger {
         self.settle_held(&mut held, writer, to).map(|()| true)
     }
 
-    /// `settle` to what the held intent reverts to when its setter is known
-    /// not to have been submitted.
+    /// Returns the held intent, whose setter is known not to have been
+    /// submitted, to its prior on the IDs of the record its claim replaced
+    /// (`Record::revert`): that record's 00/04 reply is still the newest.
+    /// Refused before writing as `settle` is.
     pub(super) fn revert(&self, writer: Writer) -> io::Result<bool> {
         let mut held = self.lock()?;
-        let prior = match &*held {
-            Held::Open(Some(record)) if record.state().settled().is_none() => record.prior(),
+        let next = match &*held {
+            Held::Open {
+                record: Some(record),
+                replaced,
+            } if record.state().settled().is_none() => self
+                .custody
+                .driver_mode_record_owner()
+                .and_then(|owner| record.revert(replaced.as_ref(), &owner)),
             _ => return self.close(&mut held, closed()).map(|()| false),
         };
         if !self.admits(writer) {
             return Ok(false);
         }
-        self.settle_held(&mut held, writer, prior).map(|()| true)
+        self.replace(&mut held, writer, next, None).map(|()| true)
     }
 
     /// Whether the custody admission `writer` names holds now, as the
@@ -224,20 +250,30 @@ impl Ledger {
     }
 
     fn settle_held(&self, held: &mut Held, writer: Writer, to: Settled) -> io::Result<()> {
-        let Held::Open(Some(record)) = &*held else {
+        let Some(record) = held.record() else {
             return self.close(held, closed());
         };
         let next = self
             .custody
             .driver_mode_record_owner()
             .and_then(|owner| record.settle(to, &owner));
-        self.replace(held, writer, next)
+        self.replace(held, writer, next, None)
     }
 
-    /// Writes `next` over the held record, and holds it only once written.
-    /// Every error closes the ledger.
-    fn replace(&self, held: &mut Held, writer: Writer, next: io::Result<Record>) -> io::Result<()> {
-        let Held::Open(expected) = &*held else {
+    /// Writes `next` over the held record, and holds it only once written,
+    /// with `replaced` when `next` is this process's claim over it. Every
+    /// error closes the ledger.
+    fn replace(
+        &self,
+        held: &mut Held,
+        writer: Writer,
+        next: io::Result<Record>,
+        replaced: Option<Record>,
+    ) -> io::Result<()> {
+        let Held::Open {
+            record: expected, ..
+        } = &*held
+        else {
             return Err(closed());
         };
         let next = match next {
@@ -258,7 +294,10 @@ impl Ledger {
         self.measured.store(took, Ordering::Release);
         match written {
             Ok(()) => {
-                *held = Held::Open(Some(next));
+                *held = Held::Open {
+                    record: Some(next),
+                    replaced,
+                };
                 Ok(())
             }
             Err(error) => self.close(held, error),
@@ -283,10 +322,7 @@ impl Ledger {
 }
 
 fn held_state(held: &Held) -> Option<State> {
-    match held {
-        Held::Open(Some(record)) => Some(record.state()),
-        _ => None,
-    }
+    held.record().map(Record::state)
 }
 
 fn closed() -> io::Error {

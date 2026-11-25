@@ -14,9 +14,17 @@
 //!
 //! Two records survive the process. The keyboard Driver-mode record
 //! (`openblade_domain::driver_mode_history`) names the four IDs of the newest
-//! Driver-mode job that claimed: only a claiming job sends 00/04, and it
-//! records its IDs before it sends the setter, so the newest 00/04 reply
-//! always belongs to them. A settled record keeps them for this reason.
+//! Driver-mode job that may have sent 00/04: only a claiming job sends it,
+//! and it records its IDs before it sends the setter. A settle or a
+//! read-only resolution keeps them, and a revert, whose job sent no setter,
+//! returns to the IDs of the record its claim replaced, so the newest 00/04
+//! reply belongs to the IDs the record names. It does not after an intent
+//! whose setter was never sent and that was not reverted: a claim whose
+//! write failed after it landed, which closes the writing process's record,
+//! or a release whose share had no room for the revert. That intent names
+//! IDs that sent no 00/04, and the newest 00/04 reply, the earlier record's,
+//! is not seeded; a later 00/04 that read it would still need its
+//! independent 00/84 readback to confirm.
 //! They join the live set, ahead of the journal's. An absent, unreadable or
 //! refused record adds none: a refused one closes the keyboard owner for
 //! the process, so no 00/04 job runs to read a stale reply.
