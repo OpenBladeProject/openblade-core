@@ -1053,25 +1053,27 @@ GPU-only setters (`WindowsVerifiedBladeDeviceProvider.cs:1780-2050`):
   3) and an unavailable GPU-only setter replies Blocked, each after the same
   committed `Performance override intent was stored. Hardware result: `
   prefix (`ServiceControlRuntime.cs:14989-14991`).
-- While a GPU submission is uncertain, or an NVML call that outlived its
-  request is still running, every native thermal writer refuses before any row
-  or setter (managed `PendingWriteConfirmationTracker.Blocks`). An explicit
-  performance step replies `A thermal write requires read-only reconciliation
-  before the performance command can be submitted.` A fan request, a return to
-  Automatic and owned Stop's handback reply `A thermal write requires read-only
+- While a GPU submission is uncertain, or an NVML call that outlived its request
+  is still running, every native thermal writer refuses before any row or setter
+  (managed `PendingWriteConfirmationTracker.Blocks`). An explicit performance
+  step replies `A thermal write requires read-only reconciliation before the
+  performance command can be submitted.` A fan request, a return to Automatic
+  and owned Stop's handback reply `A thermal write requires read-only
   reconciliation before another command can be submitted.`; an explicit fan
-  request stores its intent first and prefixes that result as its other
-  hardware results. A reconciliation is refused at its admission, before any
-  firmware read, and what it owes is kept, as managed keeps its pending
-  transition for after the confirmation resolves
-  (`ServiceControlRuntime.cs:16985`, `:18200-18241`): a report replies Blocked
-  with its own prefix and that message, a profile save is Stored with `Profiles
-  were stored.` and that message, a lifecycle attempt keeps its cause,
-  convergence reserves nothing and retires a due retry Blocked unrun, and
-  `reapplyChangedSettings` replies its pending-confirmation block (`:3842`).
-  Once a read resolves the management, the next report or lifecycle retry
-  applies the owed intent. A resume withdraws a confirmed reset, and a power
-  change or a change between classified sources (PluggedIn and USB-C,
+  request stores its intent first and prefixes that result as its other hardware
+  results. A reconciliation is refused at its admission, before any firmware
+  read, and what it owes is kept, as managed keeps its pending transition for
+  after the confirmation resolves (`ServiceControlRuntime.cs:16985`,
+  `:18200-18241`): a report replies Blocked with its own prefix and that
+  message, a profile save is Stored with `Profiles were stored.` and that
+  message, a lifecycle attempt keeps its cause and runs again at the first tick
+  after the fence clears, convergence reserves nothing and retires a due retry
+  Blocked unrun, and `reapplyChangedSettings` replies its pending-confirmation
+  block (`:3842`). In low power a trigger's fence starts no GPU call and fences
+  on the recorded state alone, as managed's tracker is in memory. Once a read
+  resolves the management, the next report or lifecycle retry applies the owed
+  intent. A resume withdraws a confirmed reset, and a power change or a change
+  between classified sources (PluggedIn and USB-C,
   `ServiceControlRuntime.cs:18684`) allows one more ungated query
   (`:2123-2180`).
 
@@ -1091,11 +1093,15 @@ Native deviations:
   request; managed keeps a separate `pendingWriteConfirmations` tracker. The
   attempt first crosses the gate and Windows power generations its writer or
   trigger was admitted under, so after a power change the first fence takes the
-  rearmed query, where managed rearms at the event. A fence resolves no power
-  class and keeps the class last seen, so a change between PluggedIn and USB-C
-  within one Windows power generation is rearmed only by the next explicit
-  performance step. The writers are released only by a finished read that
-  leaves nothing uncertain, never while a call runs.
+  rearmed query, where managed rearms at the event. Owned Stop's settle-only and
+  handback permits build their fence at Stop, after the change that moved the
+  owner's epoch. A lifecycle cause the fence refused is checked against the
+  fence at each tick, where managed reruns its deferred transition after each
+  observation. A fence resolves no power class and keeps the class last seen, so
+  a change between PluggedIn and USB-C within one Windows power generation is
+  rearmed only by the next explicit performance step. The writers are released
+  only by a finished read that leaves nothing uncertain, never while a call
+  runs.
 - An explicit fan request stores its intent before the GPU fence refuses it,
   where managed's `ScopedThermalWriteBlockReason` refuses it before storing.
 - A reconciliation under a pending GPU clock confirmation is refused before it
