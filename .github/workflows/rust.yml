@@ -340,6 +340,8 @@ jobs:
               @('openblade-windows-service-candidate', 'service-profiles-v1', 'profiles::'),
               # Automatic reconciliation of saved intent: the request triggers.
               @('openblade-windows-service-candidate', 'service-profile-triggers-v1', 'request_triggers'),
+              # The lifecycle causes and their pacing.
+              @('openblade-windows-service-candidate', 'service-profile-triggers-v1', 'triggers::lifecycle::tests'),
               # The thermal control policy: its store, requests and the
               # convergence status member with the managed vector replays.
               @('openblade-windows-service-candidate', 'service-profile-triggers-v1', 'convergence'),
@@ -387,6 +389,8 @@ jobs:
               ($driverModeOwnerTriggers + 'a_serving_loop_tick_runs_the_keyboard_driver_mode_step'),
               ($convergence + 'convergence'),
               ($convergence + 'request_triggers'),
+              # The explicit reapply's summaries.
+              ($convergence + 'triggers::reapply'),
               ($convergence + 'native_package'),
               ($convergenceDriverMode + 'convergence'),
               ($convergenceDriverMode + 'a_serving_loop_tick_runs_the_keyboard_driver_mode_step'),
