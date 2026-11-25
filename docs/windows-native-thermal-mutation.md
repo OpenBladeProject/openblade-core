@@ -942,8 +942,12 @@ from the shared domain `performance_shortcut::next`, which replays managed
 - Classified external power (PluggedIn or limited USB-C) cycles Balanced,
   Silent, Performance, Custom, Battery Balanced and Battery Saver; Windows
   battery cycles Battery Balanced and Battery Saver. The cycle starts from
-  the saved intent, or from the confirmed preset when confirmed drift has
-  marked Performance as changed outside OpenBlade.
+  the preset managed `Automation.Resolve` selects there: the saved override,
+  then the resolved profile, then, with no profiles saved, managed
+  `ProfileDefaults.CreateSafeDefaults`'s power profile, whose Balanced makes a
+  first press on either adapter select Silent. It starts from the confirmed
+  preset instead when confirmed drift has marked Performance as changed
+  outside OpenBlade.
 - Unclassified external power cycles the ordinary presets from the
   confirmed preset, offers Custom only with an admitted ordinary Custom intent
   (the saved override's settings without legacy offsets, then the confirmed
@@ -977,8 +981,18 @@ Differences from managed:
 - Native cycles from the fresh 0D/82 reading on unclassified power and when
   drift marks Performance, where managed uses its cached confirmed state.
 - On classified power native stages the saved override's GPU clock tuning
-  only. Managed stages the resolved desired tuning, which can come from the
-  profile. Native has no GPU clock writer, so either reaches the GPU refusal.
+  only. Managed stages the resolved desired tuning
+  (`current.DesiredState.GpuClockTuning`), which can come from the profile.
+  Native has no GPU clock writer, so either reaches the GPU refusal; the
+  slice that adds the writer must stage the resolved tuning as managed does.
+- Under the low-power gate a cycle reads no firmware and stages from the
+  saved intent at Windows battery. Managed also honours its cached
+  `ExternalChanges` and `ConfirmedState` there; the native runtime keeps no
+  confirmed reading to select from.
+- Windows battery with an external 07/8C reading is managed's Battery
+  source, where managed cycles the battery presets. The native thermal
+  worker refuses every performance request there before anything is staged,
+  an explicit one included.
 - Native runs no full transition when the shortcut finds a changed power
   source: temporaries expire through the class observation instead.
 - The native status message is rendered from status, not replaced by the
@@ -987,6 +1001,11 @@ Differences from managed:
   `Performance shortcut previews are unavailable.`, managed's
   `IServiceRuntime` default text. A preview from outside the controlling
   interactive session is Blocked before it changes anything.
+- Managed queues a preview behind its single user-request gate, so it waits
+  for a cycle or other user request in progress. Native applies it at once.
+  Both publish the same preview afterwards. The preview publication retains
+  no read: the Reader's read witness and retention window stay those of the
+  last thermal read.
 - The HyperBoost exit to a battery preset stays the stored `NoDirectPath`
   refusal, as for an explicit request.
 
