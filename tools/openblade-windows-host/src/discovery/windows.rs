@@ -178,6 +178,14 @@ pub(crate) fn hid_interfaces(cancelled: &AtomicBool) -> io::Result<Vec<(String, 
     }
 }
 
+/// `hardware_id_present` over Windows' present HID interfaces, which opens
+/// no interface.
+#[cfg(feature = "service-hyperboost-v1")]
+#[allow(dead_code)] // Only the Service's owned HyperBoost composes it; tests inject it.
+pub(crate) fn hid_hardware_id_present(cancelled: &AtomicBool, token: &str) -> io::Result<bool> {
+    super::hardware_id_present(&WindowsMetadata, cancelled, token)
+}
+
 fn platform(installation_type: RegistryText) -> Platform {
     match installation_type.value() {
         Some("Client") => {}

@@ -337,6 +337,35 @@ fn discover(source: &impl DiscoverySource, cancelled: &AtomicBool) -> io::Result
     Ok(snapshot)
 }
 
+/// Whether any present HID interface's devnode hardware IDs contain `token`,
+/// compared ASCII case-insensitively, for a presence check that opens no
+/// interface. Unlike `windows::hid_interfaces`, a row or ID list that cannot
+/// be read is an error, as is an incomplete scan: absence is reported only
+/// from a complete scan in which every interface's IDs were read.
+#[cfg(any(test, feature = "service-hyperboost-v1"))]
+fn hardware_id_present(
+    source: &impl DiscoverySource,
+    cancelled: &AtomicBool,
+    token: &str,
+) -> io::Result<bool> {
+    let token = token.to_ascii_uppercase();
+    let mut present = false;
+    let state = source.scan_hid(cancelled, |interface| {
+        let ids = interface
+            .and_then(|interface| interface.hardware_ids)
+            .ok_or_else(|| io::Error::other("HID interface hardware IDs are unreadable"))?;
+        present |= ids
+            .iter()
+            .any(|id| id.to_ascii_uppercase().contains(&token));
+        Ok(())
+    })?;
+    if state == ScanState::Complete {
+        Ok(present)
+    } else {
+        Err(io::Error::other("HID enumeration incomplete"))
+    }
+}
+
 #[cfg(all(windows, not(test), feature = "installed-service-candidate"))]
 #[allow(unused_imports)] // The standalone discovery binary also compiles this module.
 pub(crate) use status_metadata::{StatusHid, StatusMetadata, observe_status_metadata};
