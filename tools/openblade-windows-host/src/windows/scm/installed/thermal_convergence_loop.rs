@@ -822,7 +822,25 @@ impl Runtime {
         };
         // Managed's executor: a fresh admission and settled power before
         // the reservation, which only then spends a claim.
-        if self.gate() == Gate::Low || fresh.authorize().is_none() {
+        if self.gate() == Gate::Low {
+            return Ok(None);
+        }
+        let Some(proof) = fresh.authorize() else {
+            return Ok(None);
+        };
+        // D9: a fan contradiction over an outstanding fan row needs the
+        // continuity the fan step itself requires (`holds_fan_continuity`),
+        // or the attempt would reserve, be refused and spend its claim.
+        if fans
+            && storage.outstanding_fan()
+            && !matches!(mailbox, MailboxSource::Reader(reader) if self.holds_fan_continuity(
+                &pair.sid,
+                pair.session,
+                &proof,
+                &reader.custody(),
+                fresh.authentication(),
+            ))
+        {
             return Ok(None);
         }
         let confirmed = base.confirmed_thermal();
