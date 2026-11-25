@@ -135,7 +135,9 @@ pub(crate) enum DeviceModeStep {
     /// firmware.
     Unrecorded,
     /// The baseline admitted the setter and the owner's claim was recorded,
-    /// but the setter was not submitted (managed `KnownNotApplied`).
+    /// but the setter was not submitted (managed `KnownNotApplied`): its
+    /// checkpoint refused, or the claim took so long that the setter, its
+    /// acknowledgement and the readback no longer fit (`Pace::covers`).
     Claimed,
     /// The setter may have been submitted and its exact acknowledgement was
     /// not confirmed.
@@ -164,7 +166,8 @@ pub(crate) struct DeviceModeJob {
     target: DeviceMode,
     write_from: Option<DeviceMode>,
     claim: Claim,
-    /// What the claim's durable writes may take, charged in the pace.
+    /// What the claim's durable writes are expected to take, charged in the
+    /// pace before the claim.
     claim_allowance: Duration,
     step: Mutex<DeviceModeStep>,
 }
@@ -175,9 +178,10 @@ impl DeviceModeJob {
     /// only after `claim` has recorded the claim; `None` reads the baseline
     /// and writes nothing. `claim` gets the job's reserved IDs and must make
     /// the claim durable before it returns `Ok`: the setter can be submitted
-    /// as soon as it does. The setter is sent only when `claim_allowance`,
-    /// the claim's own time, fits in the job's pace beside the exchanges
-    /// after it.
+    /// as soon as it does. The claim is made only when `claim_allowance`, an
+    /// estimate of the claim's own time, fits in the job's pace beside the
+    /// exchanges after it, and the setter is sent only when those exchanges
+    /// still fit once the claim's real time is spent.
     pub(crate) fn new(
         target: DeviceMode,
         write_from: Option<DeviceMode>,
@@ -279,9 +283,14 @@ impl<P: Port> Reader<P, ReadAdmission> {
         // exchange either, so its allowance is fixed time too. Too little time
         // left is known not applied, before any claim, and the baseline read
         // leaves nothing in doubt.
-        let fixed = setter_fixed(&attempt.reader.exchanges, Instant::now())
-            .saturating_add(job.claim_allowance);
-        if !pace.covers(attempt.reader, 2, 0, fixed, limit) {
+        let fixed = setter_fixed(&attempt.reader.exchanges, Instant::now());
+        if !pace.covers(
+            attempt.reader,
+            2,
+            0,
+            fixed.saturating_add(job.claim_allowance),
+            limit,
+        ) {
             job.record(DeviceModeStep::Pending);
             return None;
         }
@@ -294,6 +303,14 @@ impl<P: Port> Reader<P, ReadAdmission> {
             return None;
         }
         job.record(DeviceModeStep::Claimed);
+        // The allowance was an estimate. With the claim's real time spent,
+        // the setter is sent only if it, its acknowledgement and the readback
+        // still fit; otherwise it is known not applied and the claim reverts.
+        // `fixed` was measured before the claim, so the claim is charged once,
+        // in the time that has passed.
+        if !pace.covers(attempt.reader, 2, 0, fixed, limit) {
+            return None;
+        }
         let set = DeviceModeSet::new(set_id, job.target);
         let mut frame = [0; FRAME_LENGTH];
         frame[1..].copy_from_slice(&set.request().encode());

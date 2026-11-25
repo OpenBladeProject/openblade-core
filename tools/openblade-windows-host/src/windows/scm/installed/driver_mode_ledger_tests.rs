@@ -1,6 +1,6 @@
 //! The ledger over an in-memory custody: memory follows only written
-//! records, every failed write closes it for good, and a claim charges its
-//! record writes at the longest of the floor and the last measured one.
+//! records, every failed write closes it for good, a claim charges the floor
+//! for each of its record writes and a settle the last measured one.
 use super::*;
 use std::sync::Mutex as StdMutex;
 
@@ -203,20 +203,29 @@ fn a_release_over_an_acquire_in_doubt_resolves_it_first() {
     assert_eq!(ledger.standing(), Standing::Owned);
 }
 
+/// A claim is charged the floor whatever a replace measured, so a slow
+/// write never refuses a later claim; the settle after it is charged the
+/// last measured replace, which a fast one replaces.
 #[test]
-fn a_claim_charges_the_floor_until_a_slower_replace_is_measured() {
+fn a_claim_charges_the_floor_and_a_settle_the_last_measured_replace() {
     let custody = Arc::new(Custody::default());
     let ledger = ledger(&custody);
     assert_eq!(ledger.claim_allowance(Intent::Acquire), REPLACE_FLOOR);
+    assert_eq!(ledger.write_allowance(), REPLACE_FLOOR);
     let slow = REPLACE_FLOOR * 4;
     *custody.delay.lock().unwrap() = Some(slow);
     ledger
         .claim(Writer::Ordinary, Intent::Acquire, IDS_A)
         .unwrap();
-    assert!(ledger.claim_allowance(Intent::Acquire) >= slow);
-    *custody.delay.lock().unwrap() = None;
+    assert!(ledger.write_allowance() >= slow);
+    assert_eq!(ledger.claim_allowance(Intent::Release), REPLACE_FLOOR * 2);
     ledger.settle(Writer::Ordinary, Settled::Clear).unwrap();
     assert_eq!(ledger.claim_allowance(Intent::Acquire), REPLACE_FLOOR);
+    *custody.delay.lock().unwrap() = None;
+    ledger
+        .claim(Writer::Ordinary, Intent::Acquire, [5, 6, 7, 8])
+        .unwrap();
+    assert_eq!(ledger.write_allowance(), REPLACE_FLOOR);
 }
 
 /// A settle whose custody admission is refused before anything is written

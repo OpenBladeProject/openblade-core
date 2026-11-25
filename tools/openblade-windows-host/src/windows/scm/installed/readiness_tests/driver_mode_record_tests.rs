@@ -340,12 +340,12 @@ async fn a_refused_record_closes_the_owner_and_is_kept() {
     }
 }
 
-/// A claim charges its record write in the job's pace at the longest of a
-/// floor and the last measured replace: after a replace slower than the
-/// job's whole budget, the next claim is known not to fit, so its job reads
-/// the baseline and writes nothing, neither record nor setter.
+/// A record write slower than a whole job costs only the job it slowed: the
+/// next claim is charged the floor, not that write, so after a settle that
+/// took longer than the acquire's budget a keyboard found Normal is claimed
+/// and written again at the next step.
 #[tokio::test]
-async fn a_slow_record_write_is_charged_before_the_next_claim() {
+async fn a_slow_record_write_never_refuses_a_later_claim() {
     let (rig, _) = owner_rig(NORMAL).await;
     // The settle after the first acquire takes longer than a whole job.
     rig.custody
@@ -356,11 +356,11 @@ async fn a_slow_record_write_is_charged_before_the_next_claim() {
     assert_eq!(held(&rig).unwrap().0, State::Owned);
     rig.port.state.lock().unwrap().device_mode = NORMAL;
     later(&rig).await;
-    assert_eq!(sent_from(&rig, 3), [0x84]);
-    assert_eq!(sets(&rig), 1);
-    assert_eq!(rig.custody.driver_mode.writes().len(), 2);
+    assert_eq!(sent_from(&rig, 3), [0x84, 0x04, 0x84]);
+    assert_eq!((sets(&rig), mode(&rig)), (2, DRIVER));
+    assert_eq!(rig.custody.driver_mode.writes().len(), 4);
     assert_eq!(held(&rig).unwrap().0, State::Owned);
-    assert_eq!(rig.runtime.driver_mode_claims_for_tests(), 1);
+    assert_eq!(rig.runtime.driver_mode_claims_for_tests(), 2);
     rig.stop().await;
 }
 
@@ -453,7 +453,9 @@ async fn a_release_over_an_acquire_in_doubt_records_it_owned_first() {
 
 /// A release setter refused at its checkpoint after the claim was written
 /// is known not submitted: the intent reverts to its prior under the same
-/// cleanup scope, the mode is unchanged and nothing is in doubt.
+/// cleanup scope, the mode is unchanged and nothing is in doubt. The
+/// competing controller that refused it ended the cleanup admission, so the
+/// release reports `Unadmitted`: nothing was sent.
 #[tokio::test]
 async fn a_release_claim_known_not_submitted_reverts_to_its_prior() {
     let (rig, _) = owner_rig(NORMAL).await;
@@ -467,7 +469,7 @@ async fn a_release_claim_known_not_submitted_reverts_to_its_prior() {
             .controller
             .store(true, Ordering::Release);
     });
-    assert_eq!(release(&rig).await, Some(Release::Unconfirmed));
+    assert_eq!(release(&rig).await, Some(Release::Unadmitted));
     rig.custody.controller.store(false, Ordering::Release);
     assert_eq!((sets(&rig), mode(&rig)), (1, DRIVER));
     let writes = rig.custody.driver_mode.writes();
@@ -640,12 +642,12 @@ async fn a_dropped_low_power_release_leaves_its_intent_for_a_read() {
     rig.stop().await;
 }
 
-/// A release claim is charged in its job's pace as an acquire's is: after a
-/// record write slower than the release job's whole budget, the release
-/// reads its baseline of Driver and writes nothing, neither record nor
-/// setter, and reports the share exhausted.
+/// One slow record write does not end later releases: after a settle slower
+/// than a whole release job, the next suspend's release is charged the floor
+/// for its claim, restores Normal and settles `Clear`; after the resume the
+/// next step acquires again, and the Stop restores Normal once more.
 #[tokio::test]
-async fn a_slow_record_write_is_charged_before_a_release_claim() {
+async fn one_slow_record_write_leaves_the_next_release_and_acquire_whole() {
     let (rig, _) = owner_rig(NORMAL).await;
     // The settle after the acquire takes longer than a whole release job.
     rig.custody
@@ -653,13 +655,68 @@ async fn a_slow_record_write_is_charged_before_a_release_claim() {
         .delay_at(2, Duration::from_millis(800));
     tick(&rig).await;
     assert_eq!(held(&rig).unwrap().0, State::Owned);
-    let sent = keyboard(&rig).len();
-    assert_eq!(release(&rig).await, Some(Release::Exhausted));
-    assert_eq!(sent_from(&rig, sent), [0x84]);
-    assert_eq!((sets(&rig), mode(&rig)), (1, DRIVER));
+    later(&rig).await;
     assert_eq!(rig.custody.driver_mode.writes().len(), 2);
+    suspend(&rig);
+    tick(&rig).await;
+    assert_eq!(prepared(&rig), Some(Release::Restored));
+    assert_eq!((sets(&rig), mode(&rig)), (2, NORMAL));
+    assert_eq!(held(&rig).unwrap().0, State::Clear);
+    rig.custody.lifecycle.ingress(POWER, RESUME);
+    later(&rig).await;
+    assert_eq!((sets(&rig), mode(&rig)), (3, DRIVER));
     assert_eq!(held(&rig).unwrap().0, State::Owned);
+    assert_eq!(release(&rig).await, Some(Release::Restored));
+    assert_eq!((sets(&rig), mode(&rig)), (4, NORMAL));
+    assert_eq!(held(&rig).unwrap().0, State::Clear);
     rig.stop().await;
+}
+
+/// A release claim slower than its allowance is charged again once written:
+/// when the setter, its acknowledgement and the readback no longer fit the
+/// job, no setter is sent and the release reports `Exhausted`. The claim
+/// reverts to `Owned` while the share has room for a write at the claim's
+/// own length; otherwise the `ReleaseIntent` stays, a doubt a later read
+/// resolves, and no setter was sent either way.
+#[tokio::test]
+async fn a_release_claim_slower_than_its_allowance_sends_no_setter() {
+    // (exchange latency, claim write, whether the revert fits the share)
+    for (latency, claim, reverted) in [(150, 250, true), (30, 560, false)] {
+        let (rig, _) = owner_rig(NORMAL).await;
+        tick(&rig).await;
+        let acquired = rig.custody.driver_mode.writes().len();
+        rig.port.state.lock().unwrap().device_mode_latency = Some(Duration::from_millis(latency));
+        rig.custody
+            .driver_mode
+            .delay_at(1, Duration::from_millis(claim));
+        let sent = keyboard(&rig).len();
+        assert_eq!(release(&rig).await, Some(Release::Exhausted), "{latency}");
+        rig.port.state.lock().unwrap().device_mode_latency = None;
+        assert_eq!(sent_from(&rig, sent), [0x84], "{latency}");
+        assert_eq!((sets(&rig), mode(&rig)), (1, DRIVER), "{latency}");
+        let writes = rig.custody.driver_mode.writes();
+        let claimed = Record::parse(&writes[acquired].1).unwrap();
+        assert_eq!(claimed.state(), State::ReleaseIntent, "{latency}");
+        assert_eq!(writes.len(), acquired + 1 + usize::from(reverted));
+        assert_eq!(
+            rig.runtime.driver_mode_uncertain_for_tests(),
+            !reverted,
+            "{latency}"
+        );
+        if reverted {
+            assert_eq!(held(&rig).unwrap().0, State::Owned, "{latency}");
+            assert_eq!(owner(&rig), (true, false, false), "{latency}");
+        } else {
+            assert_eq!(held(&rig).unwrap().0, State::ReleaseIntent, "{latency}");
+            // A read after the release resolves the doubt to its prior.
+            record(&rig, DeviceMode::Driver);
+            step(&rig).await;
+            assert_eq!(held(&rig).unwrap().0, State::Owned, "{latency}");
+            assert!(!rig.runtime.driver_mode_uncertain_for_tests());
+            assert_eq!(sets(&rig), 1, "{latency}");
+        }
+        rig.stop().await;
+    }
 }
 
 /// Fast Startup in Windows' order: every user is logged off, then the

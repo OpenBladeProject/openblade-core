@@ -44,8 +44,11 @@
 //!   boundary's cleanup scope, each naming the job's four IDs. A claim that
 //!   cannot be written sends no setter. After the job the owner settles it:
 //!   confirmed, an acquire becomes `Owned` and a release `Clear`; known not
-//!   submitted, it reverts to its prior; otherwise it stays in doubt. A
-//!   release settles only while its share has room for the write. The
+//!   submitted, it reverts to its prior; otherwise it stays in doubt. The
+//!   job charges a fixed estimate per record write before it claims and
+//!   checks its pace again with the claim's real time spent, so a slow
+//!   write costs only the job it slowed. A release settles only while its
+//!   share has room for the write, charged at the last measured one. The
 //!   owner's flags are derived from the record, never ahead of it, and a
 //!   failed write, or a record that cannot be read or is refused, closes
 //!   the keyboard owner for the process: no acquire, maintain or release
@@ -142,7 +145,9 @@ pub(in super::super) enum Release {
     /// boundary, or a write lease that never activated. Nothing was sent.
     Unadmitted,
     /// Nothing was sent: the share ran out first, or the job's measured
-    /// pace could not fit the setter, its acknowledgement and the readback.
+    /// pace could not fit the setter, its acknowledgement and the readback,
+    /// before its claim or once the claim was written (the claim then
+    /// reverts).
     Exhausted,
     /// The job ran without confirming Normal; a setter may have been
     /// submitted.
@@ -865,6 +870,16 @@ impl Runtime {
             })
             .map(drop)
         };
+        // Nothing was sent. The job ran out of time if its deadline passed or
+        // its pace refused the setter while cleanup admission still held;
+        // otherwise admission was lost.
+        let unsent = || {
+            if spent || permit.authorize().is_some() {
+                Release::Exhausted
+            } else {
+                Release::Unadmitted
+            }
+        };
         let release = match permit.job.step() {
             // The claimed `ReleaseIntent` settles `Clear`. Only the intent
             // is settled: a job an earlier caller dropped may be read after a
@@ -888,28 +903,19 @@ impl Runtime {
                     Release::NotDriver
                 }
             }
-            // Nothing was sent. The job ran out of time if its deadline
-            // passed or its pace refused the setter while cleanup admission
-            // still held; otherwise admission was lost.
-            DeviceModeStep::Pending => {
-                if spent || permit.authorize().is_some() {
-                    Release::Exhausted
-                } else {
-                    Release::Unadmitted
-                }
-            }
+            DeviceModeStep::Pending => unsent(),
             // The baseline may have been sent, but no claim and no setter.
             DeviceModeStep::Unread => Release::Unconfirmed,
             // The claim could not be written, which closed the record, so no
             // setter was sent.
             DeviceModeStep::Unrecorded => Release::Unrecorded,
             // Claimed, but the setter is known not to have been submitted:
-            // the intent reverts to its prior.
+            // the intent reverts to its prior, and nothing was sent.
             DeviceModeStep::Claimed => {
                 if self.release_in_doubt() {
                     settle(None)?;
                 }
-                Release::Unconfirmed
+                unsent()
             }
             // The record keeps the intent: the doubt.
             DeviceModeStep::Submitted | DeviceModeStep::Acknowledged => Release::Unconfirmed,

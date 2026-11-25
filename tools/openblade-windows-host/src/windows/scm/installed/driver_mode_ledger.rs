@@ -23,10 +23,10 @@ use openblade_domain::driver_mode_history::{IDS, Intent, Record, Settled, State}
 use std::sync::atomic::AtomicU64;
 use std::time::Duration;
 
-/// The record write time a claim charges before this process has measured
-/// one: an estimate of one staged replace in the protected owner directory
+/// An estimate of one staged replace in the protected owner directory
 /// (create, write, flush, readback, rename, verify), pending an attended
-/// timing on RZ09-0581. A slower measured replace replaces it.
+/// timing on RZ09-0581: what a claim charges for each of its writes before
+/// it is made, and the least a settle after it is charged.
 pub(super) const REPLACE_FLOOR: Duration = Duration::from_millis(25);
 
 /// The custody admission a record write holds: the custody's ordinary read
@@ -134,21 +134,27 @@ impl Ledger {
         }
     }
 
-    /// One record write's allowance: the longest of `REPLACE_FLOOR` and the
-    /// last measured replace.
+    /// The allowance of a settle after a job: the longest of `REPLACE_FLOOR`
+    /// and the last measured replace. A job that wrote its claim has just
+    /// measured one, so its settle is charged at its own claim's length.
     pub(super) fn write_allowance(&self) -> Duration {
         REPLACE_FLOOR.max(Duration::from_nanos(self.measured.load(Ordering::Acquire)))
     }
 
-    /// The time a claim of `intent` may take for its record writes, one
-    /// `write_allowance` each. A release over an acquire in doubt writes
-    /// twice (`claim`).
+    /// What the job charges for its claim's record writes before it makes
+    /// the claim: `REPLACE_FLOOR` each, never a measured replace. A refused
+    /// job writes nothing and so measures nothing, so one slow write charged
+    /// here would refuse every later claim for the rest of the process. The
+    /// job checks its pace again once the claim has returned, with the
+    /// claim's real time spent, and sends no setter when the exchanges after
+    /// it no longer fit (`DeviceModeStep::Claimed`). A release over an
+    /// acquire in doubt writes twice (`claim`).
     pub(super) fn claim_allowance(&self, intent: Intent) -> Duration {
         let writes = match (intent, self.standing()) {
             (Intent::Release, Standing::AcquireIntent) => 2,
             _ => 1,
         };
-        self.write_allowance() * writes
+        REPLACE_FLOOR * writes
     }
 
     /// Records the claim of a job whose baseline read admitted its setter:

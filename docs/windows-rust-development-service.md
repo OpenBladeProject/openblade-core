@@ -427,9 +427,16 @@ replace returned `Ok`, so memory never runs ahead of the file.
   share still has room for one record write, and so does `Owned -> Clear`
   after a release reads Normal. Otherwise the record keeps what it holds for
   a later read to resolve.
-- The job's pace charges its claim's record writes, each at the longer of a
-  25 ms floor and the last measured replace. The floor is an estimate pending
-  an attended timing on RZ09-0581. The keyboard's share is unchanged.
+- Before it claims, the job's pace charges a 25 ms floor for each of the
+  claim's record writes, never a measured replace: a refused job writes
+  nothing, so a slow sample charged there could never be replaced and would
+  refuse every later claim. Once the claim has returned, the pace is checked
+  again with its real time spent. When the setter, its acknowledgement and
+  the readback no longer fit, no setter is sent, the claim reverts as known
+  not submitted, and a release reports `Exhausted`. A release's settle is
+  charged at the longer of the floor and the last measured replace, which
+  is its own claim's when it made one. The floor is an estimate pending an
+  attended timing on RZ09-0581. The keyboard's share is unchanged.
 - Any failed record write closes the record for the process, and nothing
   reopens it: after an error the file may hold the old record or the new one.
   A record that cannot be read or is refused (corrupt, another version, a
