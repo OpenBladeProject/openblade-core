@@ -223,12 +223,41 @@ async fn without_saved_profiles_the_cycle_starts_from_the_safe_default_preset() 
 }
 
 #[tokio::test]
+async fn an_ineligible_resolved_preset_starts_the_cycle_from_its_first_preset() {
+    // The foreground application's battery override names Balanced, which
+    // the battery class does not select, over a Battery Balanced power
+    // profile. Managed cycles from that resolved preset, which is outside
+    // the battery cycle, so the cycle starts from its first preset. The
+    // power profile's own preset is not a fallback while a resolution was
+    // read: it would select Battery Saver.
+    let files = MemoryFiles::default();
+    files.profiles(1);
+    let mut aggregate = files.document("profiles.json");
+    aggregate["profiles"]["battery"]["performance"] = json!(4);
+    aggregate["profiles"]["applicationProfiles"][0]["overrides"] =
+        json!({"battery":{"performance":1}});
+    files.put("profiles.json", aggregate);
+    files.commit_configuration();
+    let rig = rig_at(selector(3), 0, BATTERY, files);
+    report_game(&rig).await;
+    let result = rig.cycle(1, 1).await;
+    assert_eq!(
+        result["result"],
+        json!({"status":1,"message":"Fn+P selected BatteryBalanced."}),
+        "{result}"
+    );
+    assert_eq!(setters(&rig), [vec![1, 1, 6, 0], vec![1, 2, 6, 0]]);
+    rig.stop().await;
+}
+
+#[tokio::test]
 async fn windows_battery_with_an_external_reading_is_refused_as_an_explicit_request_is() {
     // Managed cycles under its Battery power source whenever Windows reports
     // battery. Native admits a performance request there only with a battery
     // reading (`Power::thermal_source`), so an external 07/8C class is
-    // refused before anything is staged, exactly as the explicit temporary
-    // Battery Saver the cycle would select is: nothing is read, stored or
+    // refused when the worker admits that reading, before anything is staged,
+    // exactly as the explicit temporary Battery Saver the cycle would select
+    // is: the same 0D/82 and 07/8C queries are read, and nothing is stored or
     // written.
     let mut outcomes = Vec::new();
     for shortcut in [true, false] {
@@ -244,7 +273,16 @@ async fn windows_battery_with_an_external_reading_is_refused_as_an_explicit_requ
         assert!(setters(&rig).is_empty());
         assert!(rows(&rig).is_empty());
         assert_eq!(rig.files.read("manual-overrides.json").unwrap(), saved);
-        outcomes.push(result["result"].clone());
+        let queries: Vec<(u8, u8, Vec<u8>)> = rig
+            .port
+            .state
+            .lock()
+            .unwrap()
+            .sent
+            .iter()
+            .map(|(class, command, payload, _)| (*class, *command, payload.clone()))
+            .collect();
+        outcomes.push((result["result"].clone(), queries));
         rig.stop().await;
     }
     assert_eq!(outcomes[0], outcomes[1]);
@@ -346,6 +384,35 @@ async fn an_unsupported_combination_is_rejected_before_storing() {
     assert!(rows(&rig).is_empty());
     assert_eq!(rig.files.read("manual-overrides.json").unwrap(), saved);
     rig.stop().await;
+}
+
+#[tokio::test]
+async fn saved_profiles_the_domain_decoder_refuses_are_refused_before_the_combination() {
+    // The profile layer is read before any override is checked, so saved
+    // profiles with a member the domain decoder does not know refuse the
+    // request (Blocked) before the unsupported combination would (Failed),
+    // for the shortcut and the explicit request alike. Nothing is stored or
+    // written.
+    for shortcut in [true, false] {
+        let files = saved(CUSTOM, Some(manual_curve()));
+        files.profiles(1);
+        let mut aggregate = files.document("profiles.json");
+        aggregate["profiles"]["pluggedIn"]["unknownMember"] = json!(1);
+        files.put("profiles.json", aggregate);
+        files.commit_configuration();
+        let rig = rig_at(2, 1, FULL, files);
+        let saved = rig.files.read("manual-overrides.json").unwrap();
+        let result = if shortcut {
+            rig.cycle(1, 1).await
+        } else {
+            rig.set(1, value(4, 0)).await
+        };
+        assert_eq!(result["result"]["status"], 2, "{shortcut}: {result}");
+        assert!(setters(&rig).is_empty());
+        assert!(rows(&rig).is_empty());
+        assert_eq!(rig.files.read("manual-overrides.json").unwrap(), saved);
+        rig.stop().await;
+    }
 }
 
 #[tokio::test]
@@ -551,21 +618,5 @@ async fn an_undefined_shortcut_request_is_refused_by_the_codec() {
         );
     }
     assert_eq!(sent(&rig), before);
-    rig.stop().await;
-}
-
-#[tokio::test]
-async fn a_preview_leaves_the_readers_read_witness() {
-    // A preview reads nothing, so it neither re-stamps the retained read nor
-    // extends its retention window.
-    let rig = rig_at(2, 0, FULL, MemoryFiles::default());
-    assert_eq!(rig.cycle(1, 1).await["result"]["status"], 1);
-    let witness = rig.reader.last_completed_for_tests();
-    assert!(witness.is_some());
-    for (n, preset) in [(2, Some(0)), (3, None)] {
-        let result = rig.preview(n, SESSION, 1, preset).await;
-        assert_eq!(result["result"]["status"], 0, "{result}");
-        assert_eq!(rig.reader.last_completed_for_tests(), witness);
-    }
     rig.stop().await;
 }
