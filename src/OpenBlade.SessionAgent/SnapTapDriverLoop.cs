@@ -208,17 +208,22 @@ internal static class SnapTapDriverLoop
                     () => functionContext!.PrimaryMode, () => functionContext!.DriverMode,
                     () => functionContext!.DeviceKind, functionContext!.DeviceKind);
             }
-            functionProcessor?.ReleaseMedia();
             // On ambiguous output, close the subscription without more writes.
             // The guardian reconciles only owned hook configuration after exit.
             stage = "Cleanup";
             var stopExit = new StopRefusalExit(output!.SnapStopRefused, output.FunctionStopRefused, publisher.Failed,
                 session.Failure, processor.Faulted, processor.Failure, functionProcessor?.Faulted == true,
-                functionProcessor?.Failure, loopFailure);
-            // A stop refused output before submission and nothing else failed: release
-            // every key this worker delivered, as an ordinary stop does, so none is
-            // left down in Windows.
-            bool keysReleased = stopExit.MayRelease && output!.TryReleaseDelivered();
+                functionProcessor?.Failure, loopFailure,
+                functionProcessor?.TracksOnly(code => output.IsDelivered(code) || code == output.FunctionRefusedDown) ?? true);
+            // Release every key this worker delivered and Windows still holds down: after
+            // a stop refused output before submission with nothing else failed, or after
+            // an ordinary stop whose drain passed later A/D keys through. Never after
+            // uncertain output. Release before media cleanup, which can throw.
+            bool ordinaryClean = !processor.Faulted && functionDrained && functionProcessor?.OutputUncertain != true
+                && functionProcessor?.Faulted != true && session.Failure is null && !publisher.Failed;
+            bool releaseAttempted = stopExit.MayRelease || ordinaryClean;
+            bool keysReleased = releaseAttempted && output.TryReleaseDelivered();
+            functionProcessor?.ReleaseMedia();
             bool closed = session.Stop();
             bool functionStopped = functionContext?.Stop() ?? true;
             if (stopExit.IsClean(keysReleased, closed, functionStopped))
@@ -227,10 +232,16 @@ internal static class SnapTapDriverLoop
                 return publisher.Failed ? 1 : 0;
             }
             bool stopped = !processor.Faulted && closed && functionDrained && functionStopped
-                && functionProcessor?.OutputUncertain != true && output?.ReleaseUncertain != true;
-            DiagnosticFailure? releaseFailure = output?.ReleaseUncertain == true
+                && functionProcessor?.OutputUncertain != true && (!releaseAttempted || keysReleased);
+            // Counts only: diagnostics never record which keys were held.
+            DiagnosticFailure? releaseFailure = output.ReleaseUncertain
                 ? SnapTapDiagnosticFailure.Create(SnapTapDiagnosticFailure.Worker, "Run", stage, "StopReleaseFailed", true)
-                : null;
+                : releaseAttempted && !keysReleased
+                    ? SnapTapDiagnosticFailure.Create(SnapTapDiagnosticFailure.Worker, "Run", stage, "KeysNotReleased") with
+                    {
+                        Context = $"Held={output.DeliveredCount}",
+                    }
+                    : null;
             DiagnosticFailure? terminalFailure = session.Failure ?? releaseFailure ?? functionProcessor?.Failure ?? processor.Failure ?? loopFailure;
             bool failed = !stopped || publisher.Failed;
             if (foregroundPause && !failed && session.Failure is null && processor.Failure is null)

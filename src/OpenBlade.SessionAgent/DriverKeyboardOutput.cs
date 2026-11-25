@@ -27,6 +27,11 @@ internal sealed class DriverKeyboardOutput(Func<DriverOutputDecision> decide, Ac
     /// <summary>Function-row output was refused by a stop request before submission.</summary>
     internal bool FunctionStopRefused { get; private set; }
 
+    /// <summary>A function-row press the stop refused; it never reached Windows.</summary>
+    internal ushort? FunctionRefusedDown { get; private set; }
+
+    internal bool IsDelivered(ushort scanCode) => delivered.Contains(scanCode);
+
     /// <summary>The A/D processor's sender: returns how many strokes were submitted.</summary>
     internal int SendBatch(SnapTapOutputBatch batch)
     {
@@ -54,6 +59,10 @@ internal sealed class DriverKeyboardOutput(Func<DriverOutputDecision> decide, Ac
         if (decision != DriverOutputDecision.Allowed)
         {
             FunctionStopRefused |= decision == DriverOutputDecision.StopRequested;
+            if (decision == DriverOutputDecision.StopRequested && stroke.IsDown)
+            {
+                FunctionRefusedDown = stroke.ScanCode;
+            }
             throw new KeyboardSubmissionDeferredException();
         }
     }
@@ -69,7 +78,17 @@ internal sealed class DriverKeyboardOutput(Func<DriverOutputDecision> decide, Ac
         {
             return decision;
         }
-        submit(stroke);
+        try
+        {
+            submit(stroke);
+        }
+        catch (KeyboardSubmissionDeferredException)
+        {
+            // The transport's own final check refused before DeviceIoControl, so
+            // nothing was submitted. Only a stop that still holds counts as one.
+            DriverOutputDecision again = decide();
+            return again == DriverOutputDecision.Allowed ? DriverOutputDecision.TargetChanged : again;
+        }
         if (stroke.IsDown)
         {
             delivered.Add(stroke.ScanCode);
@@ -114,10 +133,13 @@ internal sealed class DriverKeyboardOutput(Func<DriverOutputDecision> decide, Ac
 internal readonly record struct StopRefusalExit(
     bool SnapStopRefused, bool FunctionStopRefused, bool PublishFailed, DiagnosticFailure? SessionFailure,
     bool SnapFaulted, DiagnosticFailure? SnapFailure, bool FunctionFaulted, DiagnosticFailure? FunctionFailure,
-    DiagnosticFailure? LoopFailure)
+    DiagnosticFailure? LoopFailure, bool FunctionKeysSettled)
 {
+    // FunctionKeysSettled: every function-row key still physically held was either
+    // delivered, and so is released, or is the press the stop refused. A held media
+    // key, which an ordinary stop waits for, keeps the failure.
     internal bool MayRelease =>
-        (SnapStopRefused || FunctionStopRefused) && !PublishFailed && SessionFailure is null
+        (SnapStopRefused || FunctionStopRefused) && !PublishFailed && SessionFailure is null && FunctionKeysSettled
         && (SnapFaulted
             ? SnapStopRefused && SnapFailure is
             {

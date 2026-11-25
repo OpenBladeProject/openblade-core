@@ -150,6 +150,73 @@ public sealed class DriverKeyboardOutputTests
         Assert.False(exit.IsClean(keysReleased: false, closed: true, functionStopped: true));
     }
 
+    [Fact]
+    public void ACombinedStopReleasesBothTheWinnerAndAForwardedFunctionKey()
+    {
+        var rig = new Rig();
+        Assert.True(rig.Snap.Handle(ADown));
+        Assert.True(rig.Function.Handle(new(0x3F, true), Device, false, FunctionKeyPrimaryMode.FunctionKeys, true));
+        rig.Decision = DriverOutputDecision.StopRequested;
+        // The F5 repeat is refused; F5 itself was delivered, so it is released.
+        Assert.False(rig.Function.Handle(new(0x3F, true), Device, false, FunctionKeyPrimaryMode.FunctionKeys, true));
+
+        StopRefusalExit exit = rig.Exit();
+        Assert.True(exit.FunctionKeysSettled);
+        Assert.True(exit.MayRelease);
+        rig.Decision = DriverOutputDecision.Allowed;
+        Assert.True(rig.Output.TryReleaseDelivered());
+        Assert.Empty(rig.HeldInWindows);
+    }
+
+    [Fact]
+    public void AHeldMediaKeyKeepsTheStopFailed()
+    {
+        var rig = new Rig();
+        Assert.True(rig.Function.Handle(new(0x43, true), Device, false, FunctionKeyPrimaryMode.MultimediaKeys, true));
+        Assert.Empty(rig.Submitted);
+        rig.Decision = DriverOutputDecision.StopRequested;
+        Assert.False(rig.Snap.Handle(ADown));
+
+        StopRefusalExit exit = rig.Exit();
+        Assert.False(exit.FunctionKeysSettled);
+        Assert.False(exit.MayRelease);
+    }
+
+    [Fact]
+    public void ARefusedFunctionPressIsTheOnlyUndeliveredKeyAllowed()
+    {
+        var rig = new Rig();
+        rig.Decision = DriverOutputDecision.StopRequested;
+        Assert.False(rig.Function.Handle(new(0x3F, true), Device, false, FunctionKeyPrimaryMode.FunctionKeys, true));
+        Assert.Equal((ushort)0x3F, rig.Output.FunctionRefusedDown);
+        Assert.True(rig.Exit().MayRelease);
+    }
+
+    [Fact]
+    public void TheTransportsFinalRefusalCountsOnlyWhenTheStopStillHolds()
+    {
+        var stop = new Rig { DeferSubmitAs = DriverOutputDecision.StopRequested };
+        Assert.False(stop.Snap.Handle(ADown));
+        Assert.True(stop.Output.SnapStopRefused);
+        Assert.False(stop.Snap.Failure?.MayHaveSubmitted);
+        Assert.Equal(0, stop.Output.DeliveredCount);
+        Assert.True(stop.Exit().MayRelease);
+
+        // The decision flipped back, so the refusal cannot be attributed to the stop.
+        var flicker = new Rig { DeferSubmitAs = DriverOutputDecision.Allowed };
+        Assert.False(flicker.Snap.Handle(ADown));
+        Assert.False(flicker.Output.SnapStopRefused);
+        Assert.False(flicker.Exit().MayRelease);
+
+        // A release refused by the transport's final check is not an uncertain submission.
+        var release = new Rig();
+        Assert.True(release.Snap.Handle(ADown));
+        release.DeferSubmitAs = DriverOutputDecision.TargetChanged;
+        Assert.False(release.Output.TryReleaseDelivered());
+        Assert.False(release.Output.ReleaseUncertain);
+        Assert.Equal(1, release.Output.DeliveredCount);
+    }
+
     [Theory]
     [InlineData(7, 9, false, false, (int)DriverOutputDecision.Allowed)]
     [InlineData(7, 9, false, true, (int)DriverOutputDecision.StopRequested)]
@@ -167,6 +234,12 @@ public sealed class DriverKeyboardOutputTests
             Output = new DriverKeyboardOutput(() => Submitted.Count >= RefuseAfter ? DriverOutputDecision.StopRequested : Decision, stroke =>
             {
                 if (FailSubmit) { throw new IOException("uncertain"); }
+                if (DeferSubmitAs is { } late)
+                {
+                    // The transport's own final check refuses before DeviceIoControl.
+                    Decision = late;
+                    throw new KeyboardSubmissionDeferredException();
+                }
                 Submitted.Add(stroke);
                 if (stroke.IsDown) { HeldInWindows.Add(stroke.ScanCode); }
                 else { HeldInWindows.Remove(stroke.ScanCode); }
@@ -179,6 +252,7 @@ public sealed class DriverKeyboardOutputTests
         internal DriverOutputDecision Decision { get; set; } = DriverOutputDecision.Allowed;
         internal int RefuseAfter { get; set; } = int.MaxValue;
         internal bool FailSubmit { get; set; }
+        internal DriverOutputDecision? DeferSubmitAs { get; set; }
         internal List<SnapTapKeyStroke> Submitted { get; } = [];
         internal HashSet<ushort> HeldInWindows { get; } = [];
         internal DriverKeyboardOutput Output { get; }
@@ -186,6 +260,7 @@ public sealed class DriverKeyboardOutputTests
         internal FunctionRowDriverInputProcessor Function { get; }
 
         internal StopRefusalExit Exit() => new(Output.SnapStopRefused, Output.FunctionStopRefused, false, null,
-            Snap.Faulted, Snap.Failure, Function.Faulted, Function.Failure, Function.Failure ?? Snap.Failure);
+            Snap.Faulted, Snap.Failure, Function.Faulted, Function.Failure, Function.Failure ?? Snap.Failure,
+            Function.TracksOnly(code => Output.IsDelivered(code) || code == Output.FunctionRefusedDown));
     }
 }

@@ -341,8 +341,8 @@ internal static class SnapTapDriverSupervisor
     // poisoned processor, an unconfirmed hook close) exits non-zero or publishes
     // Failed. The one faulted case that exits 0 is output refused before submission
     // because of the stop, after the worker released every key it delivered
-    // (SnapTapDriverLoop.StopRefusalExit). So a worker that honours the stop with a fresh Off of its own, or with
-    // the dedicated clean-pause exit (a stop during hook setup defers the enable
+    // (StopRefusalExit). So a worker that honours the stop with a fresh Off of its
+    // own, or with the dedicated clean-pause exit (a stop during hook setup defers the enable
     // before submission), submitted nothing ambiguous. Startup stalls keep their
     // own budget and are not admitted. The caller must also confirm reconciliation.
     internal static bool IsCleanStall(
