@@ -2000,18 +2000,16 @@ impl RequestPermit {
         Ok(None)
     }
     /// The destination a step's status projects as desired: the step's own,
-    /// but for a HyperBoost entry or restore-only exit the saved one, which
-    /// neither changes.
+    /// but for a HyperBoost entry the saved one, which it does not change.
+    /// A restore-only exit projects its Balanced destination: publication
+    /// projects the desired state again from the saved policy
+    /// (`ReadSource::current_policy`), and only a Reader writes.
     fn projected_destination(
         &self,
         destination: Option<Destination>,
     ) -> io::Result<Option<Destination>> {
         #[cfg(feature = "service-hyperboost-v1")]
-        if let Some(step) = self
-            .hyperboost
-            .as_ref()
-            .filter(|step| step.enable || step.restores_only())
-        {
+        if let Some(step) = self.hyperboost.as_ref().filter(|step| step.enable) {
             return step.saved();
         }
         Ok(destination)
