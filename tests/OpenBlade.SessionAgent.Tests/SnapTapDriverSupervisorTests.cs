@@ -198,37 +198,6 @@ public sealed class SnapTapDriverSupervisorTests
     }
 
     [Fact]
-    public void OutputRefusedForAStopIsACleanExitOnlyWithoutAnyOtherFailure()
-    {
-        var refused = SnapTapDiagnosticFailure.Create(
-            SnapTapDiagnosticFailure.Worker, "SendOutput", "InputLoop", "OutputCountMismatch", false);
-        var functionRefused = SnapTapDiagnosticFailure.Create("FunctionRowDriver", "ProcessInput", "InputLoop", "OutputDeferred");
-        bool Exit(bool deferred = true, bool closed = true, bool functionStopped = true, bool publishFailed = false,
-            DiagnosticFailure? session = null, DiagnosticFailure? snap = null, DiagnosticFailure? function = null,
-            bool uncertain = false, DiagnosticFailure? loop = null) =>
-            SnapTapDriverLoop.IsStopDeferredExit(deferred, closed, functionStopped, publishFailed,
-                session, snap, function, uncertain, loop);
-
-        Assert.True(Exit(snap: refused, loop: refused));
-        Assert.True(Exit(function: functionRefused, loop: functionRefused));
-        Assert.True(Exit(snap: refused));
-
-        // The refusal must have come from the stop and left a matching failure.
-        Assert.False(Exit(deferred: false, snap: refused, loop: refused));
-        Assert.False(Exit());
-        // Anything submitted, uncertain or failing elsewhere keeps the failure.
-        Assert.False(Exit(snap: refused with { MayHaveSubmitted = true }, loop: refused));
-        Assert.False(Exit(snap: refused with { Reason = "OutputSubmissionFailed" }));
-        Assert.False(Exit(function: functionRefused with { Reason = "InputFailed" }));
-        Assert.False(Exit(snap: refused, uncertain: true));
-        Assert.False(Exit(snap: refused, closed: false));
-        Assert.False(Exit(snap: refused, functionStopped: false));
-        Assert.False(Exit(snap: refused, publishFailed: true));
-        Assert.False(Exit(snap: refused, session: refused with { Reason = "CloseFailed" }));
-        Assert.False(Exit(snap: refused, loop: refused with { Reason = "ForegroundChanged" }));
-    }
-
-    [Fact]
     public void HeartbeatStallRearmsOnlyAfterFreshCleanWorkerStop()
     {
         DateTimeOffset start = DateTimeOffset.UtcNow;

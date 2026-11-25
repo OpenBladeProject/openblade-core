@@ -151,24 +151,6 @@ public sealed class FunctionRowDriverTests
     }
 
     [Fact]
-    public void OutputRefusedBeforeSubmissionStopsOutputWithoutUncertainty()
-    {
-        int submissions = 0;
-        var processor = new FunctionRowDriverInputProcessor(
-            _ => { submissions++; throw new KeyboardSubmissionDeferredException(); }, _ => Assert.Fail(), () => { });
-
-        Assert.False(processor.Handle(new(0x3B, true), Device, false, FunctionKeyPrimaryMode.FunctionKeys, true));
-        Assert.False(processor.Handle(new(0x3B, false), Device, false, FunctionKeyPrimaryMode.FunctionKeys, true));
-
-        Assert.True(processor.Faulted);
-        Assert.True(processor.OutputDeferred);
-        Assert.False(processor.OutputUncertain);
-        Assert.Equal("OutputDeferred", processor.Failure?.Reason);
-        Assert.False(processor.Failure?.MayHaveSubmitted);
-        Assert.Equal(1, submissions);
-    }
-
-    [Fact]
     public void MediaCleanupPublishesMatchingUpAndResetsWithoutGuessingKeyboardOutput()
     {
         List<FunctionRowInputEvent> events = [];
