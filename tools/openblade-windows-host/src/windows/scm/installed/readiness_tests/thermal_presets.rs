@@ -466,6 +466,36 @@ async fn a_windows_change_across_a_setters_query_stops_before_its_send() {
 }
 
 #[tokio::test]
+async fn a_battery_reading_under_windows_ac_refuses_a_setter_and_keeps_an_ac_temporary() {
+    // A temporary Battery Saver saved on a full adapter. The first setter's
+    // own reading reads battery while Windows stays AC. The class rule
+    // refuses it before `destination_holds`: a reading that contradicts
+    // Windows never becomes the current class, so it observes no battery
+    // power (`battery_reading_contradicts_windows`) and the AC temporary
+    // survives for status and later requests.
+    let rig = rig_at(2, 0, FULL, MemoryFiles::default());
+    {
+        let mut s = rig.port.state.lock().unwrap();
+        s.windows_on_battery = Some(Some(false));
+        s.change_power = Some((2, BATTERY));
+    }
+    let result = rig.set(1, value(BATTERY_SAVER.0, 0)).await;
+    let case = format!("{result}");
+    assert_eq!(result["result"]["status"], 2, "{case}");
+    assert!(setters(&rig).is_empty(), "{case}");
+    {
+        let mut s = rig.port.state.lock().unwrap();
+        s.change_power = None;
+        s.actual = FULL;
+    }
+    let status = rig.get().await;
+    let current = &status["status"]["performanceOverride"];
+    assert_eq!(current["value"], BATTERY_SAVER.0, "{case} / {status}");
+    assert_eq!(current["lifetime"], 0, "{case} / {status}");
+    rig.stop().await;
+}
+
+#[tokio::test]
 async fn a_lost_windows_battery_reading_stops_a_battery_pair_before_its_next_command() {
     // The second setter's adapter reading still reads battery, but Windows
     // then reports AC, or an unknown source, before submission: the
