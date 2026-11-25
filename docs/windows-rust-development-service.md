@@ -653,9 +653,10 @@ intent is unchanged: the next active reconciliation or request applies it.
   Normal release at a low-power boundary, and managed restores fans there
   only for a Battery Saver fan stop it owns (`OwnsBatterySaverFanStop`,
   `ServiceControlRuntime.cs:13069-13087`, property at `:21049`). Native has
-  no Fan Stop yet (`openblade_domain::profile_set::policy`), so owned manual
-  fans stay as OpenBlade applied them, no reading after the resume is an
-  external change, and owned Stop still hands them back. When Fan Stop
+  no Fan Stop guardian yet (`service-fan-stop-v1` serves the requests but
+  never stops a fan; `openblade_domain::profile_set::policy`), so owned
+  manual fans stay as OpenBlade applied them, no reading after the resume is
+  an external change, and owned Stop still hands them back. When Fan Stop
   lands, restore an owned Battery Saver fan stop here, after the keyboard and
   under the same generation's cleanup admission, as managed does. Managed's
   restore has no Windows-AC-only pre-check; do not copy the one owned Stop's

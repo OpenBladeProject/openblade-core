@@ -36,6 +36,8 @@ pub(super) use battery::TemporaryTaken;
 #[cfg(feature = "service-profiles-v1")]
 #[path = "profile_storage.rs"]
 mod profiles;
+#[cfg(feature = "service-fan-stop-v1")]
+pub(super) use profiles::PreferencesSave;
 #[cfg(feature = "service-profiles-v1")]
 pub(super) use profiles::ProfileSave;
 #[cfg(feature = "service-profile-triggers-v1")]

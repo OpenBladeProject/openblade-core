@@ -702,3 +702,24 @@ async fn guarded_sticky_read_loss_retains_current_metadata_and_expires_both_proj
     }
     source.drain().await.unwrap();
 }
+
+#[test]
+fn only_the_exact_matched_model_has_fan_stop_evidence() {
+    assert!(has_fan_stop_evidence(Some(&matched(
+        HidMetadata::Candidate
+    ))));
+    assert!(has_fan_stop_evidence(Some(&matched(
+        HidMetadata::Unavailable
+    ))));
+    for model in ["RZ09-0528", "RZ09-05810", "rz09-0581", ""] {
+        let other = DeviceMetadata::MatchedHost {
+            model: model.into(),
+            hid: HidMetadata::Candidate,
+        };
+        assert!(!has_fan_stop_evidence(Some(&other)), "{model}");
+    }
+    for device in [DeviceMetadata::Unsupported, DeviceMetadata::Unavailable] {
+        assert!(!has_fan_stop_evidence(Some(&device)));
+    }
+    assert!(!has_fan_stop_evidence(None));
+}

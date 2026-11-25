@@ -20345,7 +20345,8 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
                 Task>? beforeActivation = null,
             bool requireAuthoritativeSeed = true,
             Func<TimeSpan, CancellationToken, Task>? transitionRetryDelay = null,
-            IHyperBoostOwnershipJournalStore? hyperBoostOwnershipJournalStore = null)
+            IHyperBoostOwnershipJournalStore? hyperBoostOwnershipJournalStore = null,
+            IFanStopBackend? fanStopBackend = null)
     {
         string machineRoot = Path.Combine(directory, name);
         var userSid = new System.Security.Principal.SecurityIdentifier(
@@ -20390,7 +20391,8 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
                 machineRoot,
                 validator),
             transitionRetryDelay: transitionRetryDelay,
-            hyperBoostOwnershipJournalStore: hyperBoostOwnershipJournalStore);
+            hyperBoostOwnershipJournalStore: hyperBoostOwnershipJournalStore,
+            fanStopBackend: fanStopBackend);
         context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults();
         PowerProfile active = initialPowerSource switch
         {

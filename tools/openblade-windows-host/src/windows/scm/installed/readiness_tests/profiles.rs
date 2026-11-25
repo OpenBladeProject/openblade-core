@@ -703,9 +703,12 @@ fn this_composition_declares_profile_serving_in_its_compiled_identity() {
     // So does the live-reading build, after it.
     #[cfg(feature = "service-live-readings-v1")]
     let expected = format!("{expected},service-live-readings-v1");
-    // And the diagnostic export, last.
+    // And the diagnostic export.
     #[cfg(feature = "service-diagnostics-export-v1")]
     let expected = format!("{expected},service-diagnostics-export-v1");
+    // Fan Stop with its guardian unavailable, last.
+    #[cfg(feature = "service-fan-stop-v1")]
+    let expected = format!("{expected},service-fan-stop-v1");
     assert_eq!(fields[8], expected);
 }
 

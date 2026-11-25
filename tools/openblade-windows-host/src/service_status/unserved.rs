@@ -130,7 +130,7 @@ mod tests {
     }
 
     // One valid request per variant: each decodes wherever it is compiled.
-    fn variants() -> [StatusRequest; 14] {
+    fn variants() -> [StatusRequest; 18] {
         let id = || ID.to_owned();
         let version = PROTOCOL_VERSION;
         [
@@ -206,6 +206,25 @@ mod tests {
             StatusRequest::ReapplyChangedSettings {
                 version,
                 request_id: id(),
+            },
+            StatusRequest::SetFanStopMode {
+                version,
+                request_id: id(),
+                mode: 1,
+            },
+            StatusRequest::SetFanStopSettings {
+                version,
+                request_id: id(),
+                settings: serde_json::json!({}),
+            },
+            StatusRequest::ResumeAutomaticFanStop {
+                version,
+                request_id: id(),
+            },
+            StatusRequest::SetBatterySaverFanStop {
+                version,
+                request_id: id(),
+                enabled: false,
             },
         ]
     }

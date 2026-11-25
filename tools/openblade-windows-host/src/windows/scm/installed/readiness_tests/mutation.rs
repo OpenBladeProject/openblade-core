@@ -9159,7 +9159,7 @@ async fn battery_pending_once_direct_publication_keeps_fence_and_all_views() {
         let message = wire["status"]["message"].as_str().unwrap();
         assert_eq!(message.matches(reason).count(), 1, "{wire}");
         assert!(
-            message.contains("Matched Razer Blade"),
+            message.contains("Matched RZ09-0581 host"),
             "Unrelated source reason lost: {wire}"
         );
         assert_eq!(wire["status"]["writesBlocked"], true);
@@ -10055,3 +10055,7 @@ mod request_triggers;
 #[cfg(feature = "service-profile-triggers-v1")]
 #[path = "thermal_policy.rs"]
 mod thermal_policy;
+
+#[cfg(feature = "service-fan-stop-v1")]
+#[path = "fan_stop.rs"]
+mod fan_stop;

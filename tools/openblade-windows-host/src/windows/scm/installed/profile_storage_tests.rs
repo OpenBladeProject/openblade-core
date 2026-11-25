@@ -1020,3 +1020,232 @@ mod migration;
 #[cfg(feature = "service-profile-triggers-v1")]
 #[path = "profile_storage_policy_tests.rs"]
 mod policy;
+
+/// The Fan Stop settings and Battery Saver saves commit through the same
+/// transaction as a profile save, so every failure leaves one whole
+/// aggregate, says whether anything is owed, and a restart reads it.
+#[cfg(feature = "service-fan-stop-v1")]
+mod fan_stop {
+    use super::*;
+    use openblade_domain::profile_set::preferences::FanStopSettings;
+
+    fn custom() -> FanStopSettings {
+        FanStopSettings {
+            end_mode: 1,
+            seconds_above_limit: 9,
+            ..FanStopSettings::default()
+        }
+    }
+
+    type Save = fn(&Storage) -> PreferencesSave;
+
+    /// Each save, and the same request to a restarted store once it landed.
+    fn saves() -> [(&'static str, Save, Save); 2] {
+        [
+            (
+                "settings",
+                |storage| storage.save_fan_stop_settings(custom()).unwrap(),
+                |storage| {
+                    assert_eq!(storage.fan_stop_settings().unwrap(), custom());
+                    storage.save_fan_stop_settings(custom()).unwrap()
+                },
+            ),
+            (
+                "battery saver",
+                |storage| storage.save_battery_saver_fan_stop(true).unwrap(),
+                |storage| storage.save_battery_saver_fan_stop(true).unwrap(),
+            ),
+        ]
+    }
+
+    fn saved_documents(save: Save) -> [Option<Vec<u8>>; 3] {
+        let model = Model::committed();
+        assert!(matches!(save(&model.storage()), PreferencesSave::Stored(_)));
+        model.documents()
+    }
+
+    #[test]
+    fn every_failed_write_leaves_a_whole_aggregate_that_a_restart_reads() {
+        let prior = Model::replay("prior").map(Some);
+        for (name, save, reread) in saves() {
+            let saved = saved_documents(save);
+            assert_ne!(saved, prior, "{name}");
+            for fault in [Fault::Before, Fault::After, Fault::Stranded] {
+                // Only the staged replacements strand a stage.
+                let writes = if fault == Fault::Stranded {
+                    0..7
+                } else {
+                    0..11
+                };
+                for write in writes {
+                    let model = Model::committed();
+                    model.fail(write, fault);
+                    let storage = model.storage();
+                    let outcome = save(&storage);
+                    let case = format!("{name} {fault:?} write {write}");
+                    match write {
+                        // Nothing moved, or the exact prior aggregate is
+                        // restored and every stage taken back.
+                        0..=6 => {
+                            assert_eq!(
+                                outcome,
+                                PreferencesSave::Rejected(RESTORED.into()),
+                                "{case}"
+                            );
+                            assert_eq!(model.documents(), prior, "{case}");
+                            assert_eq!(model.snapshot().len(), 3, "{case}");
+                            assert!(!storage.pending(), "{case}");
+                        }
+                        // The record could not be cleared: the store closes.
+                        7 => {
+                            assert_eq!(
+                                outcome,
+                                PreferencesSave::Rejected(RECOVERY_REQUIRED.into()),
+                                "{case}"
+                            );
+                            assert_eq!(model.documents(), saved, "{case}");
+                            assert!(storage.pending(), "{case}");
+                            assert_eq!(save(&storage), PreferencesSave::Quarantined, "{case}");
+                            assert_eq!(
+                                storage.fan_stop_settings().unwrap(),
+                                FanStopSettings::default(),
+                                "{case}: a preserved aggregate shows the managed defaults"
+                            );
+                        }
+                        // A backup could not be discarded: the save stands.
+                        _ => {
+                            assert!(matches!(outcome, PreferencesSave::Stored(_)), "{case}");
+                            assert_eq!(model.documents(), saved, "{case}");
+                        }
+                    }
+                    let documents = model.documents();
+                    assert!(documents == prior || documents == saved, "{case}");
+                    // A restarted Service reads what is durable: the record
+                    // keeps it closed; otherwise a landed save is unchanged
+                    // and the prior aggregate takes the save again.
+                    let restarted = Storage::open(Box::new(model.clone()), SID);
+                    if model.snapshot().contains_key(RECORD) {
+                        assert!(restarted.is_err(), "{case}");
+                        continue;
+                    }
+                    let restarted = restarted.unwrap();
+                    if documents == saved {
+                        assert!(
+                            matches!(reread(&restarted), PreferencesSave::Unchanged(_)),
+                            "{case}"
+                        );
+                    } else {
+                        assert!(
+                            matches!(save(&restarted), PreferencesSave::Stored(_)),
+                            "{case}"
+                        );
+                        assert_eq!(model.documents(), saved, "{case}");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_stage_that_cannot_be_removed_refuses_the_save_and_says_so() {
+        for (name, save, _) in saves() {
+            let model = Model::committed();
+            model.strand(NAMES[1]);
+            *model.held.lock().unwrap() = Some(NAMES[1].into());
+            let storage = model.storage();
+            let before = model.snapshot();
+
+            assert_eq!(
+                save(&storage),
+                PreferencesSave::Rejected(STAGE_BLOCKED.into()),
+                "{name}"
+            );
+            assert_eq!(model.snapshot(), before, "{name}");
+            assert_eq!(model.writes.load(Ordering::Acquire), 0, "{name}");
+            assert!(!storage.pending(), "{name}");
+
+            *model.held.lock().unwrap() = None;
+            assert!(
+                matches!(save(&storage), PreferencesSave::Stored(_)),
+                "{name}"
+            );
+            assert_eq!(model.snapshot().len(), 3, "{name}");
+        }
+    }
+
+    #[test]
+    fn a_preserved_aggregate_refuses_both_saves_untouched() {
+        type Tamper = fn(&mut BTreeMap<String, Vec<u8>>);
+        let tampers: [Tamper; 2] = [
+            // Another writer recorded a transaction.
+            |files| drop(files.insert(RECORD.into(), b"{}".to_vec())),
+            // A document no longer matches the digest in the marker.
+            |files| files.get_mut(NAMES[0]).unwrap().push(b' '),
+        ];
+        for (name, save, _) in saves() {
+            for tamper in tampers {
+                // A store opened after the change does not open at all; one
+                // opened before it refuses to replace the aggregate.
+                let model = Model::committed();
+                let storage = model.storage();
+                tamper(&mut model.bytes.lock().unwrap());
+                assert!(
+                    Storage::open(Box::new(model.clone()), SID).is_err(),
+                    "{name}"
+                );
+                let before = model.snapshot();
+
+                assert_eq!(save(&storage), PreferencesSave::Quarantined, "{name}");
+                assert_eq!(model.snapshot(), before, "{name}");
+                assert_eq!(model.writes.load(Ordering::Acquire), 0, "{name}");
+                assert_eq!(
+                    storage.fan_stop_settings().unwrap(),
+                    FanStopSettings::default(),
+                    "{name}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_battery_saver_save_keeps_the_committed_preference_bytes() {
+        // Managed `SaveProfilesAsync` writes the profiles and leaves the
+        // preference document as it was; only the profile document and the
+        // marker change. A trailing newline makes the committed bytes differ
+        // from the canonical encoding of the same preferences, so a save that
+        // re-encoded them would show.
+        let [profile, mut preferences, _] = Model::replay("prior");
+        preferences.push(b'\n');
+        let marker = preferences::commit_marker(
+            profile_set::CURRENT_SCHEMA,
+            &configuration::digest_hex(&profile),
+            &configuration::digest_hex(&preferences),
+        );
+        let model = Model::seeded([profile, preferences, marker]);
+        let prior = model.documents();
+        assert!(matches!(
+            model.storage().save_battery_saver_fan_stop(true).unwrap(),
+            PreferencesSave::Stored(_)
+        ));
+        let saved = model.documents();
+        assert_ne!(saved[0], prior[0]);
+        assert_eq!(saved[1], prior[1]);
+        assert_ne!(saved[2], prior[2]);
+    }
+
+    #[test]
+    fn an_unchanged_value_is_not_written() {
+        let model = Model::committed();
+        let storage = model.storage();
+        let settings = storage.fan_stop_settings().unwrap();
+        assert!(matches!(
+            storage.save_fan_stop_settings(settings).unwrap(),
+            PreferencesSave::Unchanged(_)
+        ));
+        assert!(matches!(
+            storage.save_battery_saver_fan_stop(false).unwrap(),
+            PreferencesSave::Unchanged(_)
+        ));
+        assert_eq!(model.writes.load(Ordering::Acquire), 0);
+    }
+}

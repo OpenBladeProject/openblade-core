@@ -472,7 +472,7 @@ fn an_aggregate_the_service_reader_would_refuse_is_not_changed() {
 
     assert_eq!(
         storage.save_thermal_policy(SET_STRICT).unwrap(),
-        PolicySave::Rejected(POLICY_UNREADABLE.into())
+        PolicySave::Rejected(PREFERENCES_UNREADABLE.into())
     );
 
     assert_eq!(model.snapshot(), before);

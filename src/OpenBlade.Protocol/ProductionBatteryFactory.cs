@@ -725,7 +725,7 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
             ? AdapterPowerProtocol.SynapseAdapterStates
             : new HashSet<AdapterPowerState>();
 
-    private static bool IsExactModelScopedRz090581Identity(
+    internal static bool IsExactModelScopedRz090581Identity(
         HostIdentityReadResult exactIdentity) => exactIdentity is
         {
             Evidence:

@@ -38,6 +38,17 @@ enum HidMetadata {
     Unavailable,
 }
 
+/// Whether managed's production factory would publish reviewed Fan Stop
+/// evidence for this host: only the exact model it admits
+/// (`FAN_STOP_EVIDENCE_MODEL`), whatever its HID metadata says.
+fn has_fan_stop_evidence(device: Option<&DeviceMetadata>) -> bool {
+    matches!(
+        device,
+        Some(DeviceMetadata::MatchedHost { model, .. })
+            if model == crate::service_status::FAN_STOP_EVIDENCE_MODEL
+    )
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Power {
     Battery,
@@ -57,6 +68,8 @@ struct StatusFields {
     message: String,
     on_battery: bool,
     unsupported_laptop: bool,
+    // The host matched the model with reviewed Fan Stop evidence.
+    fan_stop_evidence: bool,
     controllers: Vec<String>,
     controller_warning: Option<&'static str>,
 }
@@ -230,6 +243,8 @@ impl ObservedStatus {
             evidence.as_ref().map(|current| &current.device),
             Some(DeviceMetadata::Unsupported)
         );
+        let fan_stop_evidence =
+            has_fan_stop_evidence(evidence.as_ref().map(|current| &current.device));
         let (power, controllers, controller_warning) = evidence.map_or(
             (Power::Unknown, vec![], Some(CONTROLLER_UNKNOWN)),
             |current| {
@@ -244,6 +259,7 @@ impl ObservedStatus {
             message,
             on_battery: power == Power::Battery,
             unsupported_laptop,
+            fan_stop_evidence,
             controllers,
             controller_warning,
         };
@@ -272,6 +288,7 @@ impl ObservedStatus {
                 fields.controller_warning,
                 message,
             )
+            .with_fan_stop_evidence(fields.fan_stop_evidence)
         };
         let publication = Arc::new(Publication {
             active: project(0, fields.message.clone()),
@@ -553,7 +570,10 @@ impl GuardedStatus {
 /// performance request's is: rebased on the latest publication, projected
 /// with this user's policy, retained by the Reader and given the next
 /// revision.
-#[cfg(feature = "service-profile-triggers-v1")]
+#[cfg(any(
+    feature = "service-profile-triggers-v1",
+    feature = "service-fan-stop-v1"
+))]
 fn publish_reconciled(
     publisher: &watch::Sender<Arc<Publication>>,
     mailbox: &super::mailbox_read::MailboxSource,
@@ -978,6 +998,41 @@ impl StatusSource for GuardedStatus {
                     }));
                     Ok((outcome, Some(status)))
                 }
+                #[cfg(feature = "service-fan-stop-v1")]
+                crate::service_status::StatusRequest::SetFanStopMode { .. }
+                | crate::service_status::StatusRequest::SetFanStopSettings { .. }
+                | crate::service_status::StatusRequest::ResumeAutomaticFanStop { .. }
+                | crate::service_status::StatusRequest::SetBatterySaverFanStop { .. } => {
+                    use super::thermal_mutation::FanStopRequest;
+                    use crate::service_status::StatusRequest as Request;
+                    let request = match request {
+                        Request::SetFanStopMode { mode, .. } => FanStopRequest::Mode(mode),
+                        Request::SetFanStopSettings { settings, .. } => FanStopRequest::Settings(
+                            crate::service_status::fan_stop::decode_settings(&settings)?,
+                        ),
+                        Request::SetBatterySaverFanStop { enabled, .. } => {
+                            FanStopRequest::BatterySaver(enabled)
+                        }
+                        _ => FanStopRequest::Resume,
+                    };
+                    let message = publisher
+                        .borrow()
+                        .active
+                        .fan_stop_message()
+                        .map(str::to_owned);
+                    let (outcome, changed) = runtime
+                        .fan_stop(mailbox.clone(), caller, sid, request, message)
+                        .await?;
+                    if !changed {
+                        return Ok((outcome, None));
+                    }
+                    // Managed publishes the saved settings, profile and
+                    // automation state with its reply: project this user
+                    // again on the latest status.
+                    let latest = publisher.borrow().active.clone();
+                    let status = publish_reconciled(&publisher, &mailbox, latest)?;
+                    Ok((outcome, Some(status)))
+                }
                 crate::service_status::StatusRequest::SetPerformanceOverride {
                     request_id,
                     value,
@@ -1296,7 +1351,7 @@ pub(super) fn injected_mutation_source(
                     DeviceMetadata::Unavailable
                 } else {
                     DeviceMetadata::MatchedHost {
-                        model: "Razer Blade 16 (2025) RZ09-0581".into(),
+                        model: "RZ09-0581".into(),
                         hid: HidMetadata::Candidate,
                     }
                 },

@@ -592,6 +592,10 @@ async fn serve_connection(
                 | StatusRequest::SetThermalControlPolicy { .. }
                 | StatusRequest::AcknowledgeThermalPolicyUpgradeDisclosure { .. }
                 | StatusRequest::ReapplyChangedSettings { .. }
+                | StatusRequest::SetFanStopMode { .. }
+                | StatusRequest::SetFanStopSettings { .. }
+                | StatusRequest::ResumeAutomaticFanStop { .. }
+                | StatusRequest::SetBatterySaverFanStop { .. }
         )
     {
         #[cfg(feature = "service-thermal-mutation-v1")]
@@ -888,6 +892,17 @@ fn mutation_budget(request: &StatusRequest) -> Duration {
         request,
         StatusRequest::SetThermalControlPolicy { .. }
             | StatusRequest::AcknowledgeThermalPolicyUpgradeDisclosure { .. }
+    ) {
+        return RECIPE_BUDGET;
+    }
+    // So does a Fan Stop request, which writes no hardware either.
+    #[cfg(feature = "service-fan-stop-v1")]
+    if matches!(
+        request,
+        StatusRequest::SetFanStopMode { .. }
+            | StatusRequest::SetFanStopSettings { .. }
+            | StatusRequest::ResumeAutomaticFanStop { .. }
+            | StatusRequest::SetBatterySaverFanStop { .. }
     ) {
         return RECIPE_BUDGET;
     }

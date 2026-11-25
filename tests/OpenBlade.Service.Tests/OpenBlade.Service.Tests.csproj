@@ -41,6 +41,7 @@
     <None Include="../../tools/openblade-windows-host/tests/data/thermal-convergence-vectors.json" Link="thermal-convergence-vectors.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../tools/openblade-windows-host/tests/data/thermal-convergence-ledger-vectors.json" Link="thermal-convergence-ledger-vectors.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../tools/openblade-windows-host/tests/data/thermal-reapply-vectors.json" Link="thermal-reapply-vectors.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../tools/openblade-windows-host/tests/data/fan-stop-vectors.json" Link="fan-stop-vectors.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../tools/openblade-windows-host/tests/data/firmware-version-vectors.json" Link="firmware-version-vectors.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../tools/openblade-windows-host/tests/data/firmware-version-native-frames.json" Link="firmware-version-native-frames.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../tools/openblade-windows-host/tests/data/mcu-version-vectors.json" Link="mcu-version-vectors.json" CopyToOutputDirectory="PreserveNewest" />

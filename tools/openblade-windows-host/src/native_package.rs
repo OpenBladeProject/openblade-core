@@ -737,6 +737,14 @@ fn capabilities(schema: u8, role: &str, features: &str, value: &str) -> io::Resu
     {
         return Err(deny());
     }
+    // Fan Stop is served with its guardian unavailable: it stores settings
+    // and refuses Stop. No packaging stage has admitted it, so refuse its
+    // feature and its capability marker by name, before the profiles it
+    // extends (docs/windows-rust-development-service.md).
+    const FAN_STOP: &str = "service-fan-stop-v1";
+    if has(FAN_STOP) || value.split(',').any(|capability| capability == FAN_STOP) {
+        return Err(deny());
+    }
     // No packaging stage has admitted a Service that serves updateProfiles.
     // Refuse the feature and the capability by name, whatever else the
     // record claims, rather than rely on the expected string below.

@@ -308,8 +308,14 @@ async fn only_the_owners_view_reads_the_saved_policy() {
     let inactive = serde_json::to_value(&publication.inactive).unwrap();
     assert!(inactive.get("thermalConvergence").is_none(), "{inactive}");
     // The owner's projection alone: each other view that derived the
-    // member would read the saved policy once more.
-    assert_eq!(reads, 5, "preferences reads for one publication");
+    // member would read the saved policy once more. The same projection
+    // reads the saved Fan Stop settings when that composition serves them.
+    let expected = if cfg!(feature = "service-fan-stop-v1") {
+        7
+    } else {
+        5
+    };
+    assert_eq!(reads, expected, "preferences reads for one publication");
     rig.stop().await;
 }
 

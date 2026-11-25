@@ -85,7 +85,7 @@ power. `WindowsGuard::authorize_for` compares the pinned epoch with
 `epoch_for(WriteScope::Ordinary)` before and after its Windows checks, so
 per-write admission stays authoritative. `WriteScope::LowPowerCleanup` is
 managed's `PriorAuthorityCleanup` exception for the low-power preparation: the
-keyboard's Normal release. Native has no Fan Stop, so no fan cleanup runs
+keyboard's Normal release. Native has no Fan Stop guardian, so no fan cleanup runs
 there. The gate admits it only while the exact suspend generation it captured
 is current
 (`IsActiveForGeneration`), so the next resume, DisplayOn or suspend ends it.
@@ -1053,7 +1053,9 @@ Differences from managed:
   Windows 11 build that recorded the vectors; an older Windows maps it to
   `\\.\NUL` and managed refuses it there.
 - Battery Saver fan stop cannot be newly enabled, because this composition has
-  no Fan Stop. Managed allows it once Fan Stop is admitted at run time.
+  no Fan Stop guardian; `setBatterySaverFanStop` refuses it the same way
+  (`service-fan-stop-v1`). Managed allows it once Fan Stop is admitted at
+  run time.
 - A request from another session, or while a thermal submission needs
   reconciliation, is refused as every installed mutation is (closed
   connection, or `Blocked` with the reconciliation reason). Managed stores
@@ -2463,6 +2465,104 @@ writing nothing, a rearm still published when a client disconnect drops the
 request at its first step, a Stored reply after a rearm, unknown Windows
 power, a performance-only reapply running no fan step, and the manual-fan
 bridge on battery. `thermal_reapply.rs` checks the three reply summaries.
+
+## Fan Stop without its guardian (`service-fan-stop-v1`)
+
+Managed's production composition wires `GuardianFanStopBackend` over
+`WindowsFanStopGuardianClient`. When that client cannot verify the guardian it
+reports `GuardianUnavailable` with no message of its own, so
+`FanStopController` publishes Unavailable and refuses Stop and Automatic when
+its startup disposition is Clear (see the first deviation below). The
+`service-fan-stop-v1` feature serves the four Fan Stop requests as managed
+does in that state. It implies `service-profiles-v1`, adds the
+`service-fan-stop-v1` capability marker, and both package readers refuse it
+by feature and by marker (`native_package.rs`, `WindowsNativePackage.cs`), so
+no packaged composition implies it. Nothing in it touches hardware: the
+guardian, its EC mailbox and its ownership lease are planned separately.
+
+- `setFanStopMode` replies `Blocked` with the published status message for
+  both modes: the unavailable message on exact RZ09-0581, and the
+  no-evidence message without it. Automatic first pauses automatic Stop
+  (`ManualAuto`), as managed's `SetFanStopModeAsync` does before it
+  dispatches. Managed's source answers Automatic with `Blocked`, not with a
+  stored "no ownership" reply; the vectors record that.
+- `resumeAutomaticFanStop` replies managed's `Blocked` refusal.
+- `setFanStopSettings` takes managed's codec checks
+  (`FanStopSettings.IsWellFormed`, members optional over managed's
+  initialisers, unmapped members refused), then managed's session and
+  configuration checks, then stores the settings in the preferences
+  document through the profile store's aggregate transaction
+  (`Storage::save_fan_stop_settings`). Equal settings are not written
+  ("already saved"). Saving them disables, arms or leaves automatic Stop as
+  managed's eligibility does.
+- `setBatterySaverFanStop` refuses a preserved configuration first, then
+  enabling, because RZ09-0581 has no Battery Saver fan stop
+  (`SupportsBatterySaverFanStop` false). Turning it off stores the Battery
+  profile's `stopFansInBatterySaver` with the committed preference bytes,
+  only when it changes (`Storage::save_battery_saver_fan_stop`).
+
+Both saves share `Storage::commit` with `save_profiles` and the thermal
+policy save, so a failed write restores the prior aggregate, a stage that
+cannot be removed refuses the save without writing, an uncleared record
+quarantines the store, and a restart reads only what is durable
+(`profile_storage_tests.rs`, `fan_stop`).
+
+On exact RZ09-0581 host metadata the status publishes managed's
+`fanStopStatus` with reason `GuardianUnavailable` and the unavailable
+message, and the observation record carries `hasFanStopTrialEvidence` and
+`hasFanStopSourceEvidence`. `supportsFanStop` stays false. A composition
+without the feature keeps the no-evidence status and both flags false.
+
+`ServiceControlRuntimeTests.NativeFanStopVectors` records managed's replies
+and statuses for each case through the real runtime and the v90 codec into
+`tests/data/fan-stop-vectors.json`, and the evidence flags from the
+production factory's own predicates. The native readiness tests replay every
+row through the framed dispatcher (`readiness_tests/fan_stop.rs`) and the
+capability tests compare the record in every lane.
+
+Deviations from managed:
+
+- Native never reads the `FanStopGuardian` store. Managed computes
+  `StartupDisposition = store.InspectStartup()` even when the guardian is
+  unavailable (`WindowsFanStopGuardianClient.cs`): a
+  `<machineData>\FanStopGuardian\pending.json` makes it Unresolved, and an
+  inspection that throws makes it Unknown (`FanStopGuardianTransport.cs`). A
+  non-Clear disposition makes managed publish RecoveryRequired ("Fan-stop
+  startup ownership is unresolved; commands remain fenced."), reply Blocked
+  to `setFanStopMode`, and fence ordinary hardware writes
+  (`GuardianFanStopBackend.cs`; `ServiceControlRuntime.FanStop.cs`). Native
+  replies as for a Clear startup in every case. This is latent while both
+  package readers refuse the feature. The reservation read, the
+  RecoveryRequired publication and the write fence belong to the Rust
+  guardian work (option A) and must land before `service-fan-stop-v1` can
+  ship.
+- A caller without the control session while the configuration is
+  quarantined: managed checks `ConfigurationIsAdmitted` first
+  (`ServiceControlRuntime.cs`) and native checks the session first
+  (`fan_stop_mutation.rs`). Only the reply message differs.
+
+- Evidence comes from the matched host metadata (`RZ09-0581`), not from a
+  device observation, and the observation record is published only beside
+  a confirmed active HyperBoost, as every native record is.
+- The caller's saved settings and automation state are projected only after
+  that caller's own Fan Stop or thermal request has captured the store.
+  Before then, and in another user's view, the status shows the managed
+  defaults. `batterySaverFanStopStatus` stays absent.
+- Managed also pauses armed automatic Stop at mode, power and lifecycle
+  boundaries. Nothing can arm Stop entry here, so those pauses are not
+  tracked; they would change only the published pause reason.
+- A caller outside the control session is closed without a reply, where
+  managed answers its session refusal. A store failure replies `Failed` with
+  the store's reason, where managed's exception ends the request without a
+  result. A refused request capture (competing controller, locked session,
+  unknown AC status) replies `Blocked` with the capture reason, where managed
+  stores the settings.
+- A preserved aggregate found while serving answers both saves with
+  managed's preserved-configuration replies. Managed's first save over an
+  aggregate that changed since it loaded instead raises its quarantine
+  exception and pauses automatic Stop for a safety condition.
+- The settings decoder is stricter than managed's web defaults: member names
+  must be exact camelCase and numbers must be JSON numbers.
 
 ## Submission, ambiguity and finite transport lifetime
 

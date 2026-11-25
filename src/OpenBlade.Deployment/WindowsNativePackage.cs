@@ -92,6 +92,11 @@ internal sealed record NativeArtifact(string Id, string Role, string Target, str
         // feature and its capability marker by name, whatever else the record claims.
         if (features.Contains("service-profile-triggers-v1", StringComparer.Ordinal) || capabilities.Split(',').Contains("service-profile-triggers-v1", StringComparer.Ordinal))
         { throw new InvalidDataException("Automatic profile reconciliation is not admitted for packaging."); }
+        // Fan Stop is served with its guardian unavailable: it stores settings and refuses Stop.
+        // No packaging stage has admitted it. Refuse its feature and its capability marker by name,
+        // before the profiles it extends (docs/windows-rust-development-service.md).
+        if (features.Contains("service-fan-stop-v1", StringComparer.Ordinal) || capabilities.Split(',').Contains("service-fan-stop-v1", StringComparer.Ordinal))
+        { throw new InvalidDataException("Fan Stop is not admitted for packaging."); }
         // No packaging stage has admitted a Service that serves updateProfiles. Refuse the
         // feature and the capability by name, whatever else the record claims.
         if (features.Contains("service-profiles-v1", StringComparer.Ordinal) || capabilities.Split(',').Contains("service-profiles-v1", StringComparer.Ordinal))
