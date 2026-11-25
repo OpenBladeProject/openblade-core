@@ -185,6 +185,26 @@ async fn installed_update_profiles_stores_the_managed_aggregate_and_publishes_it
         status["status"]["profiles"]["batteryPolicy"]["chargeLimitPercent"],
         75
     );
+    // Managed `UpdateProfilesAsync` records the save in the diagnostic
+    // history the export reads.
+    #[cfg(feature = "service-diagnostics-export-v1")]
+    {
+        let history = rig.source.lock().await.diagnostics().history;
+        let snapshot = history.snapshot().unwrap();
+        let recorded: Vec<_> = snapshot
+            .results
+            .iter()
+            .map(|result| {
+                (
+                    result.subsystem.as_str(),
+                    result.action.as_str(),
+                    result.status.as_str(),
+                    result.detail.as_deref(),
+                )
+            })
+            .collect();
+        assert_eq!(recorded, [("Service", "Reconcile", "Stored", Some(STORED))]);
+    }
     assert_eq!(
         status["status"]["profiles"]["pluggedIn"]["display"]["refreshRateKey"],
         "240 Hz \u{e9}<&>"
@@ -680,6 +700,9 @@ fn this_composition_declares_profile_serving_in_its_compiled_identity() {
     // So does the live-reading build, after it.
     #[cfg(feature = "service-live-readings-v1")]
     let expected = format!("{expected},service-live-readings-v1");
+    // And the diagnostic export, last.
+    #[cfg(feature = "service-diagnostics-export-v1")]
+    let expected = format!("{expected},service-diagnostics-export-v1");
     assert_eq!(fields[8], expected);
 }
 

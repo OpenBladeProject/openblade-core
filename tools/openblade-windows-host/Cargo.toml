@@ -97,6 +97,12 @@ service-keyboard-driver-mode-v1 = ["service-keyboard-driver-mode-read-v1", "serv
 # worker thread, only for a workload on a D0 adapter. It sends no setter and
 # reads no CPU temperature. Packaging refuses an image that carries it.
 service-live-readings-v1 = ["service-mailbox-observation-v1"]
+# Read-only exportDiagnostics: the managed diagnostic archive over the status
+# the Service already publishes and the bounded in-memory managed history,
+# with no firmware, device or storage read of its own. It composes with the
+# read-only mailbox observation, as the live-reading read does. Packaging
+# refuses an image that carries it.
+service-diagnostics-export-v1 = ["service-mailbox-observation-v1"]
 service-hardware-compile-check = ["installed-service-candidate", "firmware-performance-compile-check"]
 installed-service-candidate = [
     "startup-custody-v1",

@@ -579,6 +579,17 @@ fn publish_reconciled(
     Ok(status)
 }
 impl StatusSource for GuardedStatus {
+    #[cfg(all(
+        feature = "service-diagnostics-export-v1",
+        feature = "service-thermal-mutation-v1"
+    ))]
+    fn diagnostics(&self) -> crate::diagnostic_export::Sources {
+        let mut sources = crate::diagnostic_export::Sources::service();
+        if let Some(runtime) = &self.mutation {
+            sources.history = runtime.diagnostic_history();
+        }
+        sources
+    }
     #[cfg(feature = "service-profile-triggers-v1")]
     fn reconcile_lifecycle(&mut self) -> Option<super::Reconciling> {
         let runtime = self.mutation.clone()?;

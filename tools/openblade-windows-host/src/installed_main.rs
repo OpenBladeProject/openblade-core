@@ -9,6 +9,8 @@ include!(concat!(env!("OUT_DIR"), "/service_identity.rs"));
 mod candidate_receipt;
 #[cfg(windows)]
 mod console_session;
+#[cfg(all(windows, feature = "service-diagnostics-export-v1"))]
+mod diagnostic_export;
 #[cfg(windows)]
 #[allow(dead_code)] // Installed firmware access requires an admitted runtime owner.
 mod discovery;

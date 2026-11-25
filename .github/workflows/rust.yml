@@ -319,6 +319,14 @@ jobs:
           # write, which drops a retained fan pair.
           $liveReadingsDriverMode = @('openblade-windows-service-candidate', 'service-keyboard-driver-mode-read-v1,service-live-readings-v1,service-profiles-v1')
           $liveReadingsFans = @('openblade-windows-service-candidate', 'service-live-readings-v1,service-fan-mutation-v2')
+          # The read-only diagnostic export alone and beside the profile store,
+          # its one history producer, the live readings and the lifecycle
+          # triggers. The lanes without it pin that exportDiagnostics is
+          # answered with managed's unsupported reply.
+          $export = @('openblade-windows-service-candidate', 'service-diagnostics-export-v1')
+          $exportProfiles = @('openblade-windows-service-candidate', 'service-diagnostics-export-v1,service-profiles-v1')
+          $exportLiveReadings = @('openblade-windows-service-candidate', 'service-diagnostics-export-v1,service-live-readings-v1')
+          $exportTriggers = @('openblade-windows-service-candidate', 'service-diagnostics-export-v1,service-profile-triggers-v1')
           # One run per filter, so a filter that matches no test fails the step.
           foreach ($run in @(
               @('openblade-windows-service-candidate', 'service-temporary-charge-v1', 'service_status::object_tests'),
@@ -405,6 +413,18 @@ jobs:
               ($liveReadingsFans + 'firmware_versions'),
               ($liveReadingsFans + 'gpu_temperature'),
               ($liveReadingsFans + 'capability_tests'),
+              ($export + 'diagnostic_export'),
+              ($export + 'readiness::tests::export'),
+              ($export + 'unserved'),
+              ($export + 'native_package'),
+              ($exportProfiles + 'diagnostic_export'),
+              ($exportProfiles + 'readiness::tests::export'),
+              ($exportProfiles + 'unserved'),
+              ($exportProfiles + 'profiles::'),
+              ($exportLiveReadings + 'readiness::tests::export'),
+              ($exportLiveReadings + 'live_readings::tests'),
+              ($exportTriggers + 'readiness::tests::export'),
+              ($exportTriggers + 'request_triggers'),
               @('openblade-windows-service-candidate', 'service-mailbox-observation-v1', 'capability_tests'),
               @('openblade-windows-service-candidate', 'service-mailbox-observation-v1', 'readiness::tests::observation'),
               @('openblade-windows-service-candidate', 'service-mailbox-observation-v1', 'driver_mode_absent'),
@@ -458,6 +478,11 @@ jobs:
               @('openblade-windows-service-candidate', 'service-live-readings-v1,service-profiles-v1'),
               @('openblade-windows-service-candidate', 'service-keyboard-driver-mode-read-v1,service-live-readings-v1,service-profiles-v1'),
               @('openblade-windows-service-candidate', 'service-live-readings-v1,service-fan-mutation-v2'),
+              # The diagnostic export for the same reason, beside each write
+              # and read it composes with.
+              @('openblade-windows-service-candidate', 'service-diagnostics-export-v1,service-profiles-v1'),
+              @('openblade-windows-service-candidate', 'service-diagnostics-export-v1,service-live-readings-v1,service-profiles-v1'),
+              @('openblade-windows-service-candidate', 'service-diagnostics-export-v1,service-profile-triggers-v1'),
               @('openblade-windows-service-candidate', 'service-profile-triggers-v1'),
               @('openblade-windows-service-candidate', 'service-keyboard-driver-mode-v1'),
               @('openblade-windows-service-candidate', 'service-keyboard-driver-mode-v1,service-profile-triggers-v1'),

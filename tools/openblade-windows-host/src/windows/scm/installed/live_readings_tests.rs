@@ -1006,7 +1006,10 @@ fn the_compiled_identity_ends_with_the_refused_marker() {
     let fields: Vec<&str> = identity.split('\n').collect();
     assert_eq!(fields[2], "service");
     assert!(
-        fields[8].ends_with(",service-live-readings-v1"),
+        // Only the diagnostic export's marker may follow it.
+        fields[8]
+            .trim_end_matches(",service-diagnostics-export-v1")
+            .ends_with(",service-live-readings-v1"),
         "{}",
         fields[8]
     );

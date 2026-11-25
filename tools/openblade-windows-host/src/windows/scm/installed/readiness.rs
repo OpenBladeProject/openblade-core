@@ -44,6 +44,11 @@ mod mailbox_read;
 #[path = "ownership.rs"]
 pub(super) mod ownership;
 
+#[cfg(feature = "service-diagnostics-export-v1")]
+#[path = "readiness_export.rs"]
+mod export;
+#[cfg(feature = "service-diagnostics-export-v1")]
+use export::serve_export;
 #[path = "status_source.rs"]
 mod status_source;
 #[cfg(feature = "service-profile-triggers-v1")]
@@ -233,6 +238,12 @@ trait StatusSource {
     }
     fn publication_guard(&self) -> Rc<dyn Fn() -> io::Result<()>> {
         Rc::new(|| Ok(()))
+    }
+    // The history and host metadata an export reads. A composition with a
+    // history producer supplies its own history; any other has none.
+    #[cfg(feature = "service-diagnostics-export-v1")]
+    fn diagnostics(&self) -> crate::diagnostic_export::Sources {
+        crate::diagnostic_export::Sources::service()
     }
     fn drain(&mut self) -> Pending<'_, ()>;
     /// `drain` under `deadline`, the bound `Ports::retire` puts on it, so
@@ -575,6 +586,17 @@ async fn serve_connection(
         guard().map_err(ExchangeError::Runtime)
     } else if request.is_observation() {
         serve_observation(&mut *stream, &request, caller, &source).await?;
+        guard().map_err(ExchangeError::Runtime)
+    } else if request.is_export() {
+        #[cfg(feature = "service-diagnostics-export-v1")]
+        serve_export(
+            &mut *stream,
+            &request,
+            caller,
+            &source,
+            subscriptions.exports(),
+        )
+        .await?;
         guard().map_err(ExchangeError::Runtime)
     } else {
         caller.access().map_err(ExchangeError::Client)?;
