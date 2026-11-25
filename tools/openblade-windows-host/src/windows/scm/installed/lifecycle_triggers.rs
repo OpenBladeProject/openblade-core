@@ -153,20 +153,14 @@ impl Pending {
     /// Whether an attempt runs at write epoch `epoch` at `now`, the GPU
     /// fence aside (`gpu_pending`).
     fn due(&self, epoch: Option<u64>, now: Instant) -> bool {
-        self.moved(epoch) && self.paced(now)
-    }
-    /// Whether the write epoch is no longer `epoch` at the last attempt.
-    fn moved(&self, epoch: Option<u64>) -> bool {
-        match self.tried {
+        let moved = match self.tried {
             None => true,
             Some(tried) => epoch.is_some() && epoch != tried,
-        }
-    }
-    /// Whether `PACE` has passed at `now` since the last attempt whose steps
-    /// ran.
-    fn paced(&self, now: Instant) -> bool {
-        self.stepped
-            .is_none_or(|at| now.saturating_duration_since(at) >= PACE)
+        };
+        moved
+            && self
+                .stepped
+                .is_none_or(|at| now.saturating_duration_since(at) >= PACE)
     }
     /// The cause after an attempt at `epoch` refused before any step: it
     /// waits for that epoch to move. It spends nothing: the refusal read no
@@ -333,11 +327,12 @@ impl Runtime {
         // A cause the GPU fence parked is due once the fence clears, at an
         // unmoved epoch too; the fence reads only while a submission is
         // uncertain, and only once the epoch has not already made it due.
+        // The refused attempt itself ran only after `PACE`, so no pace is
+        // left to wait here.
         let due = match pending {
             Some(p) if !low => {
                 p.due(epoch, now)
                     || (p.gpu_pending
-                        && p.paced(now)
                         && !self
                             .gpu_fenced(Instant::now() + crate::service_frame::RECONCILE_BUDGET)
                             .await)
