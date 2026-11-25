@@ -1221,6 +1221,23 @@ See
 [the HyperBoost exit](windows-native-thermal-mutation.md#hyperboost-exit-to-a-battery-preset-service-thermal-hyperboost-exit-v1)
 for the recipe, the replies and the differences from managed.
 
+#### Owned HyperBoost
+
+A Service built with `service-hyperboost-v1` serves `setHyperBoost` on exact
+RZ09-0581: pad-less entry with the `hyperboost-enable` pair from a confirmed
+Silent, Balanced, Performance or Custom base with Automatic fans, or from
+manual fans, and exit to the saved performance destination. The feature implies
+`service-thermal-hyperboost-exit-v1`, adds the IPC operation, journals its rows
+as destination 100 and adds the capability marker `service-hyperboost-v1`
+after the HyperBoost exit's. Native reads managed's HyperBoost ownership
+journal read-only and refuses while it is pending; managed recovers an
+unsettled native row through the `hyperBoost` handback family. Both package
+readers refuse the feature and the marker by name ("Owned HyperBoost is not
+admitted for packaging."), so no packaged image carries it. It is
+source-reviewed and has not been run on a laptop. See
+[owned HyperBoost](windows-native-thermal-mutation.md#owned-hyperboost-service-hyperboost-v1)
+for the gates, the journal decision and the differences from managed.
+
 ### Phase 10n ownership binding
 
 The installed candidate's conditional firmware factory now requires a private

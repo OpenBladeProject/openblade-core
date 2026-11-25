@@ -34,6 +34,15 @@ without its battery pair, and a restore row after the battery pair, on any
 other destination, or without that feature is refused. The
 `hyperBoostExitRows` vectors pin both readers.
 
+Readers built with `openblade-domain/hyperboost` (`service-hyperboost-v1`)
+and a WindowsNativeThermalHistory whose artifact names that capability also
+admit owned HyperBoost rows: destination 100 with a null requested override,
+on the pair chain 0->1->2->3->4->5 or 0->6. A restore row, a Custom chain, a
+requested override or a skipped setter is refused, and so is any destination
+100 row without the feature or that capability. An unsettled row is handed
+back as `pending` family `hyperBoost` (1-4) or `abandonedPrepared` (0). The
+`hyperBoostRows` vectors pin both readers.
+
 The legacy raw journal is imported unchanged as segment 1 at the first rollover.
 Each immutable segment and active raw tail is bounded to 1 MiB. A segment ends
 settled and a new operation starts with Prepared. Request chronology is checked
