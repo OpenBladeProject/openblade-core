@@ -1757,7 +1757,10 @@ pub(super) type GpuFence = Option<Arc<dyn Fn(std::time::Duration) -> bool + Send
 impl Runtime {
     /// The fence for a writer or trigger admitted now: it carries the
     /// lifecycle the writer was admitted under (`Runtime::gpu_boundary`), so
-    /// its resolution read crosses a power change as a GPU step would.
+    /// its resolution read crosses a power change as a GPU step would. A
+    /// permit that outlives that lifecycle builds its own: owned Stop's
+    /// settle-only and handback permits take one at Stop, after the power or
+    /// session change that moved the owner's epoch.
     pub(super) fn gpu_fence(&self) -> GpuFence {
         #[cfg(feature = "service-gpu-clock-tuning-v1")]
         if let Some(lane) = self.gpu.get().cloned() {

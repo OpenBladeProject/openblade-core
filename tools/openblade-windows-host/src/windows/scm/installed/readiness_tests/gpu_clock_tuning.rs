@@ -762,6 +762,43 @@ async fn an_uncertain_gpu_submission_fences_the_owned_stop_handback() {
     }
 }
 
+/// Delta review LOW-2: owned Stop's handback reads a fence built at Stop,
+/// not at the owner's request, so an unplug that no fence has seen rearms
+/// its one ungated query: the readable driver resolves the management and
+/// the fans are handed back to Automatic, with no NVML write. Before the fix
+/// the handback crossed no power change, its read stayed gated and the fans
+/// stayed manual.
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn an_owned_stop_after_an_unseen_unplug_hands_the_fans_back() {
+    let fake = Fake::new(0, 0);
+    let (rig, lane, _, power) = rig_with(MemoryFiles::default(), 0, &fake, Arc::default());
+    rig.custody.scoped_fresh.store(true, Ordering::Release);
+    *rig.custody.origin_for_fan.lock().unwrap() = Some(rig.origin.clone());
+    rig.get().await;
+    let manual = rig.request(fan_request(10, Some(1), 3700)).await;
+    assert_eq!(manual["result"]["status"], 1, "{manual}");
+    let custody = rig.custody.clone();
+    rig.runtime
+        .read_cleanup(move |passed, scope| CleanupFresh::capture(custody.clone(), passed, scope));
+    leave_uncertain(&rig, &lane, &fake);
+    let sets = fake.sets();
+    fake.with(|d| d.queries_fail = false);
+    let firmware = writes(&rig);
+    // The unplug moves the Windows power generation and the owner's epoch.
+    power.fetch_add(1, Ordering::AcqRel);
+    rig.custody.lifecycle.ingress(
+        windows_sys::Win32::System::Services::SERVICE_CONTROL_POWEREVENT,
+        10,
+    );
+    rig.origin.stop();
+    let _ = rig.source.lock().await.drain().await;
+    let state = rig.port.state.lock().unwrap();
+    assert!(state.writes > firmware);
+    assert_eq!(state.fans, [0, 0]);
+    assert_eq!(fake.sets(), sets);
+}
+
 /// A profile save is a reconciliation, and a reconciliation leaves every
 /// GPU clock effect refused as incomplete: saving an active rule that
 /// carries GPU clock tuning writes neither firmware nor NVML.
