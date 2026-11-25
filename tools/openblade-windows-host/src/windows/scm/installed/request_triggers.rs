@@ -1197,12 +1197,19 @@ impl Runtime {
     /// (`Runtime::gpu_fence`), for a trigger's admission before any firmware
     /// read. Its one read-only resolution attempt, bounded by what is left
     /// before `deadline`, runs on a pool thread, so the Service runtime never
-    /// waits on NVML; an attempt that ended without a result fences.
+    /// waits on NVML; an attempt that ended without a result fences. In low
+    /// power it starts no call, as no GPU call runs there: a zero budget
+    /// leaves only the recorded state to fence, and keeps the ungated query
+    /// for after the boundary.
     async fn gpu_fenced(&self, deadline: Instant) -> bool {
         let Some(fenced) = self.gpu_fence() else {
             return false;
         };
-        let budget = deadline.saturating_duration_since(Instant::now());
+        let budget = if self.gate() == Gate::Low {
+            std::time::Duration::ZERO
+        } else {
+            deadline.saturating_duration_since(Instant::now())
+        };
         tokio::task::spawn_blocking(move || fenced(budget))
             .await
             .unwrap_or(true)

@@ -6,8 +6,8 @@
 //!
 //! - a caller outside the control session is refused;
 //! - an unsettled journal row or a pending GPU clock confirmation (managed
-//!   `pendingWriteConfirmations`) and a reservation still in the ledger each
-//!   block before anything is written;
+//!   `pendingWriteConfirmations`; in low power checked without a read) and a
+//!   reservation still in the ledger each block before anything is written;
 //! - a ledger that holds tombstones or budgets is rearmed: both lists and
 //!   the terminal result are cleared by compare-and-swap on the bytes the
 //!   store holds (`Storage::replace_convergence_ledger`). A replacement that
