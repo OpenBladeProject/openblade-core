@@ -121,8 +121,9 @@ public sealed class ServiceStartupCoordinatorTests : IDisposable
                         _ =>
                         {
                             events.Add("cleanup");
-                            return Task.FromResult(new ControlOperationResult(
-                                ControlOperationStatus.Applied, "Guarded cleanup completed."));
+                            var result = new ControlOperationResult(
+                                ControlOperationStatus.Applied, "Guarded cleanup completed.");
+                            return Task.FromResult(new ServiceStopCleanupResult(result, result.Status));
                         },
                         logger,
                         token);
