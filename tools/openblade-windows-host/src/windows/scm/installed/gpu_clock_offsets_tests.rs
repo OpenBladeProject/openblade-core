@@ -1074,3 +1074,25 @@ fn a_dropped_worker_starts_no_queued_call_and_writes_nothing() {
     assert_eq!(fake.sets(), 0);
     assert_eq!(fake.current(), (100, 100));
 }
+
+#[cfg(feature = "service-gpu-clock-tuning-v1")]
+#[test]
+fn a_blocking_call_that_starts_and_outlasts_its_budget_is_abandoned() {
+    let fake = Fake::new(0, 0);
+    let (release, hold) = mpsc::channel();
+    fake.with(|d| d.hold = Some(hold));
+    let worker = worker(&fake);
+    // The write starts and blocks inside the driver past the budget: it may
+    // have submitted, so it is abandoned, never reported as unsent.
+    let result = worker.call_blocking(Duration::from_millis(100), |m| {
+        m.set(offsets_of((125, 500)), true).is_ok()
+    });
+    assert_eq!(result, Called::Abandoned);
+    release.send(()).unwrap();
+    // The worker finished the write and recorded what the driver holds.
+    assert_eq!(
+        worker.call_blocking(BUDGET, |m| m.state()),
+        Called::Done(State::Managed)
+    );
+    assert_eq!(fake.current(), (125, 500));
+}
