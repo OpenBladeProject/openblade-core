@@ -568,6 +568,28 @@ fn publish_reconciled(
         status = reader.current_policy(status)?;
         reader.retain_mutation(&status);
     }
+    publish_next(publisher, status)
+}
+/// Publishes the latest status projected with the Reader's held shortcut
+/// preview. A preview reads nothing, so the Reader retains nothing: its read
+/// witness and retention window stay those of the last real read.
+#[cfg(feature = "service-performance-shortcut-v1")]
+fn publish_preview(
+    publisher: &watch::Sender<Arc<Publication>>,
+    reader: &super::mailbox_read::ReadSource,
+) -> io::Result<Snapshot> {
+    let latest = publisher.borrow().active.clone();
+    publish_next(publisher, reader.current_policy(latest)?)
+}
+/// Sends `status` with the revision after the latest publication's.
+#[cfg(any(
+    feature = "service-profile-triggers-v1",
+    feature = "service-performance-shortcut-v1"
+))]
+fn publish_next(
+    publisher: &watch::Sender<Arc<Publication>>,
+    mut status: Snapshot,
+) -> io::Result<Snapshot> {
     status.set_observation_revision(
         publisher
             .borrow()
@@ -1082,8 +1104,7 @@ impl StatusSource for GuardedStatus {
                     if !changed {
                         return Ok((outcome, None));
                     }
-                    let latest = publisher.borrow().active.clone();
-                    let status = publish_reconciled(&publisher, &mailbox, latest)?;
+                    let status = publish_preview(&publisher, reader)?;
                     Ok((outcome, Some(status)))
                 }
                 _ => Ok((

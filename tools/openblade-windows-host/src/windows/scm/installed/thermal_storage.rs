@@ -1583,15 +1583,28 @@ impl Storage {
             .filter(|custom| !custom.is_null())
             .cloned())
     }
-    /// The wire value of the saved performance at class `power` (`desired`'s
-    /// selection), whether or not it names a native destination.
+    /// The wire value managed `Automation.Resolve(..).Performance` selects
+    /// at classified class `power`, whether or not it names a native
+    /// destination: `desired`'s selection, then, when no override applies
+    /// and no profile resolution was read, the power profile's preset
+    /// (`profile_thermal`, managed `ProfileDefaults.CreateSafeDefaults`'s
+    /// when no aggregate is stored).
+    /// `profile` is the domain resolution at `power` (`ProfileLayer::at`).
     #[cfg(feature = "service-performance-shortcut-v1")]
     pub(super) fn selected_performance(
         &self,
         power: i32,
         profile: Option<&Resolution<'_>>,
     ) -> io::Result<Option<i32>> {
-        Ok(self.selected(power, profile)?.map(|s| s.value))
+        if let Some(selected) = self.selected(power, profile)? {
+            return Ok(Some(selected.value));
+        }
+        if profile.is_some() {
+            return Ok(None);
+        }
+        Ok(self
+            .profile_thermal(power)?
+            .map(|(performance, _)| performance))
     }
     /// Whether saved fan intent at class `power` is manual: an unexpired
     /// temporary fan override, then a persistent one, then the resolved

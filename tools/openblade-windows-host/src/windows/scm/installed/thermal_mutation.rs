@@ -1734,12 +1734,14 @@ impl RequestPermit {
         Cause::UnclassifiedBlocked
     }
     /// The shortcut's override for the fresh class `power` and reading
-    /// `baseline`, or the refusal that stores nothing.
+    /// `baseline` over the profiles `layer` the request step read, or the
+    /// refusal that stores nothing.
     #[cfg(feature = "service-performance-shortcut-v1")]
     fn stage_shortcut(
         &self,
         power: i32,
         baseline: ObservedPerformance,
+        layer: &super::thermal_storage::ProfileLayer,
     ) -> io::Result<Result<Override, Cause>> {
         // Managed `ExternalChanges` as confirmed drift publishes it.
         #[cfg(feature = "service-profile-triggers-v1")]
@@ -1751,13 +1753,11 @@ impl RequestPermit {
             .contains(&thermal_drift::PERFORMANCE);
         #[cfg(not(feature = "service-profile-triggers-v1"))]
         let external_performance = false;
-        let layer = self.storage.profile_layer(&self.application)?;
-        let profile = layer.at(power)?;
         shortcut::stage(&shortcut::Reading {
             storage: &self.storage,
             fresh: self.fresh.as_ref(),
             power,
-            profile: profile.as_ref(),
+            layer,
             baseline: Some(baseline),
             external_performance,
         })
@@ -1859,6 +1859,9 @@ impl Runtime {
             .power_generation()
             .ok_or(io::ErrorKind::PermissionDenied)?;
         storage.observe_power(BATTERY, generation)?;
+        // A saved document the domain decoder refuses stores nothing.
+        let layer = storage.profile_layer(application)?;
+        layer.at(BATTERY)?;
         // Only an explicit value without the shortcut feature.
         #[cfg_attr(
             not(feature = "service-performance-shortcut-v1"),
@@ -1866,17 +1869,17 @@ impl Runtime {
         )]
         let value = match staged {
             Staged::Value(value) => value,
-            // Nothing was read from firmware, so the shortcut cycles from
-            // the saved intent at Windows battery.
+            // Nothing is read from firmware while the gate is set, so the
+            // shortcut cycles from the saved intent at Windows battery; the
+            // runtime keeps no confirmed reading for managed's cached
+            // `ExternalChanges` and `ConfirmedState` to select from.
             #[cfg(feature = "service-performance-shortcut-v1")]
             Staged::Shortcut(_) => {
-                let layer = storage.profile_layer(application)?;
-                let profile = layer.at(BATTERY)?;
                 match shortcut::stage(&shortcut::Reading {
                     storage,
                     fresh,
                     power: BATTERY,
-                    profile: profile.as_ref(),
+                    layer: &layer,
                     baseline: None,
                     external_performance: false,
                 })? {
@@ -1891,8 +1894,6 @@ impl Runtime {
                 message: Cause::Rejected(message).message(),
             });
         }
-        // A saved document the domain decoder refuses stores nothing.
-        storage.profile_layer(application)?.at(BATTERY)?;
         let cleared = value.is_none();
         storage.save(value, BATTERY)?;
         self.owe_stored_intent(pair);
@@ -2107,13 +2108,19 @@ impl Permit for RequestPermit {
                 self.set_cause(Cause::Unchanged);
                 return Ok(None);
             }
+            // The profile layer is resolved before the override is stored, as
+            // the fan path does: a saved document the domain decoder refuses
+            // stores nothing and the request is not accepted. Staging and
+            // saving the override change no profile, so this one read serves
+            // the shortcut and the destination.
+            let layer = self.storage.profile_layer(&self.application)?;
             // A shortcut stages its override from this reading, after the
             // class it was read at expired any temporary it retires, and the
             // override then takes every check of an explicit request (managed
             // `CyclePerformanceShortcutAsync`).
             #[cfg(feature = "service-performance-shortcut-v1")]
             if self.shortcut.is_some() && self.requested.get().is_none() {
-                let staged = self.stage_shortcut(power, baseline)?;
+                let staged = self.stage_shortcut(power, baseline, &layer)?;
                 // Managed validates the staged override as it would an
                 // explicit one (`ValidateUnclassifiedPerformanceOverride`).
                 match staged.map(|value| {
@@ -2142,11 +2149,6 @@ impl Permit for RequestPermit {
                 self.set_cause(Cause::Rejected(message));
                 return Ok(None);
             }
-            // The profile layer is resolved before the override is stored, as
-            // the fan path does: a saved document the domain decoder refuses
-            // stores nothing and the request is not accepted. Saving the
-            // override changes no profile, so the resolution stays current.
-            let layer = self.storage.profile_layer(&self.application)?;
             let profile = layer.at(power)?;
             if self.reconcile.is_some() {
                 // Nothing is stored, so the override document the saved intent

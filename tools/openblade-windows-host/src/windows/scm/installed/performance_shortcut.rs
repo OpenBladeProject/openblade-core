@@ -5,13 +5,13 @@
 //! 0D/82 reading, before it runs the request's checks, saves it and writes
 //! the destination through the reviewed recipe. Only the reply text is the
 //! shortcut's own (`Source::reply`).
-use super::super::thermal_storage::{Override, Storage, custom_destination};
+use super::super::thermal_storage::{Override, ProfileLayer, Storage, custom_destination};
 use super::{Cause, Fresh, managed_power_source};
 use crate::discovery::performance::ObservedPerformance;
 use openblade_domain::{
     automation::UNCLASSIFIED_EXTERNAL,
     performance_shortcut::{self, Cycle},
-    profile_set::{Capabilities, CustomPerformance, PerformancePreset, application::Resolution},
+    profile_set::{Capabilities, CustomPerformance, PerformancePreset},
     thermal_mutation::CUSTOM,
 };
 use serde_json::{Value, json};
@@ -62,6 +62,8 @@ const STATE_UNAVAILABLE: &str =
     "The current thermal state is unavailable for ordinary performance cycling.";
 const NO_ALTERNATE: &str =
     "No alternate performance preset is available for the current power source.";
+/// The 07/8C battery class, managed `PowerSource.Battery`.
+const BATTERY: i32 = 1;
 
 /// What a shortcut's fresh reading selects.
 pub(super) struct Reading<'a> {
@@ -69,7 +71,8 @@ pub(super) struct Reading<'a> {
     pub(super) fresh: &'a dyn Fresh,
     /// The fresh 07/8C class.
     pub(super) power: i32,
-    pub(super) profile: Option<&'a Resolution<'a>>,
+    /// The saved profiles the request step read, with its active pair.
+    pub(super) layer: &'a ProfileLayer,
     /// The fresh 0D/82 reading; none when no firmware was read.
     pub(super) baseline: Option<ObservedPerformance>,
     /// Confirmed drift has marked Performance as changed outside OpenBlade
@@ -88,6 +91,17 @@ pub(super) fn stage(reading: &Reading<'_>) -> io::Result<Result<Override, Cause>
         Cycle::Battery
     } else {
         Cycle::External
+    };
+    // Managed resolves the cycle's current preset and the profile's Custom
+    // settings under the power source it cycles: Battery whenever Windows
+    // reports battery. The thermal worker admits a performance request under
+    // Windows battery only with a battery reading (`Power::thermal_source`),
+    // so on every admitted path this is the adapter class, where the
+    // override is saved and its destination selected.
+    let source = if cycle == Cycle::Battery {
+        BATTERY
+    } else {
+        reading.power
     };
     let observed = reading
         .baseline
@@ -114,7 +128,7 @@ pub(super) fn stage(reading: &Reading<'_>) -> io::Result<Result<Override, Cause>
             // A preset outside the cycle starts it from its first preset.
             None => reading
                 .storage
-                .selected_performance(reading.power, reading.profile)?
+                .selected_performance(source, reading.layer.at(source)?.as_ref())?
                 .unwrap_or(-1),
         };
         (current, None)
@@ -128,7 +142,7 @@ pub(super) fn stage(reading: &Reading<'_>) -> io::Result<Result<Override, Cause>
         (true, false) => Some(
             reading
                 .storage
-                .profile_custom_performance(reading.power)?
+                .profile_custom_performance(source)?
                 .unwrap_or_else(|| settings(CustomPerformance::DEFAULT)),
         ),
     };

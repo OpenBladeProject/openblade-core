@@ -180,6 +180,77 @@ async fn each_class_cycles_to_the_next_preset_through_its_reviewed_pair() {
 }
 
 #[tokio::test]
+async fn without_saved_profiles_the_cycle_starts_from_the_safe_default_preset() {
+    // Managed resolves `ProfileDefaults.CreateSafeDefaults` when no profiles
+    // are stored: Balanced on either adapter, so the first press selects
+    // Silent and the next one Performance. On battery its Battery Saver
+    // selects Battery Balanced.
+    for actual in [FULL, LIMITED] {
+        let rig = rig_at(selector(1), 0, actual, MemoryFiles::default());
+        let result = rig.cycle(1, 1).await;
+        assert_eq!(
+            result["result"],
+            json!({"status":1,"message":"Fn+P selected Silent."}),
+            "{actual}: {result}"
+        );
+        assert_eq!(
+            setters(&rig),
+            [vec![1, 1, 5, 0], vec![1, 2, 5, 0]],
+            "{actual}"
+        );
+        let result = rig.cycle(2, 1).await;
+        assert_eq!(
+            result["result"],
+            json!({"status":1,"message":"Fn+P selected Performance."}),
+            "{actual}: {result}"
+        );
+        assert_eq!(
+            setters(&rig)[2..],
+            [vec![1, 1, 2, 0], vec![1, 2, 2, 0]],
+            "{actual}"
+        );
+        rig.stop().await;
+    }
+    let rig = rig_at(selector(3), 0, BATTERY, MemoryFiles::default());
+    let result = rig.cycle(1, 0).await;
+    assert_eq!(
+        result["result"],
+        json!({"status":1,"message":"The performance button selected BatteryBalanced."}),
+        "{result}"
+    );
+    assert_eq!(setters(&rig), [vec![1, 1, 6, 0], vec![1, 2, 6, 0]]);
+    rig.stop().await;
+}
+
+#[tokio::test]
+async fn windows_battery_with_an_external_reading_is_refused_as_an_explicit_request_is() {
+    // Managed cycles under its Battery power source whenever Windows reports
+    // battery. Native admits a performance request there only with a battery
+    // reading (`Power::thermal_source`), so an external 07/8C class is
+    // refused before anything is staged, exactly as the explicit temporary
+    // Battery Saver the cycle would select is: nothing is read, stored or
+    // written.
+    let mut outcomes = Vec::new();
+    for shortcut in [true, false] {
+        let rig = rig_at(selector(1), 0, FULL, saved(4, None));
+        rig.port.state.lock().unwrap().windows_on_battery = Some(Some(true));
+        let saved = rig.files.read("manual-overrides.json").unwrap();
+        let result = if shortcut {
+            rig.cycle(1, 1).await
+        } else {
+            rig.set(1, value(3, 0)).await
+        };
+        assert_eq!(result["result"]["status"], 2, "{result}");
+        assert!(setters(&rig).is_empty());
+        assert!(rows(&rig).is_empty());
+        assert_eq!(rig.files.read("manual-overrides.json").unwrap(), saved);
+        outcomes.push(result["result"].clone());
+        rig.stop().await;
+    }
+    assert_eq!(outcomes[0], outcomes[1]);
+}
+
+#[tokio::test]
 async fn a_staged_custom_carries_the_profile_or_default_levels() {
     // Managed stages the power profile's Custom settings, or its default.
     let rig = rig_at(2, 0, FULL, saved(2, None));
@@ -480,5 +551,21 @@ async fn an_undefined_shortcut_request_is_refused_by_the_codec() {
         );
     }
     assert_eq!(sent(&rig), before);
+    rig.stop().await;
+}
+
+#[tokio::test]
+async fn a_preview_leaves_the_readers_read_witness() {
+    // A preview reads nothing, so it neither re-stamps the retained read nor
+    // extends its retention window.
+    let rig = rig_at(2, 0, FULL, MemoryFiles::default());
+    assert_eq!(rig.cycle(1, 1).await["result"]["status"], 1);
+    let witness = rig.reader.last_completed_for_tests();
+    assert!(witness.is_some());
+    for (n, preset) in [(2, Some(0)), (3, None)] {
+        let result = rig.preview(n, SESSION, 1, preset).await;
+        assert_eq!(result["result"]["status"], 0, "{result}");
+        assert_eq!(rig.reader.last_completed_for_tests(), witness);
+    }
     rig.stop().await;
 }
