@@ -4,6 +4,8 @@
 //! and GPU level setters, written directly from every confirmed state with the
 //! destination's own power-class rule.
 use super::*;
+use Change::{After, During};
+use Event::{Adapter, WindowsKind};
 
 /// (wire value, firmware selector) of the three destinations this slice adds.
 const SILENT: (i32, u8) = (0, 5);
@@ -80,6 +82,41 @@ fn rig_at(selector: u8, fans: u8, actual: u8, files: MemoryFiles) -> Rig {
         rig.metadata.store(1, Ordering::Release);
     }
     rig
+}
+
+/// When a test's power change lands. The fixture derives Windows from the
+/// adapter unless a test sets it, so an adapter change is a real unplug or
+/// plug-in. During a power read's query, Windows changes across it, which
+/// stops that setter (managed `AdmitOrdinaryThermalCommandAsync`); once a 0D
+/// setter (1-based) is sent, the change lands before the next setter's own
+/// Windows sample and reading, which admit it afresh.
+#[derive(Clone, Copy, Debug)]
+enum Change {
+    During(usize),
+    After(usize),
+}
+/// A test's adapter change or Windows-only change.
+#[derive(Clone, Copy, Debug)]
+enum Event {
+    Adapter(Change, u8),
+    WindowsKind(Change, Option<bool>),
+}
+fn change(rig: &Rig, event: Event) {
+    let mut s = rig.port.state.lock().unwrap();
+    match event {
+        Adapter(During(read), actual) => s.change_power = Some((read, actual)),
+        Adapter(After(write), actual) => s.change_power_after_write = Some((write, actual)),
+        WindowsKind(During(read), windows) => s.change_windows = Some((read, windows)),
+        WindowsKind(After(write), windows) => s.change_windows_after_write = Some((write, windows)),
+    }
+}
+/// Clears every pending change, so a retry sees a stable source.
+fn settle(rig: &Rig) {
+    let mut s = rig.port.state.lock().unwrap();
+    s.change_power = None;
+    s.change_power_after_write = None;
+    s.change_windows = None;
+    s.change_windows_after_write = None;
 }
 
 #[tokio::test]
@@ -253,33 +290,41 @@ async fn power_classes_follow_the_ordinary_and_battery_selector_rules() {
 
 #[tokio::test]
 async fn a_class_change_between_setters_continues_only_while_the_preset_is_admitted() {
-    // (preset, first class, second-setter class, Windows change, completes).
-    // With no Windows change the fixture derives Windows from the adapter, so
-    // a changed class is a real unplug or plug-in. Managed admits each
-    // command on its own fresh reading (`AdmitOrdinaryThermalCommandAsync`):
-    // a battery preset on Windows battery or an agreeing adapter, so it
-    // completes across an unplug, a plug-in or full-to-limited, as ordinary
-    // presets do between external classes. An ordinary preset is refused on
-    // battery, and a reading that disagrees with Windows admits no command,
-    // so both stop after the first setter without replay.
-    for (preset, actual, changed, windows, completes) in [
-        (BATTERY_SAVER, BATTERY, FULL, None, true),
-        (BATTERY_SAVER, FULL, BATTERY, None, true),
-        (BATTERY_BALANCED, LIMITED, BATTERY, None, true),
-        (BATTERY_BALANCED, BATTERY, LIMITED, None, true),
-        (BATTERY_BALANCED, FULL, LIMITED, None, true),
-        (SILENT, FULL, LIMITED, None, true),
-        (SILENT, FULL, BATTERY, None, false),
-        (BATTERY_SAVER, FULL, FULL, Some(Some(true)), false),
-        (BATTERY_SAVER, BATTERY, BATTERY, Some(Some(false)), false),
+    // (preset, first class, change, completes). Managed admits each command
+    // on its own fresh reading (`AdmitOrdinaryThermalCommandAsync`): a
+    // battery preset on Windows battery or an agreeing adapter, so it
+    // completes across an unplug, a plug-in or full-to-limited between its
+    // setters, as ordinary presets do between external classes. An ordinary
+    // preset is refused on battery, and a reading that disagrees with Windows
+    // admits no command, so both stop after the first setter without replay.
+    // The same changes during the second setter's query (power read 3)
+    // continue only while Windows is unchanged across it.
+    const BETWEEN: Change = After(1);
+    const DURING: Change = During(3);
+    for (preset, actual, event, completes) in [
+        (BATTERY_SAVER, BATTERY, Adapter(BETWEEN, FULL), true),
+        (BATTERY_SAVER, FULL, Adapter(BETWEEN, BATTERY), true),
+        (BATTERY_BALANCED, LIMITED, Adapter(BETWEEN, BATTERY), true),
+        (BATTERY_BALANCED, BATTERY, Adapter(BETWEEN, LIMITED), true),
+        (BATTERY_BALANCED, FULL, Adapter(BETWEEN, LIMITED), true),
+        (SILENT, FULL, Adapter(BETWEEN, LIMITED), true),
+        (SILENT, FULL, Adapter(BETWEEN, BATTERY), false),
+        (BATTERY_SAVER, FULL, WindowsKind(BETWEEN, Some(true)), false),
+        (
+            BATTERY_SAVER,
+            BATTERY,
+            WindowsKind(BETWEEN, Some(false)),
+            false,
+        ),
+        (BATTERY_BALANCED, FULL, Adapter(DURING, LIMITED), true),
+        (SILENT, LIMITED, Adapter(DURING, FULL), true),
+        (BATTERY_SAVER, FULL, Adapter(DURING, BATTERY), false),
+        (BATTERY_SAVER, BATTERY, Adapter(DURING, FULL), false),
     ] {
         let rig = rig_at(2, 0, actual, MemoryFiles::default());
-        match windows {
-            Some(windows) => rig.port.state.lock().unwrap().change_windows = Some((3, windows)),
-            None => rig.port.state.lock().unwrap().change_power = Some((3, changed)),
-        }
+        change(&rig, event);
         let result = rig.set(1, value(preset.0, 1)).await;
-        let case = format!("{preset:?} {actual} -> {changed} {windows:?}: {result}");
+        let case = format!("{preset:?} {actual} {event:?}: {result}");
         let progress = Storage::open(Box::new(rig.files.clone()), SID)
             .unwrap()
             .progress();
@@ -294,8 +339,7 @@ async fn a_class_change_between_setters_continues_only_while_the_preset_is_admit
             assert_eq!(setters(&rig), [vec![1, 1, preset.1, 0]], "{case}");
             assert_eq!(progress, Some(2), "{case}");
             // The open pair fences every later request; nothing is replayed.
-            rig.port.state.lock().unwrap().change_power = None;
-            rig.port.state.lock().unwrap().change_windows = None;
+            settle(&rig);
             assert_eq!(rig.set(2, value(preset.0, 1)).await["result"]["status"], 2);
             assert_eq!(setters(&rig).len(), 1, "{case}");
         }
@@ -304,29 +348,29 @@ async fn a_class_change_between_setters_continues_only_while_the_preset_is_admit
 }
 
 #[tokio::test]
-async fn a_balanced_to_battery_pair_completes_across_an_unplug_or_a_plug_in() {
+async fn a_balanced_to_battery_pair_continues_across_a_power_change_between_its_setters() {
     // The shared fence admits each setter of a direct Balanced-to-battery
-    // pair on its own reading: power read 2 is the first setter's and 3 the
-    // second's. An unplug or a plug-in at either completes the pair with
-    // nothing pending; a reading that disagrees with Windows still stops at
-    // that setter.
-    for (actual, read, changed, windows, writes) in [
-        (FULL, 2, BATTERY, None, 2),
-        (FULL, 3, BATTERY, None, 2),
-        (LIMITED, 3, BATTERY, None, 2),
-        (BATTERY, 2, FULL, None, 2),
-        (BATTERY, 3, LIMITED, None, 2),
-        (FULL, 2, FULL, Some(Some(true)), 0),
-        (BATTERY, 3, BATTERY, Some(Some(false)), 1),
+    // pair on its own Windows samples and reading: power read 2 is the first
+    // setter's and 3 the second's. An unplug or a plug-in after the first
+    // SET completes the pair with nothing pending, and so does a class
+    // change during a query that leaves Windows unchanged. A Windows change
+    // across a setter's query stops at that setter, as managed does.
+    for (actual, event, writes) in [
+        (FULL, Adapter(After(1), BATTERY), 2),
+        (LIMITED, Adapter(After(1), BATTERY), 2),
+        (BATTERY, Adapter(After(1), FULL), 2),
+        (BATTERY, Adapter(After(1), LIMITED), 2),
+        (FULL, Adapter(During(3), LIMITED), 2),
+        (FULL, Adapter(During(2), BATTERY), 0),
+        (BATTERY, Adapter(During(3), FULL), 1),
+        (FULL, WindowsKind(During(2), Some(true)), 0),
+        (BATTERY, WindowsKind(During(3), Some(false)), 1),
     ] {
         let files = MemoryFiles::default();
         let rig = rig_at(0, 0, actual, files.clone());
-        match windows {
-            Some(windows) => rig.port.state.lock().unwrap().change_windows = Some((read, windows)),
-            None => rig.port.state.lock().unwrap().change_power = Some((read, changed)),
-        }
+        change(&rig, event);
         let result = rig.set(1, value(BATTERY_SAVER.0, 1)).await;
-        let case = format!("{actual} -> {changed} at read {read} {windows:?}: {result}");
+        let case = format!("{actual} {event:?}: {result}");
         let pair = [
             vec![1, 1, BATTERY_SAVER.1, 0],
             vec![1, 2, BATTERY_SAVER.1, 0],
@@ -360,8 +404,9 @@ async fn a_windows_change_after_a_setters_send_is_left_to_the_next_reading() {
     // Managed checks the Windows source only up to a command's SET. A change
     // while the SET is in flight leaves that setter's reply to be read: after
     // the last setter the pair completes, confirmed by its final read, and
-    // after the first the second setter's own reading decides, here a full
-    // adapter under Windows battery, which admits no command.
+    // after the first the second setter's own admission decides: Windows
+    // battery refuses Silent before its query, and a battery reading under
+    // Windows AC admits no command.
     for (preset, actual, write, windows, completes) in [
         (SILENT, FULL, 2, Some(true), true),
         (BATTERY_SAVER, FULL, 2, Some(true), true),
@@ -385,6 +430,37 @@ async fn a_windows_change_after_a_setters_send_is_left_to_the_next_reading() {
             assert_eq!(setters(&rig).len(), 1, "{case}");
             assert_eq!(progress, Some(2), "{case}");
         }
+        rig.stop().await;
+    }
+}
+
+#[tokio::test]
+async fn a_windows_change_across_a_setters_query_stops_before_its_send() {
+    // Managed samples Windows before each command's 07/8C query and again
+    // after its reply (`AdmitOrdinaryThermalCommandAsync`). Windows changes
+    // after the first SET and changes back while the second setter's query
+    // (power read 3) is in flight. Silent's sample before that query is
+    // Windows battery, which refuses it before the query; the battery
+    // preset's query is sent under Windows AC and its reply read under
+    // Windows battery, a change that refuses it. Either stops before its
+    // second SET with the first pending, as managed stops Indeterminate.
+    for (preset, actual, before, after) in [
+        (SILENT, FULL, Some(true), Some(false)),
+        (BATTERY_SAVER, BATTERY, Some(false), Some(true)),
+    ] {
+        let rig = rig_at(2, 0, actual, MemoryFiles::default());
+        {
+            let mut s = rig.port.state.lock().unwrap();
+            s.change_windows_after_write = Some((1, before));
+            s.change_windows = Some((3, after));
+        }
+        let result = rig.set(1, value(preset.0, 1)).await;
+        let case = format!("{preset:?} {actual} {before:?} then {after:?}: {result}");
+        assert_eq!(result["result"]["message"], PENDING, "{case}");
+        assert_eq!(setters(&rig), [vec![1, 1, preset.1, 0]], "{case}");
+        let reopened = Storage::open(Box::new(rig.files.clone()), SID).unwrap();
+        assert!(reopened.pending(), "{case}");
+        assert_eq!(reopened.progress(), Some(2), "{case}");
         rig.stop().await;
     }
 }

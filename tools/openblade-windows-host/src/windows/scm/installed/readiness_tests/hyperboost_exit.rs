@@ -278,43 +278,42 @@ async fn a_final_mismatch_fences_the_battery_pair_without_replay() {
 
 #[tokio::test]
 async fn a_power_change_mid_exit_continues_only_while_the_battery_preset_is_admitted() {
-    // (first class, power read, changed class, Windows change, last row,
-    // setters, completes). Power read 2 is the first restore setter's own,
-    // 3 the second's, 4 the first battery setter's and 5 the second's. With
-    // no Windows change the fixture derives Windows from the adapter, so a
-    // changed class is a real unplug or plug-in. Managed admits a battery
-    // selector on Windows battery and an agreeing external reading alike
+    // (first class, change, last row, setters, completes). Write 1 and 2 are
+    // the restore setters and 3 the first battery setter; power read 2 is the
+    // first restore setter's own, 3 the second's, 4 the first battery
+    // setter's and 5 the second's. Managed admits a battery selector on
+    // Windows battery and an agreeing external reading alike
     // (`AdmitOrdinaryThermalCommandAsync`), so a persistent battery preset
-    // completes across either; so does every native setter, each admitted
-    // by its own fresh reading.
-    for (actual, read, changed, windows, progress, writes, completes) in [
-        (FULL, 2, BATTERY, None, 5, 4, true),
-        (FULL, 3, BATTERY, None, 5, 4, true),
-        (FULL, 4, BATTERY, None, 5, 4, true),
-        (FULL, 5, BATTERY, None, 5, 4, true),
-        (BATTERY, 3, FULL, None, 5, 4, true),
-        (BATTERY, 4, FULL, None, 5, 4, true),
-        (LIMITED, 4, BATTERY, None, 5, 4, true),
-        (FULL, 4, LIMITED, None, 5, 4, true),
-        // An adapter reading that disagrees with Windows admits no setter
-        // (managed refuses that command), so the exit stops at that setter,
-        // the restore setters included, without replay.
-        (FULL, 2, FULL, Some(Some(true)), 6, 0, false),
-        (FULL, 3, FULL, Some(Some(true)), 81, 1, false),
-        (FULL, 4, FULL, Some(Some(true)), 83, 2, false),
-        (BATTERY, 4, BATTERY, Some(Some(false)), 83, 2, false),
+    // completes across an unplug or a plug-in between its setters; so does
+    // every native setter, each admitted by its own Windows samples and
+    // fresh reading. A class change during a query continues while Windows
+    // is unchanged across it.
+    for (actual, event, progress, writes, completes) in [
+        (FULL, Adapter(After(1), BATTERY), 5, 4, true),
+        (FULL, Adapter(After(2), BATTERY), 5, 4, true),
+        (FULL, Adapter(After(3), BATTERY), 5, 4, true),
+        (BATTERY, Adapter(After(1), FULL), 5, 4, true),
+        (BATTERY, Adapter(After(2), FULL), 5, 4, true),
+        (LIMITED, Adapter(After(2), BATTERY), 5, 4, true),
+        (FULL, Adapter(After(2), LIMITED), 5, 4, true),
+        (FULL, Adapter(During(4), LIMITED), 5, 4, true),
+        // A Windows change across a setter's query, or an adapter reading
+        // that disagrees with Windows (managed refuses that command), admits
+        // no setter, so the exit stops at that setter, the restore setters
+        // included, without replay.
+        (FULL, Adapter(During(2), BATTERY), 6, 0, false),
+        (FULL, Adapter(During(3), BATTERY), 81, 1, false),
+        (BATTERY, Adapter(During(4), FULL), 83, 2, false),
+        (FULL, WindowsKind(During(2), Some(true)), 6, 0, false),
+        (FULL, WindowsKind(After(1), Some(true)), 81, 1, false),
+        (FULL, WindowsKind(After(2), Some(true)), 83, 2, false),
+        (BATTERY, WindowsKind(After(2), Some(false)), 83, 2, false),
     ] {
         let files = MemoryFiles::default();
         let rig = hyperboost_rig(actual, files.clone()).await;
-        {
-            let mut s = rig.port.state.lock().unwrap();
-            match windows {
-                Some(windows) => s.change_windows = Some((read, windows)),
-                None => s.change_power = Some((read, changed)),
-            }
-        }
+        change(&rig, event);
         let result = rig.set(1, value(BATTERY_SAVER.0, 1)).await;
-        let case = format!("{actual} -> {changed} at read {read} {windows:?}: {result}");
+        let case = format!("{actual} {event:?}: {result}");
         assert_eq!(setters(&rig).len(), writes, "{case}");
         assert_eq!(*progress_values(&rig).last().unwrap(), progress, "{case}");
         if completes {
@@ -333,11 +332,7 @@ async fn a_power_change_mid_exit_continues_only_while_the_battery_preset_is_admi
         } else {
             assert_eq!(result["result"]["status"], 2, "{case}");
             assert_eq!(result["result"]["message"], PENDING, "{case}");
-            {
-                let mut s = rig.port.state.lock().unwrap();
-                s.change_power = None;
-                s.change_windows = None;
-            }
+            settle(&rig);
             fenced(rig, files, BATTERY_SAVER.0, &case).await;
         }
     }
@@ -402,23 +397,52 @@ async fn a_windows_change_between_a_setters_admission_and_its_send_stops_the_exi
 }
 
 #[tokio::test]
-async fn a_source_change_retires_a_temporary_exit_and_stops_after_the_restore_pair() {
+async fn a_source_change_retires_a_temporary_exit_and_stops_at_that_setter() {
     // A persistent request continues on the new class (above). A temporary
-    // override is retired by the source change, full to limited or an
-    // unplug, so the request it carried no longer stands: the battery pair
-    // is not written and the restore pair's 83 row stays unsettled.
-    for changed in [LIMITED, BATTERY] {
+    // override is retired by a classified source change, full to limited
+    // during a query (Windows stays AC) or an unplug between setters, so the
+    // request it carried no longer stands and the recipe stops before the
+    // setter whose reading saw it. Power read 2 is the first restore
+    // setter's: nothing was submitted and the Prepared row retires. Reads 3,
+    // 4 and 5 leave the last acknowledged row, 81, 83 or 2, unsettled.
+    let rows: [&[u64]; 4] = [
+        &[0, 6],
+        &[0, 80, 81],
+        &[0, 80, 81, 82, 83],
+        &[0, 80, 81, 82, 83, 1, 2],
+    ];
+    for (event, writes) in [
+        (Adapter(During(2), LIMITED), 0),
+        (Adapter(During(3), LIMITED), 1),
+        (Adapter(During(4), LIMITED), 2),
+        (Adapter(During(5), LIMITED), 3),
+        (Adapter(After(1), BATTERY), 1),
+        (Adapter(After(2), BATTERY), 2),
+        (Adapter(After(3), BATTERY), 3),
+    ] {
         let files = MemoryFiles::default();
         let rig = hyperboost_rig(FULL, files.clone()).await;
-        rig.port.state.lock().unwrap().change_power = Some((4, changed));
+        change(&rig, event);
         let result = rig.set(1, value(BATTERY_SAVER.0, 0)).await;
-        let case = format!("{changed}: {result}");
+        let case = format!("{event:?}: {result}");
         assert_eq!(result["result"]["status"], 2, "{case}");
-        assert_eq!(setters(&rig), restore_then(BATTERY_SAVER.1)[..2], "{case}");
-        assert_eq!(progress_values(&rig), [0, 80, 81, 82, 83], "{case}");
-        rig.port.state.lock().unwrap().change_power = None;
+        assert_eq!(
+            setters(&rig),
+            restore_then(BATTERY_SAVER.1)[..writes],
+            "{case}"
+        );
+        assert_eq!(progress_values(&rig), rows[writes], "{case}");
+        settle(&rig);
         rig.port.state.lock().unwrap().actual = FULL;
-        fenced(rig, files, BATTERY_SAVER.0, &case).await;
+        if writes == 0 {
+            rig.stop().await;
+            assert!(
+                !Storage::open(Box::new(files), SID).unwrap().pending(),
+                "{case}"
+            );
+        } else {
+            fenced(rig, files, BATTERY_SAVER.0, &case).await;
+        }
     }
 }
 

@@ -4,7 +4,9 @@ use super::*;
 use openblade_domain::thermal_mutation::restored;
 use openblade_domain::{
     automation::UNCLASSIFIED_EXTERNAL,
-    thermal_mutation::{Destination, Plan, Progress, admits_class, confirms, pins_class},
+    thermal_mutation::{
+        Destination, Plan, Progress, admits_class, admits_windows, confirms, pins_class,
+    },
 };
 use openblade_protocol::{custom_performance::CustomLevelPair, thermal_preset::PresetPair};
 use std::sync::{Arc, Mutex, atomic::Ordering};
@@ -578,12 +580,16 @@ impl<P: Port> Attempt<'_, P, ReadAdmission> {
         // earlier reading carried (`PowerFence::release`).
         context.fence.release();
         self.checkpoint(authorize, admission, limit).ok()?;
+        let Some(windows) = context.fence.before_query() else {
+            permit.refused(Refusal::PowerChanged);
+            return None;
+        };
         let power = self
             .read_power(power_id, authorize, admission, limit)
             .await?;
         // Each command needs a fresh external reading from the exact decoder,
         // never ACLineStatus alone, that agrees with Windows AC presence.
-        if !context.fence.admits(power, context.source) {
+        if !context.fence.admits(power, context.source, windows) {
             permit.refused(Refusal::PowerChanged);
             return None;
         }
@@ -673,7 +679,9 @@ impl Setters {
 /// stops before the command is sent. A performance setter releases it once
 /// its SET is sent (`release`): managed admits each command on its own fresh
 /// reading, so the next setter's reading decides again. A fan operation
-/// keeps it to its end.
+/// keeps it to its end. Each setter's reading is bracketed by Windows samples,
+/// as managed brackets its query: one before the query that must admit the
+/// command (`before_query`) and one after the reply that must equal it.
 pub(super) struct PowerFence<'a> {
     permit: &'a dyn Permit,
     // Whether Windows battery admits a classified reading with no check: a fan
@@ -749,16 +757,39 @@ impl<'a> PowerFence<'a> {
             .store(windows == Some(false) && source != 1, Ordering::Release);
         Some(source)
     }
-    /// A setter-time reading against the first reading's class `source`.
+    /// Samples Windows before a setter's 07/8C query, as managed
+    /// `AdmitOrdinaryThermalCommandAsync` captures its source first. None when
+    /// that sample already refuses the command, which then stops before its
+    /// query: an unknown kind, or Windows battery for any destination but a
+    /// battery preset (`thermal_mutation::admits_windows`). Fan permits bind no
+    /// destination; a fan setter keeps the presence it was admitted with
+    /// (`authorize`), so its checkpoints refuse a lost presence as before.
+    pub(super) fn before_query(&self) -> Option<WindowsSample> {
+        let windows = self.permit.windows_on_battery();
+        let admitted = match self.destination.get() {
+            Some(destination) => admits_windows(*destination, windows),
+            None => windows.is_some(),
+        };
+        admitted.then_some(WindowsSample(windows))
+    }
+    /// A setter-time reading against the first reading's class `source`,
+    /// with the Windows kind sampled `before` its query.
     /// Managed admits each command on its own fresh reading: an external
     /// reading that agrees with Windows AC presence, or for a battery preset
     /// Windows battery (`AdmitOrdinaryThermalCommandAsync`). A class change
     /// between setters, among full, limited, unclassified and battery,
     /// therefore continues whenever the new reading still admits the
     /// destination. What stops, with its reason:
+    /// - a Windows kind after the reply that differs from the one sampled
+    ///   before the query (managed `capturePowerSource() != source`). A kind
+    ///   that changes and returns while the query is in flight is seen by
+    ///   neither side;
     /// - a reading the destination's class rule refuses: unclassified power
     ///   for a battery preset, battery for any other destination, or a
-    ///   reading that disagrees with Windows (managed refuses that command);
+    ///   reading that disagrees with Windows (managed refuses that command).
+    ///   It is decided before `destination_holds`, so such a reading never
+    ///   becomes the current class and retires no temporary override
+    ///   (`battery_reading_contradicts_windows`);
     /// - any change while the class is pinned (managed
     ///   `requireExternalPowerOnDirectHyperBoostExit` and the fan acPreset);
     /// - a change after which the permit's destination no longer holds: the
@@ -768,10 +799,13 @@ impl<'a> PowerFence<'a> {
     ///
     /// Fan permits bind no destination and admit no battery reading; their
     /// recipes start only on external power (`fan_recipe::Plan::select`).
-    pub(super) fn admits(&self, power: Power, source: i32) -> bool {
+    pub(super) fn admits(&self, power: Power, source: i32, before: WindowsSample) -> bool {
         let Some((current, windows)) = self.source(power) else {
             return false;
         };
+        if windows != before.0 {
+            return false;
+        }
         let class_admitted = match self.destination.get() {
             Some(destination) => admits_class(*destination, current, windows),
             None => current != 1,
@@ -790,14 +824,22 @@ impl<'a> PowerFence<'a> {
     /// its SET is sent and again before the next setter's own reading.
     /// Managed checks it only between a command's admission and its
     /// submission (`OrdinarySourceUnchanged`), so a change after a submitted
-    /// setter stops nothing by itself: its reply is still read, the next
-    /// setter's fresh reading is admitted again, and the independent reads
-    /// after the last setter confirm what firmware holds, as managed's do.
+    /// setter stops nothing by itself: its reply is still read, and the
+    /// independent reads after the last setter confirm what firmware holds,
+    /// as managed's do. The next setter is not admitted on the released
+    /// source: its Windows sample before the query must admit the command,
+    /// and its reading must agree with an unchanged sample after the reply
+    /// (`before_query`, `admits`), as managed brackets each query.
     pub(super) fn release(&self) {
         self.external.store(false, Ordering::Release);
         self.battery.store(false, Ordering::Release);
     }
 }
+/// The Windows power kind sampled before a setter's 07/8C query
+/// (`PowerFence::before_query`), which its reading must still see after the
+/// reply (`PowerFence::admits`).
+#[derive(Clone, Copy)]
+pub(super) struct WindowsSample(Option<bool>);
 /// One fresh 07/8C adapter query.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum Power {

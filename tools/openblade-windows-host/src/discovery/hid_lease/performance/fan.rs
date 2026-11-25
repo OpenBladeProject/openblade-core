@@ -221,6 +221,12 @@ impl<P: Port> Reader<P, ReadAdmission> {
                     sleep_until(limit.deadline.min(at + Duration::from_millis(65))).await;
                     limit.check().ok()?;
                 }
+                // Managed brackets each fan command's query with Windows
+                // samples too (`AdmitOrdinaryThermalCommandAsync`).
+                let Some(windows) = fence.before_query() else {
+                    permit.refused(Refusal::PowerChanged);
+                    return None;
+                };
                 let current = a
                     .read_power(
                         ids[power_start + step / 2][step % 2],
@@ -231,7 +237,7 @@ impl<P: Port> Reader<P, ReadAdmission> {
                     .await?;
                 // The commands are the same on every external class; a class
                 // change continues only while the permit's destination holds.
-                if !fence.admits(current, source) {
+                if !fence.admits(current, source, windows) {
                     permit.refused(Refusal::PowerChanged);
                     return None;
                 }

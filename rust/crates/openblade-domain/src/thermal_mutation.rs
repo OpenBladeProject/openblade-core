@@ -203,6 +203,19 @@ pub fn admits_class(
         _ => false,
     }
 }
+/// Whether the Windows power kind sampled before a setter's 07/8C query can
+/// still admit this destination's command, as managed
+/// `AdmitOrdinaryThermalCommandAsync` captures it before querying the
+/// adapter: Windows AC for every destination, Windows battery only for a
+/// battery preset, and an unknown kind for none. It is true exactly when
+/// some class admits the destination under that kind (`admits_class`).
+pub fn admits_windows(destination: Destination, windows_on_battery: Option<bool>) -> bool {
+    match windows_on_battery {
+        Some(false) => true,
+        Some(true) => destination.is_battery(),
+        None => false,
+    }
+}
 /// Intent precedes possible submission. Acknowledgement never settles the
 /// transaction; only a new independent paired read can do so. Each setter
 /// has its own intent and acknowledgement: a preset pair uses 1-4, and
@@ -500,6 +513,12 @@ mod tests {
                 for class in [-1, 4] {
                     assert!(!admits_class(destination, class, windows));
                 }
+                assert_eq!(
+                    admits_windows(destination, windows),
+                    [0, 1, 2, 3]
+                        .iter()
+                        .any(|c| admits_class(destination, *c, windows))
+                );
             }
         }
     }

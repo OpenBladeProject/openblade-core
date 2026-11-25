@@ -500,11 +500,14 @@ Native differs from managed here in these ways:
   An unplug, a plug-in or a full-to-limited change between or during the pairs
   therefore continues a persistent request, as managed's recipe does. A
   reading that disagrees with Windows, an unclassified reading, or a Windows
-  kind change between a setter's reading and its send stops it where managed
-  completes: at the first setter nothing is submitted and the row retires,
-  later 81 or 83 stays unsettled. A source change retires a temporary
-  override (a shortcut's included), so the request no longer stands and the
-  exit stops with 83 unsettled.
+  kind change across a setter's query or between its reading and its send
+  stops it where managed completes: at the first setter nothing is submitted
+  and the row retires; at a later one the last acknowledged row, 81, 83 or 2,
+  stays unsettled. A classified source change retires a temporary override
+  (a shortcut's included), so the request no longer stands and the exit stops
+  at the setter whose reading saw it, in the same way. An unclassified
+  reading is refused by the battery preset's class rule first and retires
+  no temporary.
 - Managed's exit classification ignores Windows; native refuses a class that
   disagrees with Windows (for example a battery reading under Windows AC)
   before storing, as for every battery preset.
@@ -626,11 +629,16 @@ performance setter needs it on every external class (`allowBattery: false`), and
 so does a fan return to Automatic that carries a saved destination, which
 managed applies through `SetPerformanceAsync` or `SetCustomPerformanceAsync`. Other fan setters on a classified class
 need Windows AC that agrees with the reading, or Windows battery, where managed
-admits them unchecked. The presence a reading
+admits them unchecked. Each setter's query is bracketed by Windows samples,
+as managed brackets it (`AdmitOrdinaryThermalCommandAsync`): the sample before
+the query must admit the command, so Windows battery refuses an ordinary
+command and an unknown kind refuses every command before the query is sent,
+and the sample after the reply must equal it. A kind that changes and returns
+while the query is in flight is seen by neither. The presence a reading
 was admitted with must hold at every later checkpoint until that performance
 setter's SET is sent, or for a fan operation until its end (managed
-`AdmitOrdinaryThermalCommandAsync` and `OrdinarySourceUnchanged`), so losing it
-stops before the command is sent. A class change between setters, either way
+`OrdinarySourceUnchanged`), so losing it stops before the command is sent. A
+class change between setters, either way
 between full, limited and unclassified, continues while the new class selects
 the same destination. A persistent explicit override does, and so does a
 temporary saved unclassified within one Windows power generation. A temporary
@@ -713,7 +721,12 @@ Native differs from managed here in these ways:
   battery; native still reads 07/8C before each setter and stops on a battery
   reading, which no fan destination holds, and on an unclassified reading,
   which needs Windows AC. Managed's Balanced handback there writes both
-  setters without an adapter query.
+  setters without an adapter query. Native also stops such a fan command when
+  the Windows kind after its reply differs from the one before its query,
+  which managed does not check there.
+- A battery preset's setter on Windows battery: managed admits it without an
+  adapter query; native queries 07/8C and needs a battery reading, with
+  Windows battery before the query and after the reply.
 - On a Balanced HyperBoost exit native re-reads 07/8C before each setter and
   stops on a battery reading; managed reads power once for that exit.
 - With manual fans saved and current, native replies with the Stored manual-fan
