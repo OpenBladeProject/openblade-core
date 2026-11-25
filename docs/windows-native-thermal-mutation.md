@@ -1145,26 +1145,29 @@ GPU-only setters (`WindowsVerifiedBladeDeviceProvider.cs:1780-2050`):
   prefix (`ServiceControlRuntime.cs:14989-14991`).
 - While a GPU submission is uncertain, or an NVML call that outlived its request
   is still running, every native thermal writer refuses before any row or setter
-  (managed `PendingWriteConfirmationTracker.Blocks`). An explicit performance
-  step replies `A thermal write requires read-only reconciliation before the
-  performance command can be submitted.` A fan request, a return to Automatic
-  and owned Stop's handback reply `A thermal write requires read-only
-  reconciliation before another command can be submitted.`; an explicit fan
-  request stores its intent first and prefixes that result as its other hardware
-  results. A reconciliation is refused at its admission, before any firmware
-  read, and what it owes is kept, as managed keeps its pending transition for
-  after the confirmation resolves (`ServiceControlRuntime.cs:16985`,
-  `:18200-18241`): a report replies Blocked with its own prefix and that
-  message, a profile save is Stored with `Profiles were stored.` and that
-  message, a lifecycle attempt keeps its cause and runs again at the first tick
-  after the fence clears, convergence reserves nothing and retires a due retry
-  Blocked unrun, and `reapplyChangedSettings` replies its pending-confirmation
-  block (`:3842`). In low power a trigger's fence starts no GPU call and fences
-  on the recorded state alone, as managed's tracker is in memory. Once a read
-  resolves the management, the next report or lifecycle retry applies the owed
-  intent. A resume withdraws a confirmed reset, and a power change or a change
-  between classified sources (PluggedIn and USB-C,
-  `ServiceControlRuntime.cs:18684`) allows one more ungated query
+  (managed `PendingWriteConfirmationTracker.Blocks`). With
+  `service-thermal-hyperboost-exit-v1`, the restore recipe that leaves
+  HyperBoost for a battery preset is refused with them, before its first row,
+  and its battery destination takes the GPU half a direct step to it would. An
+  explicit performance step replies `A thermal write requires read-only
+  reconciliation before the performance command can be submitted.` A fan
+  request, a return to Automatic and owned Stop's handback reply `A thermal
+  write requires read-only reconciliation before another command can be
+  submitted.`; an explicit fan request stores its intent first and prefixes that
+  result as its other hardware results. A reconciliation is refused at its
+  admission, before any firmware read, and what it owes is kept, as managed
+  keeps its pending transition for after the confirmation resolves
+  (`ServiceControlRuntime.cs:16985`, `:18200-18241`): a report replies Blocked
+  with its own prefix and that message, a profile save is Stored with `Profiles
+  were stored.` and that message, a lifecycle attempt keeps its cause and runs
+  again at the first tick after the fence clears, convergence reserves nothing
+  and retires a due retry Blocked unrun, and `reapplyChangedSettings` replies
+  its pending-confirmation block (`:3842`). In low power a trigger's fence
+  starts no GPU call and fences on the recorded state alone, as managed's
+  tracker is in memory. Once a read resolves the management, the next report or
+  lifecycle retry applies the owed intent. A resume withdraws a confirmed reset,
+  and a power change or a change between classified sources (PluggedIn and
+  USB-C, `ServiceControlRuntime.cs:18684`) allows one more ungated query
   (`:2123-2180`).
 
 Native deviations:
