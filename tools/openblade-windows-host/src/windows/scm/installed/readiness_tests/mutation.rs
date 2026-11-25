@@ -1289,12 +1289,15 @@ fn saved_intent(files: &MemoryFiles, entry: &Value) -> bool {
         false
     };
     // An owned HyperBoost request (`hyperboost_owned::Rig::hyperboost`'s
-    // request ids) stores nothing: its rows write saved profile intent.
+    // request ids) stores nothing: its rows write saved profile intent, or
+    // managed's Balanced restore (destination 1) for an exit that skips it.
     #[cfg(feature = "service-hyperboost-v1")]
-    let reconciled = reconciled
-        || entry["request"]
-            .as_str()
-            .is_some_and(|r| r.starts_with("aaaaaaaa-bbbb-cccc-eeee-"));
+    if entry["request"]
+        .as_str()
+        .is_some_and(|r| r.starts_with("aaaaaaaa-bbbb-cccc-eeee-"))
+    {
+        return entry["destination"] == 1 || files.read("profiles.json").unwrap().is_some();
+    }
     let saved = if reconciled {
         "profiles.json"
     } else {

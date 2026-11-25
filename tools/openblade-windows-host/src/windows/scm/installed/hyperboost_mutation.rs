@@ -21,12 +21,22 @@
 //!   restores the saved intent; on RZ09-0581 every saved base is a direct exit
 //!   (`CanExitHyperBoostDirectlyTo`), so native writes the destination once.
 //!   A saved manual fan intent is left to the fan writer.
+//! - An exit is submitted even when the saved intent cannot be restored, as
+//!   managed's is (`restoreIntentSkipped`, 7118-7127): a saved GPU clock
+//!   effect this exit cannot restore, or no saved destination at the class.
+//!   It then writes managed's unowned exit,
+//!   the Balanced restore pair (`ownedHyperBoostBaseMode ?? Balanced`, 7066;
+//!   `hyperboost-restore-balanced` has the Balanced pair's payloads), settles on
+//!   Balanced with Automatic fans, leaves the saved intent unchanged and says
+//!   what it did not apply (`Skipped`).
 //! - Managed's HyperBoost ownership journal is read before the request and
 //!   before each setter. Native writes nothing on managed's behalf, so a journal
 //!   managed has not relinquished, or one that cannot be read, refuses both.
 //!
 //! Native records no ownership of its own beyond the journal rows: lifecycle
-//! exits (battery boundary, low power, shutdown) are not part of this slice.
+//! exits (battery boundary, low power, shutdown) are not part of this slice,
+//! so HyperBoost stays active after an unplug until an explicit exit (H3; see
+//! "Owned HyperBoost" in docs/windows-native-thermal-mutation.md).
 use super::*;
 use openblade_domain::thermal_observation::ObservedPerformance;
 
@@ -103,23 +113,75 @@ fn observe_pad() -> Pad {
     }
 }
 
+/// Why an exit wrote managed's Balanced restore and left the saved intent
+/// unapplied (managed `restoreIntentSkipped`).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum Skipped {
+    /// The saved intent carries a GPU clock effect this step cannot restore
+    /// (`Cause::Gpu`).
+    Gpu,
+    /// No saved destination at this class (`Cause::NoEligiblePolicy`).
+    NoPolicy,
+}
+impl Skipped {
+    /// The saved-intent cause `select` blocked the destination with, when
+    /// the exit skips the restore for it. None for every other cause, which
+    /// still refuses the exit:
+    /// - `Cause::FanHandbackPending`: the durable thermal journal admits no
+    ///   performance row while a fan change this Service owns is outstanding
+    ///   (`thermal_history` refuses such a row on read), so an exit row would
+    ///   leave the journal unreadable and owned Stop unable to hand the fans
+    ///   back. Native deviation: managed has no such journal.
+    /// - `Cause::ManualDeferred` never reaches an exit: HyperBoost reads with
+    ///   Automatic fans (`defer_manual_performance`).
+    fn from_cause(cause: &Cause) -> Option<Self> {
+        match cause {
+            Cause::Gpu => Some(Self::Gpu),
+            Cause::NoEligiblePolicy => Some(Self::NoPolicy),
+            _ => None,
+        }
+    }
+    /// The reply, after managed's skipped-restore reply (7833-7835): the
+    /// laptop stays in Balanced, and the saved intent was not applied, with
+    /// native's own reason.
+    fn reply(self, saved: Option<Destination>) -> String {
+        let saved = saved.map_or_else(|| "saved".to_owned(), |d| format!("saved {}", label(d)));
+        let reason = match self {
+            Self::Gpu => format!(
+                "The {saved} setting includes GPU clock tuning that this exit can't restore, so it was not applied."
+            ),
+            Self::NoPolicy => {
+                "No saved performance setting applies to this power source, so none was applied."
+                    .to_owned()
+            }
+        };
+        format!(
+            "HyperBoost is off and the laptop stays in Balanced until the power source changes. {reason}"
+        )
+    }
+}
+/// Managed's unowned exit destination (`ownedHyperBoostBaseMode ?? Balanced`).
+const RESTORE_BASE: Destination =
+    Destination::Preset(openblade_domain::thermal_mutation::Preset::Balanced);
+
 /// One HyperBoost request, carried by its permit.
 pub(super) struct Step {
     pub(super) enable: bool,
     probes: Probes,
-    /// The fresh reading the request was resolved from.
-    baseline: Mutex<Option<ObservedPerformance>>,
-    /// The saved destination at that reading's class, which the status
-    /// projects as desired: an entry changes no saved intent.
+    /// The saved destination at the fresh reading's class, which the status
+    /// projects as desired: neither an entry nor a restore-only exit
+    /// changes the saved intent.
     saved: Mutex<Option<Destination>>,
+    /// Set when the exit writes managed's Balanced restore only.
+    skipped: Mutex<Option<Skipped>>,
 }
 impl Step {
     pub(super) fn new(enable: bool, probes: Probes) -> Self {
         Self {
             enable,
             probes,
-            baseline: Mutex::new(None),
             saved: Mutex::new(None),
+            skipped: Mutex::new(None),
         }
     }
     pub(super) fn saved(&self) -> io::Result<Option<Destination>> {
@@ -127,6 +189,18 @@ impl Step {
             .lock()
             .map(|saved| *saved)
             .map_err(|_| io::ErrorKind::Other.into())
+    }
+    fn skipped(&self) -> io::Result<Option<Skipped>> {
+        self.skipped
+            .lock()
+            .map(|skipped| *skipped)
+            .map_err(|_| io::ErrorKind::Other.into())
+    }
+    /// Whether this exit writes managed's Balanced restore without the saved
+    /// intent (`Permit::restores_only`). A poisoned lock reads as false, so
+    /// the ordinary class rule applies.
+    pub(super) fn restores_only(&self) -> bool {
+        self.skipped().ok().flatten().is_some()
     }
 }
 
@@ -174,7 +248,6 @@ impl RequestPermit {
         power: i32,
         baseline: ObservedPerformance,
     ) -> io::Result<Option<Destination>> {
-        *step.baseline.lock().map_err(|_| io::ErrorKind::Other)? = Some(baseline);
         let refuse = |message: &'static str, status: u8| {
             self.set_cause(Cause::HyperBoost { message, status });
             Ok(None)
@@ -187,18 +260,14 @@ impl RequestPermit {
             return refuse(JOURNAL_PENDING, 2);
         }
         let active = baseline == ObservedPerformance::HyperBoostObserved;
-        // 6965-7002: already in the requested state. An exit writes nothing;
-        // an entry settles on its own reading (`Plan::Unchanged`).
-        if active == step.enable && !step.enable {
-            return refuse(ALREADY_OFF, 1);
+        // 6965-7002: already in the requested state. Managed replies before
+        // its thermal setters and their pending-confirmation fence; nothing is
+        // read from the saved intent and nothing is written.
+        if active == step.enable {
+            return refuse(if active { ALREADY_ACTIVE } else { ALREADY_OFF }, 1);
         }
         let layer = self.storage.profile_layer(&self.application)?;
         let profile = layer.at(power)?;
-        if active == step.enable {
-            let saved = self.storage.desired(power, profile.as_ref())?;
-            self.accept(power, step, baseline, Destination::HyperBoost, saved)?;
-            return Ok(Some(Destination::HyperBoost));
-        }
         if !step.enable {
             // Exit: the saved destination at this fresh class, as managed's
             // exit restores the saved intent (`ResolveHyperBoostExitIntent`).
@@ -206,16 +275,28 @@ impl RequestPermit {
             // classified source). A battery class is a battery preset's restore
             // sequence (`Plan::RestoreThenBattery`).
             let selection = select(&self.storage, power, profile.as_ref(), baseline, false)?;
-            if let Some(cause) = selection.blocked {
+            let Some(cause) = selection.blocked else {
+                let Some(desired) = selection.desired else {
+                    // `select` names its cause whenever it selects nothing.
+                    return Ok(None);
+                };
+                self.accept(power, step, baseline, desired.0, Some(desired))?;
+                return Ok(Some(desired.0));
+            };
+            // 7118-7127: only an entry needs an admitted intent. An exit the
+            // saved intent cannot complete still leaves HyperBoost through
+            // managed's unowned exit, the Balanced restore, and stores nothing.
+            // Every admission but the saved intent's still applies: journal,
+            // GPU fence, custody, device, power class and readback, and an
+            // outstanding owned fan change (`Skipped::from_cause`).
+            let Some(skipped) = Skipped::from_cause(&cause) else {
                 self.set_cause(cause);
                 return Ok(None);
-            }
-            let Some(desired) = selection.desired else {
-                // `select` names its cause whenever it selects nothing.
-                return Ok(None);
             };
-            self.accept(power, step, baseline, desired.0, Some(desired))?;
-            return Ok(Some(desired.0));
+            let saved = self.storage.desired(power, profile.as_ref())?;
+            *step.skipped.lock().map_err(|_| io::ErrorKind::Other)? = Some(skipped);
+            self.accept(power, step, baseline, RESTORE_BASE, saved)?;
+            return Ok(Some(RESTORE_BASE));
         }
         // 7004-7023: a fresh pad observation selects the path. Native admits
         // only the pad-less one, so a pad refuses here; a failed observation
@@ -334,19 +415,17 @@ impl RequestPermit {
         destination: Option<Destination>,
     ) -> io::Result<Outcome> {
         if confirmed {
-            let baseline = *step.baseline.lock().map_err(|_| io::ErrorKind::Other)?;
-            let message = match (step.enable, destination) {
-                (true, _) if baseline == Some(ObservedPerformance::HyperBoostObserved) => {
-                    ALREADY_ACTIVE.into()
-                }
-                (true, _) => ENTERED.into(),
+            let skipped = step.skipped()?;
+            let message = match (step.enable, destination, skipped) {
+                (true, _, _) => ENTERED.into(),
+                (false, Some(_), Some(skipped)) => skipped.reply(step.saved()?),
                 // Managed's reply names the restored performance and fan
                 // intent; native restores the performance destination only.
-                (false, Some(destination)) => format!(
+                (false, Some(destination), None) => format!(
                     "HyperBoost is off and the prior {} performance is restored.",
                     label(destination)
                 ),
-                (false, None) => return Err(io::ErrorKind::Other.into()),
+                (false, None, _) => return Err(io::ErrorKind::Other.into()),
             };
             return Ok(Outcome { status: 1, message });
         }

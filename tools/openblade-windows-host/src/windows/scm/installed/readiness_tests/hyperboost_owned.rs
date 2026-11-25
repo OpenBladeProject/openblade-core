@@ -337,6 +337,166 @@ async fn exit_writes_the_saved_destination_and_already_off_writes_nothing() {
     }
 }
 
+const BALANCED_PAIR: [[u8; 4]; 2] = [[1, 1, 0, 0], [1, 2, 0, 0]];
+/// Managed's reply when the exit skips the saved intent (7833-7835), with
+/// native's reason.
+const STAYS_BALANCED: &str =
+    "HyperBoost is off and the laptop stays in Balanced until the power source changes. ";
+
+/// Asserts that `result` left HyperBoost through managed's unowned exit
+/// alone: the Balanced pair as one durable chain, an independent read of
+/// Balanced with Automatic fans, and the saved intent `before` unchanged.
+async fn assert_restore_only_exit(
+    rig: &Rig,
+    before: &Value,
+    result: &Value,
+    reason: &str,
+    case: &str,
+) {
+    assert_eq!(
+        result["result"],
+        json!({"status":1,"message":format!("{STAYS_BALANCED}{reason}")}),
+        "{case}"
+    );
+    let sent = setters(rig);
+    assert_eq!(
+        sent[sent.len() - 2..],
+        BALANCED_PAIR.map(|p| p.to_vec()),
+        "{case}"
+    );
+    let exit_rows: Vec<Value> = rows(rig).into_iter().rev().take(PAIR.len()).collect();
+    assert!(
+        exit_rows
+            .iter()
+            .all(|r| r["destination"] == 1 && r["requested"].is_null()),
+        "{case}: {exit_rows:?}"
+    );
+    let status = rig.get().await;
+    assert_eq!(hyperboost_active(&status), false, "{case}");
+    assert_eq!(
+        status["status"]["confirmedState"]["performance"], 1,
+        "{case}"
+    );
+    assert_eq!(status["status"]["confirmedState"]["fans"], 0, "{case}");
+    assert_eq!(
+        status["status"]["desiredState"]["performance"],
+        before["status"]["desiredState"]["performance"],
+        "{case}"
+    );
+    assert!(
+        !Storage::open(Box::new(rig.files.clone()), SID)
+            .unwrap()
+            .pending(),
+        "{case}"
+    );
+}
+
+/// Managed 7118-7127: only an entry needs an admitted saved intent. An exit
+/// whose saved intent cannot be restored is still submitted: managed writes
+/// its unowned exit (the Balanced restore pair), skips the restore step and
+/// keeps the saved intent. Natively that is a saved GPU clock effect the exit
+/// cannot restore, or no saved destination at the class. The battery class
+/// admits that exit (`admits_restore_class`), though the Balanced
+/// destination's own rule refuses battery.
+#[tokio::test]
+async fn an_exit_the_saved_intent_cannot_complete_still_leaves_hyperboost() {
+    const GPU: &str = "The saved Performance setting includes GPU clock tuning that this exit can't restore, so it was not applied.";
+    const NO_POLICY: &str =
+        "No saved performance setting applies to this power source, so none was applied.";
+    let gpu = MemoryFiles::default();
+    gpu.profiles_gpu(2);
+    for (case, files, actual, reason) in [
+        ("gpu", gpu, FULL, GPU),
+        ("no aggregate", MemoryFiles::default(), FULL, NO_POLICY),
+        (
+            "no aggregate on battery",
+            MemoryFiles::default(),
+            BATTERY,
+            NO_POLICY,
+        ),
+    ] {
+        let rig = rig_at(7, 0, actual, files);
+        let before = rig.get().await;
+        let result = rig.hyperboost(1, false).await;
+        assert_restore_only_exit(&rig, &before, &result, reason, case).await;
+        assert_eq!(setters(&rig).len(), 2, "{case}");
+        assert_eq!(progress(&rig), PAIR, "{case}");
+        // The saved intent is unchanged, so HyperBoost can be entered again
+        // only where entry admits it; an exit already off writes nothing.
+        let again = rig.hyperboost(2, false).await;
+        assert_eq!(
+            again["result"],
+            json!({"status":1,"message":ALREADY_OFF}),
+            "{case}"
+        );
+        assert_eq!(setters(&rig).len(), 2, "{case}");
+        rig.stop().await;
+    }
+}
+
+/// Managed's exit admits no ordinary command power, so the restore-only exit
+/// continues across a class change between its setters while the new class is
+/// classified and agrees with Windows, an unplug to battery included; the
+/// saved intent it skipped is not resolved again. An unclassified reading
+/// stops it before the next setter, and the sent setter's row fences writes.
+#[tokio::test]
+async fn the_restore_only_exit_continues_across_a_classified_class_change() {
+    const NO_POLICY: &str =
+        "No saved performance setting applies to this power source, so none was applied.";
+    for (actual, completes) in [(LIMITED, true), (BATTERY, true), (0x10, false)] {
+        let rig = rig_at(7, 0, FULL, MemoryFiles::default());
+        let before = rig.get().await;
+        change(&rig, Adapter(After(1), actual));
+        let result = rig.hyperboost(1, false).await;
+        let case = format!("{actual}: {result}");
+        if completes {
+            assert_restore_only_exit(&rig, &before, &result, NO_POLICY, &case).await;
+            assert_eq!(setters(&rig).len(), 2, "{case}");
+        } else {
+            assert_eq!(result["result"]["status"], 2, "{case}");
+            assert_eq!(result["result"]["message"], PENDING, "{case}");
+            assert_eq!(setters(&rig), vec![BALANCED_PAIR[0].to_vec()], "{case}");
+            settle(&rig);
+        }
+        rig.stop().await;
+    }
+}
+
+/// The one saved-state refusal an exit keeps, with its concrete reason: the
+/// durable thermal journal admits no performance row while a fan change this
+/// Service owns is outstanding (`thermal_history` refuses it on read), so an
+/// exit row would leave the journal unreadable and owned Stop unable to hand
+/// the fans back. HyperBoost entered outside native after an owned fan change
+/// is refused before any row, the journal stays readable, and owned Stop still
+/// hands the fans back. Managed has no such journal (a native deviation).
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn an_owned_fan_change_refuses_the_exit_before_any_row() {
+    let rig = fan_rig(0, 0);
+    rig.get().await;
+    let fan = rig.request(fan_request(180, Some(1), 3700)).await;
+    assert_eq!(fan["result"]["status"], 1, "{fan}");
+    assert!(rig.storage.outstanding_fan());
+    {
+        let mut s = rig.port.state.lock().unwrap();
+        s.selectors = [7; 2];
+        s.fans = [0; 2];
+    }
+    let rows_before = rows(&rig).len();
+    let sent_before = setters(&rig).len();
+    let result = rig.hyperboost(1, false).await;
+    assert_eq!(
+        result["result"],
+        json!({"status":2,"message":"OpenBlade still owns a fan change that has not been handed back to firmware Automatic; no thermal setter was submitted."}),
+        "{result}"
+    );
+    assert_eq!(rows(&rig).len(), rows_before);
+    assert_eq!(setters(&rig).len(), sent_before);
+    assert!(Storage::open(Box::new(rig.files.clone()), SID).is_ok());
+    rig.origin.stop();
+    rig.stop().await;
+}
+
 /// A readback that does not confirm HyperBoost settles nothing: the
 /// unsettled row fences later writes, and nothing is replayed.
 #[tokio::test]
@@ -364,8 +524,14 @@ async fn a_pending_gpu_confirmation_refuses_entry_and_exit_before_any_row() {
         compose, leave_uncertain,
     };
     use crate::installed::readiness::thermal_mutation::PENDING_PERFORMANCE;
-    for (from, enabled) in [(0, true), (7, false)] {
-        let rig = rig_at(from, 0, FULL, saved_files());
+    let gpu = MemoryFiles::default();
+    gpu.profiles_gpu(2);
+    for (from, enabled, files) in [
+        (0, true, saved_files()),
+        (7, false, saved_files()),
+        (7, false, gpu),
+    ] {
+        let rig = rig_at(from, 0, FULL, files);
         let fake = Fake::new(0, 0);
         let lane = compose(&rig, &fake, Arc::default());
         leave_uncertain(&rig, &lane, &fake);
@@ -388,6 +554,21 @@ async fn a_pending_gpu_confirmation_refuses_entry_and_exit_before_any_row() {
         assert_eq!(setters(&rig).len(), 2, "{enabled}");
         rig.stop().await;
     }
+    // Already active writes nothing, so managed replies before its thermal
+    // fence (6965-7002), as native does.
+    let rig = rig_at(7, 0, FULL, saved_files());
+    let fake = Fake::new(0, 0);
+    let lane = compose(&rig, &fake, Arc::default());
+    leave_uncertain(&rig, &lane, &fake);
+    let result = rig.hyperboost(1, true).await;
+    assert_eq!(
+        result["result"],
+        json!({"status":1,"message":ALREADY_ACTIVE}),
+        "{result}"
+    );
+    assert!(setters(&rig).is_empty());
+    assert!(rows(&rig).is_empty());
+    rig.stop().await;
 }
 
 const OWNED_VECTORS: &str = include_str!("../../../../../tests/data/hyperboost-owned-vectors.json");

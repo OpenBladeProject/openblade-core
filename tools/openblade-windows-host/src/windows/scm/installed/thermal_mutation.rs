@@ -2000,13 +2000,18 @@ impl RequestPermit {
         Ok(None)
     }
     /// The destination a step's status projects as desired: the step's own,
-    /// but for a HyperBoost entry the saved one, which it does not change.
+    /// but for a HyperBoost entry or restore-only exit the saved one, which
+    /// neither changes.
     fn projected_destination(
         &self,
         destination: Option<Destination>,
     ) -> io::Result<Option<Destination>> {
         #[cfg(feature = "service-hyperboost-v1")]
-        if let Some(step) = self.hyperboost.as_ref().filter(|step| step.enable) {
+        if let Some(step) = self
+            .hyperboost
+            .as_ref()
+            .filter(|step| step.enable || step.restores_only())
+        {
             return step.saved();
         }
         Ok(destination)
@@ -2441,6 +2446,12 @@ impl Permit for RequestPermit {
     fn thermal_fenced(&self, budget: std::time::Duration) -> bool {
         self.gpu_fence.as_ref().is_some_and(|fenced| fenced(budget))
     }
+    #[cfg(feature = "service-hyperboost-v1")]
+    fn restores_only(&self) -> bool {
+        self.hyperboost
+            .as_ref()
+            .is_some_and(hyperboost::Step::restores_only)
+    }
     // A paired NVML submission follows the firmware setters inside the
     // request (`thermal_gpu::Lane::complete`).
     #[cfg(feature = "service-gpu-clock-tuning-v1")]
@@ -2463,6 +2474,12 @@ impl Permit for RequestPermit {
                 return Ok(false);
             };
             self.observe_power(power)?;
+            // Managed's unowned exit resolves nothing from the saved intent, so
+            // a class its restore rule admits keeps it (`Permit::restores_only`).
+            #[cfg(feature = "service-hyperboost-v1")]
+            if self.restores_only() {
+                return Ok(true);
+            }
             // Resolved again from the saved profiles as they are now.
             let layer = self.storage.profile_layer(&self.application)?;
             let profile = layer.at(power)?;
