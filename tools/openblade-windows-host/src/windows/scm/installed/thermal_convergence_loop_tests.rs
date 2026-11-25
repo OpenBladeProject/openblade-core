@@ -5,13 +5,80 @@ fn journal(document: Value) -> Vec<u8> {
     serde_json::to_vec(&document).unwrap()
 }
 
+const JOURNAL_VECTORS: &str =
+    include_str!("../../../../tests/data/hyperboost-journal-vectors.json");
+
+/// Recorded by `NativeHyperBoostJournalVectorsTests`: each document and
+/// whether managed's store reads it as a safe Relinquished journal.
+fn journal_vectors() -> Vec<(String, String, bool)> {
+    let vectors: Value = serde_json::from_str(JOURNAL_VECTORS).unwrap();
+    vectors["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|row| {
+            (
+                row["name"].as_str().unwrap().to_owned(),
+                row["document"].as_str().unwrap().to_owned(),
+                row["managedSafe"].as_bool().unwrap(),
+            )
+        })
+        .collect()
+}
+
+/// The Relinquished Balanced journal managed's store writes, at `schema`.
 fn relinquished(schema: i64) -> Value {
-    json!({
-        "schemaVersion": schema, "state": RELINQUISHED, "baseMode": 1,
-        "updatedAtUtc": "2026-11-24T00:00:00+00:00", "requiresCoolingPad": false,
-        "restorePerformance": 1, "restoreFanControl": {"mode": 0},
-        "restorePowerSource": 0,
-    })
+    let written = journal_vectors()
+        .into_iter()
+        .find(|(name, ..)| name == "written/balanced")
+        .unwrap();
+    let mut document: Value = serde_json::from_str(&written.1).unwrap();
+    assert_eq!(document["state"], RELINQUISHED);
+    document["schemaVersion"] = json!(schema);
+    document
+}
+
+/// Every recorded row replays through the native reader. Native never calls
+/// a journal safe that managed does not, and it agrees with managed except
+/// where it fails closed on a document managed reads differently from how it
+/// is written: a duplicate or differently cased member (managed takes the
+/// last match in any case), an unknown member (ignored by managed), a number
+/// in a string, a timestamp without its full time, offset or with more than
+/// seven fraction digits, and a Turbo base.
+#[test]
+fn managed_journal_vectors_replay_through_the_native_reader() {
+    const STRICTER: [&str; 11] = [
+        "written/turbo-battery",
+        "duplicate/case-variant-later-relinquished",
+        "duplicate/exact",
+        "duplicate/nested-case-variant",
+        "case/pascal-member",
+        "unknown/member",
+        "unknown/nested-member",
+        "type/schema-string",
+        "date/date-only",
+        "date/no-offset",
+        "date/eight-fraction-digits",
+    ];
+    let rows = journal_vectors();
+    assert_eq!(rows.len(), 34);
+    for (name, document, managed) in rows {
+        let native = journal_safe(Some(document.as_bytes()));
+        assert!(
+            !native || managed,
+            "{name}: native admits what managed refuses"
+        );
+        let expected = managed && !STRICTER.contains(&name.as_str());
+        assert_eq!(native, expected, "{name}");
+    }
+    // Managed takes the last of two members that differ only in case: a
+    // pending state written after the Relinquished one is pending.
+    let (_, pending, managed) = journal_vectors()
+        .into_iter()
+        .find(|(name, ..)| name == "duplicate/case-variant-later-pending")
+        .unwrap();
+    assert!(!managed);
+    assert!(!journal_safe(Some(pending.as_bytes())));
 }
 
 /// Managed `IsSafeMaintainHyperBoostJournalBaseline`: absent or a
@@ -129,7 +196,7 @@ fn a_journal_managed_would_not_admit_blocks() {
     assert!(!safe(8, &|d| d["restoreGpuClockTuning"] = json!(1)));
     // The base mode: Silent, Balanced or Performance, or Custom with its
     // restore settings. A legacy schema restores its base mode.
-    for mode in [3, 4, 5, 6] {
+    for mode in [3, 4, 5, 6, 7] {
         assert!(!safe(8, &|d| d["baseMode"] = json!(mode)), "{mode}");
     }
     assert!(safe(8, &|d| {
@@ -149,8 +216,17 @@ fn a_journal_managed_would_not_admit_blocks() {
     // No retry, each from the schema that added it.
     assert!(!safe(5, &|d| d["restoreRetryDisposition"] = json!(1)));
     assert!(safe(4, &|d| d["restoreRetryDisposition"] = json!(1)));
-    assert!(!safe(6, &|d| d["restoreRetryTarget"] = json!({"mode": 0})));
-    assert!(safe(5, &|d| d["restoreRetryTarget"] = json!({"mode": 0})));
+    assert!(!safe(6, &|d| d["restoreRetryTarget"] = json!(1)));
+    assert!(safe(5, &|d| d["restoreRetryTarget"] = json!(1)));
+    // Managed binds every member before it ignores one a schema predates,
+    // so a member of the wrong type blocks in every schema.
+    assert!(!safe(5, &|d| d["restoreRetryTarget"] = json!({"mode": 0})));
+    assert!(!safe(4, &|d| d["restoreRetryDisposition"] = json!("0")));
+    assert!(!safe(8, &|d| d["requiresCoolingPad"] = json!(0)));
+    assert!(!safe(8, &|d| d["restoreUsesCurrentPowerDestination"] =
+        json!(null)));
+    assert!(!safe(8, &|d| d["restoreGpuClockTuning"] =
+        json!({"enabled": true, "offsets": null})));
     // A transition ID, when present, is a non-empty GUID.
     for id in [
         json!("00000000-0000-0000-0000-000000000000"),
@@ -162,10 +238,13 @@ fn a_journal_managed_would_not_admit_blocks() {
     assert!(safe(7, &|d| {
         d["transitionId"] = json!("3f2504e0-4f89-41d3-9a0c-0305e82c3301");
     }));
-    assert!(safe(6, &|d| d["transitionId"] = json!("transition")));
-    // A recovery baseline only under RestorePending.
+    assert!(!safe(6, &|d| d["transitionId"] = json!("transition")));
+    assert!(safe(6, &|d| d["transitionId"] =
+        json!("00000000-0000-0000-0000-000000000000")));
+    // A recovery baseline only under RestorePending; native refuses one in
+    // every schema.
     assert!(!safe(4, &|d| d["recoveryBaseline"] = json!({})));
-    assert!(safe(3, &|d| d["recoveryBaseline"] = json!({})));
+    assert!(!safe(3, &|d| d["recoveryBaseline"] = json!({})));
     // A written timestamp.
     assert!(!safe(8, &|d| {
         d["updatedAtUtc"] = json!("0001-01-01T00:00:00+00:00");

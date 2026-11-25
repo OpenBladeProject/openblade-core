@@ -48,16 +48,22 @@ fn saved_files() -> MemoryFiles {
 fn enable() -> Vec<Vec<u8>> {
     ENABLE.iter().map(|p| p.to_vec()).collect()
 }
+const JOURNAL_VECTORS: &str =
+    include_str!("../../../../../tests/data/hyperboost-journal-vectors.json");
+/// The Relinquished journal managed's store writes, with `state` in place
+/// of Relinquished (`NativeHyperBoostJournalVectorsTests`).
+fn journal_in(state: u8) -> Vec<u8> {
+    let vectors: Value = serde_json::from_str(JOURNAL_VECTORS).unwrap();
+    let written = vectors["rows"][0]["document"].as_str().unwrap();
+    assert_eq!(vectors["rows"][0]["name"], "written/balanced");
+    written
+        .replace("\"state\": 3,", &format!("\"state\": {state},"))
+        .into_bytes()
+}
 /// A Relinquished managed journal of the latest schema
 /// (`IsSafeMaintainHyperBoostJournalBaseline`).
 fn relinquished() -> Vec<u8> {
-    serde_json::to_vec(&json!({
-        "schemaVersion": 8, "state": 3, "baseMode": 1,
-        "updatedAtUtc": "2026-11-24T00:00:00+00:00", "requiresCoolingPad": false,
-        "restorePerformance": 1, "restoreFanControl": {"mode": 0},
-        "restorePowerSource": 0,
-    }))
-    .unwrap()
+    journal_in(3)
 }
 
 /// Managed 7044-7084 and the port's entry precondition on exact RZ09-0581:
@@ -213,13 +219,7 @@ async fn the_pad_is_observed_again_before_each_enable_setter() {
 /// is read again before each setter.
 #[tokio::test]
 async fn a_pending_or_unreadable_managed_journal_refuses_entry_and_exit() {
-    let pending = serde_json::to_vec(&json!({
-        "schemaVersion": 8, "state": 1, "baseMode": 1,
-        "updatedAtUtc": "2026-11-24T00:00:00+00:00", "requiresCoolingPad": false,
-        "restorePerformance": 1, "restoreFanControl": {"mode": 0},
-        "restorePowerSource": 0,
-    }))
-    .unwrap();
+    let pending = journal_in(1);
     for (journal, refused) in [
         (Some(Some(pending)), true),
         (None, true),
