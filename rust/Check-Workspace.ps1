@@ -262,11 +262,11 @@ try {
             $domainFeatures = @($package.features.PSObject.Properties | ForEach-Object {
                 $_.Name + '=' + (@($_.Value | Sort-Object) -join '+')
             }) -join ','
-            # profile-set, driver-mode-history and hyperboost-exit are pure
+            # profile-set, driver-mode-history, hyperboost-exit and hyperboost are pure
             # std code with no dependency of their own, and
             # thermal-convergence adds only pure ledger rules over
             # thermal-history.
-            if ($domainFeatures -cne 'driver-mode-history=,hyperboost-exit=,profile-set=,thermal-convergence=thermal-history,thermal-history=dep:serde+dep:serde_json+dep:sha2') {
+            if ($domainFeatures -cne 'driver-mode-history=,hyperboost=hyperboost-exit,hyperboost-exit=,profile-set=,thermal-convergence=thermal-history,thermal-history=dep:serde+dep:serde_json+dep:sha2') {
                 throw "Unreviewed openblade-domain features: $domainFeatures"
             }
         }

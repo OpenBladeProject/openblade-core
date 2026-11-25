@@ -5,6 +5,9 @@ use openblade_types::ProtocolValidationFailure;
 
 /// The firmware mode byte of the Custom pair (`performance-custom-channel-N`).
 pub const CUSTOM_SELECTOR: u8 = 4;
+/// The firmware mode byte of the HyperBoost enable pair
+/// (`hyperboost-enable-channel-N`, `Rz09_0581_02e0_4_00_HyperBoostProduction`).
+pub const HYPERBOOST_SELECTOR: u8 = 7;
 #[derive(Clone, Debug)]
 pub struct PresetPair {
     commands: [RazerReport; 2],
@@ -25,6 +28,12 @@ impl PresetPair {
     /// bytes are the Balanced pair's; no new firmware command is admitted.
     pub fn hyperboost_restore(ids: [u8; 2]) -> Option<Self> {
         Self::with_selector(ids, InstalledThermalPreset::Balanced.selector())
+    }
+    /// The HyperBoost enable pair (`hyperboost-enable-channel-N`): managed
+    /// `ProductionBatteryPort.SetHyperBoostCoreAsync` writes it to enter
+    /// HyperBoost on exact RZ09-0581, from either admitted pad path.
+    pub fn hyperboost_enable(ids: [u8; 2]) -> Option<Self> {
+        Self::with_selector(ids, HYPERBOOST_SELECTOR)
     }
     fn with_selector(ids: [u8; 2], selector: u8) -> Option<Self> {
         if ids[0] == 0 || ids[1] == 0 || ids[0] == ids[1] {
@@ -200,6 +209,45 @@ mod tests {
         assert_ne!(base64(&restore.commands()[0].encode()[8..12]), enable.2);
         assert!(PresetPair::hyperboost_restore([1, 1]).is_none());
         assert!(PresetPair::hyperboost_restore([0, 1]).is_none());
+    }
+    /// The HyperBoost enable pair is the managed RZ09-0581 HyperBoost
+    /// production fixture, byte for byte, and accepts only its own exact echo.
+    #[test]
+    fn the_hyperboost_enable_pair_is_the_managed_fixture() {
+        let fixture: Vec<Entry> = serde_json::from_str(include_str!(
+            "../../../../src/OpenBlade.Protocol/Fixtures/Rz09_0581_02e0_4_00_HyperBoostProduction.json"
+        ))
+        .unwrap();
+        let enable = PresetPair::hyperboost_enable([19, 20]).unwrap();
+        let restore = PresetPair::hyperboost_restore([19, 20]).unwrap();
+        for (index, command) in enable.commands().iter().enumerate() {
+            let entry = fixture_entry(
+                &fixture,
+                &format!("hyperboost-enable-channel-{}", index + 1),
+            );
+            let encoded = command.encode();
+            assert_eq!((encoded[6], encoded[7], encoded[5]), (entry.0, entry.1, 4));
+            assert_eq!(base64(&encoded[8..12]), entry.2);
+            assert_eq!(
+                &encoded[8..12],
+                &[1, index as u8 + 1, HYPERBOOST_SELECTOR, 0]
+            );
+            let mut reply = encoded;
+            reply[0] = 2;
+            assert!(enable.acknowledge(index, &reply).is_ok());
+            assert!(enable.acknowledge(1 - index, &reply).is_err());
+            // A restore echo never acknowledges the enable pair.
+            let mut other = restore.commands()[index].encode();
+            other[0] = 2;
+            assert!(enable.acknowledge(index, &other).is_err());
+        }
+        // No preset or Custom destination writes the HyperBoost selector.
+        for destination in ALL {
+            assert_ne!(destination.selector(), HYPERBOOST_SELECTOR);
+        }
+        assert_ne!(CUSTOM_SELECTOR, HYPERBOOST_SELECTOR);
+        assert!(PresetPair::hyperboost_enable([1, 1]).is_none());
+        assert!(PresetPair::hyperboost_enable([0, 1]).is_none());
     }
     #[test]
     fn complete_pair_uses_requested_destination_and_exact_echo() {
