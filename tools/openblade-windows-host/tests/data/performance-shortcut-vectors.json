@@ -1,0 +1,17 @@
+{
+"comment":"Recorded by ServiceControlRuntimeTests.NativePerformanceShortcutVectors; regenerate with OPENBLADE_REGENERATE_NATIVE_PERFORMANCE_SHORTCUT_VECTORS set to this directory. Each row runs PerformanceShortcutSelection.TrySelectNext (cycle pluggedIn, usbC or battery) or TrySelectNextOrdinary (cycle ordinary) over the admitted presets (null is an unverified capability) for every defined current preset and records the selected preset, or null when nothing is selected. The rz09-0581 set is the production RZ09-0581 battery capability\u0027s PerformancePresets.",
+"selection":[
+{"cycle":"pluggedIn","admitted":"rz09-0581","presets":[0,1,2,3,4,5],"next":[2,0,5,1,3,4,1,1,1,1]},
+{"cycle":"pluggedIn","admitted":"rz09-0581-without-custom","presets":[0,1,2,3,4],"next":[2,0,4,1,3,1,1,1,1,1]},
+{"cycle":"pluggedIn","admitted":"unverified","presets":null,"next":[2,0,5,1,1,1,1,1,1,1]},
+{"cycle":"usbC","admitted":"rz09-0581","presets":[0,1,2,3,4,5],"next":[2,0,5,1,3,4,1,1,1,1]},
+{"cycle":"usbC","admitted":"rz09-0581-without-custom","presets":[0,1,2,3,4],"next":[2,0,4,1,3,1,1,1,1,1]},
+{"cycle":"usbC","admitted":"unverified","presets":null,"next":[2,0,5,1,1,1,1,1,1,1]},
+{"cycle":"battery","admitted":"rz09-0581","presets":[0,1,2,3,4,5],"next":[4,4,4,4,3,4,4,4,4,4]},
+{"cycle":"battery","admitted":"rz09-0581-without-custom","presets":[0,1,2,3,4],"next":[4,4,4,4,3,4,4,4,4,4]},
+{"cycle":"battery","admitted":"unverified","presets":null,"next":[4,4,4,4,3,4,4,4,4,4]},
+{"cycle":"ordinary","admitted":"rz09-0581","presets":[0,1,2,3,4,5],"next":[2,0,5,1,1,1,1,1,1,1]},
+{"cycle":"ordinary","admitted":"rz09-0581-without-custom","presets":[0,1,2,3,4],"next":[2,0,1,1,1,1,1,1,1,1]},
+{"cycle":"ordinary","admitted":"unverified","presets":null,"next":[null,null,null,null,null,null,null,null,null,null]}
+]
+}
