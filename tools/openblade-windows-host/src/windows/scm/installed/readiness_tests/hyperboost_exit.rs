@@ -32,6 +32,13 @@ fn exchanges(rig: &Rig, from: usize) -> Vec<(u8, u8)> {
         .map(|(class, command, _, _)| (*class, *command))
         .collect()
 }
+/// The transaction IDs of the exchanges after the baseline observation.
+fn ids(rig: &Rig, from: usize) -> Vec<u8> {
+    rig.port.state.lock().unwrap().sent[from..]
+        .iter()
+        .map(|(_, _, _, id)| *id)
+        .collect()
+}
 fn sent_count(rig: &Rig) -> usize {
     rig.port.state.lock().unwrap().sent.len()
 }
@@ -94,6 +101,12 @@ async fn each_battery_preset_is_the_restore_pair_a_balanced_read_then_its_own_pa
                 ],
                 "{case}"
             );
+            // Every exchange has its own reserved transaction ID: the
+            // intermediate read's pair is not the final read's.
+            let mut recipe_ids = ids(&rig, before)[at..].to_vec();
+            recipe_ids.sort_unstable();
+            recipe_ids.dedup();
+            assert_eq!(recipe_ids.len(), recipe[at..].len(), "{case}");
             assert_eq!(progress_values(&rig), RESTORE, "{case}");
             assert!(
                 rows(&rig).iter().all(|r| r["destination"] == preset),
@@ -447,6 +460,50 @@ async fn a_restore_recipe_its_pace_cannot_finish_is_refused_before_any_setter() 
 }
 
 #[tokio::test]
+async fn the_restore_recipe_charges_all_four_setters_rows_once() {
+    // Every journal append takes `append` of fixture time (paused, so
+    // deterministic) on a healthy device. The pace check charges the timed
+    // Prepared append for each row left: two per setter, all four setters
+    // of the restore recipe, plus the closing row. At 450 ms the restore
+    // recipe fits and completes; checked again before the battery pair, the
+    // whole recipe would no longer fit, so it is paced only once. At 600 ms
+    // it is refused before any setter, while a direct battery pair, with
+    // two setters' rows, still fits.
+    for (from, append, completes) in [(7, 450, true), (7, 600, false), (0, 600, true)] {
+        let rig = rig_at(from, 0, FULL, MemoryFiles::default());
+        rig.get().await;
+        *rig.files.paced_replace.lock().unwrap() = Some((
+            "thermal-mutation.journal",
+            std::time::Duration::from_millis(append),
+        ));
+        let result = rig.set(1, value(BATTERY_SAVER.0, 1)).await;
+        *rig.files.paced_replace.lock().unwrap() = None;
+        let case = format!("{from} at {append} ms: {result}");
+        if completes {
+            assert_eq!(result["result"]["status"], 1, "{case}");
+            let chain = if from == 7 {
+                &RESTORE[..]
+            } else {
+                &[0, 1, 2, 3, 4, 5][..]
+            };
+            assert_eq!(progress_values(&rig), chain, "{case}");
+        } else {
+            assert_eq!(
+                result["result"]["message"],
+                format!(
+                    "Performance override intent was stored. Hardware result: {}",
+                    crate::installed::readiness::thermal_mutation::DEADLINE
+                ),
+                "{case}"
+            );
+            assert!(setters(&rig).is_empty(), "{case}");
+            assert_eq!(progress_values(&rig), [0, 6], "{case}");
+        }
+        rig.stop().await;
+    }
+}
+
+#[tokio::test]
 async fn the_restore_recipe_reserves_every_id_before_prepared() {
     // The fewest free pairs each recipe completes with: the restore recipe
     // needs three pairs more than a direct battery pair (the restore pair,
@@ -503,6 +560,47 @@ async fn a_firmware_exit_before_the_request_is_one_direct_battery_pair() {
             assert_eq!(progress_values(&rig), [0, 1, 2, 3, 4, 5]);
         }
         rig.stop().await;
+    }
+}
+
+#[tokio::test]
+async fn an_unconfirmed_restore_intent_append_reports_a_possible_submission() {
+    // Row 80 is the exit's first submission intent. An append whose
+    // publication is not confirmed (torn pending, whole pending, published
+    // with a failed final sync) may already be durable, so the store keeps
+    // the possible submission, not a Prepared-only row: no setter is sent,
+    // and a later request is fenced with the same reason.
+    for cut in 1..=3 {
+        let files = MemoryFiles::default();
+        files.fail_first_intent.store(cut, Ordering::Release);
+        let rig = hyperboost_rig(FULL, files).await;
+        let result = rig.set(1, value(BATTERY_SAVER.0, 1)).await;
+        assert_eq!(result["result"]["status"], 2, "{cut}: {result}");
+        let message = result["result"]["message"].as_str().unwrap();
+        assert!(
+            message.contains("submission-intent journal publication could not be confirmed"),
+            "{cut}: {message}"
+        );
+        assert!(setters(&rig).is_empty(), "{cut}");
+        let attempted = rig
+            .files
+            .first_intent_bytes
+            .lock()
+            .unwrap()
+            .clone()
+            .unwrap();
+        let last = attempted
+            .split(|b| *b == b'\n')
+            .rfind(|line| !line.is_empty())
+            .map(|line| serde_json::from_slice::<Value>(line).unwrap());
+        assert_eq!(last.unwrap()["progress"], 80, "{cut}");
+        let later = rig.set(2, value(BATTERY_SAVER.0, 1)).await;
+        assert_eq!(
+            later["result"]["message"], result["result"]["message"],
+            "{cut}"
+        );
+        assert!(setters(&rig).is_empty(), "{cut}");
+        let _ = rig.reader.stop().await;
     }
 }
 

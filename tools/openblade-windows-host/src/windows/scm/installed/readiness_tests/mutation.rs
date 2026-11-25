@@ -321,7 +321,9 @@ impl Files for MemoryFiles {
                         .as_u64()
                         .unwrap()
                 });
-            if progress == Some(1) || progress == Some(60) {
+            // A HyperBoost exit to a battery preset journals its first submission
+            // intent as 80 (the restore pair).
+            if progress == Some(1) || progress == Some(60) || progress == Some(80) {
                 self.submission_intent_attempts
                     .fetch_add(1, Ordering::AcqRel);
                 let cut = self.fail_first_intent.load(Ordering::Acquire);
