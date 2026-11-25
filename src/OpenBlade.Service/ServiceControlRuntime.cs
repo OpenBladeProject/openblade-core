@@ -12355,7 +12355,17 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         unexpectedExitRecoveryDeferredForUserConfiguration = false;
         startupProfileReconciliationRequested = true;
         ObserveAutomaticState(confirmed);
-        if (!deferredFanStateConverged && !recoveredAutomaticFansReinstated)
+        // Recovery starts from a manual-fan safety baseline, so firmware
+        // Automatic loses that ownership. When the user's intent is also
+        // Automatic, nothing needs restoring and nothing changed: firmware
+        // Automatic needs no ownership. Any other unconverged state is drift.
+        DesiredDeviceState recoveredIntent = ResolveAutomationDesired(confirmed);
+        FanMode recoveredFanMode = recoveredIntent.FanControl?.Mode
+            ?? recoveredIntent.Fans.Value;
+        bool automaticFansMatchIntent = confirmed.Fans == FanMode.Automatic
+            && recoveredFanMode == FanMode.Automatic;
+        if (!deferredFanStateConverged && !recoveredAutomaticFansReinstated
+            && !automaticFansMatchIntent)
         {
             driftTracker.ConfirmIntentional(DeviceSubsystem.Fans, matched: false);
         }
