@@ -372,3 +372,48 @@ fn this_composition_opens_over_its_record_and_stage() {
     assert!(store.driver_mode_record_read().is_err());
     assert_eq!(on_disk(&root, STAGE).unwrap(), b"evidence");
 }
+
+/// The store admits a replace by the domain's edges alone: every transition
+/// vector, written over its prior by this process's Active owner, is
+/// admitted exactly when the vector says the edge follows, and a refused
+/// one leaves the file as it was. `follows` ignores the owner, so each
+/// record is rewritten as this owner's.
+#[test]
+fn every_transition_vector_is_admitted_exactly_as_it_follows() {
+    let root = OwnerRoot::new("record-vectors");
+    let store = root.active(OWNER);
+    let as_owner = |text: &Value| {
+        let mut lines: Vec<String> = text
+            .as_str()
+            .unwrap()
+            .split('\n')
+            .map(str::to_owned)
+            .collect();
+        lines[3] = owner(OWNER);
+        DriverModeRecord::parse(lines.join("\n").as_bytes()).unwrap()
+    };
+    let v = vectors();
+    let transitions = v["transitions"].as_array().unwrap();
+    assert!(transitions.len() >= 30);
+    for t in transitions {
+        let name = t["name"].as_str().unwrap();
+        let prior = (!t["prior"].is_null()).then(|| as_owner(&t["prior"]));
+        let next = as_owner(&t["next"]);
+        match &prior {
+            Some(prior) => std::fs::write(root.path(RECORD), prior.bytes()).unwrap(),
+            None => {
+                let _ = std::fs::remove_file(root.path(RECORD));
+            }
+        }
+        let follows = t["follows"].as_bool().unwrap();
+        let written = store.driver_mode_record_replace(prior.as_ref(), &next);
+        assert_eq!(written.is_ok(), follows, "{name}: {written:?}");
+        let kept = if follows { Some(&next) } else { prior.as_ref() };
+        assert_eq!(
+            on_disk(&root, RECORD),
+            kept.map(DriverModeRecord::bytes),
+            "{name}"
+        );
+        assert_eq!(on_disk(&root, STAGE), None, "{name}");
+    }
+}

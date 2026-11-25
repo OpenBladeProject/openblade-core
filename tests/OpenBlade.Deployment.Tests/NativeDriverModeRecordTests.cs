@@ -64,6 +64,6 @@ public sealed class NativeDriverModeRecordTests
             }
             count++;
         }
-        Assert.Equal(37, count);
+        Assert.Equal(38, count);
     }
 }

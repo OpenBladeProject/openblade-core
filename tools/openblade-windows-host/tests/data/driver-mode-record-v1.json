@@ -374,6 +374,12 @@
       "follows": true
     },
     {
+      "name": "first release reverted to clear on other IDs",
+      "prior": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n1\n0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\nReleaseIntent\nClear\n251,252,253,254\n",
+      "next": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n2\n0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\nClear\nClear\n1,2,3,4\n",
+      "follows": true
+    },
+    {
       "name": "reacquire found Normal on other IDs",
       "prior": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n3\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nAcquireIntent\nOwned\n41,42,43,44\n",
       "next": "OpenBlade.NativeDriverMode.v1\nservice-keyboard-driver-mode-v1/rz09-0581-v1\n4\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nClear\nClear\n11,12,13,14\n",
