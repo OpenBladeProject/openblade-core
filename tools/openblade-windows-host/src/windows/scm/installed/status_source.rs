@@ -570,9 +570,11 @@ impl GuardedStatus {
 /// performance request's is: rebased on the latest publication, projected
 /// with this user's policy, retained by the Reader and given the next
 /// revision.
+/// A performance shortcut's status is published the same way.
 #[cfg(any(
     feature = "service-profile-triggers-v1",
-    feature = "service-fan-stop-v1"
+    feature = "service-fan-stop-v1",
+    feature = "service-performance-shortcut-v1"
 ))]
 fn publish_reconciled(
     publisher: &watch::Sender<Arc<Publication>>,
@@ -584,6 +586,29 @@ fn publish_reconciled(
         status = reader.current_policy(status)?;
         reader.retain_mutation(&status);
     }
+    publish_next(publisher, status)
+}
+/// Publishes the latest status projected with the Reader's held shortcut
+/// preview. A preview reads nothing, so the Reader retains nothing: its read
+/// witness and retention window stay those of the last real read.
+#[cfg(feature = "service-performance-shortcut-v1")]
+fn publish_preview(
+    publisher: &watch::Sender<Arc<Publication>>,
+    reader: &super::mailbox_read::ReadSource,
+) -> io::Result<Snapshot> {
+    let latest = publisher.borrow().active.clone();
+    publish_next(publisher, reader.current_policy(latest)?)
+}
+/// Sends `status` with the revision after the latest publication's.
+#[cfg(any(
+    feature = "service-profile-triggers-v1",
+    feature = "service-fan-stop-v1",
+    feature = "service-performance-shortcut-v1"
+))]
+fn publish_next(
+    publisher: &watch::Sender<Arc<Publication>>,
+    mut status: Snapshot,
+) -> io::Result<Snapshot> {
     status.set_observation_revision(
         publisher
             .borrow()
@@ -1072,6 +1097,69 @@ impl StatusSource for GuardedStatus {
                     } else {
                         Ok((outcome, None))
                     }
+                }
+                #[cfg(feature = "service-performance-shortcut-v1")]
+                crate::service_status::StatusRequest::CyclePerformanceShortcut {
+                    request_id,
+                    source,
+                    ..
+                } => {
+                    // The codec admits only a defined source.
+                    let source = super::thermal_mutation::ShortcutSource::from_wire(source)
+                        .ok_or_else(|| invalid("performance shortcut source is undefined"))?;
+                    let status = publisher.borrow().active.clone();
+                    let (outcome, status) = runtime
+                        .cycle_shortcut(
+                            mailbox.clone(),
+                            caller,
+                            sid,
+                            request_id,
+                            source,
+                            deadline,
+                            status,
+                        )
+                        .await?;
+                    let Some(status) = status else {
+                        return Ok((outcome, None));
+                    };
+                    let status = publish_reconciled(&publisher, &mailbox, status)?;
+                    Ok((outcome, Some(status)))
+                }
+                // Managed publishes the preview without the operation gate: it
+                // stores no intent and reads or writes no firmware.
+                #[cfg(feature = "service-performance-shortcut-v1")]
+                crate::service_status::StatusRequest::SetPerformanceShortcutPreview {
+                    session_id,
+                    generation,
+                    preset,
+                    ..
+                } => {
+                    use super::thermal_mutation::Outcome;
+                    if caller.logon != super::Logon::Interactive
+                        || caller.control_session != Some(caller.session)
+                    {
+                        return Ok((
+                            Outcome::blocked("The active interactive Windows user is required."),
+                            None,
+                        ));
+                    }
+                    let super::mailbox_read::MailboxSource::Reader(reader) = &mailbox else {
+                        return Ok((
+                            Outcome::blocked("Performance shortcut previews are unavailable."),
+                            None,
+                        ));
+                    };
+                    let (message, changed) =
+                        reader.set_shortcut_preview(&session_id, generation, preset);
+                    let outcome = Outcome {
+                        status: 0,
+                        message: message.into(),
+                    };
+                    if !changed {
+                        return Ok((outcome, None));
+                    }
+                    let status = publish_preview(&publisher, reader)?;
+                    Ok((outcome, Some(status)))
                 }
                 _ => Ok((
                     super::thermal_mutation::Outcome::blocked("Unsupported mutation operation."),

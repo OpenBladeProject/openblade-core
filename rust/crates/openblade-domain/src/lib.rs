@@ -157,6 +157,7 @@ pub mod application_context;
 pub mod automation;
 pub mod function_row;
 pub mod low_power_gate;
+pub mod performance_shortcut;
 pub mod power_setting;
 pub mod recovery;
 

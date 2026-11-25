@@ -7,6 +7,9 @@ mod driver_mode_owner;
 #[cfg(feature = "service-keyboard-driver-mode-v1")]
 #[path = "driver_mode_record_model.rs"]
 mod driver_mode_record_model;
+#[cfg(feature = "service-performance-shortcut-v1")]
+#[path = "performance_shortcut.rs"]
+mod performance_shortcut;
 #[cfg(feature = "service-fan-mutation-v2")]
 #[path = "pool_pins.rs"]
 mod pool_pins;

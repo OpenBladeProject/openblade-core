@@ -919,6 +919,8 @@ impl Runtime {
                                 value: None,
                                 reconcile: Some(classes),
                                 transition: Some(transition.clone()),
+                                #[cfg(feature = "service-performance-shortcut-v1")]
+                                shortcut: None,
                                 deadline,
                                 status: status.clone(),
                             },

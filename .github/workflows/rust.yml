@@ -344,6 +344,12 @@ jobs:
           # status. The lanes without it pin the no-evidence status and record.
           $fanStop = @('openblade-windows-service-candidate', 'service-fan-stop-v1')
           $fanStopTriggers = @('openblade-windows-service-candidate', 'service-fan-stop-v1,service-profile-triggers-v1')
+          # The performance shortcut and its preview, alone over the fan
+          # composition and beside the lifecycle triggers, whose low-power gate
+          # stores a cycle without a read. The lanes without it pin that both
+          # operations are answered with managed's unsupported reply.
+          $shortcut = @('openblade-windows-service-candidate', 'service-performance-shortcut-v1')
+          $shortcutTriggers = @('openblade-windows-service-candidate', 'service-performance-shortcut-v1,service-profile-triggers-v1')
           # One run per filter, so a filter that matches no test fails the step.
           foreach ($run in @(
               @('openblade-windows-service-candidate', 'service-temporary-charge-v1', 'service_status::object_tests'),
@@ -464,6 +470,14 @@ jobs:
               ($fanStop + 'capability_tests'),
               ($fanStopTriggers + 'fan_stop'),
               ($fanStopTriggers + 'thermal_policy'),
+              ($shortcut + 'shortcut'),
+              ($shortcut + 'unserved'),
+              ($shortcut + 'native_package'),
+              ($shortcutTriggers + 'shortcut'),
+              ($shortcutTriggers + 'request_triggers'),
+              # The compiled identity the profile store declares, which the
+              # shortcut's marker follows.
+              ($shortcutTriggers + 'profiles::'),
               @('openblade-windows-service-candidate', 'service-mailbox-observation-v1', 'capability_tests'),
               @('openblade-windows-service-candidate', 'service-mailbox-observation-v1', 'readiness::tests::observation'),
               @('openblade-windows-service-candidate', 'service-mailbox-observation-v1', 'driver_mode_absent'),
@@ -529,6 +543,8 @@ jobs:
               @('openblade-windows-service-candidate', 'service-fan-stop-v1'),
               @('openblade-windows-service-candidate', 'service-fan-stop-v1,service-profile-triggers-v1'),
               @('openblade-windows-service-candidate', 'service-keyboard-driver-mode-v1,service-thermal-convergence-v1'),
+              @('openblade-windows-service-candidate', 'service-performance-shortcut-v1'),
+              @('openblade-windows-service-candidate', 'service-performance-shortcut-v1,service-profile-triggers-v1'),
               @('openblade-windows-agent-candidate', 'agent-display-brightness-write-v1'),
               @('openblade-windows-agent-candidate', 'agent-display-profile-apply-v1'),
               @('openblade-windows-agent-candidate', 'agent-battery-report-v1'),

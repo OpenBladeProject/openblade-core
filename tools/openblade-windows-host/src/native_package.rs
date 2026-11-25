@@ -785,6 +785,18 @@ fn capabilities(schema: u8, role: &str, features: &str, value: &str) -> io::Resu
     {
         return Err(deny());
     }
+    // The performance shortcut writes a thermal preset no packaged request
+    // names, and its preview publishes status without the operation gate.
+    // Admitting them is a separate packaging decision. Refuse the feature
+    // and its marker by name (docs/windows-rust-development-service.md).
+    const PERFORMANCE_SHORTCUT: &str = "service-performance-shortcut-v1";
+    if has(PERFORMANCE_SHORTCUT)
+        || value
+            .split(',')
+            .any(|capability| capability == PERFORMANCE_SHORTCUT)
+    {
+        return Err(deny());
+    }
     // The application-context reporter is not admitted for packaging either:
     // refuse its feature and its capability marker by name, whatever else the
     // record claims, until a packaging stage admits both.

@@ -33,7 +33,7 @@ use std::{
     io,
     rc::Rc,
     sync::{
-        Arc, Mutex,
+        Arc, Mutex, OnceLock,
         atomic::{AtomicBool, Ordering},
     },
 };
@@ -113,9 +113,14 @@ mod fan;
 #[cfg(feature = "service-fan-stop-v1")]
 #[path = "fan_stop_mutation.rs"]
 mod fan_stop;
+#[cfg(feature = "service-performance-shortcut-v1")]
+#[path = "performance_shortcut.rs"]
+mod shortcut;
 pub(super) use fan::FanRequest;
 #[cfg(feature = "service-fan-stop-v1")]
 pub(super) use fan_stop::FanStopRequest;
+#[cfg(feature = "service-performance-shortcut-v1")]
+pub(super) use shortcut::Source as ShortcutSource;
 #[cfg(feature = "service-profile-triggers-v1")]
 #[path = "thermal_convergence.rs"]
 mod convergence;
@@ -473,6 +478,10 @@ struct ThermalStep {
     // A reconciliation's drift decision, shared by its steps.
     #[cfg(feature = "service-profile-triggers-v1")]
     transition: Option<Arc<thermal_drift::Transition>>,
+    // `Some` for a performance shortcut, whose override `resolve` stages
+    // from the fresh reading; `value` is then None.
+    #[cfg(feature = "service-performance-shortcut-v1")]
+    shortcut: Option<ShortcutSource>,
     deadline: Instant,
     status: Snapshot,
 }
@@ -1088,6 +1097,45 @@ impl Runtime {
                 reconcile: None,
                 #[cfg(feature = "service-profile-triggers-v1")]
                 transition: None,
+                #[cfg(feature = "service-performance-shortcut-v1")]
+                shortcut: None,
+                deadline,
+                status,
+            },
+        )
+        .await
+        .map(Stepped::reply)
+    }
+    /// Managed `CyclePerformanceShortcutAsync`: one explicit performance
+    /// request whose override `resolve` stages from the fresh reading
+    /// (`shortcut::stage`), under the same gate, admission, journal,
+    /// readback and stop-on-ambiguity as `apply`.
+    #[cfg(feature = "service-performance-shortcut-v1")]
+    #[allow(clippy::too_many_arguments)]
+    pub(super) async fn cycle_shortcut(
+        &self,
+        mailbox: MailboxSource,
+        caller: Caller,
+        sid: String,
+        request: String,
+        source: ShortcutSource,
+        deadline: Instant,
+        status: Snapshot,
+    ) -> io::Result<(Outcome, Option<Snapshot>)> {
+        #[cfg(test)]
+        self.entered.set(self.entered.get() + 1);
+        let _serial = self.gate.lock().await;
+        self.apply_locked(
+            mailbox,
+            ThermalStep {
+                caller,
+                sid,
+                request,
+                value: None,
+                reconcile: None,
+                #[cfg(feature = "service-profile-triggers-v1")]
+                transition: None,
+                shortcut: Some(source),
                 deadline,
                 status,
             },
@@ -1108,9 +1156,18 @@ impl Runtime {
             reconcile,
             #[cfg(feature = "service-profile-triggers-v1")]
             transition,
+            #[cfg(feature = "service-performance-shortcut-v1")]
+            shortcut,
             deadline,
             status,
         } = step;
+        #[cfg(feature = "service-performance-shortcut-v1")]
+        let staged = match shortcut {
+            Some(source) => Staged::Shortcut(source),
+            None => Staged::Value(value),
+        };
+        #[cfg(not(feature = "service-performance-shortcut-v1"))]
+        let staged = Staged::Value(value);
         verify_retained_failure(&self.fatal)?;
         // Metadata may retain a previous user's projection. New accepted intent
         // starts from the public view even when this user has no profile file.
@@ -1176,7 +1233,7 @@ impl Runtime {
                             application: &self.foreground(&sid, caller.session),
                             pair: (&sid, caller.session),
                         },
-                        value,
+                        staged,
                     )
                     .map(|outcome| Stepped::new(outcome, None));
             }
@@ -1199,7 +1256,15 @@ impl Runtime {
             return Ok(refused);
         }
         reader.retain_policy(self.thermal_policy(sid.clone(), caller.session, reader.custody()));
-        let intent = format!("{:x}", Sha256::digest(serde_json::to_vec(&value)?));
+        #[cfg(feature = "service-performance-shortcut-v1")]
+        let (requested, shortcut) = match staged {
+            Staged::Value(value) => (OnceLock::from(Requested::new(value)?), None),
+            Staged::Shortcut(source) => (OnceLock::new(), Some(source)),
+        };
+        #[cfg(not(feature = "service-performance-shortcut-v1"))]
+        let Staged::Value(value) = staged;
+        #[cfg(not(feature = "service-performance-shortcut-v1"))]
+        let requested = OnceLock::from(Requested::new(value)?);
         let permit = Arc::new(RequestPermit {
             storage,
             fresh,
@@ -1207,8 +1272,9 @@ impl Runtime {
             caller_pid: caller.pid.ok_or(io::ErrorKind::PermissionDenied)?,
             session: caller.session,
             owner: format!("{:x}", Sha256::digest(proof.generation)),
-            intent,
-            value,
+            requested,
+            #[cfg(feature = "service-performance-shortcut-v1")]
+            shortcut,
             reconcile,
             #[cfg(feature = "service-profile-triggers-v1")]
             transition,
@@ -1264,7 +1330,7 @@ impl Runtime {
             {
                 self.owe_stored_intent((&sid, caller.session));
                 return Ok(Stepped::new(
-                    deferred_performance(permit.value.is_none()),
+                    deferred_performance(permit.value().is_none()),
                     None,
                 ));
             }
@@ -1288,8 +1354,7 @@ impl Runtime {
             .filter(|value| destination.is_some_and(|destination| confirms(*value, destination)));
         let accepted = permit.accepted.load(Ordering::Acquire);
         let requested_applied = permit
-            .value
-            .as_ref()
+            .value()
             .is_none_or(|v| destination.is_some_and(|d| v.value == d.wire()));
         let outcome = if observed.is_some() && requested_applied {
             Outcome{status:1,message:"Bounded thermal preset confirmed by independent paired readback. GPU clock handling and broad device capabilities remain unavailable; other native controls are incomplete.".into()}
@@ -1317,7 +1382,7 @@ impl Runtime {
             } else {
                 // Saved but unapplied: Blocked, prefixed as ExecuteScopedMutationAsync
                 // prefixes the hardware result after committing managed intent.
-                let committed = performance_committed(permit.value.is_none());
+                let committed = performance_committed(permit.value().is_none());
                 // The policy can select and confirm another destination while the
                 // requested value itself stays saved but unapplied.
                 let reason = if observed.is_some() && !requested_applied {
@@ -1346,6 +1411,8 @@ impl Runtime {
             Cause::UnclassifiedBlocked
         ) {
             Outcome::blocked(UNCLASSIFIED_BLOCKED)
+        } else if let Some(message) = shortcut_refusal(&permit)? {
+            Outcome::blocked(message)
         } else if matches!(
             *permit.cause.lock().map_err(|_| io::ErrorKind::Other)?,
             Cause::Unchanged
@@ -1356,6 +1423,18 @@ impl Runtime {
             Outcome::blocked(
                 "Performance intent was not accepted; admission or protected persistence failed.",
             )
+        };
+        // Managed reports an applied or stored shortcut by what it selected.
+        #[cfg(feature = "service-performance-shortcut-v1")]
+        let outcome = match (permit.shortcut, permit.value()) {
+            (Some(source), Some(value)) => match source.reply(outcome.status, value.value) {
+                Some(message) => Outcome {
+                    status: outcome.status,
+                    message,
+                },
+                None => outcome,
+            },
+            _ => outcome,
         };
         let power = *permit.power.lock().map_err(|_| io::ErrorKind::Other)?;
         // A pace refusal, an adapter not classified yet, or a job that ran out
@@ -1382,7 +1461,7 @@ impl Runtime {
             // A reconciliation reports the override layer it applied over.
             let intent_value = match power.filter(|_| reconcile.is_some()) {
                 Some(power) => permit.storage.current_override(power)?,
-                None => permit.value.clone(),
+                None => permit.value().cloned(),
             };
             let status = if let Some(observed) = observed {
                 let fresh = permit.fresh.clone();
@@ -1531,8 +1610,12 @@ struct RequestPermit {
     fresh: Arc<dyn Fresh>,
     request: String,
     owner: String,
-    intent: String,
-    value: Option<Override>,
+    // The override this request stores and journals. A shortcut stages
+    // its own in `resolve` from the fresh reading (`shortcut::stage`);
+    // every other request carries it from the start.
+    requested: OnceLock<Requested>,
+    #[cfg(feature = "service-performance-shortcut-v1")]
+    shortcut: Option<ShortcutSource>,
     // `Some` applies saved intent at those classes without storing any
     // (`Runtime::reconcile_locked`); `value` is then None.
     reconcile: Option<Classes>,
@@ -1556,6 +1639,37 @@ struct RequestPermit {
     cause: Mutex<Cause>,
     // Reader refusal is Option-valued; retain typed trust loss across that boundary.
     fatal: Arc<Mutex<Option<&'static str>>>,
+}
+/// A request's override (`None` clears it) and the digest its journal
+/// rows carry.
+struct Requested {
+    value: Option<Override>,
+    intent: String,
+}
+impl Requested {
+    fn new(value: Option<Override>) -> io::Result<Self> {
+        let intent = format!("{:x}", Sha256::digest(serde_json::to_vec(&value)?));
+        Ok(Self { value, intent })
+    }
+}
+/// What a performance step stores: an explicit override (`None` clears it),
+/// or the one a shortcut stages from its fresh reading.
+enum Staged {
+    Value(Option<Override>),
+    #[cfg(feature = "service-performance-shortcut-v1")]
+    Shortcut(ShortcutSource),
+}
+#[cfg(feature = "service-profile-triggers-v1")]
+impl Staged {
+    /// The refusal at an unclassified adapter that admits no ordinary
+    /// control: a shortcut reports managed's own.
+    fn unclassified_blocked(&self) -> &'static str {
+        match self {
+            Self::Value(_) => UNCLASSIFIED_BLOCKED,
+            #[cfg(feature = "service-performance-shortcut-v1")]
+            Self::Shortcut(_) => shortcut::UNCLASSIFIED_BLOCKED,
+        }
+    }
 }
 #[derive(Debug)]
 enum Cause {
@@ -1583,6 +1697,10 @@ enum Cause {
     /// drift or an observed HyperBoost (`thermal_drift`).
     #[cfg(feature = "service-profile-triggers-v1")]
     Excluded(thermal_drift::Exclusion),
+    /// A performance shortcut that staged nothing (`shortcut::stage`);
+    /// nothing is stored or written.
+    #[cfg(feature = "service-performance-shortcut-v1")]
+    Shortcut(&'static str),
 }
 impl Cause {
     fn message(&self) -> String {
@@ -1609,10 +1727,55 @@ impl Cause {
             Self::Rejected(message) => format!("The requested intent was rejected: {message}"),
             #[cfg(feature = "service-profile-triggers-v1")]
             Self::Excluded(exclusion) => exclusion.message("Performance"),
+            #[cfg(feature = "service-performance-shortcut-v1")]
+            Self::Shortcut(message) => (*message).into(),
         }
     }
 }
 impl RequestPermit {
+    /// The override this request stores; none for a clear, or for a
+    /// shortcut that has not staged one.
+    fn value(&self) -> Option<&Override> {
+        self.requested.get().and_then(|r| r.value.as_ref())
+    }
+    /// An unclassified adapter that admits no ordinary control: a shortcut
+    /// reports managed's own refusal for it.
+    fn unclassified_blocked(&self) -> Cause {
+        #[cfg(feature = "service-performance-shortcut-v1")]
+        if self.shortcut.is_some() {
+            return Cause::Shortcut(shortcut::UNCLASSIFIED_BLOCKED);
+        }
+        Cause::UnclassifiedBlocked
+    }
+    /// The shortcut's override for the fresh class `power` and reading
+    /// `baseline` over the profiles `layer` the request step read, or the
+    /// refusal that stores nothing.
+    #[cfg(feature = "service-performance-shortcut-v1")]
+    fn stage_shortcut(
+        &self,
+        power: i32,
+        baseline: ObservedPerformance,
+        layer: &super::thermal_storage::ProfileLayer,
+    ) -> io::Result<Result<Override, Cause>> {
+        // Managed `ExternalChanges` as confirmed drift publishes it.
+        #[cfg(feature = "service-profile-triggers-v1")]
+        let external_performance = self
+            .drift
+            .lock()
+            .map_err(|_| io::ErrorKind::Other)?
+            .external()
+            .contains(&thermal_drift::PERFORMANCE);
+        #[cfg(not(feature = "service-profile-triggers-v1"))]
+        let external_performance = false;
+        shortcut::stage(&shortcut::Reading {
+            storage: &self.storage,
+            fresh: self.fresh.as_ref(),
+            power,
+            layer,
+            baseline: Some(baseline),
+            external_performance,
+        })
+    }
     fn remember_failure(&self, error: &io::Error) {
         remember_failure(&self.fatal, error);
     }
@@ -1668,7 +1831,7 @@ impl Runtime {
     fn store_performance_deferred(
         &self,
         store: triggers::DeferredStore<'_>,
-        value: Option<Override>,
+        value: Staged,
     ) -> io::Result<Outcome> {
         use triggers::DeferredRefusal;
         match triggers::deferred_store_refusal(store.fresh) {
@@ -1676,7 +1839,7 @@ impl Runtime {
                 return Ok(Outcome::blocked(CURRENT_ADMISSION_UNAVAILABLE));
             }
             Some(DeferredRefusal::Unclassified) => {
-                return Ok(Outcome::blocked(UNCLASSIFIED_BLOCKED));
+                return Ok(Outcome::blocked(value.unclassified_blocked()));
             }
             None => {}
         }
@@ -1697,7 +1860,7 @@ impl Runtime {
     fn store_performance_now(
         &self,
         store: triggers::DeferredStore<'_>,
-        value: Option<Override>,
+        staged: Staged,
     ) -> io::Result<Outcome> {
         use triggers::BATTERY;
         let triggers::DeferredStore {
@@ -1710,14 +1873,41 @@ impl Runtime {
             .power_generation()
             .ok_or(io::ErrorKind::PermissionDenied)?;
         storage.observe_power(BATTERY, generation)?;
+        // A saved document the domain decoder refuses stores nothing.
+        let layer = storage.profile_layer(application)?;
+        layer.at(BATTERY)?;
+        // Only an explicit value without the shortcut feature.
+        #[cfg_attr(
+            not(feature = "service-performance-shortcut-v1"),
+            allow(clippy::infallible_destructuring_match)
+        )]
+        let value = match staged {
+            Staged::Value(value) => value,
+            // Nothing is read from firmware while the gate is set, so the
+            // shortcut cycles from the saved intent at Windows battery; the
+            // runtime keeps no confirmed reading for managed's cached
+            // `ExternalChanges` and `ConfirmedState` to select from.
+            #[cfg(feature = "service-performance-shortcut-v1")]
+            Staged::Shortcut(_) => {
+                match shortcut::stage(&shortcut::Reading {
+                    storage,
+                    fresh,
+                    power: BATTERY,
+                    layer: &layer,
+                    baseline: None,
+                    external_performance: false,
+                })? {
+                    Ok(value) => Some(value),
+                    Err(cause) => return Ok(Outcome::blocked(cause.message())),
+                }
+            }
+        };
         if let Some(message) = combination_rejected(storage, fresh, value.as_ref(), BATTERY)? {
             return Ok(Outcome {
                 status: 3,
                 message: Cause::Rejected(message).message(),
             });
         }
-        // A saved document the domain decoder refuses stores nothing.
-        storage.profile_layer(application)?.at(BATTERY)?;
         let cleared = value.is_none();
         storage.save(value, BATTERY)?;
         self.owe_stored_intent(pair);
@@ -1742,6 +1932,42 @@ fn deferred_performance(cleared: bool) -> Outcome {
         performance_committed(cleared),
         triggers::LOW_POWER_PERFORMANCE
     ))
+}
+/// The refusal of a shortcut that staged nothing (`Cause::Shortcut`).
+#[cfg(feature = "service-performance-shortcut-v1")]
+fn shortcut_refusal(permit: &RequestPermit) -> io::Result<Option<String>> {
+    Ok(
+        match &*permit.cause.lock().map_err(|_| io::ErrorKind::Other)? {
+            cause @ Cause::Shortcut(_) => Some(cause.message()),
+            _ => None,
+        },
+    )
+}
+#[cfg(not(feature = "service-performance-shortcut-v1"))]
+fn shortcut_refusal(_: &RequestPermit) -> io::Result<Option<String>> {
+    Ok(None)
+}
+/// Managed `ValidateUnclassifiedPerformanceOverride`: on unclassified power
+/// it rejects native overclocking, legacy Custom offsets included, and the
+/// battery presets before any intent is stored, since ordinary external
+/// presence admits none of them. It then rejects Custom settings the model
+/// capability does not admit.
+fn unclassified_rejected(v: &Override) -> Option<Cause> {
+    let custom = v.custom_performance.as_ref();
+    if v.gpu_clock_tuning.is_some()
+        || Preset::from_wire(v.value).is_some_and(Preset::is_battery)
+        || custom.is_some_and(|c| c.get("gpuClockOffsets").is_some_and(|o| !o.is_null()))
+    {
+        Some(Cause::UnclassifiedRejected)
+    } else if v.value == CUSTOM
+        && custom
+            .and_then(super::thermal_storage::custom_destination)
+            .is_none()
+    {
+        Some(Cause::UnclassifiedCustomRejected)
+    } else {
+        None
+    }
 }
 /// Managed `ValidateThermalOverrideCombination` on classified power, run
 /// before the performance override `value` is stored: the requested preset
@@ -1871,35 +2097,19 @@ impl Permit for RequestPermit {
             if unclassified
                 && (self.reconcile.is_some() || baseline == ObservedPerformance::HyperBoostObserved)
             {
-                self.set_cause(Cause::UnclassifiedBlocked);
+                self.set_cause(self.unclassified_blocked());
                 return Ok(None);
             }
-            // Managed `ValidateUnclassifiedPerformanceOverride` rejects native
-            // overclocking, legacy Custom offsets included, and the battery
-            // presets there before any intent is stored: ordinary external
-            // presence admits none of them. It then rejects Custom settings the
-            // model capability does not admit.
-            if let Some(v) = self.value.as_ref().filter(|_| unclassified) {
-                let custom = v.custom_performance.as_ref();
-                if v.gpu_clock_tuning.is_some()
-                    || Preset::from_wire(v.value).is_some_and(Preset::is_battery)
-                    || custom
-                        .is_some_and(|c| c.get("gpuClockOffsets").is_some_and(|o| !o.is_null()))
-                {
-                    self.set_cause(Cause::UnclassifiedRejected);
-                    return Ok(None);
-                }
-                if v.value == CUSTOM
-                    && custom
-                        .and_then(super::thermal_storage::custom_destination)
-                        .is_none()
-                {
-                    self.set_cause(Cause::UnclassifiedCustomRejected);
-                    return Ok(None);
-                }
+            if let Some(cause) = self
+                .value()
+                .filter(|_| unclassified)
+                .and_then(unclassified_rejected)
+            {
+                self.set_cause(cause);
+                return Ok(None);
             }
             if battery_reading_contradicts_windows(power, self.fresh.as_ref()) {
-                self.set_cause(Cause::UnclassifiedBlocked);
+                self.set_cause(self.unclassified_blocked());
                 return Ok(None);
             }
             self.observe_power(power)?;
@@ -1912,24 +2122,47 @@ impl Permit for RequestPermit {
                 self.set_cause(Cause::Unchanged);
                 return Ok(None);
             }
+            // The profile layer is resolved before the override is stored, as
+            // the fan path does: a saved document the domain decoder refuses
+            // stores nothing and the request is not accepted. Staging and
+            // saving the override change no profile, so this one read serves
+            // the shortcut and the destination.
+            let layer = self.storage.profile_layer(&self.application)?;
+            // A shortcut stages its override from this reading, after the
+            // class it was read at expired any temporary it retires, and the
+            // override then takes every check of an explicit request (managed
+            // `CyclePerformanceShortcutAsync`).
+            #[cfg(feature = "service-performance-shortcut-v1")]
+            if self.shortcut.is_some() && self.requested.get().is_none() {
+                let staged = self.stage_shortcut(power, baseline, &layer)?;
+                // Managed validates the staged override as it would an
+                // explicit one (`ValidateUnclassifiedPerformanceOverride`).
+                match staged.map(|value| {
+                    let rejected = unclassified
+                        .then(|| unclassified_rejected(&value))
+                        .flatten();
+                    (value, rejected)
+                }) {
+                    Ok((_, Some(cause))) | Err(cause) => {
+                        self.set_cause(cause);
+                        return Ok(None);
+                    }
+                    Ok((value, None)) => {
+                        self.requested
+                            .set(Requested::new(Some(value))?)
+                            .map_err(|_| io::ErrorKind::PermissionDenied)?;
+                    }
+                }
+            }
             // A reconciliation applies intent already saved: managed
             // `ApplyFullTransitionAsync` validates no override and stores nothing.
             if self.reconcile.is_none()
-                && let Some(message) = combination_rejected(
-                    &self.storage,
-                    self.fresh.as_ref(),
-                    self.value.as_ref(),
-                    power,
-                )?
+                && let Some(message) =
+                    combination_rejected(&self.storage, self.fresh.as_ref(), self.value(), power)?
             {
                 self.set_cause(Cause::Rejected(message));
                 return Ok(None);
             }
-            // The profile layer is resolved before the override is stored, as
-            // the fan path does: a saved document the domain decoder refuses
-            // stores nothing and the request is not accepted. Saving the
-            // override changes no profile, so the resolution stays current.
-            let layer = self.storage.profile_layer(&self.application)?;
             let profile = layer.at(power)?;
             if self.reconcile.is_some() {
                 // Nothing is stored, so the override document the saved intent
@@ -1941,14 +2174,14 @@ impl Permit for RequestPermit {
                     .inspect_err(|e| self.set_cause(Cause::Storage(e.to_string())))?;
             } else {
                 self.storage
-                    .save(self.value.clone(), power)
+                    .save(self.value().cloned(), power)
                     .inspect_err(|e| self.set_cause(Cause::Storage(e.to_string())))?;
             }
             self.accepted.store(true, Ordering::Release);
             *self.power.lock().map_err(|_| io::ErrorKind::Other)? = Some(power);
             // A clear selects no profile there: nothing is written until the
             // adapter is classified (managed `ExecuteScopedMutationAsync`).
-            if unclassified && self.value.is_none() {
+            if unclassified && self.value().is_none() {
                 self.set_cause(Cause::AwaitingClassification);
                 return Ok(None);
             }
@@ -2089,13 +2322,17 @@ impl RequestPermit {
             .lock()
             .map_err(|_| io::ErrorKind::Other)?
             .ok_or(io::ErrorKind::PermissionDenied)?;
+        let requested = self
+            .requested
+            .get()
+            .ok_or(io::ErrorKind::PermissionDenied)?;
         self.storage
             .record(
                 &self.request,
                 &self.owner,
                 destination,
-                &self.intent,
-                &self.value,
+                &requested.intent,
+                &requested.value,
                 self.caller_pid,
                 self.session,
                 progress,

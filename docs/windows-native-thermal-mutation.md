@@ -920,6 +920,98 @@ native keeps Blocked:
 Mapping any of these needs native error classification first; a status change
 alone would misreport the other class.
 
+### Performance shortcut (`service-performance-shortcut-v1`)
+
+A Service built with `service-performance-shortcut-v1` serves
+`cyclePerformanceShortcut` and `setPerformanceShortcutPreview`, managed
+`CyclePerformanceShortcutAsync` and `SetPerformanceShortcutPreviewAsync`. The
+feature implies `service-fan-mutation-v2`, so a cycle under manual fans uses
+managed's Stored reply. It adds no firmware command: every destination a
+cycle selects is one of the preset recipes and the Custom recipe above.
+
+A cycle is an explicit performance request whose override is staged inside
+`RequestPermit::resolve`, after the fresh 07/8C class and 0D/82 reading and
+after that class retires any temporary it ends. The staged override then takes
+every check, save, journal row, readback and stop-on-ambiguity path of
+`setPerformanceOverride` under the same operation gate. The next preset comes
+from the shared domain `performance_shortcut::next`, which replays managed
+`PerformanceShortcutSelection` from
+`tools/openblade-windows-host/tests/data/performance-shortcut-vectors.json`
+(`ServiceControlRuntimeTests.NativePerformanceShortcutVectors`):
+
+- Classified external power (PluggedIn or limited USB-C) cycles Balanced,
+  Silent, Performance, Custom, Battery Balanced and Battery Saver; Windows
+  battery cycles Battery Balanced and Battery Saver. The cycle starts from
+  the preset managed `Automation.Resolve` selects there: the saved override,
+  then the resolved profile, then, with no profiles saved, managed
+  `ProfileDefaults.CreateSafeDefaults`'s power profile, whose Balanced makes a
+  first press on either adapter select Silent. It starts from the confirmed
+  preset instead when confirmed drift has marked Performance as changed
+  outside OpenBlade.
+- Unclassified external power cycles the ordinary presets from the
+  confirmed preset, offers Custom only with an admitted ordinary Custom intent
+  (the saved override's settings without legacy offsets, then the confirmed
+  levels, then managed's default) and stages no GPU tuning. Confirmed
+  HyperBoost, or a battery reading under Windows AC or unknown power, is
+  Blocked with `Hardware application was not confirmed. The external power
+  adapter could not be classified; the performance shortcut is blocked.`
+  A fixed maximum confirms no preset and is Blocked with `The current thermal
+  state is unavailable for ordinary performance cycling.`
+- The staged override lasts until the power source changes
+  (`UntilPowerSourceChange`) and replaces the saved performance override, as
+  managed's single override slot does. A Custom destination carries the power
+  profile's Custom settings, or managed's default.
+- An Applied reply reads `The performance button selected <preset>.` or
+  `Fn+P selected <preset>.`; a Stored reply under manual fans adds
+  ` It will be applied when fans return to Automatic.` Every other reply,
+  including a rejected combination (Failed) and the low-power deferral
+  (Blocked), keeps the performance request's own text.
+
+A preview stores no intent and reads or writes no firmware, so it takes no
+operation gate. The Reader holds one preview and publishes it as
+`performanceShortcutPreview` with every active status; inactive projections
+omit it, which reads as managed's null. A clear removes only the same
+session's same generation, and a preview replaces any preview but a newer
+generation of the same session, with managed's three Stored replies. Session
+GUIDs compare without case. The codec refuses an undefined source, the nil
+session, a generation below 1 and an undefined preset.
+
+Differences from managed:
+
+- Native cycles from the fresh 0D/82 reading on unclassified power and when
+  drift marks Performance, where managed uses its cached confirmed state.
+- On classified power native stages the saved override's GPU clock tuning
+  only. Managed stages the resolved desired tuning
+  (`current.DesiredState.GpuClockTuning`), which can come from the profile.
+  Native has no GPU clock writer, so either reaches the GPU refusal; the
+  slice that adds the writer must stage the resolved tuning as managed does.
+- Under the low-power gate a cycle reads no firmware and stages from the
+  saved intent at Windows battery. Managed also honours its cached
+  `ExternalChanges` and `ConfirmedState` there; the native runtime keeps no
+  confirmed reading to select from.
+- Windows battery with an external 07/8C reading is managed's Battery
+  source, where managed cycles the battery presets. The native thermal
+  worker refuses every performance request there before anything is staged,
+  an explicit one included.
+- Native runs no full transition when the shortcut finds a changed power
+  source: temporaries expire through the class observation instead.
+- The native status message is rendered from status, not replaced by the
+  shortcut's reply.
+- Without the Reader (no thermal custody) a preview is Blocked with
+  `Performance shortcut previews are unavailable.`, managed's
+  `IServiceRuntime` default text. A preview from outside the controlling
+  interactive session is Blocked before it changes anything.
+- Managed queues a preview behind its single user-request gate, so it waits
+  for a cycle or other user request in progress. Native applies it at once.
+  Both publish the same preview afterwards. The preview publication retains
+  no read: the Reader's read witness and retention window stay those of the
+  last thermal read.
+- The HyperBoost exit to a battery preset stays the stored `NoDirectPath`
+  refusal, as for an explicit request.
+
+Both package readers refuse the feature and its marker by name ("The
+performance shortcut is not admitted for packaging.").
+
 ## Saved profiles (`service-profiles-v1`)
 
 `service-profiles-v1` adds `updateProfiles` on top of the temporary-charge

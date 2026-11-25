@@ -1187,6 +1187,20 @@ with the archive the managed provider builds from the same status and history
 (`NativeDiagnosticArchive_ReadsThroughTheManagedCodecAndMatchesTheManagedProvider`).
 Set `OPENBLADE_REGENERATE_NATIVE_DIAGNOSTIC_ARCHIVES` to rerecord them.
 
+#### Performance shortcut
+
+A Service built with `service-performance-shortcut-v1` serves
+`cyclePerformanceShortcut` and `setPerformanceShortcutPreview` instead of
+replying that the operations are unsupported. The feature implies
+`service-fan-mutation-v2` and adds the capability marker
+`service-performance-shortcut-v1`, last. Both package readers refuse the
+feature and the marker by name ("The performance shortcut is not admitted for
+packaging."), so no packaged image carries it. A cycle writes only the
+reviewed preset and Custom recipes through the ordinary performance request
+path; a preview publishes status and reaches no firmware. See
+[Performance shortcut](windows-native-thermal-mutation.md#performance-shortcut-service-performance-shortcut-v1)
+for the selection, replies and differences from managed.
+
 ### Phase 10n ownership binding
 
 The installed candidate's conditional firmware factory now requires a private
