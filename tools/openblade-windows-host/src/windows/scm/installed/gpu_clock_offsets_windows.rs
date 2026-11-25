@@ -1,6 +1,17 @@
 //! The seven NVML functions managed `NvidiaNvmlClockOffsetApi` imports,
 //! loaded through the Service's one NVML loader (`nvml_library`, System32
 //! only). Nothing here runs in tests: every write test scripts [`Nvml`].
+//!
+//! All seven are resolved when the library loads, where managed's
+//! `DllImport` binds each on its first call. A missing library or function
+//! therefore fails `init` with `NVML_ERROR_LIBRARY_NOT_FOUND` (12), and the
+//! controller's message names that status where managed's carries the .NET
+//! load exception's text. A driver that exports the getter but not the
+//! setter makes every query fail, so a write is Unavailable at its
+//! preflight; managed queries and then fails the set KnownNotApplied.
+//! Neither submits anything. A failed load is retried by the next `init`, so
+//! a driver installed while the Service runs is found; that costs one
+//! `LoadLibraryExW` per attempt only while NVML is missing or incomplete.
 #![allow(unsafe_code)]
 
 use super::super::nvml_library::{self, LIBRARY_NOT_FOUND};

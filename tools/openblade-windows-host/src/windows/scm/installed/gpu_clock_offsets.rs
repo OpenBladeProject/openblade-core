@@ -19,8 +19,21 @@
 //! - [`Worker`] runs both on a thread of its own, so no NVML call blocks the
 //!   async runtime, the HID read job or the GPU temperature sampler, whose
 //!   session lease it does not share. A call has a budget: one that has not
-//!   started when it runs out never starts, and one that has is abandoned and
-//!   finishes on the worker, which records the driver's result.
+//!   started when it runs out, or whose caller stops waiting, never starts,
+//!   and one that has is abandoned and finishes on the worker, which records
+//!   the driver's result. A call that panics is abandoned too: the worker
+//!   keeps serving, and a submission the panic interrupted is uncertain.
+//!
+//! The worker serializes single calls only. A paired performance write spans
+//! several (the preflight, the firmware write, then [`Management::submit`] or
+//! [`Management::mark_reset_confirmed`]), and a resume's
+//! [`Management::invalidate`] or a [`Management::relinquish`] could otherwise
+//! land between them. The integration must hold one exclusive thermal lane
+//! from the preflight through the completion, as managed holds
+//! `EnterHardwareOperationAsync` around `ExecuteProductionWriteAsync`, its
+//! relinquish and its invalidation. `submit` rechecks the rules that need no
+//! NVML session and `mark_reset_confirmed` refuses a withdrawn reset, but
+//! neither replaces that lane.
 //!
 //! Nothing here writes at Stop, shutdown or a low-power transition: managed
 //! leaves the offsets in the driver then, and only a resume invalidates its
@@ -32,6 +45,7 @@
 use openblade_domain::profile_set::model::GpuClockOffsets;
 use std::{
     ops::RangeInclusive,
+    panic::{self, AssertUnwindSafe},
     sync::{
         Arc,
         atomic::{AtomicBool, AtomicU8, Ordering},
@@ -85,20 +99,28 @@ pub(super) struct ClockOffset {
 }
 
 impl ClockOffset {
-    /// Managed `CreateWrite`: a request at P0 carrying `megahertz` in the
-    /// editable unit, which NVML takes doubled for memory.
-    fn request(kind: ClockKind, megahertz: i32) -> Self {
+    /// Managed `QueryRange`'s request: the P0 offsets of `kind`.
+    fn query(kind: ClockKind) -> Self {
         Self {
             version: CLOCK_OFFSET_VERSION,
             kind: kind as i32,
             pstate: PSTATE_ZERO,
-            current: match kind {
-                ClockKind::Graphics => megahertz,
-                ClockKind::Memory => megahertz * MEMORY_MULTIPLIER,
-            },
-            minimum: 0,
-            maximum: 0,
+            ..Self::default()
         }
+    }
+
+    /// Managed `CreateWrite`: a request at P0 carrying `megahertz` in the
+    /// editable unit, which NVML takes doubled for memory. None when the
+    /// doubled value does not fit, which well-formed offsets never reach.
+    fn set(kind: ClockKind, megahertz: i32) -> Option<Self> {
+        let current = match kind {
+            ClockKind::Graphics => megahertz,
+            ClockKind::Memory => megahertz.checked_mul(MEMORY_MULTIPLIER)?,
+        };
+        Some(Self {
+            current,
+            ..Self::query(kind)
+        })
     }
 }
 
@@ -275,21 +297,27 @@ struct Progress {
 /// Managed `NvidiaGpuClockOffsetController` over one [`Nvml`].
 pub(super) struct Controller<N> {
     nvml: N,
+    /// Whether an `nvmlInit_v2` has not been shut down yet: only after a
+    /// panic unwound out of a query or write.
+    session: bool,
 }
 
 impl<N: Nvml> Controller<N> {
     pub(super) fn new(nvml: N) -> Self {
-        Self { nvml }
+        Self {
+            nvml,
+            session: false,
+        }
     }
 
     /// Managed `Query`: the admitted GPU's capabilities, or None for any
     /// failure. The session is shut down only when it started.
     pub(super) fn query(&mut self) -> Option<Capabilities> {
-        if self.nvml.init() != SUCCESS {
+        if self.init() != SUCCESS {
             return None;
         }
         let capabilities = self.open().and_then(|device| self.capabilities(device));
-        let _ = self.nvml.shutdown();
+        self.shutdown();
         capabilities.ok()
     }
 
@@ -298,13 +326,20 @@ impl<N: Nvml> Controller<N> {
     /// after either write restores both channels it touched, each attempted
     /// whatever the other did, and judges the result from a fresh readback.
     pub(super) fn set(&mut self, offsets: GpuClockOffsets) -> Result<Capabilities, WriteError> {
-        if !well_formed(offsets) {
-            return Err(WriteError::new(
-                Failure::NotApplied,
-                "GPU clock offsets are invalid.",
-            ));
-        }
-        let status = self.nvml.init();
+        let requests = match (
+            well_formed(offsets),
+            ClockOffset::set(ClockKind::Graphics, offsets.core_megahertz),
+            ClockOffset::set(ClockKind::Memory, offsets.memory_megahertz),
+        ) {
+            (true, Some(core), Some(memory)) => [core, memory],
+            _ => {
+                return Err(WriteError::new(
+                    Failure::NotApplied,
+                    "GPU clock offsets are invalid.",
+                ));
+            }
+        };
+        let status = self.init();
         if status != SUCCESS {
             return Err(WriteError::new(
                 Failure::NotApplied,
@@ -314,18 +349,19 @@ impl<N: Nvml> Controller<N> {
             ));
         }
         let mut progress = Progress::default();
-        let result = match self.attempt(offsets, &mut progress) {
+        let result = match self.attempt(offsets, requests, &mut progress) {
             Ok(confirmed) => Ok(confirmed),
             Err(Step::Refused(message)) => Err(WriteError::new(Failure::NotApplied, message)),
             Err(Step::Fault(message)) => Err(self.recover(&progress, &message)),
         };
-        let _ = self.nvml.shutdown();
+        self.shutdown();
         result
     }
 
     fn attempt(
         &mut self,
         offsets: GpuClockOffsets,
+        [core, memory]: [ClockOffset; 2],
         progress: &mut Progress,
     ) -> Result<Capabilities, Step> {
         progress.device = self.open()?;
@@ -337,19 +373,9 @@ impl<N: Nvml> Controller<N> {
             ));
         }
         progress.core = true;
-        self.write(
-            progress.device,
-            ClockKind::Graphics,
-            offsets.core_megahertz,
-            "set the GPU core clock offset",
-        )?;
+        self.write(progress.device, core, "set the GPU core clock offset")?;
         progress.memory = true;
-        self.write(
-            progress.device,
-            ClockKind::Memory,
-            offsets.memory_megahertz,
-            "set the GPU memory clock offset",
-        )?;
+        self.write(progress.device, memory, "set the GPU memory clock offset")?;
         let confirmed = self.capabilities(progress.device)?;
         let current = confirmed.current();
         if current != offsets {
@@ -389,21 +415,19 @@ impl<N: Nvml> Controller<N> {
     /// Managed `TryRestore`: the readback decides, not the write status, so a
     /// refused write that left the prior offsets in place is not applied.
     fn restore(&mut self, device: usize, prior: GpuClockOffsets, core: bool, memory: bool) -> bool {
-        if core {
-            let _ = self.write(
-                device,
-                ClockKind::Graphics,
-                prior.core_megahertz,
-                "restore the GPU core clock offset",
-            );
+        // The prior offsets come from a well-formed driver reading, so both
+        // requests exist.
+        let core = core
+            .then(|| ClockOffset::set(ClockKind::Graphics, prior.core_megahertz))
+            .flatten();
+        let memory = memory
+            .then(|| ClockOffset::set(ClockKind::Memory, prior.memory_megahertz))
+            .flatten();
+        if let Some(core) = core {
+            let _ = self.write(device, core, "restore the GPU core clock offset");
         }
-        if memory {
-            let _ = self.write(
-                device,
-                ClockKind::Memory,
-                prior.memory_megahertz,
-                "restore the GPU memory clock offset",
-            );
+        if let Some(memory) = memory {
+            let _ = self.write(device, memory, "restore the GPU memory clock offset");
         }
         self.capabilities(device)
             .is_ok_and(|restored| restored.current() == prior)
@@ -451,7 +475,7 @@ impl<N: Nvml> Controller<N> {
 
     /// Managed `QueryRange`, in the editable unit.
     fn range(&mut self, device: usize, kind: ClockKind, label: &str) -> Result<Range, Step> {
-        let mut info = ClockOffset::request(kind, 0);
+        let mut info = ClockOffset::query(kind);
         ensure(
             self.nvml.clock_offsets(device, &mut info),
             &format!("read the {label}"),
@@ -479,15 +503,22 @@ impl<N: Nvml> Controller<N> {
         Ok(range)
     }
 
-    fn write(
-        &mut self,
-        device: usize,
-        kind: ClockKind,
-        megahertz: i32,
-        action: &str,
-    ) -> Result<(), Step> {
-        let mut info = ClockOffset::request(kind, megahertz);
-        ensure(self.nvml.set_clock_offsets(device, &mut info), action)
+    fn write(&mut self, device: usize, mut request: ClockOffset, action: &str) -> Result<(), Step> {
+        ensure(self.nvml.set_clock_offsets(device, &mut request), action)
+    }
+
+    /// `nvmlInit_v2`, recording that a session is open.
+    fn init(&mut self) -> i32 {
+        let status = self.nvml.init();
+        self.session = status == SUCCESS;
+        status
+    }
+
+    /// `nvmlShutdown` of the open session, if any.
+    fn shutdown(&mut self) {
+        if std::mem::take(&mut self.session) {
+            let _ = self.nvml.shutdown();
+        }
     }
 }
 
@@ -523,6 +554,35 @@ pub(super) struct Management<N> {
     uncertain_prior: State,
     /// Whether the one query that ignores the dGPU activity has run.
     ungated_query_attempted: bool,
+    /// The retain flag of the NVML submission in progress, read only if a
+    /// panic unwinds out of it.
+    submitting: Option<bool>,
+}
+
+/// The admission rules that need no NVML session: well-formed offsets, and a
+/// default reset for any write that relinquishes.
+fn request_rules(offsets: GpuClockOffsets, retain: bool) -> Result<(), WriteError> {
+    if !well_formed(offsets) {
+        return Err(WriteError::new(
+            Failure::NotApplied,
+            "GPU clock offsets are invalid.",
+        ));
+    }
+    if !retain && offsets != GpuClockOffsets::default() {
+        return Err(WriteError::new(
+            Failure::NotApplied,
+            "Relinquishing GPU clock tuning requires a default-offset reset.",
+        ));
+    }
+    Ok(())
+}
+
+/// Managed's refusal of offsets outside the driver's ranges or the envelope.
+fn outside_ranges() -> WriteError {
+    WriteError::new(
+        Failure::Unavailable,
+        "The requested GPU clock offsets are outside the ranges reported by the NVIDIA driver.",
+    )
 }
 
 impl<N: Nvml> Management<N> {
@@ -538,6 +598,7 @@ impl<N: Nvml> Management<N> {
             uncertain_reset: false,
             uncertain_prior: State::Unknown,
             ungated_query_attempted: false,
+            submitting: None,
         }
     }
 
@@ -597,28 +658,14 @@ impl<N: Nvml> Management<N> {
         offsets: GpuClockOffsets,
         retain: bool,
     ) -> Result<(), WriteError> {
-        if !well_formed(offsets) {
-            return Err(WriteError::new(
-                Failure::NotApplied,
-                "GPU clock offsets are invalid.",
-            ));
-        }
-        if !retain && offsets != GpuClockOffsets::default() {
-            return Err(WriteError::new(
-                Failure::NotApplied,
-                "Relinquishing GPU clock tuning requires a default-offset reset.",
-            ));
-        }
+        request_rules(offsets, retain)?;
         match self.query_for_write() {
             None => Err(WriteError::new(
                 Failure::Unavailable,
                 "GPU clock tuning is unavailable.",
             )),
             Some(driver) if !driver.supports(offsets) || !self.policy.admits(offsets) => {
-                Err(WriteError::new(
-                    Failure::Unavailable,
-                    "The requested GPU clock offsets are outside the ranges reported by the NVIDIA driver.",
-                ))
+                Err(outside_ranges())
             }
             Some(_) => Ok(()),
         }
@@ -630,12 +677,24 @@ impl<N: Nvml> Management<N> {
     /// observation. A write that may have changed the offsets withdraws
     /// every earlier confirmation and stays uncertain until a driver read
     /// resolves it. A write known not to have applied changes nothing.
+    ///
+    /// The rules that need no NVML session, well-formed offsets, a reset for
+    /// a write that relinquishes and the envelope, are checked again here,
+    /// so a paired write's submission cannot pass offsets its preflight
+    /// never saw. The driver's ranges are the controller's to check.
     pub(super) fn submit(
         &mut self,
         offsets: GpuClockOffsets,
         retain: bool,
     ) -> Result<Option<Capabilities>, WriteError> {
-        match self.controller.set(offsets) {
+        request_rules(offsets, retain)?;
+        if !self.policy.admits(offsets) {
+            return Err(outside_ranges());
+        }
+        self.submitting = Some(retain);
+        let result = self.controller.set(offsets);
+        self.submitting = None;
+        match result {
             Ok(confirmed) => {
                 self.state = if retain {
                     State::Managed
@@ -647,16 +706,35 @@ impl<N: Nvml> Management<N> {
             }
             Err(error) => {
                 if error.failure != Failure::NotApplied {
-                    if self.state != State::SubmissionUncertain {
-                        self.uncertain_prior = self.state;
-                    }
-                    self.uncertain_reset = !retain;
-                    self.ungated_query_attempted = false;
-                    self.state = State::SubmissionUncertain;
-                    self.confirmed = None;
+                    self.enter_uncertain(retain);
                 }
                 Err(error)
             }
+        }
+    }
+
+    /// A submission that may have changed the offsets: no earlier managed
+    /// or default-reset confirmation survives it, and it stays uncertain
+    /// until a driver read resolves it. A second uncertain submission keeps
+    /// the state before the first.
+    fn enter_uncertain(&mut self, retain: bool) {
+        if self.state != State::SubmissionUncertain {
+            self.uncertain_prior = self.state;
+        }
+        self.uncertain_reset = !retain;
+        self.ungated_query_attempted = false;
+        self.state = State::SubmissionUncertain;
+        self.confirmed = None;
+    }
+
+    /// After a call panicked on the worker: the NVML session it left open is
+    /// shut down, and a submission it interrupted is uncertain, since the
+    /// driver may hold its offsets. A panic outside a submission left the
+    /// state as the last completed step recorded it.
+    fn recover_from_panic(&mut self) {
+        self.controller.shutdown();
+        if let Some(retain) = self.submitting.take() {
+            self.enter_uncertain(retain);
         }
     }
 
@@ -681,10 +759,18 @@ impl<N: Nvml> Management<N> {
     }
 
     /// The paired write's reuse of a confirmed reset (managed
-    /// `SetGpuClockOffsetManagementState(ResetConfirmed)`).
-    pub(super) fn mark_reset_confirmed(&mut self) {
+    /// `SetGpuClockOffsetManagementState(ResetConfirmed)`). Refused, changing
+    /// nothing, when the reset is no longer confirmed, for example because a
+    /// resume withdrew it after the preflight decided to reuse it; the caller
+    /// must then submit the reset. Returns whether the reset was reused.
+    #[must_use]
+    pub(super) fn mark_reset_confirmed(&mut self) -> bool {
+        if !self.has_confirmed_default_reset() {
+            return false;
+        }
         self.state = State::ResetConfirmed;
         self.confirmed = None;
+        true
     }
 
     /// Managed `RelinquishGpuClockOffsetManagementAsync`: OpenBlade stops
@@ -783,15 +869,41 @@ pub(super) enum Called<R> {
     /// was queued, it had stopped, or the budget ran out first. Nothing was
     /// submitted.
     NotStarted,
-    /// The call started and the budget ran out. It finishes on the worker,
-    /// which records what the driver did; a write is indeterminate to its
-    /// caller.
+    /// The call started and returned no result: the budget ran out, so it
+    /// finishes on the worker, which records what the driver did, or it
+    /// panicked, and the worker recovered its state. A write is
+    /// indeterminate to its caller.
     Abandoned,
 }
 
 const QUEUED: u8 = 0;
 const STARTED: u8 = 1;
 const WITHDRAWN: u8 = 2;
+
+/// A caller's hold on its queued call. The worker starts the call only by
+/// moving it from queued to started; the caller withdraws it when it stops
+/// waiting, and on drop, so a cancelled call never starts later with nobody
+/// observing it.
+struct Claim(Arc<AtomicU8>);
+
+impl Claim {
+    /// Whether the call was withdrawn before it started.
+    fn withdraw(&self) -> bool {
+        self.0
+            .compare_exchange(QUEUED, WITHDRAWN, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
+    }
+
+    fn started(&self) -> bool {
+        self.0.load(Ordering::Acquire) == STARTED
+    }
+}
+
+impl Drop for Claim {
+    fn drop(&mut self) {
+        self.withdraw();
+    }
+}
 
 /// One call, run on the worker with its management.
 type Run<N> = Box<dyn FnOnce(&mut Management<N>) + Send>;
@@ -827,18 +939,20 @@ impl<N: Nvml + 'static> Worker<N> {
         Ok(Self { jobs, stopped })
     }
 
-    /// Runs `job` on the worker within `budget`.
+    /// Runs `job` on the worker within `budget`. Dropping the future before
+    /// the call starts withdraws it; dropping it after leaves the call to
+    /// finish on the worker, as when the budget runs out.
     pub(super) async fn call<R: Send + 'static>(
         &self,
         budget: Duration,
         job: impl FnOnce(&mut Management<N>) -> R + Send + 'static,
     ) -> Called<R> {
-        let claim = Arc::new(AtomicU8::new(QUEUED));
+        let claim = Claim(Arc::new(AtomicU8::new(QUEUED)));
         let (reply, mut result) = oneshot::channel();
         let job: Run<N> = Box::new(move |management| {
             let _ = reply.send(job(management));
         });
-        match self.jobs.try_send((claim.clone(), job)) {
+        match self.jobs.try_send((claim.0.clone(), job)) {
             Ok(()) => {}
             Err(TrySendError::Full(_) | TrySendError::Disconnected(_)) => {
                 return Called::NotStarted;
@@ -846,21 +960,16 @@ impl<N: Nvml + 'static> Worker<N> {
         }
         match tokio::time::timeout(budget, &mut result).await {
             Ok(Ok(value)) => Called::Done(value),
-            // The worker dropped the job unrun.
+            // A started call that sent nothing panicked; one never started
+            // was dropped unrun by a stopped worker.
+            Ok(Err(_)) if claim.started() => Called::Abandoned,
             Ok(Err(_)) => Called::NotStarted,
-            Err(_) => {
-                if claim
-                    .compare_exchange(QUEUED, WITHDRAWN, Ordering::AcqRel, Ordering::Acquire)
-                    .is_ok()
-                {
-                    return Called::NotStarted;
-                }
-                // It started; it may have just finished.
-                match result.try_recv() {
-                    Ok(value) => Called::Done(value),
-                    Err(_) => Called::Abandoned,
-                }
-            }
+            Err(_) if claim.withdraw() => Called::NotStarted,
+            // It started; it may have just finished.
+            Err(_) => match result.try_recv() {
+                Ok(value) => Called::Done(value),
+                Err(_) => Called::Abandoned,
+            },
         }
     }
 }
@@ -874,9 +983,16 @@ fn run<N: Nvml>(mut management: Management<N>, queue: Receiver<Job<N>>, stopped:
         }
         if claim
             .compare_exchange(QUEUED, STARTED, Ordering::AcqRel, Ordering::Acquire)
-            .is_ok()
+            .is_err()
         {
-            job(&mut management);
+            continue;
+        }
+        // A panicking call must not end the worker: its in-memory record of
+        // an uncertain submission is the only one. The management is
+        // recovered before the next call, so a broken invariant is not
+        // observed.
+        if panic::catch_unwind(AssertUnwindSafe(|| job(&mut management))).is_err() {
+            management.recover_from_panic();
         }
     }
 }

@@ -139,7 +139,7 @@ fn controller_vectors_match_managed() {
     ))
     .unwrap();
     let rows = vectors["controller"].as_array().unwrap();
-    assert!(rows.len() >= 30);
+    assert_eq!(rows.len(), 38);
     let mut failures = Vec::new();
     for row in rows {
         let mut controller = Controller::new(Scripted::new(row));
@@ -180,14 +180,22 @@ fn controller_vectors_match_managed() {
 #[test]
 fn the_nvml_structure_is_the_v1_layout() {
     assert_eq!(std::mem::size_of::<ClockOffset>(), 24);
-    let request = ClockOffset::request(ClockKind::Memory, 500);
+    let request = ClockOffset::set(ClockKind::Memory, 500).unwrap();
     assert_eq!(request.version, (1 << 24) | 24);
     assert_eq!(
         (request.kind, request.pstate, request.current),
         (2, 0, 1000)
     );
-    let request = ClockOffset::request(ClockKind::Graphics, -125);
+    let request = ClockOffset::set(ClockKind::Graphics, -125).unwrap();
     assert_eq!((request.kind, request.current), (0, -125));
+    let query = ClockOffset::query(ClockKind::Memory);
+    assert_eq!(
+        (query.version, query.kind, query.current),
+        ((1 << 24) | 24, 2, 0)
+    );
+    // A memory offset whose doubled NVML value does not fit has no request.
+    assert_eq!(ClockOffset::set(ClockKind::Memory, i32::MAX / 2 + 1), None);
+    assert!(ClockOffset::set(ClockKind::Memory, i32::MAX / 2).is_some());
 }
 
 #[test]
@@ -220,6 +228,8 @@ struct Driver {
     sets: Vec<(i32, i32)>,
     /// Blocks the next set until released.
     hold: Option<mpsc::Receiver<()>>,
+    /// The next set stores its value and then panics, as a bug would.
+    panic_on_set: bool,
 }
 
 #[derive(Clone)]
@@ -296,11 +306,11 @@ impl Nvml for Fake {
         if let Some(hold) = self.with(|d| d.hold.take()) {
             let _ = hold.recv();
         }
-        self.with(|d| {
+        let (status, panics) = self.with(|d| {
             d.sets.push((info.kind, info.current));
             if d.sets_fail {
                 if d.storing_failures == 0 {
-                    return 3;
+                    return (3, false);
                 }
                 d.storing_failures -= 1;
             }
@@ -309,8 +319,12 @@ impl Nvml for Fake {
             } else {
                 d.memory.2 = info.current;
             }
-            if d.sets_fail { 3 } else { SUCCESS }
-        })
+            let status = if d.sets_fail { 3 } else { SUCCESS };
+            (status, std::mem::take(&mut d.panic_on_set))
+        });
+        // Outside the lock, so the driver stays readable.
+        assert!(!panics, "a bug after the NVML write");
+        status
     }
 }
 
@@ -608,6 +622,23 @@ fn an_unreadable_uncertain_submission_is_queried_again_only_while_active() {
 }
 
 #[test]
+fn an_uncertain_resubmission_rearms_the_ungated_query() {
+    // Managed provider: every uncertain submission allows one more query
+    // whatever the activity, even after an earlier one was spent.
+    let mut rig = Rig::new(0, 0);
+    rig.uncertain((125, 500), true);
+    rig.fake.with(|d| d.queries_fail = true);
+    assert_eq!(rig.management.read(), None);
+    // The preflight resolves it, and the resubmission is uncertain again.
+    rig.fake.with(|d| d.queries_fail = false);
+    rig.uncertain((150, 500), true);
+    let inits = rig.fake.inits();
+    assert!(rig.management.read().is_some());
+    assert_eq!(rig.fake.inits(), inits + 1);
+    assert_eq!(rig.management.state(), State::Managed);
+}
+
+#[test]
 fn a_power_change_rearms_one_ungated_query() {
     let mut rig = Rig::new(0, 0);
     rig.uncertain((125, 500), true);
@@ -782,10 +813,58 @@ fn a_resume_invalidates_every_confirmation() {
 fn a_confirmed_reset_can_be_reused_by_a_paired_relinquishing_write() {
     let mut rig = Rig::new(0, 0);
     assert!(!rig.management.has_confirmed_default_reset());
-    rig.management.mark_reset_confirmed();
+    // Nothing to reuse while Unknown.
+    assert!(!rig.management.mark_reset_confirmed());
+    assert_eq!(rig.management.state(), State::Unknown);
+    rig.management.set(DEFAULTS, false).unwrap();
+    assert!(rig.management.relinquish());
+    let inits = rig.fake.inits();
+    assert!(rig.management.mark_reset_confirmed());
     assert_eq!(rig.management.state(), State::ResetConfirmed);
     assert!(rig.management.has_confirmed_default_reset());
-    assert_eq!(rig.fake.inits(), 0);
+    assert_eq!(rig.fake.inits(), inits);
+}
+
+#[test]
+fn a_reuse_decision_withdrawn_by_an_interleaved_resume_is_refused() {
+    let mut rig = Rig::new(0, 0);
+    rig.management.set(DEFAULTS, false).unwrap();
+    // The paired relinquishing write's preflight decides to reuse the reset.
+    assert!(rig.management.has_confirmed_default_reset());
+    // A resume lands between that decision and the completion.
+    assert!(rig.management.invalidate());
+    assert_eq!(rig.management.state(), State::Unknown);
+    // The completion cannot reassert the reset the resume withdrew.
+    assert!(!rig.management.mark_reset_confirmed());
+    assert_eq!(rig.management.state(), State::Unknown);
+}
+
+#[test]
+fn a_submission_alone_enforces_the_envelope_and_the_reset_rule() {
+    let mut rig = Rig::new(0, 0);
+    // Above the RZ09-0581 core envelope (400), inside the driver's 1000.
+    let error = rig
+        .management
+        .submit(offsets_of((1000, 0)), true)
+        .unwrap_err();
+    assert_eq!(error.failure, Failure::Unavailable);
+    // A relinquishing write of non-default offsets.
+    let error = rig
+        .management
+        .submit(offsets_of((5, 0)), false)
+        .unwrap_err();
+    assert_eq!(
+        (error.failure, error.message.as_str()),
+        (
+            Failure::NotApplied,
+            "Relinquishing GPU clock tuning requires a default-offset reset."
+        )
+    );
+    // Neither opened NVML or changed the state.
+    assert_eq!((rig.fake.inits(), rig.fake.sets()), (0, 0));
+    assert_eq!(rig.fake.current(), (0, 0));
+    assert_eq!(rig.management.state(), State::Unknown);
+    assert!(!rig.management.has_confirmed_default_reset());
 }
 
 #[test]
@@ -944,6 +1023,99 @@ async fn a_call_whose_budget_ends_before_it_starts_never_starts() {
     );
     assert!(!ran.load(Ordering::SeqCst));
     assert_eq!(fake.sets(), 0);
+}
+
+#[tokio::test]
+async fn a_cancelled_call_is_withdrawn_and_never_runs() {
+    let fake = Fake::new(0, 0);
+    let worker = Arc::new(worker(&fake));
+    let (release, hold) = mpsc::channel::<()>();
+    let (started, running) = mpsc::channel();
+    let first = {
+        let worker = worker.clone();
+        tokio::spawn(async move {
+            worker
+                .call(BUDGET, move |_| {
+                    started.send(()).unwrap();
+                    hold.recv().unwrap();
+                })
+                .await
+        })
+    };
+    while running.try_recv().is_err() {
+        tokio::task::yield_now().await;
+    }
+    // A request queues a write and is cancelled well inside its budget.
+    let ran = Arc::new(AtomicBool::new(false));
+    let flag = ran.clone();
+    let cancelled = tokio::time::timeout(
+        Duration::from_millis(50),
+        worker.call(BUDGET, move |m| {
+            flag.store(true, Ordering::SeqCst);
+            m.set(offsets_of((125, 500)), true).is_ok()
+        }),
+    )
+    .await;
+    assert!(cancelled.is_err());
+    release.send(()).unwrap();
+    assert_eq!(first.await.unwrap(), Called::Done(()));
+    // The queue is in order, so the next call runs after the withdrawn one
+    // was skipped.
+    assert_eq!(
+        worker.call(BUDGET, |m| m.state()).await,
+        Called::Done(State::Unknown)
+    );
+    assert!(!ran.load(Ordering::SeqCst));
+    assert_eq!((fake.sets(), fake.current()), (0, (0, 0)));
+}
+
+#[tokio::test]
+async fn a_call_that_panics_after_its_write_is_abandoned_and_the_worker_serves_on() {
+    let fake = Fake::new(0, 0);
+    let worker = worker(&fake);
+    let result: Called<()> = worker
+        .call(BUDGET, |m| {
+            let _ = m.set(offsets_of((125, 500)), true);
+            panic!("a caller bug after the NVML write");
+        })
+        .await;
+    // The write reached the driver, so the caller must not read it as unsent.
+    assert_eq!(result, Called::Abandoned);
+    assert_eq!(fake.current(), (125, 500));
+    // The completed write was recorded before the panic, and the worker runs on.
+    assert_eq!(
+        worker.call(BUDGET, |m| m.state()).await,
+        Called::Done(State::Managed)
+    );
+}
+
+#[tokio::test]
+async fn a_panic_inside_a_submission_leaves_it_uncertain_and_ends_its_session() {
+    let fake = Fake::new(0, 0);
+    let worker = worker(&fake);
+    worker.call(BUDGET, |m| m.set(DEFAULTS, false)).await;
+    fake.with(|d| d.panic_on_set = true);
+    let result = worker
+        .call(BUDGET, |m| m.set(offsets_of((125, 500)), true).is_ok())
+        .await;
+    assert_eq!(result, Called::Abandoned);
+    // The core offset reached the driver; nothing confirmed it.
+    assert_eq!(fake.current(), (125, 0));
+    // The caller hears of the panic as the job unwinds; the worker recovers
+    // before it runs the next call.
+    assert_eq!(
+        worker
+            .call(BUDGET, |m| (m.state(), m.has_confirmed_default_reset()))
+            .await,
+        Called::Done((State::SubmissionUncertain, false))
+    );
+    let (inits, shutdowns) = fake.with(|d| (d.inits, d.shutdowns));
+    assert_eq!(shutdowns, inits);
+    // The ungated read resolves what the driver holds.
+    assert_eq!(
+        worker.call(BUDGET, |m| m.read().map(|c| c.current())).await,
+        Called::Done(Some(offsets_of((125, 0))))
+    );
 }
 
 #[tokio::test]

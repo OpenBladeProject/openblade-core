@@ -7,9 +7,13 @@
 //! searched. Like managed's `[DllImport("nvml.dll")]`, the load checks no
 //! signature. A Windows trust and catalog-membership check of the loaded
 //! file belongs in `load`, so both callers get it at once; it is a tracked
-//! gate before any GPU clock-offset writer is packaged. Once a function of the
-//! library may have been called it stays loaded for the process: a worker
-//! that Stop no longer waits for may still be inside a call.
+//! gate before any GPU clock-offset writer is packaged. A bare-name
+//! `LoadLibraryExW` returns any `nvml.dll` already loaded in the process,
+//! whatever its directory and the search flags, so that check must verify
+//! the loaded module's own path (`GetModuleFileNameW`) as well as its
+//! signature. Once a function of the library may have been called it stays
+//! loaded for the process: a worker that Stop no longer waits for may still
+//! be inside a call.
 // The clock-offset backend has no production caller yet, so a composition
 // without the live readings, and every test build, leaves this unused.
 #![cfg_attr(any(test, not(feature = "service-live-readings-v1")), allow(dead_code))]
