@@ -612,3 +612,40 @@ fn a_recorded_uncertainty_is_resolved_by_the_fence_read_when_the_driver_reads() 
     assert!(!lane.fenced(CALL_BUDGET));
     assert_eq!(fake.sets(), 0);
 }
+
+#[test]
+fn a_queued_call_withdrawn_at_its_budget_is_retired_and_fences_nothing() {
+    let fake = Fake::new(0, 0);
+    let lane = Arc::new(lane(&fake));
+    let (release, hold) = std::sync::mpsc::channel();
+    fake.with(|d| d.hold = Some(hold));
+    let (started, running) = std::sync::mpsc::channel();
+    let busy = {
+        let lane = lane.clone();
+        std::thread::spawn(move || {
+            lane.call_for_tests(move |m| {
+                started.send(()).unwrap();
+                let _ = m.set(tuning(true, 125, 500).effective(), true);
+            })
+        })
+    };
+    running.recv().unwrap();
+    // The submission waits behind the running call and is withdrawn unrun
+    // when its budget ends: the firmware half stands, nothing was sent.
+    let wanted = tuning(true, 50, 50);
+    assert_eq!(
+        lane.complete(
+            Boundary::default(),
+            Half::Paired(wanted),
+            Duration::from_millis(100)
+        ),
+        Some(Completed::failed(indeterminate(&paired_detail(
+            NOT_STARTED
+        ))))
+    );
+    release.send(()).unwrap();
+    assert!(matches!(busy.join().unwrap(), Called::Done(())));
+    // Only the running call was outstanding; it ended, so nothing fences.
+    assert!(!lane.fenced(CALL_BUDGET));
+    assert_eq!(fake.current(), (125, 500));
+}

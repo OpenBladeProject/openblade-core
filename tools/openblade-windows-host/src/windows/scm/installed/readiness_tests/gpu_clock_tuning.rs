@@ -179,7 +179,7 @@ async fn a_refused_write_admission_stores_nothing_and_calls_no_nvml() {
     let fake = Fake::new(0, 0);
     let (rig, _, _) = rig_at(0, &fake);
     rig.custody.activation_refusal.store(1, Ordering::Release);
-    let reply = rig.set(1, tuned(2, true, 125, 500)).await;
+    let reply = rig.set(2, tuned(0, true, 200, 600)).await;
     assert_eq!(reply["result"]["status"], 2, "{reply}");
     assert_eq!((writes(&rig), fake.inits(), fake.sets()), (0, 0, 0));
     assert!(rig.files.read("manual-overrides.json").unwrap().is_none());
@@ -573,5 +573,66 @@ async fn a_profile_save_with_gpu_clock_tuning_is_refused_as_incomplete() {
         (writes(&rig), fake.inits(), fake.sets()),
         (firmware, inits, 0)
     );
+    rig.stop().await;
+}
+
+/// A paired step's pace keeps time for its NVML submission
+/// (`Permit::reserve`). At this fixture exchange pace the firmware recipe
+/// alone fits the request, but not with the submission's 1 s reserve: the
+/// paired step is refused before any row or setter, with nothing written.
+#[tokio::test]
+async fn a_paired_step_without_time_for_its_submission_writes_nothing() {
+    for paired in [false, true] {
+        let fake = Fake::new(0, 0);
+        let (rig, _, _) = rig_at(0, &fake);
+        rig.port.state.lock().unwrap().latency = Some(Duration::from_millis(285));
+        let request = if paired {
+            tuned(2, true, 125, 500)
+        } else {
+            value(2, 1)
+        };
+        let reply = rig.set(1, request).await;
+        rig.port.state.lock().unwrap().latency = None;
+        if paired {
+            assert_eq!(reply["result"]["status"], 2, "{reply}");
+            assert_eq!(
+                message(&reply),
+                format!(
+                    "{STORED}The remaining request time cannot cover this recipe at the measured device pace; no thermal setter was submitted."
+                )
+            );
+            assert_eq!((writes(&rig), fake.sets()), (0, 0));
+        } else {
+            assert_eq!(reply["result"]["status"], 1, "{reply}");
+        }
+        rig.stop().await;
+    }
+}
+
+/// The preflight's own call is bounded by what remains of the request, not
+/// by the 5 s call cap: after slow exchanges have spent part of the
+/// request, a preflight that outlasts the rest is refused as unresponsive,
+/// with nothing written.
+#[tokio::test]
+async fn a_preflight_outlasting_the_rest_of_its_request_is_refused() {
+    let fake = Fake::new(0, 0);
+    let slow = Arc::new(AtomicU64::new(0));
+    let (rig, _, _, _) = rig_with(MemoryFiles::default(), 0, &fake, slow.clone());
+    let reply = rig.set(1, tuned(2, true, 125, 500)).await;
+    assert_eq!(reply["result"]["status"], 1, "{reply}");
+    let (firmware, sets) = (writes(&rig), fake.sets());
+    // The exchanges before the preflight spend fixture time; the preflight's
+    // activity read then takes 4 s, under the call cap but past what is
+    // left of the request.
+    rig.port.state.lock().unwrap().latency = Some(Duration::from_millis(600));
+    slow.store(4000, Ordering::Release);
+    let reply = rig.set(2, tuned(0, true, 200, 600)).await;
+    rig.port.state.lock().unwrap().latency = None;
+    assert_eq!(reply["result"]["status"], 2, "{reply}");
+    assert_eq!(
+        message(&reply),
+        format!("{STORED}GPU clock management did not respond; no thermal setter was submitted.")
+    );
+    assert_eq!((writes(&rig), fake.sets()), (firmware, sets));
     rig.stop().await;
 }
