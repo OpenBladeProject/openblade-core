@@ -277,6 +277,10 @@ async fn a_power_change_during_or_between_the_pairs_stops_without_replay() {
         (FULL, 4, BATTERY, None, 83, 2, false),
         (BATTERY, 4, FULL, None, 83, 2, false),
         (FULL, 4, FULL, Some(Some(true)), 83, 2, false),
+        // The restore setters are fenced on their own readings too.
+        (FULL, 2, FULL, Some(Some(true)), 6, 0, false),
+        (FULL, 3, FULL, Some(Some(true)), 81, 1, false),
+        (BATTERY, 3, FULL, None, 81, 1, false),
         (FULL, 4, LIMITED, None, 5, 4, true),
     ] {
         let files = MemoryFiles::default();
@@ -319,6 +323,37 @@ async fn a_power_change_during_or_between_the_pairs_stops_without_replay() {
 }
 
 #[tokio::test]
+async fn an_unclassified_reading_at_any_setter_stops_the_exit_without_replay() {
+    // A battery preset never admits unclassified power, and Windows AC
+    // presence still holds, so only the setter's own fence admission stops
+    // it. Power read 2 is the first restore setter's, 3 the second's and 4
+    // the first battery setter's.
+    for (read, progress, writes) in [(2, 6, 0), (3, 81, 1), (4, 83, 2)] {
+        let files = MemoryFiles::default();
+        let rig = hyperboost_rig(FULL, files.clone()).await;
+        rig.port.state.lock().unwrap().change_power_status = Some((read, 5));
+        let result = rig.set(1, value(BATTERY_SAVER.0, 1)).await;
+        let case = format!("read {read}: {result}");
+        assert_eq!(result["result"]["status"], 2, "{case}");
+        assert_eq!(setters(&rig).len(), writes, "{case}");
+        assert_eq!(*progress_values(&rig).last().unwrap(), progress, "{case}");
+        rig.port.state.lock().unwrap().change_power_status = None;
+        if writes == 0 {
+            assert!(
+                !Storage::open(Box::new(files.clone()), SID)
+                    .unwrap()
+                    .pending(),
+                "{case}"
+            );
+            rig.stop().await;
+        } else {
+            assert_eq!(result["result"]["message"], PENDING, "{case}");
+            fenced(rig, files, BATTERY_SAVER.0, &case).await;
+        }
+    }
+}
+
+#[tokio::test]
 async fn a_full_to_limited_change_retires_a_temporary_exit_and_stops_after_the_restore_pair() {
     // A persistent request continues on the new class (above); a temporary
     // override is retired by the source change, so the battery pair is not
@@ -337,12 +372,14 @@ async fn a_full_to_limited_change_retires_a_temporary_exit_and_stops_after_the_r
 
 #[tokio::test]
 async fn a_restore_recipe_its_pace_cannot_finish_is_refused_before_any_setter() {
-    // At 250 ms a transfer each exchange takes about 530 ms. A direct battery
-    // pair's nine exchanges end inside the 6 s budget; the restore recipe's
-    // fifteen cannot, so it is refused at the pace check before its first
-    // intent row, and the Prepared row retires as known not submitted.
+    // At 200 ms a transfer (paused time, so deterministic) a direct battery
+    // pair ends inside the operation budget and the restore recipe cannot,
+    // so it is refused at the pace check before its first intent row, and
+    // the Prepared row retires as known not submitted. A pace that left out
+    // the restore pair's intermediate read would start the recipe at this
+    // latency and overrun it with every setter submitted.
     let latency = |rig: &Rig| {
-        rig.port.state.lock().unwrap().latency = Some(std::time::Duration::from_millis(250));
+        rig.port.state.lock().unwrap().latency = Some(std::time::Duration::from_millis(200));
     };
     let rig = rig_at(2, 0, FULL, MemoryFiles::default());
     latency(&rig);
