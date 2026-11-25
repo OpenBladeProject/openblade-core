@@ -556,6 +556,26 @@ takes the [restore recipe](#hyperboost-exit-to-a-battery-preset-service-thermal-
 An entry stores no intent; an exit stores none either and restores the saved
 one.
 
+Only an entry needs an admitted saved intent. As managed submits every exit and
+skips only its restore step (`restoreIntentSkipped`, 7118-7127), an exit whose
+saved intent native cannot restore, a saved GPU clock effect or no saved
+destination at the class, still leaves HyperBoost. It writes managed's unowned
+exit, the Balanced restore (`ownedHyperBoostBaseMode ?? Balanced`, 7066; the
+`hyperboost-restore-balanced` pair has the Balanced pair's payloads), as a
+Balanced row with no requested override, and settles on an independent read of
+Balanced with Automatic fans. The saved intent and the desired state it projects
+are unchanged, and the reply, after managed's skipped-restore reply (7833-7835),
+says so: `HyperBoost is off and the laptop stays in Balanced until the power
+source changes.` followed by what was not applied. Managed's exit makes no
+ordinary per-command power admission, so each setter of this exit is admitted on
+a classified class that agrees with Windows, battery with Windows battery
+included (`thermal_mutation::admits_restore_class`), and a class change keeps
+it. The journal, GPU fence, custody, device, pad and readback checks all still
+apply. An outstanding owned fan change still refuses the exit before any row:
+the thermal history admits no performance row while a fan owner is outstanding,
+so the row would leave the journal unreadable and owned Stop unable to hand the
+fans back.
+
 The gates run in managed's order, each citing its managed line at the native
 gate:
 
@@ -564,11 +584,11 @@ gate:
 | 6943-6952 | Probes unavailable (no composed pad and journal reader) | Blocked, `HyperBoost control is unavailable right now.` |
 | shared | Exact device, controller, custody, quarantine, fresh 07/8C class with Windows agreement, pending journal, GPU fence | The shared thermal refusal |
 | native only | Managed's ownership journal neither absent nor Relinquished, or unreadable | Blocked, the journal-pending reply below |
-| 6965-7002 | Already in the requested state | Applied, `HyperBoost is already active.` (settled on its own reading) or `HyperBoost is already off.` (nothing prepared) |
+| 6965-7002 | Already in the requested state | Applied, `HyperBoost is already active.` or `HyperBoost is already off.`, before the GPU fence and with nothing prepared |
 | 7004-7023 | Pad path selection | A connected pad refuses: native admits the pad-less path only |
 | 7024-7032 | Fresh confirmed state | Holds for every reading the Reader decodes |
 | 7134-7140, first for an unclassified external reading | Managed resolves ExternalUnknown's intent and then refuses the source; native's saved layer has no destination for that class | Blocked, `HyperBoost requires a confirmed external power source.` |
-| 7121-7132 | Admitted saved intent at the class: no outstanding owned fan change, a saved aggregate, no GPU clock effect | The fan handback reply, or Blocked, managed's intent text |
+| 7121-7132 | Entry only: admitted saved intent at the class, no outstanding owned fan change, a saved aggregate, no GPU clock effect | The fan handback reply, or Blocked, managed's intent text. An exit skips the restore instead (above), except for the fan change |
 | 7134-7140 | `PowerSourcePolicy.IsExternal` | Blocked, `HyperBoost requires a confirmed external power source.` |
 | 7142-7159 | Fresh pad absence | Blocked, managed's pad-absence text |
 | port 914-922 | Entry base: Silent, Balanced, Performance or Custom with Automatic fans, or manual (Maximum) fans | Blocked, managed's precondition text |
@@ -602,14 +622,28 @@ and native never writes a file whose recovery managed owns:
   `IsSafeMaintainHyperBoostJournalBaseline`). Anything else, or a read that
   fails, replies Blocked, `HyperBoost recovery from the previous OpenBlade
   service is pending. Start that service once so it can finish, then try
-  again.`
+  again.` The reader fails closed: managed matches member names in any case,
+  takes the last of duplicate members, ignores unknown members and reads
+  numbers from strings, so native accepts only the camelCase members managed
+  writes, each once (no two names equal ignoring case at any depth), with JSON
+  numbers, every member type-checked in every schema, the settings records bound
+  as stored profiles bind them, no recovery baseline, and the update time as a
+  full timestamp with its offset. `NativeHyperBoostJournalVectorsTests` records
+  managed's verdict on journals its store writes and on edits of them
+  (`tools/openblade-windows-host/tests/data/hyperboost-journal-vectors.json`);
+  `managed_journal_vectors_replay_through_the_native_reader` asserts that native
+  never admits a journal managed refuses and names each case it refuses that
+  managed admits.
 - Managed recovers after a native run. `WindowsNativeThermalHistory` admits
   destination 100 rows only from an artifact whose capabilities name
   `service-hyperboost-v1`. The handback classifies an unsettled HyperBoost row
   as `pending` family `hyperBoost` (progress 1-4) or `abandonedPrepared` (0).
   Managed latches a pending HyperBoost confirmation for it, matched by
   `MatchPendingHyperBoost` against HyperBoost active with Automatic fans, and a
-  disagreeing thermal reading is a mismatch.
+  disagreeing thermal reading is a mismatch. An exit's rows are ordinary
+  Performance rows; a reading of HyperBoost, which reports no preset, resolves
+  them as a mismatch (`WriteConfirmationPolicy.MatchNativeHandback`), so an exit
+  stopped before its first setter is reported for a reapply instead of waiting.
 
 Native differs from managed here in these ways:
 
@@ -632,11 +666,20 @@ Native differs from managed here in these ways:
   native gives its shared unclassified-power refusal.
 - A class change between the request's reading and a setter's reading stops
   an entry, because HyperBoost is never the saved destination.
+- An exit the saved intent cannot complete writes the Balanced restore and
+  names native's reason (GPU clock tuning, or no saved setting at this power
+  source) where managed says the saved setting isn't available. An outstanding
+  owned fan change refuses the exit, which managed has no counterpart for.
 - Native records no HyperBoost ownership of its own: the battery boundary,
   low power and shutdown exits, and a status projection of owned HyperBoost,
-  are not part of this feature.
-- An entry managed sees afterwards shows HyperBoost active without a managed
-  ownership journal.
+  are not part of this feature. HyperBoost entered natively stays active after
+  an unplug until an explicit exit, where managed leaves it at the battery
+  boundary.
+- Managed treats a natively entered HyperBoost as an external change: it sees
+  HyperBoost active without a managed ownership journal.
+
+Packaging stays refused until the lifecycle exits land (H3): a package must not
+leave HyperBoost running on battery after an unplug.
 
 `ServiceControlRuntimeTests.NativeHyperBoostOwnedVectors` records managed's
 reply and writes for entry and exit from each confirmed state the getter
