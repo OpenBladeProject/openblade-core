@@ -161,6 +161,22 @@ public sealed class NativeThermalHistoryTests : IDisposable
         Thermal(files, Bytes(complete));
         _ = WindowsNativeThermalHistory.Read(files, [original]);
         Assert.Equal("Custom", WindowsNativeThermalHistory.PresetName(5));
+        // Leaving HyperBoost for a battery preset journals the restore pair as
+        // 80-83 before the battery pair (hyperBoostExitRows). An unsettled
+        // journal is classified for handback; only a complete one is settled.
+        foreach (var (key, admitted) in new[] { ("admitted", true), ("refused", false) })
+        {
+            foreach (var journal in v.GetProperty("hyperBoostExitRows").GetProperty(key).EnumerateArray())
+            {
+                string text = journal.GetProperty("journal").GetString()!;
+                Thermal(files, Bytes(text));
+                bool settled = text.EndsWith("\"progress\":5}\n", StringComparison.Ordinal);
+                if (admitted) { Assert.NotNull(WindowsNativeThermalHistory.Read(files, [original], original).Handback); }
+                else { Assert.ThrowsAny<IOException>(() => WindowsNativeThermalHistory.Read(files, [original], original)); }
+                if (admitted && settled) { _ = WindowsNativeThermalHistory.Read(files, [original]); }
+                else { Assert.ThrowsAny<IOException>(() => WindowsNativeThermalHistory.Read(files, [original])); }
+            }
+        }
         Thermal(files, segment);
         Roll(files, segment, []);
         var segmented = WindowsNativeThermalHistory.Read(files, [original]);

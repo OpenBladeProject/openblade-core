@@ -122,6 +122,11 @@ internal sealed record NativeArtifact(string Id, string Role, string Target, str
         // Refuse the feature and its capability marker by name (docs/windows-rust-development-service.md).
         if (features.Contains("service-performance-shortcut-v1", StringComparer.Ordinal) || capabilities.Split(',').Contains("service-performance-shortcut-v1", StringComparer.Ordinal))
         { throw new InvalidDataException("The performance shortcut is not admitted for packaging."); }
+        // The HyperBoost exit to a battery preset writes managed's restore pair in HyperBoost, which has
+        // no capture evidence on battery. Admitting it is a separate packaging decision. Refuse the
+        // feature and its capability marker by name (docs/windows-rust-development-service.md).
+        if (features.Contains("service-thermal-hyperboost-exit-v1", StringComparer.Ordinal) || capabilities.Split(',').Contains("service-thermal-hyperboost-exit-v1", StringComparer.Ordinal))
+        { throw new InvalidDataException("The HyperBoost exit is not admitted for packaging."); }
         // The application-context reporter is not admitted for packaging either. Refuse its
         // feature and its capability marker by name until a packaging stage admits both.
         // That stage must also pair the reporter with a Service built with service-thermal-mutation-v1,

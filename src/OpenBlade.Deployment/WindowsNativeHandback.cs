@@ -143,6 +143,8 @@ internal sealed record WindowsNativeHandback(string Epoch, NativeHandbackItem? P
         ("pending", "performance", >= 1 and <= 4) => true,
         // Custom's CPU and GPU level setters (thermal_mutation.rs Progress).
         ("pending", "performance", >= 7 and <= 10) => item.Performance == "Custom",
+        // The HyperBoost restore pair before a battery preset.
+        ("pending", "performance", >= 80 and <= 83) => item.Performance is "BatterySaver" or "BatteryBalanced",
         ("pending", "fan", >= 10 and <= 17) => true,
         ("pending", "fan", >= 40 and <= 43) => item.FanMode == "Automatic",
         ("pending", "battery", 60 or 61) => true,
