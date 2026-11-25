@@ -27,6 +27,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Experimental Razer-driver SnapTap and function-row handling now hands A, D and the F keys back to Windows when a key it sends doesn't arrive, instead of leaving them untypeable. Turn the feature off and on to retry. ([#1008](https://github.com/OpenBladeProject/openblade-core/pull/1008))
 - Fix the cooling pad going back to its own lighting and fan settings after the laptop sleeps or restarts, or OpenBlade updates. OpenBlade now applies your cooling-pad settings again once Windows is awake and you're signed in; **Release control** turns this off. Update the service. ([#1004](https://github.com/OpenBladeProject/openblade-core/pull/1004))
 - Fix the GPU temperature going blank while the NVIDIA GPU is on but idle, for example when an app keeps it awake without using it. Update the service. ([#1002](https://github.com/OpenBladeProject/openblade-core/pull/1002))
 - Return fans from a fixed speed or fan curve to Automatic without stopping the OpenBlade service. A performance mode chosen while the fans were manual is applied once when they return to Automatic. Clear manual overrides no longer reapplies the cleared mode first. ([#989](https://github.com/OpenBladeProject/openblade-core/pull/989))
