@@ -1057,22 +1057,24 @@ async fn a_last_step_refused_after_a_confirmed_one_is_blocked() {
     let written = writes(&rig);
     let setters = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let counted = setters.clone();
-    let mut state = rig.port.state.lock().unwrap();
-    let previous = state.before_write.take();
-    state.before_write = Some(Arc::new(move |number| {
-        if let Some(previous) = &previous {
-            previous(number);
-        }
-        counted.fetch_add(1, Ordering::AcqRel);
-    }));
-    let (custody, suspended) = (rig.custody.clone(), Arc::new(AtomicBool::new(false)));
-    state.on_power = Some(Arc::new(move |_| {
-        if setters.load(Ordering::Acquire) == FAN_SETTERS && !suspended.swap(true, Ordering::AcqRel)
-        {
-            custody.lifecycle.ingress(POWER, SUSPEND);
-        }
-    }));
-    drop(state);
+    {
+        let mut state = rig.port.state.lock().unwrap();
+        let previous = state.before_write.take();
+        state.before_write = Some(Arc::new(move |number| {
+            if let Some(previous) = &previous {
+                previous(number);
+            }
+            counted.fetch_add(1, Ordering::AcqRel);
+        }));
+        let (custody, suspended) = (rig.custody.clone(), Arc::new(AtomicBool::new(false)));
+        state.on_power = Some(Arc::new(move |_| {
+            if setters.load(Ordering::Acquire) == FAN_SETTERS
+                && !suspended.swap(true, Ordering::AcqRel)
+            {
+                custody.lifecycle.ingress(POWER, SUSPEND);
+            }
+        }));
+    }
     tick(&rig).await;
     rig.port.state.lock().unwrap().on_power = None;
     rig.custody.lifecycle.ingress(POWER, RESUME);
