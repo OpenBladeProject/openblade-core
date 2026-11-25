@@ -87,9 +87,11 @@ try {
         # function_row_vectors reads the managed Windows-hook function-row vectors.
         # low_power_gate_vectors reads the managed LowPowerGate vectors and
         # power_setting_vectors the managed power-setting notice vectors.
+        # thermal_convergence_vectors reads the managed convergence ledger vectors;
+        # it compiles only with the thermal-convergence feature.
         'openblade-domain' = @('automation_policy', 'function_row_policy', 'function_row_vectors',
             'low_power_gate_vectors', 'power_setting_vectors', 'profile_migration_vectors', 'profile_policy',
-            'profile_resolution_vectors', 'profile_set_vectors', 'recovery_replay')
+            'profile_resolution_vectors', 'profile_set_vectors', 'recovery_replay', 'thermal_convergence_vectors')
     }
 
     $metadataJson = cargo metadata --locked --offline --format-version 1
@@ -260,8 +262,9 @@ try {
             $domainFeatures = @($package.features.PSObject.Properties | ForEach-Object {
                 $_.Name + '=' + (@($_.Value | Sort-Object) -join '+')
             }) -join ','
-            # profile-set is pure std code with no dependency of its own.
-            if ($domainFeatures -cne 'profile-set=,thermal-history=dep:serde+dep:serde_json+dep:sha2') {
+            # profile-set is pure std code with no dependency of its own, and
+            # thermal-convergence adds only pure ledger rules over thermal-history.
+            if ($domainFeatures -cne 'profile-set=,thermal-convergence=thermal-history,thermal-history=dep:serde+dep:serde_json+dep:sha2') {
                 throw "Unreviewed openblade-domain features: $domainFeatures"
             }
         }
