@@ -171,6 +171,29 @@ public sealed class SnapTapDriverSupervisorTests
         Assert.Null(SnapTapDriverSupervisor.MatchingTerminalFailure(
             matching with { State = SnapTapRuntimeState.Active, Failure = null }, 123, startedAt));
     }
+
+    [Fact]
+    public void RecoveryRequiredKeepsTheWorkerExitAndItsOwnReasonBesideTheObservedCause()
+    {
+        var heartbeat = new DiagnosticFailure("SnapTapSupervisor", "Run", "InputLoop", "HeartbeatTimeout", false);
+        var reported = new DiagnosticFailure("SnapTapWorker", "Run", "InputLoop", "OutputCountMismatch", false)
+        {
+            Context = new string('x', 20_000),
+        };
+
+        DiagnosticFailure failure = SnapTapDriverSupervisor.RecoveryRequiredFailure("InputLoop", heartbeat, 1, reported);
+
+        Assert.Equal("RecoveryRequired", failure.Reason);
+        Assert.Equal(1, failure.ProcessExitCode);
+        Assert.Equal("HeartbeatTimeout", failure.Cause?.Reason);
+        Assert.False(failure.MayHaveSubmitted);
+        Assert.StartsWith("WorkerReason=OutputCountMismatch; WorkerStage=InputLoop; WorkerContext=x", failure.Context);
+        Assert.True(failure.Context!.Length <= 8192);
+
+        DiagnosticFailure unreported = SnapTapDriverSupervisor.RecoveryRequiredFailure("InputLoop", null, 4, null);
+        Assert.Equal("WorkerReason=None; WorkerStage=None; WorkerContext=None", unreported.Context);
+    }
+
     [Fact]
     public void ForegroundPauseRequiresDedicatedExitAndFreshUnambiguousStatus()
     {
@@ -195,6 +218,67 @@ public sealed class SnapTapDriverSupervisorTests
         Assert.False(Eligible(8, status with { Failure = status.Failure! with { Operation = "HookSession" } }));
         Assert.False(Eligible(8, status with { Failure = status.Failure! with { Cause = status.Failure } }));
         Assert.False(Eligible(8, status with { Failure = status.Failure! with { Related = [status.Failure!] } }));
+    }
+
+    [Fact]
+    public void HeartbeatStallRearmsOnlyAfterFreshCleanWorkerStop()
+    {
+        DateTimeOffset start = DateTimeOffset.UtcNow;
+        // The production timeout, so a renamed field cannot silently disable rearm.
+        DiagnosticFailure stall = SnapTapDriverSupervisor.HeartbeatTimeoutFailure(started: true);
+        Assert.Equal("InputLoop", stall.Stage);
+        Assert.True(stall.MayHaveSubmitted);
+        var off = new SnapTapRuntimeStatus(SnapTapRuntimeState.Off, start.AddMilliseconds(1), 123);
+        var deferred = new SnapTapRuntimeStatus(SnapTapRuntimeState.Paused, start.AddMilliseconds(1), 123,
+            Failure: SnapTapDriverLoop.SubscriptionDeferredFailure());
+        bool Eligible(DiagnosticFailure? observed, int code, SnapTapRuntimeStatus? value) =>
+            SnapTapDriverSupervisor.IsCleanStall(observed, code, value, 123, start);
+
+        // The supervisor marks every timeout as possibly submitted; the worker's own
+        // clean stop is what resolves that.
+        Assert.True(Eligible(stall, 0, off));
+        foreach (int code in new[] { 1, 2, 3, 4, 5, 6, 7, SnapTapDriverLoop.CleanPauseExitCode, -1 })
+        {
+            Assert.False(Eligible(stall, code, off));
+        }
+        Assert.False(Eligible(null, 0, off));
+        Assert.False(Eligible(stall, 0, null));
+        Assert.False(Eligible(stall, 0, off with { ProcessId = 124 }));
+        Assert.False(Eligible(stall, 0, off with { UpdatedAt = start.AddMilliseconds(-1) }));
+        Assert.False(Eligible(stall, 0, off with { State = SnapTapRuntimeState.Failed }));
+        Assert.False(Eligible(stall, 0, off with { State = SnapTapRuntimeState.Active }));
+        Assert.False(Eligible(stall, 0, off with { Failure = stall }));
+        // A stall that lands in the next worker's hook setup ends with the dedicated
+        // clean-pause exit; only that exit with its own fresh pause status qualifies.
+        Assert.True(Eligible(stall, SnapTapDriverLoop.CleanPauseExitCode, deferred));
+        Assert.False(Eligible(stall, 0, deferred));
+        Assert.False(Eligible(stall, SnapTapDriverLoop.CleanPauseExitCode, deferred with { ProcessId = 124 }));
+        Assert.False(Eligible(stall, SnapTapDriverLoop.CleanPauseExitCode,
+            deferred with { Failure = deferred.Failure! with { MayHaveSubmitted = true } }));
+        // A startup stall keeps its own budget and is not admitted here.
+        Assert.False(Eligible(SnapTapDriverSupervisor.HeartbeatTimeoutFailure(started: false), 0, off));
+        Assert.False(Eligible(stall with { Stage = "WorkerStartup" }, 0, off));
+        Assert.False(Eligible(stall with { Reason = "WorkerDidNotExit" }, 0, off));
+        Assert.False(Eligible(stall with { Component = SnapTapDiagnosticFailure.Worker }, 0, off));
+        Assert.False(Eligible(stall with { Operation = "ReconcileHooks" }, 0, off));
+        Assert.False(Eligible(stall with { Cause = stall }, 0, off));
+        Assert.False(Eligible(stall with { Related = [stall] }, 0, off));
+    }
+
+    [Fact]
+    public void StallRearmIsBoundedWithinItsWindow()
+    {
+        var recent = new Queue<long>();
+        long window = SnapTapDriverSupervisor.StallRearmWindowMilliseconds;
+        for (int index = 0; index < SnapTapDriverSupervisor.StallRearmLimit; index++)
+        {
+            Assert.True(SnapTapDriverSupervisor.TryAdmitStallRearm(recent, 1000 + index));
+        }
+        Assert.False(SnapTapDriverSupervisor.TryAdmitStallRearm(recent, 1000 + window - 1));
+        // A refused attempt does not consume budget; the oldest rearm ages out exactly.
+        Assert.True(SnapTapDriverSupervisor.TryAdmitStallRearm(recent, 1000 + window));
+        Assert.False(SnapTapDriverSupervisor.TryAdmitStallRearm(recent, 1001 + window - 1));
+        Assert.Equal(SnapTapDriverSupervisor.StallRearmLimit, recent.Count);
     }
 
     [Fact]

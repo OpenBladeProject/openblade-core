@@ -2818,6 +2818,9 @@ OpenBlade повторно проверит этот список и остан�
   <data name="KeyboardBackend_Recovery" xml:space="preserve">
     <value>Переключите способ ввода для повторной попытки. Если сообщение повторяется, перезагрузите Windows.</value>
   </data>
+  <data name="KeyboardBackend_DriverStillOwns" xml:space="preserve">
+    <value>Драйвер Razer всё ещё удерживает эти клавиши. Переключитесь на драйвер Razer, затем обратно на перехват Windows. Если сообщение повторяется, перезагрузите Windows.</value>
+  </data>
   <data name="KeyboardBackend_Unknown" xml:space="preserve">
     <value>Выберите способ ввода, чтобы продолжить.</value>
   </data>

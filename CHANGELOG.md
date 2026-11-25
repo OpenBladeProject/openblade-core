@@ -27,6 +27,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Experimental Razer-driver SnapTap and function-row handling now hands A, D and the F keys back to Windows when a key it sends doesn't arrive, instead of leaving them untypeable. Turn the feature off and on to retry. ([#1008](https://github.com/OpenBladeProject/openblade-core/pull/1008))
+- Experimental Razer-driver function-row media keys on Blade 16 (2026, RZ09-0581) and Blade 16 (2025, RZ09-0528) now work right away, without pressing Fn first after sign-in, unplugging the charger or switching input methods. ([#1007](https://github.com/OpenBladeProject/openblade-core/pull/1007))
+- Fix "Changed outside OpenBlade: Fans" appearing after OpenBlade restarts or updates while the fans are on Automatic and nothing changed them. Update the service. ([#1009](https://github.com/OpenBladeProject/openblade-core/pull/1009))
 - Fix the cooling pad going back to its own lighting and fan settings after the laptop sleeps or restarts, or OpenBlade updates. OpenBlade now applies your cooling-pad settings again once Windows is awake and you're signed in; **Release control** turns this off. Update the service. ([#1004](https://github.com/OpenBladeProject/openblade-core/pull/1004))
 - Fix the service treating a stop or update as a crash when only the cooling pad could not be handed back. That started the next run in crash recovery, which could show a false "Changed outside OpenBlade: Fans" notice. The cooling pad still asks you to check it before OpenBlade controls it again. Update the service. ([#1010](https://github.com/OpenBladeProject/openblade-core/pull/1010))
 - Fix the GPU temperature going blank while the NVIDIA GPU is on but idle, for example when an app keeps it awake without using it. Update the service. ([#1002](https://github.com/OpenBladeProject/openblade-core/pull/1002))
@@ -39,6 +42,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Apply the new power profile's performance and fan settings when you plug in or unplug after the power adapter briefly couldn't be identified. ([#997](https://github.com/OpenBladeProject/openblade-core/pull/997))
 - Keep Razer-driver function-row media keys and SnapTap working after focus briefly leaves every window, such as at the lock screen, and when a key is pressed while Windows is still starting. ([#990](https://github.com/OpenBladeProject/openblade-core/pull/990))
 - Keep Razer-driver function-row media keys and SnapTap working when a key or mouse button is held while OpenBlade turns them back on, such as right after switching windows. If they still need recovery, switch input methods or turn SnapTap off and on instead of restarting Windows. ([#1000](https://github.com/OpenBladeProject/openblade-core/pull/1000))
+- Fix Razer-driver function-row media keys and SnapTap turning off when the laptop is briefly too busy, such as while a game starts. They now come back on their own. If this keeps happening, switch input methods or turn SnapTap off and on. ([#1006](https://github.com/OpenBladeProject/openblade-core/pull/1006))
+- When Windows hook can't take over because Razer driver still holds SnapTap or the function row, the status now says to switch back to Razer driver once instead of suggesting a restart. ([#1006](https://github.com/OpenBladeProject/openblade-core/pull/1006))
 - Fix clicking Function keys or Media keys under **Function key behavior**, which opened or closed the card instead of changing the setting. ([#1000](https://github.com/OpenBladeProject/openblade-core/pull/1000))
 
 ## [0.65.1-nightly.117] - 2026-11-20

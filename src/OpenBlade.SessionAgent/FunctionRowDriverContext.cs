@@ -23,6 +23,13 @@ internal sealed class FunctionRowDriverContext : IDisposable, IReactiveKeyboardS
     private int failed;
     private int disposed;
 
+    /// <summary>
+    /// Keyboard packets seen by this process's Fn observer. A second Raw Input
+    /// registration here would take keyboard packets away from that observer, so
+    /// the delivery check shares them instead.
+    /// </summary>
+    internal SnapTapKeyboardFeed DeliveryFeed { get; } = new();
+
     internal FunctionRowDriverContext(RazerSnapTapDriverProfile profile)
     {
         expectedDevice = profile.ProductId switch
@@ -81,6 +88,8 @@ internal sealed class FunctionRowDriverContext : IDisposable, IReactiveKeyboardS
             PublishBlade18FnShortcut = _ => { },
             IsBlade18FnInputAdmitted = value.IsBlade18DriverFunctionRowAdmitted,
             ResetFunctionRowInput = pump.Reset,
+            ObserveKeyboardInput = DeliveryFeed.Post,
+            ObserveKeyboardInputCaughtUp = DeliveryFeed.MarkCaughtUp,
         });
         Volatile.Write(ref source, metadata);
         return metadata;
