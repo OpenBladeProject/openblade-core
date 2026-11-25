@@ -51,6 +51,10 @@ internal sealed class CoolingPadControlRuntime(
     private int outsideReadFailures;
     // Set when the session used for the last confirmed write was replaced during control.
     private bool connectionLost;
+    // Set when a lighting change made elsewhere was left in place while the fan stays controlled,
+    // for example after the pad's fan button also reset its lighting. Automatic writes and
+    // comparisons then leave lighting alone until the user applies settings or releases control.
+    private bool lightingKept;
     // Restoring a change made elsewhere is bounded so OpenBlade never fights another controller.
     internal const int OutsideRestorationLimit = 3;
     internal static readonly TimeSpan OutsideRestorationWindow = TimeSpan.FromMinutes(10);
@@ -81,6 +85,7 @@ internal sealed class CoolingPadControlRuntime(
         if (owner == user && !configurationFailure) { return; }
         Revoke();
         await gate.WaitAsync(token).ConfigureAwait(false);
+        lightingKept = false;
         try
         {
             try
@@ -142,22 +147,41 @@ internal sealed class CoolingPadControlRuntime(
             if (ownership is null) { await CloseDeviceAsync(token).ConfigureAwait(false); }
             return Result(ControlOperationStatus.Stored);
         }
+        catch (Exception exception) when (exception is TimeoutException
+            || exception is CoolingPadOperationException { SubmissionUnknown: false } && device is { Usable: false })
+        {
+            // A read submits nothing, and a timed-out exchange or the session it retired is not a
+            // change or a disconnect. Keep control and the last confirmed status, including the
+            // message explaining it; maintenance reopens the retired session. A port that cannot
+            // be opened or a refusal is still reported below.
+            DiagnosticTrace.TraceException(nameof(CoolingPadControlRuntime), nameof(ReadAsync), exception);
+            return new(ControlOperationStatus.Failed, BoundMessage(exception.Message));
+        }
         catch (Exception exception) when (exception is not OperationCanceledException)
         { return Fail(exception, false); }
         finally { gate.Release(); }
     }
 
+    /// <param name="resumption">
+    /// True when the service applies saved settings again after a handback. It keeps lighting
+    /// that was left as changed elsewhere; the user's own Apply manages lighting again.
+    /// </param>
     internal async Task<ControlOperationResult> ApplyAsync(CoolingPadSettings settings,
-        Func<bool> admission, CancellationToken token, Func<bool>? continuedOwnership = null)
+        Func<bool> admission, CancellationToken token, Func<bool>? continuedOwnership = null, bool resumption = false)
     {
         if (!CoolingPadSettings.IsWellFormed(settings)) { return Block("Cooling pad settings are invalid."); }
         await gate.WaitAsync(token).ConfigureAwait(false);
         try
         {
-            ControlOperationResult result = await ApplyCoreAsync(Freeze(settings), admission, token, continuedOwnership)
-                .ConfigureAwait(false);
+            bool keepLighting = resumption && lightingKept;
+            ControlOperationResult result = await ApplyCoreAsync(Freeze(settings), admission, token, continuedOwnership,
+                keepLighting).ConfigureAwait(false);
             // An accepted setting starts a new allowance for restoring changes made elsewhere.
-            if (result.Status is ControlOperationStatus.Applied or ControlOperationStatus.Stored) { outsideRestorations.Clear(); }
+            if (result.Status is ControlOperationStatus.Applied or ControlOperationStatus.Stored)
+            {
+                outsideRestorations.Clear();
+                lightingKept = keepLighting;
+            }
             return result;
         }
         finally { gate.Release(); }
@@ -165,8 +189,9 @@ internal sealed class CoolingPadControlRuntime(
 
     // Runs under the serial gate. A refusal before submission saves nothing, so maintenance and
     // resumption cannot later apply settings that were reported as not accepted.
+    // keepLighting writes only the fan and leaves the pad's current lighting as it is.
     private async Task<ControlOperationResult> ApplyCoreAsync(CoolingPadSettings settings,
-        Func<bool> admission, CancellationToken token, Func<bool>? continuedOwnership)
+        Func<bool> admission, CancellationToken token, Func<bool>? continuedOwnership, bool keepLighting = false)
     {
         bool submitted = false;
         try
@@ -182,7 +207,7 @@ internal sealed class CoolingPadControlRuntime(
             if (ownership is not null && ownership.Baseline.Identity != baseline.Identity)
             { return Block("The connected cooling pad changed during control."); }
             bool fan = settings.FanMode != CoolingPadFanMode.Keep;
-            bool lighting = settings.LightingMode != CoolingPadLightingMode.Keep;
+            bool lighting = settings.LightingMode != CoolingPadLightingMode.Keep && !keepLighting;
             if (fan && baseline.FanConfiguration is null
                 || lighting && (baseline.LightingConfiguration is null || baseline.BrightnessRaw is null))
             { return Block("The affected cooling pad settings could not be read for restoration."); }
@@ -285,6 +310,8 @@ internal sealed class CoolingPadControlRuntime(
         try
         {
             leases.Clear();
+            // A service handback keeps lighting left as changed elsewhere for resumption.
+            if (userRequested) { lightingKept = false; }
             await LoadOwnershipAsync(token).ConfigureAwait(false);
             if (userRequested && owner is not null && resumeIntent)
             {
@@ -405,12 +432,11 @@ internal sealed class CoolingPadControlRuntime(
                     return;
                 }
                 outsideReadFailures = 0;
-                (bool fanOutside, bool lightingOutside) = OutsideChanges(expected, current, settings);
+                (bool fanOutside, bool lightingOutside) = OutsideChanges(expected, current, Managed(settings));
                 if (fanOutside || lightingOutside)
                 {
                     await HandleOutsideChangeAsync(current, fanOutside, lightingOutside,
-                        restoreOutsideChanges && (!lightingOutside || restoreOutsideLighting), admission, token)
-                        .ConfigureAwait(false);
+                        restoreOutsideChanges, restoreOutsideLighting, admission, token).ConfigureAwait(false);
                     return;
                 }
             }
@@ -431,7 +457,7 @@ internal sealed class CoolingPadControlRuntime(
                 }
             }
             // A lost session waits for the next check to reconnect and reapply.
-            if (settings.LightingMode == CoolingPadLightingMode.KeyboardMirror && !connectionLost && device is { Usable: true }
+            if (Managed(settings).LightingMode == CoolingPadLightingMode.KeyboardMirror && !connectionLost && device is { Usable: true }
                 && KeyboardLightingFrameStream.Latest is { } frame && frame.Sequence != mirroredSequence)
             {
                 submitted = true;
@@ -464,19 +490,40 @@ internal sealed class CoolingPadControlRuntime(
     // Runs under the serial gate from maintenance, after a read found the pad's controlled
     // settings changed by another controller, the pad itself or its buttons.
     private async Task HandleOutsideChangeAsync(CoolingPadDeviceSnapshot current, bool fanOutside, bool lightingOutside,
-        bool restore, Func<bool> admission, CancellationToken token)
+        bool restore, bool restoreLighting, Func<bool> admission, CancellationToken token)
     {
         DateTimeOffset now = clock.GetUtcNow();
         while (outsideRestorations.Count != 0 && now - outsideRestorations.Peek() >= OutsideRestorationWindow)
         { outsideRestorations.Dequeue(); }
+        if (restore && lightingOutside && !restoreLighting)
+        {
+            // Only the lighting opt-in may rewrite lighting changed elsewhere, so it is left as it
+            // is. A controlled fan stays controlled: the pad's fan button can also reset its lighting.
+            if (!await KeepOutsideLightingAsync(token).ConfigureAwait(false)) { restore = false; }
+            else if (!fanOutside)
+            {
+                controlled = current;
+                UpdateStatus(previous => previous with
+                {
+                    Message = "The cooling pad lighting was changed outside OpenBlade and is left as it is. Apply lighting again to manage it.",
+                });
+                return;
+            }
+        }
         if (restore && outsideRestorations.Count < OutsideRestorationLimit)
         {
             // The same admitted, read-back apply as a user's change. A refused or failed
             // apply reports and stops as it would for the user; it is not retried here.
             outsideRestorations.Enqueue(now);
-            ControlOperationResult result = await ApplyCoreAsync(status.Requested, admission, token, authority).ConfigureAwait(false);
+            ControlOperationResult result = await ApplyCoreAsync(status.Requested, admission, token, authority, lightingKept)
+                .ConfigureAwait(false);
             if (result.Status == ControlOperationStatus.Applied)
-            { UpdateStatus(previous => previous with { Message = "Cooling pad settings changed outside OpenBlade and were restored." }); }
+            {
+                string message = lightingOutside && lightingKept
+                    ? "The cooling pad fan was changed outside OpenBlade and restored. Its lighting changed too and is left as it is."
+                    : "Cooling pad settings changed outside OpenBlade and were restored.";
+                UpdateStatus(previous => previous with { Message = message });
+            }
             // A refused restoration would otherwise repeat at every check; stop instead.
             if (result.Status == ControlOperationStatus.Blocked && status.Active)
             {
@@ -521,19 +568,22 @@ internal sealed class CoolingPadControlRuntime(
             Fail(new IOException("The cooling pad connection could not be reopened. OpenBlade stopped controlling it."), false);
             return;
         }
-        if (settings.LightingMode != CoolingPadLightingMode.Keep && !restoreLighting)
+        if (Managed(settings).LightingMode != CoolingPadLightingMode.Keep && !restoreLighting)
         {
             // The stored effect, brightness and device mode read the same through any session.
-            // Without the lighting opt-in, a change there releases control instead of being rewritten.
+            // Without the lighting opt-in, a change there is left as it is instead of being
+            // rewritten; a controlled fan is still applied again, otherwise control is released.
             CoolingPadDeviceSnapshot current = FreezeSnapshot(await ReadDeviceAsync(token).ConfigureAwait(false));
-            if (!SameEffect(expected.LightingConfiguration, current.LightingConfiguration)
+            if ((!SameEffect(expected.LightingConfiguration, current.LightingConfiguration)
                 || expected.BrightnessRaw != current.BrightnessRaw || expected.DeviceMode != current.DeviceMode)
+                && !await KeepOutsideLightingAsync(token).ConfigureAwait(false))
             {
-                await HandleOutsideChangeAsync(current, false, true, false, admission, token).ConfigureAwait(false);
+                await HandleOutsideChangeAsync(current, false, true, false, false, admission, token).ConfigureAwait(false);
                 return;
             }
         }
-        ControlOperationResult result = await ApplyCoreAsync(status.Requested, admission, token, authority).ConfigureAwait(false);
+        ControlOperationResult result = await ApplyCoreAsync(status.Requested, admission, token, authority, lightingKept)
+            .ConfigureAwait(false);
         if (result.Status == ControlOperationStatus.Applied)
         {
             outsideRestorations.Enqueue(now);
@@ -556,6 +606,7 @@ internal sealed class CoolingPadControlRuntime(
     {
         Revoke();
         leases.Clear();
+        lightingKept = false;
         authority = static () => false;
         controlled = null;
         bool submitted = false;
@@ -592,6 +643,25 @@ internal sealed class CoolingPadControlRuntime(
             throw;
         }
         catch (Exception exception) { Fail(exception, submitted); }
+    }
+
+    // The parts of the saved settings OpenBlade currently writes and compares.
+    private CoolingPadSettings Managed(CoolingPadSettings settings) =>
+        lightingKept ? settings with { LightingMode = CoolingPadLightingMode.Keep } : settings;
+
+    // Leaves lighting changed elsewhere in place while a controlled fan stays controlled. Release and
+    // service handback then restore only the fan, because the new lighting is no longer OpenBlade's
+    // change. False when the fan is not controlled, so the caller releases control instead.
+    private async Task<bool> KeepOutsideLightingAsync(CancellationToken token)
+    {
+        if (status.Requested.FanMode == CoolingPadFanMode.Keep || ownership is not { FanChanged: true } owned) { return false; }
+        lightingKept = true;
+        if (owned.LightingChanged)
+        {
+            ownership = owned with { LightingChanged = false };
+            await store.SaveOwnershipAsync(ownership, token).ConfigureAwait(false);
+        }
+        return true;
     }
 
     /// <summary>Which controlled parts a read shows changed since this session confirmed them.</summary>
@@ -669,7 +739,7 @@ internal sealed class CoolingPadControlRuntime(
         nextResumeAttempt = clock.GetUtcNow() + ResumeRetryInterval;
         await SetUserAsync(user, token).ConfigureAwait(false);
         if (!resumeIntent || !ResumeEligible()) { return; }
-        await ApplyAsync(Status.Requested, admission, token, continuedOwnership).ConfigureAwait(false);
+        await ApplyAsync(Status.Requested, admission, token, continuedOwnership, resumption: true).ConfigureAwait(false);
     }
 
     private bool ResumeEligible() => !configurationFailure

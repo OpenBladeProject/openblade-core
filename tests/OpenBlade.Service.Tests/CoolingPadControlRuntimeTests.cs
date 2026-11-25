@@ -1024,7 +1024,7 @@ public sealed class CoolingPadControlRuntimeTests
     }
 
     [Fact]
-    public async Task OutsideLightingChangeWithoutTheLightingOptInReleasesInsteadOfRestoring()
+    public async Task OutsideLightingChangeWithoutTheLightingOptInIsKeptWhileTheFanStaysControlled()
     {
         var clock = new Clock();
         var provider = new Provider { Connection = CoolingPadConnectionState.PresentExact };
@@ -1035,14 +1035,126 @@ public sealed class CoolingPadControlRuntimeTests
         Assert.Equal(ControlOperationStatus.Applied, (await runtime.ApplyAsync(both, () => true, default)).Status);
 
         // Restore them is selected, but only the lighting ownership policy restores lighting.
+        // The pad's fan button changes the fan and resets the lighting: only the fan is restored.
+        provider.Pad.Snapshot = provider.Pad.Snapshot with
+        {
+            FanConfiguration = new(CoolingPadFanOwnership.Firmware, CoolingPadFanPreset.High, 800),
+            BrightnessRaw = 255,
+        };
+        clock.Now += CoolingPadControlRuntime.OutsideChangeCheckInterval;
+        await runtime.MaintainAsync(() => true, default, restoreOutsideChanges: true, restoreOutsideLighting: false);
+        Assert.Equal(["fan:Fixed:1500", "lighting", "fan:Fixed:1500"], provider.Pad.Writes);
+        Assert.True(runtime.Status.Active);
+        Assert.Equal("The cooling pad fan was changed outside OpenBlade and restored. Its lighting changed too and is left as it is.",
+            runtime.Status.Message);
+        CoolingPadOwnershipRecord? owned = await store.LoadOwnershipAsync(default);
+        Assert.True(owned!.FanChanged);
+        Assert.False(owned.LightingChanged);
+
+        // Later lighting changes are no longer compared or rewritten.
+        provider.Pad.Snapshot = provider.Pad.Snapshot with { BrightnessRaw = 40 };
+        clock.Now += CoolingPadControlRuntime.OutsideChangeCheckInterval;
+        await runtime.MaintainAsync(() => true, default, restoreOutsideChanges: true, restoreOutsideLighting: false);
+        Assert.Equal(3, provider.Pad.Writes.Count);
+        Assert.True(runtime.Status.Active);
+
+        // A service handback and resumption leave the lighting alone too.
+        Assert.Equal(ControlOperationStatus.Applied, (await runtime.HandBackForUserTransitionAsync(() => true, default)).Status);
+        Assert.True(provider.Pad.RestoredFan);
+        Assert.False(provider.Pad.RestoredLighting);
+        await runtime.ResumeSavedControlAsync("owner", () => true, () => true, default);
+        Assert.True(runtime.Status.Active);
+        Assert.Equal(["fan:Fixed:1500", "lighting", "fan:Fixed:1500", "fan:Fixed:1500"], provider.Pad.Writes);
+
+        // The user's own Apply manages the lighting again.
+        Assert.Equal(ControlOperationStatus.Applied, (await runtime.ApplyAsync(both, () => true, default)).Status);
+        Assert.Equal("lighting", provider.Pad.Writes[^1]);
+        Assert.True((await store.LoadOwnershipAsync(default))!.LightingChanged);
+    }
+
+    [Fact]
+    public async Task AnOutsideLightingOnlyChangeWithoutTheLightingOptInIsKeptWithoutAWrite()
+    {
+        var clock = new Clock();
+        var provider = new Provider { Connection = CoolingPadConnectionState.PresentExact };
+        var store = new CoolingPadStateStore();
+        var runtime = new CoolingPadControlRuntime(provider, store, new Temperatures(), clock);
+        await runtime.SetUserAsync("owner", default);
+        var both = Fixed with { LightingMode = CoolingPadLightingMode.Static, BrightnessPercent = 80 };
+        Assert.Equal(ControlOperationStatus.Applied, (await runtime.ApplyAsync(both, () => true, default)).Status);
+
         provider.Pad.Snapshot = provider.Pad.Snapshot with { BrightnessRaw = 10 };
         clock.Now += CoolingPadControlRuntime.OutsideChangeCheckInterval;
         await runtime.MaintainAsync(() => true, default, restoreOutsideChanges: true, restoreOutsideLighting: false);
         Assert.Equal(["fan:Fixed:1500", "lighting"], provider.Pad.Writes);
+        Assert.True(runtime.Status.Active);
+        Assert.Equal("The cooling pad lighting was changed outside OpenBlade and is left as it is. Apply lighting again to manage it.",
+            runtime.Status.Message);
+        Assert.False((await store.LoadOwnershipAsync(default))!.LightingChanged);
+
+        // A later fan change is still restored, without rewriting the lighting.
+        provider.Pad.Snapshot = provider.Pad.Snapshot with { FanConfiguration = new(CoolingPadFanOwnership.Firmware, CoolingPadFanPreset.High, 800) };
+        clock.Now += CoolingPadControlRuntime.OutsideChangeCheckInterval;
+        await runtime.MaintainAsync(() => true, default, restoreOutsideChanges: true, restoreOutsideLighting: false);
+        Assert.Equal(["fan:Fixed:1500", "lighting", "fan:Fixed:1500"], provider.Pad.Writes);
+        Assert.Equal("Cooling pad settings changed outside OpenBlade and were restored.", runtime.Status.Message);
+
+        // Release restores only the fan.
+        Assert.Equal(ControlOperationStatus.Applied, (await runtime.ReleaseAsync(() => true, default, userRequested: true)).Status);
         Assert.True(provider.Pad.RestoredFan);
+        Assert.False(provider.Pad.RestoredLighting);
+    }
+
+    [Fact]
+    public async Task OutsideLightingChangeWithoutTheLightingOptInReleasesWhenTheFanIsNotControlled()
+    {
+        var clock = new Clock();
+        var provider = new Provider { Connection = CoolingPadConnectionState.PresentExact };
+        var runtime = new CoolingPadControlRuntime(provider, new CoolingPadStateStore(), new Temperatures(), clock);
+        await runtime.SetUserAsync("owner", default);
+        var lightingOnly = Fixed with { FanMode = CoolingPadFanMode.Keep, LightingMode = CoolingPadLightingMode.Static, BrightnessPercent = 80 };
+        Assert.Equal(ControlOperationStatus.Applied, (await runtime.ApplyAsync(lightingOnly, () => true, default)).Status);
+
+        provider.Pad.Snapshot = provider.Pad.Snapshot with { BrightnessRaw = 10 };
+        clock.Now += CoolingPadControlRuntime.OutsideChangeCheckInterval;
+        await runtime.MaintainAsync(() => true, default, restoreOutsideChanges: true, restoreOutsideLighting: false);
+        Assert.Equal(["lighting"], provider.Pad.Writes);
         Assert.False(provider.Pad.RestoredLighting);
         Assert.False(runtime.Status.Active);
         Assert.Equal("Cooling pad settings changed outside OpenBlade. OpenBlade stopped controlling it.", runtime.Status.Message);
+    }
+
+    [Fact]
+    public async Task AStatusReadThatFailsKeepsControlAndTheLastExplanation()
+    {
+        var clock = new Clock();
+        var provider = new Provider { Connection = CoolingPadConnectionState.PresentExact };
+        var runtime = new CoolingPadControlRuntime(provider, new CoolingPadStateStore(), new Temperatures(), clock);
+        await runtime.SetUserAsync("owner", default);
+        Assert.Equal(ControlOperationStatus.Applied, (await runtime.ApplyAsync(Fixed, () => true, default)).Status);
+
+        // While controlling, a page's status read times out.
+        provider.Pad.ReadFailure = new TimeoutException("The operation has timed out.");
+        Assert.Equal(ControlOperationStatus.Failed, (await runtime.ReadAsync(default)).Status);
+        Assert.True(runtime.Status.Active);
+        Assert.False(runtime.Status.RecoveryRequired);
+        Assert.Equal("Cooling pad settings applied.", runtime.Status.Message);
+        provider.Pad.ReadFailure = null;
+        clock.Now += CoolingPadControlRuntime.OutsideChangeCheckInterval;
+        await runtime.MaintainAsync(() => true, default, restoreOutsideChanges: false);
+        Assert.True(runtime.Status.Active);
+
+        // After an outside change released control, a failed read keeps that reason on the page.
+        provider.Pad.Snapshot = provider.Pad.Snapshot with { FanConfiguration = new(CoolingPadFanOwnership.Firmware, CoolingPadFanPreset.High, 800) };
+        clock.Now += CoolingPadControlRuntime.OutsideChangeCheckInterval;
+        await runtime.MaintainAsync(() => true, default, restoreOutsideChanges: false);
+        const string Released = "Cooling pad settings changed outside OpenBlade. OpenBlade stopped controlling it.";
+        Assert.Equal(Released, runtime.Status.Message);
+        provider.Pad.ReadFailure = new TimeoutException("The operation has timed out.");
+        Assert.Equal(ControlOperationStatus.Failed, (await runtime.ReadAsync(default)).Status);
+        Assert.Equal(Released, runtime.Status.Message);
+        Assert.False(runtime.Status.RecoveryRequired);
+        Assert.Single(provider.Pad.Writes);
     }
 
     [Fact]
@@ -1181,7 +1293,7 @@ public sealed class CoolingPadControlRuntimeTests
     }
 
     [Fact]
-    public async Task ReconnectWithoutTheLightingOptInRewritesOnlyUnchangedLighting()
+    public async Task ReconnectWithoutTheLightingOptInRewritesOnlyUnchangedLightingAndKeepsChangedLighting()
     {
         var both = Fixed with { LightingMode = CoolingPadLightingMode.Static, BrightnessPercent = 80 };
         var clock = new Clock();
@@ -1198,16 +1310,16 @@ public sealed class CoolingPadControlRuntimeTests
         Assert.True(runtime.Status.Active);
         Assert.Equal(4, provider.Pad.Writes.Count);
 
-        // Brightness changed while the session was lost: release control and keep that change.
+        // Brightness changed while the session was lost: keep that change and apply only the fan again.
         provider.Pad.Unusable = true;
         provider.Pad.Snapshot = provider.Pad.Snapshot with { BrightnessRaw = 10 };
         clock.Now += CoolingPadControlRuntime.OutsideChangeCheckInterval;
         await runtime.MaintainAsync(() => true, default, restoreOutsideChanges: true, restoreOutsideLighting: false);
-        Assert.False(runtime.Status.Active);
-        Assert.Equal(4, provider.Pad.Writes.Count);
-        Assert.True(provider.Pad.RestoredFan);
-        Assert.False(provider.Pad.RestoredLighting);
-        Assert.Equal("Cooling pad settings changed outside OpenBlade. OpenBlade stopped controlling it.", runtime.Status.Message);
+        Assert.True(runtime.Status.Active);
+        Assert.Equal(5, provider.Pad.Writes.Count);
+        Assert.Equal("fan:Fixed:1500", provider.Pad.Writes[^1]);
+        Assert.Null(provider.Pad.Restored);
+        Assert.Equal("The cooling pad connection was reopened and its settings were applied again.", runtime.Status.Message);
     }
 
     [Fact]
