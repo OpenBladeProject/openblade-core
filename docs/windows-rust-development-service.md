@@ -433,10 +433,11 @@ replace returned `Ok`, so memory never runs ahead of the file.
   refuse every later claim. Once the claim has returned, the pace is checked
   again with its real time spent. When the setter, its acknowledgement and
   the readback no longer fit, no setter is sent, the claim reverts as known
-  not submitted, and a release reports `Exhausted`. A release's settle is
-  charged at the longer of the floor and the last measured replace, which
-  is its own claim's when it made one. The floor is an estimate pending an
-  attended timing on RZ09-0581. The keyboard's share is unchanged.
+  not submitted, and a release reports `Exhausted`, or `Unadmitted` when
+  its admission has ended. A release's settle is charged at the longer of
+  the floor and the last measured replace, which is its own claim's when it
+  made one. The floor is an estimate pending an attended timing on
+  RZ09-0581. The keyboard's share is unchanged.
 - Any failed record write closes the record for the process, and nothing
   reopens it: after an error the file may hold the old record or the new one.
   A record that cannot be read or is refused (corrupt, another version, a
@@ -610,9 +611,10 @@ exception is an intent whose setter was never sent and that was not
 reverted: a claim whose write failed after it landed, or a release whose
 share had no room for the revert. It names IDs that sent no `00/04`, so the
 newest reply, the earlier record's, is not seeded, and a later setter that
-read it would still need its independent `00/84` readback to confirm. The next process quarantines
-them in its transaction pool beside the journal's (`transaction_seed`);
-managed restarts its IDs at 1 per port. No ID is pinned: the job reserves
+read it would still need its independent `00/84` readback to confirm. The
+next process quarantines the record's IDs in its transaction pool
+beside the journal's (`transaction_seed`); managed restarts its IDs at 1
+per port. No ID is pinned: the job reserves
 both pairs before its first send, and the pool skips the seeded ones. A sent
 ID stays quarantined until a correlated reply is read, and retirement frees
 the unsent one, so long runs keep at most one answered ID per command out of
