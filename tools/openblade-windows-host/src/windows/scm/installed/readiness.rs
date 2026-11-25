@@ -575,6 +575,8 @@ async fn serve_connection(
                 | StatusRequest::SetFullChargeOverride { .. }
                 | StatusRequest::SetFanOverride { .. }
                 | StatusRequest::SetPerformanceOverride { .. }
+                | StatusRequest::CyclePerformanceShortcut { .. }
+                | StatusRequest::SetPerformanceShortcutPreview { .. }
                 | StatusRequest::ReportApplicationContext { .. }
                 | StatusRequest::UpdateProfiles { .. }
                 | StatusRequest::SetThermalControlPolicy { .. }
@@ -882,7 +884,9 @@ fn mutation_budget(request: &StatusRequest) -> Duration {
     if request.battery_request().is_some()
         || matches!(
             request,
-            StatusRequest::SetPerformanceOverride { .. } | StatusRequest::SetFanOverride { .. }
+            StatusRequest::SetPerformanceOverride { .. }
+                | StatusRequest::SetFanOverride { .. }
+                | StatusRequest::CyclePerformanceShortcut { .. }
         )
     {
         RECIPE_BUDGET

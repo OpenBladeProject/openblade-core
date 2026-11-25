@@ -1243,6 +1243,10 @@ pub(super) struct ReadSource {
     battery_intent: Rc<RefCell<Option<IntentFn>>>,
     #[cfg(feature = "service-thermal-mutation-v1")]
     battery_expiry: Rc<RefCell<Option<ExpiryFn>>>,
+    // Managed `PerformanceShortcutPreview`, published with every active
+    // status (`current_policy`).
+    #[cfg(feature = "service-performance-shortcut-v1")]
+    shortcut_preview: Rc<RefCell<Option<crate::service_status::ShortcutPreview>>>,
     last: Rc<RefCell<Option<(Snapshot, Instant)>>>,
     /// When the job behind `last` started. Observations finish out of job
     /// order while one waits for its GPU sample, so a reading from an
@@ -1347,6 +1351,8 @@ impl ReadSource {
             battery_intent: Rc::default(),
             #[cfg(feature = "service-thermal-mutation-v1")]
             battery_expiry: Rc::default(),
+            #[cfg(feature = "service-performance-shortcut-v1")]
+            shortcut_preview: Rc::default(),
             last: Rc::default(),
             newest_job: Rc::default(),
             #[cfg(feature = "service-profile-triggers-v1")]
@@ -2013,7 +2019,51 @@ impl ReadSource {
         )?;
         #[cfg(feature = "service-profile-triggers-v1")]
         let value = self.with_drift(value)?;
+        #[cfg(feature = "service-performance-shortcut-v1")]
+        let value = value.with_shortcut_preview(self.shortcut_preview.borrow().as_ref());
         Ok(value)
+    }
+    /// Managed `SetPerformanceShortcutPreviewAsync` over the held preview:
+    /// a clear removes only the session's own generation, and a preview
+    /// replaces any but a newer one of the same session. Returns managed's
+    /// reply and whether the preview changed. It takes no operation gate
+    /// and reads or writes no firmware.
+    #[cfg(feature = "service-performance-shortcut-v1")]
+    pub(super) fn set_shortcut_preview(
+        &self,
+        session_id: &str,
+        generation: i64,
+        preset: Option<i32>,
+    ) -> (&'static str, bool) {
+        const NEWER: &str = "A newer performance shortcut preview is already active.";
+        // Managed compares GUID values, so the spelling's case is not part
+        // of the session.
+        let session_id = session_id.to_ascii_lowercase();
+        let mut held = self.shortcut_preview.borrow_mut();
+        let Some(preset) = preset else {
+            if held
+                .as_ref()
+                .is_some_and(|held| held.session_id == session_id && held.generation == generation)
+            {
+                *held = None;
+                return ("Performance shortcut preview was cleared.", true);
+            }
+            return (NEWER, false);
+        };
+        if held
+            .as_ref()
+            .is_some_and(|held| held.session_id == session_id && held.generation > generation)
+        {
+            return (NEWER, false);
+        }
+        let next = crate::service_status::ShortcutPreview {
+            session_id,
+            generation,
+            preset,
+        };
+        let changed = held.as_ref() != Some(&next);
+        *held = Some(next);
+        ("Performance shortcut preview was published.", changed)
     }
     async fn drain_mutation(&self, reconstruct: bool) -> io::Result<()> {
         let active = self.mutation.borrow().clone();

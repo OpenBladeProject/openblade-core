@@ -553,7 +553,11 @@ impl GuardedStatus {
 /// performance request's is: rebased on the latest publication, projected
 /// with this user's policy, retained by the Reader and given the next
 /// revision.
-#[cfg(feature = "service-profile-triggers-v1")]
+/// A performance shortcut's status is published the same way.
+#[cfg(any(
+    feature = "service-profile-triggers-v1",
+    feature = "service-performance-shortcut-v1"
+))]
 fn publish_reconciled(
     publisher: &watch::Sender<Arc<Publication>>,
     mailbox: &super::mailbox_read::MailboxSource,
@@ -1017,6 +1021,70 @@ impl StatusSource for GuardedStatus {
                     } else {
                         Ok((outcome, None))
                     }
+                }
+                #[cfg(feature = "service-performance-shortcut-v1")]
+                crate::service_status::StatusRequest::CyclePerformanceShortcut {
+                    request_id,
+                    source,
+                    ..
+                } => {
+                    // The codec admits only a defined source.
+                    let source = super::thermal_mutation::ShortcutSource::from_wire(source)
+                        .ok_or_else(|| invalid("performance shortcut source is undefined"))?;
+                    let status = publisher.borrow().active.clone();
+                    let (outcome, status) = runtime
+                        .cycle_shortcut(
+                            mailbox.clone(),
+                            caller,
+                            sid,
+                            request_id,
+                            source,
+                            deadline,
+                            status,
+                        )
+                        .await?;
+                    let Some(status) = status else {
+                        return Ok((outcome, None));
+                    };
+                    let status = publish_reconciled(&publisher, &mailbox, status)?;
+                    Ok((outcome, Some(status)))
+                }
+                // Managed publishes the preview without the operation gate: it
+                // stores no intent and reads or writes no firmware.
+                #[cfg(feature = "service-performance-shortcut-v1")]
+                crate::service_status::StatusRequest::SetPerformanceShortcutPreview {
+                    session_id,
+                    generation,
+                    preset,
+                    ..
+                } => {
+                    use super::thermal_mutation::Outcome;
+                    if caller.logon != super::Logon::Interactive
+                        || caller.control_session != Some(caller.session)
+                    {
+                        return Ok((
+                            Outcome::blocked("The active interactive Windows user is required."),
+                            None,
+                        ));
+                    }
+                    let super::mailbox_read::MailboxSource::Reader(reader) = &mailbox else {
+                        return Ok((
+                            Outcome::blocked("Performance shortcut previews are unavailable."),
+                            None,
+                        ));
+                    };
+                    let (message, changed) =
+                        reader.set_shortcut_preview(&session_id, generation, preset);
+                    let outcome = Outcome {
+                        status: 0,
+                        message: message.into(),
+                    };
+                    if !changed {
+                        return Ok((outcome, None));
+                    }
+                    let latest = publisher.borrow().active.clone();
+                    let status = publish_reconciled(&publisher, &mailbox, latest)?;
+                    Ok((outcome, Some(status)))
                 }
                 _ => Ok((
                     super::thermal_mutation::Outcome::blocked("Unsupported mutation operation."),

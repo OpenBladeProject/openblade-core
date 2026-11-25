@@ -130,7 +130,7 @@ mod tests {
     }
 
     // One valid request per variant: each decodes wherever it is compiled.
-    fn variants() -> [StatusRequest; 14] {
+    fn variants() -> [StatusRequest; 16] {
         let id = || ID.to_owned();
         let version = PROTOCOL_VERSION;
         [
@@ -206,6 +206,18 @@ mod tests {
             StatusRequest::ReapplyChangedSettings {
                 version,
                 request_id: id(),
+            },
+            StatusRequest::CyclePerformanceShortcut {
+                version,
+                request_id: id(),
+                source: 1,
+            },
+            StatusRequest::SetPerformanceShortcutPreview {
+                version,
+                request_id: id(),
+                session_id: id(),
+                generation: 1,
+                preset: None,
             },
         ]
     }

@@ -128,6 +128,23 @@ pub(crate) enum StatusRequest {
         request_id: String,
         live_readings_enabled: bool,
     },
+    /// Managed `CyclePerformanceShortcutRequest`; `source` is the managed
+    /// `PerformanceShortcutSource`, which the codec requires to be defined.
+    CyclePerformanceShortcut {
+        version: i32,
+        request_id: String,
+        source: i32,
+    },
+    /// Managed `SetPerformanceShortcutPreviewRequest`. Every member is a
+    /// required constructor member, `preset` included, which may be null.
+    SetPerformanceShortcutPreview {
+        version: i32,
+        request_id: String,
+        session_id: String,
+        generation: i64,
+        #[serde(deserialize_with = "Deserialize::deserialize")]
+        preset: Option<i32>,
+    },
     ObserveState {
         include_live_readings: bool,
         #[serde(default = "all_live_readings")]
@@ -194,7 +211,7 @@ impl StatusRequest {
     /// The discriminator of every variant. `operation` maps each variant to
     /// its entry, so a new variant cannot be added without listing it here.
     #[cfg(feature = "installed-service-candidate")]
-    pub(crate) const OPERATIONS: [&'static str; 14] = [
+    pub(crate) const OPERATIONS: [&'static str; 16] = [
         "setBatteryPolicy",
         "setBatteryProtection",
         "setFullChargeOverride",
@@ -209,6 +226,8 @@ impl StatusRequest {
         "acknowledgeThermalPolicyUpgradeDisclosure",
         "exportDiagnostics",
         "reapplyChangedSettings",
+        "cyclePerformanceShortcut",
+        "setPerformanceShortcutPreview",
     ];
 
     #[cfg(all(test, feature = "installed-service-candidate"))]
@@ -228,6 +247,8 @@ impl StatusRequest {
             Self::AcknowledgeThermalPolicyUpgradeDisclosure { .. } => 11,
             Self::ExportDiagnostics { .. } => 12,
             Self::ReapplyChangedSettings { .. } => 13,
+            Self::CyclePerformanceShortcut { .. } => 14,
+            Self::SetPerformanceShortcutPreview { .. } => 15,
         }]
     }
 
@@ -244,7 +265,8 @@ impl StatusRequest {
         const EXPORT: bool = cfg!(feature = "service-diagnostics-export-v1");
         const POLICY: bool = cfg!(feature = "service-profile-triggers-v1");
         const CONVERGENCE: bool = cfg!(feature = "service-thermal-convergence-v1");
-        const COMPILED: [bool; 14] = [
+        const SHORTCUT: bool = cfg!(feature = "service-performance-shortcut-v1");
+        const COMPILED: [bool; 16] = [
             BATTERY,
             BATTERY,
             BATTERY,
@@ -259,6 +281,8 @@ impl StatusRequest {
             POLICY,
             EXPORT,
             CONVERGENCE,
+            SHORTCUT,
+            SHORTCUT,
         ];
         Self::OPERATIONS
             .iter()
@@ -408,6 +432,16 @@ impl StatusRequest {
                 version,
                 request_id,
                 ..
+            }
+            | Self::CyclePerformanceShortcut {
+                version,
+                request_id,
+                ..
+            }
+            | Self::SetPerformanceShortcutPreview {
+                version,
+                request_id,
+                ..
             } => (*version, request_id),
             Self::ExportDiagnostics {
                 version,
@@ -493,6 +527,35 @@ impl StatusRequest {
             return Err(invalid(
                 "signed thermal convergence composition is unavailable",
             ));
+        }
+        if matches!(
+            self,
+            Self::CyclePerformanceShortcut { .. } | Self::SetPerformanceShortcutPreview { .. }
+        ) && !cfg!(feature = "service-performance-shortcut-v1")
+        {
+            return Err(invalid(
+                "signed performance shortcut composition is unavailable",
+            ));
+        }
+        // Managed `IpcMessageCodec`: `Enum.IsDefined(cycle.Source)`, and for a
+        // preview a non-empty session, a positive generation and a defined or
+        // null preset.
+        if let Self::CyclePerformanceShortcut { source, .. } = self
+            && !matches!(*source, 0 | 1)
+        {
+            return Err(invalid("performance shortcut source is undefined"));
+        }
+        if let Self::SetPerformanceShortcutPreview {
+            session_id,
+            generation,
+            preset,
+            ..
+        } = self
+            && (!is_guid(session_id)
+                || *generation <= 0
+                || preset.is_some_and(|preset| !(0..=9).contains(&preset)))
+        {
+            return Err(invalid("invalid performance shortcut preview"));
         }
         // Managed `IpcMessageCodec`: `Enum.IsDefined(set.Policy)`.
         if let Self::SetThermalControlPolicy { policy, .. } = self
@@ -2052,7 +2115,41 @@ impl Snapshot {
         value.control_access = 1;
         value.read_confirmation = None;
         value.writes_blocked = true;
+        #[cfg(feature = "service-performance-shortcut-v1")]
+        let value = value.with_shortcut_preview(None);
         value
+    }
+}
+
+/// Managed `PerformanceShortcutPreview`: the preset a session's shortcut
+/// key shows before it is released. `session_id` is the lowercase GUID.
+#[cfg(feature = "service-performance-shortcut-v1")]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ShortcutPreview {
+    pub(crate) session_id: String,
+    pub(crate) generation: i64,
+    pub(crate) preset: i32,
+}
+#[cfg(feature = "service-performance-shortcut-v1")]
+impl Snapshot {
+    /// Managed `PerformanceShortcutPreview`, which only the active client
+    /// sees (`CreateInactiveSessionStatus` nulls it): set for an active
+    /// status, removed otherwise. Managed defaults the member to null, so
+    /// an absent one reads the same.
+    pub(crate) fn with_shortcut_preview(mut self, value: Option<&ShortcutPreview>) -> Self {
+        match value.filter(|_| self.control_access == 0) {
+            Some(value) => {
+                self.feature_fields.insert(
+                    "performanceShortcutPreview".into(),
+                    serde_json::to_value(value).expect("a plain record serializes"),
+                );
+            }
+            None => {
+                self.feature_fields.remove("performanceShortcutPreview");
+            }
+        }
+        self
     }
 }
 

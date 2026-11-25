@@ -1546,6 +1546,53 @@ impl Storage {
         let fans = profile["fans"].as_i64().ok_or_else(denied)?;
         Ok(Some((performance as i32, fans as i32)))
     }
+    /// The power profile's own Custom settings for classified class `power`,
+    /// as a performance shortcut that selects Custom reads them
+    /// (`Automation.Profiles.ForPowerSource(source).CustomPerformance`), or
+    /// managed `ProfileDefaults.CreateSafeDefaults`'s when no aggregate is
+    /// stored. `None` is a profile without Custom settings.
+    #[cfg(feature = "service-performance-shortcut-v1")]
+    pub(super) fn profile_custom_performance(&self, power: i32) -> io::Result<Option<Value>> {
+        let key = match power {
+            0 => "pluggedIn",
+            1 => "battery",
+            2 => "usbC",
+            _ => return Ok(None),
+        };
+        let Some(doc) = aggregate(self.files.as_ref(), self.same_path)? else {
+            let defaults = openblade_domain::profile_set::ProfileSet::safe_defaults();
+            let profile = match power {
+                0 => defaults.plugged_in,
+                1 => defaults.battery,
+                _ => defaults.usb_c,
+            };
+            return Ok(profile.custom_performance.map(|custom| {
+                serde_json::json!({
+                    "cpu": custom.cpu.0,
+                    "gpu": custom.gpu.0,
+                    "maximumFans": custom.maximum_fans,
+                    "gpuClockOffsets": custom.gpu_clock_offsets.map(|offsets| serde_json::json!({
+                        "coreMegahertz": offsets.core_megahertz,
+                        "memoryMegahertz": offsets.memory_megahertz,
+                    })),
+                })
+            }));
+        };
+        Ok(doc["profiles"][key]
+            .get("customPerformance")
+            .filter(|custom| !custom.is_null())
+            .cloned())
+    }
+    /// The wire value of the saved performance at class `power` (`desired`'s
+    /// selection), whether or not it names a native destination.
+    #[cfg(feature = "service-performance-shortcut-v1")]
+    pub(super) fn selected_performance(
+        &self,
+        power: i32,
+        profile: Option<&Resolution<'_>>,
+    ) -> io::Result<Option<i32>> {
+        Ok(self.selected(power, profile)?.map(|s| s.value))
+    }
     /// Whether saved fan intent at class `power` is manual: an unexpired
     /// temporary fan override, then a persistent one, then the resolved
     /// profile's mode, which is the application's fan mode or fan control
