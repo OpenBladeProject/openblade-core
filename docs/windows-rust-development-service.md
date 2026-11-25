@@ -997,8 +997,8 @@ marker by name. A build without the feature still refuses the request with
   composes its production writer (`thermal_gpu.rs`), and only for the
   explicit performance requests (see
   [native thermal mutation](windows-native-thermal-mutation.md#gpu-clock-tuning-service-gpu-clock-tuning-v1)).
-  Without that feature, and on every reconciliation path with it,
-  `Storage::gpu_incomplete` still refuses a GPU effect. `setGpuClockTuning`
+  Without that feature, and on every reconciliation path with it (profile
+  saves included), `Storage::gpu_incomplete` still refuses a GPU effect. `setGpuClockTuning`
   is not served yet. The controller ports managed `NvidiaGpuClockOffsetController`:
   exactly one NVIDIA GPU, its exact RZ09-0581 name, the P0 ranges read with
   the versioned structure, core then memory written and read back, and each

@@ -1022,8 +1022,9 @@ performance shortcut is not admitted for packaging.").
 
 The feature composes the RZ09-0581 NVML writer (`thermal_gpu.rs` over
 `gpu_clock_offsets.rs`) into the explicit performance requests:
-`setPerformanceOverride`, a profile save that reaches the paired setter, and
-the performance shortcut. Its image carries the `service-gpu-clock-tuning-v1`
+`setPerformanceOverride` and the performance shortcut. A profile save
+(`updateProfiles`) is a reconciliation, so it keeps the GPU refusal with the
+other reconciliation paths below. Its image carries the `service-gpu-clock-tuning-v1`
 marker, and both package readers refuse the feature and the marker by name: a
 WinVerifyTrust and catalog check of the loaded `nvml.dll` path is still
 required before packaging. NVML loads from System32 only. There is no durable
@@ -1041,18 +1042,30 @@ GPU-only setters (`WindowsVerifiedBladeDeviceProvider.cs:1780-2050`):
   (`CanApplyGpuClockOffsetsOnly`).
 - Otherwise the paired write preflights the offsets against the policy
   envelope before any firmware row: a refused preflight stores the intent and
-  replies Blocked with managed's `Performance is unavailable: <message>` or
-  `Performance write was not applied: <message>` cause. A disabled request
-  reuses a confirmed reset (`PairedReuse`).
+  replies Blocked with managed's `Performance is unavailable: <message>`
+  (`CapabilityRefused`), or Failed with `Performance write was not applied:
+  <message>` (`WriteRejected`). A disabled request reuses a confirmed reset
+  (`PairedReuse`).
 - An NVML failure after the firmware half is indeterminate with managed's
   `The power mode was applied, but GPU clock tuning failed.` detail, and is
   resolved by one fresh read, never replayed (`ResolveIndeterminateWriteByReadbackAsync`,
-  `:3172-3268`).
-- While the management state is an unresolved uncertain submission, every next
-  explicit step is refused before any firmware row with managed's pending
-  reply, `A thermal write requires read-only reconciliation before the
-  performance command can be submitted.` A resume withdraws a confirmed reset
-  and a power change allows one more ungated query (`:2123-2180`).
+  `:3172-3268`). Indeterminate and not-applied results reply Failed (status
+  3) and an unavailable GPU-only setter replies Blocked, each after the same
+  committed `Performance override intent was stored. Hardware result: `
+  prefix (`ServiceControlRuntime.cs:14989-14991`).
+- While a GPU submission is uncertain, or an NVML call that outlived its
+  request is still running, every native thermal writer refuses before any
+  row or setter (managed `PendingWriteConfirmationTracker.Blocks`). An
+  explicit performance step replies `A thermal write requires read-only
+  reconciliation before the performance command can be submitted.` A fan
+  request, a return to Automatic, owned Stop's handback and every
+  reconciliation (triggers, profile saves, convergence and drift) reply `A
+  thermal write requires read-only reconciliation before another command can
+  be submitted.`; an explicit fan request stores its intent first and prefixes
+  that result as its other hardware results. A resume withdraws a confirmed
+  reset, and a power change or a change between classified sources (PluggedIn
+  and USB-C, `ServiceControlRuntime.cs:18684`) allows one more ungated query
+  (`:2123-2180`).
 
 Native deviations:
 
@@ -1061,17 +1074,27 @@ Native deviations:
   firmware readback and re-checks write admission, where managed submits
   before its final read.
 - Resume invalidation and the power-change rearm are applied at the next GPU
-  call, from the gate's clear generation and the Windows power generation,
-  where managed applies them when the event arrives.
-- The pending block is the management machine's own uncertain state, read
-  only after a read-only resolution attempt; managed keeps a separate
-  `pendingWriteConfirmations` tracker.
-- Each NVML call has a fixed 5-second budget on the worker thread, not the
-  request deadline. A call that never started refuses the step; one that did
-  not finish is indeterminate.
-- Triggers, convergence, fan handback and drift reconciliation keep the GPU
-  refusal. Managed's fan handback preserves GPU management
+  call, from the gate's clear generation, the Windows power generation and the
+  power class the explicit step resolved, where managed applies them when the
+  event arrives.
+- The pending block is the management machine's own uncertain state and its
+  outstanding calls, checked on the shared Reader write path
+  (`Permit::thermal_fenced`) after one read-only resolution attempt within the
+  request; managed keeps a separate `pendingWriteConfirmations` tracker. That
+  attempt crosses no boundary, so after a power or source change the writers
+  stay fenced until the next explicit performance step takes the rearmed
+  query.
+- Each NVML call is bounded by what remains of the request less a 500 ms reply
+  margin, and by 5 seconds; a paired step reserves 1 second of the pace for
+  its submission. A call that never started refuses the step. A call that did
+  not finish replies Failed and indeterminate before the deadline, keeps
+  running on the worker, and fences every thermal writer until it ends.
+- Triggers, profile saves, convergence, fan handback and drift reconciliation
+  keep the GPU refusal. Managed's fan handback preserves GPU management
   (`ApplyPerformancePreservingGpuClockManagementOutcomeAsync`).
+- `Storage::gpu_incomplete` treats a saved GPU clock effect as one at every
+  power class, where managed selects no tuning off external power. That
+  battery case is left with the reconciliation paths.
 - `setGpuClockTuning` and the status projection of confirmed offsets are not
   served yet.
 

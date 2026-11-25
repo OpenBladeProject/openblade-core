@@ -14,8 +14,10 @@
 //! signature. Once a function of the library may have been called it stays
 //! loaded for the process: a worker that Stop no longer waits for may still
 //! be inside a call.
-// The clock-offset backend has no production caller yet, so a composition
-// without the live readings, and every test build, leaves this unused.
+// Its callers are the live GPU temperature reader and, with
+// `service-gpu-clock-tuning-v1`, the clock-offset backend. The allowance is
+// kept for the live readings alone so that every other composition, and
+// every test build, may leave parts of it unused.
 #![cfg_attr(any(test, not(feature = "service-live-readings-v1")), allow(dead_code))]
 #![allow(unsafe_code)]
 
