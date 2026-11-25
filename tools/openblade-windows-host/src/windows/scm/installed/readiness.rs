@@ -45,7 +45,8 @@ mod mailbox_read;
 pub(super) mod ownership;
 
 // NVIDIA's NVML: one System32-only loader for the GPU temperature reader and
-// the clock-offset backend, and that backend, which has no request yet.
+// the clock-offset backend, and that backend, which only
+// `service-gpu-clock-tuning-v1` composes (`thermal_gpu`).
 #[cfg(feature = "service-thermal-mutation-v1")]
 #[path = "gpu_clock_offsets.rs"]
 mod gpu_clock_offsets;
@@ -66,6 +67,9 @@ mod status_source;
 #[cfg(feature = "service-profile-triggers-v1")]
 #[path = "thermal_drift.rs"]
 mod thermal_drift;
+#[cfg(feature = "service-gpu-clock-tuning-v1")]
+#[path = "thermal_gpu.rs"]
+mod thermal_gpu;
 #[cfg(feature = "service-thermal-mutation-v1")]
 #[path = "thermal_mutation.rs"]
 mod thermal_mutation;

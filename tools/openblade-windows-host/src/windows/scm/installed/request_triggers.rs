@@ -1142,6 +1142,21 @@ impl Runtime {
         }
     }
 
+    /// The lifecycle a GPU clock step is admitted under
+    /// (`thermal_gpu::Boundary`): the gate's clear generation, which a
+    /// suspend and resume move, and the Windows power generation. Neither
+    /// admits anything; the lane only compares them with what it last saw.
+    #[cfg(feature = "service-gpu-clock-tuning-v1")]
+    pub(super) fn gpu_boundary(&self) -> super::thermal_gpu::Boundary {
+        super::thermal_gpu::Boundary {
+            gate: match self.gate() {
+                Gate::Clear(generation) => Some(generation),
+                Gate::Low => None,
+            },
+            power: self.power_generation.get().and_then(|read| read()),
+        }
+    }
+
     /// The lifecycle's ordinary write epoch now (`Lifecycle::active`), `None`
     /// in low power, unreadable or unwired. It only classifies a refusal a
     /// write's own admission already made; it never admits a write.

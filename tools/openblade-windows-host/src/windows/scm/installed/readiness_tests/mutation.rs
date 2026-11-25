@@ -7,6 +7,9 @@ mod driver_mode_owner;
 #[cfg(feature = "service-keyboard-driver-mode-v1")]
 #[path = "driver_mode_record_model.rs"]
 mod driver_mode_record_model;
+#[cfg(feature = "service-gpu-clock-tuning-v1")]
+#[path = "gpu_clock_tuning.rs"]
+mod gpu_clock_tuning;
 #[cfg(feature = "service-performance-shortcut-v1")]
 #[path = "performance_shortcut.rs"]
 mod performance_shortcut;

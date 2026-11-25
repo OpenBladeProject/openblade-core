@@ -2,7 +2,7 @@
 //! the management state machine against the managed provider's rules, and
 //! the worker's budget, refusal and Stop. Every NVML here is scripted; no
 //! test loads nvml.dll.
-use super::*;
+use super::{fake::Fake, *};
 use serde_json::{Value, json};
 use std::{
     collections::BTreeMap,
@@ -207,124 +207,6 @@ fn invalid_offsets_are_refused_before_any_nvml_call() {
         assert_eq!(error.failure, Failure::NotApplied);
         assert_eq!(error.message, "GPU clock offsets are invalid.");
         assert!(controller.nvml.calls.is_empty());
-    }
-}
-
-// --- A shared fake driver for the management machine and the worker ---
-
-#[derive(Default)]
-struct Driver {
-    /// NVML units: memory doubled.
-    core: (i32, i32, i32),
-    memory: (i32, i32, i32),
-    queries_fail: bool,
-    sets_fail: bool,
-    /// How many of the failing sets still store their value before failing.
-    storing_failures: usize,
-    /// The readback reports this core instead (a driver that clamps).
-    clamp_core: Option<i32>,
-    inits: usize,
-    shutdowns: usize,
-    sets: Vec<(i32, i32)>,
-    /// Blocks the next set until released.
-    hold: Option<mpsc::Receiver<()>>,
-    /// The next set stores its value and then panics, as a bug would.
-    panic_on_set: bool,
-}
-
-#[derive(Clone)]
-struct Fake(Arc<Mutex<Driver>>);
-
-impl Fake {
-    fn new(core: i32, memory: i32) -> Self {
-        Self(Arc::new(Mutex::new(Driver {
-            core: (-1000, 1000, core),
-            memory: (-2000, 6000, memory * 2),
-            ..Driver::default()
-        })))
-    }
-
-    fn with<R>(&self, f: impl FnOnce(&mut Driver) -> R) -> R {
-        f(&mut self.0.lock().unwrap())
-    }
-
-    fn current(&self) -> (i32, i32) {
-        self.with(|d| (d.core.2, d.memory.2 / 2))
-    }
-
-    fn inits(&self) -> usize {
-        self.with(|d| d.inits)
-    }
-
-    fn sets(&self) -> usize {
-        self.with(|d| d.sets.len())
-    }
-}
-
-impl Nvml for Fake {
-    fn init(&mut self) -> i32 {
-        self.with(|d| d.inits += 1);
-        SUCCESS
-    }
-
-    fn shutdown(&mut self) -> i32 {
-        self.with(|d| d.shutdowns += 1);
-        SUCCESS
-    }
-
-    fn device_count(&mut self) -> Result<u32, i32> {
-        Ok(1)
-    }
-
-    fn device(&mut self, _: u32) -> Result<usize, i32> {
-        Ok(1)
-    }
-
-    fn name(&mut self, _: usize, name: &mut [u8; NAME_CAPACITY]) -> i32 {
-        name[..ADMITTED_NAME.len()].copy_from_slice(ADMITTED_NAME.as_bytes());
-        SUCCESS
-    }
-
-    fn clock_offsets(&mut self, _: usize, info: &mut ClockOffset) -> i32 {
-        self.with(|d| {
-            if d.queries_fail {
-                // NVML_ERROR_GPU_IS_LOST.
-                return 15;
-            }
-            let (minimum, maximum, current) = if info.kind == ClockKind::Graphics as i32 {
-                let core = d.core;
-                (core.0, core.1, d.clamp_core.unwrap_or(core.2))
-            } else {
-                d.memory
-            };
-            (info.minimum, info.maximum, info.current) = (minimum, maximum, current);
-            SUCCESS
-        })
-    }
-
-    fn set_clock_offsets(&mut self, _: usize, info: &mut ClockOffset) -> i32 {
-        if let Some(hold) = self.with(|d| d.hold.take()) {
-            let _ = hold.recv();
-        }
-        let (status, panics) = self.with(|d| {
-            d.sets.push((info.kind, info.current));
-            if d.sets_fail {
-                if d.storing_failures == 0 {
-                    return (3, false);
-                }
-                d.storing_failures -= 1;
-            }
-            if info.kind == ClockKind::Graphics as i32 {
-                d.core.2 = info.current;
-            } else {
-                d.memory.2 = info.current;
-            }
-            let status = if d.sets_fail { 3 } else { SUCCESS };
-            (status, std::mem::take(&mut d.panic_on_set))
-        });
-        // Outside the lock, so the driver stays readable.
-        assert!(!panics, "a bug after the NVML write");
-        status
     }
 }
 
