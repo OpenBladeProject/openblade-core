@@ -110,7 +110,12 @@ pub(super) use battery::BatteryUpdate;
 pub(super) use triggers::convergence_loop::OBSERVE_BUDGET as CONVERGENCE_OBSERVE_BUDGET;
 #[path = "fan_mutation.rs"]
 mod fan;
+#[cfg(feature = "service-fan-stop-v1")]
+#[path = "fan_stop_mutation.rs"]
+mod fan_stop;
 pub(super) use fan::FanRequest;
+#[cfg(feature = "service-fan-stop-v1")]
+pub(super) use fan_stop::FanStopRequest;
 #[cfg(feature = "service-profile-triggers-v1")]
 #[path = "thermal_convergence.rs"]
 mod convergence;
@@ -413,6 +418,9 @@ pub(super) struct Runtime {
     // status publishes what it did before the loop existed.
     #[cfg(feature = "service-thermal-convergence-v1")]
     convergence_loop: Rc<std::cell::OnceCell<triggers::convergence_loop::Loop>>,
+    // Managed's automatic Fan Stop eligibility (`fan_stop::Automation`).
+    #[cfg(feature = "service-fan-stop-v1")]
+    fan_stop: Rc<RefCell<fan_stop::Automation>>,
     fan_owner: Rc<RefCell<Option<Arc<fan::FanPermit>>>>,
     temporary_owner: Rc<RefCell<Option<Arc<battery::BatteryPermit>>>>,
     temporary_pending: Rc<RefCell<Option<Arc<battery::BatteryPermit>>>>,
@@ -653,6 +661,8 @@ impl Runtime {
     ) -> Self {
         Self {
             factory: Rc::new(factory),
+            #[cfg(feature = "service-fan-stop-v1")]
+            fan_stop: Rc::default(),
             application: Rc::default(),
             #[cfg(feature = "service-profile-triggers-v1")]
             debts: Rc::default(),
@@ -860,6 +870,8 @@ impl Runtime {
                 }
                 Ok((stores.as_ref().unwrap().1.clone(), guard))
             }),
+            #[cfg(feature = "service-fan-stop-v1")]
+            fan_stop: Rc::default(),
             application: Rc::default(),
             #[cfg(feature = "service-profile-triggers-v1")]
             debts: Rc::default(),
@@ -1046,6 +1058,8 @@ impl Runtime {
                 .bind_private_user(&policy_sid);
             #[cfg(feature = "service-profile-triggers-v1")]
             let projected = projected.with_thermal_convergence(convergence);
+            #[cfg(feature = "service-fan-stop-v1")]
+            let projected = runtime.project_fan_stop(projected, &store, &policy_sid, session)?;
             Ok(projected)
         })
     }

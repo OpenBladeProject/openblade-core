@@ -9,6 +9,9 @@ pub(crate) use fan_request::FanOverride;
 #[path = "service_status/profiles.rs"]
 mod profiles;
 pub(crate) use profiles::ProfilesBody;
+#[cfg(feature = "service-fan-stop-v1")]
+#[path = "service_status/fan_stop.rs"]
+pub(crate) mod fan_stop;
 #[path = "service_status/thermal_convergence.rs"]
 pub(crate) mod thermal_convergence;
 use thermal_convergence::ThermalConvergence;
@@ -113,6 +116,32 @@ pub(crate) enum StatusRequest {
         version: i32,
         request_id: String,
     },
+    /// Managed `SetFanStopModeRequest`; `mode` is the managed `FanStopMode`
+    /// value, which the codec requires to be defined.
+    SetFanStopMode {
+        version: i32,
+        request_id: String,
+        mode: i32,
+    },
+    /// Managed `SetFanStopSettingsRequest`. The codec requires well-formed
+    /// settings (`fan_stop::decode_settings`).
+    SetFanStopSettings {
+        version: i32,
+        request_id: String,
+        #[serde(deserialize_with = "object")]
+        settings: Value,
+    },
+    /// Managed `ResumeAutomaticFanStopRequest`.
+    ResumeAutomaticFanStop {
+        version: i32,
+        request_id: String,
+    },
+    /// Managed `SetBatterySaverFanStopRequest`.
+    SetBatterySaverFanStop {
+        version: i32,
+        request_id: String,
+        enabled: bool,
+    },
     GetStatus {
         version: i32,
         request_id: String,
@@ -175,10 +204,25 @@ pub(crate) fn requested_live_readings() -> u8 {
 fn observed_capabilities(confirmed: Option<&FeatureRecord>) -> Option<FeatureRecord> {
     let hyper_boost = confirmed.and_then(|state| state.get("hyperBoostActive"));
     (hyper_boost == Some(&Value::Bool(true))).then(|| {
-        serde_json::from_str(include_str!("service_status/observed_capabilities.json"))
-            .expect("the reviewed observation capability record")
+        #[cfg_attr(not(feature = "service-fan-stop-v1"), allow(unused_mut))]
+        let mut record: FeatureRecord =
+            serde_json::from_str(include_str!("service_status/observed_capabilities.json"))
+                .expect("the reviewed observation capability record");
+        // Managed admits both Fan Stop evidence flags on exact RZ09-0581;
+        // `supportsFanStop` stays false while the guardian is unavailable.
+        #[cfg(feature = "service-fan-stop-v1")]
+        for evidence in ["hasFanStopTrialEvidence", "hasFanStopSourceEvidence"] {
+            record.insert(evidence.into(), Value::Bool(true));
+        }
+        record
     })
 }
+
+/// The one model with reviewed Fan Stop evidence: managed admits trial
+/// evidence on exact RZ09-0581 (`IsExactModelScopedRz090581Identity`) and
+/// source evidence from its `FanStopModelContract` entry.
+#[cfg(feature = "installed-service-candidate")]
+pub(crate) const FAN_STOP_EVIDENCE_MODEL: &str = "RZ09-0581";
 
 /// The exact model, as (model, vendor ID, product ID), whose observation the
 /// record describes.
@@ -194,7 +238,7 @@ impl StatusRequest {
     /// The discriminator of every variant. `operation` maps each variant to
     /// its entry, so a new variant cannot be added without listing it here.
     #[cfg(feature = "installed-service-candidate")]
-    pub(crate) const OPERATIONS: [&'static str; 14] = [
+    pub(crate) const OPERATIONS: [&'static str; 18] = [
         "setBatteryPolicy",
         "setBatteryProtection",
         "setFullChargeOverride",
@@ -209,6 +253,10 @@ impl StatusRequest {
         "acknowledgeThermalPolicyUpgradeDisclosure",
         "exportDiagnostics",
         "reapplyChangedSettings",
+        "setFanStopMode",
+        "setFanStopSettings",
+        "resumeAutomaticFanStop",
+        "setBatterySaverFanStop",
     ];
 
     #[cfg(all(test, feature = "installed-service-candidate"))]
@@ -228,6 +276,10 @@ impl StatusRequest {
             Self::AcknowledgeThermalPolicyUpgradeDisclosure { .. } => 11,
             Self::ExportDiagnostics { .. } => 12,
             Self::ReapplyChangedSettings { .. } => 13,
+            Self::SetFanStopMode { .. } => 14,
+            Self::SetFanStopSettings { .. } => 15,
+            Self::ResumeAutomaticFanStop { .. } => 16,
+            Self::SetBatterySaverFanStop { .. } => 17,
         }]
     }
 
@@ -244,7 +296,8 @@ impl StatusRequest {
         const EXPORT: bool = cfg!(feature = "service-diagnostics-export-v1");
         const POLICY: bool = cfg!(feature = "service-profile-triggers-v1");
         const CONVERGENCE: bool = cfg!(feature = "service-thermal-convergence-v1");
-        const COMPILED: [bool; 14] = [
+        const FAN_STOP: bool = cfg!(feature = "service-fan-stop-v1");
+        const COMPILED: [bool; 18] = [
             BATTERY,
             BATTERY,
             BATTERY,
@@ -259,6 +312,10 @@ impl StatusRequest {
             POLICY,
             EXPORT,
             CONVERGENCE,
+            FAN_STOP,
+            FAN_STOP,
+            FAN_STOP,
+            FAN_STOP,
         ];
         Self::OPERATIONS
             .iter()
@@ -408,6 +465,21 @@ impl StatusRequest {
                 version,
                 request_id,
                 ..
+            }
+            | Self::SetFanStopMode {
+                version,
+                request_id,
+                ..
+            }
+            | Self::SetFanStopSettings {
+                version,
+                request_id,
+                ..
+            }
+            | Self::SetBatterySaverFanStop {
+                version,
+                request_id,
+                ..
             } => (*version, request_id),
             Self::ExportDiagnostics {
                 version,
@@ -419,6 +491,10 @@ impl StatusRequest {
                 request_id,
             }
             | Self::ReapplyChangedSettings {
+                version,
+                request_id,
+            }
+            | Self::ResumeAutomaticFanStop {
                 version,
                 request_id,
             }
@@ -493,6 +569,27 @@ impl StatusRequest {
             return Err(invalid(
                 "signed thermal convergence composition is unavailable",
             ));
+        }
+        if matches!(
+            self,
+            Self::SetFanStopMode { .. }
+                | Self::SetFanStopSettings { .. }
+                | Self::ResumeAutomaticFanStop { .. }
+                | Self::SetBatterySaverFanStop { .. }
+        ) && !cfg!(feature = "service-fan-stop-v1")
+        {
+            return Err(invalid("signed Fan Stop composition is unavailable"));
+        }
+        // Managed `IpcMessageCodec`: `Enum.IsDefined(set.Mode)`, and
+        // `FanStopSettings.IsWellFormed(set.Settings)`.
+        if let Self::SetFanStopMode { mode, .. } = self
+            && !matches!(*mode, 0 | 1)
+        {
+            return Err(invalid("Fan Stop mode is undefined"));
+        }
+        #[cfg(feature = "service-fan-stop-v1")]
+        if let Self::SetFanStopSettings { settings, .. } = self {
+            fan_stop::decode_settings(settings)?;
         }
         // Managed `IpcMessageCodec`: `Enum.IsDefined(set.Policy)`.
         if let Self::SetThermalControlPolicy { policy, .. } = self
@@ -1071,6 +1168,31 @@ impl Snapshot {
             )]),
         }
         .with_unknown_keyboard_driver_mode()
+        .with_public_fan_stop()
+    }
+    /// Managed's Fan Stop status once the host is identified as the model
+    /// with reviewed evidence (`FAN_STOP_EVIDENCE_MODEL`). Without the Fan
+    /// Stop requests no status is published, so nothing changes.
+    #[cfg(feature = "installed-service-candidate")]
+    pub(crate) fn with_fan_stop_evidence(self, evident: bool) -> Self {
+        #[cfg(feature = "service-fan-stop-v1")]
+        if evident {
+            return self.fan_stop_evident();
+        }
+        #[cfg(not(feature = "service-fan-stop-v1"))]
+        let _ = evident;
+        self
+    }
+    /// Managed always publishes a Fan Stop status. Without the Fan Stop
+    /// requests the member stays absent and decodes as managed's default.
+    #[cfg(feature = "installed-service-candidate")]
+    fn with_public_fan_stop(
+        #[cfg_attr(not(feature = "service-fan-stop-v1"), allow(unused_mut))] mut self,
+    ) -> Self {
+        #[cfg(feature = "service-fan-stop-v1")]
+        self.feature_fields
+            .insert("fanStopStatus".into(), fan_stop::public_status());
+        self
     }
     /// Managed publishes no Driver mode for an unverified device, but its status
     /// always carries the member. Without the read feature it stays absent.
@@ -1877,6 +1999,8 @@ impl Snapshot {
         // The saved policy is the user's, as managed reports it only to the
         // active client.
         result.feature_fields.remove("thermalConvergence");
+        #[cfg(feature = "service-fan-stop-v1")]
+        result.without_fan_stop_automation();
         result.lighting_override = None;
         result.full_charge_override = false;
         result.writes_blocked = true;

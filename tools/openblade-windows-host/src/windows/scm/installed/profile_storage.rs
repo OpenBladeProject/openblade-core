@@ -25,6 +25,8 @@
 //! The same transaction migrates an older aggregate when the store opens, as
 //! managed's load does: see [`plan_migration`].
 use super::*;
+#[cfg(feature = "service-fan-stop-v1")]
+use openblade_domain::profile_set::preferences::FanStopSettings;
 use openblade_domain::profile_set::{
     self as profile_set, Capabilities, ProfileSet, ValidationPolicy, Validator, encode,
     migrate::{self, Migration, Stored},
@@ -45,8 +47,11 @@ const STAGE_BLOCKED: &str = "The requested intent was rejected: A staging file l
 const UNREADABLE: &str = "The requested intent was rejected: This service cannot read the profile set back once it is stored. The saved configuration is unchanged.";
 /// The staged preferences are valid, but this service's own reader would
 /// refuse the aggregate once stored.
-#[cfg(feature = "service-profile-triggers-v1")]
-const POLICY_UNREADABLE: &str = "The requested intent was rejected: This service cannot read the configuration back once it is stored. The saved configuration is unchanged.";
+#[cfg(any(
+    feature = "service-profile-triggers-v1",
+    feature = "service-fan-stop-v1"
+))]
+const PREFERENCES_UNREADABLE: &str = "The requested intent was rejected: This service cannot read the configuration back once it is stored. The saved configuration is unchanged.";
 /// A migration at open that left the stored aggregate as it was. The next
 /// open tries again, and a failed open is not kept, so that is the next
 /// request. A stage that cannot be removed, or another file under one of the
@@ -570,7 +575,6 @@ impl Storage {
         let Some(saved) = committed(self.files.as_ref(), &validator)? else {
             return Ok(ProfileSave::Blocked(QUARANTINE_BLOCKED));
         };
-        let prior = &saved.documents;
         let admitted = match update::admit(
             requested.clone(),
             &saved.profiles,
@@ -581,34 +585,56 @@ impl Storage {
             Ok(admitted) => admitted,
             Err(reason) => return Ok(ProfileSave::Rejected(update::rejection_message(&reason))),
         };
-        let profile = encode::profile_document(profile_set::CURRENT_SCHEMA, &admitted);
-        // Managed keeps the committed preference bytes unless loading them
-        // migrated something; then it writes them again.
-        let preferences = match &prior[1] {
-            Some(bytes) if !saved.migrated => bytes.clone(),
-            _ => preferences_document(profile_set::CURRENT_SCHEMA, &saved.preferences),
+        Ok(
+            match self.commit(&mut state, &saved, &admitted, None, &validator, UNREADABLE) {
+                Ok(()) => ProfileSave::Stored,
+                Err(message) => ProfileSave::Rejected(message.into()),
+            },
+        )
+    }
+
+    /// Commits `profiles` with `preferences` as one aggregate over `saved`,
+    /// as managed `SaveProfilesAsync` and `SaveConfigurationAsync` write it,
+    /// and reads it back before it counts. Without `preferences` managed keeps
+    /// the committed preference bytes, unless loading them migrated
+    /// something; then it writes them again. `unreadable` is the refusal when
+    /// this service's own reader would refuse the aggregate once stored.
+    fn commit(
+        &self,
+        state: &mut State,
+        saved: &Committed,
+        profiles: &ProfileSet,
+        preferences: Option<&Preferences>,
+        validator: &Validator,
+        unreadable: &'static str,
+    ) -> Result<(), &'static str> {
+        let profile = encode::profile_document(profile_set::CURRENT_SCHEMA, profiles);
+        let preference_bytes = match (preferences, &saved.documents[1]) {
+            (Some(staged), _) => preferences_document(profile_set::CURRENT_SCHEMA, staged),
+            (None, Some(bytes)) if !saved.migrated => bytes.clone(),
+            (None, _) => preferences_document(profile_set::CURRENT_SCHEMA, &saved.preferences),
         };
         let marker = commit_marker(
             profile_set::CURRENT_SCHEMA,
             &sha256(&profile),
-            &sha256(&preferences),
+            &sha256(&preference_bytes),
         );
-        let intended = [profile, preferences, marker];
+        let intended = [profile, preference_bytes, marker];
+        // Managed `ValidatePreferences` and this service's own reader: the
+        // staged aggregate must read back before anything is written.
         if !reopens(&intended, self.same_path) {
-            return Ok(ProfileSave::Rejected(UNREADABLE.into()));
+            return Err(unreadable);
         }
-        let transaction = Transaction::new(
+        Transaction::new(
             self.files.as_ref(),
-            prior,
+            &saved.documents,
             intended,
-            &admitted,
-            &saved.preferences,
-            &validator,
-        );
-        Ok(match transaction.run() {
-            Ok(()) => ProfileSave::Stored,
-            Err(failure) => ProfileSave::Rejected(settle_failure(&mut state, failure).into()),
-        })
+            profiles,
+            preferences.unwrap_or(&saved.preferences),
+            validator,
+        )
+        .run()
+        .map_err(|failure| settle_failure(state, failure))
     }
 
     /// The saved thermal control policy and disclosure state, as managed
@@ -620,90 +646,176 @@ impl Storage {
     /// managed's pending write confirmations are.
     #[cfg(feature = "service-profile-triggers-v1")]
     pub(in super::super) fn thermal_policy(&self) -> io::Result<SavedPolicy> {
-        let state = self.state.lock().map_err(|_| denied())?;
-        if configuration_quarantined(&state) {
-            return Ok(SavedPolicy::Quarantined);
-        }
-        let (_, validator) = validator();
-        Ok(match committed(self.files.as_ref(), &validator)? {
+        Ok(match self.admitted_preferences()? {
             None => SavedPolicy::Quarantined,
-            Some(saved) => SavedPolicy::Admitted {
-                policy: saved.preferences.thermal_control_policy,
-                disclosure: saved.preferences.thermal_policy_upgrade_disclosure,
+            Some(preferences) => SavedPolicy::Admitted {
+                policy: preferences.thermal_control_policy,
+                disclosure: preferences.thermal_policy_upgrade_disclosure,
             },
         })
     }
 
     /// Managed `SetThermalControlPolicyAsync` and
     /// `AcknowledgeThermalPolicyUpgradeDisclosureAsync` from the stored
-    /// preferences to the store: a change that leaves them as they are is
-    /// not written; otherwise the staged preferences and the saved profiles
-    /// are committed as one aggregate, as managed `SaveConfigurationAsync`
-    /// writes them, and read back before the change counts. Managed admits
-    /// the change with an admitted configuration only, so a journal or
-    /// battery fence does not refuse it (`configuration_quarantined`).
+    /// preferences to the store (`save_preferences`).
     #[cfg(feature = "service-profile-triggers-v1")]
     pub(in super::super) fn save_thermal_policy(
         &self,
         change: PolicyChange,
     ) -> io::Result<PolicySave> {
+        use crate::service_status::thermal_convergence::{
+            DISCLOSURE_ACKNOWLEDGED, DISCLOSURE_PENDING,
+        };
+        self.save_preferences(|staged| match change {
+            PolicyChange::Set(policy) if staged.thermal_control_policy == policy => false,
+            PolicyChange::Set(policy) => {
+                staged.thermal_control_policy = policy;
+                true
+            }
+            PolicyChange::Acknowledge
+                if staged.thermal_policy_upgrade_disclosure != DISCLOSURE_PENDING =>
+            {
+                false
+            }
+            PolicyChange::Acknowledge => {
+                staged.thermal_policy_upgrade_disclosure = DISCLOSURE_ACKNOWLEDGED;
+                true
+            }
+        })
+    }
+
+    /// The saved Fan Stop settings, as managed projects
+    /// `preferences.FanStopSettings`: managed's defaults where the aggregate
+    /// is quarantined (`BatteryConfigurationStore` quarantine preferences).
+    #[cfg(feature = "service-fan-stop-v1")]
+    pub(in super::super) fn fan_stop_settings(&self) -> io::Result<FanStopSettings> {
+        Ok(self
+            .admitted_preferences()?
+            .and_then(|preferences| preferences.fan_stop_settings)
+            .unwrap_or_default())
+    }
+
+    /// Managed `ConfigurationIsAdmitted`: the aggregate is committed and this
+    /// service neither failed to replace it nor saw it change.
+    #[cfg(feature = "service-fan-stop-v1")]
+    pub(in super::super) fn configuration_admitted(&self) -> io::Result<bool> {
+        Ok(self.admitted_preferences()?.is_some())
+    }
+
+    /// Managed `SetFanStopSettingsAsync` from the stored preferences to the
+    /// store (`save_preferences`). Settings equal to the saved ones are not
+    /// written: managed's "already saved" reply.
+    #[cfg(feature = "service-fan-stop-v1")]
+    pub(in super::super) fn save_fan_stop_settings(
+        &self,
+        settings: FanStopSettings,
+    ) -> io::Result<PreferencesSave> {
+        self.save_preferences(|staged| {
+            if staged.fan_stop_settings == Some(settings) {
+                return false;
+            }
+            staged.fan_stop_settings = Some(settings);
+            true
+        })
+    }
+
+    /// Managed `SetBatterySaverFanStopAsync`'s store: the Battery profile's
+    /// `stopFansInBatterySaver` saved with the committed preference bytes, as
+    /// managed `SaveProfilesAsync` writes it, only when it changes. Managed
+    /// refuses the request with an inadmissible configuration first, so a
+    /// journal or battery fence does not refuse it (`configuration_quarantined`).
+    #[cfg(feature = "service-fan-stop-v1")]
+    pub(in super::super) fn save_battery_saver_fan_stop(
+        &self,
+        enabled: bool,
+    ) -> io::Result<PreferencesSave> {
         let mut state = self.state.lock().map_err(|_| denied())?;
         if configuration_quarantined(&state) {
-            return Ok(PolicySave::Quarantined);
+            return Ok(PreferencesSave::Quarantined);
         }
         let (_, validator) = validator();
         let Some(saved) = committed(self.files.as_ref(), &validator)? else {
-            return Ok(PolicySave::Quarantined);
+            return Ok(PreferencesSave::Quarantined);
+        };
+        if saved.profiles.battery.stop_fans_in_battery_saver == enabled {
+            return Ok(PreferencesSave::Unchanged(saved.preferences));
+        }
+        let mut profiles = saved.profiles.clone();
+        profiles.battery.stop_fans_in_battery_saver = enabled;
+        Ok(
+            match self.commit(&mut state, &saved, &profiles, None, &validator, UNREADABLE) {
+                Ok(()) => PreferencesSave::Stored(saved.preferences),
+                Err(message) => PreferencesSave::Rejected(message.into()),
+            },
+        )
+    }
+
+    /// The committed preferences, `None` where the aggregate is preserved or
+    /// this service failed to replace it or saw it change.
+    #[cfg(any(
+        feature = "service-profile-triggers-v1",
+        feature = "service-fan-stop-v1"
+    ))]
+    fn admitted_preferences(&self) -> io::Result<Option<Preferences>> {
+        let state = self.state.lock().map_err(|_| denied())?;
+        if configuration_quarantined(&state) {
+            return Ok(None);
+        }
+        let (_, validator) = validator();
+        Ok(committed(self.files.as_ref(), &validator)?.map(|saved| saved.preferences))
+    }
+
+    /// One managed preference request from the stored preferences to the
+    /// store: `edit` stages the change on a copy and says whether it changed
+    /// anything; a change that leaves them as they are is not written.
+    /// Otherwise the staged preferences and the saved profiles are committed
+    /// as one aggregate, as managed `SaveConfigurationAsync` writes them
+    /// (`commit`). Managed admits the change with an admitted configuration
+    /// only, so a journal or battery fence does not refuse it
+    /// (`configuration_quarantined`).
+    #[cfg(any(
+        feature = "service-profile-triggers-v1",
+        feature = "service-fan-stop-v1"
+    ))]
+    fn save_preferences(
+        &self,
+        edit: impl FnOnce(&mut Preferences) -> bool,
+    ) -> io::Result<PreferencesSave> {
+        let mut state = self.state.lock().map_err(|_| denied())?;
+        if configuration_quarantined(&state) {
+            return Ok(PreferencesSave::Quarantined);
+        }
+        let (_, validator) = validator();
+        let Some(saved) = committed(self.files.as_ref(), &validator)? else {
+            return Ok(PreferencesSave::Quarantined);
         };
         let mut staged = saved.preferences.clone();
-        match change {
-            PolicyChange::Set(policy) if staged.thermal_control_policy == policy => {
-                return Ok(PolicySave::Unchanged(staged));
-            }
-            PolicyChange::Set(policy) => staged.thermal_control_policy = policy,
-            PolicyChange::Acknowledge
-                if staged.thermal_policy_upgrade_disclosure
-                    != crate::service_status::thermal_convergence::DISCLOSURE_PENDING =>
-            {
-                return Ok(PolicySave::Unchanged(staged));
-            }
-            PolicyChange::Acknowledge => {
-                staged.thermal_policy_upgrade_disclosure =
-                    crate::service_status::thermal_convergence::DISCLOSURE_ACKNOWLEDGED;
-            }
+        if !edit(&mut staged) {
+            return Ok(PreferencesSave::Unchanged(staged));
         }
-        let profile = encode::profile_document(profile_set::CURRENT_SCHEMA, &saved.profiles);
-        let preferences = preferences_document(profile_set::CURRENT_SCHEMA, &staged);
-        let marker = commit_marker(
-            profile_set::CURRENT_SCHEMA,
-            &sha256(&profile),
-            &sha256(&preferences),
-        );
-        let intended = [profile, preferences, marker];
-        // Managed `ValidatePreferences` and this service's own reader: the
-        // staged aggregate must read back before anything is written.
-        if !reopens(&intended, self.same_path) {
-            return Ok(PolicySave::Rejected(POLICY_UNREADABLE.into()));
-        }
-        let transaction = Transaction::new(
-            self.files.as_ref(),
-            &saved.documents,
-            intended,
-            &saved.profiles,
-            &staged,
-            &validator,
-        );
-        Ok(match transaction.run() {
-            Ok(()) => PolicySave::Stored(staged),
-            Err(failure) => PolicySave::Rejected(settle_failure(&mut state, failure).into()),
-        })
+        Ok(
+            match self.commit(
+                &mut state,
+                &saved,
+                &saved.profiles,
+                Some(&staged),
+                &validator,
+                PREFERENCES_UNREADABLE,
+            ) {
+                Ok(()) => PreferencesSave::Stored(staged),
+                Err(message) => PreferencesSave::Rejected(message.into()),
+            },
+        )
     }
 }
 
 /// Whether this service failed to replace the configuration or saw it
 /// change: managed's configuration quarantine. A journal or battery fence
 /// fences thermal writes only; the configuration itself stays admitted.
-#[cfg(feature = "service-profile-triggers-v1")]
+#[cfg(any(
+    feature = "service-profile-triggers-v1",
+    feature = "service-fan-stop-v1"
+))]
 fn configuration_quarantined(state: &State) -> bool {
     state.configuration_failed || state.configuration_changed
 }
@@ -744,11 +856,14 @@ pub(in super::super) enum PolicyChange {
     Acknowledge,
 }
 
-/// What `Storage::save_thermal_policy` did.
-#[cfg(feature = "service-profile-triggers-v1")]
+/// What a preference save (`Storage::save_preferences`) did.
+#[cfg(any(
+    feature = "service-profile-triggers-v1",
+    feature = "service-fan-stop-v1"
+))]
 #[derive(Debug, PartialEq)]
-pub(in super::super) enum PolicySave {
-    /// The stored preferences already hold the change; nothing was written.
+pub(in super::super) enum PreferencesSave {
+    /// The stored configuration already holds the change; nothing was written.
     Unchanged(Preferences),
     /// The change was committed and read back.
     Stored(Preferences),
@@ -757,6 +872,10 @@ pub(in super::super) enum PolicySave {
     /// The aggregate is preserved, so nothing may change it.
     Quarantined,
 }
+
+/// What `Storage::save_thermal_policy` did.
+#[cfg(feature = "service-profile-triggers-v1")]
+pub(in super::super) type PolicySave = PreferencesSave;
 
 #[cfg(test)]
 #[path = "profile_storage_tests.rs"]

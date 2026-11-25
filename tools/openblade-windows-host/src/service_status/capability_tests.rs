@@ -15,8 +15,17 @@ fn state(hyper_boost: Value) -> FeatureRecord {
     ])
 }
 
+/// The reviewed record, with the Fan Stop evidence managed admits on
+/// exact RZ09-0581 when the Fan Stop requests are served.
 fn record() -> FeatureRecord {
-    serde_json::from_str(include_str!("observed_capabilities.json")).unwrap()
+    #[cfg_attr(not(feature = "service-fan-stop-v1"), allow(unused_mut))]
+    let mut record: FeatureRecord =
+        serde_json::from_str(include_str!("observed_capabilities.json")).unwrap();
+    #[cfg(feature = "service-fan-stop-v1")]
+    for evidence in ["hasFanStopTrialEvidence", "hasFanStopSourceEvidence"] {
+        record.insert(evidence.into(), json!(true));
+    }
+    record
 }
 
 #[test]
@@ -202,4 +211,31 @@ mod projections {
             true
         );
     }
+}
+
+/// Managed's recorded observation record for an exact RZ09-0581 host, whose
+/// production factory admits both Fan Stop evidence flags, and for any other
+/// host, which has neither. A composition that serves the Fan Stop requests
+/// publishes the first; every other keeps the second.
+#[test]
+fn the_record_is_managed_with_the_fan_stop_evidence_of_this_composition() {
+    let vectors: Value =
+        serde_json::from_str(include_str!("../../tests/data/fan-stop-vectors.json")).unwrap();
+    let rows = vectors["capabilities"].as_array().unwrap();
+    let exact = &rows[0];
+    assert_eq!(exact["productName"], "Blade 16 - RZ09-0581");
+    assert_eq!(exact["evidence"], json!({"trial": true, "source": true}));
+    assert_eq!(
+        rows[1]["evidence"],
+        json!({"trial": false, "source": false})
+    );
+    let row = if cfg!(feature = "service-fan-stop-v1") {
+        exact
+    } else {
+        &rows[1]
+    };
+    assert_eq!(
+        observed_capabilities(Some(&state(json!(true)))).map(Value::Object),
+        Some(row["record"].clone())
+    );
 }
