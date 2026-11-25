@@ -143,6 +143,7 @@ public sealed partial class MainWindow
             {
                 SnapTapRuntimeState.DriverMissing => LocalizedResources.Get("KeyboardBackend_DriverMissing", "The Razer keyboard driver is missing."),
                 SnapTapRuntimeState.UnsupportedModel => LocalizedResources.Get("KeyboardBackend_Unsupported", "This input method is unavailable for this laptop."),
+                SnapTapRuntimeState.RecoveryRequired when status.WaitsForDriverRelease => LocalizedResources.Get("KeyboardBackend_DriverStillOwns", "Razer driver is still holding these keys. Switch to Razer driver, then back to Windows hook. If this keeps appearing, restart Windows."),
                 SnapTapRuntimeState.RecoveryRequired => LocalizedResources.Get("KeyboardBackend_Recovery", "Switch input methods to retry. If this keeps appearing, restart Windows."),
                 SnapTapRuntimeState.ManualDriverSetupRequired => LocalizedResources.Get("KeyboardBackend_ManualSetup", "Install this laptop’s Razer keyboard driver, then switch input methods to retry."),
                 SnapTapRuntimeState.WaitingForFunctionKey => LocalizedResources.Get("KeyboardBackend_PrimeFn", "Press Fn once to activate multimedia keys."),
