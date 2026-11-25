@@ -682,9 +682,16 @@ the tick reconciles (`GuardedStatus::publish_power_source`), so the
 destination's publication carries the new source instead of the source of the
 last 2 s metadata refresh. An epoch moves on every SCM power, session and
 suspend notice. Metadata that repeats the last publication publishes no new
-revision, and a refresh that yields no evidence is retried at the next tick.
-The source is presentation only and admits no write: every step still takes
-its own fresh 07/8C reading and Windows power. A rejected or timed-out 07/8C
+revision. One attempt settles the epoch: a refresh that yields no evidence is
+not retried, because each attempt can hold the source lock for the 1 s refresh
+budget, and the 2 s subscription refresh publishes the source instead. A tick
+whose temporary-charge source event already attempted the observation does
+not repeat it. A failed observation closes the feed, as a failed subscription
+refresh does. The source admits no thermal write: every step still takes its
+own fresh 07/8C reading and Windows power. The Agent's display automation and
+display-power admission do act on the published `activePowerSource`
+(`session_native/display_query/automation.rs`,
+`session_native/installed_monitor.rs`). A rejected or timed-out 07/8C
 read at the change writes nothing, still publishes the Windows source, and
 the next notice's classified reading applies the destination once the
 debt's retry pace has passed.
@@ -708,6 +715,15 @@ Differences from managed:
   replay nothing; managed reopens write authority there.
 - An explicit request served before the next tick publishes the source of
   the last observation.
+- Managed has a second release path: its periodic 15 s observation
+  (`ServicePeriodicObservationLoop`, `RefreshPowerSourceClassificationAsync`)
+  also reaches `ChangePowerSourceCore`. Native retries the owed step only at
+  a later lifecycle epoch, and the debt settles after `RETRIES` (2) retries
+  (`request_triggers.rs`). If the first 07/8C reading after a plug-in
+  conflicts and no further notice arrives, native keeps the previous profile
+  until the next notice or request, where managed applies the destination
+  within about 15 s. A periodic native 07/8C observation is tracked
+  separately.
 
 Resolution uses eligible manual intent, then the current application report's
 performance override, then the matching power profile. Desired performance
