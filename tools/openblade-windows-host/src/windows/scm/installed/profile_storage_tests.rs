@@ -1208,6 +1208,32 @@ mod fan_stop {
     }
 
     #[test]
+    fn a_battery_saver_save_keeps_the_committed_preference_bytes() {
+        // Managed `SaveProfilesAsync` writes the profiles and leaves the
+        // preference document as it was; only the profile document and the
+        // marker change. A trailing newline makes the committed bytes differ
+        // from the canonical encoding of the same preferences, so a save that
+        // re-encoded them would show.
+        let [profile, mut preferences, _] = Model::replay("prior");
+        preferences.push(b'\n');
+        let marker = preferences::commit_marker(
+            profile_set::CURRENT_SCHEMA,
+            &configuration::digest_hex(&profile),
+            &configuration::digest_hex(&preferences),
+        );
+        let model = Model::seeded([profile, preferences, marker]);
+        let prior = model.documents();
+        assert!(matches!(
+            model.storage().save_battery_saver_fan_stop(true).unwrap(),
+            PreferencesSave::Stored(_)
+        ));
+        let saved = model.documents();
+        assert_ne!(saved[0], prior[0]);
+        assert_eq!(saved[1], prior[1]);
+        assert_ne!(saved[2], prior[2]);
+    }
+
+    #[test]
     fn an_unchanged_value_is_not_written() {
         let model = Model::committed();
         let storage = model.storage();
