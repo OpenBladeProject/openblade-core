@@ -7,8 +7,6 @@
 #![allow(unsafe_code)]
 
 use std::{
-    ffi::OsString,
-    os::windows::ffi::OsStringExt,
     path::{Path, PathBuf},
     ptr::{null, null_mut},
 };
@@ -293,11 +291,36 @@ fn profile_path(sid: &str) -> Option<String> {
             &mut bytes,
         )
     };
-    (status == 0).then(|| {
-        buffer.truncate(bytes as usize / 2);
-        OsString::from_wide(&buffer)
-            .to_string_lossy()
-            .trim_end_matches('\0')
-            .to_owned()
-    })
+    // `bytes` counts the value as stored, before expansion, so it does not
+    // bound the expanded text: read up to its terminating NUL.
+    (status == 0).then(|| wide(&buffer))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::wide;
+
+    /// `RegGetValueW` expands a REG_EXPAND_SZ value but reports the
+    /// unexpanded byte count, so the buffer holds the expanded text, a NUL,
+    /// then whatever the buffer held before. Only the text may become a
+    /// redaction token.
+    #[test]
+    fn an_expanded_registry_value_ends_at_its_first_nul() {
+        let mut buffer: Vec<u16> = r"C:\Users\Operator".encode_utf16().collect();
+        buffer.extend([
+            0,
+            u16::from(b'j'),
+            u16::from(b'u'),
+            u16::from(b'n'),
+            u16::from(b'k'),
+        ]);
+        buffer.resize(1024, 0);
+        assert_eq!(wide(&buffer), r"C:\Users\Operator");
+    }
+
+    #[test]
+    fn an_unterminated_buffer_is_read_whole() {
+        let buffer: Vec<u16> = "abc".encode_utf16().collect();
+        assert_eq!(wide(&buffer), "abc");
+    }
 }
