@@ -2471,7 +2471,8 @@ bridge on battery. `thermal_reapply.rs` checks the three reply summaries.
 Managed's production composition wires `GuardianFanStopBackend` over
 `WindowsFanStopGuardianClient`. When that client cannot verify the guardian it
 reports `GuardianUnavailable` with no message of its own, so
-`FanStopController` publishes Unavailable and refuses Stop and Automatic. The
+`FanStopController` publishes Unavailable and refuses Stop and Automatic when
+its startup disposition is Clear (see the first deviation below). The
 `service-fan-stop-v1` feature serves the four Fan Stop requests as managed
 does in that state. It implies `service-profiles-v1`, adds the
 `service-fan-stop-v1` capability marker, and both package readers refuse it
@@ -2520,6 +2521,25 @@ row through the framed dispatcher (`readiness_tests/fan_stop.rs`) and the
 capability tests compare the record in every lane.
 
 Deviations from managed:
+
+- Native never reads the `FanStopGuardian` store. Managed computes
+  `StartupDisposition = store.InspectStartup()` even when the guardian is
+  unavailable (`WindowsFanStopGuardianClient.cs`): a
+  `<machineData>\FanStopGuardian\pending.json` makes it Unresolved, and an
+  inspection that throws makes it Unknown (`FanStopGuardianTransport.cs`). A
+  non-Clear disposition makes managed publish RecoveryRequired ("Fan-stop
+  startup ownership is unresolved; commands remain fenced."), reply Blocked
+  to `setFanStopMode`, and fence ordinary hardware writes
+  (`GuardianFanStopBackend.cs`; `ServiceControlRuntime.FanStop.cs`). Native
+  replies as for a Clear startup in every case. This is latent while both
+  package readers refuse the feature. The reservation read, the
+  RecoveryRequired publication and the write fence belong to the Rust
+  guardian work (option A) and must land before `service-fan-stop-v1` can
+  ship.
+- A caller without the control session while the configuration is
+  quarantined: managed checks `ConfigurationIsAdmitted` first
+  (`ServiceControlRuntime.cs`) and native checks the session first
+  (`fan_stop_mutation.rs`). Only the reply message differs.
 
 - Evidence comes from the matched host metadata (`RZ09-0581`), not from a
   device observation, and the observation record is published only beside
