@@ -211,6 +211,12 @@ fn main() {
         } else {
             capabilities
         };
+        // Nor GPU clock tuning, which writes NVIDIA driver state through NVML.
+        let capabilities = if role == "service" && has("service-gpu-clock-tuning-v1") {
+            format!("{capabilities},service-gpu-clock-tuning-v1")
+        } else {
+            capabilities
+        };
         // Nor the performance shortcut and its preview, under the same rule.
         let capabilities = if role == "service" && has("service-performance-shortcut-v1") {
             format!("{capabilities},service-performance-shortcut-v1")

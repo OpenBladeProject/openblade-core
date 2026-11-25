@@ -670,6 +670,38 @@ public sealed class WindowsNativeEpochTests
     }
 
     [Fact]
+    public void GpuClockTuningServiceIsNotAdmittedByFeatureOrMarker()
+    {
+        string source = new('a', 40);
+        const string message = "GPU clock tuning is not admitted for packaging.";
+        // The features and the capability build.rs gives a build with service-gpu-clock-tuning-v1,
+        // beside the triggers it implies.
+        const string features = "controller-admission-compile-check,firmware-performance-compile-check,hid-identity-compile-check,installed-service-candidate,lifecycle-evidence-compile-check,service-battery-policy-v1,service-fan-mutation-v2,service-gpu-clock-tuning-v1,service-hardware-compile-check,service-mailbox-observation-v1,service-profile-triggers-v1,service-profiles-v1,service-temporary-charge-v1,service-thermal-mutation-v1,startup-custody-v1";
+        const string temporary = "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1,service-fan-mutation-v2,service-battery-policy-v1,service-temporary-charge-v1";
+        const string marked = temporary + ",service-profiles-v1,service-profile-triggers-v1,service-gpu-clock-tuning-v1";
+        // Refused by name before the triggers it extends, whatever the record claims.
+        foreach (string capabilities in new[] { marked, temporary, "none" })
+        {
+            var refused = Assert.Throws<InvalidDataException>(() => NativeArtifact.Inspect(
+                [.. Image("service", schema: 2, features: features, capabilities: capabilities)], "service", source));
+            Assert.Equal(message, refused.Message);
+        }
+        // Neither the feature nor the marker alone is admitted beside the admitted
+        // temporary-charge composition.
+        string extended = features.Replace("service-profile-triggers-v1,service-profiles-v1,", "", StringComparison.Ordinal)
+            .Replace("service-gpu-clock-tuning-v1,", "", StringComparison.Ordinal);
+        Assert.Equal("service-temporary-charge-v1", NativeArtifact.Inspect(
+            [.. Image("service", schema: 2, features: extended, capabilities: temporary)], "service", source).StartupPolicy);
+        string featureOnly = extended.Replace("service-fan-mutation-v2,", "service-fan-mutation-v2,service-gpu-clock-tuning-v1,", StringComparison.Ordinal);
+        var feature = Assert.Throws<InvalidDataException>(() => NativeArtifact.Inspect(
+            [.. Image("service", schema: 2, features: featureOnly, capabilities: temporary)], "service", source));
+        Assert.Equal(message, feature.Message);
+        var marker = Assert.Throws<InvalidDataException>(() => NativeArtifact.Inspect(
+            [.. Image("service", schema: 2, features: extended, capabilities: temporary + ",service-gpu-clock-tuning-v1")], "service", source));
+        Assert.Equal(message, marker.Message);
+    }
+
+    [Fact]
     public void LiveReadingReadIsNotAdmittedByFeatureOrMarker()
     {
         // The features and the marker build.rs gives each admitted Service composition

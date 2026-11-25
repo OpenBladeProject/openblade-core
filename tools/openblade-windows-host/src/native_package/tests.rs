@@ -2288,6 +2288,41 @@ fn a_thermal_convergence_service_is_not_admitted_by_feature_or_marker() {
 }
 
 #[test]
+fn a_gpu_clock_tuning_service_is_not_admitted_by_feature_or_marker() {
+    // The features and the capability build.rs gives a build with
+    // service-gpu-clock-tuning-v1 beside the triggers it implies. Packaging
+    // has not admitted NVML writes, so the reader refuses them by name in
+    // either role or schema, whatever else the record claims, and before the
+    // triggers they extend.
+    const MARKER: &str = "service-gpu-clock-tuning-v1";
+    let triggers = "controller-admission-compile-check,firmware-performance-compile-check,hid-identity-compile-check,installed-service-candidate,lifecycle-evidence-compile-check,service-battery-policy-v1,service-fan-mutation-v2,service-hardware-compile-check,service-mailbox-observation-v1,service-profile-triggers-v1,service-profiles-v1,service-temporary-charge-v1,service-thermal-mutation-v1,startup-custody-v1";
+    let features = triggers.replace(
+        "service-fan-mutation-v2,",
+        "service-fan-mutation-v2,service-gpu-clock-tuning-v1,",
+    );
+    let temporary = "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1,service-fan-mutation-v2,service-battery-policy-v1,service-temporary-charge-v1";
+    let marked = format!("{temporary},service-profiles-v1,service-profile-triggers-v1,{MARKER}");
+    for role in ["service", "agent"] {
+        for claimed in [marked.as_str(), temporary, "none"] {
+            assert!(capabilities(2, role, &features, claimed).is_err());
+            assert!(capabilities(1, role, &features, claimed).is_err());
+        }
+    }
+    // Neither the feature nor the marker alone is admitted beside the
+    // otherwise admitted temporary-charge composition.
+    let admitted = triggers.replace("service-profile-triggers-v1,service-profiles-v1,", "");
+    assert!(capabilities(2, "service", &admitted, temporary).is_ok());
+    let feature_only = admitted.replace(
+        "service-fan-mutation-v2,",
+        "service-fan-mutation-v2,service-gpu-clock-tuning-v1,",
+    );
+    assert!(capabilities(2, "service", &feature_only, temporary).is_err());
+    let marker_only = format!("{temporary},{MARKER}");
+    assert!(capabilities(2, "service", &admitted, &marker_only).is_err());
+    assert!(capabilities(1, "service", &admitted, &marker_only).is_err());
+}
+
+#[test]
 fn a_fan_stop_service_is_not_admitted_by_feature_or_marker() {
     // The features and the capability build.rs gives a build with
     // service-fan-stop-v1 beside updateProfiles. Packaging has not admitted

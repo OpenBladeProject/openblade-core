@@ -70,6 +70,15 @@ service-thermal-convergence-v1 = ["service-profile-triggers-v1", "openblade-doma
 # updateProfiles and a session's first admitted report. No packaged
 # composition implies it, and both package readers refuse it by name.
 service-profile-triggers-v1 = ["service-profiles-v1"]
+# Paired GPU clock tuning on the explicit performance path of exact
+# RZ09-0581: managed ApplyPerformanceOutcomeAsync's NVML preflight, its
+# submission after the confirmed firmware write, the GPU-only setter, the
+# relinquish of unconfigured tuning, and the read-only resolution of an
+# uncertain submission, through the System32-only NVML loader. It writes
+# NVIDIA driver state, so no packaged composition implies it, and both package
+# readers refuse it by name until a WinVerifyTrust and catalog gate checks the
+# loaded module path.
+service-gpu-clock-tuning-v1 = ["service-profile-triggers-v1"]
 # Fan Stop requests served as managed serves them while its guardian is
 # unavailable: Stop and Resume are refused, Fan Stop settings and the
 # Battery Saver preference are stored in the configuration aggregate, and
