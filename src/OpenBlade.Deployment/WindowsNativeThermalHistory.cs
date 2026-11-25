@@ -133,6 +133,7 @@ internal sealed class WindowsNativeThermalHistory
     private readonly HashSet<string> batteryGenerations = new(StringComparer.Ordinal);
     private readonly HashSet<string> fanGenerations = new(StringComparer.Ordinal);
     private readonly HashSet<string> temporaryGenerations = new(StringComparer.Ordinal);
+    private readonly HashSet<string> hyperBoostExitGenerations = new(StringComparer.Ordinal);
     private sealed record Row(string Request, string Owner, string Sid, uint Pid, uint Session, int Destination, string Intent, byte Progress, string? Fan, string? Battery, string? Temporary);
     // Each segment ends positively settled; chronology cannot be split by rolling.
     private ulong Rows(byte[] bytes, IReadOnlyList<WindowsNativeTrustLifecycle.OwnerReference> owners, bool requireSettled)
@@ -206,6 +207,8 @@ internal sealed class WindowsNativeThermalHistory
             string key = original.Epoch;
             if (temporary is not null) { temporaryGenerations.Add(key); }
             if (fan is not null) { fanGenerations.Add(key); }
+            // The HyperBoost restore pair's rows (thermal_mutation.rs Progress 80-83).
+            if (fan is null && battery is null && temporary is null && row.Progress is >= 80 and <= 83) { hyperBoostExitGenerations.Add(key); }
             if (battery is not null || fan is not null && f.GetProperty("contract").GetString() == WindowsNativeFanHistory.CoexistenceContract) { batteryGenerations.Add(key); }
             string prior = generations.GetValueOrDefault(key) ?? Empty(original.Installation, original.Epoch, original.Service);
             generations[key] = NativeCanonical.Digest(NativeCanonical.Lines("OpenBlade.ThermalGenerationRow.v1", prior, NativeCanonical.Digest(raw), original.Active));
@@ -223,6 +226,7 @@ internal sealed class WindowsNativeThermalHistory
         if (temporaryGenerations.Contains(record.Epoch) && !service.TemporaryChargeMutation) { throw Denied(); }
         if (batteryGenerations.Contains(record.Epoch) && !service.BatteryMutation) { throw Denied(); }
         if (fanGenerations.Contains(record.Epoch) && !service.FanMutation) { throw Denied(); }
+        if (hyperBoostExitGenerations.Contains(record.Epoch) && !service.HyperBoostExitMutation) { throw Denied(); }
         if (service.Id != record.ServiceId) { throw Denied(); }
         var original = owners.Where(o => o.Epoch == record.Epoch).ToArray();
         foreach (var owner in original.Where(_ => service.ThermalMutation || generations.ContainsKey(record.Epoch)))

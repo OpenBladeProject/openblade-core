@@ -37,6 +37,8 @@ internal sealed record NativeArtifact(string Id, string Role, string Target, str
     internal bool BatteryMutation => Schema == 2 && Capabilities.Split(',').Contains("service-battery-policy-v1", StringComparer.Ordinal);
     internal bool FanMutation => Schema == 2 && Capabilities.Split(',').Contains("service-fan-mutation-v2", StringComparer.Ordinal);
     internal bool ThermalMutation => Schema == 2 && Capabilities.Split(',').Contains("service-thermal-mutation-v1", StringComparer.Ordinal);
+    // build.rs appends this marker to a Service built with the HyperBoost exit, the only producer of rows 80-83.
+    internal bool HyperBoostExitMutation => Schema == 2 && Capabilities.Split(',').Contains("service-thermal-hyperboost-exit-v1", StringComparer.Ordinal);
     internal bool RequiresMailboxHandoff => ReadOnlyMailbox || ThermalMutation;
     internal string StartupPolicy => TemporaryChargeMutation ? "service-temporary-charge-v1" : BatteryMutation ? "service-battery-policy-v1" : FanMutation ? "service-fan-mutation-v2" : ThermalMutation ? "service-thermal-mutation-v1" : MetadataOnly ? "service-metadata-only-v1" : ReadOnlyMailbox ? "service-mailbox-observation-v1" : Schema == 1 ? "metadata-only-no-firmware" : "service-hardware-compile-check";
 
