@@ -41,15 +41,16 @@
 //! its own reading and never later than `RESERVE` before its deadline. One
 //! sample runs at a time and one request may wait for it; any further
 //! request gets none. A request whose observation has gone is skipped.
-//! Stop and the request's own time, which ends `RESERVE` before the
-//! observation's deadline, cancel a sample as managed's token does: it
-//! stops after the step it is in, the workload, a D-state read or the NVML
-//! read. An observation that stops waiting earlier stops the sample the
-//! same way only until NVML is read. After that the sample still rechecks
-//! the D-state and keeps a valid reading, publishing nothing, so a read
-//! that outlasts the wait spares the next idle samples their own. Stop does
-//! not wait for the worker, which ends the session when the call it is in
-//! returns.
+//! Stop cancels a sample as managed's token does: it stops after the step
+//! it is in, the workload, a D-state read or the NVML read, without waiting
+//! for the worker, which ends the session when the call it is in returns.
+//! An observation that stops waiting, and the request's own time, which
+//! ends `RESERVE` before the observation's deadline, stop the sample the
+//! same way only until it has started its NVML read. After that the sample
+//! still rechecks the D-state and keeps a valid reading, as managed keeps
+//! one its token did not cancel, so a read that outlasts the wait spares
+//! the next idle samples their own. A sample that ends past its request's
+//! time publishes nothing.
 //!
 //! A missing driver, adapter or NVML, a failed call, a powered-down GPU and a
 //! sensor outside managed's 10..=125 C all publish null, as managed does. A
@@ -306,12 +307,11 @@ enum Reader {
 
 /// What ends a sample before its last step.
 pub(super) trait Cancellation {
-    /// Managed's cancellation token: Stop or the request's own time. It ends
-    /// the sample after any step.
+    /// Managed's cancellation token, Stop. It ends the sample after any step.
     fn cancelled(&self) -> bool;
-    /// No observation waits for the sample any more. It ends the sample only
-    /// before the NVML read: a reading taken after it still spares the next
-    /// idle samples their own.
+    /// No observation waits for the sample any more, or its time ran out. It
+    /// ends the sample only before the NVML read: a reading taken after it
+    /// still spares the next idle samples their own.
     fn unwanted(&self) -> bool;
 
     /// Whether a sample that has not read NVML yet stops.
@@ -365,8 +365,9 @@ impl Sampler {
 
     /// One sample of `reader` (`ReadCoreAsync`). `cancel` is checked where
     /// managed checks its token, and an unwanted sample also stops there
-    /// until NVML is read: one that stops before the power read leaves the
-    /// session as it is, and one that stops after it releases the session.
+    /// until it has started its NVML read: one that stops before the power
+    /// read leaves the session as it is, and one that stops after it
+    /// releases the session.
     ///
     /// Managed's timer ends a session on time even while a sample reads
     /// Windows state. Here a session whose lease would end within
@@ -506,23 +507,30 @@ struct Request {
     until: Instant,
 }
 
-/// One request's sample: Stop and the request's time are managed's token,
-/// and a dropped reply leaves the sample unwanted.
+impl Request {
+    /// Whether the request's time, `RESERVE` before its observation's
+    /// deadline, has run out.
+    fn expired(&self) -> bool {
+        Instant::now() >= self.until
+    }
+}
+
+/// One request's sample: Stop is managed's token, and a dropped reply or
+/// the end of the request's time leaves the sample unwanted.
 struct Sampling<'a> {
     request: &'a Request,
     stopped: &'a AtomicBool,
 }
 
 impl Cancellation for Sampling<'_> {
-    /// Stop, or the request's time has run out.
     fn cancelled(&self) -> bool {
-        self.stopped.load(Ordering::Acquire) || Instant::now() >= self.request.until
+        self.stopped.load(Ordering::Acquire)
     }
 
-    /// The observation dropped its reply: it stopped waiting at
-    /// `AFTER_READING` or has gone.
+    /// The observation dropped its reply, at `AFTER_READING` or because it
+    /// went, or the request's time has run out.
     fn unwanted(&self) -> bool {
-        self.request.reply.is_closed()
+        self.request.reply.is_closed() || self.request.expired()
     }
 }
 
@@ -547,13 +555,17 @@ fn run(factory: Factory, requests: Receiver<Request>, stopped: Arc<AtomicBool>) 
             },
         };
         // Stop cancels a running sample and every waiting request, and a
-        // request whose observation went ends before the workload read. A
-        // reply nobody waits for is dropped here.
+        // request whose observation went or whose time ran out ends before
+        // the workload read. A reply nobody waits for is dropped here, and so
+        // is one that ended past its request's time, even before its
+        // observation asks for it.
         let celsius = sampler.sample(&Sampling {
             request: &request,
             stopped: &stopped,
         });
-        let _ = request.reply.send(celsius);
+        if !request.expired() {
+            let _ = request.reply.send(celsius);
+        }
     }
 }
 

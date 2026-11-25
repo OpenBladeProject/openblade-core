@@ -750,8 +750,8 @@ marker by name. A build without the feature still refuses the request with
   not cancelled, and NVIDIA's own brief wakes open no NVML. Any sample that
   is not D0, the recheck after a read included, drops the reading and
   restarts the dwell. A sample cancelled right after its first D-state read
-  changes neither, and a read cancelled by Stop or its deadline keeps no
-  value, as in managed.
+  changes neither, and a read cancelled by Stop keeps no value, as in
+  managed.
   The 3 s dwell and 10 s spacing are managed's and have not been checked
   against NVIDIA's runtime-D3 idle timeout on the device. The session
   (`nvmlInit_v2` to `nvmlShutdown`) stays open across consecutive valid
@@ -780,11 +780,12 @@ marker by name. A build without the feature still refuses the request with
   holds neither the reply nor the read source. A sample whose reading is not
   accepted or that has not arrived by then is dropped, and a reading that
   waited for its sample is never published over one from a later job. A
-  sample whose observation stops waiting before its NVML read stops after
-  the step it is in. One that has read NVML by then still rechecks the
-  D-state and keeps a valid reading for the next idle samples, as managed
-  keeps one its token did not cancel. Only Stop and the request's deadline,
-  500 ms before the observation's, cancel it there. One
+  sample whose observation stops waiting, or whose request's deadline,
+  500 ms before the observation's, passes, before its NVML read stops after
+  the step it is in. One that has started its NVML read by then still
+  rechecks the D-state and keeps a valid reading for the next idle samples,
+  as managed keeps one its token did not cancel; only Stop cancels it there.
+  A sample that ends past its request's deadline publishes nothing. One
   request may wait behind a running sample and any other gets none; a
   waiting request whose observation went is skipped. Stop cancels without
   waiting: a running sample makes no call after the one it is in, a waiting

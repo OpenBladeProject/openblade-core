@@ -1329,3 +1329,36 @@ async fn an_idle_read_that_outlasts_the_wait_is_reused_by_the_next_samples() {
     );
     assert_eq!(worker.workloads.load(Ordering::SeqCst), 4);
 }
+
+/// An idle NVML read that ends after its request's time, `RESERVE` before
+/// the observation's deadline, publishes nothing even to an observation
+/// that asks for it only then, but keeps the reading as managed does: the
+/// next idle samples reuse it without a session of their own.
+#[tokio::test]
+async fn an_idle_read_past_its_requests_time_is_kept_but_not_published() {
+    let mut worker = Worker::idle();
+    let (release, entries) = worker.hold_init();
+    let host = worker.host();
+    assert_eq!(host.request(deadline()).unwrap().temperature().await, None);
+    *worker.ahead.lock().unwrap() = IDLE_DWELL;
+    let short = Duration::from_millis(200);
+    let late = loop {
+        if let Some(late) = host.request(tokio::time::Instant::now() + RESERVE + short) {
+            break late;
+        }
+        thread::sleep(Duration::from_millis(1));
+    };
+    entries.recv_timeout(Duration::from_secs(5)).unwrap();
+    thread::sleep(short + Duration::from_millis(100));
+    drop(release);
+    worker.wait_for("shutdown", 1);
+    // The observation asks only after the sample ended.
+    assert_eq!(late.temperature().await, None);
+    for _ in 0..2 {
+        assert_eq!(accepted(&host).temperature().await, Some(52));
+    }
+    assert_eq!(
+        worker.nvml.calls(),
+        calls(&[&["init"], &READ, &["shutdown"]])
+    );
+}
