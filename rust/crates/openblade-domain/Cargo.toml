@@ -26,6 +26,10 @@ driver-mode-history = []
 # the RestoreThenBattery plan and the restore setters' progress 80-83 in the
 # shared thermal grammar. Readers built without it refuse those rows.
 hyperboost-exit = []
+# Entering HyperBoost from a confirmed admitted state: the HyperBoost
+# destination, its enable pair and its row destination in the shared thermal
+# grammar. Readers built without it refuse those rows.
+hyperboost = ["hyperboost-exit"]
 
 [dependencies]
 openblade-types.workspace = true

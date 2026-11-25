@@ -128,12 +128,15 @@ internal sealed class WindowsNativeThermalHistory
             int mode = row.Progress is 31 or (>= 40 and <= 43) ? 0 : document.RootElement.GetProperty("intent").GetProperty("mode").GetInt32();
             return new(row.Request, "fan", row.Progress, row.Sid, null, mode switch { 0 => "Automatic", 1 => "Fixed", 3 => "Maximum", _ => throw Denied() }, null);
         }
+        // Owned HyperBoost's enable pair: its target is HyperBoost with Automatic fans.
+        if (row.Destination == HyperBoost) { return new(row.Request, "hyperBoost", row.Progress, row.Sid, null, null, null); }
         return new(row.Request, "performance", row.Progress, row.Sid, PresetName(row.Destination) ?? throw Denied(), null, null);
     }
     private readonly HashSet<string> batteryGenerations = new(StringComparer.Ordinal);
     private readonly HashSet<string> fanGenerations = new(StringComparer.Ordinal);
     private readonly HashSet<string> temporaryGenerations = new(StringComparer.Ordinal);
     private readonly HashSet<string> hyperBoostExitGenerations = new(StringComparer.Ordinal);
+    private readonly HashSet<string> hyperBoostGenerations = new(StringComparer.Ordinal);
     private sealed record Row(string Request, string Owner, string Sid, uint Pid, uint Session, int Destination, string Intent, byte Progress, string? Fan, string? Battery, string? Temporary);
     // Each segment ends positively settled; chronology cannot be split by rolling.
     private ulong Rows(byte[] bytes, IReadOnlyList<WindowsNativeTrustLifecycle.OwnerReference> owners, bool requireSettled)
@@ -164,7 +167,8 @@ internal sealed class WindowsNativeThermalHistory
                 || !row.Sid.StartsWith("S-1-5-21-", StringComparison.Ordinal) || row.Sid.Any(c => !char.IsAsciiDigit(c) && c is not ('S' or '-'))
                 || row.Pid == 0 || row.Session == 0 || (temporary is not null ? fan is not null || battery is not null || row.Destination != 0 || !WindowsNativeTemporaryChargeHistory.ValidProgress(row.Progress) : battery is not null ? fan is not null || row.Destination != 0 || !WindowsNativeBatteryHistory.ValidProgress(row.Progress) : fan is null ? !ValidPerformanceProgress(row.Destination, row.Progress) : row.Destination != 0 || !WindowsNativeFanHistory.ValidProgress(f, row.Progress))) { throw Denied(); }
             JsonElement requested = e.TryGetProperty("requested", out var v) ? v : default;
-            if ((fan is not null || battery is not null || temporary is not null) && requested.ValueKind != JsonValueKind.Null || NativeCanonical.Digest(temporary ?? battery ?? fan ?? Intent(requested)) != row.Intent) { throw Denied(); }
+            // An owned HyperBoost entry (thermal_history.rs hyperboost_requested) stores no override.
+            if ((fan is not null || battery is not null || temporary is not null || row.Destination == HyperBoost) && requested.ValueKind != JsonValueKind.Null || NativeCanonical.Digest(temporary ?? battery ?? fan ?? Intent(requested)) != row.Intent) { throw Denied(); }
             if (temporary is not null && t.GetProperty("origin").ValueKind != JsonValueKind.Null)
             {
                 var origin = t.GetProperty("origin");
@@ -209,6 +213,8 @@ internal sealed class WindowsNativeThermalHistory
             if (fan is not null) { fanGenerations.Add(key); }
             // The HyperBoost restore pair's rows (thermal_mutation.rs Progress 80-83).
             if (fan is null && battery is null && temporary is null && row.Progress is >= 80 and <= 83) { hyperBoostExitGenerations.Add(key); }
+            // Owned HyperBoost's enable rows (thermal_mutation.rs HYPERBOOST).
+            if (fan is null && battery is null && temporary is null && row.Destination == HyperBoost) { hyperBoostGenerations.Add(key); }
             if (battery is not null || fan is not null && f.GetProperty("contract").GetString() == WindowsNativeFanHistory.CoexistenceContract) { batteryGenerations.Add(key); }
             string prior = generations.GetValueOrDefault(key) ?? Empty(original.Installation, original.Epoch, original.Service);
             generations[key] = NativeCanonical.Digest(NativeCanonical.Lines("OpenBlade.ThermalGenerationRow.v1", prior, NativeCanonical.Digest(raw), original.Active));
@@ -227,6 +233,7 @@ internal sealed class WindowsNativeThermalHistory
         if (batteryGenerations.Contains(record.Epoch) && !service.BatteryMutation) { throw Denied(); }
         if (fanGenerations.Contains(record.Epoch) && !service.FanMutation) { throw Denied(); }
         if (hyperBoostExitGenerations.Contains(record.Epoch) && !service.HyperBoostExitMutation) { throw Denied(); }
+        if (hyperBoostGenerations.Contains(record.Epoch) && !service.HyperBoostMutation) { throw Denied(); }
         if (service.Id != record.ServiceId) { throw Denied(); }
         var original = owners.Where(o => o.Epoch == record.Epoch).ToArray();
         foreach (var owner in original.Where(_ => service.ThermalMutation || generations.ContainsKey(record.Epoch)))
@@ -249,6 +256,8 @@ internal sealed class WindowsNativeThermalHistory
         _ => null,
     };
     private const int Custom = 5;
+    // Owned HyperBoost's enable pair (thermal_mutation.rs HYPERBOOST), never a saved intent.
+    private const int HyperBoost = 100;
     // thermal_mutation.rs Progress::chain: each destination's setter chains. A
     // preset is one pair (0, 1-4, 5); Custom adds the 0D/07 CPU and GPU level
     // setters (7-10) before its final read. Leaving HyperBoost for a battery
@@ -264,6 +273,7 @@ internal sealed class WindowsNativeThermalHistory
     {
         Custom => CustomChains,
         3 or 4 => BatteryChains,
+        HyperBoost => PairChains,
         _ => PresetName(destination) is null ? null : PairChains,
     };
     internal static bool ValidPerformanceProgress(int destination, byte progress) => Chains(destination) is { } chains

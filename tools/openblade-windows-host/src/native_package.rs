@@ -822,6 +822,14 @@ fn capabilities(schema: u8, role: &str, features: &str, value: &str) -> io::Resu
     {
         return Err(deny());
     }
+    // Owned HyperBoost writes the enable pair, and its rows (destination 100)
+    // need a managed handback no packaged pairing has been reviewed with.
+    // Admitting it is a separate packaging decision. Refuse the feature and
+    // its marker by name (docs/windows-rust-development-service.md).
+    const HYPERBOOST: &str = "service-hyperboost-v1";
+    if has(HYPERBOOST) || value.split(',').any(|capability| capability == HYPERBOOST) {
+        return Err(deny());
+    }
     // The application-context reporter is not admitted for packaging either:
     // refuse its feature and its capability marker by name, whatever else the
     // record claims, until a packaging stage admits both.

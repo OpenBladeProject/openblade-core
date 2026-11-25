@@ -1151,7 +1151,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         // else is unknown evidence and blocks like an unreadable record.
         string? failure = adoption.Failure ?? (adoption.Obligations.All(o => o switch
         {
-            { Key: "pending", Item.Family: "performance" or "fan" or "battery" or "temporaryCharge" } => true,
+            { Key: "pending", Item.Family: "performance" or "hyperBoost" or "fan" or "battery" or "temporaryCharge" } => true,
             { Key: "liveTemporaryCharge", Item.Family: "temporaryCharge" } => true,
             { Key: "ownedFan", Item.Family: "fan" } or { Key: "abandonedPrepared" } => true,
             _ => false,
@@ -1183,6 +1183,13 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                             Performance = new(Enum.Parse<PerformancePreset>(obligation.Item.Performance!), SettingValueSource.ConfirmedFirmwareState),
                         },
                         UnknownConfirmedState, NativeHandback: claim));
+                    break;
+                case { Key: "pending", Item.Family: "hyperBoost" }:
+                    // Native owned HyperBoost's enable pair. Its target is HyperBoost
+                    // with Automatic fans; native writes no ownership journal, so a
+                    // confirmed entry is HyperBoost managed did not start.
+                    pendingWriteConfirmations.Set(DeviceSubsystem.Performance, new(powerSource, resolved,
+                        UnknownConfirmedState, HyperBoostActive: true, NativeHandback: claim));
                     break;
                 case { Key: "pending", Item.Family: "fan" }:
                     pendingWriteConfirmations.Set(DeviceSubsystem.Fans, new(powerSource,

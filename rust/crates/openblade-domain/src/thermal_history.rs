@@ -229,6 +229,19 @@ pub struct Entry {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fan: Option<crate::fan_history::FanRecord>,
 }
+/// Whether a row claims owned HyperBoost (`thermal_mutation::HYPERBOOST`)
+/// with a requested override: the entry stores no intent, so its rows carry
+/// none. Without owned HyperBoost the destination has no chain and is refused
+/// by `valid_progress`.
+fn hyperboost_requested(e: &Entry) -> bool {
+    #[cfg(feature = "hyperboost")]
+    return e.destination == crate::thermal_mutation::HYPERBOOST && e.requested.is_some();
+    #[cfg(not(feature = "hyperboost"))]
+    {
+        let _ = e;
+        false
+    }
+}
 pub fn battery_fan_binding(e: &Entry) -> io::Result<String> {
     let fan = e.fan.as_ref().ok_or_else(deny)?;
     Ok(digest(&lines(
@@ -359,6 +372,7 @@ fn rows_from(
                     || f.hash()? != entry.intent
             } else {
                 !valid_progress(entry.destination, entry.progress)
+                    || hyperboost_requested(&entry)
                     || digest(&serde_json::to_vec(&entry.requested)?) != entry.intent
             }
         {
@@ -1026,6 +1040,26 @@ mod tests {
             );
         assert!(complete.contains("\"cpu\":3"));
         rows(complete.as_bytes(), |_, _| Ok(())).unwrap();
+    }
+    /// An owned HyperBoost entry (destination 100) is the enable pair's own
+    /// chain and stores no override; a reader without owned HyperBoost refuses
+    /// every such journal. The managed reader consumes the same journals.
+    #[test]
+    fn hyperboost_rows_are_the_enable_pair_without_a_requested_override() {
+        let v = vector();
+        for (key, admitted) in [("admitted", true), ("refused", false)] {
+            let cases = v["hyperBoostRows"][key].as_array().unwrap();
+            assert!(!cases.is_empty());
+            for case in cases {
+                let journal = case["journal"].as_str().unwrap().as_bytes();
+                assert_eq!(
+                    rows(journal, |_, _| Ok(())).is_ok(),
+                    admitted && cfg!(feature = "hyperboost"),
+                    "{}",
+                    case["name"]
+                );
+            }
+        }
     }
     /// Leaving HyperBoost for a battery preset journals the restore pair as
     /// 80-83 first; a reader without the restore sequence refuses every such

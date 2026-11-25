@@ -43,6 +43,9 @@ const RESUBMIT: &str = "Performance intent stored. Performance is saved, not app
 #[cfg(feature = "service-thermal-hyperboost-exit-v1")]
 #[path = "hyperboost_exit.rs"]
 mod hyperboost_exit;
+#[cfg(feature = "service-hyperboost-v1")]
+#[path = "hyperboost_owned.rs"]
+mod hyperboost_owned;
 
 fn rows(rig: &Rig) -> Vec<Value> {
     rig.files

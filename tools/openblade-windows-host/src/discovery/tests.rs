@@ -355,3 +355,57 @@ fn cancellation_discards_partial_results_and_bounds_the_visitor() {
         io::ErrorKind::InvalidData
     );
 }
+
+/// The owned-HyperBoost cooling-pad probe: absence only from a complete scan
+/// in which every interface's IDs were read; any matching ID, in any case, is
+/// presence.
+#[test]
+fn hardware_id_presence_needs_a_complete_readable_scan() {
+    const PAD: &str = "VID_1532&PID_0F43";
+    let present = |rows: Vec<Option<Interface>>, scan: ScanState| {
+        let mut fixture = fixture("Blade 16 - RZ09-0581");
+        fixture.rows = rows;
+        fixture.scan = scan;
+        hardware_id_present(&fixture, &AtomicBool::new(false), PAD).map_err(|e| e.to_string())
+    };
+    assert_eq!(present(Vec::new(), ScanState::Complete), Ok(false));
+    assert_eq!(
+        present(vec![row("opaque-device-a", EXACT)], ScanState::Complete),
+        Ok(false)
+    );
+    for id in [
+        r"HID\VID_1532&PID_0F43&MI_00",
+        r"hid\vid_1532&pid_0f43&col01",
+    ] {
+        assert_eq!(
+            present(
+                vec![row("opaque-device-a", EXACT), row("opaque-device-b", &[id])],
+                ScanState::Complete
+            ),
+            Ok(true),
+            "{id}"
+        );
+    }
+    // A row or ID list that cannot be read, or an incomplete scan, is no
+    // evidence of absence.
+    assert!(
+        present(
+            vec![row("opaque-device-a", EXACT), None],
+            ScanState::Complete
+        )
+        .is_err()
+    );
+    assert!(
+        present(
+            vec![Some(Interface {
+                path: "opaque-device-a".into(),
+                hardware_ids: None
+            })],
+            ScanState::Complete
+        )
+        .is_err()
+    );
+    for scan in [ScanState::Incomplete, ScanState::Unavailable] {
+        assert!(present(Vec::new(), scan).is_err(), "{scan:?}");
+    }
+}

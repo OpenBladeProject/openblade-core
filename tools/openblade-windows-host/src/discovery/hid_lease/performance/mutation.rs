@@ -130,12 +130,30 @@ pub(crate) trait Permit: Send + Sync {
     fn destination_holds(&self, _power: i32) -> bool {
         false
     }
+    /// Whether this operation is a HyperBoost exit that writes only managed's
+    /// Balanced restore and leaves the saved intent unapplied. Managed's exit
+    /// admits no ordinary command power (`ProductionBatteryPort`'s exit checks
+    /// its precondition and final readback only), so each setter is admitted
+    /// on a classified source that agrees with Windows, battery included
+    /// (`thermal_mutation::admits_restore_class`), instead of the Balanced
+    /// destination's own rule.
+    #[cfg(feature = "service-hyperboost-v1")]
+    fn restores_only(&self) -> bool {
+        false
+    }
     /// Whether a thermal submission this recipe does not own is still
     /// unresolved, after at most one read-only resolution attempt within
     /// `budget` (managed `PendingWriteConfirmationTracker.Blocks`): every
     /// thermal writer refuses then, before any row or setter.
     fn thermal_fenced(&self, _budget: std::time::Duration) -> bool {
         false
+    }
+    /// A fresh admission a performance setter needs immediately before its
+    /// intent row, after its own power reading: managed revalidates HyperBoost
+    /// eligibility before each enable command (`requiredPadStatePerCommand`).
+    /// A refusal sets its own cause; that setter is not submitted.
+    fn admits_setter(&self) -> bool {
+        true
     }
     /// Time the pace must leave after this recipe's setters for work that
     /// follows them inside the request, such as a paired NVML submission.
@@ -464,7 +482,7 @@ impl<P: Port> Reader<P, ReadAdmission> {
         let final_ids = reserve()?;
         let level_ids = match destination {
             Destination::Custom(_) => Some(reserve()?),
-            Destination::Preset(_) => None,
+            _ => None,
         };
         // Each setter is one power read and its own exchange; the restore
         // pair's intermediate read, the final pair and any Custom levels
@@ -626,6 +644,12 @@ impl<P: Port> Attempt<'_, P, ReadAdmission> {
             permit.refused(Refusal::Deadline);
             return None;
         }
+        // Refused as a power change is: nothing is submitted for this setter,
+        // and an earlier one keeps its acknowledged row unsettled, so nothing
+        // is replayed.
+        if !permit.admits_setter() {
+            return None;
+        }
         self.checkpoint(authorize, admission, limit).ok()?;
         permit.record(intent).ok()?;
         self.checkpoint(authorize, admission, limit).ok()?;
@@ -667,6 +691,11 @@ impl Setters {
             Destination::Custom(levels) => Self {
                 pair: PresetPair::custom(reserve()?)?,
                 levels: Some(CustomLevelPair::new(reserve()?, levels.cpu, levels.gpu)?),
+            },
+            #[cfg(feature = "service-hyperboost-v1")]
+            Destination::HyperBoost => Self {
+                pair: PresetPair::hyperboost_enable(reserve()?)?,
+                levels: None,
             },
         })
     }
@@ -793,10 +822,19 @@ impl<'a> PowerFence<'a> {
     pub(super) fn before_query(&self) -> Option<WindowsSample> {
         let windows = self.permit.windows_on_battery();
         let admitted = match self.destination.get() {
+            Some(_) if self.restores_only() => windows.is_some(),
             Some(destination) => admits_windows(*destination, windows),
             None => windows.is_some(),
         };
         admitted.then_some(WindowsSample(windows))
+    }
+    /// A HyperBoost exit that writes only managed's Balanced restore
+    /// (`Permit::restores_only`).
+    fn restores_only(&self) -> bool {
+        #[cfg(feature = "service-hyperboost-v1")]
+        return self.permit.restores_only();
+        #[cfg(not(feature = "service-hyperboost-v1"))]
+        false
     }
     /// A setter-time reading against the first reading's class `source`,
     /// with the Windows kind sampled `before` its query.
@@ -833,6 +871,10 @@ impl<'a> PowerFence<'a> {
             return false;
         }
         let class_admitted = match self.destination.get() {
+            #[cfg(feature = "service-hyperboost-v1")]
+            Some(_) if self.restores_only() => {
+                openblade_domain::thermal_mutation::admits_restore_class(current, windows)
+            }
             Some(destination) => admits_class(*destination, current, windows),
             None => current != 1,
         };

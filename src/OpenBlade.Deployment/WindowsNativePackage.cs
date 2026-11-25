@@ -39,6 +39,8 @@ internal sealed record NativeArtifact(string Id, string Role, string Target, str
     internal bool ThermalMutation => Schema == 2 && Capabilities.Split(',').Contains("service-thermal-mutation-v1", StringComparer.Ordinal);
     // build.rs appends this marker to a Service built with the HyperBoost exit, the only producer of rows 80-83.
     internal bool HyperBoostExitMutation => Schema == 2 && Capabilities.Split(',').Contains("service-thermal-hyperboost-exit-v1", StringComparer.Ordinal);
+    // build.rs appends this marker to a Service built with owned HyperBoost, the only producer of destination-100 rows.
+    internal bool HyperBoostMutation => Schema == 2 && Capabilities.Split(',').Contains("service-hyperboost-v1", StringComparer.Ordinal);
     internal bool RequiresMailboxHandoff => ReadOnlyMailbox || ThermalMutation;
     internal string StartupPolicy => TemporaryChargeMutation ? "service-temporary-charge-v1" : BatteryMutation ? "service-battery-policy-v1" : FanMutation ? "service-fan-mutation-v2" : ThermalMutation ? "service-thermal-mutation-v1" : MetadataOnly ? "service-metadata-only-v1" : ReadOnlyMailbox ? "service-mailbox-observation-v1" : Schema == 1 ? "metadata-only-no-firmware" : "service-hardware-compile-check";
 
@@ -134,6 +136,11 @@ internal sealed record NativeArtifact(string Id, string Role, string Target, str
         // feature and its capability marker by name (docs/windows-rust-development-service.md).
         if (features.Contains("service-thermal-hyperboost-exit-v1", StringComparer.Ordinal) || capabilities.Split(',').Contains("service-thermal-hyperboost-exit-v1", StringComparer.Ordinal))
         { throw new InvalidDataException("The HyperBoost exit is not admitted for packaging."); }
+        // Owned HyperBoost writes the enable pair, and its rows need a managed handback no packaged
+        // pairing has been reviewed with. Admitting it is a separate packaging decision. Refuse the
+        // feature and its capability marker by name (docs/windows-rust-development-service.md).
+        if (features.Contains("service-hyperboost-v1", StringComparer.Ordinal) || capabilities.Split(',').Contains("service-hyperboost-v1", StringComparer.Ordinal))
+        { throw new InvalidDataException("Owned HyperBoost is not admitted for packaging."); }
         // The application-context reporter is not admitted for packaging either. Refuse its
         // feature and its capability marker by name until a packaging stage admits both.
         // That stage must also pair the reporter with a Service built with service-thermal-mutation-v1,

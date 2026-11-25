@@ -388,6 +388,13 @@ public sealed partial class NativeHandbackTests : IDisposable
         ("ownedFan", Item("fan", 12, fanMode: "Fixed")),
         ("abandonedPrepared", Item("fan", 31, fanMode: "Fixed")),
         ("abandonedPrepared", Item("performance", 2, performance: "Balanced")),
+        // Owned HyperBoost's enable pair has no Confirmed, retired or
+        // level-setter row to hand back.
+        ("pending", Item("hyperBoost", 0)),
+        ("pending", Item("hyperBoost", 5)),
+        ("pending", Item("hyperBoost", 7)),
+        ("pending", Item("hyperBoost", 80)),
+        ("ownedFan", Item("hyperBoost", 30)),
     ];
     public static TheoryData<int> IncoherentSlots() => [.. Enumerable.Range(0, Incoherent.Length)];
 
@@ -473,6 +480,62 @@ public sealed partial class NativeHandbackTests : IDisposable
         string balanced = Encoding.UTF8.GetString(journal).Replace("\"destination\":" + destination.ToString(CultureInfo.InvariantCulture), "\"destination\":1", StringComparison.Ordinal);
         Thermal(files, Bytes(balanced));
         if (count >= 2) { Assert.ThrowsAny<IOException>(() => WindowsNativeThermalHistory.Read(files, [Original], Original)); }
+    }
+
+    // A crash at every row of owned HyperBoost's enable pair (destination 100:
+    // 0, 1-4, 5, or 0 then 6) is classified as the hyperBoost family; only a
+    // settled row passes the strict reader, and no other chain is native
+    // chronology for it.
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(4)]
+    [InlineData(5)]
+    [InlineData(6)]
+    [InlineData(7)]
+    public void OwnedHyperBoostCrashAtEachRowIsClassifiedAndStrictReaderStillRefuses(int count)
+    {
+        int[] chain = count == 7 ? [0, 6] : new[] { 0, 1, 2, 3, 4, 5 }[..count];
+        byte[] Journal(int destination, object? requested, IEnumerable<int> progress)
+        {
+            using var stream = new MemoryStream();
+            byte[] intent = requested is null ? "null"u8.ToArray() : JsonSerializer.SerializeToUtf8Bytes(requested);
+            foreach (int p in progress)
+            {
+                stream.Write(JsonSerializer.SerializeToUtf8Bytes(new { request = "aaaaaaaa-bbbb-cccc-eeee-000000000001", owner = Original.Nonce, user_sid = "S-1-5-21-111-222-333-1002", caller_pid = 42, session = 7, requested, destination, intent = NativeCanonical.Digest(intent), progress = p }));
+                stream.WriteByte(10);
+            }
+            return stream.ToArray();
+        }
+        byte[] journal = Journal(100, null, chain);
+        using var files = ManagedMailboxCorrectionTests.Bootstrap();
+        Thermal(files, journal);
+        var handback = WindowsNativeThermalHistory.Read(files, [Original], Original).Handback!;
+        AssertClassified(Lines(Encoding.UTF8.GetString(journal)), handback);
+        int last = chain[^1];
+        if (last is >= 1 and <= 4) { Assert.Equal(new NativeHandbackItem("aaaaaaaa-bbbb-cccc-eeee-000000000001", "hyperBoost", last, "S-1-5-21-111-222-333-1002", null, null, null), handback.Pending); }
+        if (last == 0) { Assert.Equal("hyperBoost", handback.AbandonedPrepared!.Family); }
+        Assert.Equal(last is 5 or 6, handback.IsEmpty);
+        if (last is 5 or 6) { _ = WindowsNativeThermalHistory.Read(files, [Original]); }
+        else { Assert.Throws<IOException>(() => WindowsNativeThermalHistory.Read(files, [Original])); }
+        // The record round-trips the classified item, and an item of the
+        // family naming a preset or fan mode is refused.
+        if (!handback.IsEmpty) { Assert.Equal(handback, WindowsNativeHandback.Parse(handback.Serialize([])).Handback); }
+        foreach (var named in new[] { Item("hyperBoost", 1, performance: "Balanced"), Item("hyperBoost", 2, fanMode: "Automatic") })
+        { Assert.Throws<InvalidDataException>(() => WindowsNativeHandback.Parse(new WindowsNativeHandback(new string('2', 32), named, null, null, null, null).Serialize([]))); }
+        // The restore and Custom chains are not owned HyperBoost's, and its rows
+        // carry no requested override.
+        foreach (byte[] foreign in new[]
+        {
+            Journal(100, null, [0, 80]),
+            Journal(100, null, [0, 1, 2, 3, 4, 7]),
+            Journal(100, new { value = 1, lifetime = 1, customPerformance = (object?)null }, chain),
+        })
+        {
+            Thermal(files, foreign);
+            Assert.ThrowsAny<IOException>(() => WindowsNativeThermalHistory.Read(files, [Original], Original));
+        }
     }
 
     // Every pair destination native journals hands back under its managed name.

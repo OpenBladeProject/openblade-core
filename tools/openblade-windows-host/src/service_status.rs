@@ -174,6 +174,12 @@ pub(crate) enum StatusRequest {
         #[serde(deserialize_with = "Deserialize::deserialize")]
         preset: Option<i32>,
     },
+    /// Managed `SetHyperBoostRequest`.
+    SetHyperBoost {
+        version: i32,
+        request_id: String,
+        enabled: bool,
+    },
     ObserveState {
         include_live_readings: bool,
         #[serde(default = "all_live_readings")]
@@ -255,7 +261,7 @@ impl StatusRequest {
     /// The discriminator of every variant. `operation` maps each variant to
     /// its entry, so a new variant cannot be added without listing it here.
     #[cfg(feature = "installed-service-candidate")]
-    pub(crate) const OPERATIONS: [&'static str; 20] = [
+    pub(crate) const OPERATIONS: [&'static str; 21] = [
         "setBatteryPolicy",
         "setBatteryProtection",
         "setFullChargeOverride",
@@ -276,6 +282,7 @@ impl StatusRequest {
         "setBatterySaverFanStop",
         "cyclePerformanceShortcut",
         "setPerformanceShortcutPreview",
+        "setHyperBoost",
     ];
 
     #[cfg(all(test, feature = "installed-service-candidate"))]
@@ -301,6 +308,7 @@ impl StatusRequest {
             Self::SetBatterySaverFanStop { .. } => 17,
             Self::CyclePerformanceShortcut { .. } => 18,
             Self::SetPerformanceShortcutPreview { .. } => 19,
+            Self::SetHyperBoost { .. } => 20,
         }]
     }
 
@@ -319,7 +327,8 @@ impl StatusRequest {
         const CONVERGENCE: bool = cfg!(feature = "service-thermal-convergence-v1");
         const FAN_STOP: bool = cfg!(feature = "service-fan-stop-v1");
         const SHORTCUT: bool = cfg!(feature = "service-performance-shortcut-v1");
-        const COMPILED: [bool; 20] = [
+        const HYPERBOOST: bool = cfg!(feature = "service-hyperboost-v1");
+        const COMPILED: [bool; 21] = [
             BATTERY,
             BATTERY,
             BATTERY,
@@ -340,6 +349,7 @@ impl StatusRequest {
             FAN_STOP,
             SHORTCUT,
             SHORTCUT,
+            HYPERBOOST,
         ];
         Self::OPERATIONS
             .iter()
@@ -514,6 +524,11 @@ impl StatusRequest {
                 version,
                 request_id,
                 ..
+            }
+            | Self::SetHyperBoost {
+                version,
+                request_id,
+                ..
             } => (*version, request_id),
             Self::ExportDiagnostics {
                 version,
@@ -633,6 +648,9 @@ impl StatusRequest {
             return Err(invalid(
                 "signed performance shortcut composition is unavailable",
             ));
+        }
+        if matches!(self, Self::SetHyperBoost { .. }) && !cfg!(feature = "service-hyperboost-v1") {
+            return Err(invalid("signed HyperBoost composition is unavailable"));
         }
         // Managed `IpcMessageCodec`: `Enum.IsDefined(cycle.Source)`, and for a
         // preview a non-empty session, a positive generation and a defined or

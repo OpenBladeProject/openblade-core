@@ -9,6 +9,15 @@ pub use openblade_types::InstalledThermalPreset as Preset;
 pub const CUSTOM: i32 = 5;
 /// The 0D/02 Custom selector (fixture `performance-custom-channel-1/2`).
 pub const CUSTOM_SELECTOR: u8 = 4;
+/// The native row destination of a HyperBoost entry. Managed has no
+/// PerformancePreset for HyperBoost (it is `HyperBoostActive` beside the
+/// preset), so the value lies outside every managed preset (0-9) and is read
+/// only by readers bound to the HyperBoost capability.
+#[cfg(feature = "hyperboost")]
+pub const HYPERBOOST: i32 = 100;
+/// The 0D/02 HyperBoost selector (fixture `hyperboost-enable-channel-1/2`).
+#[cfg(feature = "hyperboost")]
+pub const HYPERBOOST_SELECTOR: u8 = 7;
 /// One native destination on exact RZ09-0581, after managed
 /// `ProductionBatteryPort`: a preset is its own 0D/02 pair
 /// (`SetPerformanceAsync`); Custom is the selector-4 pair and then the CPU and
@@ -18,6 +27,11 @@ pub const CUSTOM_SELECTOR: u8 = 4;
 pub enum Destination {
     Preset(Preset),
     Custom(CustomPerformanceLevels),
+    /// Managed `SetHyperBoostAsync(true)` on exact RZ09-0581: the
+    /// `hyperboost-enable` pair, confirmed by an independent read of
+    /// HyperBoost with Automatic fans. It is never a saved intent.
+    #[cfg(feature = "hyperboost")]
+    HyperBoost,
 }
 impl Destination {
     /// Managed `CustomPerformanceSettings` on exact RZ09-0581, admitted by
@@ -42,6 +56,8 @@ impl Destination {
         match self {
             Self::Preset(preset) => preset as i32,
             Self::Custom(_) => CUSTOM,
+            #[cfg(feature = "hyperboost")]
+            Self::HyperBoost => HYPERBOOST,
         }
     }
     /// The battery selectors 3 and 6 (managed `IsBatterySelectorCommand`).
@@ -52,7 +68,7 @@ impl Destination {
     pub fn custom_levels(self) -> Option<CustomPerformanceLevels> {
         match self {
             Self::Custom(levels) => Some(levels),
-            Self::Preset(_) => None,
+            _ => None,
         }
     }
     /// The 0D/02 selector the destination's pair writes; Custom is 4.
@@ -60,6 +76,8 @@ impl Destination {
         match self {
             Self::Preset(preset) => preset.selector(),
             Self::Custom(_) => CUSTOM_SELECTOR,
+            #[cfg(feature = "hyperboost")]
+            Self::HyperBoost => HYPERBOOST_SELECTOR,
         }
     }
     /// The managed PerformancePreset name, as managed replies print it.
@@ -71,6 +89,8 @@ impl Destination {
             Self::Preset(Preset::BatterySaver) => "BatterySaver",
             Self::Preset(Preset::BatteryBalanced) => "BatteryBalanced",
             Self::Custom(_) => "Custom",
+            #[cfg(feature = "hyperboost")]
+            Self::HyperBoost => "HyperBoost",
         }
     }
 }
@@ -132,6 +152,11 @@ impl Plan {
 /// levels (manual High/High) confirm nothing.
 pub fn confirms(current: ObservedPerformance, destination: Destination) -> bool {
     let preset = match destination {
+        // Managed's entry readback: `HyperBoostActive` with Automatic fans
+        // (`SetHyperBoostCoreAsync`'s final-state predicate), which the exact
+        // getter decodes only as (7, 0).
+        #[cfg(feature = "hyperboost")]
+        Destination::HyperBoost => return current == ObservedPerformance::HyperBoostObserved,
         Destination::Custom(levels) => {
             return current
                 == ObservedPerformance::Custom {
@@ -194,6 +219,15 @@ pub fn admits_class(
     class: i32,
     windows_on_battery: Option<bool>,
 ) -> bool {
+    // Managed HyperBoost entry needs `PowerSourcePolicy.IsExternal` (PluggedIn
+    // or UsbC, never ExternalUnknown) and, per command, an adapter that
+    // `ValidateHyperBoostEligibilityAsync` admits: every classified external
+    // reading (full 0 or limited 2) of the exact 07/8C table. Unclassified
+    // power (3) and battery refuse it.
+    #[cfg(feature = "hyperboost")]
+    if destination == Destination::HyperBoost {
+        return matches!(class, 0 | 2) && windows_on_battery == Some(false);
+    }
     match class {
         0 | 2 => windows_on_battery == Some(false),
         crate::automation::UNCLASSIFIED_EXTERNAL => {
@@ -202,6 +236,21 @@ pub fn admits_class(
         1 => destination.is_battery() && windows_on_battery == Some(true),
         _ => false,
     }
+}
+/// Whether a fresh setter-time class admits managed's unowned HyperBoost exit,
+/// the Balanced restore an exit writes when the saved intent cannot be
+/// restored. Managed's exit makes no ordinary per-command power admission
+/// (`ProductionBatteryPort.SetHyperBoostCoreAsync` checks only its
+/// precondition and final readback), and it refuses an unclassified source
+/// before any write. Native admits each setter on a classified class that
+/// agrees with Windows: full or limited external with Windows AC, or battery
+/// with Windows battery.
+#[cfg(feature = "hyperboost")]
+pub fn admits_restore_class(class: i32, windows_on_battery: Option<bool>) -> bool {
+    matches!(
+        (class, windows_on_battery),
+        (0 | 2, Some(false)) | (1, Some(true))
+    )
 }
 /// Whether the Windows power kind sampled before a setter's 07/8C query can
 /// still admit this destination's command, as managed
@@ -305,6 +354,10 @@ impl Progress {
     /// The submission chain of a row for wire destination `destination`,
     /// Prepared to Confirmed, or None when the row has no native destination.
     pub fn chain(destination: i32) -> Option<&'static [Self]> {
+        #[cfg(feature = "hyperboost")]
+        if destination == HYPERBOOST {
+            return Some(&PAIR);
+        }
         if destination == CUSTOM {
             Some(&CUSTOM_CHAIN)
         } else {
@@ -521,6 +574,45 @@ mod tests {
                 );
             }
         }
+    }
+    /// Managed HyperBoost entry needs `PowerSourcePolicy.IsExternal` and a
+    /// classified external reading: full (0) or limited (2) under Windows AC.
+    /// Battery, unclassified external power and an unknown Windows kind refuse.
+    #[cfg(feature = "hyperboost")]
+    #[test]
+    fn hyperboost_needs_a_classified_external_adapter_under_windows_ac() {
+        for windows in [Some(false), Some(true), None] {
+            for class in [-1, 0, 1, 2, crate::automation::UNCLASSIFIED_EXTERNAL, 4] {
+                assert_eq!(
+                    admits_class(Destination::HyperBoost, class, windows),
+                    matches!(class, 0 | 2) && windows == Some(false),
+                    "{class} {windows:?}"
+                );
+            }
+        }
+    }
+    /// Managed's unowned HyperBoost exit admits no ordinary command power and
+    /// refuses an unclassified source: native admits the Balanced restore on
+    /// a classified class that agrees with Windows, battery included, where
+    /// the Balanced destination's own rule refuses battery.
+    #[cfg(feature = "hyperboost")]
+    #[test]
+    fn the_restore_only_exit_needs_a_classified_class_that_agrees_with_windows() {
+        for windows in [Some(false), Some(true), None] {
+            for class in [-1, 0, 1, 2, crate::automation::UNCLASSIFIED_EXTERNAL, 4] {
+                assert_eq!(
+                    admits_restore_class(class, windows),
+                    matches!(class, 0 | 2) && windows == Some(false)
+                        || class == 1 && windows == Some(true),
+                    "{class} {windows:?}"
+                );
+            }
+        }
+        assert!(!admits_class(
+            Destination::Preset(Preset::Balanced),
+            1,
+            Some(true)
+        ));
     }
     /// The admitted Custom range is the managed RZ09-0581 capability vector,
     /// which the managed composition test pins against its factories.
@@ -768,5 +860,88 @@ mod tests {
         }
         assert_eq!(Progress::longest_chain(3).unwrap().len(), 6);
         assert_eq!(RESTORE.len(), 10);
+    }
+    /// HyperBoost entry (managed `SetHyperBoostCoreAsync` on exact RZ09-0581)
+    /// is one direct enable pair, journalled 0-5 under its own row
+    /// destination, settled only by an independent read of HyperBoost with
+    /// Automatic fans, and admitted only on classified external power with
+    /// fresh Windows AC presence.
+    #[cfg(feature = "hyperboost")]
+    #[test]
+    fn hyperboost_entry_is_one_direct_pair_on_classified_external_power() {
+        let entry = Destination::HyperBoost;
+        assert_eq!(entry.wire(), HYPERBOOST);
+        assert_eq!(entry.selector(), HYPERBOOST_SELECTOR);
+        assert!(!entry.is_battery());
+        assert_eq!(entry.custom_levels(), None);
+        assert_eq!(entry.setters(), 2);
+        assert_eq!(entry.name(), "HyperBoost");
+        // Outside every managed PerformancePreset, so no preset reader
+        // admits the row by accident.
+        assert!(!(0..=9).contains(&HYPERBOOST));
+        assert_eq!(Preset::from_wire(HYPERBOOST), None);
+        for current in starting_states() {
+            let already = current == O::HyperBoostObserved;
+            assert_eq!(confirms(current, entry), already, "{current:?}");
+            assert_eq!(
+                Plan::from_observation(current, entry),
+                if already {
+                    Plan::Unchanged
+                } else {
+                    Plan::Direct { destination: entry }
+                },
+                "{current:?}"
+            );
+            // Entry never pins a class: managed admits each command on any
+            // eligible adapter reading.
+            assert!(!pins_class(current, entry) || already, "{current:?}");
+        }
+        for class in -1..=4 {
+            for windows in [Some(false), Some(true), None] {
+                assert_eq!(
+                    admits_class(entry, class, windows),
+                    matches!(class, 0 | 2) && windows == Some(false),
+                    "{class} {windows:?}"
+                );
+            }
+        }
+        assert!(admits_windows(entry, Some(false)));
+        assert!(!admits_windows(entry, Some(true)));
+        assert!(!admits_windows(entry, None));
+        // The pair chain, and nothing else: no restore or Custom step.
+        assert_eq!(Progress::chain(HYPERBOOST), Some(&PAIR[..]));
+        assert_eq!(Progress::longest_chain(HYPERBOOST), Some(&PAIR[..]));
+        for progress in 0..=u8::MAX {
+            assert_eq!(
+                valid_progress(HYPERBOOST, progress),
+                progress <= 6,
+                "{progress}"
+            );
+        }
+        assert!(progress_follows(HYPERBOOST, 0, 1));
+        assert!(progress_follows(HYPERBOOST, 4, 5));
+        assert!(progress_follows(HYPERBOOST, 0, 6));
+        assert!(!progress_follows(HYPERBOOST, 0, 80));
+        assert!(!progress_follows(HYPERBOOST, 4, 7));
+        assert_eq!(
+            Progress::setter(entry, 0),
+            Some((Progress::FirstIntent, Progress::FirstAcknowledged))
+        );
+        assert_eq!(
+            Progress::setter(entry, 1),
+            Some((Progress::SecondIntent, Progress::SecondAcknowledged))
+        );
+        assert_eq!(Progress::setter(entry, 2), None);
+    }
+    /// Without the HyperBoost feature the entry row destination is no
+    /// destination at all.
+    #[cfg(not(feature = "hyperboost"))]
+    #[test]
+    fn without_the_hyperboost_feature_no_entry_row_is_legal() {
+        for progress in 0..=u8::MAX {
+            assert!(!valid_progress(100, progress));
+            assert!(!progress_follows(100, 0, progress));
+        }
+        assert_eq!(Progress::chain(100), None);
     }
 }

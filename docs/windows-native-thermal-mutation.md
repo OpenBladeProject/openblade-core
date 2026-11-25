@@ -532,6 +532,185 @@ and its marker by name ("The HyperBoost exit is not admitted for
 packaging."). The recipe is source-reviewed only: it has not been run on a
 laptop.
 
+#### Owned HyperBoost (`service-hyperboost-v1`)
+
+The feature implies `service-thermal-hyperboost-exit-v1` and enables
+`openblade-domain/hyperboost`. It serves the `setHyperBoost` operation
+(`enabled` true or false) on exact RZ09-0581 and ports managed
+`SetHyperBoostCoreAsync` (`ServiceControlRuntime.cs:6840-7857`) with the
+port's `SetHyperBoostCoreAsync` (`ProductionBatteryPort.cs:869-940`). A request
+is one performance step under the thermal gate, with the same caller, custody,
+fresh exact-device and controller admission, durable journal, per-setter power
+admission, GPU clock fence, independent readback and stop-on-ambiguity as every
+other native thermal write (`hyperboost_mutation.rs`).
+
+Entry writes the `hyperboost-enable` pair, 0D/02 `[1, 1, 7, 0]` then
+`[1, 2, 7, 0]` (`Rz09_0581_02e0_4_00_HyperBoostProduction.json`), which
+`PresetPair::hyperboost_enable` encodes; a protocol test compares it with that
+fixture. Only an independent read of HyperBoost with Automatic fans confirms
+it. The row is destination 100 with no requested override and journals 0,
+1-4, then 5. Exit writes the saved destination at the fresh class: on
+RZ09-0581 every saved AC base is a direct exit (`CanExitHyperBoostDirectlyTo`),
+so native writes that destination's own pair once, and a saved battery preset
+takes the [restore recipe](#hyperboost-exit-to-a-battery-preset-service-thermal-hyperboost-exit-v1).
+An entry stores no intent; an exit stores none either and restores the saved
+one.
+
+Only an entry needs an admitted saved intent. As managed submits every exit and
+skips only its restore step (`restoreIntentSkipped`, 7118-7127), an exit whose
+saved intent native cannot restore, a saved GPU clock effect or no saved
+destination at the class, still leaves HyperBoost. It writes managed's unowned
+exit, the Balanced restore (`ownedHyperBoostBaseMode ?? Balanced`, 7066; the
+`hyperboost-restore-balanced` pair has the Balanced pair's payloads), as a
+Balanced row with no requested override, and settles on an independent read of
+Balanced with Automatic fans. The saved intent and the desired state it projects
+are unchanged, and the reply, after managed's skipped-restore reply (7833-7835),
+says so: `HyperBoost is off and the laptop stays in Balanced until the power
+source changes.` followed by what was not applied. Managed's exit makes no
+ordinary per-command power admission, so each setter of this exit is admitted on
+a classified class that agrees with Windows, battery with Windows battery
+included (`thermal_mutation::admits_restore_class`), and a class change keeps
+it. The reply names the reason found at the class the exit resolved; a
+classified class change between setters keeps that reason, as managed resolves
+its restore intent once. The journal, GPU fence, custody, device, pad and
+readback checks all still apply.
+
+An outstanding owned fan change refuses every exit before any row, whatever the
+saved intent: the thermal history admits no performance row while a fan owner
+is outstanding, so the row would leave the journal unreadable and owned Stop
+unable to hand the fans back. The exit checks it before resolving the saved
+intent, and the thermal store also refuses to append a performance row while a
+fan owner is outstanding. The reply is `HyperBoost was not turned off because
+OpenBlade still owns an earlier fan change. The fans are already on firmware
+Automatic. Restart OpenBlade to hand them back, then turn HyperBoost off.`
+HyperBoost reads Automatic fans, so owned Stop closes the change without a
+setter, and the exit is admitted after the restart.
+
+The gates run in managed's order, each citing its managed line at the native
+gate:
+
+| Managed | Gate | Native reply |
+|---|---|---|
+| 6943-6952 | Probes unavailable (no composed pad and journal reader) | Blocked, `HyperBoost control is unavailable right now.` |
+| shared | Exact device, controller, custody, quarantine, fresh 07/8C class with Windows agreement, pending journal, GPU fence | The shared thermal refusal |
+| native only | Managed's ownership journal neither absent nor Relinquished, or unreadable | Blocked, the journal-pending reply below |
+| 6965-7002 | Already in the requested state | Applied, `HyperBoost is already active.` or `HyperBoost is already off.`, before the GPU fence and with nothing prepared |
+| 7004-7023 | Pad path selection | A connected pad refuses: native admits the pad-less path only |
+| 7024-7032 | Fresh confirmed state | Holds for every reading the Reader decodes |
+| 7134-7140, first for an unclassified external reading | Managed resolves ExternalUnknown's intent and then refuses the source; native's saved layer has no destination for that class | Blocked, `HyperBoost requires a confirmed external power source.` |
+| 7121-7132 | Entry only: admitted saved intent at the class, no outstanding owned fan change, a saved aggregate, no GPU clock effect | The fan handback reply, or Blocked, managed's intent text. An exit refuses the fan change first, with its own reply, and otherwise skips the restore (above) |
+| 7134-7140 | `PowerSourcePolicy.IsExternal` | Blocked, `HyperBoost requires a confirmed external power source.` |
+| 7142-7159 | Fresh pad absence | Blocked, managed's pad-absence text |
+| port 914-922 | Entry base: Silent, Balanced, Performance or Custom with Automatic fans, or manual (Maximum) fans | Blocked, managed's precondition text |
+| 6806-6812 | Per-command revalidation before each enable setter | Pad absence again, and the journal before every setter of either direction |
+
+Each gate has a concrete source reason: managed's own check at that line, or,
+for the journal, managed's ownership of its own recovery
+(`ReconcileUnexpectedExitAsync`, 11456-11648). No gate is a prerequisite
+transition: entry goes directly from every admitted base, and exit goes
+directly to the saved destination.
+
+The cooling pad (1532:0F43) is observed read-only by the present HID
+interfaces' hardware IDs, without opening any interface
+(`discovery::hardware_id_present`). Absence needs a complete scan with every
+row and ID list readable. A pad, a failed or incomplete scan, or a pad that
+appears before either enable setter refuses. Native never writes an accessory
+command or assumes a pad. The pad-present path is not admitted: it needs the
+pad's interface contract, which is not reviewed for native use.
+
+Journal decision. Native keeps its own row family and hands back to managed
+through the existing handback (option b), rather than writing managed's
+`hyperboost-ownership.json` (option a). Native rows are ordinary thermal
+history rows with destination 100, so the existing frontier, fence,
+reconciliation and package readers carry them without a second durable store,
+and native never writes a file whose recovery managed owns:
+
+- Native honours managed's journal. Before the request and again before each
+  setter, native reads `hyperboost-ownership.json` read-only and proceeds only
+  when it is absent or a recognized Relinquished document
+  (`hyperboost_journal::journal_safe`, managed
+  `IsSafeMaintainHyperBoostJournalBaseline`). Anything else, or a read that
+  fails, replies Blocked, `HyperBoost recovery from the previous OpenBlade
+  service is pending. Start that service once so it can finish, then try
+  again.` The reader fails closed: managed matches member names in any case,
+  takes the last of duplicate members, ignores unknown members and reads
+  numbers from strings, so native accepts only the camelCase members managed
+  writes, each once (no two names equal ignoring case at any depth), with JSON
+  numbers for the document's own members, every member type-checked in every
+  schema, the settings records bound as stored profiles bind them (which, as
+  managed does, read an integer from a string), no recovery baseline, and the
+  update time as a full timestamp with its offset. `NativeHyperBoostJournalVectorsTests` records
+  managed's verdict on journals its store writes and on edits of them
+  (`tools/openblade-windows-host/tests/data/hyperboost-journal-vectors.json`);
+  `managed_journal_vectors_replay_through_the_native_reader` asserts that native
+  never admits a journal managed refuses and names each case it refuses that
+  managed admits.
+- Managed recovers after a native run. `WindowsNativeThermalHistory` admits
+  destination 100 rows only from an artifact whose capabilities name
+  `service-hyperboost-v1`. The handback classifies an unsettled HyperBoost row
+  as `pending` family `hyperBoost` (progress 1-4) or `abandonedPrepared` (0).
+  Managed latches a pending HyperBoost confirmation for it, matched by
+  `MatchPendingHyperBoost` against HyperBoost active with Automatic fans, and a
+  disagreeing thermal reading is a mismatch. An exit's rows are ordinary
+  Performance rows; a reading of HyperBoost, which reports no preset, resolves
+  them as a mismatch (`WriteConfirmationPolicy.MatchNativeHandback`), so an exit
+  stopped before its first setter is reported for a reapply instead of waiting.
+
+Native differs from managed here in these ways:
+
+- Managed retries a KnownNotApplied setter once; native retries nothing.
+- An unconfirmed final read replies Blocked with the reconciliation reason
+  and fences writes, where managed replies Failed after its own fresh
+  readback.
+- A connected pad refuses entry; managed enters through its pad path.
+- Native exits restore the saved performance destination only, and the reply
+  says `HyperBoost is off and the prior <name> performance is restored.`
+  Managed restores the saved performance and fan intent. A saved manual fan
+  intent is left to the fan writer. The reply carries no
+  `HyperBoostRestoredPerformance`.
+- Entry from a confirmed Custom whose saved intent is not Custom enters;
+  managed cannot build a well-formed ownership journal for that pair and
+  fails before any write.
+- Controller and custody refusals use native's shared replies.
+- An exit on an external source neither side can classify is refused
+  before any write by both. Managed names its preserved ownership journal;
+  native gives its shared unclassified-power refusal.
+- A class change between the request's reading and a setter's reading stops
+  an entry, because HyperBoost is never the saved destination.
+- An exit whose saved intent carries a GPU clock effect writes the Balanced
+  restore and says the tuning was not applied, where managed, which has a GPU
+  clock writer, restores the saved preset with its tuning.
+- An exit with no saved destination at the class writes the Balanced restore
+  and says so, where managed says the saved setting isn't available.
+- An outstanding owned fan change refuses the exit and asks for a restart,
+  which managed has no counterpart for.
+- Native answers `HyperBoost is already active.` or `HyperBoost is already
+  off.` while a GPU clock confirmation is pending. Managed's WritesBlocked
+  refusal (6943-6952), which counts an unconfirmed write, comes first and
+  replies `HyperBoost control is unavailable right now.` Neither writes.
+- Native records no HyperBoost ownership of its own: the battery boundary,
+  low power and shutdown exits, and a status projection of owned HyperBoost,
+  are not part of this feature. HyperBoost entered natively stays active after
+  an unplug until an explicit exit, where managed leaves it at the battery
+  boundary.
+- Managed treats a natively entered HyperBoost as an external change: it sees
+  HyperBoost active without a managed ownership journal.
+
+Packaging stays refused until the lifecycle exits land (H3): a package must not
+leave HyperBoost running on battery after an unplug.
+
+`ServiceControlRuntimeTests.NativeHyperBoostOwnedVectors` records managed's
+reply and writes for entry and exit from each confirmed state the getter
+decodes, on PluggedIn, UsbC and Battery, with the pad absent, plus a present
+and an unobservable pad, and on an external source the adapter table cannot
+classify
+(`tools/openblade-windows-host/tests/data/hyperboost-owned-vectors.json`).
+`hyperboost_owned::managed_owned_hyperboost_vectors_replay_through_the_dispatcher`
+replays every row and asserts each deviation above literally. Both package
+readers refuse the feature and its marker by name ("Owned HyperBoost is not
+admitted for packaging."). The feature is source-reviewed only: it has not
+been run on a laptop.
+
 ### Custom
 
 Custom (5) follows managed `SetCustomPerformanceAsync`
