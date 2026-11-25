@@ -1068,6 +1068,44 @@ async fn an_unplug_reconciles_once_a_read_resolves_a_pending_gpu_confirmation() 
     }
 }
 
+/// An unplug whose attempt a pending GPU clock confirmation refuses, with the
+/// driver readable again but the dGPU idle and the ungated query spent: the
+/// fence holds and the cause is parked by it. Returns the lane and the driver,
+/// and the frames sent before the unplug.
+#[cfg(feature = "service-gpu-clock-tuning-v1")]
+async fn parked_by_gpu(
+    rig: &Rig,
+) -> (
+    Arc<crate::installed::readiness::thermal_gpu::Lane>,
+    crate::installed::readiness::gpu_clock_offsets::fake::Fake,
+    usize,
+) {
+    use super::super::super::gpu_clock_tuning::{compose, leave_uncertain};
+    let fake = crate::installed::readiness::gpu_clock_offsets::fake::Fake::new(0, 0);
+    let lane = compose(rig, &fake, Arc::default());
+    leave_uncertain(rig, &lane, &fake);
+    let before = sent(rig);
+    unplug(rig);
+    tick(rig).await;
+    assert_eq!((sent(rig), owed(rig)), (before, Some(0)));
+    fake.with(|d| d.queries_fail = false);
+    (lane, fake, before)
+}
+/// Resolves the management read-only, as an explicit performance step's
+/// query would, so the GPU fence clears without a write epoch move.
+#[cfg(feature = "service-gpu-clock-tuning-v1")]
+fn resolve_gpu(rig: &Rig, lane: &crate::installed::readiness::thermal_gpu::Lane) {
+    use super::super::super::gpu_clock_tuning::fenced;
+    let _ = lane.call_for_tests(|m| {
+        m.rearm();
+        let _ = m.read();
+    });
+    assert!(!fenced(
+        rig,
+        crate::installed::readiness::thermal_gpu::CALL_BUDGET
+    ));
+}
+
 /// Delta review LOW-1: a cause the GPU fence parked runs as soon as the
 /// fence clears, which moves no write epoch, so a default install that sends
 /// no reports still gets the battery profile (managed reruns its deferred
@@ -1077,21 +1115,10 @@ async fn an_unplug_reconciles_once_a_read_resolves_a_pending_gpu_confirmation() 
 #[cfg(feature = "service-gpu-clock-tuning-v1")]
 #[tokio::test]
 async fn a_cause_the_gpu_fence_parked_runs_once_the_fence_clears() {
-    use super::super::super::gpu_clock_tuning::{compose, fenced, leave_uncertain};
-    use crate::installed::readiness::{gpu_clock_offsets::fake::Fake, thermal_gpu::CALL_BUDGET};
     let vectors: Value = serde_json::from_str(LIFECYCLE_VECTORS).unwrap();
     let rig = applied_game().await;
-    let fake = Fake::new(0, 0);
-    let lane = compose(&rig, &fake, Arc::default());
-    leave_uncertain(&rig, &lane, &fake);
+    let (lane, fake, before) = parked_by_gpu(&rig).await;
     let sets = fake.sets();
-    let before = sent(&rig);
-    unplug(&rig);
-    tick(&rig).await;
-    assert_eq!((sent(&rig), owed(&rig)), (before, Some(0)));
-    // The driver reads again, but the dGPU is idle and the ungated query is
-    // spent: the fence holds and the parked cause takes no capture.
-    fake.with(|d| d.queries_fail = false);
     let parked = captures(&rig);
     for _ in 0..2 {
         tick(&rig).await;
@@ -1100,13 +1127,7 @@ async fn a_cause_the_gpu_fence_parked_runs_once_the_fence_clears() {
         (captures(&rig), sent(&rig), owed(&rig)),
         (parked, before, Some(0))
     );
-    // Something else resolves the management read-only, as an explicit
-    // performance step's query would: the next tick applies the debt.
-    let _ = lane.call_for_tests(|m| {
-        m.rearm();
-        let _ = m.read();
-    });
-    assert!(!fenced(&rig, CALL_BUDGET));
+    resolve_gpu(&rig, &lane);
     tick(&rig).await;
     assert!(sent(&rig) > before);
     assert_eq!(owed(&rig), None);
@@ -1115,6 +1136,35 @@ async fn a_cause_the_gpu_fence_parked_runs_once_the_fence_clears() {
         &vector(&vectors, "powerToBattery")["desired"]
     );
     assert_eq!(fake.sets(), sets);
+    rig.stop().await;
+}
+
+/// A parked cause whose retry after the fence clears is refused for another
+/// reason, here a locked session, waits for the write epoch again: the
+/// cleared fence does not make it due at every tick. The unlock applies it.
+#[cfg(feature = "service-gpu-clock-tuning-v1")]
+#[tokio::test]
+async fn a_parked_cause_refused_otherwise_waits_for_the_epoch_again() {
+    let rig = applied_game().await;
+    let (lane, _fake, before) = parked_by_gpu(&rig).await;
+    resolve_gpu(&rig, &lane);
+    rig.custody.fresh_refuse.store(true, Ordering::Release);
+    let parked = captures(&rig);
+    tick(&rig).await;
+    let refused = captures(&rig);
+    assert!(refused > parked);
+    for _ in 0..2 {
+        tick(&rig).await;
+    }
+    assert_eq!(
+        (captures(&rig), sent(&rig), owed(&rig)),
+        (refused, before, Some(0))
+    );
+    rig.custody.fresh_refuse.store(false, Ordering::Release);
+    unlock(&rig);
+    tick(&rig).await;
+    assert!(sent(&rig) > before);
+    assert_eq!(owed(&rig), None);
     rig.stop().await;
 }
 
