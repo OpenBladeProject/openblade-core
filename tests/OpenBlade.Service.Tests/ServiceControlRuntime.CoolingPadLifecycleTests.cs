@@ -88,6 +88,56 @@ public sealed partial class ServiceControlRuntimeTests
     }
 
     [Fact]
+    public async Task CoolingPadShutdown_PadOnlyFailureOrBlockLeavesLaptopCleanupConfirmed()
+    {
+        var pad = new LifecyclePad
+        {
+            Restore = _ => Task.FromException(
+                new CoolingPadOperationException("Synthetic pad restoration failure.", true)),
+        };
+        var (context, _) = await CreateActiveLifecyclePadContextAsync(pad);
+        await context.Runtime.SetFanOverrideAsync(new ManualOverride<FanMode>(FanMode.Maximum, OverrideLifetime.Persistent), default);
+        context.Device.DriverModeActive = true;
+
+        ServiceStopCleanupResult failed = await context.Runtime.PrepareForServiceStopAsync(default);
+
+        // The laptop was handed back; only the pad was not. The pad keeps its journal.
+        Assert.Equal(ControlOperationStatus.Failed, failed.Result.Status);
+        Assert.Contains("Cooling-pad fan cleanup:", failed.Result.Message, StringComparison.Ordinal);
+        Assert.Equal(ControlOperationStatus.Applied, failed.LaptopStatus);
+        Assert.False(context.Device.DriverModeActive);
+        Assert.Equal(FanMode.Automatic, context.Device.ConfirmedState.Fans);
+        Assert.True(context.Runtime.GetStatus().CoolingPad.RecoveryRequired);
+        Assert.True(context.Runtime.GetStatus().CoolingPad.WritesPaused);
+
+        // A retained journal keeps writes paused until the user checks the pad, so a later
+        // stop is Blocked without a pad write, as on every RZ09-0581 stop on 2026-11-24.
+        ServiceStopCleanupResult blocked = await context.Runtime.PrepareForServiceStopAsync(default);
+
+        Assert.Equal(ControlOperationStatus.Blocked, blocked.Result.Status);
+        Assert.Contains("Cooling-pad fan cleanup: Read the cooling pad before restoring retained settings.",
+            blocked.Result.Message, StringComparison.Ordinal);
+        Assert.Contains(blocked.LaptopStatus, new[] { ControlOperationStatus.Applied, ControlOperationStatus.Stored });
+        Assert.Equal(1, pad.RestoreCalls);
+    }
+
+    [Fact]
+    public async Task CoolingPadShutdown_LaptopCleanupFailureStillDecidesLaptopStatusAfterPadRestore()
+    {
+        var pad = new LifecyclePad();
+        var (context, _) = await CreateActiveLifecyclePadContextAsync(pad);
+        context.Device.DriverModeActive = true;
+        context.Device.DriverModeReleaseFailure = new IOException("Synthetic keyboard release failure.");
+
+        ServiceStopCleanupResult result = await context.Runtime.PrepareForServiceStopAsync(default);
+
+        Assert.Equal(1, pad.RestoreCalls);
+        Assert.False(context.Runtime.GetStatus().CoolingPad.RecoveryRequired);
+        Assert.DoesNotContain(result.LaptopStatus, new[] { ControlOperationStatus.Applied, ControlOperationStatus.Stored });
+        Assert.Equal(result.LaptopStatus, result.Result.Status);
+    }
+
+    [Fact]
     public async Task CoolingPadLowPower_ResumeDuringKeyboardReleaseBlocksPadRestoreAtSubmission()
     {
         var gate = new LowPowerGate();
