@@ -32,6 +32,14 @@ public sealed record SnapTapRuntimeStatus(
     DiagnosticFailure? Failure = null)
 {
     public KeyboardInputBackend Backend { get; init; } = KeyboardInputBackend.RazerDriver;
+
+    /// <summary>
+    /// Windows hook is blocked by this boot's Razer driver ownership journal. Only an
+    /// explicit Razer driver retry releases it, so the remedy is to switch back once.
+    /// </summary>
+    public bool WaitsForDriverRelease => State == SnapTapRuntimeState.RecoveryRequired
+        && Backend == KeyboardInputBackend.WindowsHook
+        && Failure?.Reason is "DriverOwnershipRecoveryRequired" or "DriverFunctionRowOwnershipRecoveryRequired";
 }
 
 public static class SnapTapStatusStore

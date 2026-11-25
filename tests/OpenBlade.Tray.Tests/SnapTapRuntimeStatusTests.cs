@@ -31,6 +31,21 @@ public sealed class SnapTapRuntimeStatusTests : IDisposable
         Assert.Equal(status, SnapTapStatusStore.Read(StatusPath));
     }
 
+    [Theory]
+    [InlineData("DriverOwnershipRecoveryRequired", KeyboardInputBackend.WindowsHook, true)]
+    [InlineData("DriverFunctionRowOwnershipRecoveryRequired", KeyboardInputBackend.WindowsHook, true)]
+    [InlineData("DriverOwnershipObservationFailed", KeyboardInputBackend.WindowsHook, false)]
+    [InlineData("DriverOwnershipRecoveryRequired", KeyboardInputBackend.RazerDriver, false)]
+    public void OnlyADriverJournalBlockingWindowsHookAsksToSwitchBack(string reason,
+        KeyboardInputBackend backend, bool expected)
+    {
+        var status = new SnapTapRuntimeStatus(SnapTapRuntimeState.RecoveryRequired, DateTimeOffset.UtcNow,
+            Failure: new DiagnosticFailure("FunctionRowWindowsOwnership", "InspectStartup", "OwnershipJournal", reason, true))
+        { Backend = backend };
+        Assert.Equal(expected, status.WaitsForDriverRelease);
+        Assert.False((status with { State = SnapTapRuntimeState.Paused }).WaitsForDriverRelease);
+    }
+
     [Fact]
     public void WindowsHookStatusKeepsItsBackendAndUnknownCannotClaimActive()
     {
