@@ -445,23 +445,84 @@ rejection is Failed with "The requested intent was rejected: " and managed's
 text, and Stop still hands back an owned manual change.
 
 Managed leaves confirmed HyperBoost for a battery preset indirectly
-(`CanExitHyperBoostDirectlyTo`; the RZ09-0581
+(`CanExitHyperBoostDirectlyTo`, `ProductionBatteryPort.cs:832-834`; the RZ09-0581
 `HyperBoostBaseModeAdmissionSource` admits direct exits to Silent, Balanced,
-Performance and Custom only). `ExecuteThermalSettersAsync`
-(`ProductionBatteryPort.cs:2329-2442`) writes the `hyperboost-restore-balanced`
-pair (`Rz09_0581_02e0_4_00_HyperBoostProduction.json:28-48`, the same payloads
-as `performance-balanced-channel-1/2` at
-`Rz09_0581_02e0_3_01_BatteryProduction.json:179-196`), then reads the full
-thermal state and stops as indeterminate unless it reports Balanced with
-Automatic fans, and only then writes the battery pair. After that exit the
-battery pair skips the per-command ordinary source admission
-(`ordinaryControl && !exitedHyperBoost`). So it is not the restore pair followed
-by the battery pair: it has an intermediate confirmation and different per-command
-power admission, and native has no recipe for it. Native stores the intent and
-replies Blocked without preparing a row (`Plan::NoDirectPath`); this exit stays
-deferred. A direct exit
-to Silent keeps the first reading's classified external class, as the
-Performance exit does.
+Performance and Custom only). A direct exit to Silent keeps the first
+reading's classified external class, as the Performance exit does. Without
+`service-thermal-hyperboost-exit-v1`, native stores a battery request under
+confirmed HyperBoost and replies Blocked without preparing a row
+(`Plan::NoDirectPath`).
+
+#### HyperBoost exit to a battery preset (`service-thermal-hyperboost-exit-v1`)
+
+The feature implies `service-thermal-mutation-v1` and enables
+`openblade-domain/hyperboost-exit`. It ports managed
+`ExecuteThermalSettersAsync` (`ProductionBatteryPort.cs:2277-2528`) with its
+`hyperBoostExitActions` (passed at 806-811 for a battery destination):
+
+1. Managed classifies the adapter once for the exit (2324-2336) and needs
+   full, limited or battery. Native takes this from its first 07/8C reading,
+   which must agree with Windows, as for any battery preset.
+2. The `hyperboost-restore-balanced` pair
+   (`Rz09_0581_02e0_4_00_HyperBoostProduction.json:28-48`; the same payloads as
+   `performance-balanced-channel-1/2` at
+   `Rz09_0581_02e0_3_01_BatteryProduction.json:179-196`), written at 2337-2397.
+   `PresetPair::hyperboost_restore` encodes it, and a protocol test compares
+   it with that fixture and with the Balanced pair.
+3. An independent full thermal read (2399-2408). Anything but Balanced with
+   Automatic fans and HyperBoost inactive stops as indeterminate:
+   `thermal_mutation::restored`.
+4. The battery pair (2428-2495), then the final read (2501-2526), which only
+   the battery preset with Automatic fans confirms.
+
+That is 12 exchanges and four setters. Each setter keeps native's own 07/8C
+reading, fresh Windows check and fence admission (`PowerFence`), and the pace
+check before the first setter counts the whole recipe, so a recipe that cannot
+finish inside the operation budget is refused before any intent row. The row
+journals 0, then 80-83 (restore intent and acknowledgement per setter), 1-4,
+then 5; `Prepared` reserves every transaction ID first. Managed decides the
+plan from the port's own fresh read, and native from the reading the request
+was resolved on: when firmware has already left HyperBoost the request is the
+direct battery pair. When firmware leaves HyperBoost for anything other than
+Balanced after the restore pair, the intermediate read fails in both and the
+row stops at 83. A possibly submitted setter, a failed or unconfirmed
+intermediate read and a final mismatch each leave the row unsettled; later
+requests and a restart are fenced, and nothing is replayed.
+
+Native differs from managed here in these ways:
+
+- Managed admits no command of the recipe after classifying the adapter: no
+  per-command ordinary admission after the exit (2450,
+  `ordinaryControl && !exitedHyperBoost`). Native reads 07/8C before every
+  setter, so a change to or from battery, or a Windows kind change, between or
+  during the pairs stops it where managed completes: at the first setter
+  nothing is submitted and the row retires, later 81 or 83 stays unsettled. A
+  full-to-limited change continues a persistent request, since the battery
+  preset holds there. It retires a temporary override (a shortcut's
+  included), which then stops with 83 unsettled.
+- Managed's exit classification ignores Windows; native refuses a class that
+  disagrees with Windows (for example a battery reading under Windows AC)
+  before storing, as for every battery preset.
+- On a failure managed replies Failed, `Performance override intent was
+  stored. Hardware result: Performance write is indeterminate: <stage
+  message>` and reconciles from its own fresh readback, leaving no write
+  pending. Native replies Blocked with the reconciliation reason and fences the
+  store until read-only reconciliation, the existing deviation for an
+  uncertain submission (see [reply parity](#reply-parity-with-managed)).
+- Storage reserves a battery row's longest legal chain, the restore chain,
+  even for a direct battery pair, which leaves four rows unspent.
+
+`ServiceControlRuntimeTests.NativeHyperBoostBatteryExitVectors` records
+managed's reply and pending state for HyperBoost to each battery preset on
+Battery, PluggedIn and UsbC, on success and on each stage's failure with
+either readback
+(`tools/openblade-windows-host/tests/data/hyperboost-battery-exit-vectors.json`),
+and `hyperboost_exit::managed_hyperboost_battery_exit_vectors_replay_through_the_dispatcher`
+replays every row. Success matches managed's status and setter sequence; the
+failure rows pin the deviation above. Both package readers refuse the feature
+and its marker by name ("The HyperBoost exit is not admitted for
+packaging."). The recipe is source-reviewed only: it has not been run on a
+laptop.
 
 ### Custom
 
@@ -772,7 +833,7 @@ unapplied intent:
 | --- | --- |
 | External power (PluggedIn, limited USB-C or unclassified) with current-manual plus desired-manual fans, when a native destination resolves | Stored, `Performance intent was stored and will be applied when fans return to Automatic.` |
 | The same manual-fan state with no native destination (for example a clear under a High/High Custom profile) | Blocked, `Performance override was cleared. Hardware result: No supported performance destination...` |
-| Confirmed HyperBoost and a Battery Saver or Battery Balanced destination | Blocked, `Performance override intent was stored. Hardware result: Leaving HyperBoost for a battery preset needs the HyperBoost restore sequence, which this build does not submit; no thermal setter was submitted.` |
+| Confirmed HyperBoost and a Battery Saver or Battery Balanced destination, without `service-thermal-hyperboost-exit-v1` | Blocked, `Performance override intent was stored. Hardware result: Leaving HyperBoost for a battery preset needs the HyperBoost restore sequence, which this build does not submit; no thermal setter was submitted.` |
 | OpenBlade-owned fan row whose handback to Automatic is outstanding, without that manual deferral | Blocked, `Performance override intent was stored. Hardware result: OpenBlade still owns a fan change...` |
 | GPU effect, ineligible policy, power change, admission, capacity, storage or transport cause after the intent was saved | Blocked, `Performance override intent was stored. Hardware result: <cause>` |
 | Saved clear that was not applied | Blocked, `Performance override was cleared. Hardware result: <cause>` |
@@ -1006,8 +1067,12 @@ Differences from managed:
   Both publish the same preview afterwards. The preview publication retains
   no read: the Reader's read witness and retention window stay those of the
   last thermal read.
-- The HyperBoost exit to a battery preset stays the stored `NoDirectPath`
-  refusal, as for an explicit request.
+- The HyperBoost exit to a battery preset follows an explicit request: the
+  stored `NoDirectPath` refusal, or with `service-thermal-hyperboost-exit-v1`
+  the restore recipe (see
+  [the HyperBoost exit](#hyperboost-exit-to-a-battery-preset-service-thermal-hyperboost-exit-v1)).
+  A cycle that selects a battery preset under confirmed HyperBoost writes the
+  four setters.
 
 Both package readers refuse the feature and its marker by name ("The
 performance shortcut is not admitted for packaging.").
@@ -1493,7 +1558,8 @@ It never selects HyperBoost, and a resolved battery preset under confirmed
 HyperBoost is refused as `Plan::NoDirectPath` (Blocked, "Leaving HyperBoost
 for a battery preset needs the HyperBoost restore sequence, which this build
 does not submit; no thermal setter was submitted."), whichever layer selected
-it.
+it. With `service-thermal-hyperboost-exit-v1` it runs the restore recipe
+instead, whichever layer selected it.
 
 As in managed, a save that gives the active rule's path to a new id leaves no
 application profile active until the next report selects the new rule.

@@ -24,6 +24,16 @@ Confirmed retains its reviewed independent paired-read producer guarantee;
 KnownNotSubmitted retains its separately positive original transport-retirement
 guarantee. Neither grammar nor metadata recovery creates either guarantee.
 
+Readers built with `openblade-domain/hyperboost-exit`
+(`service-thermal-hyperboost-exit-v1`) and WindowsNativeThermalHistory also
+admit the HyperBoost exit to a battery preset (destinations 3 and 4 only):
+0, then 80 first restore intent, 81 first restore acknowledgement, 82 second
+restore intent, 83 second restore acknowledgement, then 1->2->3->4->5. The
+restore rows never settle: 83 continues only to 1, so a row cannot confirm
+without its battery pair, and a restore row after the battery pair, on any
+other destination, or without that feature is refused. The
+`hyperBoostExitRows` vectors pin both readers.
+
 The legacy raw journal is imported unchanged as segment 1 at the first rollover.
 Each immutable segment and active raw tail is bounded to 1 MiB. A segment ends
 settled and a new operation starts with Prepared. Request chronology is checked
@@ -53,9 +63,11 @@ missing, extra, unknown, out-of-order or corrupt files remain fenced.
 
 After rollover, thermal-mutation.journal contains header OpenBlade.ThermalActive.v1,
 sequence, checkpoint SHA-256, contract, a blank line, then the bounded raw tail.
-Before Prepared, Storage serializes the exact operation row and reserves six
-complete progress rows, covering the larger legal branch. An oversized operation
-or unavailable reservation fails before Prepared and before firmware intent.
+Before Prepared, Storage serializes the exact operation row and reserves the
+complete progress rows of its destination's longest legal chain: six for a
+preset pair, ten for Custom, and ten for a battery preset when the HyperBoost
+exit is compiled, whose direct pair then leaves four unspent. An oversized
+operation or unavailable reservation fails before Prepared and before firmware intent.
 
 ### Temporary-charge source cancellation IDs
 
@@ -242,6 +254,8 @@ With that exit, the tail is classified instead of refused. Every unsettled or
 owned row must belong to the exited owner:
 
 - pending: an open frontier past its last unsent step, a possibly submitted write;
+  the HyperBoost exit's restore rows (80-83) are pending only for Battery Saver
+  or Battery Balanced;
 - abandonedPrepared: an open frontier at Prepared (0) or fan release
   preparation (31), neither of which has sent a setter;
 - ownedFan: manual fan control the exited owner held (progress 30);
