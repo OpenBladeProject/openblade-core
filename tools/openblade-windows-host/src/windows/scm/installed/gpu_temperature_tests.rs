@@ -238,6 +238,31 @@ impl Script {
     }
 }
 
+/// A closure is managed's token alone: every sample is wanted.
+impl<F: Fn() -> bool> Cancellation for F {
+    fn cancelled(&self) -> bool {
+        self()
+    }
+
+    fn unwanted(&self) -> bool {
+        false
+    }
+}
+
+/// The script's cancellation as an observation that stopped waiting, never
+/// managed's token.
+struct Unwanted<'a>(&'a RefCell<Script>);
+
+impl Cancellation for Unwanted<'_> {
+    fn cancelled(&self) -> bool {
+        false
+    }
+
+    fn unwanted(&self) -> bool {
+        self.0.borrow().cancelled
+    }
+}
+
 struct ScriptedProbes(Rc<RefCell<Script>>);
 
 impl Probes for ScriptedProbes {
@@ -305,7 +330,8 @@ fn power_states(states: &Value) -> VecDeque<Power> {
 /// its reader (no `reader` for ReadAsync, `live` for
 /// ReadForLiveReadingsAsync, the Service's `sample`), the session timer is
 /// `expire` and disposal is `release`. Any other reader is a recorder this
-/// replay does not know.
+/// replay does not know. A step's `cancel` is managed's token, which a
+/// closure stands for.
 fn replay(steps: &[Value]) -> Vec<Value> {
     let script = Rc::new(RefCell::new(Script::default()));
     let (base, elapsed, clock) = clock();
@@ -322,9 +348,9 @@ fn replay(steps: &[Value]) -> Vec<Value> {
             let mut expect = Map::new();
             match step["action"].as_str().unwrap_or("read") {
                 "read" => {
-                    let live_readings = match &step["reader"] {
-                        Value::Null => false,
-                        Value::String(reader) if reader == "live" => true,
+                    let reader = match &step["reader"] {
+                        Value::Null => Reader::Ordinary,
+                        Value::String(reader) if reader == "live" => Reader::LiveReadings,
                         reader => panic!("unknown sampler reader {reader}"),
                     };
                     {
@@ -336,7 +362,7 @@ fn replay(steps: &[Value]) -> Vec<Value> {
                         script.cancel = step["cancel"].as_str().map(str::to_owned);
                         script.cancelled = false;
                     }
-                    let celsius = sampler.read(live_readings, &|| script.borrow().cancelled);
+                    let celsius = sampler.read(reader, &|| script.borrow().cancelled);
                     let script = script.borrow();
                     expect.insert("celsius".into(), json!(celsius));
                     expect.insert("cancelled".into(), json!(script.cancelled));
@@ -707,7 +733,7 @@ fn an_ordinary_read_does_not_reuse_a_live_reading() {
     let expected = calls(&[&["init"], &READ, &["shutdown"]]);
 
     set(&script, Some(false), &[Power::On]);
-    assert_eq!(sampler.read(false, &|| false), None);
+    assert_eq!(sampler.read(Reader::Ordinary, &|| false), None);
     assert_eq!(nvml.calls(), expected);
     set(&script, Some(false), &[Power::On]);
     assert_eq!(sampler.sample(&|| false), Some(52));
@@ -854,9 +880,58 @@ fn a_cancelled_sample_makes_no_further_call() {
     }
 }
 
-/// An always-active D0 GPU, counting its workload samples. `Hold`, when
-/// set, blocks each workload read as `FakeNvml` blocks `init`.
-struct ActiveProbes(Arc<AtomicUsize>, Option<Hold>);
+/// A dwelled idle sample that becomes unwanted before its NVML read stops
+/// there and keeps the dwell. One that becomes unwanted during or after the
+/// read still rechecks the D-state and keeps the reading. Either way the
+/// next idle sample reads NVML once at most.
+#[test]
+fn an_unwanted_sample_stops_before_the_nvml_read_and_keeps_one_it_made() {
+    for (step, power_reads, reads, kept) in [
+        ("activity", 0, 0, false),
+        ("power", 1, 0, false),
+        ("read", 2, 1, true),
+        ("recheck", 2, 1, true),
+    ] {
+        let script = Rc::new(RefCell::new(Script {
+            temperature: Some(52),
+            ..Script::default()
+        }));
+        let (_, elapsed, clock) = clock();
+        let mut sampler = Sampler::new(
+            Box::new(ScriptedProbes(script.clone())),
+            Box::new(ScriptedSession(script.clone())),
+            clock,
+        );
+        set(&script, Some(false), &[Power::On]);
+        assert_eq!(sampler.sample(&|| false), None, "{step}");
+        elapsed.set(elapsed.get() + IDLE_DWELL);
+        set(&script, Some(false), &[Power::On, Power::On]);
+        script.borrow_mut().cancel = Some(step.into());
+        // The worker publishes nothing for an unwanted sample.
+        let celsius = sampler.sample(&Unwanted(&script));
+        assert_eq!(celsius, kept.then_some(52), "{step}");
+        {
+            let mut script = script.borrow_mut();
+            assert!(script.cancelled, "{step}");
+            assert_eq!(script.power_reads, power_reads, "{step}");
+            assert_eq!(script.reads, reads, "{step}");
+            script.cancel = None;
+            script.cancelled = false;
+        }
+
+        set(&script, Some(false), &[Power::On, Power::On]);
+        assert_eq!(sampler.sample(&|| false), Some(52), "{step}");
+        assert_eq!(script.borrow().reads, 1, "{step}");
+    }
+}
+
+/// A D0 GPU with a workload or always idle, counting its workload samples.
+/// `hold`, when set, blocks each workload read as `FakeNvml` blocks `init`.
+struct D0Probes {
+    active: bool,
+    workloads: Arc<AtomicUsize>,
+    hold: Option<Hold>,
+}
 
 /// A blocked call: entries are reported on the sender, and each waits until
 /// the test sends or drops its end.
@@ -876,13 +951,13 @@ impl Hold {
     }
 }
 
-impl Probes for ActiveProbes {
+impl Probes for D0Probes {
     fn workload(&mut self) -> Option<bool> {
-        self.0.fetch_add(1, Ordering::SeqCst);
-        if let Some(hold) = &self.1 {
+        self.workloads.fetch_add(1, Ordering::SeqCst);
+        if let Some(hold) = &self.hold {
             hold.wait();
         }
-        Some(true)
+        Some(self.active)
     }
 
     fn power(&mut self) -> Power {
@@ -890,9 +965,11 @@ impl Probes for ActiveProbes {
     }
 }
 
-/// A worker over `ActiveProbes` and a fake NVML. Its clock is the real one
-/// plus `ahead`, and `started` counts the factory's runs.
+/// A worker over `D0Probes`, active unless built `idle`, and a fake NVML.
+/// Its clock is the real one plus `ahead`, and `started` counts the
+/// factory's runs.
 struct Worker {
+    active: bool,
     nvml: FakeNvml,
     workloads: Arc<AtomicUsize>,
     workload_hold: Option<Hold>,
@@ -903,11 +980,19 @@ struct Worker {
 impl Worker {
     fn new() -> Self {
         Self {
+            active: true,
             nvml: FakeNvml::new(52),
             workloads: Arc::new(AtomicUsize::new(0)),
             workload_hold: None,
             started: Arc::new(AtomicUsize::new(0)),
             ahead: Arc::new(Mutex::new(Duration::ZERO)),
+        }
+    }
+
+    fn idle() -> Self {
+        Self {
+            active: false,
+            ..Self::new()
         }
     }
 
@@ -937,6 +1022,7 @@ impl Worker {
     fn factory(&mut self, lease: Duration) -> Factory {
         let nvml = self.nvml.clone();
         self.nvml.dropped = None;
+        let active = self.active;
         let (workloads, hold, started, ahead) = (
             self.workloads.clone(),
             self.workload_hold.clone(),
@@ -948,7 +1034,11 @@ impl Worker {
             Sampler {
                 lease,
                 ..Sampler::new(
-                    Box::new(ActiveProbes(workloads, hold)),
+                    Box::new(D0Probes {
+                        active,
+                        workloads,
+                        hold,
+                    }),
                     Box::new(NvmlSession::new(nvml)),
                     Box::new(move || Instant::now() + *ahead.lock().unwrap()),
                 )
@@ -1206,4 +1296,32 @@ fn dropping_a_started_nvml_session_ends_it() {
     assert_eq!(session.try_read(), Some(52));
     drop(session);
     assert_eq!(nvml.calls(), calls(&[&["init"], &READ, &["shutdown"]]));
+}
+
+/// An idle sample whose NVML read outlasts its observation's wait publishes
+/// nothing but keeps the reading, so the idle samples after it within
+/// `IDLE_INTERVAL` reuse it instead of each opening a session of their own.
+#[tokio::test]
+async fn an_idle_read_that_outlasts_the_wait_is_reused_by_the_next_samples() {
+    let mut worker = Worker::idle();
+    let (release, entries) = worker.hold_init();
+    let host = worker.host();
+    // The first sample starts the dwell and reads nothing.
+    assert_eq!(host.request(deadline()).unwrap().temperature().await, None);
+    *worker.ahead.lock().unwrap() = IDLE_DWELL;
+    let slow = accepted(&host);
+    entries.recv_timeout(Duration::from_secs(5)).unwrap();
+    // The observation stops waiting `AFTER_READING` after its reading, well
+    // before its deadline, while `init` is held.
+    assert_eq!(slow.temperature().await, None);
+    drop(release);
+    worker.wait_for("shutdown", 1);
+    for _ in 0..2 {
+        assert_eq!(accepted(&host).temperature().await, Some(52));
+    }
+    assert_eq!(
+        worker.nvml.calls(),
+        calls(&[&["init"], &READ, &["shutdown"]])
+    );
+    assert_eq!(worker.workloads.load(Ordering::SeqCst), 4);
 }

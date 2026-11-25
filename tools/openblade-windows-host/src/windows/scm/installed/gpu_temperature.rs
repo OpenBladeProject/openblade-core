@@ -19,30 +19,37 @@
 //! reuses the last valid D0 reading for `IDLE_INTERVAL`, and only while
 //! every sample since has reported D0; otherwise it reads NVML once the
 //! samples have reported D0 for `IDLE_DWELL`. So an idle GPU held in D0 is
-//! read at most once per `IDLE_INTERVAL`, and NVIDIA's own brief wakes
-//! open no NVML. Any sample that is not D0, including the recheck after a
-//! read, drops the reading and restarts the dwell.
+//! read at most once per `IDLE_INTERVAL` while its reads return a valid
+//! temperature and are not cancelled, and NVIDIA's own brief wakes open no
+//! NVML. Any sample that is not D0, including the recheck after a read,
+//! drops the reading and restarts the dwell, except one cancelled right
+//! after its first D-state read, which observes nothing, as managed's does.
 //!
 //! The session (`nvmlInit_v2` to `nvmlShutdown`) stays open only across
 //! consecutive samples that read a valid temperature from an active, D0 GPU,
 //! and for at most `LEASE` after the last one. Any other sample ends it
 //! before it returns, an idle read included, and so does a cancellation
 //! after the D-state read; one during the workload read leaves it to its
-//! lease, as managed's does. A sample starting within `SAMPLE_BUDGET` of the lease's end ends it
-//! first, and the D-state read ends one whose lease ran out during the
-//! Windows reads, so only a stalled Windows read can hold it past the lease.
-//! So a sample neither wakes a GPU that is not in D0 nor keeps it awake past
-//! a workload by more than the lease.
+//! lease, as managed's does. A sample starting within `SAMPLE_BUDGET` of the
+//! lease's end ends it first, and the D-state read ends one whose lease ran
+//! out during the Windows reads, so only a stalled Windows read can hold it
+//! past the lease. So a sample neither wakes a GPU that is not in D0 nor
+//! keeps it awake past a workload by more than the lease.
 //!
 //! The reads run on a worker thread this module owns, never on the HID read
 //! job. An observation waits for its sample at most `AFTER_READING` after
 //! its own reading and never later than `RESERVE` before its deadline. One
 //! sample runs at a time and one request may wait for it; any further
-//! request gets none. A request whose observation has gone is skipped, and a
-//! sample whose observation goes stops after the step it is in: the
-//! workload, a D-state read or the NVML read. Stop cancels the same way
-//! without waiting for the worker, which ends the session when the call it
-//! is in returns.
+//! request gets none. A request whose observation has gone is skipped.
+//! Stop and the request's own time, which ends `RESERVE` before the
+//! observation's deadline, cancel a sample as managed's token does: it
+//! stops after the step it is in, the workload, a D-state read or the NVML
+//! read. An observation that stops waiting earlier stops the sample the
+//! same way only until NVML is read. After that the sample still rechecks
+//! the D-state and keeps a valid reading, publishing nothing, so a read
+//! that outlasts the wait spares the next idle samples their own. Stop does
+//! not wait for the worker, which ends the session when the call it is in
+//! returns.
 //!
 //! A missing driver, adapter or NVML, a failed call, a powered-down GPU and a
 //! sensor outside managed's 10..=125 C all publish null, as managed does. A
@@ -286,6 +293,33 @@ impl<N: Nvml> TemperatureSession for NvmlSession<N> {
     }
 }
 
+/// Managed's two GPU readers, which share `ReadCoreAsync`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Reader {
+    /// `ReadForLiveReadingsAsync`: the Service's only reader.
+    LiveReadings,
+    /// `ReadAsync`, which leaves an idle GPU unread. Only the managed
+    /// vectors use it, where they interleave both readers over one D0 state.
+    #[cfg(test)]
+    Ordinary,
+}
+
+/// What ends a sample before its last step.
+pub(super) trait Cancellation {
+    /// Managed's cancellation token: Stop or the request's own time. It ends
+    /// the sample after any step.
+    fn cancelled(&self) -> bool;
+    /// No observation waits for the sample any more. It ends the sample only
+    /// before the NVML read: a reading taken after it still spares the next
+    /// idle samples their own.
+    fn unwanted(&self) -> bool;
+
+    /// Whether a sample that has not read NVML yet stops.
+    fn stops_before_read(&self) -> bool {
+        self.cancelled() || self.unwanted()
+    }
+}
+
 /// Managed `SafeWindowsFanTemperatureSource` on the live-readings path
 /// (`ReadForLiveReadingsAsync`): active samples read and renew the session,
 /// and idle D0 samples reuse a recent reading or read once the dwell has
@@ -325,16 +359,14 @@ impl Sampler {
     }
 
     /// One live-readings sample.
-    pub(super) fn sample(&mut self, cancelled: &dyn Fn() -> bool) -> Option<i32> {
-        self.read(true, cancelled)
+    pub(super) fn sample(&mut self, cancel: &dyn Cancellation) -> Option<i32> {
+        self.read(Reader::LiveReadings, cancel)
     }
 
-    /// One sample (`ReadCoreAsync`). `live_readings` selects managed
-    /// `ReadForLiveReadingsAsync` over `ReadAsync`, which leaves an idle GPU
-    /// unread; the Service has only the live reader, and the managed vectors
-    /// interleave both over the same D0 state. `cancelled` is checked where
-    /// managed checks its token: a cancellation before the power read leaves
-    /// the session as it is, and one after it releases the session.
+    /// One sample of `reader` (`ReadCoreAsync`). `cancel` is checked where
+    /// managed checks its token, and an unwanted sample also stops there
+    /// until NVML is read: one that stops before the power read leaves the
+    /// session as it is, and one that stops after it releases the session.
     ///
     /// Managed's timer ends a session on time even while a sample reads
     /// Windows state. Here a session whose lease would end within
@@ -342,16 +374,16 @@ impl Sampler {
     /// ends one whose lease ran out during the Windows reads, before NVML
     /// is called. So the sampler's own reads keep a session past its lease
     /// only while one Windows read stalls.
-    fn read(&mut self, live_readings: bool, cancelled: &dyn Fn() -> bool) -> Option<i32> {
+    fn read(&mut self, reader: Reader, cancel: &dyn Cancellation) -> Option<i32> {
         self.expire_within(SAMPLE_BUDGET);
-        if cancelled() {
+        if cancel.stops_before_read() {
             return None;
         }
         let active = self.probes.workload() == Some(true);
-        if cancelled() {
+        if cancel.stops_before_read() {
             return None;
         }
-        let celsius = self.gated(active, live_readings, cancelled);
+        let celsius = self.gated(active, reader, cancel);
         // A valid temperature of an active GPU renews the session; anything
         // else, an idle reading included, ends it.
         if active && celsius.is_some() {
@@ -364,15 +396,10 @@ impl Sampler {
 
     /// The power gate, the idle reuse and dwell, the read and the recheck: a
     /// valid temperature of a D0 GPU, or None.
-    fn gated(
-        &mut self,
-        active: bool,
-        live_readings: bool,
-        cancelled: &dyn Fn() -> bool,
-    ) -> Option<i32> {
+    fn gated(&mut self, active: bool, reader: Reader, cancel: &dyn Cancellation) -> Option<i32> {
         let power = self.probes.power();
         self.expire();
-        if cancelled() {
+        if cancel.stops_before_read() {
             return None;
         }
         self.observe(power);
@@ -383,7 +410,7 @@ impl Sampler {
         }
         if !active {
             // `ReadAsync` leaves an idle GPU unread.
-            if !live_readings {
+            if reader != Reader::LiveReadings {
                 return None;
             }
             // Every sample since this reading has reported D0.
@@ -395,7 +422,9 @@ impl Sampler {
             }
         }
         let celsius = self.session.try_read().filter(|c| PLAUSIBLE.contains(c));
-        if cancelled() {
+        // The read is made: only managed's token stops the recheck and the
+        // reading it keeps.
+        if cancel.cancelled() {
             return None;
         }
         let still_on = self.probes.power() == Power::On;
@@ -404,7 +433,7 @@ impl Sampler {
             // cancellation check.
             self.observe(Power::Unknown);
         }
-        if cancelled() || !still_on {
+        if cancel.cancelled() || !still_on {
             return None;
         }
         if let Some(celsius) = celsius {
@@ -477,10 +506,23 @@ struct Request {
     until: Instant,
 }
 
-impl Request {
-    /// Whether the observation stopped waiting for this sample.
-    fn abandoned(&self) -> bool {
-        self.reply.is_closed() || Instant::now() >= self.until
+/// One request's sample: Stop and the request's time are managed's token,
+/// and a dropped reply leaves the sample unwanted.
+struct Sampling<'a> {
+    request: &'a Request,
+    stopped: &'a AtomicBool,
+}
+
+impl Cancellation for Sampling<'_> {
+    /// Stop, or the request's time has run out.
+    fn cancelled(&self) -> bool {
+        self.stopped.load(Ordering::Acquire) || Instant::now() >= self.request.until
+    }
+
+    /// The observation dropped its reply: it stopped waiting at
+    /// `AFTER_READING` or has gone.
+    fn unwanted(&self) -> bool {
+        self.request.reply.is_closed()
     }
 }
 
@@ -505,9 +547,12 @@ fn run(factory: Factory, requests: Receiver<Request>, stopped: Arc<AtomicBool>) 
             },
         };
         // Stop cancels a running sample and every waiting request, and a
-        // request whose observation went ends before the workload read.
-        let cancelled = || stopped.load(Ordering::Acquire) || request.abandoned();
-        let celsius = sampler.sample(&cancelled);
+        // request whose observation went ends before the workload read. A
+        // reply nobody waits for is dropped here.
+        let celsius = sampler.sample(&Sampling {
+            request: &request,
+            stopped: &stopped,
+        });
         let _ = request.reply.send(celsius);
     }
 }
