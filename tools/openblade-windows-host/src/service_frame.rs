@@ -81,16 +81,21 @@ fn frame_length(payload: &[u8]) -> io::Result<i32> {
         .ok_or_else(|| invalid("invalid frame length"))
 }
 
-/// Writes the one response that may carry a diagnostic archive, under
-/// managed `MaximumDiagnosticResponseBytes` instead of the 64 KiB bound and
-/// with the same write timeout as every frame.
+/// A response that may carry a diagnostic archive, serialized and checked
+/// against managed `MaximumDiagnosticResponseBytes` instead of the 64 KiB
+/// bound. Encoding a 16 MiB archive is CPU work, so a caller builds this off
+/// the runtime thread and the runtime only writes it.
 #[cfg(feature = "service-diagnostics-export-v1")]
 // The wire fixture binary includes this module too and serves no export.
 #[allow(dead_code)]
-pub(crate) async fn write_archive_frame(
-    io: &mut (impl AsyncWrite + Unpin + ?Sized),
-    frame: &impl Serialize,
-) -> io::Result<()> {
+pub(crate) struct ArchiveFrame {
+    length: i32,
+    payload: Vec<u8>,
+}
+
+#[cfg(feature = "service-diagnostics-export-v1")]
+#[allow(dead_code)]
+pub(crate) fn encode_archive_frame(frame: &impl Serialize) -> io::Result<ArchiveFrame> {
     let payload = serde_json::to_vec(frame)?;
     // Managed `OpenBladeIpc.MaximumDiagnosticResponseBytes`.
     const MAX_ARCHIVE_RESPONSE_BYTES: i32 = 24 * 1024 * 1024;
@@ -98,9 +103,21 @@ pub(crate) async fn write_archive_frame(
         .ok()
         .filter(|length| (1..=MAX_ARCHIVE_RESPONSE_BYTES).contains(length))
         .ok_or_else(|| invalid("invalid frame length"))?;
+    Ok(ArchiveFrame { length, payload })
+}
+
+/// Writes an encoded archive response with the same write timeout as every
+/// frame.
+#[cfg(feature = "service-diagnostics-export-v1")]
+// The wire fixture binary includes this module too and serves no export.
+#[allow(dead_code)]
+pub(crate) async fn write_encoded_archive_frame(
+    io: &mut (impl AsyncWrite + Unpin + ?Sized),
+    frame: &ArchiveFrame,
+) -> io::Result<()> {
     timeout(FRAME_TIMEOUT, async {
-        io.write_i32_le(length).await?;
-        io.write_all(&payload).await?;
+        io.write_i32_le(frame.length).await?;
+        io.write_all(&frame.payload).await?;
         io.flush().await
     })
     .await?

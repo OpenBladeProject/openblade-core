@@ -77,6 +77,7 @@ struct Held {
     canceled: AtomicBool,
     active: AtomicUsize,
     most: AtomicUsize,
+    started: AtomicUsize,
 }
 
 impl Held {
@@ -106,6 +107,7 @@ impl Metadata for HeldMetadata {
         let held = &self.0;
         let active = held.active.fetch_add(1, Ordering::AcqRel) + 1;
         held.most.fetch_max(active, Ordering::AcqRel);
+        held.started.fetch_add(1, Ordering::AcqRel);
         held.entered.store(true, Ordering::Release);
         let deadline = std::time::Instant::now() + Duration::from_secs(10);
         let result = loop {
@@ -178,11 +180,30 @@ fn request(live_readings_enabled: bool) -> Vec<u8> {
 
 async fn exchange_on(
     stream: Box<dyn Stream>,
+    client: DuplexStream,
+    source: Shared,
+    payload: &[u8],
+) -> (Result<(), ExchangeError>, Vec<u8>) {
+    exchange_with(
+        Rc::new(Subscriptions::new(1)),
+        stream,
+        client,
+        source,
+        payload,
+    )
+    .await
+}
+
+/// One connection of a server whose state, the export gate included, is
+/// `server`.
+async fn exchange_with(
+    server: Rc<Subscriptions>,
+    stream: Box<dyn Stream>,
     mut client: DuplexStream,
     source: Shared,
     payload: &[u8],
 ) -> (Result<(), ExchangeError>, Vec<u8>) {
-    let served = serve_connection(stream, source, None, Rc::new(Subscriptions::new(1)));
+    let served = serve_connection(stream, source, None, server);
     let sent = async {
         crate::service_frame::write_payload(&mut client, payload)
             .await
@@ -199,9 +220,19 @@ async fn exchange(
     source: Shared,
     live: bool,
 ) -> (Result<(), ExchangeError>, Vec<u8>) {
-    let (client, server) = duplex(1 << 20);
-    exchange_on(
-        test_stream(server, caller, Fault::None),
+    exchange_sharing(Rc::new(Subscriptions::new(1)), caller, source, live).await
+}
+
+async fn exchange_sharing(
+    server: Rc<Subscriptions>,
+    caller: Caller,
+    source: Shared,
+    live: bool,
+) -> (Result<(), ExchangeError>, Vec<u8>) {
+    let (client, stream) = duplex(1 << 20);
+    exchange_with(
+        server,
+        test_stream(stream, caller, Fault::None),
         client,
         source,
         &request(live),
@@ -432,10 +463,11 @@ async fn concurrent_exports_build_one_at_a_time() {
         Arc::new(HeldMetadata(held.clone())),
         &Events::default(),
     );
+    let server = Rc::new(Subscriptions::new(1));
     let (first, second, third) = tokio::join!(
-        exchange(SYSTEM, source.clone(), false),
-        exchange(ACTIVE, source.clone(), false),
-        exchange(SYSTEM, source.clone(), true),
+        exchange_sharing(server.clone(), SYSTEM, source.clone(), false),
+        exchange_sharing(server.clone(), ACTIVE, source.clone(), false),
+        exchange_sharing(server.clone(), SYSTEM, source.clone(), true),
     );
     for (result, reply) in [first, second, third] {
         result.unwrap();
@@ -557,6 +589,65 @@ async fn a_build_past_its_time_bound_fails_with_a_reply() {
     );
     held.wait(|held| held.canceled.load(Ordering::Acquire))
         .await;
+}
+
+/// A build that cannot be interrupted: it ignores cancellation and runs until
+/// released, as a stalled OS call does.
+struct StubbornMetadata(Arc<Held>);
+
+impl Metadata for StubbornMetadata {
+    fn capture(&self, _cancel: &Cancel) -> Result<HostMetadata, Failure> {
+        let held = &self.0;
+        held.active.fetch_add(1, Ordering::AcqRel);
+        held.started.fetch_add(1, Ordering::AcqRel);
+        held.entered.store(true, Ordering::Release);
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while !held.release.load(Ordering::Acquire) && std::time::Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        held.active.fetch_sub(1, Ordering::AcqRel);
+        Ok(metadata(&[], "2026-11-23T10:00:01.12+00:00"))
+    }
+}
+
+/// A build that outlives its time bound keeps the export gate: an export
+/// that arrives meanwhile gets the same failure at once and starts no second
+/// build. Once the build ends, exports run again.
+#[tokio::test(start_paused = true)]
+async fn an_export_beside_an_unfinished_timed_out_build_fails_without_a_second_build() {
+    let held = Arc::new(Held::default());
+    let stubborn = shared(
+        empty_history(),
+        Arc::new(StubbornMetadata(held.clone())),
+        &Events::default(),
+    );
+    let server = Rc::new(Subscriptions::new(1));
+    let time_bound = failure(
+        "Diagnostic export failed: The diagnostic archive did not complete within its time bound.",
+    );
+    let (first, ()) = tokio::join!(
+        exchange_sharing(server.clone(), SYSTEM, stubborn.clone(), false),
+        async {
+            held.wait(|held| held.entered.load(Ordering::Acquire)).await;
+            tokio::time::advance(EXPORT_BUDGET + Duration::from_millis(1)).await;
+        },
+    );
+    first.0.unwrap();
+    assert_eq!(reply_value(&first.1), time_bound);
+    assert!(server.exports().is_building());
+
+    // No time passes: the second export is not waiting for a bound.
+    let (result, reply) = exchange_sharing(server.clone(), ACTIVE, stubborn, true).await;
+    result.unwrap();
+    assert_eq!(reply_value(&reply), time_bound);
+    assert_eq!(held.started.load(Ordering::Acquire), 1);
+
+    held.release.store(true, Ordering::Release);
+    held.wait(|_| !server.exports().is_building()).await;
+    let next = shared(empty_history(), fixed(), &Events::default());
+    let (result, reply) = exchange_sharing(server, SYSTEM, next, false).await;
+    result.unwrap();
+    archive_entries(&reply_value(&reply));
 }
 
 /// The archive holds the caller's private projection: a caller that loses
@@ -760,17 +851,16 @@ async fn the_archive_response_frame_has_the_managed_bound() {
     const BOUND: usize = 24 * 1024 * 1024;
     let frame = |length: usize| Value::String("a".repeat(length - 2));
     let mut written = Vec::new();
-    crate::service_frame::write_archive_frame(&mut written, &frame(BOUND))
+    let at_bound = crate::service_frame::encode_archive_frame(&frame(BOUND)).unwrap();
+    crate::service_frame::write_encoded_archive_frame(&mut written, &at_bound)
         .await
         .unwrap();
     assert_eq!(written.len(), BOUND + 4);
     assert_eq!(&written[..4], &(BOUND as i32).to_le_bytes());
-    let mut refused = Vec::new();
-    let error = crate::service_frame::write_archive_frame(&mut refused, &frame(BOUND + 1))
-        .await
-        .unwrap_err();
+    let error = crate::service_frame::encode_archive_frame(&frame(BOUND + 1))
+        .err()
+        .unwrap();
     assert_eq!(error.kind(), io::ErrorKind::InvalidData);
-    assert!(refused.is_empty());
 }
 
 /// A status origin replaced while the archive was built fails the Service's

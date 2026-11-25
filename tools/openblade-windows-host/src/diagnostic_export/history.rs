@@ -94,13 +94,20 @@ impl History {
 
     /// The Service's history: default bounds, the host's redaction tokens and
     /// the system clock. Test builds read no host identity.
-    #[cfg(windows)]
+    #[cfg(all(windows, feature = "service-thermal-mutation-v1"))]
     pub(crate) fn service() -> Self {
         #[cfg(not(test))]
         let tokens = super::host::default_tokens();
         #[cfg(test)]
         let tokens = Vec::new();
         Self::new(Limits::DEFAULT, tokens, Box::new(super::host::now))
+    }
+
+    /// A history nothing records into, as in a composition with no history
+    /// producer: it redacts nothing, so it reads no host identity.
+    #[cfg(windows)]
+    pub(crate) fn unrecorded() -> Self {
+        Self::new(Limits::DEFAULT, Vec::new(), Box::new(super::host::now))
     }
 
     /// Managed `RecordSummary(status, summary)`: a `Service`/`Reconcile`

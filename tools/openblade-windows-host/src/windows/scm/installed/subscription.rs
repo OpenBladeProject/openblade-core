@@ -18,10 +18,14 @@ const CONNECTION_LIFETIME: Duration = Duration::from_secs(15 * 60);
 const CAPACITY_UNAVAILABLE: i32 = 0; // ServiceResponseErrorCode.CapacityUnavailable
 pub(super) const REFRESH_INTERVAL: Duration = Duration::from_secs(2);
 
+// The state every connection of one server shares: the subscription slots
+// and, with the export, its single-build gate.
 pub(super) struct Subscriptions {
     capacity: usize,
     slots: Semaphore,
     wake: Notify,
+    #[cfg(feature = "service-diagnostics-export-v1")]
+    exports: super::export::Exports,
 }
 
 impl Subscriptions {
@@ -30,7 +34,14 @@ impl Subscriptions {
             capacity,
             slots: Semaphore::new(capacity),
             wake: Notify::new(),
+            #[cfg(feature = "service-diagnostics-export-v1")]
+            exports: super::export::Exports::new(),
         }
+    }
+
+    #[cfg(feature = "service-diagnostics-export-v1")]
+    pub(super) fn exports(&self) -> &super::export::Exports {
+        &self.exports
     }
 
     pub(super) fn has_subscribers(&self) -> bool {

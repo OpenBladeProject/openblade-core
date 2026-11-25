@@ -202,7 +202,7 @@ impl Sources {
     #[cfg(windows)]
     pub(crate) fn service() -> Self {
         Self {
-            history: Arc::new(History::service()),
+            history: Arc::new(History::unrecorded()),
             metadata: Arc::new(WindowsHost),
         }
     }

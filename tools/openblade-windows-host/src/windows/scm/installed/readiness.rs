@@ -589,7 +589,14 @@ async fn serve_connection(
         guard().map_err(ExchangeError::Runtime)
     } else if request.is_export() {
         #[cfg(feature = "service-diagnostics-export-v1")]
-        serve_export(&mut *stream, &request, caller, &source).await?;
+        serve_export(
+            &mut *stream,
+            &request,
+            caller,
+            &source,
+            subscriptions.exports(),
+        )
+        .await?;
         guard().map_err(ExchangeError::Runtime)
     } else {
         caller.access().map_err(ExchangeError::Client)?;

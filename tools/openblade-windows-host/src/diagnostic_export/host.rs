@@ -2,7 +2,7 @@
 //! `WindowsAuthorizedUserTokenSource` read, and the `DiagnosticText`
 //! default tokens. Each token read that fails is skipped, as managed skips a
 //! failed account, profile or directory read; only the clock and version
-//! reads can fail the capture.
+//! reads, or a cancellation between sources, can fail the capture.
 
 #![allow(unsafe_code)]
 
@@ -35,11 +35,13 @@ use crate::service_install_identity::known_folder;
 pub(crate) struct WindowsHost;
 
 impl Metadata for WindowsHost {
-    fn capture(&self, _cancel: &Cancel) -> Result<HostMetadata, Failure> {
+    fn capture(&self, cancel: &Cancel) -> Result<HostMetadata, Failure> {
+        cancel.check()?;
         let filetime = system_filetime();
+        let windows_version = windows_version()?;
         Ok(HostMetadata {
-            windows_version: windows_version()?,
-            tokens: sensitive_tokens(),
+            windows_version,
+            tokens: sensitive_tokens(cancel)?,
             captured_at: Timestamp::from_filetime(filetime),
             local_time: Timestamp::from_filetime(local_filetime(filetime)?),
         })
@@ -124,6 +126,8 @@ fn folder(id: &windows_sys::core::GUID) -> Option<PathBuf> {
 }
 
 /// Managed `DiagnosticText.DefaultSensitiveTokens`.
+// Read only for the history a composition records into.
+#[cfg(feature = "service-thermal-mutation-v1")]
 #[cfg_attr(test, allow(dead_code))]
 pub(crate) fn default_tokens() -> Vec<String> {
     let mut tokens = Vec::new();
@@ -142,14 +146,17 @@ fn add(tokens: &mut Vec<String>, value: Option<String>) {
     }
 }
 
-/// Managed `ReadSensitiveTokens`, in its insertion order.
-fn sensitive_tokens() -> Vec<String> {
+/// Managed `ReadSensitiveTokens`, in its insertion order. `cancel` is checked
+/// between the sources, each of which can block in the OS.
+fn sensitive_tokens(cancel: &Cancel) -> Result<Vec<String>, Failure> {
     let mut tokens = Vec::new();
-    for token in authorized_user_tokens() {
+    for token in authorized_user_tokens(cancel)? {
         add(&mut tokens, Some(token));
     }
+    cancel.check()?;
     add(&mut tokens, user_name());
     add(&mut tokens, machine_name());
+    cancel.check()?;
     let profile = folder(&FOLDERID_Profile);
     let program_files = folder(&FOLDERID_ProgramFiles);
     let common = folder(&FOLDERID_ProgramData);
@@ -175,7 +182,7 @@ fn sensitive_tokens() -> Vec<String> {
             .and_then(|image| image.parent().map(path_text))
             .map(|directory| directory.trim_end_matches('\\').to_owned()),
     );
-    tokens
+    Ok(tokens)
 }
 
 fn is_account_sid(text: &str) -> bool {
@@ -186,9 +193,9 @@ fn is_account_sid(text: &str) -> bool {
 }
 
 /// Managed `WindowsAuthorizedUserTokenSource.ReadTokens`.
-fn authorized_user_tokens() -> Vec<String> {
+fn authorized_user_tokens(cancel: &Cancel) -> Result<Vec<String>, Failure> {
     let Some(common) = folder(&FOLDERID_ProgramData) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let root = common.join("OpenBlade");
     let mut sids: Vec<String> = Vec::new();
@@ -212,6 +219,7 @@ fn authorized_user_tokens() -> Vec<String> {
     }
     let mut tokens = Vec::new();
     for sid in sids {
+        cancel.check()?;
         add(&mut tokens, Some(sid.clone()));
         if let Some(account) = account_name(&sid) {
             let leaf = account.rsplit('\\').next().map(str::to_owned);
@@ -226,7 +234,7 @@ fn authorized_user_tokens() -> Vec<String> {
             add(&mut tokens, leaf);
         }
     }
-    tokens
+    Ok(tokens)
 }
 
 fn wide_text(text: &str) -> Vec<u16> {
