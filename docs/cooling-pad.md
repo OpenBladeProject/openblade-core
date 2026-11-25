@@ -24,9 +24,12 @@ While OpenBlade controls the pad, it reads the pad every few seconds. If its fan
 mode, lighting effect or brightness changes elsewhere, such as in Synapse or
 with the pad's own controls, **Restore them** applies your settings again, up to
 three times in ten minutes. Lighting is restored only when **Override external
-lighting changes** is on. OpenBlade releases control instead under **Notify me**,
-after a fourth change, for a lighting change without that setting, or when your
-settings cannot be applied again. The
+lighting changes** is on. Otherwise the pad's new lighting stays and OpenBlade
+keeps controlling the fan, so pressing the pad's fan button, which also resets
+its lighting, still gets your fan setting back. Choose a lighting setting again
+to manage it. OpenBlade releases control instead under **Notify me**, after a
+fourth change, for a lighting change when it controls only the lighting, or when
+your settings cannot be applied again. The
 changed part stays as it is, the parts OpenBlade changed return to the pad's
 own settings, and control stays off until you choose a setting.
 
@@ -100,6 +103,20 @@ an earlier version restores nothing, and does not resume, until its disclosure
 has been seen. The firmware cannot report which owner's fan
 record is running, so a change written under the other owner is not detected.
 
+Without the lighting opt-in, a lighting change found during fan control is kept:
+the ownership journal drops its lighting part, so **Release control** and service
+handback restore only the fan, and later checks, restorations, reconnects,
+keyboard-sync frames and resumption leave lighting alone. The user's next Apply
+manages lighting again, and **Release control** or a user change ends the kept
+state. The kept state is held in memory, so after a service restart resumption
+applies the saved lighting again. When the saved settings control only the
+lighting, there is nothing left to control and the change releases control.
+
+A status read submits nothing. When one times out or finds the session retired,
+control and the last confirmed status, including its message, are kept and
+maintenance reconnects. A control port that cannot be opened, or a refusal, is
+still reported.
+
 A timed-out exchange retires the HID session, and its later commands fail as
 `Disposed` without reaching the pad. Reads, Apply and Release then open a fresh
 exact-device session. A new session cannot tell which fan owner or effect record
@@ -107,7 +124,7 @@ the old one confirmed, so during control it does not compare those. **Restore
 them** applies the saved settings again, counted against the same restore
 allowance; **Notify me** stops control. Without the lighting opt-in, lighting is
 rewritten only when the stored effect, brightness and device mode still match;
-otherwise control is released as for an outside change.
+otherwise it is kept as for an outside change and only the fan is applied again.
 
 A failed or ambiguous submission pauses control. Read the current state before
 choosing an explicit recovery action. The tray's automatic read is read-only and
