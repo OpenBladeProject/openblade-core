@@ -818,6 +818,36 @@ public sealed class WindowsNativeEpochTests
     }
 
     [Fact]
+    public void OwnedHyperBoostIsNotAdmittedByFeatureOrMarker()
+    {
+        // The features and markers build.rs gives the admitted temporary-charge composition built with
+        // service-hyperboost-v1, which implies the exit. Packaging has not admitted the enable pair, so the
+        // image is refused, and the owned feature or marker is refused by its own name without the exit.
+        const string exit = "service-thermal-hyperboost-exit-v1";
+        const string marker = "service-hyperboost-v1";
+        const string refusal = "Owned HyperBoost is not admitted for packaging.";
+        const string features = "controller-admission-compile-check,firmware-performance-compile-check,hid-identity-compile-check,installed-service-candidate,lifecycle-evidence-compile-check,service-battery-policy-v1,service-fan-mutation-v2,service-hardware-compile-check,service-mailbox-observation-v1,service-temporary-charge-v1,service-thermal-mutation-v1,startup-custody-v1";
+        const string admitted = "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1,service-fan-mutation-v2,service-battery-policy-v1,service-temporary-charge-v1";
+        string built = string.Join(',', features.Split(',').Append(exit).Append(marker).Order(StringComparer.Ordinal));
+        foreach (string claimed in new[] { admitted + "," + exit + "," + marker, admitted + "," + marker, admitted })
+        {
+            Assert.Throws<InvalidDataException>(() => NativeArtifact.Inspect(
+                [.. Image("service", schema: 2, features: built, capabilities: claimed)], "service", new string('a', 40)));
+        }
+        string owned = string.Join(',', features.Split(',').Append(marker).Order(StringComparer.Ordinal));
+        foreach (string claimed in new[] { admitted + "," + marker, admitted })
+        {
+            var refused = Assert.Throws<InvalidDataException>(() => NativeArtifact.Inspect(
+                [.. Image("service", schema: 2, features: owned, capabilities: claimed)], "service", new string('a', 40)));
+            Assert.Equal(refusal, refused.Message);
+        }
+
+        var forged = Assert.Throws<InvalidDataException>(() => NativeArtifact.Inspect(
+            [.. Image("service", schema: 2, features: features, capabilities: admitted + "," + marker)], "service", new string('a', 40)));
+        Assert.Equal(refusal, forged.Message);
+    }
+
+    [Fact]
     public void ApplicationReporterAgentIsNotAdmittedUntilPackagingAdmitsIt()
     {
         string source = new('a', 40);

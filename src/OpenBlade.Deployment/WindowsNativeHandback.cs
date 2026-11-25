@@ -6,7 +6,7 @@ namespace OpenBlade.Deployment;
 
 internal sealed record NativeHandbackBattery(int Limit, bool Protection, bool Temporary);
 
-// Family is performance, fan, battery or temporaryCharge. Targets are the
+// Family is performance, hyperBoost, fan, battery or temporaryCharge. Targets are the
 // native destination; release progress targets firmware Automatic.
 internal sealed record NativeHandbackItem(string Request, string Family, int Progress, string UserSid,
     string? Performance, string? FanMode, NativeHandbackBattery? Battery);
@@ -127,6 +127,8 @@ internal sealed record WindowsNativeHandback(string Epoch, NativeHandbackItem? P
             && item.Family switch
             {
                 "performance" => item.Performance is "Silent" or "Balanced" or "Performance" or "BatterySaver" or "BatteryBalanced" or "Custom" && item.FanMode is null && battery is null,
+                // Owned HyperBoost's enable pair names no preset or fan mode.
+                "hyperBoost" => item.Performance is null && item.FanMode is null && battery is null,
                 "fan" => item.FanMode is "Automatic" or "Fixed" or "Maximum" && item.Performance is null && battery is null,
                 // Managed cannot hold a temporary full charge with protection off.
                 "battery" or "temporaryCharge" => battery is { Limit: >= 50 and <= 99 } && !(battery.Temporary && !battery.Protection)
@@ -145,6 +147,7 @@ internal sealed record WindowsNativeHandback(string Epoch, NativeHandbackItem? P
         ("pending", "performance", >= 7 and <= 10) => item.Performance == "Custom",
         // The HyperBoost restore pair before a battery preset.
         ("pending", "performance", >= 80 and <= 83) => item.Performance is "BatterySaver" or "BatteryBalanced",
+        ("pending", "hyperBoost", >= 1 and <= 4) => true,
         ("pending", "fan", >= 10 and <= 17) => true,
         ("pending", "fan", >= 40 and <= 43) => item.FanMode == "Automatic",
         ("pending", "battery", 60 or 61) => true,
