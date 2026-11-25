@@ -22,6 +22,7 @@ public sealed class NativeDiagnosticExportVectorTests
     private const string ContractFile = "diagnostic-export-contract.json";
     private const string VectorFile = "diagnostic-export-vectors.json";
     private const string NativeFile = "diagnostic-export-native.json";
+    private const string NativePrivateFile = "diagnostic-export-native-private.json";
     private const string Regenerate = "OPENBLADE_REGENERATE_NATIVE_DIAGNOSTIC_EXPORT_VECTORS";
     private const string RequestId = "8f3c2a71-5d4e-4b6a-9c1f-2e7d0a9b4c31";
 
@@ -204,7 +205,8 @@ public sealed class NativeDiagnosticExportVectorTests
     [Fact]
     public async Task NativeDiagnosticArchive_ReadsThroughTheManagedCodecAndMatchesTheManagedProvider()
     {
-        JsonArray samples = Load(NativeFile)["samples"]!.AsArray();
+        // The second file holds the thermal composition's private projections.
+        JsonNode?[] samples = [.. Load(NativeFile)["samples"]!.AsArray(), .. Load(NativePrivateFile)["samples"]!.AsArray()];
         Assert.NotEmpty(samples);
         var names = new HashSet<string>(StringComparer.Ordinal);
         foreach (JsonNode? node in samples)

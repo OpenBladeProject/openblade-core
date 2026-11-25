@@ -14,9 +14,9 @@ use crate::diagnostic_export::{
 
 const ID: &str = "8F3C2A71-5D4E-4B6A-9C1F-2E7D0A9B4C31";
 const VECTORS: &str = include_str!("../../../../../tests/data/diagnostic-export-vectors.json");
-#[cfg(not(feature = "service-thermal-mutation-v1"))]
 const SAMPLES: &str = "diagnostic-export-native.json";
-#[cfg(not(feature = "service-thermal-mutation-v1"))]
+#[cfg(feature = "service-thermal-mutation-v1")]
+const PRIVATE_SAMPLES: &str = "diagnostic-export-native-private.json";
 const REGENERATE: &str = "OPENBLADE_REGENERATE_NATIVE_DIAGNOSTIC_ARCHIVES";
 
 const ACTIVE: Caller = Caller {
@@ -723,64 +723,100 @@ fn the_compiled_identity_ends_with_the_refused_marker() {
     );
 }
 
-/// Records native responses for the managed reader test
-/// (`NativeDiagnosticArchive_ReadsThroughTheManagedCodecAndMatchesTheManagedProvider`):
-/// each sample's status event, the history the managed side replays, the
-/// host metadata and the response frame. The private projection of a
-/// thermal composition changes the status, so only these compositions record.
-#[cfg(not(feature = "service-thermal-mutation-v1"))]
-#[tokio::test]
-async fn native_archives_match_the_recorded_managed_reader_input() {
-    struct Sample {
-        name: &'static str,
-        caller: Caller,
-        history: Vec<(&'static str, String)>,
-        tokens: &'static [&'static str],
-        captured_at: &'static str,
-        live: bool,
+/// The status a sample's source serves, beyond the managed fixture.
+#[derive(Clone, Copy, Default)]
+struct Served {
+    /// Edits the status the managed codec reads.
+    edit: Option<fn(&mut Value)>,
+    /// Binds the status's private data to this owner.
+    #[cfg(feature = "service-thermal-mutation-v1")]
+    owner: Option<&'static str>,
+}
+
+impl Served {
+    /// The status served at `access`, the control access of the caller.
+    fn status(self, access: i32) -> Snapshot {
+        let mut status = managed_status();
+        status["controlAccess"] = json!(access);
+        if let Some(edit) = self.edit {
+            edit(&mut status);
+        }
+        let status: Snapshot = serde_json::from_value(status).unwrap();
+        #[cfg(feature = "service-thermal-mutation-v1")]
+        let status = match self.owner {
+            Some(owner) => status.bind_private_user(owner),
+            None => status,
+        };
+        status
     }
-    let samples = [
-        Sample {
-            name: "system with an empty history",
-            caller: SYSTEM,
-            history: Vec::new(),
-            tokens: &[],
-            captured_at: "2026-11-23T10:00:01.12+00:00",
-            live: false,
-        },
-        Sample {
-            name: "console caller with redacted and truncated history",
-            caller: ACTIVE,
-            history: vec![
-                ("2026-11-23T09:59:00+00:00", "Stored profiles for tester on CONTOSO-PC.".into()),
-                (
-                    "2026-11-23T09:59:01.5+00:00",
-                    "Synced https://tester:secret@example.test/profile\r\nwith Authorization: Bearer abc.def"
-                        .into(),
-                ),
-                ("2026-11-23T09:59:02.0000001+00:00", "x".repeat(5000)),
-            ],
-            tokens: &["tester", "CONTOSO-PC", "0.1.0-test"],
-            captured_at: "2026-11-23T23:59:59.9999999+00:00",
-            live: true,
-        },
-    ];
+}
+
+/// An export source that serves a sample's status.
+struct ServedSource(ExportSource, Served);
+
+impl StatusSource for ServedSource {
+    fn snapshot(&mut self, caller: Caller, requested: Instant) -> Pending<'_, Snapshot> {
+        let served = self.1;
+        Box::pin(async move {
+            // The access check and the event log are the fixture's.
+            self.0.snapshot(caller, requested).await?;
+            Ok(served.status(caller.access()?))
+        })
+    }
+
+    fn drain(&mut self) -> Pending<'_, ()> {
+        self.0.drain()
+    }
+
+    fn diagnostics(&self) -> Sources {
+        self.0.diagnostics()
+    }
+}
+
+struct Sample {
+    name: &'static str,
+    caller: Caller,
+    served: Served,
+    history: Vec<(&'static str, String)>,
+    tokens: &'static [&'static str],
+    captured_at: &'static str,
+    live: bool,
+}
+
+/// Replays each sample through the endpoint and renders what the managed
+/// reader test replays: the status event the caller was served, the history
+/// the managed side records, the host metadata and the response frame.
+async fn record_samples(samples: &[Sample]) -> String {
     let mut recorded = Vec::new();
-    for sample in &samples {
+    for sample in samples {
         let times = sample.history.iter().map(|(time, _)| at(time)).collect();
         let history = Arc::new(History::new(Limits::DEFAULT, Vec::new(), sequence(times)));
         for (_, summary) in &sample.history {
             history.record_summary("Stored", summary);
         }
         let metadata = Arc::new(Fixed(metadata(sample.tokens, sample.captured_at)));
-        let source = shared(history, metadata, &Events::default());
+        let source: Shared = Rc::new(Mutex::new(Box::new(ServedSource(
+            ExportSource {
+                inner: TestSource {
+                    fault: Fault::None,
+                    events: Events::default(),
+                    publications: None,
+                },
+                sources: Sources { history, metadata },
+            },
+            sample.served,
+        ))));
         let (result, reply) = exchange(sample.caller, source, sample.live).await;
         result.unwrap();
         archive_entries(&reply_value(&reply));
 
-        let mut status = managed_status();
-        status["controlAccess"] = json!(0);
-        let status: Snapshot = serde_json::from_value(status).unwrap();
+        // The archive is built from the status after the private projection
+        // of a thermal composition: the managed provider gets the same one.
+        let status = sample.served.status(0);
+        #[cfg(feature = "service-thermal-mutation-v1")]
+        let status = status.project_private(
+            (sample.caller.logon == Logon::Interactive).then_some("S-1-5-21-111-222-333-1001"),
+        );
         let status = crate::service_status::encode_status_event(&status).unwrap();
         recorded.push(json!({
             "name": sample.name,
@@ -804,13 +840,111 @@ async fn native_archives_match_the_recorded_managed_reader_input() {
             .join(",\n"),
     );
     text.push_str("\n]}\n");
+    text
+}
+
+/// Compares `text` with the recorded `file`, or rerecords it.
+fn assert_recorded(file: &str, text: &str) {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/data")
-        .join(SAMPLES);
+        .join(file);
     if std::env::var_os(REGENERATE).is_some() {
-        std::fs::write(&path, &text).unwrap();
+        std::fs::write(&path, text).unwrap();
     }
     assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
+}
+
+/// Records native responses for the managed reader test
+/// (`NativeDiagnosticArchive_ReadsThroughTheManagedCodecAndMatchesTheManagedProvider`).
+/// The thermal composition's private projection leaves these statuses as
+/// served, so every composition records the same file.
+#[tokio::test]
+async fn native_archives_match_the_recorded_managed_reader_input() {
+    let samples = [
+        Sample {
+            name: "system with an empty history",
+            caller: SYSTEM,
+            served: Served::default(),
+            history: Vec::new(),
+            tokens: &[],
+            captured_at: "2026-11-23T10:00:01.12+00:00",
+            live: false,
+        },
+        Sample {
+            name: "console caller with redacted and truncated history",
+            caller: ACTIVE,
+            served: Served::default(),
+            history: vec![
+                ("2026-11-23T09:59:00+00:00", "Stored profiles for tester on CONTOSO-PC.".into()),
+                (
+                    "2026-11-23T09:59:01.5+00:00",
+                    "Synced https://tester:secret@example.test/profile\r\nwith Authorization: Bearer abc.def"
+                        .into(),
+                ),
+                ("2026-11-23T09:59:02.0000001+00:00", "x".repeat(5000)),
+            ],
+            tokens: &["tester", "CONTOSO-PC", "0.1.0-test"],
+            captured_at: "2026-11-23T23:59:59.9999999+00:00",
+            live: true,
+        },
+        // The members ported from the managed build beside the fixture's
+        // defaults: a hyperBoostEntryRestriction, a read-write firmware gaming
+        // GPU overclock and a Windows Dynamic Lighting advisory that may
+        // control the keyboard.
+        Sample {
+            name: "capability and advisory members with non-default values",
+            caller: SYSTEM,
+            served: Served {
+                edit: Some(|status| {
+                    status["windowsDynamicLightingAdvisory"] = json!(2);
+                    // The managed codec admits an entry restriction only beside the
+                    // HyperBoost access it restricts.
+                    status["capabilities"]["hyperBoostAccess"] = json!(2);
+                    status["capabilities"]["hyperBoostEntryRestriction"] = json!(0);
+                    status["capabilities"]["firmwareGamingGpuOverclockAccess"] = json!(2);
+                }),
+                ..Served::default()
+            },
+            history: Vec::new(),
+            tokens: &[],
+            captured_at: "2026-11-23T10:00:01.12+00:00",
+            live: false,
+        },
+    ];
+    assert_recorded(SAMPLES, &record_samples(&samples).await);
+}
+
+/// The private projection of a thermal composition: a caller that does not
+/// own the saved private data is exported the redacted status, and its owner
+/// the full one. The managed provider is given the status the caller was
+/// served, so the same archive entries must come out.
+#[cfg(feature = "service-thermal-mutation-v1")]
+#[tokio::test]
+async fn private_projections_match_the_recorded_managed_reader_input() {
+    const CALLER: &str = "S-1-5-21-111-222-333-1001";
+    const OTHER: &str = "S-1-5-21-111-222-333-1002";
+    let sample = |name, caller, owner| Sample {
+        name,
+        caller,
+        served: Served {
+            owner: Some(owner),
+            ..Served::default()
+        },
+        history: Vec::new(),
+        tokens: &[],
+        captured_at: "2026-11-23T10:00:01.12+00:00",
+        live: false,
+    };
+    let samples = [
+        sample("console caller that owns the private data", ACTIVE, CALLER),
+        sample(
+            "console caller that does not own the private data",
+            ACTIVE,
+            OTHER,
+        ),
+        sample("system with no private data of its own", SYSTEM, CALLER),
+    ];
+    assert_recorded(PRIVATE_SAMPLES, &record_samples(&samples).await);
 }
 
 /// A bounded history keeps the newest entries: the managed retention seen
