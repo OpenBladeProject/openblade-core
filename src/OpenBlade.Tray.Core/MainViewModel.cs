@@ -60,6 +60,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private static readonly HashSet<string> CompetingLightingControllers = new(
         ["RazerAppEngine", "Razer Synapse Service"],
         StringComparer.OrdinalIgnoreCase);
+    // Names that all belong to Razer Synapse, so the user can be told which app
+    // to quit instead of being shown process and service names.
+    private static readonly HashSet<string> SynapseControllers = new(
+        ["RazerAppEngine", "Razer Synapse Service", "RazerSynapseService", "razerwdl"],
+        StringComparer.OrdinalIgnoreCase);
 
     private sealed record PendingPerformanceHold(
         PerformanceOverride Requested,
@@ -242,6 +247,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private string lightingSourceLabel = UnavailableLabel;
     private string batterySourceLabel = UnavailableLabel;
     private bool hasControllerAdvisory;
+    private bool hasSynapseControllerAdvisory;
     private string controllerAdvisoryText = string.Empty;
     private bool hasControllerDetectionWarning;
     private string controllerDetectionWarningText = string.Empty;
@@ -1501,9 +1507,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         ThermalConvergenceReason.LowPower => TrayText.Get(
             "Restoration is paused while Windows enters or leaves low power."),
         ThermalConvergenceReason.CompetingControllerPresent => TrayText.Get(
-            "Another Razer controller is active, so OpenBlade will not compete for these settings."),
+            "Other Razer software, such as Synapse, is running, so OpenBlade won’t restore these settings until it closes."),
         ThermalConvergenceReason.CompetingControllerUncertain => TrayText.Get(
-            "OpenBlade could not confirm whether another Razer controller is active."),
+            "OpenBlade couldn’t check for other Razer software, so it won’t restore these settings yet."),
         ThermalConvergenceReason.HyperBoostActive => TrayText.Get(
             "HyperBoost controls performance and fans right now."),
         ThermalConvergenceReason.HyperBoostPending => TrayText.Get(
@@ -2025,7 +2031,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             {
                 return TrayText.Get("Controller detection needs attention");
             }
-            return TrayText.Get("Another Razer app is running");
+            return hasSynapseControllerAdvisory
+                ? TrayText.Get("Razer Synapse is running")
+                : TrayText.Get("Other Razer software is running");
         }
     }
 
@@ -2041,6 +2049,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             ? TrayText.Get("Changed outside OpenBlade")
             : HasControllerDetectionWarning
                 ? TrayText.Get("Check status")
+                : hasSynapseControllerAdvisory
+                ? TrayText.Get("Synapse running")
                 : TrayText.Get("Razer app active");
 
     public string AttentionDetails
@@ -2071,8 +2081,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             }
             if (HasControllerAdvisory)
             {
-                details.Add(TrayText.Get(
-                    "OpenBlade shows changes made by another Razer app without changing them back."));
+                details.Add(ControllerAdvisoryText);
+                if (hasSynapseControllerAdvisory)
+                {
+                    details.Add(TrayText.Get(
+                        "If this notice stays after you quit Synapse, open About > Troubleshooting to see which Razer software is still running."));
+                }
             }
             if (HasControllerDetectionWarning)
             {
@@ -2517,7 +2531,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
             if (!HasLightingCapability && latestStatus.PotentialControllers.Count > 0)
             {
-                return TrayText.Get("Another Razer app may be using the laptop’s lighting interface. OpenBlade will enable these controls when it becomes available.");
+                return TrayText.Get("Another Razer app, such as Synapse, may be using the laptop’s lighting. Close it to use these controls.");
             }
 
             if (!HasLightingCapability && HasControllerDetectionWarning)
@@ -5915,15 +5929,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         ConnectionStatus = status.Message;
         ControlAccessStatus = FormatControlAccessStatus(status);
         HasControllerAdvisory = status.PotentialControllers.Count > 0;
-        bool competingLightingController = status.PotentialControllers.Any(
-            CompetingLightingControllers.Contains);
-        ControllerAdvisoryText = HasControllerAdvisory
-            ? TrayText.Format(
-                competingLightingController
-                    ? "Another controller may change laptop settings: {0}. OpenBlade yields automatic keyboard lighting to Synapse while external lighting override is off. Confirmed external changes pause automatic profile updates; manual actions still apply."
-                    : "Another controller may change laptop settings: {0}. Confirmed external changes pause automatic profile updates; manual actions still apply.",
-                string.Join(", ", status.PotentialControllers))
-            : string.Empty;
+        hasSynapseControllerAdvisory = status.PotentialControllers.Any(
+            SynapseControllers.Contains);
+        ControllerAdvisoryText = FormatControllerAdvisory(
+            status,
+            hasSynapseControllerAdvisory);
         HasControllerDetectionWarning = !string.IsNullOrWhiteSpace(
             status.ControllerDetectionWarning);
         ControllerDetectionWarningText = status.ControllerDetectionWarning ?? string.Empty;
@@ -9057,6 +9067,40 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         NotifyComputed(nameof(HasDashboardProfileRestoreOpportunity), HasDashboardProfileRestoreOpportunity);
     }
 
+    // Names the software, says what it affects, and says what to do about it.
+    // Synapse is named directly because it is the usual cause and users know it
+    // by that name, not by its process or service names.
+    private static string FormatControllerAdvisory(
+        ServiceStatusSnapshot status,
+        bool synapse)
+    {
+        if (status.PotentialControllers.Count == 0)
+        {
+            return string.Empty;
+        }
+        bool controlsBlocked = !status.DeviceVerified || status.WritesBlocked;
+        if (synapse)
+        {
+            return controlsBlocked
+                ? TrayText.Get(
+                    "Synapse may be blocking OpenBlade’s access to the laptop. Quit Synapse from its tray icon to use OpenBlade’s controls.")
+                : TrayText.Get(
+                    "Synapse can also change performance, fans and lighting. Your OpenBlade changes still apply, but Synapse may change them again and some automatic features pause. For full control, quit Synapse from its tray icon.");
+        }
+        string found = string.Join(
+            ", ",
+            status.PotentialControllers
+                .Select(name => name.Equals("RGS", StringComparison.OrdinalIgnoreCase)
+                    ? "Razer Gaming Services"
+                    : name)
+                .Distinct(StringComparer.OrdinalIgnoreCase));
+        return TrayText.Format(
+            controlsBlocked
+                ? "Found: {0}. This Razer software may be blocking OpenBlade’s access to the laptop. Close it to use OpenBlade’s controls."
+                : "Found: {0}. This Razer software may also change laptop settings, and some automatic features pause. For full control, close it.",
+            found);
+    }
+
     private string SourceLabel(
         DeviceSubsystem subsystem,
         bool confirmed,
@@ -9073,7 +9117,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 && !status.AlwaysOverrideExternalLightingChanges
                 && status.PotentialControllers.Any(
                     CompetingLightingControllers.Contains)
-            ? TrayText.Get("Other controller may be active")
+            ? TrayText.Get("Synapse may change lighting")
             : confirmed
                 ? TrayText.Get("Current setting")
                 : TrayText.Get("Controls unavailable");

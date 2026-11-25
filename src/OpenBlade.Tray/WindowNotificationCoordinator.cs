@@ -208,7 +208,7 @@ internal sealed class WindowNotificationCoordinator
                 TryShowNotification(new TrayNotification(
                     LocalizedResources.Get(
                         "MainWindow_Notification_ControllerDetectedTitle",
-                        "Razer controller detected"),
+                        "Razer software is running"),
                     current,
                     TrayNotificationSeverity.Information,
                     ReplacementTag: ControllerAdvisoryNotificationTag,
