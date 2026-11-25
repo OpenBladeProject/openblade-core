@@ -764,9 +764,12 @@ impl<'a> PowerFence<'a> {
     /// `AdmitOrdinaryThermalCommandAsync` captures its source first. None when
     /// that sample already refuses the command, which then stops before its
     /// query: an unknown kind, or Windows battery for any destination but a
-    /// battery preset (`thermal_mutation::admits_windows`). Fan permits bind no
-    /// destination; a fan setter keeps the presence it was admitted with
-    /// (`authorize`), so its checkpoints refuse a lost presence as before.
+    /// battery preset (`thermal_mutation::admits_windows`). Such a sample
+    /// admits no reading after an unchanged reply either; refusing here sends
+    /// no query that cannot admit the command, as managed throws before
+    /// querying. Fan permits bind no destination; a fan setter keeps the
+    /// presence it was admitted with (`authorize`), so its checkpoints refuse
+    /// a lost presence as before.
     pub(super) fn before_query(&self) -> Option<WindowsSample> {
         let windows = self.permit.windows_on_battery();
         let admitted = match self.destination.get() {

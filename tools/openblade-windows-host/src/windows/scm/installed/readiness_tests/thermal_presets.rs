@@ -438,15 +438,16 @@ async fn a_windows_change_after_a_setters_send_is_left_to_the_next_reading() {
 async fn a_windows_change_across_a_setters_query_stops_before_its_send() {
     // Managed samples Windows before each command's 07/8C query and again
     // after its reply (`AdmitOrdinaryThermalCommandAsync`). Windows changes
-    // after the first SET and changes back while the second setter's query
-    // (power read 3) is in flight. Silent's sample before that query is
-    // Windows battery, which refuses it before the query; the battery
-    // preset's query is sent under Windows AC and its reply read under
-    // Windows battery, a change that refuses it. Either stops before its
-    // second SET with the first pending, as managed stops Indeterminate.
-    for (preset, actual, before, after) in [
-        (SILENT, FULL, Some(true), Some(false)),
-        (BATTERY_SAVER, BATTERY, Some(false), Some(true)),
+    // after the first SET and would change back while the second setter's
+    // query (power read 3) is in flight. Silent's sample before that query is
+    // Windows battery, which refuses it before the query is sent, as managed
+    // throws before querying; the battery preset's query is sent under
+    // Windows AC and its reply read under Windows battery, a change that
+    // refuses it. Either stops before its second SET with the first pending,
+    // as managed stops Indeterminate.
+    for (preset, actual, before, after, queries) in [
+        (SILENT, FULL, Some(true), Some(false), 2),
+        (BATTERY_SAVER, BATTERY, Some(false), Some(true), 3),
     ] {
         let rig = rig_at(2, 0, actual, MemoryFiles::default());
         {
@@ -458,6 +459,11 @@ async fn a_windows_change_across_a_setters_query_stops_before_its_send() {
         let case = format!("{preset:?} {actual} {before:?} then {after:?}: {result}");
         assert_eq!(result["result"]["message"], PENDING, "{case}");
         assert_eq!(setters(&rig), [vec![1, 1, preset.1, 0]], "{case}");
+        assert_eq!(
+            rig.port.state.lock().unwrap().power_reads,
+            queries,
+            "{case}"
+        );
         let reopened = Storage::open(Box::new(rig.files.clone()), SID).unwrap();
         assert!(reopened.pending(), "{case}");
         assert_eq!(reopened.progress(), Some(2), "{case}");
