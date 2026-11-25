@@ -674,6 +674,53 @@ async fn a_stop_after_the_restore_pair_reads_balanced_as_openblades_own_write() 
     }
 }
 
+/// The GPU clock fence holds the restore recipe as it holds every native
+/// thermal writer: while a GPU submission is uncertain, leaving HyperBoost
+/// for a battery preset is refused before any row or setter of the four.
+/// Once a read resolves the management, the same request runs the whole
+/// restore recipe with no NVML write.
+#[cfg(feature = "service-gpu-clock-tuning-v1")]
+#[tokio::test]
+async fn a_pending_gpu_confirmation_refuses_the_restore_recipe_before_any_setter() {
+    use crate::installed::readiness::gpu_clock_offsets::fake::Fake;
+    use crate::installed::readiness::tests::mutation::gpu_clock_tuning::{
+        compose, leave_uncertain,
+    };
+    use crate::installed::readiness::thermal_mutation::PENDING_PERFORMANCE;
+    for actual in SOURCES {
+        for (preset, selector) in BATTERY_PRESETS {
+            let rig = hyperboost_rig(actual, MemoryFiles::default()).await;
+            let fake = Fake::new(0, 0);
+            let lane = compose(&rig, &fake, Arc::default());
+            leave_uncertain(&rig, &lane, &fake);
+            let sets = fake.sets();
+            let result = rig.set(1, value(preset, 1)).await;
+            let case = format!("{preset} at {actual}: {result}");
+            assert_eq!(result["result"]["status"], 2, "{case}");
+            assert!(
+                result["result"]["message"]
+                    .as_str()
+                    .unwrap()
+                    .ends_with(PENDING_PERFORMANCE),
+                "{case}"
+            );
+            assert!(setters(&rig).is_empty(), "{case}");
+            assert!(progress_values(&rig).is_empty(), "{case}");
+            fake.with(|d| d.queries_fail = false);
+            let _ = lane.call_for_tests(|m| {
+                m.rearm();
+                let _ = m.read();
+            });
+            let result = rig.set(2, value(preset, 1)).await;
+            let case = format!("{preset} at {actual} resolved: {result}");
+            assert_eq!(result["result"]["status"], 1, "{case}");
+            assert_eq!(setters(&rig), restore_then(selector), "{case}");
+            assert_eq!(fake.sets(), sets, "{case}");
+            rig.stop().await;
+        }
+    }
+}
+
 #[cfg(all(
     feature = "service-profile-triggers-v1",
     feature = "service-fan-mutation-v2"
