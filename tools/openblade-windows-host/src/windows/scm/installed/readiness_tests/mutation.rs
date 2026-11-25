@@ -574,6 +574,9 @@ struct Custody {
     integrity_lost: AtomicBool,
     // Loses integrity at the nth check once armed (0 is off).
     integrity_lost_at: AtomicUsize,
+    // Refuses the nth ordinary read authorization from now, once (0 is
+    // off): a read admission lost between two checks of one step.
+    read_refuse_at: AtomicUsize,
     // Blocks the thread in the nth owned-Stop fresh authorization once
     // armed, as a slow Windows supplier would.
     owned_stop_stall: StdMutex<Option<(usize, std::time::Duration)>>,
@@ -630,6 +633,7 @@ impl Custody {
             fatal_health: AtomicBool::new(false),
             integrity_lost: AtomicBool::new(false),
             integrity_lost_at: AtomicUsize::new(0),
+            read_refuse_at: AtomicUsize::new(0),
             owned_stop_stall: StdMutex::new(None),
             activation_refusal: AtomicU8::new(0),
             lifecycle: Default::default(),
@@ -765,6 +769,13 @@ impl ReadCustody for Custody {
         self.live.load(Ordering::Acquire)
     }
     fn authorize(&self) -> Option<ReadAdmission> {
+        if self
+            .read_refuse_at
+            .try_update(Ordering::AcqRel, Ordering::Acquire, |n| n.checked_sub(1))
+            == Ok(1)
+        {
+            return None;
+        }
         if let Some(origin) = &*self.origin_for_fan.lock().unwrap() {
             let proof = ReadAdmission {
                 lifecycle: self.lifecycle.active()?,

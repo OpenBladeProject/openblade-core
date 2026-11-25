@@ -549,7 +549,9 @@ managed order (`ServiceControlRuntime.cs:12925-12950`,
 - A fresh `00/84` read of Driver writes `00/04:0000` once, whoever set it, as
   managed does, and requires the exact acknowledgement and an independent
   `00/84` readback of Normal, after its `ReleaseIntent` is written. A read of
-  Normal ends an owned claim as a foreign change and sends no setter.
+  Normal ends an owned claim as a foreign change and sends no setter. An
+  acquire intent read Normal is resolved `Clear`, as its read-only
+  resolution is, and reported as not Driver: its setter never took effect.
 - Each boundary releases at most once: the shutdown, and each suspend
   generation. A job whose measured pace could not fit the setter, its
   acknowledgement and the readback in its time sends nothing and reports
@@ -608,11 +610,20 @@ before the setter is sent. A settle or a read-only resolution keeps them,
 and a revert, whose job sent no setter, returns to the IDs of the record the
 claim replaced, so the newest `00/04` reply belongs to the IDs on disk. The
 exception is an intent whose setter was never sent and that was not
-reverted: a claim whose write failed after it landed, or a release whose
-share had no room for the revert. It names IDs that sent no `00/04`, so the
-newest reply, the earlier record's, is not seeded, and a later setter that
-read it would still need its independent `00/84` readback to confirm. The
-next process quarantines the record's IDs in its transaction pool
+reverted: a claim whose write failed after it landed, a release whose share
+had no room for the revert, a revert its writer's admission refused (a
+suspend that refused an acquire's setter also ends the ordinary admission
+its revert holds), or a process that ended between the claim and its setter
+or revert. It names IDs that sent no `00/04`, so the newest reply, the
+earlier record's, is not seeded, and a later setter that read it would
+still need its independent `00/84` readback to confirm. The seed is exact
+for `00/04` only: a revert also drops the reverted job's answered baseline
+`00/84` ID. That reply names the mode the job read, which its unsent setter
+did not change, read-only `00/84` IDs are not seeded either, and a `00/84`
+read never confirms a write on its own. The store admits a replace by the
+domain's edges and compare-and-swap alone, so keeping a settle or a
+resolution on the intent's IDs, and building a revert from the replaced
+record, is the ledger's job. The next process quarantines the record's IDs in its transaction pool
 beside the journal's (`transaction_seed`); managed restarts its IDs at 1
 per port. No ID is pinned: the job reserves
 both pairs before its first send, and the pool skips the seeded ones. A sent

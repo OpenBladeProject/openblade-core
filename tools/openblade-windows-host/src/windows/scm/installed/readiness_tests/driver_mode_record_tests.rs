@@ -610,6 +610,69 @@ async fn a_refused_resolution_settle_keeps_the_intent_for_a_later_read() {
     later_rig.stop().await;
 }
 
+/// This process's own release in doubt is resolved by a later confirmed
+/// read, whose settle is refused when the read admission ends between the
+/// read and the settle: the `ReleaseIntent` and its IDs stay, the ledger
+/// stays open and the doubt stays. The next step's read settles it.
+#[tokio::test]
+async fn a_refused_settle_of_this_processs_release_doubt_keeps_it_for_a_later_read() {
+    let (rig, _) = owner_rig(NORMAL).await;
+    tick(&rig).await;
+    rig.port.state.lock().unwrap().device_mode_bad_ack = true;
+    suspend(&rig);
+    tick(&rig).await;
+    assert_eq!(prepared(&rig), Some(Release::Unconfirmed));
+    rig.port.state.lock().unwrap().device_mode_bad_ack = false;
+    let (state, ids) = held(&rig).unwrap();
+    assert_eq!(state, State::ReleaseIntent);
+    rig.custody.lifecycle.ingress(POWER, RESUME);
+    rig.port.state.lock().unwrap().device_mode = DRIVER;
+    let writes = rig.custody.driver_mode.writes().len();
+    record(&rig, DeviceMode::Driver);
+    // The step's read of the mode is admitted, its settle is not.
+    rig.custody.read_refuse_at.store(2, Ordering::Release);
+    step(&rig).await;
+    assert_eq!(rig.custody.read_refuse_at.load(Ordering::Acquire), 0);
+    assert_eq!(rig.custody.driver_mode.writes().len(), writes);
+    assert_eq!(held(&rig), Some((State::ReleaseIntent, ids)));
+    assert!(rig.runtime.driver_mode_uncertain_for_tests());
+    assert!(!closed(&rig));
+    step(&rig).await;
+    assert_eq!(held(&rig), Some((State::Owned, ids)));
+    assert!(!rig.runtime.driver_mode_uncertain_for_tests());
+    assert_eq!(owner(&rig), (true, false, false));
+    assert_eq!(sets(&rig), 2);
+    rig.stop().await;
+}
+
+/// An acquire claim whose setter a suspend refuses at its checkpoint is
+/// known not submitted, but its revert holds the ordinary admission, which
+/// the suspend ended too, so the `AcquireIntent` stays. The low-power
+/// release then reads Normal and resolves it as the read-only resolution
+/// does, `Clear` on the claim's IDs. Nothing was claimed or changed, so it
+/// reports `NotDriver`, not a foreign change.
+#[tokio::test]
+async fn a_suspend_between_an_acquire_claim_and_its_setter_releases_as_not_driver() {
+    let (rig, _) = owner_rig(NORMAL).await;
+    let custody = Arc::downgrade(&rig.custody);
+    rig.custody.driver_mode.after_write(move || {
+        custody.upgrade().unwrap().lifecycle.ingress(POWER, SUSPEND);
+    });
+    tick(&rig).await;
+    let (state, ids) = held(&rig).unwrap();
+    assert_eq!(state, State::AcquireIntent);
+    assert_eq!((sets(&rig), mode(&rig)), (0, NORMAL));
+    assert_eq!(rig.custody.driver_mode.writes().len(), 1);
+    tick(&rig).await;
+    assert_eq!(prepared(&rig), Some(Release::NotDriver));
+    assert_eq!(held(&rig), Some((State::Clear, ids)));
+    assert_eq!((sets(&rig), mode(&rig)), (0, NORMAL));
+    let (owns, indeterminate, _) = owner(&rig);
+    assert_eq!((owns, indeterminate), (false, false));
+    rig.custody.lifecycle.ingress(POWER, RESUME);
+    rig.stop().await;
+}
+
 /// A closed record cannot hold a release's claim, so the release sends no
 /// setter: a corrupt record found at Stop is kept byte for byte, and a
 /// claim that cannot be written closes the record after the baseline read

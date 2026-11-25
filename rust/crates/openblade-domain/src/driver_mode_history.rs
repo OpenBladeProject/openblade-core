@@ -23,11 +23,13 @@
 //! IDs of the record its claim replaced (`Record::revert`). Either way the
 //! newest 00/04 reply belongs to the IDs the record names, except after an
 //! intent whose setter was never sent and that was not reverted: a claim
-//! whose write failed after it landed, which closes the writer, or a revert
-//! that a release's share had no room for. That intent names IDs that sent
-//! no 00/04, and the newest 00/04 reply is the earlier record's. Anything
-//! else, another header, contract or state name included, is refused: a
-//! later version needs a new header, which this reader refuses.
+//! whose write failed after it landed, which closes the writer, a revert
+//! that a release's share had no room for or its writer's admission refused,
+//! or a process that ended between the claim and its setter or revert. That
+//! intent, and what later settles it, names IDs that sent no 00/04, and the
+//! newest 00/04 reply is the earlier record's. Anything else, another
+//! header, contract or state name included, is refused: a later version
+//! needs a new header, which this reader refuses.
 use std::prelude::rust_2024::*;
 use std::{format, io};
 
@@ -333,9 +335,11 @@ fn next_sequence(prior: Option<&Record>) -> Option<u64> {
 /// Every edge out of a record keeps its IDs unless it enters an intent or
 /// returns to the intent's prior. A revert takes the IDs of the record the
 /// claim replaced (`Record::revert`), which this table cannot see, so an
-/// edge into the prior admits any IDs; the writer keeps a settle or a
-/// resolution into that state on the intent's IDs. An intent never follows
-/// an intent, and no settled state repeats itself.
+/// edge into the prior admits any IDs. Those IDs are the writer's to get
+/// right, not a store's: the host's record store admits a replace by this
+/// table alone, and only its ledger builds a revert from the replaced record
+/// and keeps a settle or a resolution into that state on the intent's IDs.
+/// An intent never follows an intent, and no settled state repeats itself.
 pub fn follows(prior: Option<&Record>, next: &Record) -> bool {
     if next.validate().is_err() || next_sequence(prior) != Some(next.sequence) {
         return false;

@@ -14,6 +14,11 @@
 //! the same staged publication as the thermal journal (`replace_staged`). A
 //! recovery-only process never activates, so it can read the record and seed
 //! its IDs but never write it.
+//!
+//! A replace is admitted by the domain's edge table (`history::follows`)
+//! and that compare-and-swap alone. The table admits any IDs on an edge into
+//! an intent's prior, so which IDs a revert names is the ledger's to get
+//! right (`driver_mode_ledger`), not this store's.
 use super::*;
 use openblade_domain::driver_mode_history::{self as history, Record as DriverModeRecord};
 use windows_sys::Win32::Storage::FileSystem::FILE_SHARE_READ;

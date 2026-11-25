@@ -19,15 +19,31 @@
 //! read-only resolution keeps them, and a revert, whose job sent no setter,
 //! returns to the IDs of the record its claim replaced, so the newest 00/04
 //! reply belongs to the IDs the record names. It does not after an intent
-//! whose setter was never sent and that was not reverted: a claim whose
-//! write failed after it landed, which closes the writing process's record,
-//! or a release whose share had no room for the revert. That intent names
-//! IDs that sent no 00/04, and the newest 00/04 reply, the earlier record's,
-//! is not seeded; a later 00/04 that read it would still need its
-//! independent 00/84 readback to confirm.
-//! They join the live set, ahead of the journal's. An absent, unreadable or
-//! refused record adds none: a refused one closes the keyboard owner for
-//! the process, so no 00/04 job runs to read a stale reply.
+//! whose setter was never sent and that was not reverted:
+//!
+//! - a claim whose write failed after it landed, which closes the writing
+//!   process's record;
+//! - a release whose share had no room for the revert;
+//! - a revert its writer's admission refused, such as an acquire whose
+//!   setter checkpoint a suspend refused: its ordinary revert is refused in
+//!   low power, and the low-power release later reads Normal and settles the
+//!   intent `Clear` on its own IDs;
+//! - a process that ended between the claim and its setter or revert.
+//!
+//! That intent, or what settles it, names IDs that sent no 00/04, and the
+//! newest 00/04 reply, the earlier record's, is not seeded; a later 00/04
+//! that read it would still need its independent 00/84 readback to confirm.
+//!
+//! The seed is exact for 00/04 only. A revert also drops the reverted job's
+//! answered baseline 00/84 ID, whose reply is then the newest 00/84 reply,
+//! unlike the journal's rule below. That reply names the mode the job read,
+//! which its unsent setter did not change, and no read-only 00/84 that a read
+//! job sends is seeded either. A 00/84 read alone never confirms a write: a
+//! setter is confirmed only after its own exact acknowledgement.
+//!
+//! The record's IDs join the live set, ahead of the journal's. An absent,
+//! unreadable or refused record adds none: a refused one closes the keyboard
+//! owner for the process, so no 00/04 job runs to read a stale reply.
 //!
 //! The journal names fan, battery and temporary-charge IDs; performance rows
 //! and read-only Readers name none. These are the IDs it names that may bear

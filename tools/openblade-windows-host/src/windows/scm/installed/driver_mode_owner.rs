@@ -126,9 +126,14 @@ const _: () = assert!(
 pub(in super::super) enum Release {
     /// Normal confirmed by the exact acknowledgement and readback.
     Restored,
-    /// A fresh read found Normal and nothing was claimed.
+    /// A fresh read found Normal and no confirmed claim: nothing was
+    /// claimed, or an acquire intent was in doubt, whose setter the read
+    /// shows never took effect. That intent settles `Clear`.
     NotDriver,
-    /// A fresh read found Normal although OpenBlade had claimed Driver mode.
+    /// A fresh read found Normal although OpenBlade owned Driver mode
+    /// (`Owned`). The outcome names what the read found: the record ends the
+    /// claim (`Owned -> Clear`) only while the share holds that write, and
+    /// otherwise keeps `Owned`, from which the next step acquires again.
     ForeignChange,
     /// A fan row was not settled (managed
     /// `FanStopController.BlocksOrdinaryHardware`). Nothing was sent. Managed
@@ -146,8 +151,10 @@ pub(in super::super) enum Release {
     Unadmitted,
     /// Nothing was sent: the share ran out first, or the job's measured
     /// pace could not fit the setter, its acknowledgement and the readback,
-    /// before its claim or once the claim was written (the claim then
-    /// reverts).
+    /// before its claim or once the claim was written. A written claim then
+    /// reverts only while the share holds the write and the cleanup
+    /// admission admits it; otherwise its `ReleaseIntent` stays for a later
+    /// read to resolve.
     Exhausted,
     /// The job ran without confirming Normal; a setter may have been
     /// submitted.
@@ -872,7 +879,10 @@ impl Runtime {
         };
         // Nothing was sent. The job ran out of time if its deadline passed or
         // its pace refused the setter while cleanup admission still held;
-        // otherwise admission was lost.
+        // otherwise admission was lost. The job records how far it got, not
+        // why it stopped, so the cause is inferred from the admission now: a
+        // pace refusal followed by a lost admission reads as `Unadmitted`,
+        // and either way nothing was sent.
         let unsent = || {
             if spent || permit.authorize().is_some() {
                 Release::Exhausted
@@ -890,19 +900,22 @@ impl Runtime {
                 }
                 Release::Restored
             }
-            // Not Driver, so nothing was claimed: a foreign change if
-            // OpenBlade had claimed it, whose claim then ends.
-            DeviceModeStep::Observed(_) => {
-                if ledger
-                    .as_ref()
-                    .is_some_and(|ledger| ledger.standing().owns())
-                {
+            // Not Driver, so this job claimed nothing. An owned claim found
+            // Normal is a foreign change and ends; an acquire intent found
+            // Normal is resolved as its read-only resolution does, `Clear`,
+            // since its setter never took effect (`resolve_indeterminate`).
+            // A `ReleaseIntent` is another job's, left for its resolution.
+            DeviceModeStep::Observed(_) => match ledger.as_ref().map(|ledger| ledger.standing()) {
+                Some(Standing::Owned) => {
                     settle(Some(Settled::Clear))?;
                     Release::ForeignChange
-                } else {
+                }
+                Some(Standing::AcquireIntent) => {
+                    settle(Some(Settled::Clear))?;
                     Release::NotDriver
                 }
-            }
+                _ => Release::NotDriver,
+            },
             DeviceModeStep::Pending => unsent(),
             // The baseline may have been sent, but no claim and no setter.
             DeviceModeStep::Unread => Release::Unconfirmed,

@@ -153,8 +153,14 @@ impl Ledger {
     }
 
     /// The allowance of a settle after a job: the longest of `REPLACE_FLOOR`
-    /// and the last measured replace. A job that wrote its claim has just
-    /// measured one, so its settle is charged at its own claim's length.
+    /// and the last measured replace. After a job that wrote its claim that
+    /// is the claim's own length. After one that wrote none, such as a
+    /// release whose baseline read Normal, it is an earlier write's, however
+    /// long ago, so one slow earlier write can skip a settle that would have
+    /// fitted. A skipped settle leaves the record as it was, as any settle
+    /// the share has no room for does: `Owned`, from which the next step
+    /// acquires again, or an intent for a later read to resolve. The next
+    /// write measures afresh.
     pub(super) fn write_allowance(&self) -> Duration {
         REPLACE_FLOOR.max(Duration::from_nanos(self.measured.load(Ordering::Acquire)))
     }
