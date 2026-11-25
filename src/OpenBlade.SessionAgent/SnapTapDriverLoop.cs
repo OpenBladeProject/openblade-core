@@ -20,6 +20,7 @@ internal static class SnapTapDriverLoop
         nint targetWindow = 0;
         nint targetLayout = 0;
         bool stopping = false;
+        DriverKeyboardOutput? output = null;
         bool confirmedInput = false;
         string stage = "Admission";
         RazerSnapTapDriverTransport? transport = null;
@@ -56,9 +57,10 @@ internal static class SnapTapDriverLoop
             transport = new RazerSnapTapDriverTransport(endpoint!.Path,
                 () => AdmitWithProgress(() => admission.IsCurrent(endpoint), () => heartbeat.Set(), admitting),
                 () => !shouldStop() && AllReleased() && (functionContext is null || functionContext.Ready), CanOutput, purpose);
+            output = new DriverKeyboardOutput(DecideOutput, stroke => transport!.Send(stroke));
             if (functionContext is not null)
             {
-                functionProcessor = new(transport.Send, functionContext.Publish, functionContext.Reset);
+                functionProcessor = new(output.SendFunctionRow, functionContext.Publish, functionContext.Reset);
             }
             stage = "InputConfiguration";
             if (!Native.SystemParametersInfo(0x000A, 0, out uint speed, 0) || speed > 31)
@@ -67,7 +69,7 @@ internal static class SnapTapDriverLoop
                     SnapTapDiagnosticFailure.Worker, "Run", stage, "KeyboardSpeedUnavailable"));
                 return 1;
             }
-            processor = new SnapTapDriverInputProcessor(Send,
+            processor = new SnapTapDriverInputProcessor(output.SendBatch,
                 repeatInterval: TimeSpan.FromSeconds(1 / (2.5 + 27.5 * speed / 31)));
             publisher.Publish(SnapTapRuntimeState.WaitingForRelease);
             stage = "WaitingForRelease";
@@ -90,6 +92,8 @@ internal static class SnapTapDriverLoop
             }
             if (shouldStop())
             {
+                // No hook or output exists yet; report the clean stop for this worker.
+                publisher.Publish(SnapTapRuntimeState.Off);
                 return 0;
             }
             stage = "HookSetup";
@@ -204,15 +208,43 @@ internal static class SnapTapDriverLoop
                     () => functionContext!.PrimaryMode, () => functionContext!.DriverMode,
                     () => functionContext!.DeviceKind, functionContext!.DeviceKind);
             }
-            functionProcessor?.ReleaseMedia();
             // On ambiguous output, close the subscription without more writes.
             // The guardian reconciles only owned hook configuration after exit.
             stage = "Cleanup";
+            var stopExit = new StopRefusalExit(output!.SnapStopRefused, output.FunctionStopRefused, publisher.Failed,
+                session.Failure, processor.Faulted, processor.Failure, functionProcessor?.Faulted == true,
+                functionProcessor?.Failure, loopFailure,
+                functionProcessor?.TracksOnly(code => output.IsDelivered(code) || code == output.FunctionRefusedDown) ?? true);
+            // Release every key this worker delivered and Windows still holds down: after
+            // a stop refused output before submission with nothing else failed, or after
+            // an ordinary stop whose drain passed later A/D keys through. Never after
+            // uncertain output. Release before media cleanup, which can throw.
+            // A function-row fault without uncertain output, such as a rejected media edge,
+            // still releases keys the drain delivered.
+            bool ordinaryClean = !processor.Faulted && functionDrained && functionProcessor?.OutputUncertain != true
+                && session.Failure is null && !publisher.Failed;
+            bool releaseAttempted = stopExit.MayRelease || ordinaryClean;
+            bool keysReleased = releaseAttempted && output.TryReleaseDelivered();
+            functionProcessor?.ReleaseMedia();
             bool closed = session.Stop();
             bool functionStopped = functionContext?.Stop() ?? true;
+            if (stopExit.IsClean(keysReleased, closed, functionStopped))
+            {
+                publisher.Publish(SnapTapRuntimeState.Off);
+                return publisher.Failed ? 1 : 0;
+            }
             bool stopped = !processor.Faulted && closed && functionDrained && functionStopped
-                && functionProcessor?.OutputUncertain != true;
-            DiagnosticFailure? terminalFailure = session.Failure ?? functionProcessor?.Failure ?? processor.Failure ?? loopFailure;
+                && functionProcessor?.OutputUncertain != true && (!releaseAttempted || keysReleased);
+            // Counts only: diagnostics never record which keys were held.
+            DiagnosticFailure? releaseFailure = output.ReleaseUncertain
+                ? SnapTapDiagnosticFailure.Create(SnapTapDiagnosticFailure.Worker, "Run", stage, "StopReleaseFailed", true)
+                : releaseAttempted && !keysReleased
+                    ? SnapTapDiagnosticFailure.Create(SnapTapDiagnosticFailure.Worker, "Run", stage, "KeysNotReleased") with
+                    {
+                        Context = $"Held={output.DeliveredCount}",
+                    }
+                    : null;
+            DiagnosticFailure? terminalFailure = session.Failure ?? releaseFailure ?? functionProcessor?.Failure ?? processor.Failure ?? loopFailure;
             bool failed = !stopped || publisher.Failed;
             if (foregroundPause && !failed && session.Failure is null && processor.Failure is null)
             {
@@ -256,8 +288,10 @@ internal static class SnapTapDriverLoop
             functionContext?.Dispose();
         }
 
-        bool CanOutput() => IsOutputTargetCurrent(targetWindow, targetLayout,
-            Native.GetForegroundWindow(), KeyboardLayout(targetWindow), stopping || !shouldStop());
+        DriverOutputDecision DecideOutput() => OutputDecision(targetWindow, targetLayout,
+            Native.GetForegroundWindow(), KeyboardLayout(targetWindow), stopping, shouldStop());
+
+        bool CanOutput() => DecideOutput() == DriverOutputDecision.Allowed;
 
         bool Handle(SnapTapKeyStroke stroke)
         {
@@ -270,22 +304,13 @@ internal static class SnapTapDriverLoop
                 functionKey == true, functionContext.PrimaryMode,
                 functionContext.Ready && functionKey.HasValue);
         }
-
-        int Send(SnapTapOutputBatch batch)
-        {
-            if (!CanOutput())
-            {
-                return 0;
-            }
-            int sent = 0;
-            for (int index = 0; index < batch.Count; index++)
-            {
-                transport!.Send(index == 0 ? batch.First : batch.Second);
-                sent++;
-            }
-            return sent;
-        }
     }
+
+    internal static DriverOutputDecision OutputDecision(nint targetWindow, nint targetLayout,
+        nint currentWindow, nint currentLayout, bool stopping, bool stopRequested) =>
+        !IsOutputTargetCurrent(targetWindow, targetLayout, currentWindow, currentLayout, true)
+            ? DriverOutputDecision.TargetChanged
+            : !stopping && stopRequested ? DriverOutputDecision.StopRequested : DriverOutputDecision.Allowed;
 
     // Brackets only the user-mode admission that precedes each driver mutation, never
     // the driver request itself. Progress is signalled before the window flag is
