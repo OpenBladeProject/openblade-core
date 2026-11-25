@@ -1880,14 +1880,14 @@
   <data name="Synapse may be blocking OpenBlade’s access to the laptop. Quit Synapse from its tray icon to use OpenBlade’s controls." xml:space="preserve">
     <value>Synapse 可能正在阻止 OpenBlade 访问笔记本电脑。请通过 Synapse 的托盘图标退出它，以使用 OpenBlade 的控制功能。</value>
   </data>
-  <data name="Synapse can also change performance, fans and lighting. Your OpenBlade changes still apply, but Synapse may change them again and some automatic features pause. For full control, quit Synapse from its tray icon." xml:space="preserve">
-    <value>Synapse 也可以更改性能、风扇和灯光。你在 OpenBlade 中所做的更改仍会生效，但 Synapse 可能会再次更改它们，部分自动功能也会暂停。如需完全控制，请通过 Synapse 的托盘图标退出它。</value>
+  <data name="Synapse can also change performance, fans and lighting, and it may undo changes you make in OpenBlade. Some automatic features pause while it runs. To stop this, quit Synapse from its tray icon." xml:space="preserve">
+    <value>Synapse 也可以更改性能、风扇和灯光，并可能撤销你在 OpenBlade 中所做的更改。它运行期间，部分自动功能会暂停。如需避免这种情况，请通过 Synapse 的托盘图标退出它。</value>
   </data>
-  <data name="Found: {0}. This Razer software may be blocking OpenBlade’s access to the laptop. Close it to use OpenBlade’s controls." xml:space="preserve">
-    <value>发现：{0}。此 Razer 软件可能正在阻止 OpenBlade 访问笔记本电脑。请关闭它，以使用 OpenBlade 的控制功能。</value>
+  <data name="Razer software found: {0}. It may be blocking OpenBlade’s access to the laptop. Close it to use OpenBlade’s controls." xml:space="preserve">
+    <value>发现 Razer 软件：{0}。它可能正在阻止 OpenBlade 访问笔记本电脑。请关闭它，以使用 OpenBlade 的控制功能。</value>
   </data>
-  <data name="Found: {0}. This Razer software may also change laptop settings, and some automatic features pause. For full control, close it." xml:space="preserve">
-    <value>发现：{0}。此 Razer 软件也可能更改笔记本电脑设置，部分自动功能也会暂停。如需完全控制，请关闭它。</value>
+  <data name="Razer software found: {0}. It may also change laptop settings, and some automatic features pause while it runs. To stop this, close it." xml:space="preserve">
+    <value>发现 Razer 软件：{0}。它也可能更改笔记本电脑设置，运行期间部分自动功能会暂停。如需避免这种情况，请关闭它。</value>
   </data>
   <data name="Other Razer software, such as Synapse, is running, so OpenBlade won’t restore these settings until it closes." xml:space="preserve">
     <value>其他 Razer 软件（例如 Synapse）正在运行，因此在它关闭之前，OpenBlade 不会恢复这些设置。</value>

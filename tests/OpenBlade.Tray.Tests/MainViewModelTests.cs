@@ -1998,7 +1998,7 @@ public sealed partial class MainViewModelTests
         Assert.True(viewModel.SetFanModeCommand.CanExecute(FanMode.Automatic));
         Assert.True(viewModel.HasControllerAdvisory);
         Assert.Equal(
-            "Synapse can also change performance, fans and lighting. Your OpenBlade changes still apply, but Synapse may change them again and some automatic features pause. For full control, quit Synapse from its tray icon.",
+            "Synapse can also change performance, fans and lighting, and it may undo changes you make in OpenBlade. Some automatic features pause while it runs. To stop this, quit Synapse from its tray icon.",
             viewModel.ControllerAdvisoryText);
         Assert.Equal("Synapse may change lighting", viewModel.LightingSourceLabel);
         Assert.True(viewModel.HasControllerDetectionWarning);
@@ -2031,7 +2031,7 @@ public sealed partial class MainViewModelTests
         Assert.True(viewModel.HasControllerAdvisory);
         Assert.Equal("Controls unavailable", viewModel.LightingSourceLabel);
         Assert.Equal(
-            "Found: Razer Central Service. This Razer software may also change laptop settings, and some automatic features pause. For full control, close it.",
+            "Razer software found: Razer Central Service. It may also change laptop settings, and some automatic features pause while it runs. To stop this, close it.",
             viewModel.ControllerAdvisoryText);
         Assert.Equal("Other Razer software is running", viewModel.AttentionSummary);
         Assert.Equal("Razer app active", viewModel.AttentionBadgeLabel);
@@ -2051,7 +2051,7 @@ public sealed partial class MainViewModelTests
         await WaitUntilAsync(() => viewModel.HasControllerAdvisory);
 
         const string advisory =
-            "Synapse can also change performance, fans and lighting. Your OpenBlade changes still apply, but Synapse may change them again and some automatic features pause. For full control, quit Synapse from its tray icon.";
+            "Synapse can also change performance, fans and lighting, and it may undo changes you make in OpenBlade. Some automatic features pause while it runs. To stop this, quit Synapse from its tray icon.";
         Assert.Equal(advisory, viewModel.ControllerAdvisoryText);
         Assert.Equal("Razer Synapse is running", viewModel.AttentionSummary);
         Assert.Equal("Synapse running", viewModel.AttentionBadgeLabel);
@@ -2072,7 +2072,7 @@ public sealed partial class MainViewModelTests
         await WaitUntilAsync(() => viewModel.AttentionSummary == "Other Razer software is running");
 
         Assert.Equal(
-            "Found: Razer Gaming Services, Razer Chroma SDK Service. This Razer software may be blocking OpenBlade’s access to the laptop. Close it to use OpenBlade’s controls.",
+            "Razer software found: Razer Gaming Services, Razer Chroma SDK Service. It may be blocking OpenBlade’s access to the laptop. Close it to use OpenBlade’s controls.",
             viewModel.ControllerAdvisoryText);
         Assert.Equal("Razer app active", viewModel.AttentionBadgeLabel);
         Assert.Equal("RGS, Razer Chroma SDK Service", viewModel.TroubleshootingOtherRazerSoftwareStatus);

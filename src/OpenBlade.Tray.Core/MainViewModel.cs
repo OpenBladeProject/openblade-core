@@ -9085,7 +9085,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 ? TrayText.Get(
                     "Synapse may be blocking OpenBlade’s access to the laptop. Quit Synapse from its tray icon to use OpenBlade’s controls.")
                 : TrayText.Get(
-                    "Synapse can also change performance, fans and lighting. Your OpenBlade changes still apply, but Synapse may change them again and some automatic features pause. For full control, quit Synapse from its tray icon.");
+                    "Synapse can also change performance, fans and lighting, and it may undo changes you make in OpenBlade. Some automatic features pause while it runs. To stop this, quit Synapse from its tray icon.");
         }
         string found = string.Join(
             ", ",
@@ -9096,8 +9096,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 .Distinct(StringComparer.OrdinalIgnoreCase));
         return TrayText.Format(
             controlsBlocked
-                ? "Found: {0}. This Razer software may be blocking OpenBlade’s access to the laptop. Close it to use OpenBlade’s controls."
-                : "Found: {0}. This Razer software may also change laptop settings, and some automatic features pause. For full control, close it.",
+                ? "Razer software found: {0}. It may be blocking OpenBlade’s access to the laptop. Close it to use OpenBlade’s controls."
+                : "Razer software found: {0}. It may also change laptop settings, and some automatic features pause while it runs. To stop this, close it.",
             found);
     }
 
