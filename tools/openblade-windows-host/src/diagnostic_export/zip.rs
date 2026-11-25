@@ -254,8 +254,20 @@ const HASH_BITS: u32 = 15;
 const MAX_CHAIN: usize = 64;
 const NONE: u32 = u32::MAX;
 
+/// Input bytes between cancellation checks while compressing.
+const CANCEL_INTERVAL: usize = 65_536;
+
 /// One final fixed-Huffman DEFLATE block over greedy LZ77 matches.
 pub(crate) fn deflate(input: &[u8], cancel: &Cancel) -> Result<Vec<u8>, Failure> {
+    deflate_checked(input, || cancel.check())
+}
+
+/// `deflate` with its cancellation check supplied, called at least once per
+/// `CANCEL_INTERVAL` input bytes plus one match.
+pub(crate) fn deflate_checked(
+    input: &[u8],
+    mut check: impl FnMut() -> Result<(), Failure>,
+) -> Result<Vec<u8>, Failure> {
     let mut bits = Bits {
         bytes: Vec::with_capacity(input.len() / 2),
         buffer: 0,
@@ -278,9 +290,13 @@ pub(crate) fn deflate(input: &[u8], cancel: &Cancel) -> Result<Vec<u8>, Failure>
         }
     };
     let mut position = 0;
+    let mut next_check = 0;
     while position < input.len() {
-        if position % 65_536 == 0 {
-            cancel.check()?;
+        // A match advances `position` by up to MAX_MATCH, so a multiple of the
+        // interval can be stepped over: compare against the next due position.
+        if position >= next_check {
+            check()?;
+            next_check = position + CANCEL_INTERVAL;
         }
         let mut best = (0, 0);
         if position + MIN_MATCH <= input.len() {

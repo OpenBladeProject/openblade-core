@@ -12,7 +12,7 @@ use super::{
     history::{CommandResult, History, Limits, Snapshot},
     json::Json,
     redact::redact_text,
-    zip::{OVERSIZED, deflate, read},
+    zip::{OVERSIZED, deflate, deflate_checked, read},
     *,
 };
 
@@ -318,6 +318,35 @@ fn deflate_round_trips_and_compresses_repetition() {
         assert_eq!(read::inflate(&deflated), input);
     }
     assert!(deflate(&[b'x'; 100_000], &Cancel::default()).unwrap().len() < 1_000);
+}
+
+/// A long run of one byte matches 258 bytes at a time, so its positions step
+/// over every multiple of the check interval. The cancellation must still be
+/// observed within one interval of being raised.
+#[test]
+fn deflate_observes_a_cancel_raised_mid_entry_in_a_long_run() {
+    const RUN: usize = 4 * 1024 * 1024;
+    let input = vec![b'x'; RUN];
+    let mut checks = 0usize;
+    let canceled = deflate_checked(&input, || {
+        checks += 1;
+        if checks == 3 {
+            Err(Failure::new("canceled"))
+        } else {
+            Ok(())
+        }
+    });
+    assert_eq!(canceled.unwrap_err(), Failure::new("canceled"));
+    assert_eq!(checks, 3);
+
+    // Uncanceled, the checks are evenly spread over the whole entry.
+    let mut checks = 0usize;
+    deflate_checked(&input, || {
+        checks += 1;
+        Ok(())
+    })
+    .unwrap();
+    assert!(checks >= RUN / (65_536 + 258), "{checks}");
 }
 
 fn metadata(tokens: Vec<String>) -> HostMetadata {
