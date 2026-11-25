@@ -44,6 +44,15 @@ mod mailbox_read;
 #[path = "ownership.rs"]
 pub(super) mod ownership;
 
+// NVIDIA's NVML: one System32-only loader for the GPU temperature reader and
+// the clock-offset backend.
+#[cfg(any(
+    feature = "service-live-readings-v1",
+    feature = "service-thermal-mutation-v1"
+))]
+#[path = "nvml_library.rs"]
+mod nvml_library;
+
 #[cfg(feature = "service-diagnostics-export-v1")]
 #[path = "readiness_export.rs"]
 mod export;
