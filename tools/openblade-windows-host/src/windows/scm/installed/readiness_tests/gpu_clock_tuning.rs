@@ -25,21 +25,9 @@ fn rig_at(selector: u8, fake: &Fake) -> (Rig, Arc<AtomicU64>, Arc<AtomicU64>) {
     (rig, gate, power)
 }
 
-/// `rig_at` over `files`, returning its lane too; the dGPU activity read
-/// sleeps `slow` ms once when it is set.
-fn rig_with(
-    files: MemoryFiles,
-    selector: u8,
-    fake: &Fake,
-    slow: Arc<AtomicU64>,
-) -> (Rig, Arc<Lane>, Arc<AtomicU64>, Arc<AtomicU64>) {
-    let rig = Rig::new(files);
-    {
-        let mut s = rig.port.state.lock().unwrap();
-        s.selectors = [selector; 2];
-        s.fans = [0; 2];
-        s.actual = FULL;
-    }
+/// Composes GPU clock tuning over `fake` into `rig`, with an idle dGPU
+/// whose activity read sleeps `slow` ms once when it is set.
+pub(super) fn compose(rig: &Rig, fake: &Fake, slow: Arc<AtomicU64>) -> Arc<Lane> {
     let driver = fake.clone();
     let worker = Worker::spawn(move || {
         Management::new(
@@ -57,6 +45,36 @@ fn rig_with(
     .unwrap();
     let lane = Arc::new(Lane::new(worker));
     rig.runtime.compose_gpu(lane.clone());
+    lane
+}
+
+/// Whether the runtime's thermal writers are fenced now, by the fence a
+/// writer admitted now reads (`Runtime::gpu_fence`).
+pub(super) fn fenced(rig: &Rig, budget: Duration) -> bool {
+    rig.runtime.gpu_fence().is_some_and(|fenced| fenced(budget))
+}
+
+/// The firmware exchanges the rig has carried, reads included.
+fn exchanges(rig: &Rig) -> usize {
+    rig.port.state.lock().unwrap().sent.len()
+}
+
+/// `rig_at` over `files`, returning its lane too; the dGPU activity read
+/// sleeps `slow` ms once when it is set.
+fn rig_with(
+    files: MemoryFiles,
+    selector: u8,
+    fake: &Fake,
+    slow: Arc<AtomicU64>,
+) -> (Rig, Arc<Lane>, Arc<AtomicU64>, Arc<AtomicU64>) {
+    let rig = Rig::new(files);
+    {
+        let mut s = rig.port.state.lock().unwrap();
+        s.selectors = [selector; 2];
+        s.fans = [0; 2];
+        s.actual = FULL;
+    }
+    let lane = compose(&rig, fake, slow);
     let gate = Arc::new(AtomicU64::new(0));
     let power = Arc::new(AtomicU64::new(1));
     let (g, p) = (gate.clone(), power.clone());
@@ -350,8 +368,9 @@ async fn an_unconfirmed_firmware_half_submits_no_offsets() {
 }
 
 /// Leaves the lane's management with an unconfirmable submission on a
-/// driver that stays unreadable, so its fence's read cannot resolve it.
-fn leave_uncertain(lane: &Lane, fake: &Fake) {
+/// driver that stays unreadable, so the runtime's fence read, which spends
+/// the one ungated query, cannot resolve it.
+pub(super) fn leave_uncertain(rig: &Rig, lane: &Lane, fake: &Fake) {
     fake.with(|d| {
         d.sets_fail = true;
         d.storing_failures = 1;
@@ -370,7 +389,7 @@ fn leave_uncertain(lane: &Lane, fake: &Fake) {
         d.sets_fail = false;
         d.lose_on_set = false;
     });
-    assert!(lane.fenced(CALL_BUDGET));
+    assert!(fenced(rig, CALL_BUDGET));
 }
 
 async fn report(rig: &Rig, sequence: i64, path: Option<&str>) -> Value {
@@ -386,7 +405,7 @@ async fn a_gpu_submission_outlasting_its_request_replies_failed_and_fences_write
     keep_real_clock();
     let fake = Fake::new(0, 0);
     let slow = Arc::new(AtomicU64::new(0));
-    let (rig, lane, _, _) = rig_with(MemoryFiles::default(), 0, &fake, slow.clone());
+    let (rig, _, _, _) = rig_with(MemoryFiles::default(), 0, &fake, slow.clone());
     let reply = rig.set(1, tuned(2, true, 125, 500)).await;
     assert_eq!(reply["result"]["status"], 1, "{reply}");
     // The preflight's activity read takes 1.3 s and the submission blocks
@@ -406,7 +425,7 @@ async fn a_gpu_submission_outlasting_its_request_replies_failed_and_fences_write
     );
     assert_eq!(rig.port.state.lock().unwrap().selectors, [5; 2]);
     // While it runs no thermal writer reaches firmware.
-    assert!(lane.fenced(Duration::ZERO));
+    assert!(fenced(&rig, Duration::ZERO));
     let firmware = writes(&rig);
     let reply = rig.set(3, value(2, 1)).await;
     assert_eq!(reply["result"]["status"], 2, "{reply}");
@@ -414,11 +433,11 @@ async fn a_gpu_submission_outlasting_its_request_replies_failed_and_fences_write
     assert_eq!(writes(&rig), firmware);
     release.send(()).unwrap();
     let end = std::time::Instant::now() + Duration::from_secs(5);
-    while lane.fenced(Duration::ZERO) && std::time::Instant::now() < end {
+    while fenced(&rig, Duration::ZERO) && std::time::Instant::now() < end {
         std::thread::sleep(Duration::from_millis(10));
     }
     // It ended on the worker, which recorded what the driver holds.
-    assert!(!lane.fenced(CALL_BUDGET));
+    assert!(!fenced(&rig, CALL_BUDGET));
     assert_eq!(fake.current(), (200, 600));
     let reply = rig.set(4, tuned(2, true, 200, 600)).await;
     assert_eq!(reply["result"]["status"], 1, "{reply}");
@@ -475,6 +494,38 @@ async fn an_uncertain_gpu_submission_fences_fan_writes() {
     rig.stop().await;
 }
 
+/// Delta review F2 (D2) for a fan writer: with the dGPU idle and the
+/// driver readable again, a manual fan request stays fenced until a power
+/// change rearms its fence's one ungated query, which then resolves the
+/// management read-only and releases the request. Before the fix the fence
+/// crossed no boundary and the request stayed fenced.
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn a_power_change_releases_a_fenced_fan_request_after_a_read() {
+    let fake = Fake::new(0, 0);
+    let (rig, lane, _, power) = rig_with(MemoryFiles::default(), 0, &fake, Arc::default());
+    *rig.custody.origin_for_fan.lock().unwrap() = Some(rig.origin.clone());
+    rig.get().await;
+    leave_uncertain(&rig, &lane, &fake);
+    let sets = fake.sets();
+    fake.with(|d| d.queries_fail = false);
+    let firmware = writes(&rig);
+    let manual = rig.request(fan_request(10, Some(1), 3700)).await;
+    assert_eq!(manual["result"]["status"], 2, "{manual}");
+    assert_eq!(
+        manual["result"]["message"],
+        format!("Fan override intent was stored. Hardware result: {PENDING_OTHER}")
+    );
+    assert_eq!(writes(&rig), firmware);
+    power.fetch_add(1, Ordering::AcqRel);
+    let manual = rig.request(fan_request(11, Some(1), 3700)).await;
+    assert_eq!(manual["result"]["status"], 1, "{manual}");
+    assert!(writes(&rig) > firmware);
+    assert_eq!(rig.port.state.lock().unwrap().fans, [1, 1]);
+    assert_eq!(fake.sets(), sets);
+    rig.stop().await;
+}
+
 /// A request-driven reconciliation is fenced as every other thermal writer
 /// is: the changed report's steps are refused with nothing written, and the
 /// writers are released once the submission is resolved read-only.
@@ -491,7 +542,7 @@ async fn an_uncertain_gpu_submission_fences_a_trigger_reconciliation() {
         source: None,
     };
     lane.prepare(seen, None, true, CALL_BUDGET);
-    leave_uncertain(&lane, &fake);
+    leave_uncertain(&rig, &lane, &fake);
     let refused = report(&rig, 1, Some(r"C:\Games\Game.exe")).await;
     assert!(
         refused["result"]["message"]
@@ -509,7 +560,176 @@ async fn an_uncertain_gpu_submission_fences_a_trigger_reconciliation() {
     power.fetch_add(1, Ordering::AcqRel);
     let reply = rig.set(2, tuned(2, true, 125, 0)).await;
     assert_eq!(reply["result"]["status"], 1, "{reply}");
-    assert!(!lane.fenced(CALL_BUDGET));
+    assert!(!fenced(&rig, CALL_BUDGET));
+    rig.stop().await;
+}
+
+/// Delta review F1 (D1): a pending GPU clock confirmation refuses a
+/// reconciliation at its admission, before any firmware read, and keeps the
+/// pair's debt as the journal fence does, however many reports it refuses.
+/// Once a read resolves the management, the next report applies the owed
+/// profile. Before the fix the refused steps settled the debt, so nothing
+/// applied the profile after the fence cleared.
+#[tokio::test]
+async fn a_reconciliation_refused_by_a_pending_gpu_confirmation_stays_owed() {
+    let fake = Fake::new(0, 0);
+    let files = MemoryFiles::default();
+    files.profiles(1);
+    let (rig, lane, _, _) = rig_with(files, 0, &fake, Arc::default());
+    leave_uncertain(&rig, &lane, &fake);
+    let sets = fake.sets();
+    let read = exchanges(&rig);
+    let game = Some(r"C:\Games\Game.exe");
+    // More reports than a debt has retries.
+    for sequence in 1..=4 {
+        let refused = report(&rig, sequence, game).await;
+        assert_eq!(refused["result"]["status"], 2, "{refused}");
+        assert!(message(&refused).ends_with(PENDING_OTHER), "{refused}");
+        assert_eq!(exchanges(&rig), read, "{refused}");
+        assert_eq!(rig.runtime.owed_attempts(SID, 7), Some(0), "{refused}");
+    }
+    // The management resolves read-only, as once the dGPU is active.
+    fake.with(|d| d.queries_fail = false);
+    let _ = lane.call_for_tests(|m| {
+        m.rearm();
+        let _ = m.read();
+    });
+    assert!(!fenced(&rig, CALL_BUDGET));
+    let applied = report(&rig, 5, game).await;
+    assert_eq!(applied["result"]["status"], 1, "{applied}");
+    assert_eq!(rig.port.state.lock().unwrap().selectors, [2; 2]);
+    assert_eq!(rig.runtime.owed_attempts(SID, 7), None);
+    assert_eq!(fake.sets(), sets);
+    rig.stop().await;
+}
+
+/// Delta review F2: a Windows power change rearms the fence's one ungated
+/// query, so with the dGPU idle the next report's admission resolves the
+/// management read-only and runs what the pair owes. Without a power
+/// change the spent query stays spent and the writers stay fenced. Before
+/// the fix the fence's read crossed no boundary, so only an explicit
+/// performance step could take the rearmed query.
+#[tokio::test]
+async fn a_power_change_rearms_the_fence_read_for_what_a_pair_owes() {
+    let fake = Fake::new(0, 0);
+    let files = MemoryFiles::default();
+    files.profiles(1);
+    let (rig, lane, _, power) = rig_with(files, 0, &fake, Arc::default());
+    leave_uncertain(&rig, &lane, &fake);
+    let sets = fake.sets();
+    let game = Some(r"C:\Games\Game.exe");
+    let refused = report(&rig, 1, game).await;
+    assert!(message(&refused).ends_with(PENDING_OTHER), "{refused}");
+    // The driver reads again, but the dGPU is idle and the query was spent.
+    fake.with(|d| d.queries_fail = false);
+    let inits = fake.inits();
+    let refused = report(&rig, 2, game).await;
+    assert!(message(&refused).ends_with(PENDING_OTHER), "{refused}");
+    assert_eq!(fake.inits(), inits);
+    assert_eq!(rig.port.state.lock().unwrap().selectors, [0; 2]);
+    power.fetch_add(1, Ordering::AcqRel);
+    let applied = report(&rig, 3, game).await;
+    assert_eq!(applied["result"]["status"], 1, "{applied}");
+    assert_eq!(fake.inits(), inits + 1);
+    assert_eq!(rig.port.state.lock().unwrap().selectors, [2; 2]);
+    assert_eq!(rig.runtime.owed_attempts(SID, 7), None);
+    assert_eq!(fake.sets(), sets);
+    rig.stop().await;
+}
+
+/// Delta review F2 for a read that fails: the rearmed query is spent by a
+/// read the driver refuses, the writers stay fenced, and the next fence at
+/// the same boundary queries nothing.
+#[tokio::test]
+async fn a_rearmed_fence_read_that_fails_keeps_the_writers_fenced() {
+    let fake = Fake::new(0, 0);
+    let (rig, lane, _, power) = rig_with(MemoryFiles::default(), 0, &fake, Arc::default());
+    leave_uncertain(&rig, &lane, &fake);
+    power.fetch_add(1, Ordering::AcqRel);
+    let inits = fake.inits();
+    assert!(fenced(&rig, CALL_BUDGET));
+    let spent = fake.inits();
+    assert!(spent > inits);
+    fake.with(|d| d.queries_fail = false);
+    assert!(fenced(&rig, CALL_BUDGET));
+    assert_eq!(fake.inits(), spent);
+    rig.stop().await;
+}
+
+/// Delta review F2 while a call is outstanding: a power change releases
+/// nothing until the call ends, however readable the driver is.
+#[tokio::test]
+async fn a_power_change_releases_no_writer_while_a_gpu_call_runs() {
+    let fake = Fake::new(0, 0);
+    let (rig, lane, _, power) = rig_with(MemoryFiles::default(), 0, &fake, Arc::default());
+    let (release, hold) = std::sync::mpsc::channel();
+    fake.with(|d| d.hold = Some(hold));
+    let (started, running) = std::sync::mpsc::channel();
+    let busy = {
+        let lane = lane.clone();
+        std::thread::spawn(move || {
+            lane.call_for_tests(move |m| {
+                started.send(()).unwrap();
+                let _ = m.set(tuning_offsets(), true);
+            })
+        })
+    };
+    running.recv().unwrap();
+    power.fetch_add(1, Ordering::AcqRel);
+    assert!(fenced(&rig, CALL_BUDGET));
+    release.send(()).unwrap();
+    assert!(matches!(
+        busy.join().unwrap(),
+        crate::installed::readiness::gpu_clock_offsets::Called::Done(())
+    ));
+    assert!(!fenced(&rig, CALL_BUDGET));
+    rig.stop().await;
+}
+
+fn tuning_offsets() -> openblade_domain::profile_set::model::GpuClockOffsets {
+    openblade_domain::profile_set::model::GpuClockOffsets {
+        core_megahertz: 125,
+        memory_megahertz: 500,
+    }
+}
+
+/// Delta review F1 for a profile save: a save whose reconciliation a
+/// pending GPU clock confirmation refuses is stored, reads no firmware and
+/// stays owed, so the report after the fence clears applies it. Before the
+/// fix the refused save settled what the pair owed.
+#[tokio::test]
+async fn a_profile_save_refused_by_a_pending_gpu_confirmation_stays_owed() {
+    let fake = Fake::new(0, 0);
+    let files = MemoryFiles::default();
+    files.profiles(1);
+    let (rig, lane, _, _) = rig_with(files, 0, &fake, Arc::default());
+    let game = Some(r"C:\Games\Game.exe");
+    let applied = report(&rig, 1, game).await;
+    assert_eq!(applied["result"]["status"], 1, "{applied}");
+    let applied = rig.port.state.lock().unwrap().selectors;
+    leave_uncertain(&rig, &lane, &fake);
+    let read = exchanges(&rig);
+    let mut profiles = rig.files.document("profiles.json")["profiles"].clone();
+    profiles["applicationProfiles"][0]["overrides"]["pluggedIn"]["performance"] = json!(0);
+    let saved = rig
+        .request(json!({"operation":"updateProfiles","version":90,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000009","profiles":profiles}))
+        .await;
+    assert_eq!(saved["result"]["status"], 0, "{saved}");
+    assert_eq!(
+        message(&saved),
+        format!("Profiles were stored. {PENDING_OTHER}")
+    );
+    assert_eq!(exchanges(&rig), read);
+    assert_eq!(rig.runtime.owed_attempts(SID, 7), Some(0));
+    fake.with(|d| d.queries_fail = false);
+    let _ = lane.call_for_tests(|m| {
+        m.rearm();
+        let _ = m.read();
+    });
+    let renewed = report(&rig, 2, game).await;
+    assert_eq!(renewed["result"]["status"], 1, "{renewed}");
+    assert_ne!(rig.port.state.lock().unwrap().selectors, applied);
+    assert_eq!(rig.runtime.owed_attempts(SID, 7), None);
     rig.stop().await;
 }
 
@@ -533,7 +753,7 @@ async fn an_uncertain_gpu_submission_fences_the_owned_stop_handback() {
                 CleanupFresh::capture(custody.clone(), passed, scope)
             });
         }
-        leave_uncertain(&lane, &fake);
+        leave_uncertain(&rig, &lane, &fake);
         let firmware = writes(&rig);
         rig.origin.stop();
         let _ = rig.source.lock().await.drain().await;

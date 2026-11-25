@@ -431,10 +431,10 @@ fn lane(fake: &Fake) -> Lane {
 }
 
 /// Waits on the real clock until the lane's outstanding call finishes.
-fn unfenced(lane: &Lane) -> bool {
+fn unfenced(lane: &Lane, boundary: Boundary) -> bool {
     let start = std::time::Instant::now();
     while start.elapsed() < Duration::from_secs(5) {
-        if !lane.fenced(CALL_BUDGET) {
+        if !lane.fenced(boundary, CALL_BUDGET) {
             return true;
         }
         std::thread::sleep(Duration::from_millis(10));
@@ -500,7 +500,7 @@ fn a_call_that_outlasts_its_request_is_indeterminate_and_fences_writers_until_it
         lane.prepare(boundary, Some(wanted), false, CALL_BUDGET),
         Prepared::Proceed(Half::Paired(wanted))
     );
-    assert!(!lane.fenced(CALL_BUDGET));
+    assert!(!lane.fenced(boundary, CALL_BUDGET));
     let (release, hold) = std::sync::mpsc::channel();
     fake.with(|d| d.hold = Some(hold));
     // The submission starts and blocks in the driver past the request.
@@ -512,14 +512,14 @@ fn a_call_that_outlasts_its_request_is_indeterminate_and_fences_writers_until_it
         Completed::failed(indeterminate(&paired_detail(ABANDONED)))
     );
     // Every writer is fenced while it runs, and the next step is pending.
-    assert!(lane.fenced(CALL_BUDGET));
+    assert!(lane.fenced(boundary, CALL_BUDGET));
     assert_eq!(
         lane.prepare(boundary, Some(wanted), true, CALL_BUDGET),
         Prepared::Pending
     );
     release.send(()).unwrap();
     // It finished on the worker and recorded what the driver holds.
-    assert!(unfenced(&lane));
+    assert!(unfenced(&lane, boundary));
     assert_eq!(fake.current(), (125, 500));
     assert_eq!(
         lane.prepare(boundary, Some(wanted), true, CALL_BUDGET),
@@ -551,7 +551,7 @@ fn a_spent_request_starts_no_gpu_call() {
         ))))
     );
     assert_eq!(fake.sets(), 0);
-    assert!(!lane.fenced(CALL_BUDGET));
+    assert!(!lane.fenced(boundary, CALL_BUDGET));
 }
 
 #[test]
@@ -583,8 +583,8 @@ fn an_uncertain_submission_fences_writers_until_a_read_resolves_it() {
     let sets = fake.sets();
     // The dGPU is idle and the ungated query was spent: the fence's own read
     // cannot resolve it, and too short a budget reads nothing.
-    assert!(lane.fenced(CALL_BUDGET));
-    assert!(lane.fenced(REPLY_MARGIN));
+    assert!(lane.fenced(first, CALL_BUDGET));
+    assert!(lane.fenced(first, REPLY_MARGIN));
     // A classified change rearms one query, which resolves it read-only;
     // the writers are released and nothing was written.
     assert!(matches!(
@@ -599,8 +599,60 @@ fn an_uncertain_submission_fences_writers_until_a_read_resolves_it() {
         ),
         Prepared::Proceed(Half::GpuOnly { .. })
     ));
-    assert!(!lane.fenced(CALL_BUDGET));
+    assert!(!lane.fenced(first, CALL_BUDGET));
     assert_eq!(fake.sets(), sets);
+}
+
+/// Delta review F2: the fence crosses its writer's boundary. A power change
+/// rearms the one ungated query its read then takes; a fence without a
+/// source, which resolves no class, keeps the source last seen, so neither
+/// it nor the step after it at that source rearms anything.
+#[test]
+fn a_fence_crosses_a_power_change_and_keeps_the_source_it_does_not_know() {
+    let fake = Fake::new(0, 0);
+    let lane = lane(&fake);
+    let first = Boundary {
+        gate: Some(0),
+        power: Some(1),
+        source: Some(1),
+    };
+    let wanted = tuning(true, 125, 500);
+    assert_eq!(
+        lane.prepare(first, Some(wanted), false, CALL_BUDGET),
+        Prepared::Proceed(Half::Paired(wanted))
+    );
+    fail_mid_pair(&fake);
+    fake.with(|d| d.lose_on_set = true);
+    assert!(
+        lane.complete(first, Half::Paired(wanted), CALL_BUDGET)
+            .unwrap()
+            .failed
+    );
+    fake.with(|d| {
+        d.sets_fail = false;
+        d.queries_fail = false;
+        d.lose_on_set = false;
+    });
+    let (sets, inits) = (fake.sets(), fake.inits());
+    let fence = Boundary {
+        source: None,
+        ..first
+    };
+    assert!(lane.fenced(fence, CALL_BUDGET));
+    assert_eq!(
+        lane.prepare(first, Some(wanted), true, CALL_BUDGET),
+        Prepared::Pending
+    );
+    assert!(lane.fenced(fence, CALL_BUDGET));
+    assert_eq!(fake.inits(), inits);
+    assert!(!lane.fenced(
+        Boundary {
+            power: Some(2),
+            ..fence
+        },
+        CALL_BUDGET
+    ));
+    assert_eq!((fake.sets(), fake.inits()), (sets, inits + 1));
 }
 
 #[test]
@@ -609,7 +661,7 @@ fn a_recorded_uncertainty_is_resolved_by_the_fence_read_when_the_driver_reads() 
     let lane = lane(&fake);
     lane.mark_uncertain_for_tests();
     // The management itself holds no uncertain submission: one read clears it.
-    assert!(!lane.fenced(CALL_BUDGET));
+    assert!(!lane.fenced(Boundary::default(), CALL_BUDGET));
     assert_eq!(fake.sets(), 0);
 }
 
@@ -646,6 +698,6 @@ fn a_queued_call_withdrawn_at_its_budget_is_retired_and_fences_nothing() {
     release.send(()).unwrap();
     assert!(matches!(busy.join().unwrap(), Called::Done(())));
     // Only the running call was outstanding; it ended, so nothing fences.
-    assert!(!lane.fenced(CALL_BUDGET));
+    assert!(!lane.fenced(Boundary::default(), CALL_BUDGET));
     assert_eq!(fake.current(), (125, 500));
 }

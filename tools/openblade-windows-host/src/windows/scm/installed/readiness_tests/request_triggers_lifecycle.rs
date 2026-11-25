@@ -1027,6 +1027,47 @@ async fn an_uncertain_prior_submission_is_never_replayed_by_a_lifecycle_tick() {
     rig.stop().await;
 }
 
+/// Delta review F1 and F2 at an AC unplug: an uncertain GPU clock
+/// submission with the dGPU idle fences the tick's reconciliation at its
+/// admission. The power change rearms the fence's one ungated query: a
+/// driver that reads resolves it and the battery profile is applied once;
+/// one that does not keeps the cause and the debt, with no firmware read.
+/// Before the fix the refused steps settled the debt and the rearm was
+/// never taken.
+#[cfg(feature = "service-gpu-clock-tuning-v1")]
+#[tokio::test]
+async fn an_unplug_reconciles_once_a_read_resolves_a_pending_gpu_confirmation() {
+    use super::super::super::gpu_clock_tuning::{compose, fenced, leave_uncertain};
+    use crate::installed::readiness::{gpu_clock_offsets::fake::Fake, thermal_gpu::CALL_BUDGET};
+    let vectors: Value = serde_json::from_str(LIFECYCLE_VECTORS).unwrap();
+    for readable in [false, true] {
+        let rig = applied_game().await;
+        let fake = Fake::new(0, 0);
+        let lane = compose(&rig, &fake, Arc::default());
+        leave_uncertain(&rig, &lane, &fake);
+        let sets = fake.sets();
+        fake.with(|d| d.queries_fail = !readable);
+        let before = sent(&rig);
+        unplug(&rig);
+        tick(&rig).await;
+        if readable {
+            assert!(sent(&rig) > before);
+            assert_eq!(owed(&rig), None);
+            assert!(!fenced(&rig, CALL_BUDGET));
+            assert_eq!(
+                performance(&rig.get().await),
+                &vector(&vectors, "powerToBattery")["desired"]
+            );
+        } else {
+            assert_eq!(sent(&rig), before);
+            assert_eq!(owed(&rig), Some(0));
+            assert!(fenced(&rig, CALL_BUDGET));
+        }
+        assert_eq!(fake.sets(), sets);
+        rig.stop().await;
+    }
+}
+
 /// Without any report, the console user's pair is reconciled: managed's
 /// power-source change needs no report, and by default no application rule
 /// exists, so no reporter ever sends one.

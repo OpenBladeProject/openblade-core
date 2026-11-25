@@ -1755,10 +1755,14 @@ struct RequestPermit {
 /// confirmation blocks every thermal write. None fences nothing.
 pub(super) type GpuFence = Option<Arc<dyn Fn(std::time::Duration) -> bool + Send + Sync>>;
 impl Runtime {
+    /// The fence for a writer or trigger admitted now: it carries the
+    /// lifecycle the writer was admitted under (`Runtime::gpu_boundary`), so
+    /// its resolution read crosses a power change as a GPU step would.
     pub(super) fn gpu_fence(&self) -> GpuFence {
         #[cfg(feature = "service-gpu-clock-tuning-v1")]
         if let Some(lane) = self.gpu.get().cloned() {
-            return Some(Arc::new(move |budget| lane.fenced(budget)));
+            let boundary = self.gpu_boundary();
+            return Some(Arc::new(move |budget| lane.fenced(boundary, budget)));
         }
         None
     }

@@ -33,9 +33,12 @@
 //! every native thermal writer (managed `PendingWriteConfirmationTracker`),
 //! after one read-only resolution attempt under the management's own query
 //! rules; [`Lane::prepare`] resolves it read-only too and replies pending
-//! while it stays uncertain. The fence's attempt crosses no boundary: the
-//! one ungated query a power or source change rearms is taken by the next
-//! performance step, so until then the writers stay fenced (the safe side).
+//! while it stays uncertain. The fence's attempt crosses the writer's own
+//! boundary first, without a source of its own, so a power change since the
+//! last call rearms the one ungated query and the next writer or trigger
+//! admission takes it; a trigger checks the fence before any firmware read
+//! and keeps what it owes (`request_triggers`). The writers are released
+//! only by a finished read that leaves nothing uncertain.
 //!
 //! The low-power boundary and the power-change rearm are applied lazily:
 //! each step carries the gate generation, the Windows power generation and
@@ -286,18 +289,24 @@ impl Lane {
     /// `PendingWriteConfirmationTracker.Blocks`): a started call has not
     /// finished, or the management holds an uncertain submission after one
     /// read-only resolution attempt within `budget` less [`REPLY_MARGIN`],
-    /// at most [`FENCE_READ_BUDGET`]. The attempt reads under the
-    /// management's own query rules and writes nothing.
-    pub(super) fn fenced(&self, budget: Duration) -> bool {
+    /// at most [`FENCE_READ_BUDGET`]. The attempt first crosses `boundary`,
+    /// the writer's own, so a power change since the last call rearms the
+    /// one ungated query it may take (managed
+    /// `RearmUncertainGpuClockOffsetResolution`), then reads under the
+    /// management's own query rules and writes nothing. Only a finished read
+    /// that leaves nothing uncertain releases the writers.
+    pub(super) fn fenced(&self, boundary: Boundary, budget: Duration) -> bool {
         if self.outstanding.calls.load(Ordering::SeqCst) > 0 {
             return true;
         }
         if !self.outstanding.uncertain.load(Ordering::SeqCst) {
             return false;
         }
+        let seen = self.seen.clone();
         match self.call(
             budget.saturating_sub(REPLY_MARGIN).min(FENCE_READ_BUDGET),
-            |management| {
+            move |management| {
+                cross(management, &seen, boundary);
                 let _ = management.read();
             },
         ) {
@@ -432,20 +441,32 @@ pub(super) fn confirmed(completed: Option<&Completed>) -> &'static str {
 
 /// Applies the boundaries crossed since the management's last call: a moved
 /// gate generation is a resume, which withdraws every confirmation, and a
-/// moved power generation rearms the one ungated query. The first call has
-/// nothing to withdraw: the management starts `Unknown`.
+/// moved power generation or a changed classified source rearms the one
+/// ungated query. A boundary without a source, as a writer's fence carries
+/// (`Lane::fenced`), keeps the source last seen: an unknown source is no
+/// change, so a fence between two steps at one class rearms nothing. The
+/// first call has nothing to withdraw: the management starts `Unknown`.
 fn cross<N: Nvml>(
     management: &mut Management<N>,
     seen: &Mutex<Option<Boundary>>,
     boundary: Boundary,
 ) {
+    let record = |previous: Option<Boundary>| Boundary {
+        source: boundary.source.or(previous.and_then(|p| p.source)),
+        ..boundary
+    };
     // A poisoned record is a crossed boundary of every kind. The lock is
     // only held for this replace, which cannot panic, so it stays poisoned
     // only in theory: each later call then also counts as crossed.
     let previous = match seen.lock() {
-        Ok(mut seen) => seen.replace(boundary),
+        Ok(mut seen) => {
+            let previous = *seen;
+            *seen = Some(record(previous));
+            previous
+        }
         Err(poisoned) => {
-            *poisoned.into_inner() = Some(boundary);
+            let mut seen = poisoned.into_inner();
+            *seen = Some(record(*seen));
             Some(Boundary {
                 gate: boundary.gate.map(|g| g.wrapping_add(1)).or(Some(0)),
                 power: boundary.power.map(|p| p.wrapping_add(1)).or(Some(0)),
@@ -460,7 +481,10 @@ fn cross<N: Nvml>(
         // Revalidation is the next read's: nothing is published here.
         let _ = management.invalidate();
     }
-    if previous.power != boundary.power || previous.source != boundary.source {
+    let source_changed = boundary
+        .source
+        .is_some_and(|source| previous.source != Some(source));
+    if previous.power != boundary.power || source_changed {
         management.rearm();
     }
 }

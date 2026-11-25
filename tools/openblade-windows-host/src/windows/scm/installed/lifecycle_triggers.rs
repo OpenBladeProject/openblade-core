@@ -432,13 +432,17 @@ impl Runtime {
             // epoch move costs one refused capture and no firmware read.
             Err(_) => return Ok(Attempt::Refused),
         };
-        // As a report's: a fenced store or unclassified power runs nothing
-        // and leaves the debt as it was. The cause is kept, as for a refused
-        // session: the fence is OpenBlade's own unsettled journal row or a
-        // document changed outside the Service, not another controller, and
-        // it stays fenced until read-only reconciliation settles that row, so
-        // a possibly submitted step never runs again (`admit_trigger`).
-        let TriggerAdmission::Admitted(classes) = admit_trigger(&storage, fresh.as_ref(), owed)?
+        // As a report's: a fenced store, unclassified power or a pending GPU
+        // clock confirmation runs nothing and leaves the debt as it was. The
+        // cause is kept, as for a refused session: the fence is OpenBlade's
+        // own unsettled journal row, a document changed outside the Service
+        // or OpenBlade's own uncertain GPU submission, not another
+        // controller, and it stays fenced until a read-only reconciliation
+        // settles it, so a possibly submitted step never runs again
+        // (`admit_trigger`).
+        let deadline = Instant::now() + crate::service_frame::RECONCILE_BUDGET;
+        let TriggerAdmission::Admitted(classes) =
+            admit_trigger(&storage, fresh.as_ref(), owed, self.gpu_fenced(deadline)).await?
         else {
             return Ok(Attempt::Refused);
         };
@@ -461,7 +465,7 @@ impl Runtime {
                     request: lifecycle_request(),
                     storage: &storage,
                     classes,
-                    deadline: Instant::now() + crate::service_frame::RECONCILE_BUDGET,
+                    deadline,
                     status: status(),
                     mode,
                     resume,
