@@ -22,7 +22,8 @@ public sealed partial class ServiceControlRuntimeTests
         + "pad-less HyperBoost context on the row's source with RZ09-0581's HyperBoost bases (Silent, Balanced, "
         + "Performance and Custom, with direct entry from manual fans) and the default saved profiles, confirms "
         + "the row's state, observes once, then calls SetHyperBoostAsync(enabled) with the cooling pad in the "
-        + "row's state. Where ProductionBatteryPort's entry precondition refuses the confirmed state (a battery "
+        + "row's state. An ExternalUnknown row reports an adapter the exact table cannot classify. Where "
+        + "ProductionBatteryPort's entry precondition refuses the confirmed state (a battery "
         + "preset with Automatic fans), the device throws that precondition's known-not-applied refusal. Each "
         + "row records the reply and the HyperBoost and performance writes the runtime made.";
 
@@ -59,6 +60,9 @@ public sealed partial class ServiceControlRuntimeTests
         {
             rows.Add(await NativeHyperBoostOwnedAsync(PowerSource.PluggedIn, NativeHyperBoostOwnedStates[1], true, pad));
         }
+        // An external source native cannot classify: entry from Balanced, exit from HyperBoost.
+        rows.Add(await NativeHyperBoostOwnedAsync(PowerSource.ExternalUnknown, NativeHyperBoostOwnedStates[1], true, CoolingPadConnectionState.Absent));
+        rows.Add(await NativeHyperBoostOwnedAsync(PowerSource.ExternalUnknown, NativeHyperBoostOwnedStates[8], false, CoolingPadConnectionState.Absent));
 
         string path = string.IsNullOrEmpty(output)
             ? Path.Combine(AppContext.BaseDirectory, NativeHyperBoostOwnedVectors)
@@ -113,6 +117,16 @@ public sealed partial class ServiceControlRuntimeTests
             },
             SupportsDirectManualFanTransitions = true,
         };
+        if (source == PowerSource.ExternalUnknown)
+        {
+            // An adapter the exact table cannot classify, on which RZ09-0581
+            // admits ordinary thermal control.
+            context.Device.Capabilities = context.Device.Capabilities with
+            {
+                SupportsOrdinaryThermalControlOnUnclassifiedExternalPower = true,
+            };
+            context.Device.AdapterPowerState = AdapterPowerState.Unknown;
+        }
         context.Device.ConfirmedState = context.Device.ConfirmedState with
         {
             Performance = state.Performance,
