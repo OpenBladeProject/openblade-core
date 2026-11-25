@@ -28,6 +28,8 @@ struct Paced {
     authorization: Duration,
     // The saved destination a fan request returns to.
     fan_destination: Option<Destination>,
+    // What the pace must leave after the setters (`Permit::reserve`).
+    reserve: Duration,
     rows: Mutex<Vec<Progress>>,
     fan_rows: Mutex<Vec<u8>>,
     refusals: Mutex<Vec<Refusal>>,
@@ -70,6 +72,9 @@ impl Permit for Paced {
     }
     fn windows_on_battery(&self) -> Option<bool> {
         Some(false)
+    }
+    fn reserve(&self) -> Duration {
+        self.reserve
     }
     fn is_fan(&self) -> bool {
         self.fan.is_some()
@@ -180,6 +185,36 @@ async fn a_preset_recipe_starts_only_when_its_measured_pace_fits_the_deadline() 
         permit.rows.lock().unwrap().last(),
         Some(&Progress::Confirmed)
     );
+    assert_eq!(started.elapsed(), Duration::from_millis(2070));
+}
+
+/// The permit's reserve is charged after the recipe's measured pace
+/// (`Permit::reserve`), as a paired NVML submission needs it: the recipe
+/// that ends 2070 ms after it starts, with a 100 ms reserve, is refused
+/// before any setter with 2160 ms and runs with 2180 ms.
+#[tokio::test(start_paused = true)]
+async fn a_reserve_is_charged_after_the_recipe_measured_pace() {
+    let reserved = || Paced {
+        destination: Some(Destination::Preset(Preset::Silent)),
+        reserve: Duration::from_millis(100),
+        ..Paced::default()
+    };
+    let fixture = balanced();
+    let permit = reserved();
+    assert_eq!(
+        apply(&fixture, &permit, Duration::from_millis(2160)).await,
+        None
+    );
+    assert_eq!(*permit.refusals.lock().unwrap(), [Refusal::Deadline]);
+    assert_eq!(fixture.state.lock().unwrap().writes, 0);
+    let fixture = balanced();
+    let permit = reserved();
+    let started = Instant::now();
+    assert_eq!(
+        apply(&fixture, &permit, Duration::from_millis(2180)).await,
+        Some(ObservedPerformance::SilentAutomatic)
+    );
+    assert!(permit.refusals.lock().unwrap().is_empty());
     assert_eq!(started.elapsed(), Duration::from_millis(2070));
 }
 
