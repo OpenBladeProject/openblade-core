@@ -98,14 +98,29 @@ pub enum Plan {
     /// is false: `HyperBoostBaseModeAdmissionSource` admits direct exits to
     /// Silent, Balanced, Performance and Custom only). That pair is not
     /// admitted natively, so nothing is written.
+    #[cfg(not(feature = "hyperboost-exit"))]
     NoDirectPath,
+    /// Managed leaves HyperBoost for a battery preset through the
+    /// `hyperboost-restore-balanced` pair first (`CanExitHyperBoostDirectlyTo`
+    /// is false: `HyperBoostBaseModeAdmissionSource` admits direct exits to
+    /// Silent, Balanced, Performance and Custom only), then an independent
+    /// read that must confirm Balanced with Automatic fans, then the battery
+    /// pair (`ExecuteThermalSettersAsync` with `hyperBoostExitActions`).
+    #[cfg(feature = "hyperboost-exit")]
+    RestoreThenBattery {
+        destination: Destination,
+    },
 }
 impl Plan {
     pub fn from_observation(current: ObservedPerformance, destination: Destination) -> Self {
         if confirms(current, destination) {
             Self::Unchanged
         } else if current == ObservedPerformance::HyperBoostObserved && destination.is_battery() {
-            Self::NoDirectPath
+            #[cfg(not(feature = "hyperboost-exit"))]
+            let plan = Self::NoDirectPath;
+            #[cfg(feature = "hyperboost-exit")]
+            let plan = Self::RestoreThenBattery { destination };
+            plan
         } else {
             Self::Direct { destination }
         }
@@ -146,10 +161,20 @@ pub fn confirms(current: ObservedPerformance, destination: Destination) -> bool 
 }
 /// Managed `requireExternalPowerOnDirectHyperBoostExit`: a direct HyperBoost
 /// exit to any destination but Balanced keeps the first reading's classified
-/// external class for every setter. The Balanced exit has no class rule.
+/// external class for every setter. The Balanced exit has no class rule, and a
+/// battery preset is never a direct exit (`directHyperBoostExit` is false for
+/// it, so managed passes no class rule to its restore sequence either).
 pub fn pins_class(current: ObservedPerformance, destination: Destination) -> bool {
     current == ObservedPerformance::HyperBoostObserved
         && destination != Destination::Preset(Preset::Balanced)
+        && !destination.is_battery()
+}
+/// The intermediate independent read of the HyperBoost restore sequence:
+/// managed requires `!HyperBoostActive`, Balanced and Automatic fans before
+/// any battery setter (`ExecuteThermalSettersAsync`).
+#[cfg(feature = "hyperboost-exit")]
+pub fn restored(current: ObservedPerformance) -> bool {
+    confirms(current, Destination::Preset(Preset::Balanced))
 }
 /// Whether a fresh setter-time power class admits this destination's pair,
 /// after managed `AdmitOrdinaryThermalCommandAsync`. `windows_on_battery` is
@@ -181,7 +206,9 @@ pub fn admits_class(
 /// Intent precedes possible submission. Acknowledgement never settles the
 /// transaction; only a new independent paired read can do so. Each setter
 /// has its own intent and acknowledgement: a preset pair uses 1-4, and
-/// Custom continues with 7-10 for its CPU and GPU setters.
+/// Custom continues with 7-10 for its CPU and GPU setters. Leaving HyperBoost
+/// for a battery preset first journals the restore pair as 80-83, then the
+/// battery pair as 1-4.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u8)]
 pub enum Progress {
@@ -197,6 +224,14 @@ pub enum Progress {
     ThirdAcknowledged,
     FourthIntent,
     FourthAcknowledged,
+    #[cfg(feature = "hyperboost-exit")]
+    RestoreFirstIntent = 80,
+    #[cfg(feature = "hyperboost-exit")]
+    RestoreFirstAcknowledged = 81,
+    #[cfg(feature = "hyperboost-exit")]
+    RestoreSecondIntent = 82,
+    #[cfg(feature = "hyperboost-exit")]
+    RestoreSecondAcknowledged = 83,
 }
 const PAIR: [Progress; 6] = {
     use Progress::*;
@@ -224,6 +259,35 @@ const CUSTOM_CHAIN: [Progress; 10] = {
         Confirmed,
     ]
 };
+/// The HyperBoost-to-battery chain: the restore pair (80-83), then the
+/// battery pair (1-4), then the final independent read.
+#[cfg(feature = "hyperboost-exit")]
+const RESTORE_CHAIN: [Progress; 10] = {
+    use Progress::*;
+    [
+        Prepared,
+        RestoreFirstIntent,
+        RestoreFirstAcknowledged,
+        RestoreSecondIntent,
+        RestoreSecondAcknowledged,
+        FirstIntent,
+        FirstAcknowledged,
+        SecondIntent,
+        SecondAcknowledged,
+        Confirmed,
+    ]
+};
+/// Every legal submission chain of a row for wire destination `destination`:
+/// its direct chain and, for a battery preset, the HyperBoost restore chain.
+pub fn chains(destination: i32) -> impl Iterator<Item = &'static [Progress]> {
+    #[cfg(feature = "hyperboost-exit")]
+    let restore = Preset::from_wire(destination)
+        .filter(|preset| preset.is_battery())
+        .map(|_| &RESTORE_CHAIN[..]);
+    #[cfg(not(feature = "hyperboost-exit"))]
+    let restore: Option<&'static [Progress]> = None;
+    Progress::chain(destination).into_iter().chain(restore)
+}
 impl Progress {
     /// The submission chain of a row for wire destination `destination`,
     /// Prepared to Confirmed, or None when the row has no native destination.
@@ -243,6 +307,26 @@ impl Progress {
     pub fn blocks_restart(self) -> bool {
         !settled(self as u8)
     }
+    /// The longest legal chain of a row for wire destination `destination`,
+    /// which a Prepared row reserves before any setter.
+    pub fn longest_chain(destination: i32) -> Option<&'static [Self]> {
+        chains(destination).max_by_key(|chain| chain.len())
+    }
+    /// The intent and acknowledgement of zero-based restore setter `index`.
+    #[cfg(feature = "hyperboost-exit")]
+    pub fn restore_setter(index: usize) -> Option<(Self, Self)> {
+        (index < 2).then(|| (RESTORE_CHAIN[1 + 2 * index], RESTORE_CHAIN[2 + 2 * index]))
+    }
+    /// Whether this step is a setter's intent, the row before possible
+    /// submission.
+    pub fn is_intent(self) -> bool {
+        match self {
+            Self::FirstIntent | Self::SecondIntent | Self::ThirdIntent | Self::FourthIntent => true,
+            #[cfg(feature = "hyperboost-exit")]
+            Self::RestoreFirstIntent | Self::RestoreSecondIntent => true,
+            _ => false,
+        }
+    }
 }
 impl Destination {
     /// Setters before the independent read: the pair, and Custom's two levels.
@@ -254,22 +338,24 @@ pub fn settled(progress: u8) -> bool {
     matches!(progress, 5 | 6 | 30 | 50 | 51 | 62 | 63 | 72 | 73)
 }
 /// Whether a row of wire destination `destination` may follow `prior` with
-/// `next` in the same request: the next step of its chain, or the
+/// `next` in the same request: the next step of one of its chains, or the
 /// Prepared-only retirement (0 to 6).
 pub fn progress_follows(destination: i32, prior: u8, next: u8) -> bool {
-    Progress::chain(destination).is_some_and(|chain| {
-        (prior == 0 && next == 6)
-            || chain
-                .windows(2)
-                .any(|step| step[0] as u8 == prior && step[1] as u8 == next)
-    })
+    let mut chains = chains(destination).peekable();
+    chains.peek().is_some()
+        && ((prior == 0 && next == 6)
+            || chains.any(|chain| {
+                chain
+                    .windows(2)
+                    .any(|step| step[0] as u8 == prior && step[1] as u8 == next)
+            }))
 }
 /// Whether `progress` is a step of a row for wire destination `destination`.
 pub fn valid_progress(destination: i32, progress: u8) -> bool {
-    Progress::chain(destination).is_some_and(|chain| {
-        progress == Progress::KnownNotSubmitted as u8
-            || chain.iter().any(|step| *step as u8 == progress)
-    })
+    let mut chains = chains(destination).peekable();
+    chains.peek().is_some()
+        && (progress == Progress::KnownNotSubmitted as u8
+            || chains.any(|chain| chain.iter().any(|step| *step as u8 == progress)))
 }
 /// Existing exact0581 performance-only policy; not a firmware prerequisite.
 /// Managed `DeferredPerformanceIntentMessage` defers on every external source
@@ -373,7 +459,11 @@ mod tests {
                 let expected = if own {
                     Plan::Unchanged
                 } else if current == O::HyperBoostObserved && preset.is_battery() {
-                    Plan::NoDirectPath
+                    #[cfg(not(feature = "hyperboost-exit"))]
+                    let plan = Plan::NoDirectPath;
+                    #[cfg(feature = "hyperboost-exit")]
+                    let plan = Plan::RestoreThenBattery { destination };
+                    plan
                 } else {
                     Plan::Direct { destination }
                 };
@@ -386,7 +476,9 @@ mod tests {
                 assert_eq!(confirms(current, destination), own);
                 assert_eq!(
                     pins_class(current, destination),
-                    current == O::HyperBoostObserved && preset != Preset::Balanced
+                    current == O::HyperBoostObserved
+                        && preset != Preset::Balanced
+                        && !preset.is_battery()
                 );
             }
         }
@@ -522,8 +614,8 @@ mod tests {
         assert_eq!(Progress::setter(custom, 4), None);
         // The Custom chain continues past the pair; a pair row cannot.
         let chain = [0, 1, 2, 3, 4, 7, 8, 9, 10, 5];
-        for prior in 0..=12u8 {
-            for next in 0..=12u8 {
+        for prior in 0..=90u8 {
+            for next in 0..=90u8 {
                 let custom_step =
                     chain.windows(2).any(|step| step == [prior, next]) || (prior, next) == (0, 6);
                 let pair_step = (prior < 5 && next == prior + 1) || (prior, next) == (0, 6);
@@ -533,7 +625,14 @@ mod tests {
                     "{prior}->{next}"
                 );
                 for preset in PRESETS {
-                    assert_eq!(progress_follows(preset as i32, prior, next), pair_step);
+                    let restore_step = cfg!(feature = "hyperboost-exit")
+                        && preset.is_battery()
+                        && RESTORE.windows(2).any(|step| step == [prior, next]);
+                    assert_eq!(
+                        progress_follows(preset as i32, prior, next),
+                        pair_step || restore_step,
+                        "{preset:?} {prior}->{next}"
+                    );
                 }
                 for destination in [-1, 6, 9] {
                     assert!(!progress_follows(destination, prior, next));
@@ -541,10 +640,114 @@ mod tests {
             }
             assert_eq!(valid_progress(CUSTOM, prior), prior <= 10);
             assert_eq!(valid_progress(1, prior), prior <= 6);
+            for battery in [3, 4] {
+                let restore = cfg!(feature = "hyperboost-exit") && (80..=83).contains(&prior);
+                assert_eq!(valid_progress(battery, prior), prior <= 6 || restore);
+            }
             assert!(!valid_progress(6, prior));
         }
         for progress in [7, 8, 9, 10] {
             assert!(!settled(progress));
         }
+    }
+    /// The HyperBoost restore chain: 0, the restore pair 80-83, the battery
+    /// pair 1-4, then 5.
+    const RESTORE: [u8; 10] = [0, 80, 81, 82, 83, 1, 2, 3, 4, 5];
+    #[cfg(feature = "hyperboost-exit")]
+    #[test]
+    fn hyperboost_restore_chain_is_battery_only_and_unsettled() {
+        use Progress::*;
+        let pairs = [
+            (RestoreFirstIntent, RestoreFirstAcknowledged),
+            (RestoreSecondIntent, RestoreSecondAcknowledged),
+        ];
+        for (index, expected) in pairs.iter().enumerate() {
+            assert_eq!(Progress::restore_setter(index), Some(*expected));
+        }
+        assert_eq!(Progress::restore_setter(2), None);
+        assert_eq!(
+            [
+                RestoreFirstIntent,
+                RestoreFirstAcknowledged,
+                RestoreSecondIntent,
+                RestoreSecondAcknowledged
+            ]
+            .map(|p| p as u8),
+            [80, 81, 82, 83]
+        );
+        for progress in [80, 81, 82, 83] {
+            assert!(!settled(progress));
+        }
+        for step in [
+            RestoreFirstIntent,
+            RestoreSecondIntent,
+            FirstIntent,
+            FourthIntent,
+        ] {
+            assert!(step.is_intent(), "{step:?}");
+        }
+        for step in [
+            Prepared,
+            RestoreFirstAcknowledged,
+            RestoreSecondAcknowledged,
+            Confirmed,
+            KnownNotSubmitted,
+        ] {
+            assert!(!step.is_intent(), "{step:?}");
+        }
+        // A battery row reserves the restore chain; every other row its own.
+        for preset in PRESETS {
+            let longest = Progress::longest_chain(preset as i32).unwrap();
+            let expected: &[u8] = if preset.is_battery() {
+                &RESTORE
+            } else {
+                &[0, 1, 2, 3, 4, 5]
+            };
+            assert_eq!(
+                longest
+                    .iter()
+                    .map(|p| *p as u8)
+                    .collect::<std::vec::Vec<_>>(),
+                expected
+            );
+        }
+        assert_eq!(Progress::longest_chain(CUSTOM).unwrap().len(), 10);
+        assert_eq!(Progress::longest_chain(6), None);
+        // Entering the restore chain from Prepared, and leaving it into the
+        // battery pair, are battery-only steps; 83 never confirms directly.
+        for (prior, next) in [(0, 80), (83, 1)] {
+            assert!(progress_follows(3, prior, next));
+            assert!(progress_follows(4, prior, next));
+            for destination in [0, 1, 2, CUSTOM] {
+                assert!(!progress_follows(destination, prior, next));
+            }
+        }
+        for (prior, next) in [(83, 5), (81, 1), (80, 82), (4, 80), (0, 81)] {
+            assert!(!progress_follows(3, prior, next), "{prior}->{next}");
+        }
+    }
+    #[cfg(feature = "hyperboost-exit")]
+    #[test]
+    fn only_balanced_with_automatic_fans_restores() {
+        for current in starting_states() {
+            assert_eq!(
+                restored(current),
+                current == O::BalancedAutomatic,
+                "{current:?}"
+            );
+        }
+    }
+    #[cfg(not(feature = "hyperboost-exit"))]
+    #[test]
+    fn without_the_exit_feature_no_restore_step_is_legal() {
+        for progress in 11..=u8::MAX {
+            for destination in [0, 1, 2, 3, 4, CUSTOM] {
+                assert!(!valid_progress(destination, progress));
+                assert!(!progress_follows(destination, 0, progress));
+                assert!(!progress_follows(destination, progress, 1));
+            }
+        }
+        assert_eq!(Progress::longest_chain(3).unwrap().len(), 6);
+        assert_eq!(RESTORE.len(), 10);
     }
 }
