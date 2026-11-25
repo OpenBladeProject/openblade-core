@@ -44,6 +44,9 @@ public sealed class SnapTapRuntimeStatusTests : IDisposable
         { Backend = backend };
         Assert.Equal(expected, status.WaitsForDriverRelease);
         Assert.False((status with { State = SnapTapRuntimeState.Paused }).WaitsForDriverRelease);
+        SnapTapStatusStore.Write(status, StatusPath);
+        Assert.DoesNotContain("waitsForDriverRelease", File.ReadAllText(StatusPath), StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(expected, SnapTapStatusStore.Read(StatusPath)!.WaitsForDriverRelease);
     }
 
     [Fact]
