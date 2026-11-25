@@ -1154,6 +1154,8 @@ impl Runtime {
                 Gate::Low => None,
             },
             power: self.power_generation.get().and_then(|read| read()),
+            // The class the step resolves (`RequestPermit::prepare_gpu`).
+            source: None,
         }
     }
 

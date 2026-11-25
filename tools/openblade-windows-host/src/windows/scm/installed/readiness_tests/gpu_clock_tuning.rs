@@ -6,6 +6,8 @@
 //! resolution, and the resume and power-change boundaries. Every NVML call
 //! is scripted (`gpu_clock_offsets::fake`).
 use super::*;
+use crate::installed::readiness::thermal_gpu::CALL_BUDGET;
+use crate::installed::readiness::thermal_mutation::{PENDING_OTHER, PENDING_PERFORMANCE};
 use crate::installed::readiness::{
     gpu_clock_offsets::{Management, RZ09_0581, Worker, fake::Fake},
     thermal_gpu::{Backend, Lane},
@@ -19,7 +21,19 @@ const STORED: &str = "Performance override intent was stored. Hardware result: "
 /// clock tuning over `fake` with an idle dGPU, its gate generation and its
 /// Windows power generation read from the returned counters.
 fn rig_at(selector: u8, fake: &Fake) -> (Rig, Arc<AtomicU64>, Arc<AtomicU64>) {
-    let rig = Rig::new(MemoryFiles::default());
+    let (rig, _, gate, power) = rig_with(MemoryFiles::default(), selector, fake, Arc::default());
+    (rig, gate, power)
+}
+
+/// `rig_at` over `files`, returning its lane too; the dGPU activity read
+/// sleeps `slow` ms once when it is set.
+fn rig_with(
+    files: MemoryFiles,
+    selector: u8,
+    fake: &Fake,
+    slow: Arc<AtomicU64>,
+) -> (Rig, Arc<Lane>, Arc<AtomicU64>, Arc<AtomicU64>) {
+    let rig = Rig::new(files);
     {
         let mut s = rig.port.state.lock().unwrap();
         s.selectors = [selector; 2];
@@ -30,12 +44,19 @@ fn rig_at(selector: u8, fake: &Fake) -> (Rig, Arc<AtomicU64>, Arc<AtomicU64>) {
     let worker = Worker::spawn(move || {
         Management::new(
             Box::new(driver) as Backend,
-            Box::new(|| Some(false)),
+            Box::new(move || {
+                let ms = slow.swap(0, Ordering::AcqRel);
+                if ms > 0 {
+                    std::thread::sleep(Duration::from_millis(ms));
+                }
+                Some(false)
+            }),
             RZ09_0581,
         )
     })
     .unwrap();
-    rig.runtime.compose_gpu(Arc::new(Lane::new(worker)));
+    let lane = Arc::new(Lane::new(worker));
+    rig.runtime.compose_gpu(lane.clone());
     let gate = Arc::new(AtomicU64::new(0));
     let power = Arc::new(AtomicU64::new(1));
     let (g, p) = (gate.clone(), power.clone());
@@ -47,7 +68,7 @@ fn rig_at(selector: u8, fake: &Fake) -> (Rig, Arc<AtomicU64>, Arc<AtomicU64>) {
     });
     rig.runtime
         .read_power_generation(move || Some(p.load(Ordering::Acquire)));
-    (rig, gate, power)
+    (rig, lane, gate, power)
 }
 
 fn tuned(preset: i32, enabled: bool, core: i32, memory: i32) -> Value {
@@ -188,7 +209,7 @@ async fn an_nvml_failure_mid_pair_is_indeterminate_and_is_not_replayed() {
     let (rig, _, _) = rig_at(0, &fake);
     fail_after_firmware(&rig, &fake, false);
     let reply = rig.set(1, tuned(2, true, 125, 500)).await;
-    assert_eq!(reply["result"]["status"], 2, "{reply}");
+    assert_eq!(reply["result"]["status"], 3, "{reply}");
     let message = message(&reply);
     assert!(
         message.starts_with(&format!(
@@ -214,7 +235,7 @@ async fn an_uncertain_submission_stops_writes_until_a_read_only_resolution() {
     let (rig, _, power) = rig_at(0, &fake);
     fail_after_firmware(&rig, &fake, true);
     let reply = rig.set(1, tuned(2, true, 125, 500)).await;
-    assert_eq!(reply["result"]["status"], 2, "{reply}");
+    assert_eq!(reply["result"]["status"], 3, "{reply}");
     assert!(
         message(&reply).ends_with("Fresh readback cannot confirm the GPU clock offsets."),
         "{reply}"
@@ -290,7 +311,7 @@ async fn admission_lost_before_the_submission_submits_no_offsets() {
         });
         rig.stop().await;
         if landed && refused {
-            assert_eq!(reply["result"]["status"], 2, "{reply}");
+            assert_eq!(reply["result"]["status"], 3, "{reply}");
             assert_eq!(fake.sets(), 0);
             assert_eq!(fake.current(), (0, 0));
             found = true;
@@ -326,4 +347,231 @@ async fn an_unconfirmed_firmware_half_submits_no_offsets() {
         assert_eq!((fake.sets(), fake.current()), (0, (0, 0)), "{reply}");
         rig.stop().await;
     }
+}
+
+/// Leaves the lane's management with an unconfirmable submission on a
+/// driver that stays unreadable, so its fence's read cannot resolve it.
+fn leave_uncertain(lane: &Lane, fake: &Fake) {
+    fake.with(|d| {
+        d.sets_fail = true;
+        d.storing_failures = 1;
+        d.lose_on_set = true;
+    });
+    let _ = lane.call_for_tests(|m| {
+        let _ = m.set(
+            openblade_domain::profile_set::model::GpuClockOffsets {
+                core_megahertz: 125,
+                memory_megahertz: 500,
+            },
+            true,
+        );
+    });
+    fake.with(|d| {
+        d.sets_fail = false;
+        d.lose_on_set = false;
+    });
+    assert!(lane.fenced(CALL_BUDGET));
+}
+
+async fn report(rig: &Rig, sequence: i64, path: Option<&str>) -> Value {
+    rig.request(json!({"operation":"reportApplicationContext","version":90,"requestId":format!("bbbbbbbb-bbbb-cccc-dddd-{sequence:012}"),"instanceId":"cccccccc-bbbb-cccc-dddd-000000000003","sequence":sequence,"executablePath":path})).await
+}
+
+/// Review F-A: the GPU half is bounded by the request. A submission that
+/// outlasts it is replied Failed and indeterminate before the deadline, and
+/// fences every thermal writer until it ends on the worker. Before the fix
+/// no reply arrived and the offsets landed after the request was dropped.
+#[tokio::test]
+async fn a_gpu_submission_outlasting_its_request_replies_failed_and_fences_writes() {
+    keep_real_clock();
+    let fake = Fake::new(0, 0);
+    let slow = Arc::new(AtomicU64::new(0));
+    let (rig, lane, _, _) = rig_with(MemoryFiles::default(), 0, &fake, slow.clone());
+    let reply = rig.set(1, tuned(2, true, 125, 500)).await;
+    assert_eq!(reply["result"]["status"], 1, "{reply}");
+    // The preflight's activity read takes 1.3 s and the submission blocks
+    // in the driver.
+    slow.store(1300, Ordering::Release);
+    let (release, hold) = std::sync::mpsc::channel();
+    fake.with(|d| d.hold = Some(hold));
+    let started = std::time::Instant::now();
+    let reply = rig.set(2, tuned(0, true, 200, 600)).await;
+    assert!(started.elapsed() < Duration::from_secs(6), "{reply}");
+    assert_eq!(reply["result"]["status"], 3, "{reply}");
+    assert_eq!(
+        message(&reply),
+        format!(
+            "{STORED}Performance write is indeterminate: The power mode was applied, but GPU clock tuning failed. GPU clock tuning did not finish within its budget."
+        )
+    );
+    assert_eq!(rig.port.state.lock().unwrap().selectors, [5; 2]);
+    // While it runs no thermal writer reaches firmware.
+    assert!(lane.fenced(Duration::ZERO));
+    let firmware = writes(&rig);
+    let reply = rig.set(3, value(2, 1)).await;
+    assert_eq!(reply["result"]["status"], 2, "{reply}");
+    assert_eq!(message(&reply), format!("{STORED}{PENDING_PERFORMANCE}"));
+    assert_eq!(writes(&rig), firmware);
+    release.send(()).unwrap();
+    let end = std::time::Instant::now() + Duration::from_secs(5);
+    while lane.fenced(Duration::ZERO) && std::time::Instant::now() < end {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    // It ended on the worker, which recorded what the driver holds.
+    assert!(!lane.fenced(CALL_BUDGET));
+    assert_eq!(fake.current(), (200, 600));
+    let reply = rig.set(4, tuned(2, true, 200, 600)).await;
+    assert_eq!(reply["result"]["status"], 1, "{reply}");
+    assert_eq!(rig.port.state.lock().unwrap().selectors, [2; 2]);
+    rig.stop().await;
+}
+
+/// Review F-B: an uncertain GPU submission fences the fan writers too,
+/// with managed's `ScopedThermalWriteBlockReason`: a manual fan request and
+/// a return to Automatic that carries the saved preset store their intent
+/// and write nothing. Before the fix both wrote firmware.
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn an_uncertain_gpu_submission_fences_fan_writes() {
+    let fake = Fake::new(0, 0);
+    let files = MemoryFiles::default();
+    files.profiles_with(2, Some(2));
+    let (rig, _, _, _) = rig_with(files, 0, &fake, Arc::default());
+    *rig.custody.origin_for_fan.lock().unwrap() = Some(rig.origin.clone());
+    rig.get().await;
+    fail_after_firmware(&rig, &fake, true);
+    let reply = rig.set(1, tuned(2, true, 125, 500)).await;
+    assert!(
+        message(&reply).ends_with("Fresh readback cannot confirm the GPU clock offsets."),
+        "{reply}"
+    );
+    fake.with(|d| {
+        d.sets_fail = false;
+        d.queries_fail = false;
+        d.lose_on_set = false;
+    });
+    // The saved preset becomes Silent; its step is refused.
+    let reply = rig.set(3, value(0, 1)).await;
+    assert_eq!(message(&reply), format!("{STORED}{PENDING_PERFORMANCE}"));
+    let before = (writes(&rig), rig.port.state.lock().unwrap().fans);
+    let manual = rig.request(fan_request(10, Some(1), 3700)).await;
+    assert_eq!(manual["result"]["status"], 2, "{manual}");
+    assert_eq!(
+        manual["result"]["message"],
+        format!("Fan override intent was stored. Hardware result: {PENDING_OTHER}")
+    );
+    let back = rig.request(fan_request(11, None, 0)).await;
+    assert_eq!(back["result"]["status"], 2, "{back}");
+    assert_eq!(
+        back["result"]["message"],
+        format!("Fan override was cleared. Hardware result: {PENDING_OTHER}")
+    );
+    let after = {
+        let s = rig.port.state.lock().unwrap();
+        (s.writes, s.fans, s.selectors)
+    };
+    assert_eq!((after.0, after.1), before);
+    assert_eq!(after.2, [2; 2]);
+    rig.stop().await;
+}
+
+/// A request-driven reconciliation is fenced as every other thermal writer
+/// is: the changed report's steps are refused with nothing written, and the
+/// writers are released once the submission is resolved read-only.
+#[tokio::test]
+async fn an_uncertain_gpu_submission_fences_a_trigger_reconciliation() {
+    let fake = Fake::new(0, 0);
+    let files = MemoryFiles::default();
+    files.profiles(1);
+    let (rig, lane, _, power) = rig_with(files, 0, &fake, Arc::default());
+    // The lane has seen this power generation, as after an earlier step.
+    let seen = crate::installed::readiness::thermal_gpu::Boundary {
+        gate: Some(0),
+        power: Some(1),
+        source: None,
+    };
+    lane.prepare(seen, None, true, CALL_BUDGET);
+    leave_uncertain(&lane, &fake);
+    let refused = report(&rig, 1, Some(r"C:\Games\Game.exe")).await;
+    assert!(
+        refused["result"]["message"]
+            .as_str()
+            .unwrap()
+            .contains(PENDING_OTHER),
+        "{refused}"
+    );
+    assert_ne!(refused["result"]["status"], 1, "{refused}");
+    assert_eq!(writes(&rig), 0);
+    assert_eq!(rig.port.state.lock().unwrap().selectors, [0; 2]);
+    // A power change rearms one query; the driver reads again and the next
+    // explicit step resolves it read-only, releasing the writers.
+    fake.with(|d| d.queries_fail = false);
+    power.fetch_add(1, Ordering::AcqRel);
+    let reply = rig.set(2, tuned(2, true, 125, 0)).await;
+    assert_eq!(reply["result"]["status"], 1, "{reply}");
+    assert!(!lane.fenced(CALL_BUDGET));
+    rig.stop().await;
+}
+
+/// Owned Stop's handback to firmware Automatic is fenced too (managed
+/// blocks prior-authority cleanup while a confirmation is pending): the
+/// fans stay as OpenBlade left them and nothing is written.
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn an_uncertain_gpu_submission_fences_the_owned_stop_handback() {
+    for composed in [true, false] {
+        let fake = Fake::new(0, 0);
+        let (rig, lane, _, _) = rig_with(MemoryFiles::default(), 0, &fake, Arc::default());
+        rig.custody.scoped_fresh.store(true, Ordering::Release);
+        *rig.custody.origin_for_fan.lock().unwrap() = Some(rig.origin.clone());
+        rig.get().await;
+        let manual = rig.request(fan_request(10, Some(1), 3700)).await;
+        assert_eq!(manual["result"]["status"], 1, "{manual}");
+        if composed {
+            let custody = rig.custody.clone();
+            rig.runtime.read_cleanup(move |passed, scope| {
+                CleanupFresh::capture(custody.clone(), passed, scope)
+            });
+        }
+        leave_uncertain(&lane, &fake);
+        let firmware = writes(&rig);
+        rig.origin.stop();
+        let _ = rig.source.lock().await.drain().await;
+        let state = rig.port.state.lock().unwrap();
+        assert_eq!((state.writes, state.fans), (firmware, [1, 1]), "{composed}");
+    }
+}
+
+/// A profile save is a reconciliation, and a reconciliation leaves every
+/// GPU clock effect refused as incomplete: saving an active rule that
+/// carries GPU clock tuning writes neither firmware nor NVML.
+#[tokio::test]
+async fn a_profile_save_with_gpu_clock_tuning_is_refused_as_incomplete() {
+    let fake = Fake::new(0, 0);
+    let files = MemoryFiles::default();
+    files.profiles(1);
+    let (rig, _, _, _) = rig_with(files, 0, &fake, Arc::default());
+    let applied = report(&rig, 1, Some(r"C:\Games\Game.exe")).await;
+    assert_eq!(applied["result"]["status"], 1, "{applied}");
+    let (firmware, inits) = (writes(&rig), fake.inits());
+    let mut profiles = rig.files.document("profiles.json")["profiles"].clone();
+    let game = &mut profiles["applicationProfiles"][0]["overrides"]["pluggedIn"];
+    game["performance"] = json!(0);
+    game["gpuClockTuning"] =
+        json!({"enabled":true,"offsets":{"coreMegahertz":125,"memoryMegahertz":500}});
+    let saved = rig
+        .request(json!({"operation":"updateProfiles","version":90,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000009","profiles":profiles}))
+        .await;
+    assert!(
+        saved["result"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("GPU clock handling is incomplete; no thermal setter was submitted."),
+        "{saved}"
+    );
+    assert_eq!(
+        (writes(&rig), fake.inits(), fake.sets()),
+        (firmware, inits, 0)
+    );
+    rig.stop().await;
 }

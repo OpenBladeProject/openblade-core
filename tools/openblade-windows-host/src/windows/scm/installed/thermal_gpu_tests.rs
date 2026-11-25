@@ -1,7 +1,7 @@
 //! The GPU half of a performance step over a scripted driver: what each
 //! decision writes, and how a failed or uncertain submission is judged
-//! read-only and never replayed. The managed-recorded decisions are replayed
-//! by `managed_decision_vectors`.
+//! read-only and never replayed, and how the lane bounds each call by its
+//! request and fences the thermal writers while a call is outstanding.
 use super::super::gpu_clock_offsets::{Activity, RZ09_0581, fake::Fake};
 use super::*;
 use serde_json::json;
@@ -105,7 +105,10 @@ fn a_refused_preflight_writes_nothing() {
         let mut m = management(&fake);
         assert_eq!(
             prepare(&mut m, Some(tuning(true, offsets.0, offsets.1)), false),
-            Prepared::Refused(message.into())
+            Prepared::Refused {
+                message: message.into(),
+                failed: false,
+            }
         );
         assert_eq!(fake.sets(), 0);
         assert_eq!(m.state(), State::Unknown);
@@ -256,7 +259,7 @@ fn a_gpu_only_failure_is_reported_as_managed_reports_it() {
     };
     assert_eq!(
         complete(&mut m, half),
-        Completed::failed("Performance is unavailable: GPU clock tuning is unavailable.")
+        Completed::blocked("Performance is unavailable: GPU clock tuning is unavailable.")
     );
     // Not applied: the write failed and its restore confirmed the prior state.
     fake.with(|d| {
@@ -301,16 +304,17 @@ fn a_moved_gate_generation_withdraws_a_confirmed_reset_before_the_next_decision(
     let before = Boundary {
         gate: Some(0),
         power: Some(1),
+        source: Some(1),
     };
     let disabled = tuning(false, 125, 500);
     // A confirmed reset.
-    let Prepared::Proceed(half) = lane.prepare(before, Some(disabled), true) else {
+    let Prepared::Proceed(half) = lane.prepare(before, Some(disabled), true, CALL_BUDGET) else {
         panic!("GPU-only");
     };
     assert!(matches!(half, Half::GpuOnly { .. }));
-    assert!(lane.complete(before, half).unwrap().applied);
+    assert!(lane.complete(before, half, CALL_BUDGET).unwrap().applied);
     assert_eq!(
-        lane.prepare(before, Some(disabled), false),
+        lane.prepare(before, Some(disabled), false, CALL_BUDGET),
         Prepared::Proceed(Half::PairedReuse)
     );
     // After a resume the reset is not evidence: the paired disable queries
@@ -321,12 +325,12 @@ fn a_moved_gate_generation_withdraws_a_confirmed_reset_before_the_next_decision(
     };
     let inits = fake.inits();
     assert_eq!(
-        lane.prepare(resumed, Some(disabled), false),
+        lane.prepare(resumed, Some(disabled), false, CALL_BUDGET),
         Prepared::Proceed(Half::Paired(disabled))
     );
     assert_eq!(fake.inits(), inits + 1);
     assert!(matches!(
-        lane.prepare(resumed, Some(disabled), true),
+        lane.prepare(resumed, Some(disabled), true, CALL_BUDGET),
         Prepared::Proceed(Half::GpuOnly { .. })
     ));
 }
@@ -342,17 +346,20 @@ fn a_moved_power_generation_rearms_one_ungated_query() {
     let first = Boundary {
         gate: Some(0),
         power: Some(1),
+        source: Some(1),
     };
     let wanted = tuning(true, 125, 500);
     assert_eq!(
-        lane.prepare(first, Some(wanted), false),
+        lane.prepare(first, Some(wanted), false, CALL_BUDGET),
         Prepared::Proceed(Half::Paired(wanted))
     );
     // The paired submission fails after writing core, and the driver is
     // lost before its follow-up read.
     fail_mid_pair(&fake);
     fake.with(|d| d.lose_on_set = true);
-    let completed = lane.complete(first, Half::Paired(wanted)).unwrap();
+    let completed = lane
+        .complete(first, Half::Paired(wanted), CALL_BUDGET)
+        .unwrap();
     assert_eq!(
         completed.message,
         format!(
@@ -372,8 +379,14 @@ fn a_moved_power_generation_rearms_one_ungated_query() {
     let (sets, inits) = (fake.sets(), fake.inits());
     // The dGPU is idle and the one ungated query was spent: refused, with
     // no query and no write.
-    assert_eq!(lane.prepare(first, Some(wanted), true), Prepared::Pending);
-    assert_eq!(lane.prepare(first, None, false), Prepared::Pending);
+    assert_eq!(
+        lane.prepare(first, Some(wanted), true, CALL_BUDGET),
+        Prepared::Pending
+    );
+    assert_eq!(
+        lane.prepare(first, None, false, CALL_BUDGET),
+        Prepared::Pending
+    );
     assert_eq!(fake.inits(), inits);
     // A power change rearms one query, which resolves it read-only.
     let changed = Boundary {
@@ -381,7 +394,7 @@ fn a_moved_power_generation_rearms_one_ungated_query() {
         ..first
     };
     assert_eq!(
-        lane.prepare(changed, Some(wanted), true),
+        lane.prepare(changed, Some(wanted), true, CALL_BUDGET),
         Prepared::Proceed(Half::GpuOnly {
             tuning: wanted,
             initial: Some(tuning(true, 125, 0).offsets),
@@ -407,4 +420,195 @@ fn a_lost_admission_submits_nothing_and_names_the_applied_firmware_half() {
         unadmitted(Half::Paired(wanted)).unwrap().message,
         "Performance write is indeterminate: The power mode was applied, but GPU clock tuning failed. GPU clock tuning lost its write admission before it was submitted."
     );
+}
+
+fn lane(fake: &Fake) -> Lane {
+    let driver = fake.clone();
+    Lane::new(
+        Worker::spawn(move || Management::new(Box::new(driver) as Backend, inactive(), RZ09_0581))
+            .unwrap(),
+    )
+}
+
+/// Waits on the real clock until the lane's outstanding call finishes.
+fn unfenced(lane: &Lane) -> bool {
+    let start = std::time::Instant::now();
+    while start.elapsed() < Duration::from_secs(5) {
+        if !lane.fenced(CALL_BUDGET) {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    false
+}
+
+#[test]
+fn a_classified_source_change_rearms_one_ungated_query() {
+    let fake = Fake::new(0, 0);
+    let lane = lane(&fake);
+    let first = Boundary {
+        gate: Some(0),
+        power: Some(1),
+        source: Some(1),
+    };
+    let wanted = tuning(true, 125, 500);
+    assert_eq!(
+        lane.prepare(first, Some(wanted), false, CALL_BUDGET),
+        Prepared::Proceed(Half::Paired(wanted))
+    );
+    fail_mid_pair(&fake);
+    fake.with(|d| d.lose_on_set = true);
+    assert!(
+        lane.complete(first, Half::Paired(wanted), CALL_BUDGET)
+            .unwrap()
+            .failed
+    );
+    fake.with(|d| {
+        d.sets_fail = false;
+        d.queries_fail = false;
+        d.lose_on_set = false;
+    });
+    let (sets, inits) = (fake.sets(), fake.inits());
+    assert_eq!(
+        lane.prepare(first, Some(wanted), true, CALL_BUDGET),
+        Prepared::Pending
+    );
+    assert_eq!(fake.inits(), inits);
+    // PluggedIn to USB-C in the same power generation (managed
+    // `ServiceControlRuntime.cs:18684`): one query resolves it read-only.
+    let changed = Boundary {
+        source: Some(2),
+        ..first
+    };
+    assert_eq!(
+        lane.prepare(changed, Some(wanted), true, CALL_BUDGET),
+        Prepared::Proceed(Half::GpuOnly {
+            tuning: wanted,
+            initial: Some(tuning(true, 125, 0).offsets),
+        })
+    );
+    assert_eq!((fake.sets(), fake.inits()), (sets, inits + 1));
+}
+
+#[test]
+fn a_call_that_outlasts_its_request_is_indeterminate_and_fences_writers_until_it_ends() {
+    let fake = Fake::new(0, 0);
+    let lane = lane(&fake);
+    let boundary = Boundary::default();
+    let wanted = tuning(true, 125, 500);
+    assert_eq!(
+        lane.prepare(boundary, Some(wanted), false, CALL_BUDGET),
+        Prepared::Proceed(Half::Paired(wanted))
+    );
+    assert!(!lane.fenced(CALL_BUDGET));
+    let (release, hold) = std::sync::mpsc::channel();
+    fake.with(|d| d.hold = Some(hold));
+    // The submission starts and blocks in the driver past the request.
+    let completed = lane
+        .complete(boundary, Half::Paired(wanted), Duration::from_millis(100))
+        .unwrap();
+    assert_eq!(
+        completed,
+        Completed::failed(indeterminate(&paired_detail(ABANDONED)))
+    );
+    // Every writer is fenced while it runs, and the next step is pending.
+    assert!(lane.fenced(CALL_BUDGET));
+    assert_eq!(
+        lane.prepare(boundary, Some(wanted), true, CALL_BUDGET),
+        Prepared::Pending
+    );
+    release.send(()).unwrap();
+    // It finished on the worker and recorded what the driver holds.
+    assert!(unfenced(&lane));
+    assert_eq!(fake.current(), (125, 500));
+    assert_eq!(
+        lane.prepare(boundary, Some(wanted), true, CALL_BUDGET),
+        Prepared::Proceed(Half::Matches)
+    );
+}
+
+#[test]
+fn a_spent_request_starts_no_gpu_call() {
+    let fake = Fake::new(0, 0);
+    let lane = lane(&fake);
+    let boundary = Boundary::default();
+    let wanted = tuning(true, 125, 500);
+    assert_eq!(
+        lane.prepare(boundary, Some(wanted), false, Duration::ZERO),
+        Prepared::Refused {
+            message: UNRESPONSIVE.into(),
+            failed: false,
+        }
+    );
+    let Prepared::Proceed(half) = lane.prepare(boundary, Some(wanted), false, CALL_BUDGET) else {
+        panic!("paired");
+    };
+    // The firmware half landed; the GPU half never started.
+    assert_eq!(
+        lane.complete(boundary, half, Duration::ZERO),
+        Some(Completed::failed(indeterminate(&paired_detail(
+            NOT_STARTED
+        ))))
+    );
+    assert_eq!(fake.sets(), 0);
+    assert!(!lane.fenced(CALL_BUDGET));
+}
+
+#[test]
+fn an_uncertain_submission_fences_writers_until_a_read_resolves_it() {
+    let fake = Fake::new(0, 0);
+    let lane = lane(&fake);
+    let first = Boundary {
+        gate: Some(0),
+        power: Some(1),
+        source: Some(1),
+    };
+    let wanted = tuning(true, 125, 500);
+    assert_eq!(
+        lane.prepare(first, Some(wanted), false, CALL_BUDGET),
+        Prepared::Proceed(Half::Paired(wanted))
+    );
+    fail_mid_pair(&fake);
+    fake.with(|d| d.lose_on_set = true);
+    assert!(
+        lane.complete(first, Half::Paired(wanted), CALL_BUDGET)
+            .unwrap()
+            .failed
+    );
+    fake.with(|d| {
+        d.sets_fail = false;
+        d.queries_fail = false;
+        d.lose_on_set = false;
+    });
+    let sets = fake.sets();
+    // The dGPU is idle and the ungated query was spent: the fence's own read
+    // cannot resolve it, and too short a budget reads nothing.
+    assert!(lane.fenced(CALL_BUDGET));
+    assert!(lane.fenced(REPLY_MARGIN));
+    // A classified change rearms one query, which resolves it read-only;
+    // the writers are released and nothing was written.
+    assert!(matches!(
+        lane.prepare(
+            Boundary {
+                source: Some(2),
+                ..first
+            },
+            Some(wanted),
+            true,
+            CALL_BUDGET
+        ),
+        Prepared::Proceed(Half::GpuOnly { .. })
+    ));
+    assert!(!lane.fenced(CALL_BUDGET));
+    assert_eq!(fake.sets(), sets);
+}
+
+#[test]
+fn a_recorded_uncertainty_is_resolved_by_the_fence_read_when_the_driver_reads() {
+    let fake = Fake::new(0, 0);
+    let lane = lane(&fake);
+    lane.mark_uncertain_for_tests();
+    // The management itself holds no uncertain submission: one read clears it.
+    assert!(!lane.fenced(CALL_BUDGET));
+    assert_eq!(fake.sets(), 0);
 }

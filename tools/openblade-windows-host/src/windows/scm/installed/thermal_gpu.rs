@@ -3,8 +3,8 @@
 //! (`ControlCoordinator.cs:591-698`) over the clock-offset backend
 //! (`gpu_clock_offsets`), composed by `service-gpu-clock-tuning-v1`.
 //!
-//! A performance step runs in two halves, both under the Runtime's
-//! performance gate, so no other GPU call lands between them:
+//! A performance step runs in two halves inside its request, both bounded by
+//! the request's deadline:
 //!
 //! - [`Lane::prepare`] runs inside `RequestPermit::resolve`, after the
 //!   override was stored and every firmware refusal was decided, before
@@ -22,19 +22,28 @@
 //!   submission, then the read that judges it (managed `matches(final)`, or
 //!   `ResolveIndeterminateWriteByReadbackAsync` after a failed submission).
 //!   A paired failure is managed's `The power mode was applied, but GPU clock
-//!   tuning failed.` indeterminate write. Nothing is replayed: a submission
-//!   that may have changed the offsets leaves the management uncertain, and
-//!   the next step's [`Lane::prepare`] resolves it read-only first and
-//!   refuses while it stays uncertain.
+//!   tuning failed.` indeterminate write. Nothing is replayed.
+//!
+//! Each call is bounded by what is left of the request, less
+//! [`REPLY_MARGIN`], and by [`CALL_BUDGET`], so the reply is sent before the
+//! request's deadline. A started call cannot be withdrawn: one that outlives
+//! its budget finishes on the worker after the reply, which reports it as
+//! indeterminate. Until it finishes, and while its result or any other
+//! submission leaves the management uncertain, [`Lane::fenced`] refuses
+//! every native thermal writer (managed `PendingWriteConfirmationTracker`),
+//! after one read-only resolution attempt under the management's own query
+//! rules; [`Lane::prepare`] resolves it read-only too and replies pending
+//! while it stays uncertain. The fence's attempt crosses no boundary: the
+//! one ungated query a power or source change rearms is taken by the next
+//! performance step, so until then the writers stay fenced (the safe side).
 //!
 //! The low-power boundary and the power-change rearm are applied lazily:
-//! each step carries the gate generation and Windows power generation it was
-//! admitted under ([`Boundary`]), and the first GPU call after either moved
-//! invalidates the confirmations (managed `InvalidateGpuClockOffsetConfirmation`
-//! at resume) or rearms the one ungated query (managed
-//! `RearmUncertainGpuClockOffsetResolution` at a power change) before it
-//! reads or writes anything. Every decision reads the management through
-//! this lane, so none sees a confirmation from before a boundary.
+//! each step carries the gate generation, the Windows power generation and
+//! the power class it was admitted under ([`Boundary`]), and the first GPU
+//! call after any moved invalidates the confirmations (managed
+//! `InvalidateGpuClockOffsetConfirmation` at resume) or rearms the one
+//! ungated query (managed `RearmUncertainGpuClockOffsetResolution` at a power
+//! change) before it reads or writes anything.
 //!
 //! Nothing is written at Stop, shutdown or low power, as managed writes
 //! nothing then. There is no durable record of a GPU submission: managed
@@ -43,12 +52,23 @@ use super::gpu_clock_offsets::{Called, Capabilities, Failure, Management, Nvml, 
 use openblade_domain::profile_set::model::GpuClockOffsets;
 use serde_json::Value;
 use std::{
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+    },
     time::Duration,
 };
 
 /// The bound on each NVML call, measured on the real clock.
 pub(super) const CALL_BUDGET: Duration = Duration::from_secs(5);
+/// What each GPU call leaves of the request for the reply after it.
+pub(super) const REPLY_MARGIN: Duration = Duration::from_millis(500);
+/// What the firmware half's pace leaves for a paired submission and its
+/// read (`Permit::reserve`).
+pub(super) const COMPLETE_RESERVE: Duration = Duration::from_secs(1);
+/// The bound on [`Lane::fenced`]'s read-only resolution attempt, which runs
+/// before the writer's own rows.
+pub(super) const FENCE_READ_BUDGET: Duration = Duration::from_secs(1);
 
 /// The backend a lane drives: production NVML, or a scripted driver.
 pub(super) type Backend = Box<dyn Nvml>;
@@ -90,11 +110,16 @@ impl Tuning {
 }
 
 /// The lifecycle a step was admitted under: the low-power gate's clear
-/// generation and the Windows power generation, `None` where unknown.
+/// generation, the Windows power generation and the classified power source
+/// the step resolved, `None` where unknown. Managed rearms on any classified
+/// source change (`ServiceControlRuntime.cs:18684`), PluggedIn and USB-C
+/// included; a change and its return between two GPU calls is not seen,
+/// which leaves the query unarmed: the safe side.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(super) struct Boundary {
     pub(super) gate: Option<u64>,
     pub(super) power: Option<u64>,
+    pub(super) source: Option<i32>,
 }
 
 /// What the firmware step must leave to [`Lane::complete`].
@@ -124,14 +149,21 @@ pub(super) enum Prepared {
     /// An earlier submission is still uncertain after its read-only
     /// resolution: no thermal setter may be submitted.
     Pending,
-    /// The managed reply: nothing was written.
-    Refused(String),
+    /// The managed reply: nothing was written. `failed` is managed's
+    /// Failed status (a write refused as not applied); otherwise Blocked.
+    Refused {
+        message: String,
+        failed: bool,
+    },
 }
 
 /// [`Lane::complete`]'s result: managed's reply for the GPU half.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct Completed {
     pub(super) applied: bool,
+    /// Managed's Failed status (`Indeterminate`, `WriteRejected`), else
+    /// Blocked (`CapabilityRefused`).
+    pub(super) failed: bool,
     pub(super) message: String,
 }
 
@@ -139,6 +171,7 @@ impl Completed {
     fn applied(message: &str) -> Self {
         Self {
             applied: true,
+            failed: false,
             message: message.into(),
         }
     }
@@ -146,16 +179,24 @@ impl Completed {
     fn failed(message: impl Into<String>) -> Self {
         Self {
             applied: false,
+            failed: true,
+            message: message.into(),
+        }
+    }
+
+    fn blocked(message: impl Into<String>) -> Self {
+        Self {
+            applied: false,
+            failed: false,
             message: message.into(),
         }
     }
 }
 
-/// Managed `ScopedPerformanceWriteBlockReason` for a pending confirmation
-/// (`ServiceControlRuntime.cs:15788-15793`).
-pub(super) const PENDING: &str = "A thermal write requires read-only reconciliation before the performance command can be submitted.";
-/// A GPU call that could not run: the worker was still finishing one it
-/// abandoned. Nothing was submitted.
+/// Managed's pending-confirmation block reason for a performance request
+/// (`thermal_mutation`).
+pub(super) use super::thermal_mutation::PENDING_PERFORMANCE as PENDING;
+/// A GPU call that could not run within the request. Nothing was submitted.
 pub(super) const UNRESPONSIVE: &str =
     "GPU clock management did not respond; no thermal setter was submitted.";
 /// Managed `ApplyScopedAsync`'s refusal of tuning `IsWellFormed` rejects.
@@ -170,10 +211,35 @@ const NOT_STARTED: &str = "GPU clock tuning did not start.";
 const ABANDONED: &str = "GPU clock tuning did not finish within its budget.";
 const UNADMITTED: &str = "GPU clock tuning lost its write admission before it was submitted.";
 
-/// One clock-offset worker and the boundaries its management last saw.
+/// The calls the lane has started that have not finished, and whether the
+/// management was left with an uncertain submission when the last finished.
+/// A started call outlives its caller when its budget ends first.
+#[derive(Default)]
+struct Outstanding {
+    calls: AtomicUsize,
+    uncertain: AtomicBool,
+}
+
+/// Held by a call while it runs on the worker: its end, a panic included,
+/// retires the call, after the call itself recorded the management's state.
+struct Running(Arc<Outstanding>);
+
+impl Drop for Running {
+    fn drop(&mut self) {
+        // A panic leaves an interrupted submission uncertain (`Worker`).
+        if std::thread::panicking() {
+            self.0.uncertain.store(true, Ordering::SeqCst);
+        }
+        self.0.calls.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+/// One clock-offset worker, the boundaries its management last saw, and its
+/// outstanding calls.
 pub(super) struct Lane {
     worker: Worker<Backend>,
     seen: Arc<Mutex<Option<Boundary>>>,
+    outstanding: Arc<Outstanding>,
 }
 
 impl Lane {
@@ -181,33 +247,103 @@ impl Lane {
         Self {
             worker,
             seen: Arc::new(Mutex::new(None)),
+            outstanding: Arc::default(),
         }
     }
 
-    /// The first half (see the module). Blocks the calling thread for at
-    /// most [`CALL_BUDGET`]; `firmware_unchanged` is whether the fresh
-    /// reading already confirms the destination (`Plan::Unchanged`).
+    /// One call within `budget` (at most [`CALL_BUDGET`]), recording what it
+    /// leaves even when it finishes after its caller stopped waiting. A zero
+    /// budget starts nothing.
+    fn call<R: Send + 'static>(
+        &self,
+        budget: Duration,
+        job: impl FnOnce(&mut Management<Backend>) -> R + Send + 'static,
+    ) -> Called<R> {
+        let budget = budget.min(CALL_BUDGET);
+        if budget.is_zero() {
+            return Called::NotStarted;
+        }
+        let outstanding = self.outstanding.clone();
+        outstanding.calls.fetch_add(1, Ordering::SeqCst);
+        let called = self.worker.call_blocking(budget, move |management| {
+            let running = Running(outstanding);
+            let result = job(management);
+            running.0.uncertain.store(
+                management.state() == State::SubmissionUncertain,
+                Ordering::SeqCst,
+            );
+            drop(running);
+            result
+        });
+        // A call that never started never runs: it retires here.
+        if matches!(called, Called::NotStarted) {
+            self.outstanding.calls.fetch_sub(1, Ordering::SeqCst);
+        }
+        called
+    }
+
+    /// Whether every native thermal writer must refuse (managed
+    /// `PendingWriteConfirmationTracker.Blocks`): a started call has not
+    /// finished, or the management holds an uncertain submission after one
+    /// read-only resolution attempt within `budget` less [`REPLY_MARGIN`],
+    /// at most [`FENCE_READ_BUDGET`]. The attempt reads under the
+    /// management's own query rules and writes nothing.
+    pub(super) fn fenced(&self, budget: Duration) -> bool {
+        if self.outstanding.calls.load(Ordering::SeqCst) > 0 {
+            return true;
+        }
+        if !self.outstanding.uncertain.load(Ordering::SeqCst) {
+            return false;
+        }
+        match self.call(
+            budget.saturating_sub(REPLY_MARGIN).min(FENCE_READ_BUDGET),
+            |management| {
+                let _ = management.read();
+            },
+        ) {
+            Called::Done(()) => self.outstanding.uncertain.load(Ordering::SeqCst),
+            Called::NotStarted | Called::Abandoned => true,
+        }
+    }
+
+    /// The first half (see the module) within `budget`;
+    /// `firmware_unchanged` is whether the fresh reading already confirms
+    /// the destination (`Plan::Unchanged`).
     pub(super) fn prepare(
         &self,
         boundary: Boundary,
         tuning: Option<Tuning>,
         firmware_unchanged: bool,
+        budget: Duration,
     ) -> Prepared {
+        // A call that outlived its request may still submit: pending until
+        // it finishes.
+        if self.outstanding.calls.load(Ordering::SeqCst) > 0 {
+            return Prepared::Pending;
+        }
         let seen = self.seen.clone();
-        match self.worker.call_blocking(CALL_BUDGET, move |management| {
+        match self.call(budget, move |management| {
             cross(management, &seen, boundary);
             prepare(management, tuning, firmware_unchanged)
         }) {
             Called::Done(prepared) => prepared,
             // A relinquish or a preflight is read-only: an abandoned one
-            // submitted nothing.
-            Called::NotStarted | Called::Abandoned => Prepared::Refused(UNRESPONSIVE.into()),
+            // submitted nothing, and fences the writers until it finishes.
+            Called::NotStarted | Called::Abandoned => Prepared::Refused {
+                message: UNRESPONSIVE.into(),
+                failed: false,
+            },
         }
     }
 
-    /// The second half (see the module), or None when nothing follows.
-    /// Blocks the calling thread for at most [`CALL_BUDGET`].
-    pub(super) fn complete(&self, boundary: Boundary, half: Half) -> Option<Completed> {
+    /// The second half (see the module) within `budget`, or None when
+    /// nothing follows.
+    pub(super) fn complete(
+        &self,
+        boundary: Boundary,
+        half: Half,
+        budget: Duration,
+    ) -> Option<Completed> {
         let paired = match half {
             Half::Relinquished | Half::Matches => return None,
             Half::GpuOnly { .. } => false,
@@ -215,7 +351,7 @@ impl Lane {
         };
         let seen = self.seen.clone();
         Some(
-            match self.worker.call_blocking(CALL_BUDGET, move |management| {
+            match self.call(budget, move |management| {
                 cross(management, &seen, boundary);
                 complete(management, half)
             }) {
@@ -226,14 +362,30 @@ impl Lane {
                 }
                 Called::NotStarted => Completed::failed(not_applied(NOT_STARTED)),
                 // It may have submitted and finishes on the worker, which
-                // records the driver's result for the next step's read-only
-                // resolution; no read can follow it now.
+                // records the driver's result; the writers stay fenced until
+                // then (`fenced`), and no read can follow it now.
                 Called::Abandoned if paired => {
                     Completed::failed(indeterminate(&paired_detail(ABANDONED)))
                 }
                 Called::Abandoned => Completed::failed(indeterminate(ABANDONED)),
             },
         )
+    }
+
+    /// Leaves the management's recorded state uncertain, as an
+    /// unconfirmable submission does.
+    #[cfg(test)]
+    pub(super) fn mark_uncertain_for_tests(&self) {
+        self.outstanding.uncertain.store(true, Ordering::SeqCst);
+    }
+
+    /// One call within [`CALL_BUDGET`], recorded as the lane records its own.
+    #[cfg(test)]
+    pub(super) fn call_for_tests<R: Send + 'static>(
+        &self,
+        job: impl FnOnce(&mut Management<Backend>) -> R + Send + 'static,
+    ) -> Called<R> {
+        self.call(CALL_BUDGET, job)
     }
 }
 
@@ -287,7 +439,9 @@ fn cross<N: Nvml>(
     seen: &Mutex<Option<Boundary>>,
     boundary: Boundary,
 ) {
-    // A poisoned record is a crossed boundary of both kinds.
+    // A poisoned record is a crossed boundary of every kind. The lock is
+    // only held for this replace, which cannot panic, so it stays poisoned
+    // only in theory: each later call then also counts as crossed.
     let previous = match seen.lock() {
         Ok(mut seen) => seen.replace(boundary),
         Err(poisoned) => {
@@ -295,6 +449,7 @@ fn cross<N: Nvml>(
             Some(Boundary {
                 gate: boundary.gate.map(|g| g.wrapping_add(1)).or(Some(0)),
                 power: boundary.power.map(|p| p.wrapping_add(1)).or(Some(0)),
+                source: boundary.source,
             })
         }
     };
@@ -305,7 +460,7 @@ fn cross<N: Nvml>(
         // Revalidation is the next read's: nothing is published here.
         let _ = management.invalidate();
     }
-    if previous.power != boundary.power {
+    if previous.power != boundary.power || previous.source != boundary.source {
         management.rearm();
     }
 }
@@ -358,10 +513,16 @@ pub(super) fn prepare<N: Nvml>(
     }
     match management.preflight(tuning.effective(), tuning.enabled) {
         Ok(()) => Prepared::Proceed(Half::Paired(tuning)),
-        Err(error) => Prepared::Refused(match error.failure {
-            Failure::Unavailable => unavailable(&error.message),
-            Failure::NotApplied | Failure::Indeterminate => not_applied(&error.message),
-        }),
+        Err(error) => match error.failure {
+            Failure::Unavailable => Prepared::Refused {
+                message: unavailable(&error.message),
+                failed: false,
+            },
+            Failure::NotApplied | Failure::Indeterminate => Prepared::Refused {
+                message: not_applied(&error.message),
+                failed: true,
+            },
+        },
     }
 }
 
@@ -372,7 +533,7 @@ pub(super) fn complete<N: Nvml>(management: &mut Management<N>, half: Half) -> C
             match management.set(tuning.effective(), tuning.enabled) {
                 Ok(_) => judged(management, tuning),
                 Err(error) => match error.failure {
-                    Failure::Unavailable => Completed::failed(unavailable(&error.message)),
+                    Failure::Unavailable => Completed::blocked(unavailable(&error.message)),
                     Failure::NotApplied => Completed::failed(not_applied(&error.message)),
                     Failure::Indeterminate => {
                         resolve(management, tuning, &error.message, |current, state| {

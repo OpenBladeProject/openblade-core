@@ -425,12 +425,13 @@ pub(super) struct Runtime {
     // status publishes what it did before the loop existed.
     #[cfg(feature = "service-thermal-convergence-v1")]
     convergence_loop: Rc<std::cell::OnceCell<triggers::convergence_loop::Loop>>,
-    // Managed's automatic Fan Stop eligibility (`fan_stop::Automation`).
     // GPU clock tuning on the explicit performance path (`thermal_gpu`).
     // The native composition sets it when its worker starts; unset keeps
-    // every GPU clock effect refused as incomplete (`Cause::Gpu`).
+    // every GPU clock effect refused as incomplete (`Cause::Gpu`). Every
+    // thermal writer reads its fence (`Runtime::gpu_fence`).
     #[cfg(feature = "service-gpu-clock-tuning-v1")]
     gpu: Rc<std::cell::OnceCell<Arc<thermal_gpu::Lane>>>,
+    // Managed's automatic Fan Stop eligibility (`fan_stop::Automation`).
     #[cfg(feature = "service-fan-stop-v1")]
     fan_stop: Rc<RefCell<fan_stop::Automation>>,
     fan_owner: Rc<RefCell<Option<Arc<fan::FanPermit>>>>,
@@ -583,6 +584,15 @@ pub(super) fn after_write_unreadable(storage: &Storage) -> io::Result<Outcome> {
 /// measured so far (`Refusal::Deadline`): the Prepared row is settled as
 /// known not submitted and no setter was submitted.
 pub(super) const DEADLINE: &str = "The remaining request time cannot cover this recipe at the measured device pace; no thermal setter was submitted.";
+/// Managed `ScopedPerformanceWriteBlockReason` while a thermal confirmation
+/// is pending (`ServiceControlRuntime.cs:15788-15793`): an explicit
+/// performance request.
+pub(super) const PENDING_PERFORMANCE: &str = "A thermal write requires read-only reconciliation before the performance command can be submitted.";
+/// Managed `ScopedThermalWriteBlockReason` while a thermal confirmation is
+/// pending (`ServiceControlRuntime.cs:15832-15838`): every other thermal
+/// writer.
+pub(super) const PENDING_OTHER: &str =
+    "A thermal write requires read-only reconciliation before another command can be submitted.";
 /// A performance step whose fresh admission refused before anything was
 /// accepted, read or submitted.
 const CURRENT_ADMISSION_UNAVAILABLE: &str =
@@ -751,14 +761,14 @@ impl Runtime {
     ) {
         assert!(self.low_power.set(Box::new(probe)).is_ok());
     }
-    /// Reads the Windows power generation from `probe`
-    /// (`Runtime::power_generation`); it may be set once.
     /// Composes GPU clock tuning over `lane` (`Runtime::gpu`); it may be set
     /// once.
     #[cfg(all(test, feature = "service-gpu-clock-tuning-v1"))]
     pub(super) fn compose_gpu(&self, lane: Arc<thermal_gpu::Lane>) {
         assert!(self.gpu.set(lane).is_ok());
     }
+    /// Reads the Windows power generation from `probe`
+    /// (`Runtime::power_generation`); it may be set once.
     #[cfg(all(test, feature = "service-profile-triggers-v1"))]
     pub(super) fn read_power_generation(&self, probe: impl Fn() -> Option<u64> + 'static) {
         assert!(self.power_generation.set(Box::new(probe)).is_ok());
@@ -1321,18 +1331,18 @@ impl Runtime {
             #[cfg(feature = "service-gpu-clock-tuning-v1")]
             // Read only for a composed lane, so a build without one reads the
             // gate exactly as it did.
-            gpu_boundary: if self.gpu.get().is_some() && reconcile.is_none() {
+            gpu_boundary: Mutex::new(if self.gpu.get().is_some() && reconcile.is_none() {
                 self.gpu_boundary()
             } else {
-                thermal_gpu::Boundary {
-                    gate: None,
-                    power: None,
-                }
-            },
+                thermal_gpu::Boundary::default()
+            }),
             #[cfg(feature = "service-gpu-clock-tuning-v1")]
             gpu_tuning: Mutex::new(None),
             #[cfg(feature = "service-gpu-clock-tuning-v1")]
             gpu_half: Mutex::new(None),
+            #[cfg(feature = "service-gpu-clock-tuning-v1")]
+            deadline,
+            gpu_fence: self.gpu_fence(),
         });
         let result = reader.mutate(permit.clone(), deadline).await;
         permit.verify_failure()?;
@@ -1405,7 +1415,10 @@ impl Runtime {
         let gpu_applied = gpu.as_ref().is_none_or(|c| c.applied);
         #[cfg(feature = "service-gpu-clock-tuning-v1")]
         if let Some(failed) = gpu.as_ref().filter(|c| !c.applied) {
-            permit.set_cause(Cause::GpuRefused(failed.message.clone()));
+            permit.set_cause(Cause::GpuRefused {
+                message: failed.message.clone(),
+                failed: failed.failed,
+            });
         }
         #[cfg(not(feature = "service-gpu-clock-tuning-v1"))]
         let gpu_applied = true;
@@ -1462,6 +1475,14 @@ impl Runtime {
                 // result is reported (managed `ApplyFullTransitionAsync`).
                 if reconcile.is_some() {
                     Outcome::blocked(reason)
+                } else if gpu_failed(&cause) {
+                    // Managed reports an indeterminate or rejected GPU clock
+                    // submission as Failed, after the same committed prefix
+                    // (`ServiceControlRuntime.cs:14989-14991`).
+                    Outcome {
+                        status: 3,
+                        message: format!("{committed} Hardware result: {reason}"),
+                    }
                 } else {
                     Outcome::blocked(format!("{committed} Hardware result: {reason}"))
                 }
@@ -1716,12 +1737,31 @@ struct RequestPermit {
     gpu: Option<Arc<thermal_gpu::Lane>>,
     // The lifecycle this step was admitted under.
     #[cfg(feature = "service-gpu-clock-tuning-v1")]
-    gpu_boundary: thermal_gpu::Boundary,
+    gpu_boundary: Mutex<thermal_gpu::Boundary>,
     // The tuning `resolve` selected (None: none) and the half it left.
     #[cfg(feature = "service-gpu-clock-tuning-v1")]
     gpu_tuning: Mutex<Option<Option<thermal_gpu::Tuning>>>,
     #[cfg(feature = "service-gpu-clock-tuning-v1")]
     gpu_half: Mutex<Option<thermal_gpu::Half>>,
+    // The request's deadline, which bounds both GPU halves.
+    #[cfg(feature = "service-gpu-clock-tuning-v1")]
+    deadline: Instant,
+    gpu_fence: GpuFence,
+}
+/// The fence every native thermal writer reads before its rows
+/// (`Permit::thermal_fenced`): with `service-gpu-clock-tuning-v1` composed,
+/// the GPU clock lane's outstanding or uncertain submission
+/// (`thermal_gpu::Lane::fenced`), for which managed's pending Performance
+/// confirmation blocks every thermal write. None fences nothing.
+pub(super) type GpuFence = Option<Arc<dyn Fn(std::time::Duration) -> bool + Send + Sync>>;
+impl Runtime {
+    pub(super) fn gpu_fence(&self) -> GpuFence {
+        #[cfg(feature = "service-gpu-clock-tuning-v1")]
+        if let Some(lane) = self.gpu.get().cloned() {
+            return Some(Arc::new(move |budget| lane.fenced(budget)));
+        }
+        None
+    }
 }
 /// A request's override (`None` clears it) and the digest its journal
 /// rows carry.
@@ -1734,6 +1774,15 @@ impl Requested {
         let intent = format!("{:x}", Sha256::digest(serde_json::to_vec(&value)?));
         Ok(Self { value, intent })
     }
+}
+/// Whether `cause` is a GPU clock failure managed reports as Failed.
+fn gpu_failed(cause: &Cause) -> bool {
+    #[cfg(feature = "service-gpu-clock-tuning-v1")]
+    if let Cause::GpuRefused { failed, .. } = cause {
+        return *failed;
+    }
+    let _ = cause;
+    false
 }
 /// The reply of a confirmed step without GPU clock tuning composed.
 const CONFIRMED: &str = "Bounded thermal preset confirmed by independent paired readback. GPU clock handling and broad device capabilities remain unavailable; other native controls are incomplete.";
@@ -1757,9 +1806,13 @@ async fn complete_gpu(
     if !admitted {
         return Ok(thermal_gpu::unadmitted(half));
     }
-    let boundary = permit.gpu_boundary;
+    let boundary = *permit
+        .gpu_boundary
+        .lock()
+        .map_err(|_| io::ErrorKind::Other)?;
+    let budget = permit.gpu_budget();
     Ok(
-        tokio::task::spawn_blocking(move || lane.complete(boundary, half))
+        tokio::task::spawn_blocking(move || lane.complete(boundary, half, budget))
             .await
             .unwrap_or_else(|_| thermal_gpu::lost(half)),
     )
@@ -1795,7 +1848,14 @@ enum Cause {
     /// firmware destination was confirmed (`thermal_gpu::Lane::complete`):
     /// managed's reply, which is never retried.
     #[cfg(feature = "service-gpu-clock-tuning-v1")]
-    GpuRefused(String),
+    GpuRefused {
+        message: String,
+        failed: bool,
+    },
+    /// The shared thermal fence refused the step before any journal row or
+    /// setter (`Refusal::ThermalPending`): a GPU clock submission is
+    /// outstanding or uncertain. Managed's scoped block reason.
+    ThermalPending(&'static str),
     ManualDeferred,
     NoDirectPath,
     NoEligiblePolicy,
@@ -1829,7 +1889,8 @@ impl Cause {
             Self::FanHandbackPending => "OpenBlade still owns a fan change that has not been handed back to firmware Automatic; no thermal setter was submitted.".into(),
             Self::Gpu => "GPU clock handling is incomplete; no thermal setter was submitted.".into(),
             #[cfg(feature = "service-gpu-clock-tuning-v1")]
-            Self::GpuRefused(message) => message.clone(),
+            Self::GpuRefused { message, .. } => message.clone(),
+            Self::ThermalPending(message) => (*message).into(),
             // Without the fan composition no native request returns the fans,
             // so that build keeps the explicit resubmission instruction.
             Self::ManualDeferred if cfg!(feature = "service-fan-mutation-v2") => "Performance intent was stored and will be applied when fans return to Automatic.".into(),
@@ -1891,6 +1952,15 @@ impl RequestPermit {
     fn gpu_tuning_holds(&self, _: i32, _: Option<&Resolution<'_>>) -> io::Result<bool> {
         Ok(false)
     }
+    /// What remains of the request for one GPU call, less the margin its
+    /// reply needs (`thermal_gpu::REPLY_MARGIN`): no GPU call outlives the
+    /// request.
+    #[cfg(feature = "service-gpu-clock-tuning-v1")]
+    fn gpu_budget(&self) -> std::time::Duration {
+        self.deadline
+            .saturating_duration_since(Instant::now())
+            .saturating_sub(thermal_gpu::REPLY_MARGIN)
+    }
     /// The GPU half's first step for the destination `desired` selected at
     /// class `power` from the fresh `baseline` (`thermal_gpu::Lane::prepare`),
     /// or the cause that refuses the step with nothing written. A step the
@@ -1912,19 +1982,32 @@ impl RequestPermit {
             return Ok(None);
         }
         let Ok(tuning) = self.gpu_tuning_at(power, profile)? else {
-            return Ok(Some(Cause::GpuRefused(thermal_gpu::UNSUPPORTED.into())));
+            return Ok(Some(Cause::GpuRefused {
+                message: thermal_gpu::UNSUPPORTED.into(),
+                failed: false,
+            }));
         };
         *self.gpu_tuning.lock().map_err(|_| io::ErrorKind::Other)? = Some(tuning);
+        // The step's resolved power class joins its boundary, so both
+        // halves rearm the management on the same classified source change.
+        let boundary = {
+            let mut boundary = self.gpu_boundary.lock().map_err(|_| io::ErrorKind::Other)?;
+            boundary.source = Some(power);
+            *boundary
+        };
         Ok(
-            match lane.prepare(self.gpu_boundary, tuning, plan == Plan::Unchanged) {
+            match lane.prepare(boundary, tuning, plan == Plan::Unchanged, self.gpu_budget()) {
                 thermal_gpu::Prepared::Proceed(half) => {
                     *self.gpu_half.lock().map_err(|_| io::ErrorKind::Other)? = Some(half);
                     None
                 }
-                thermal_gpu::Prepared::Pending => {
-                    Some(Cause::GpuRefused(thermal_gpu::PENDING.into()))
+                thermal_gpu::Prepared::Pending => Some(Cause::GpuRefused {
+                    message: thermal_gpu::PENDING.into(),
+                    failed: false,
+                }),
+                thermal_gpu::Prepared::Refused { message, failed } => {
+                    Some(Cause::GpuRefused { message, failed })
                 }
-                thermal_gpu::Prepared::Refused(message) => Some(Cause::GpuRefused(message)),
             },
         )
     }
@@ -2248,6 +2331,24 @@ impl Permit for RequestPermit {
     fn windows_on_battery(&self) -> Option<bool> {
         self.fresh.on_battery()
     }
+    fn thermal_fenced(&self, budget: std::time::Duration) -> bool {
+        self.gpu_fence.as_ref().is_some_and(|fenced| fenced(budget))
+    }
+    // A paired NVML submission follows the firmware setters inside the
+    // request (`thermal_gpu::Lane::complete`).
+    #[cfg(feature = "service-gpu-clock-tuning-v1")]
+    fn reserve(&self) -> std::time::Duration {
+        match *self
+            .gpu_half
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+        {
+            Some(thermal_gpu::Half::Paired(_) | thermal_gpu::Half::PairedReuse) => {
+                thermal_gpu::COMPLETE_RESERVE
+            }
+            _ => std::time::Duration::ZERO,
+        }
+    }
     fn destination_holds(&self, power: i32) -> bool {
         (|| -> io::Result<bool> {
             let Some(destination) = *self.destination.lock().map_err(|_| io::ErrorKind::Other)?
@@ -2436,6 +2537,10 @@ impl Permit for RequestPermit {
             Refusal::UnclassifiedBlocked => Cause::UnclassifiedBlocked,
             Refusal::NoDirectPath => Cause::NoDirectPath,
             Refusal::Deadline => Cause::Deadline,
+            Refusal::ThermalPending if self.reconcile.is_some() => {
+                Cause::ThermalPending(PENDING_OTHER)
+            }
+            Refusal::ThermalPending => Cause::ThermalPending(PENDING_PERFORMANCE),
         });
     }
     fn retired(&self) -> io::Result<Settlement> {
