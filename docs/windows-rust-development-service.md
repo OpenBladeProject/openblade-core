@@ -845,7 +845,11 @@ so no packaged image carries it.
 The archive is managed `DiagnosticArchiveProvider` and
 `DiagnosticBundleExporter` over evidence the Service already holds: the status a
 GET would answer the caller with, the diagnostic history and the host metadata.
-No firmware, device or storage read runs on the export path. Entries keep
+No firmware command is sent, no HID handle is opened and no storage is read
+on the export path. The status is a fresh observation, though: the export runs
+the Service's read worker once, which reads the power source, enumerates HID
+devices through SetupAPI and PnP for the device metadata, and scans processes
+for competing controllers. Entries keep
 managed's names, order and text: `versions.json`, `device.json`,
 `device-verification.json`, `capabilities.json`, `configuration.json`,
 `command-results.json`, `service-history.json`, `firmware-queries.json`,
@@ -903,17 +907,28 @@ Any other failure is managed's "Diagnostic export failed: {message}".
 
 One export builds at a time; a second waits. Managed serializes the export
 with every finite request through its user gate; native reads only published
-status, so only exports wait. The archive is built on the blocking pool with a
-20 s bound, which managed lacks, so a stalled build cannot hold the export
-gate. A requester that disconnects, the bound and Stop (which aborts each
-connection task) cancel the build at its next check, and the build checks at
-each entry and every 64 KiB of compression.
+status, so only exports wait. The archive and its response frame, including
+the base64 text, are built on the blocking pool with a 20 s bound, which
+managed lacks, so a stalled build cannot hold the export gate. A requester
+that disconnects, the bound and Stop (which aborts each connection task)
+cancel the build at its next check. The build checks at each entry, between
+the host token sources, and after at most 64 KiB of compression input plus one
+match (258 bytes).
+
+A build cannot be interrupted between checks, so one that passes its bound can
+run on after its export has failed. The server remembers it: an export that
+arrives while it still runs gets the same time-bound failure at once and starts
+no second build, the rule of the status observation worker, so unfinished
+builds never accumulate. The next export builds again once it ends. The gate
+is server-owned state, not a process global.
 
 Native writes its own deflate, so its compressed bytes and the exact content
 size at which the 16 MiB bound is reached differ from managed's; entry text is
 identical. Managed truncation counts UTF-16 units and can cut a surrogate
 pair; native keeps whole characters. Native's user-path redaction matches
 letters by Unicode alphabetic class where managed uses `\p{L}`.
+Another deviation: managed's export refreshes nothing; native's status is the fresh observation
+above, so an export can also fail with the status source's own error.
 
 The managed vectors in
 `tools/openblade-windows-host/tests/data/diagnostic-export-vectors.json` and
