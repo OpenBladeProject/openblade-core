@@ -304,3 +304,26 @@ async fn admission_lost_before_the_submission_submits_no_offsets() {
     }
     assert!(found);
 }
+
+/// A firmware half its independent readback does not confirm submits no
+/// offsets: only the preflight reached NVML.
+#[tokio::test]
+async fn an_unconfirmed_firmware_half_submits_no_offsets() {
+    for timeout in [false, true] {
+        let fake = Fake::new(0, 0);
+        let (rig, _, _) = rig_at(0, &fake);
+        {
+            let mut state = rig.port.state.lock().unwrap();
+            if timeout {
+                state.final_read_timeout = true;
+            } else {
+                state.mismatch = true;
+            }
+        }
+        let reply = rig.set(1, tuned(2, true, 125, 500)).await;
+        assert_ne!(reply["result"]["status"], 1, "{reply}");
+        assert!(writes(&rig) > 0, "{reply}");
+        assert_eq!((fake.sets(), fake.current()), (0, (0, 0)), "{reply}");
+        rig.stop().await;
+    }
+}
