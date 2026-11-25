@@ -360,6 +360,9 @@ jobs:
               @('openblade-windows-service-candidate', 'service-profile-triggers-v1', 'profiles::tests::policy::'),
               @('openblade-windows-service-candidate', 'service-fan-mutation-v2', 'unserved'),
               @('openblade-windows-service-candidate', 'service-thermal-mutation-v1', 'unserved'),
+              # The RZ09-0581 NVML clock-offset backend, which no request
+              # reaches yet, with the managed controller vector replay.
+              @('openblade-windows-service-candidate', 'service-thermal-mutation-v1', 'gpu_clock_offsets'),
               @('openblade-windows-service-candidate', 'service-metadata-only-v1', 'unserved'),
               ($agent + 'service_status::object_tests'),
               ($agent + 'display_query::recovery'),

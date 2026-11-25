@@ -655,6 +655,31 @@ fn an_uncertain_enable_that_left_a_confirmed_default_restores_it() {
 }
 
 #[test]
+fn a_second_uncertain_submission_keeps_the_state_before_the_first() {
+    let mut rig = Rig::new(0, 0);
+    rig.management.set(DEFAULTS, false).unwrap();
+    assert!(rig.management.relinquish());
+    rig.uncertain((125, 500), true);
+    // A submit without its own preflight, as a paired write's is, fails
+    // uncertain again; the prior state stays the confirmed default.
+    rig.fake.with(|d| {
+        d.sets_fail = true;
+        d.storing_failures = 1;
+    });
+    let error = rig
+        .management
+        .submit(offsets_of((150, 500)), true)
+        .unwrap_err();
+    assert_eq!(error.failure, Failure::Indeterminate);
+    rig.fake.with(|d| {
+        d.sets_fail = false;
+        d.core.2 = 0;
+    });
+    assert_eq!(rig.management.read(), None);
+    assert_eq!(rig.management.state(), State::RelinquishedDefaultConfirmed);
+}
+
+#[test]
 fn the_write_preflight_resolves_an_uncertain_submission_before_writing() {
     let mut rig = Rig::new(0, 0);
     rig.uncertain((125, 500), true);
