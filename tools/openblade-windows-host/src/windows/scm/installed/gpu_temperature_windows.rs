@@ -4,15 +4,15 @@
 //!
 //! The counters and the power property are read-only Windows queries that
 //! open no GPU device and call no NVIDIA API. NVML is NVIDIA's user-mode
-//! driver library. It is loaded only from `%windir%\System32`, where the
-//! NVIDIA display driver installs it, and only once the gates have passed,
-//! where managed's first `[DllImport("nvml.dll")]` call loads it. The
-//! System32 search applies to its dependencies too, so neither the current
-//! directory nor `PATH` is ever searched. Once loaded it stays loaded for the
-//! process, as managed's import does: a worker that Stop no longer waits for
-//! may still be inside a call, so the module is never unloaded under it.
+//! driver library, loaded through the Service's one NVML loader
+//! (`nvml_library`, System32 only, its dependencies included) and only once
+//! the gates have passed, where managed's first `[DllImport("nvml.dll")]`
+//! call loads it. Once loaded it stays loaded for the process, as managed's
+//! import does: a worker that Stop no longer waits for may still be inside a
+//! call, so the module is never unloaded under it.
 #![allow(unsafe_code)]
 
+use super::super::super::nvml_library::{self, LIBRARY_NOT_FOUND};
 use super::{
     Enumerated, Factory, Nvml, NvmlSession, POWER_DATA, Power, Probes, Sampler, nvidia_power,
     workload,
@@ -20,33 +20,23 @@ use super::{
 use openblade_platform_windows::gpu_apps::NvidiaActivityQuery;
 use std::{
     cell::Cell,
-    ffi::{CStr, c_void},
+    ffi::c_void,
     mem::size_of,
     ptr::{null, null_mut},
     thread,
     time::Instant,
 };
-use windows_sys::{
-    Win32::{
-        Devices::DeviceAndDriverInstallation::{
-            DIGCF_PRESENT, GUID_DEVCLASS_DISPLAY, HDEVINFO, SP_DEVINFO_DATA,
-            SPDRP_DEVICE_POWER_DATA, SetupDiDestroyDeviceInfoList, SetupDiEnumDeviceInfo,
-            SetupDiGetClassDevsW, SetupDiGetDeviceInstanceIdW, SetupDiGetDeviceRegistryPropertyW,
-        },
-        Foundation::{
-            ERROR_NO_MORE_ITEMS, FreeLibrary, GetLastError, HMODULE, INVALID_HANDLE_VALUE,
-        },
-        System::LibraryLoader::{GetProcAddress, LOAD_LIBRARY_SEARCH_SYSTEM32, LoadLibraryExW},
+use windows_sys::Win32::{
+    Devices::DeviceAndDriverInstallation::{
+        DIGCF_PRESENT, GUID_DEVCLASS_DISPLAY, HDEVINFO, SP_DEVINFO_DATA, SPDRP_DEVICE_POWER_DATA,
+        SetupDiDestroyDeviceInfoList, SetupDiEnumDeviceInfo, SetupDiGetClassDevsW,
+        SetupDiGetDeviceInstanceIdW, SetupDiGetDeviceRegistryPropertyW,
     },
-    core::w,
+    Foundation::{ERROR_NO_MORE_ITEMS, GetLastError, INVALID_HANDLE_VALUE},
 };
 
 /// Managed reads at most this many characters of an instance ID.
 const MAX_INSTANCE_ID: usize = 512;
-/// `NVML_ERROR_LIBRARY_NOT_FOUND`: nvml.dll or one of its four functions is
-/// missing, which managed sees as `DllNotFoundException` or
-/// `EntryPointNotFoundException`.
-const LIBRARY_NOT_FOUND: i32 = 12;
 
 /// The production sampler, built on the worker thread.
 pub(in super::super) fn sampler() -> Factory {
@@ -222,32 +212,15 @@ impl Nvml for WindowsNvml {
 
 /// nvml.dll from System32 with all four functions, or None.
 fn load() -> Option<Library> {
-    // SAFETY: A constant name. LOAD_LIBRARY_SEARCH_SYSTEM32 searches only
-    // System32 for the library and its dependencies.
-    let module =
-        unsafe { LoadLibraryExW(w!("nvml.dll"), null_mut(), LOAD_LIBRARY_SEARCH_SYSTEM32) };
-    if module.is_null() {
-        return None;
-    }
-    let library = resolve(module);
-    if library.is_none() {
-        // No function of it was called, so nothing can still run in it.
-        // SAFETY: The load above took this reference.
-        unsafe { FreeLibrary(module) };
-    }
-    library
+    nvml_library::load(resolve)
 }
 
-fn resolve(module: HMODULE) -> Option<Library> {
-    let symbol = |name: &CStr| {
-        // SAFETY: The module is loaded and the name is NUL-terminated.
-        unsafe { GetProcAddress(module, name.as_ptr().cast()) }
-    };
+fn resolve(module: &nvml_library::Module) -> Option<Library> {
     let (init, shutdown, device, temperature) = (
-        symbol(c"nvmlInit_v2")?,
-        symbol(c"nvmlShutdown")?,
-        symbol(c"nvmlDeviceGetHandleByIndex_v2")?,
-        symbol(c"nvmlDeviceGetTemperature")?,
+        module.symbol(c"nvmlInit_v2")?,
+        module.symbol(c"nvmlShutdown")?,
+        module.symbol(c"nvmlDeviceGetHandleByIndex_v2")?,
+        module.symbol(c"nvmlDeviceGetTemperature")?,
     );
     // SAFETY: Each export has the NVML signature named by its type, in the
     // C calling convention of the x64 Windows ABI.

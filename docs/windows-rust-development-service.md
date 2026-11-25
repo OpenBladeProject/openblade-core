@@ -991,6 +991,46 @@ marker by name. A build without the feature still refuses the request with
   not admit; the live-readings image stays refused by its marker. The read
   has not been compared with the managed Service on the device.
 
+- **GPU clock offsets.** `gpu_clock_offsets.rs`, in thermal-mutation
+  compositions only, is a backend that no request reaches yet: `setGpuClockTuning` and the
+  performance integration that would replace `Storage::gpu_incomplete` are a
+  later slice. The controller ports managed `NvidiaGpuClockOffsetController`:
+  exactly one NVIDIA GPU, its exact RZ09-0581 name, the P0 ranges read with
+  the versioned structure, core then memory written and read back, and each
+  channel restored independently after a failure, with the fresh reading
+  deciding between not applied and indeterminate. The management machine
+  ports managed's six states, its policy clip to the RZ09-0581 envelope, its
+  ungated first query of an uncertain submission, relinquish, resume
+  invalidation and power-change rearm. A driver reading outside the envelope
+  resolves to managed with no confirmation. As in managed, an uncertain
+  submission is held in memory only: after a restart the state is Unknown and
+  the next write's query reads the driver, so there is no durable journal by
+  design. Stop, shutdown and low power write nothing, and the offsets stay in
+  the driver, as in managed. The calls run on their own worker thread with a
+  one-call queue. A call whose budget ends before it starts, or whose caller
+  stops waiting, never starts; one that ends after it started, or that
+  panics, is indeterminate. A panic leaves the worker serving, with its open
+  NVML session shut down and an interrupted submission uncertain. The worker
+  serializes single calls only: the integration must hold one exclusive
+  thermal lane from a paired write's preflight through its completion, as
+  managed's hardware-operation gate does, so a resume or relinquish cannot
+  land between them. The submission itself rechecks the envelope and the
+  reset rule, and reusing a confirmed reset is refused once a resume has
+  withdrawn it. `nvml.dll` is loaded through the same System32-only loader as
+  the temperature reader (`nvml_library.rs`) and, like it, checks no
+  signature: a Windows trust and catalog-membership check in that loader is a
+  tracked gate before any GPU clock-offset writer is packaged. Because a
+  bare-name load returns an `nvml.dll` already loaded from anywhere, that
+  check must verify the loaded module's path. All seven functions are
+  resolved at load, where managed binds each on first use: a missing library
+  or function reports NVML status 12 where managed reports the .NET load
+  exception, and a driver without the setter refuses a write as Unavailable
+  where managed fails the set as not applied. `gpu-clock-offset-vectors.json`
+  pins the controller's calls, messages and driver state against managed
+  (`NativeGpuClockOffsetVectorTests`) for a loaded library; the management
+  machine is pinned by unit tests of the managed rules, not by recorded
+  vectors. Nothing has run against a real driver.
+
 Live readings appear only in the ObserveState reply, never in the subscription
 feed, as managed does not push a change of live readings alone. A request for no
 sensors publishes `liveReadings: null`. Reads outside an ObserveState, such as a
@@ -1982,7 +2022,7 @@ managed vector:
 |---|---|---|
 | 85182893 | A pending write block is released on a power change | thermal mutation, drift. Native holds no published write block for a power change to release: admission never reads `writesBlocked`, and the pending-confirmation fence (`Storage::pending`, which makes `admit_trigger` return Fenced) deliberately outlasts a power change until read-only reconciliation, so porting this would mean releasing that fence |
 | 3b692b95, 445f17b7, 2b141ccd | HyperBoost journal handoff retirement and exit submission | thermal history store, thermal mutation |
-| 374e4847, 66c6e902, 72137077, 26db283c, cc2dea76 | GPU clock offset confirmation, resend and NVML submission recovery | no native GPU clock offset writer; stored offsets are only validated |
+| 374e4847, 66c6e902, 72137077, 26db283c, cc2dea76 | GPU clock offset confirmation, resend and NVML submission recovery | the RZ09-0581 NVML backend ports the controller's submission recovery and the management states, but no request reaches it: the confirmation, resend and paired-write integration with the performance subsystem are pending, and stored offsets are only validated |
 | 24966354, c91181b8 | GPU clock offsets and the NVIDIA laptop form on RZ09-0529 and RZ09-0530 | no native GPU clock offset writer; stored offsets are only validated |
 | a26e1519 | A HyperBoost exit whose Maximum Fans restore was refused and whose journal cannot be retired reports the restore failure and blocked writes | HyperBoost exit reporting |
 | 0cf60756 | Writes stay open after a refused Maximum Fans restore | HyperBoost exit, Custom capability |
