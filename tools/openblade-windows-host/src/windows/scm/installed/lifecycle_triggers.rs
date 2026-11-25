@@ -42,7 +42,12 @@
 //! once the ordinary write epoch has moved, as an unlock or a later notice
 //! moves it, so the tick takes at most one capture per epoch move and never
 //! polls an unmoved epoch; a retry after steps also waits `PACE` after them,
-//! so a burst of notices cannot spend the budget at once. A newer cause
+//! so a burst of notices cannot spend the budget at once. An attempt refused
+//! by a pending GPU clock confirmation is also retried once that fence
+//! clears, which moves no epoch: while a cause is parked so, each tick checks
+//! the fence, which reads nothing unless a submission is uncertain, as
+//! managed reruns its deferred transition after each periodic observation
+//! (`ServiceControlRuntime.cs:18085`, `:18187-18241`). A newer cause
 //! supersedes a pending one.
 //!
 //! A capture refused because fresh competing-controller absence is not
@@ -114,6 +119,9 @@ struct Pending {
     /// The ordinary write epoch at the last attempt that left the cause
     /// pending; `None` until one ran. A retry waits for that epoch to move.
     tried: Option<Option<u64>>,
+    /// The last attempt was refused by a pending GPU clock confirmation
+    /// (`Attempt::GpuPending`): a retry also runs once that fence clears.
+    gpu_pending: bool,
     /// When the last attempt whose steps ran left the debt owed. A retry
     /// waits `PACE` after it.
     stepped: Option<Instant>,
@@ -135,22 +143,30 @@ impl Pending {
         Self {
             owe,
             tried: None,
+            gpu_pending: false,
             stepped: None,
             mode: thermal_drift::Mode::WithPrior,
             power: false,
             resume: false,
         }
     }
-    /// Whether an attempt runs at write epoch `epoch` at `now`.
+    /// Whether an attempt runs at write epoch `epoch` at `now`, the GPU
+    /// fence aside (`gpu_pending`).
     fn due(&self, epoch: Option<u64>, now: Instant) -> bool {
-        let moved = match self.tried {
+        self.moved(epoch) && self.paced(now)
+    }
+    /// Whether the write epoch is no longer `epoch` at the last attempt.
+    fn moved(&self, epoch: Option<u64>) -> bool {
+        match self.tried {
             None => true,
             Some(tried) => epoch.is_some() && epoch != tried,
-        };
-        moved
-            && self
-                .stepped
-                .is_none_or(|at| now.saturating_duration_since(at) >= PACE)
+        }
+    }
+    /// Whether `PACE` has passed at `now` since the last attempt whose steps
+    /// ran.
+    fn paced(&self, now: Instant) -> bool {
+        self.stepped
+            .is_none_or(|at| now.saturating_duration_since(at) >= PACE)
     }
     /// The cause after an attempt at `epoch` refused before any step: it
     /// waits for that epoch to move. It spends nothing: the refusal read no
@@ -158,7 +174,17 @@ impl Pending {
     fn wait(self, epoch: Option<u64>) -> Self {
         Self {
             tried: Some(epoch),
+            gpu_pending: false,
             ..self
+        }
+    }
+    /// The cause after an attempt at `epoch` refused by a pending GPU clock
+    /// confirmation: it also runs once that fence clears, which moves no
+    /// epoch.
+    fn gpu_pending(self, epoch: Option<u64>) -> Self {
+        Self {
+            gpu_pending: true,
+            ..self.wait(epoch)
         }
     }
     /// The cause after an attempt at `epoch` whose steps left the debt owed
@@ -202,6 +228,10 @@ enum Attempt {
     Done(Option<Snapshot>),
     /// Refused before any step: retried once the write epoch has moved.
     Refused,
+    /// Refused before any step by a pending GPU clock confirmation
+    /// (`TriggerAdmission::ThermalPending`): retried once the write epoch has
+    /// moved or the fence has cleared.
+    GpuPending,
     /// Its steps left the debt owed with nothing possibly submitted:
     /// retried once the write epoch has moved and `PACE` has passed.
     Owed(Option<Snapshot>),
@@ -300,7 +330,21 @@ impl Runtime {
                 ..Pending::new(owe)
             });
         }
-        let Some(mut cause) = pending.filter(|p| !low && p.due(epoch, now)) else {
+        // A cause the GPU fence parked is due once the fence clears, at an
+        // unmoved epoch too; the fence reads only while a submission is
+        // uncertain, and only once the epoch has not already made it due.
+        let due = match pending {
+            Some(p) if !low => {
+                p.due(epoch, now)
+                    || (p.gpu_pending
+                        && p.paced(now)
+                        && !self
+                            .gpu_fenced(Instant::now() + crate::service_frame::RECONCILE_BUDGET)
+                            .await)
+            }
+            _ => false,
+        };
+        let Some(mut cause) = pending.filter(|_| due) else {
             self.stamp(mark, console, pending, boundary);
             return Ok(None);
         };
@@ -318,6 +362,7 @@ impl Runtime {
         let (pending, snapshot) = match attempt {
             Attempt::Done(snapshot) => (None, snapshot),
             Attempt::Refused => (Some(cause.wait(epoch)), None),
+            Attempt::GpuPending => (Some(cause.gpu_pending(epoch)), None),
             Attempt::Owed(snapshot) => (Some(cause.stepped(epoch, Instant::now())), snapshot),
         };
         self.stamp(mark, console, pending, boundary);
@@ -439,13 +484,15 @@ impl Runtime {
         // or OpenBlade's own uncertain GPU submission, not another
         // controller, and it stays fenced until a read-only reconciliation
         // settles it, so a possibly submitted step never runs again
-        // (`admit_trigger`).
+        // (`admit_trigger`). A GPU fence clears without moving the epoch, so
+        // that refusal is retried once the fence clears (`Pending::gpu_pending`).
         let deadline = Instant::now() + crate::service_frame::RECONCILE_BUDGET;
-        let TriggerAdmission::Admitted(classes) =
-            admit_trigger(&storage, fresh.as_ref(), owed, self.gpu_fenced(deadline)).await?
-        else {
-            return Ok(Attempt::Refused);
-        };
+        let classes =
+            match admit_trigger(&storage, fresh.as_ref(), owed, self.gpu_fenced(deadline)).await? {
+                TriggerAdmission::Admitted(classes) => classes,
+                TriggerAdmission::ThermalPending => return Ok(Attempt::GpuPending),
+                _ => return Ok(Attempt::Refused),
+            };
         let reconciled = self
             .reconcile_locked(
                 mailbox,

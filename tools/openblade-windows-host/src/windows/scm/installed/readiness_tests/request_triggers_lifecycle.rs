@@ -1068,6 +1068,56 @@ async fn an_unplug_reconciles_once_a_read_resolves_a_pending_gpu_confirmation() 
     }
 }
 
+/// Delta review LOW-1: a cause the GPU fence parked runs as soon as the
+/// fence clears, which moves no write epoch, so a default install that sends
+/// no reports still gets the battery profile (managed reruns its deferred
+/// transition after each periodic observation). While the fence holds, the
+/// ticks take no capture. Before the fix the cause waited for an unrelated
+/// epoch move.
+#[cfg(feature = "service-gpu-clock-tuning-v1")]
+#[tokio::test]
+async fn a_cause_the_gpu_fence_parked_runs_once_the_fence_clears() {
+    use super::super::super::gpu_clock_tuning::{compose, fenced, leave_uncertain};
+    use crate::installed::readiness::{gpu_clock_offsets::fake::Fake, thermal_gpu::CALL_BUDGET};
+    let vectors: Value = serde_json::from_str(LIFECYCLE_VECTORS).unwrap();
+    let rig = applied_game().await;
+    let fake = Fake::new(0, 0);
+    let lane = compose(&rig, &fake, Arc::default());
+    leave_uncertain(&rig, &lane, &fake);
+    let sets = fake.sets();
+    let before = sent(&rig);
+    unplug(&rig);
+    tick(&rig).await;
+    assert_eq!((sent(&rig), owed(&rig)), (before, Some(0)));
+    // The driver reads again, but the dGPU is idle and the ungated query is
+    // spent: the fence holds and the parked cause takes no capture.
+    fake.with(|d| d.queries_fail = false);
+    let parked = captures(&rig);
+    for _ in 0..2 {
+        tick(&rig).await;
+    }
+    assert_eq!(
+        (captures(&rig), sent(&rig), owed(&rig)),
+        (parked, before, Some(0))
+    );
+    // Something else resolves the management read-only, as an explicit
+    // performance step's query would: the next tick applies the debt.
+    let _ = lane.call_for_tests(|m| {
+        m.rearm();
+        let _ = m.read();
+    });
+    assert!(!fenced(&rig, CALL_BUDGET));
+    tick(&rig).await;
+    assert!(sent(&rig) > before);
+    assert_eq!(owed(&rig), None);
+    assert_eq!(
+        performance(&rig.get().await),
+        &vector(&vectors, "powerToBattery")["desired"]
+    );
+    assert_eq!(fake.sets(), sets);
+    rig.stop().await;
+}
+
 /// Without any report, the console user's pair is reconciled: managed's
 /// power-source change needs no report, and by default no application rule
 /// exists, so no reporter ever sends one.
