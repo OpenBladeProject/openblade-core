@@ -31,6 +31,9 @@ struct Paced {
     rows: Mutex<Vec<Progress>>,
     fan_rows: Mutex<Vec<u8>>,
     refusals: Mutex<Vec<Refusal>>,
+    // A keyboard Driver-mode write job (`Reader::apply_device_mode`).
+    #[cfg(feature = "service-keyboard-driver-mode-v1")]
+    job: Option<DeviceModeJob>,
 }
 impl Paced {
     fn append(&self, prepared: bool) {
@@ -57,6 +60,10 @@ fn spend(duration: Duration) {
         .poll(&mut std::task::Context::from_waker(std::task::Waker::noop()));
 }
 impl Permit for Paced {
+    #[cfg(feature = "service-keyboard-driver-mode-v1")]
+    fn device_mode(&self) -> Option<&DeviceModeJob> {
+        self.job.as_ref()
+    }
     fn authorize(&self) -> Option<ReadAdmission> {
         spend(self.authorization);
         Some(ADMITTED)
@@ -772,5 +779,54 @@ async fn a_fan_return_charges_the_prepared_append_once_with_slow_checkpoints() {
             assert_eq!(*permit.fan_rows.lock().unwrap(), [0], "{case}");
             assert_eq!(fixture.state.lock().unwrap().writes, 0, "{case}");
         }
+    }
+}
+
+/// A Driver-mode job's claim is charged its allowance before it is made, and
+/// once it returns the job checks again with the claim's real time spent,
+/// charging that time once (`DeviceModeStep::Claimed`). Every exchange takes
+/// 230 ms: the baseline read ends at 230 ms, and the setter and readback need
+/// 460 ms more, with the baseline's length charged again as fixed time
+/// (`setter_fixed`). Within a 900 ms budget a 200 ms claim leaves the setter
+/// 10 ms to spare and it is confirmed at 890 ms; charging the claim twice
+/// would refuse it. A 220 ms claim overruns by 10 ms, so no setter is sent.
+#[cfg(feature = "service-keyboard-driver-mode-v1")]
+#[tokio::test(start_paused = true)]
+async fn a_driver_mode_setter_is_sent_only_while_it_fits_after_the_claim() {
+    use openblade_protocol::device_mode::DeviceMode;
+    // (claim, setters sent, the job's last step, when it ends)
+    for (claim, sets, step, ends) in [
+        (200, 1, DeviceModeStep::Confirmed, 890),
+        (220, 0, DeviceModeStep::Claimed, 450),
+    ] {
+        let fixture = Fixture::new();
+        fixture.state.lock().unwrap().latency = Some(LATENCY);
+        let claims = Arc::new(Mutex::new(Vec::new()));
+        let recorded = claims.clone();
+        let permit = Paced {
+            job: Some(DeviceModeJob::new(
+                DeviceMode::Driver,
+                Some(DeviceMode::Normal),
+                Duration::from_millis(25),
+                move |ids| {
+                    recorded.lock().unwrap().push(*ids);
+                    spend(Duration::from_millis(claim));
+                    Ok(())
+                },
+            )),
+            ..Paced::default()
+        };
+        let started = Instant::now();
+        assert_eq!(
+            apply(&fixture, &permit, Duration::from_millis(900)).await,
+            None
+        );
+        let case = format!("{claim} ms claim");
+        assert_eq!(permit.job.as_ref().unwrap().step(), step, "{case}");
+        assert_eq!(claims.lock().unwrap().len(), 1, "{case}");
+        let s = fixture.state.lock().unwrap();
+        assert_eq!(s.device_mode_sets, sets, "{case}");
+        assert_eq!(s.device_mode_queries, 1 + sets, "{case}");
+        assert_eq!(started.elapsed(), Duration::from_millis(ends), "{case}");
     }
 }

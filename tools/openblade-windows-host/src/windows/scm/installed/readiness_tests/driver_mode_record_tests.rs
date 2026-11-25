@@ -731,52 +731,46 @@ async fn one_slow_record_write_leaves_the_next_release_and_acquire_whole() {
 }
 
 /// A release claim slower than its allowance is charged again once written:
-/// when the setter, its acknowledgement and the readback no longer fit the
-/// job, no setter is sent and the release reports `Exhausted`. The claim
-/// reverts to `Owned` while the share has room for a write at the claim's
-/// own length; otherwise the `ReleaseIntent` stays, a doubt a later read
-/// resolves, and no setter was sent either way.
+/// the setter, its acknowledgement and the readback no longer fit the job,
+/// so no setter is sent and the release reports `Exhausted`. The revert is
+/// charged at the claim's own measured length, which the share no longer
+/// holds, so the `ReleaseIntent` stays, a doubt a later read resolves. The
+/// pace arithmetic itself, both sides of the check, is pinned on paused time
+/// (`a_driver_mode_setter_is_sent_only_while_it_fits_after_the_claim`); a
+/// revert with room is `a_release_claim_known_not_submitted_reverts_to_its_prior`.
+/// Here every margin only grows with host load: the job's three exchanges
+/// and the 640 ms claim overrun its 700 ms budget by their own lengths, and
+/// the revert would need another 640 ms of a 900 ms share.
 #[tokio::test]
 async fn a_release_claim_slower_than_its_allowance_sends_no_setter() {
-    // (exchange latency, claim write, whether the revert fits the share)
-    for (latency, claim, reverted) in [(150, 250, true), (30, 560, false)] {
-        let (rig, _) = owner_rig(NORMAL).await;
-        tick(&rig).await;
-        let acquired = rig.custody.driver_mode.writes().len();
-        let owned = held(&rig).unwrap().1;
-        rig.port.state.lock().unwrap().device_mode_latency = Some(Duration::from_millis(latency));
-        rig.custody
-            .driver_mode
-            .delay_at(1, Duration::from_millis(claim));
-        let sent = keyboard(&rig).len();
-        assert_eq!(release(&rig).await, Some(Release::Exhausted), "{latency}");
-        rig.port.state.lock().unwrap().device_mode_latency = None;
-        assert_eq!(sent_from(&rig, sent), [0x84], "{latency}");
-        assert_eq!((sets(&rig), mode(&rig)), (1, DRIVER), "{latency}");
-        let writes = rig.custody.driver_mode.writes();
-        let claimed = Record::parse(&writes[acquired].1).unwrap();
-        assert_eq!(claimed.state(), State::ReleaseIntent, "{latency}");
-        assert_eq!(writes.len(), acquired + 1 + usize::from(reverted));
-        assert_eq!(
-            rig.runtime.driver_mode_uncertain_for_tests(),
-            !reverted,
-            "{latency}"
-        );
-        if reverted {
-            assert_eq!(held(&rig), Some((State::Owned, owned)), "{latency}");
-            assert_eq!(owner(&rig), (true, false, false), "{latency}");
-        } else {
-            assert_eq!(held(&rig).unwrap().0, State::ReleaseIntent, "{latency}");
-            // A read after the release resolves the doubt to its prior, on the
-            // intent's IDs: a resolution cannot know that no setter was sent.
-            record(&rig, DeviceMode::Driver);
-            step(&rig).await;
-            assert_eq!(held(&rig), Some((State::Owned, claimed.ids())), "{latency}");
-            assert!(!rig.runtime.driver_mode_uncertain_for_tests());
-            assert_eq!(sets(&rig), 1, "{latency}");
-        }
-        rig.stop().await;
-    }
+    let (rig, _) = owner_rig(NORMAL).await;
+    tick(&rig).await;
+    let acquired = rig.custody.driver_mode.writes().len();
+    // A zero latency keeps the job on the real clock the claim's delay
+    // spends, with no exchange slower than the fixture's own.
+    rig.port.state.lock().unwrap().device_mode_latency = Some(Duration::ZERO);
+    rig.custody
+        .driver_mode
+        .delay_at(1, Duration::from_millis(640));
+    let sent = keyboard(&rig).len();
+    assert_eq!(release(&rig).await, Some(Release::Exhausted));
+    rig.port.state.lock().unwrap().device_mode_latency = None;
+    assert_eq!(sent_from(&rig, sent), [0x84]);
+    assert_eq!((sets(&rig), mode(&rig)), (1, DRIVER));
+    let writes = rig.custody.driver_mode.writes();
+    assert_eq!(writes.len(), acquired + 1, "only the claim was written");
+    let claimed = Record::parse(&writes[acquired].1).unwrap();
+    assert_eq!(claimed.state(), State::ReleaseIntent);
+    assert!(rig.runtime.driver_mode_uncertain_for_tests());
+    assert_eq!(held(&rig), Some((State::ReleaseIntent, claimed.ids())));
+    // A read after the release resolves the doubt to its prior, on the
+    // intent's IDs: a resolution cannot know that no setter was sent.
+    record(&rig, DeviceMode::Driver);
+    step(&rig).await;
+    assert_eq!(held(&rig), Some((State::Owned, claimed.ids())));
+    assert!(!rig.runtime.driver_mode_uncertain_for_tests());
+    assert_eq!(sets(&rig), 1);
+    rig.stop().await;
 }
 
 /// Fast Startup in Windows' order: every user is logged off, then the

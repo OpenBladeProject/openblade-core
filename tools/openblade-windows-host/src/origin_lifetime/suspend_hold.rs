@@ -221,23 +221,22 @@ mod tests {
     fn a_hold_ends_at_its_cap_from_the_notice() {
         let cap = Duration::from_millis(200);
         let (hold, _arm) = armed(cap);
-        let at = Instant::now();
-        assert!(!hold.accept(1, Some(Duration::ZERO)).unwrap().wait());
-        let waited = at.elapsed();
-        assert!(waited >= cap && waited < cap * 3, "{waited:?}");
-        // The cap counts from the notice's stamp, not from the wait.
-        let at = Instant::now();
-        assert!(
-            !hold
-                .accept(3, Some(cap - Duration::from_millis(150)))
-                .unwrap()
-                .wait()
-        );
-        let waited = at.elapsed();
-        assert!(
-            waited >= Duration::from_millis(150) && waited < Duration::from_millis(190),
-            "{waited:?}"
-        );
+        // The cap counts from the notice's stamp, not from the wait: the
+        // deadline is fixed at the accept, and the wait ends at it, however
+        // late a loaded host wakes the waiter.
+        for (generation, age) in [(1, Duration::ZERO), (3, cap - Duration::from_millis(150))] {
+            let left = cap - age;
+            let before = Instant::now();
+            let pending = hold.accept(generation, Some(age)).unwrap();
+            let after = Instant::now();
+            let deadline = pending.deadline;
+            assert!(
+                deadline >= before + left && deadline <= after + left,
+                "{age:?}"
+            );
+            assert!(!pending.wait());
+            assert!(Instant::now() >= deadline, "{age:?}");
+        }
         // A spent cap or an unknown age holds nothing.
         assert!(hold.accept(5, Some(cap)).is_none());
         assert!(hold.accept(5, Some(cap * 2)).is_none());
@@ -270,17 +269,15 @@ mod tests {
         let at = Instant::now();
         assert!(!hold.accept(1, Some(Duration::ZERO)).unwrap().wait());
         assert!(at.elapsed() < Duration::from_millis(100));
-        // Another thread does wait, until the cap.
+        // Another thread does wait, until the cap. `accept` fixes the
+        // deadline, so the wait is timed from before it, not from inside the
+        // thread, whose spawn latency the deadline already counts.
+        let at = Instant::now();
         let pending = hold
             .accept(1, Some(CAP - Duration::from_millis(100)))
             .unwrap();
-        let waited = thread::spawn(move || {
-            let at = Instant::now();
-            pending.wait();
-            at.elapsed()
-        })
-        .join()
-        .unwrap();
+        thread::spawn(move || pending.wait()).join().unwrap();
+        let waited = at.elapsed();
         assert!(waited >= Duration::from_millis(100), "{waited:?}");
     }
 

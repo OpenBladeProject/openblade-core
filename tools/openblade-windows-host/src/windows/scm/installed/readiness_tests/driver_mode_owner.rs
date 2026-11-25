@@ -981,6 +981,11 @@ async fn long_runs_of_acquisitions_never_drain_the_pool() {
     let free = rig.port.free_transactions();
     for _ in 0..200 {
         rig.port.state.lock().unwrap().device_mode = NORMAL;
+        // Each step levels the test clock with real time, so on a loaded
+        // host the run outlasts the retained read (`RETENTION_WINDOW`) and
+        // an unverified device runs no step. A fresh read keeps each step
+        // verified; its read job sends no 00/84, so every step acquires.
+        observe(&rig).await;
         later(&rig).await;
         assert_eq!(mode(&rig), DRIVER);
     }
@@ -1924,8 +1929,12 @@ async fn a_suspend_while_a_write_is_in_flight() {
             let maintain = rig.source.lock().await.maintain_driver_mode().unwrap();
             maintain.await.unwrap();
         };
+        // The request is held only until the release has had time to reach
+        // the gate, so the release keeps nearly its whole share for its job
+        // however loaded the host is. A release that reached the gate later
+        // would still find the request refused at the epoch the suspend moved.
         let unhold = async {
-            tokio::time::sleep(Duration::from_millis(300)).await;
+            tokio::time::sleep(Duration::from_millis(20)).await;
             held.store(true, Ordering::Release);
             rig.port.state.lock().unwrap().held_read = None;
         };
