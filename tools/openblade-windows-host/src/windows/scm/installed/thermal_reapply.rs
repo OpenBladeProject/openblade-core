@@ -10,8 +10,9 @@
 //! - a ledger that holds tombstones or budgets is rearmed: both lists and
 //!   the terminal result are cleared by compare-and-swap on the bytes the
 //!   store holds (`Storage::replace_convergence_ledger`). A replacement that
-//!   fails blocks, and the store then holds the ledger closed, as managed's
-//!   failed persist leaves its ledger unauthoritative;
+//!   fails blocks. A failed write closes the store, as managed's failed
+//!   persist leaves its ledger unauthoritative; a ledger the store no longer
+//!   holds as read, or one the encoder refuses, is kept unclosed;
 //! - with no drift the reply is Stored;
 //! - each drifted subsystem is applied from the current settings by one
 //!   reconciliation scoped to those subsystems (`reconcile_locked`), which
@@ -19,9 +20,11 @@
 //!   keeps its own capture, write admission, readback and
 //!   stop-on-ambiguity path; nothing is replayed.
 //!
-//! A rearm, or a replacement that closes the ledger, republishes the status,
-//! whose convergence member native derives from the ledger at that
-//! publication.
+//! After a rearm is attempted, whether or not it persisted, the status is
+//! republished at once, before any step runs, as managed publishes
+//! AwaitingObservation right after its rearm. A request a client disconnect
+//! drops after that point leaves the rearmed status published. Native
+//! derives the convergence member from the ledger at each publication.
 //!
 //! Deviations, each because native holds no managed state for them: the
 //! request capture (`capture_intent`) precedes the pending and ledger checks,
@@ -41,42 +44,37 @@ pub(in super::super::super) const PENDING: &str =
 pub(in super::super::super) const IN_FLIGHT: &str = "OpenBlade must reconcile the reserved thermal transition before changed settings can be reapplied.";
 pub(in super::super::super) const NOT_RETIRED: &str = "The durable thermal convergence suppression could not be retired, so no background retry was armed.";
 const UNCHANGED: &str = "No settings changed outside OpenBlade.";
-const UNCLASSIFIED: &str =
+pub(in super::super::super) const UNCLASSIFIED: &str =
     "Changed settings cannot be reapplied until the external power adapter is classified.";
 /// Managed's per-subsystem replies while manual fans stay on both sides of
 /// a performance reapply (`RequiresManualFanPerformanceBridge`).
-const PERFORMANCE_BRIDGE: &str = "Power mode cannot be reapplied while manual fan control is active. Switch fans to Automatic, then reapply.";
-const FANS_BRIDGE: &str = "Fans were not reapplied because OpenBlade kept manual fan control unchanged while Power mode recovery was blocked.";
+pub(in super::super::super) const PERFORMANCE_BRIDGE: &str = "Power mode cannot be reapplied while manual fan control is active. Switch fans to Automatic, then reapply.";
+pub(in super::super::super) const FANS_BRIDGE: &str = "Fans were not reapplied because OpenBlade kept manual fan control unchanged while Power mode recovery was blocked.";
 
 /// Managed `ControlOperationStatus`.
 const STORED: u8 = 0;
 const APPLIED: u8 = 1;
 const FAILED: u8 = 3;
 
-/// What one reapply did: its reply, the status its steps published, and
-/// whether the ledger was rearmed or closed, which changes the published
-/// status too.
+/// What one reapply did: its reply and the status its steps published.
 pub(in super::super::super) struct Reapplied {
     pub(in super::super::super) outcome: Outcome,
     pub(in super::super::super) snapshot: Option<Snapshot>,
-    pub(in super::super::super) ledger_changed: bool,
 }
 impl Reapplied {
-    fn reply(status: u8, message: &str, ledger_changed: bool) -> Self {
+    fn reply(status: u8, message: &str) -> Self {
         Self {
             outcome: Outcome {
                 status,
                 message: message.into(),
             },
             snapshot: None,
-            ledger_changed,
         }
     }
     fn blocked(message: impl Into<String>) -> Self {
         Self {
             outcome: Outcome::blocked(message),
             snapshot: None,
-            ledger_changed: false,
         }
     }
 }
@@ -166,6 +164,11 @@ fn summary(targets: &[i32], remaining: &[i32], results: &[(i32, Outcome)]) -> Ou
 
 impl Runtime {
     /// Managed `ReapplyChangedSettingsAsync` for one admitted request.
+    /// `publish` publishes the status again from the ledger the store now
+    /// holds; it runs as soon as a rearm was attempted, as managed publishes
+    /// right after its rearm, so a request dropped later leaves no stale
+    /// suppression published.
+    #[allow(clippy::too_many_arguments)]
     pub(in super::super::super) async fn reapply_changed(
         &self,
         mailbox: MailboxSource,
@@ -174,6 +177,7 @@ impl Runtime {
         request: String,
         deadline: Instant,
         status: Snapshot,
+        publish: &dyn Fn() -> io::Result<()>,
     ) -> io::Result<Reapplied> {
         // Managed `stillControlsSession`.
         if caller.logon != Logon::Interactive || caller.control_session != Some(caller.session) {
@@ -215,41 +219,37 @@ impl Runtime {
         if held.as_ref().is_some_and(|held| held.in_flight.is_some()) {
             return Ok(Reapplied::blocked(IN_FLIGHT));
         }
-        let rearmed =
-            match held.filter(|held| !held.tombstones.is_empty() || !held.budgets.is_empty()) {
-                Some(held) => {
-                    let next = openblade_domain::thermal_convergence::State {
-                        tombstones: Vec::new(),
-                        budgets: Vec::new(),
-                        terminal_disposition: None,
-                        terminal_affected_components: Vec::new(),
-                        ..held.clone()
-                    };
-                    if storage.replace_convergence_ledger(&held, &next).is_err() {
-                        // The store now holds the ledger closed.
-                        return Ok(Reapplied {
-                            ledger_changed: true,
-                            ..Reapplied::blocked(NOT_RETIRED)
-                        });
-                    }
-                    true
-                }
-                None => false,
+        if let Some(held) =
+            held.filter(|held| !held.tombstones.is_empty() || !held.budgets.is_empty())
+        {
+            let next = openblade_domain::thermal_convergence::State {
+                tombstones: Vec::new(),
+                budgets: Vec::new(),
+                terminal_disposition: None,
+                terminal_affected_components: Vec::new(),
+                ..held.clone()
             };
+            let replaced = storage.replace_convergence_ledger(&held, &next);
+            // Rearmed, or refused. A failed write, including one the file
+            // changed under, closes the store; a ledger the store no longer
+            // holds as read, or one the encoder refuses, is kept unclosed.
+            // Either way the status is published before any step runs.
+            publish()?;
+            if replaced.is_err() {
+                return Ok(Reapplied::blocked(NOT_RETIRED));
+            }
+        }
         let external = self
             .drift
             .lock()
             .map_err(|_| io::Error::from(io::ErrorKind::Other))?
             .external();
         if external.is_empty() {
-            return Ok(Reapplied::reply(STORED, UNCHANGED, rearmed));
+            return Ok(Reapplied::reply(STORED, UNCHANGED));
         }
         let classes = Classes::admitted(fresh.as_ref());
         if classes.is_empty() {
-            return Ok(Reapplied {
-                ledger_changed: rearmed,
-                ..Reapplied::blocked(UNCLASSIFIED)
-            });
+            return Ok(Reapplied::blocked(UNCLASSIFIED));
         }
         // Managed `DeviceSubsystemOrder.ForTransition` over the drifted
         // subsystems, and its manual-fan bridge: manual fans on both sides
@@ -286,7 +286,6 @@ impl Runtime {
             return Ok(Reapplied {
                 outcome: summary(&targets, &targets, &results),
                 snapshot: None,
-                ledger_changed: rearmed,
             });
         }
         let reconciled = self
@@ -332,7 +331,6 @@ impl Runtime {
         Ok(Reapplied {
             outcome: summary(&targets, &remaining, &results),
             snapshot: reconciled.snapshot,
-            ledger_changed: rearmed,
         })
     }
 }
