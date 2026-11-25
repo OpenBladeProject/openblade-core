@@ -43,7 +43,8 @@ fn relinquished(schema: i64) -> Value {
 /// where it fails closed on a document managed reads differently from how it
 /// is written: a duplicate or differently cased member (managed takes the
 /// last match in any case), an unknown member (ignored by managed), a number
-/// in a string, a timestamp without its full time, offset or with more than
+/// in a string at the top level (a settings record reads one, as managed
+/// does), a timestamp without its full time, offset or with more than
 /// seven fraction digits, and a Turbo base.
 #[test]
 fn managed_journal_vectors_replay_through_the_native_reader() {
@@ -61,7 +62,7 @@ fn managed_journal_vectors_replay_through_the_native_reader() {
         "date/eight-fraction-digits",
     ];
     let rows = journal_vectors();
-    assert_eq!(rows.len(), 34);
+    assert_eq!(rows.len(), 36);
     for (name, document, managed) in rows {
         let native = journal_safe(Some(document.as_bytes()));
         assert!(

@@ -139,6 +139,8 @@ public sealed class NativeHyperBoostJournalVectorsTests
         yield return ("type/transition-id-number", Replace("\"transitionId\": \"0b4f3e2a-5c6d-4e7f-8a9b-0c1d2e3f4a5b\",", "\"transitionId\": 7,"));
         yield return ("type/transition-id-braced", Replace("\"transitionId\": \"0b4f3e2a-5c6d-4e7f-8a9b-0c1d2e3f4a5b\",", "\"transitionId\": \"{0b4f3e2a-5c6d-4e7f-8a9b-0c1d2e3f4a5b}\","));
         yield return ("type/fan-control-mode-only", ReplaceFanControl(balanced, "{\"mode\": 0}"));
+        yield return ("type/nested-number-string", Replace("\"fixedSpeedRpm\": 3700,", "\"fixedSpeedRpm\": \"3700\","));
+        yield return ("type/nested-enum-string", Replace("\"mode\": 0,", "\"mode\": \"0\","));
         yield return ("type/updated-number", Replace("\"updatedAtUtc\": \"2026-11-24T08:30:15.1234567+00:00\",", "\"updatedAtUtc\": 5,"));
         yield return ("date/zulu", Replace("2026-11-24T08:30:15.1234567+00:00", "2026-11-24T08:30:15Z"));
         yield return ("date/offset", Replace("2026-11-24T08:30:15.1234567+00:00", "2026-11-24T00:30:15-08:00"));

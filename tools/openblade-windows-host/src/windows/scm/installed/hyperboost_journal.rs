@@ -47,17 +47,19 @@ const MEMBERS: [&str; 15] = [
 /// blocks, even where managed would read it. Managed's `JsonSerializerDefaults.Web`
 /// reader matches names in any case, takes the last of duplicate members,
 /// ignores unknown members and reads numbers from strings. Native accepts only
-/// what managed writes: the camelCase members, each once, JSON numbers for
-/// numbers and enums, and
-/// the update time as a full timestamp with its offset (`timestamp`). Every
-/// member is type-checked whatever the schema, since managed binds each one
-/// before it ignores any. The restore intent's settings records are bound as
-/// stored profiles bind them (`profile_set::decode`), which also refuses
-/// their unknown members. Every object's names are therefore exact and
-/// distinct (`json::parse` refuses a duplicate), so no two of them are one
-/// member to managed's case-insensitive reader. A recovery baseline is refused in every schema: only
-/// a RestorePending journal may carry one. A Turbo base, which managed admits,
-/// is refused as before: no native model enters HyperBoost from it.
+/// what managed writes: the camelCase members, each once, JSON numbers for the
+/// document's own numbers and enums, and the update time as a full timestamp
+/// with its offset (`timestamp`). Every member is type-checked whatever the
+/// schema, since managed binds each one before it ignores any. The restore
+/// intent's settings records are bound as stored profiles bind them
+/// (`profile_set::decode`), which refuses their unknown members but reads
+/// their integers through `Json::web_integer`, so a number in a string is
+/// accepted there, as managed's `AllowReadingFromString` reads it. Every
+/// object's names are exact and distinct (`json::parse` refuses a
+/// duplicate), so no two of them are one member to managed's
+/// case-insensitive reader. A recovery baseline is refused in every schema:
+/// only a RestorePending journal may carry one. A Turbo base, which managed
+/// admits, is refused as before: no native model enters HyperBoost from it.
 pub(super) fn journal_safe(bytes: Option<&[u8]>) -> bool {
     let Some(bytes) = bytes else {
         return true;
