@@ -1106,6 +1106,43 @@ public sealed class CoolingPadControlRuntimeTests
     }
 
     [Fact]
+    public async Task AnEffectThePadButtonSelectsButOpenBladeCannotReadKeepsFanControlAndRefusesLightingChanges()
+    {
+        var clock = new Clock();
+        var provider = new Provider { Connection = CoolingPadConnectionState.PresentExact };
+        var runtime = new CoolingPadControlRuntime(provider, new CoolingPadStateStore(), new Temperatures(), clock);
+        await runtime.SetUserAsync("owner", default);
+        var both = Fixed with { LightingMode = CoolingPadLightingMode.Static, BrightnessPercent = 80 };
+        Assert.Equal(ControlOperationStatus.Applied, (await runtime.ApplyAsync(both, () => true, default)).Status);
+
+        // The pad's lighting button selects effect 7 or 9, which the device reads as unknown.
+        provider.Pad.Snapshot = provider.Pad.Snapshot with
+        {
+            LightingMode = null,
+            LightingConfiguration = null,
+            ActiveLightingConfiguration = null,
+        };
+        clock.Now += CoolingPadControlRuntime.OutsideChangeCheckInterval;
+        await runtime.MaintainAsync(() => true, default, restoreOutsideChanges: true, restoreOutsideLighting: false);
+        Assert.True(runtime.Status.Active);
+        Assert.Equal(["fan:Fixed:1500", "lighting"], provider.Pad.Writes);
+        // The page's own status reads keep the explanation.
+        Assert.Equal(ControlOperationStatus.Stored, (await runtime.ReadAsync(default)).Status);
+        Assert.True(runtime.Status.Active);
+        Assert.Equal("The cooling pad lighting was changed outside OpenBlade and is left as it is. Apply lighting again to manage it.",
+            runtime.Status.Message);
+
+        // A lighting change is refused while that effect shows; the fan alone still applies.
+        ControlOperationResult refused = await runtime.ApplyAsync(both, () => true, default);
+        Assert.Equal(ControlOperationStatus.Blocked, refused.Status);
+        Assert.Contains("lighting effect OpenBlade can't read", refused.Message);
+        Assert.Equal(2, provider.Pad.Writes.Count);
+        Assert.Equal(ControlOperationStatus.Applied,
+            (await runtime.ApplyAsync(Fixed with { FixedRpm = 2000 }, () => true, default)).Status);
+        Assert.Equal("fan:Fixed:2000", provider.Pad.Writes[^1]);
+    }
+
+    [Fact]
     public async Task OutsideLightingChangeWithoutTheLightingOptInReleasesWhenTheFanIsNotControlled()
     {
         var clock = new Clock();
@@ -1155,6 +1192,11 @@ public sealed class CoolingPadControlRuntimeTests
         Assert.Equal(Released, runtime.Status.Message);
         Assert.False(runtime.Status.RecoveryRequired);
         Assert.Single(provider.Pad.Writes);
+
+        // A successful read keeps it too.
+        provider.Pad.ReadFailure = null;
+        Assert.Equal(ControlOperationStatus.Stored, (await runtime.ReadAsync(default)).Status);
+        Assert.Equal(Released, runtime.Status.Message);
     }
 
     [Fact]

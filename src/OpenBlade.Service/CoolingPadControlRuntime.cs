@@ -55,6 +55,9 @@ internal sealed class CoolingPadControlRuntime(
     // for example after the pad's fan button also reset its lighting. Automatic writes and
     // comparisons then leave lighting alone until the user applies settings or releases control.
     private bool lightingKept;
+    // The message that explained the last time control stopped. A status read keeps it, and while
+    // control runs a read keeps the latest control message, so the page's checks never hide them.
+    private string? releaseReason;
     // Restoring a change made elsewhere is bounded so OpenBlade never fights another controller.
     internal const int OutsideRestorationLimit = 3;
     internal static readonly TimeSpan OutsideRestorationWindow = TimeSpan.FromMinutes(10);
@@ -143,7 +146,8 @@ internal sealed class CoolingPadControlRuntime(
             if (ownership is not null && snapshot.Identity != ownership.Baseline.Identity)
             { return Block("The connected cooling pad does not match the retained restoration state."); }
             Project(snapshot);
-            UpdateStatus(previous => previous with { WritesPaused = false, Message = "Cooling pad configuration was read." });
+            bool explained = status.Active || status.Message == releaseReason;
+            UpdateStatus(previous => previous with { WritesPaused = false, Message = explained ? previous.Message : "Cooling pad configuration was read." });
             if (ownership is null) { await CloseDeviceAsync(token).ConfigureAwait(false); }
             return Result(ControlOperationStatus.Stored);
         }
@@ -208,6 +212,13 @@ internal sealed class CoolingPadControlRuntime(
             { return Block("The connected cooling pad changed during control."); }
             bool fan = settings.FanMode != CoolingPadFanMode.Keep;
             bool lighting = settings.LightingMode != CoolingPadLightingMode.Keep && !keepLighting;
+            // An effect the pad's own button selected but OpenBlade does not decode (7 or 9) could
+            // not be put back on Release, so its lighting is not changed while it shows.
+            if (lighting && baseline.BrightnessRaw is not null
+                && (baseline.LightingConfiguration is null || baseline.ActiveLightingConfiguration is null))
+            {
+                return Block("The cooling pad is showing a lighting effect OpenBlade can't read. Choose another effect with the pad's lighting button, or keep the pad's lighting, then try again.");
+            }
             if (fan && baseline.FanConfiguration is null
                 || lighting && (baseline.LightingConfiguration is null || baseline.BrightnessRaw is null))
             { return Block("The affected cooling pad settings could not be read for restoration."); }
@@ -558,6 +569,7 @@ internal sealed class CoolingPadControlRuntime(
             Fail(new IOException(restore
                 ? "The connection to the cooling pad keeps failing. OpenBlade stopped controlling it."
                 : "The connection to the cooling pad was lost. OpenBlade stopped controlling it; apply settings again to continue."), false);
+            releaseReason = status.Message;
             return;
         }
         device ??= await provider.OpenAsync(token).ConfigureAwait(false);
@@ -566,6 +578,7 @@ internal sealed class CoolingPadControlRuntime(
             // Native retirement of the old session can hold the pad briefly; try at the next check.
             if (++outsideReadFailures < OutsideReadFailureLimit) { return; }
             Fail(new IOException("The cooling pad connection could not be reopened. OpenBlade stopped controlling it."), false);
+            releaseReason = status.Message;
             return;
         }
         if (Managed(settings).LightingMode != CoolingPadLightingMode.Keep && !restoreLighting)
@@ -596,6 +609,7 @@ internal sealed class CoolingPadControlRuntime(
             // A refused reapply would otherwise repeat at every check.
             Revoke();
             UpdateStatus(previous => previous with { Message = "The cooling pad connection was reopened, but its settings could not be applied again. OpenBlade stopped controlling it." });
+            releaseReason = status.Message;
         }
     }
 
@@ -635,6 +649,7 @@ internal sealed class CoolingPadControlRuntime(
             }
             Project(current);
             UpdateStatus(previous => previous with { Active = false, RecoveryRequired = false, WritesPaused = false, Message = message });
+            releaseReason = message;
             await CloseDeviceAsync(token).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)

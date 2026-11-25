@@ -87,8 +87,17 @@ internal static class CoolingPadProtocol
         p => p.Length == 3 && p.Span[0] == 1 && p.Span[1] == region);
     internal static RazerCommandSpec BrightnessSet(byte raw) => Echo(0x0F, 4, [1, 0, raw]);
     internal static RazerCommandSpec EffectQuery(byte profile = 1) => new(0x0F, 0x82, CreateEffectQueryPayload(profile), 80,
-        p => TryDecodeEffect(p.Span, profile, out _))
+        p => IsEffectReply(p.Span, profile))
     { AllowVariableResponseLength = true };
+
+    /// <summary>
+    /// A well-formed effect record. Firmware 1.10.00 also has effects 7 and 9, which the pad's own
+    /// lighting button selects; they are not decoded or admitted, so their record is accepted as
+    /// unknown lighting instead of failing the whole read. Any other effect id is a bad reply.
+    /// </summary>
+    internal static bool IsEffectReply(ReadOnlySpan<byte> p, byte profile) =>
+        TryDecodeEffect(p, profile, out _)
+        || profile <= 1 && p.Length == EffectResponseLength && p[0] == 0 && p[2] is 7 or 9;
 
     private static byte[] CreateEffectQueryPayload(byte profile)
     {
