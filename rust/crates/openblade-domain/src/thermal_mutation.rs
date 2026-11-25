@@ -560,6 +560,22 @@ mod tests {
             }
         }
     }
+    /// Managed HyperBoost entry needs `PowerSourcePolicy.IsExternal` and a
+    /// classified external reading: full (0) or limited (2) under Windows AC.
+    /// Battery, unclassified external power and an unknown Windows kind refuse.
+    #[cfg(feature = "hyperboost")]
+    #[test]
+    fn hyperboost_needs_a_classified_external_adapter_under_windows_ac() {
+        for windows in [Some(false), Some(true), None] {
+            for class in [-1, 0, 1, 2, crate::automation::UNCLASSIFIED_EXTERNAL, 4] {
+                assert_eq!(
+                    admits_class(Destination::HyperBoost, class, windows),
+                    matches!(class, 0 | 2) && windows == Some(false),
+                    "{class} {windows:?}"
+                );
+            }
+        }
+    }
     /// The admitted Custom range is the managed RZ09-0581 capability vector,
     /// which the managed composition test pins against its factories.
     #[test]
