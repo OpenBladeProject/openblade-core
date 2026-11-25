@@ -290,9 +290,7 @@ public sealed class WorkerTests
             _ =>
             {
                 cleanupCalls++;
-                return Task.FromResult(new ControlOperationResult(
-                    ControlOperationStatus.Applied,
-                    "Hardware cleanup completed."));
+                return Cleanup(ControlOperationStatus.Applied, "Hardware cleanup completed.");
             },
             new RecordingLogger(),
             CancellationToken.None);
@@ -313,9 +311,7 @@ public sealed class WorkerTests
             _ =>
             {
                 cleanupCalled = true;
-                return Task.FromResult(new ControlOperationResult(
-                    ControlOperationStatus.Applied,
-                    "Hardware cleanup completed."));
+                return Cleanup(ControlOperationStatus.Applied, "Hardware cleanup completed.");
             },
             logger,
             CancellationToken.None);
@@ -383,7 +379,7 @@ public sealed class WorkerTests
         bool? clearRunMarker = await Worker.PrepareHardwareAndShouldClearRunMarkerAsync(
             runtimeInitialized: true,
             intentionalStop: true,
-            _ => Task.FromResult(new ControlOperationResult(status, "result")),
+            _ => Cleanup(status, "result"),
             new RecordingLogger(),
             CancellationToken.None);
 
@@ -391,6 +387,59 @@ public sealed class WorkerTests
             expected,
             clearRunMarker);
     }
+
+    [Theory]
+    [InlineData(ControlOperationStatus.Blocked)]
+    [InlineData(ControlOperationStatus.Failed)]
+    public async Task RunMarker_AccessoryOnlyCleanupFailureClearsMarkerAndStillWarns(
+        ControlOperationStatus accessoryStatus)
+    {
+        // The 2026-11-24 RZ09-0581 stops: the laptop was handed back, only the
+        // cooling pad was not. Its own journal recovers it, so the marker clears.
+        const string message =
+            "Cooling-pad fan cleanup: Read the cooling pad before restoring retained settings.";
+        var logger = new RecordingLogger();
+
+        bool? clearRunMarker = await Worker.PrepareHardwareAndShouldClearRunMarkerAsync(
+            runtimeInitialized: true,
+            intentionalStop: true,
+            _ => Task.FromResult(new ServiceStopCleanupResult(
+                new ControlOperationResult(accessoryStatus, message),
+                ControlOperationStatus.Applied)),
+            logger,
+            CancellationToken.None);
+
+        Assert.True(clearRunMarker);
+        LogEntry warning = Assert.Single(logger.Entries, entry => entry.Level == LogLevel.Warning);
+        Assert.Contains(message, warning.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(ControlOperationStatus.Blocked, false)]
+    [InlineData(ControlOperationStatus.Failed, false)]
+    [InlineData(ControlOperationStatus.Applied, true)]
+    public async Task RunMarker_FollowsLaptopStatusEvenWhenTheCombinedResultSucceeded(
+        ControlOperationStatus laptopStatus,
+        bool expected)
+    {
+        bool? clearRunMarker = await Worker.PrepareHardwareAndShouldClearRunMarkerAsync(
+            runtimeInitialized: true,
+            intentionalStop: true,
+            _ => Task.FromResult(new ServiceStopCleanupResult(
+                new ControlOperationResult(ControlOperationStatus.Applied, "result"),
+                laptopStatus)),
+            new RecordingLogger(),
+            CancellationToken.None);
+
+        Assert.Equal(expected, clearRunMarker);
+    }
+
+    private static Task<ServiceStopCleanupResult> Cleanup(
+        ControlOperationStatus status,
+        string message) =>
+        Task.FromResult(new ServiceStopCleanupResult(
+            new ControlOperationResult(status, message),
+            status));
 
     private sealed class ManualTimestampProvider : TimeProvider
     {

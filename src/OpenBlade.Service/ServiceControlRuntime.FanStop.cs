@@ -419,7 +419,7 @@ public sealed partial class ServiceControlRuntime
         }
     }
 
-    private async Task<ControlOperationResult> PrepareOwnedFanStopShutdownAsync(
+    private async Task<ServiceStopCleanupResult> PrepareOwnedFanStopShutdownAsync(
         ControlOperationResult hyperBoostResult, CancellationToken keyboardToken)
     {
         ControlOperationResult? brightness = null;
