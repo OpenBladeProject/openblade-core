@@ -227,6 +227,12 @@ impl RequestPermit {
         // 7024-7032 (a fresh confirmed state) holds for every reading the
         // Reader decodes. 7044-7084 select the base; its refusal is the
         // port's, checked last below.
+        // Managed resolves an unclassified external source's restore intent
+        // and then refuses the source at 7134-7140. Native's saved layer has
+        // no destination for that class, so the same refusal comes first.
+        if power == openblade_domain::automation::UNCLASSIFIED_EXTERNAL {
+            return refuse(EXTERNAL_POWER, 2);
+        }
         // 7121-7132: the saved intent this class restores must be admitted.
         // An owned fan change without its handback, or a GPU clock effect the
         // exit could not restore, is not.

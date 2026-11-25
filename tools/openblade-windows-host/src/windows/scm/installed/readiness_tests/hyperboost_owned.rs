@@ -405,6 +405,10 @@ const OWNED_VECTORS: &str = include_str!("../../../../../tests/data/hyperboost-o
 ///   no such journal, enters, and its exit restores the saved intent.
 /// - A connected pad: managed enters through the pad path; native admits only
 ///   the pad-less path and refuses before any row.
+/// - An exit on an external source neither can classify: both refuse before
+///   any write, managed naming its preserved ownership journal and native
+///   with its shared unclassified-power refusal (native keeps no such
+///   journal).
 ///
 /// Writes: native sends the enable pair for every entry, the saved
 /// destination's pair (AC) or the restore recipe (battery) for every exit,
@@ -417,14 +421,17 @@ async fn managed_owned_hyperboost_vectors_replay_through_the_dispatcher() {
         "HyperBoost could not be updated. OpenBlade did not retry the write.";
     const MANAGED_PAD_ENTRY: &str =
         "HyperBoost is active. Keep the supported cooling pad connected.";
+    const MANAGED_UNCLASSIFIED_EXIT: &str = "HyperBoost restoration requires a confirmed power source; the owned recovery journal was preserved.";
+    const UNCLASSIFIED_BLOCKED: &str = "Hardware application was not confirmed. The external power adapter could not be classified; overrides and control writes are blocked.";
     let vectors: Value = serde_json::from_str(OWNED_VECTORS).unwrap();
     let replies = vectors["replies"].as_array().unwrap();
-    assert_eq!(replies.len(), 3 * 9 * 2 + 2);
+    assert_eq!(replies.len(), 3 * 9 * 2 + 2 + 2);
     for row in replies {
         let actual = match row["source"].as_str().unwrap() {
             "PluggedIn" => FULL,
             "UsbC" => LIMITED,
             "Battery" => BATTERY,
+            "ExternalUnknown" => 0x10,
             other => panic!("{other}"),
         };
         let state = row["state"].as_str().unwrap();
@@ -468,6 +475,7 @@ async fn managed_owned_hyperboost_vectors_replay_through_the_dispatcher() {
                 (1, ENTERED.to_owned())
             }
             ((1, MANAGED_PAD_ENTRY), Pad::Present) => (2, PAD_PRESENT.to_owned()),
+            ((2, MANAGED_UNCLASSIFIED_EXIT), _) => (2, UNCLASSIFIED_BLOCKED.to_owned()),
             ((1, message), _) if message.starts_with("HyperBoost is off and the prior ") => {
                 (1, exit)
             }
@@ -544,5 +552,22 @@ async fn an_owned_fan_change_refuses_entry_before_any_row() {
     assert_eq!(rows(&rig).len(), rows_before);
     assert_eq!(setters(&rig).len(), sent_before);
     rig.origin.stop();
+    rig.stop().await;
+}
+
+/// Managed 7134-7140 needs a classified external source. An external
+/// reading native cannot classify refuses entry before any row or setter,
+/// with managed's reply for ExternalUnknown.
+#[tokio::test]
+async fn entry_refuses_unclassified_external_power() {
+    let rig = rig_at(0, 0, 0x10, saved_files());
+    let result = rig.hyperboost(1, true).await;
+    assert_eq!(
+        result["result"],
+        json!({"status":2,"message":EXTERNAL_POWER}),
+        "{result}"
+    );
+    assert!(setters(&rig).is_empty());
+    assert!(rows(&rig).is_empty());
     rig.stop().await;
 }
