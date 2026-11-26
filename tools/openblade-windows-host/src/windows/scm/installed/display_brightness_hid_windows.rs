@@ -18,7 +18,7 @@ use std::{
     mem::size_of,
     os::windows::io::{FromRawHandle, OwnedHandle},
     ptr::{null, null_mut},
-    sync::Mutex,
+    sync::{Arc, Mutex},
 };
 
 use windows_sys::{
@@ -32,9 +32,8 @@ use windows_sys::{
             SetupDiGetDeviceRegistryPropertyW,
         },
         Foundation::{
-            ERROR_DEVICE_NOT_CONNECTED, ERROR_FILE_NOT_FOUND, ERROR_INSUFFICIENT_BUFFER,
-            ERROR_INVALID_HANDLE, ERROR_NO_MORE_ITEMS, ERROR_PATH_NOT_FOUND, GENERIC_WRITE,
-            GetLastError, INVALID_HANDLE_VALUE,
+            ERROR_INSUFFICIENT_BUFFER, ERROR_NO_MORE_ITEMS, GENERIC_WRITE, GetLastError,
+            INVALID_HANDLE_VALUE,
         },
         Storage::FileSystem::{CreateFileW, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING},
         System::IO::DeviceIoControl,
@@ -42,7 +41,10 @@ use windows_sys::{
     core::GUID,
 };
 
-use super::hid::{Device, SUBMIT_INPUT_IOCTL, WriteResult, WriteStatus, control_buffer};
+use super::hid::{
+    Device, Log, Reached, SUBMIT_INPUT_IOCTL, Usage, WriteResult, WriteStatus, control_buffer,
+    message, written,
+};
 use crate::driver_trust::package::{self, Package};
 
 /// Managed `ControlInterfaceGuid` and `HidClassGuid`.
@@ -72,7 +74,7 @@ fn starts_with_ci(text: &str, prefix: &str) -> bool {
 }
 
 fn os_message(error: u32) -> String {
-    io::Error::from_raw_os_error(error as i32).to_string()
+    message(&io::Error::from_raw_os_error(error as i32))
 }
 
 fn last_error() -> u32 {
@@ -82,32 +84,43 @@ fn last_error() -> u32 {
 
 /// The production device: SetupAPI, configuration manager, the installed
 /// packages and the RzCommon IOCTL.
-pub(super) struct Windows;
+pub(super) struct Windows {
+    log: Arc<Log>,
+}
 
-impl Device for Windows {
-    fn resolve(&mut self) -> io::Result<(Option<String>, WriteResult)> {
-        resolve_path()
-    }
-
-    fn write(&mut self, path: &str, usage: u16) -> io::Result<WriteResult> {
-        write_usage(path, usage)
+impl Windows {
+    /// A device whose package captures `log` records.
+    pub(super) fn new(log: Arc<Log>) -> Self {
+        Self { log }
     }
 }
 
-fn package(instance: &str, service: &str, hardware_id: &str) -> Package {
+impl Device for Windows {
+    fn resolve(&mut self) -> io::Result<(Option<String>, WriteResult)> {
+        resolve_path(&self.log)
+    }
+
+    fn write(&mut self, path: &str, usage: Usage) -> io::Result<WriteResult> {
+        write_usage(path, usage, &self.log)
+    }
+}
+
+fn package(log: &Log, instance: &str, service: &str, hardware_id: &str) -> Package {
     // One capture at a time shares the process-wide trust cache.
     static SERIAL: Mutex<()> = Mutex::new(());
     let _serial = SERIAL
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    package::capture(
+    let package = package::capture(
         &crate::driver_trust::windows::Machine,
         package::trust_cache(),
         std::time::Instant::now(),
         Some(instance),
         service,
         hardware_id,
-    )
+    );
+    log.package(service, &package);
+    package
 }
 
 struct DeviceSet(HDEVINFO);
@@ -316,12 +329,16 @@ fn has_exact_ancestor(instance: u32, prefix: &str) -> Result<bool, String> {
 
 /// Managed `IsExactControlDevice`: Ok(true) admits it; Err carries the
 /// identity failure, Ok(false) none.
-fn is_exact_control_device(set: &DeviceSet, device: &SP_DEVINFO_DATA) -> Result<bool, String> {
+fn is_exact_control_device(
+    set: &DeviceSet,
+    device: &SP_DEVINFO_DATA,
+    log: &Log,
+) -> Result<bool, String> {
     let instance = instance_id(device.DevInst)?;
     if !starts_with_ci(&instance, CONTROL_PREFIX) {
         return Ok(false);
     }
-    let service = set.service(device).map_err(|error| error.to_string())?;
+    let service = set.service(device).map_err(|error| message(&error))?;
     if !crate::driver_trust::paths::eq_ci(&service, CONTROL_SERVICE) {
         return Err(format!(
             "The exact Razer control device uses unexpected service '{service}'."
@@ -330,7 +347,7 @@ fn is_exact_control_device(set: &DeviceSet, device: &SP_DEVINFO_DATA) -> Result<
     if !has_exact_ancestor(device.DevInst, CONTROL_ANCESTOR)? {
         return Err("The Razer control interface has no admitted physical-device ancestor.".into());
     }
-    let package = package(&instance, CONTROL_SERVICE, CONTROL_HARDWARE_ID);
+    let package = package(log, &instance, CONTROL_SERVICE, CONTROL_HARDWARE_ID);
     if package.trusted() {
         return Ok(true);
     }
@@ -341,7 +358,7 @@ fn is_exact_control_device(set: &DeviceSet, device: &SP_DEVINFO_DATA) -> Result<
 }
 
 /// Managed `ResolveDevicePath(stack)` for the one stack.
-fn resolve_path() -> io::Result<(Option<String>, WriteResult)> {
+fn resolve_path(log: &Log) -> io::Result<(Option<String>, WriteResult)> {
     let set = DeviceSet::open(&CONTROL_INTERFACE, DIGCF_PRESENT | DIGCF_DEVICEINTERFACE)?;
     let mut exact_observed = false;
     let mut exact_failure = None;
@@ -353,13 +370,13 @@ fn resolve_path() -> io::Result<(Option<String>, WriteResult)> {
         let (path, device) = match set.path(&interface) {
             Ok(found) => found,
             Err(error) => {
-                inspection_failure = Some(error.to_string());
+                inspection_failure = Some(message(&error));
                 continue;
             }
         };
-        match is_exact_control_device(&set, &device) {
+        match is_exact_control_device(&set, &device, log) {
             Ok(true) => {
-                let consumer = validate_virtual_consumer_device();
+                let consumer = validate_virtual_consumer_device(log);
                 if consumer.status != WriteStatus::Applied {
                     return Ok((None, consumer));
                 }
@@ -394,10 +411,10 @@ fn resolve_path() -> io::Result<(Option<String>, WriteResult)> {
 
 /// Managed `ValidateVirtualConsumerDevice`: Applied admits the device. An
 /// untrusted package is Unavailable, as managed reports it.
-fn validate_virtual_consumer_device() -> WriteResult {
+fn validate_virtual_consumer_device(log: &Log) -> WriteResult {
     let set = match DeviceSet::open(&HID_CLASS, DIGCF_PRESENT) {
         Ok(set) => set,
-        Err(error) => return WriteResult::failed(Some(error.to_string())),
+        Err(error) => return WriteResult::failed(Some(message(&error))),
     };
     let mut exact_observed = false;
     let mut inspection_failure = None;
@@ -405,7 +422,7 @@ fn validate_virtual_consumer_device() -> WriteResult {
         let device = match set.device(index) {
             Ok(Some(device)) => device,
             Ok(None) => break,
-            Err(error) => return WriteResult::failed(Some(error.to_string())),
+            Err(error) => return WriteResult::failed(Some(message(&error))),
         };
         let instance = match instance_id(device.DevInst) {
             Ok(instance) => instance,
@@ -421,7 +438,7 @@ fn validate_virtual_consumer_device() -> WriteResult {
         let service = match set.service(&device) {
             Ok(service) => service,
             Err(error) => {
-                inspection_failure = Some(error.to_string());
+                inspection_failure = Some(message(&error));
                 continue;
             }
         };
@@ -431,7 +448,7 @@ fn validate_virtual_consumer_device() -> WriteResult {
         }
         match has_exact_ancestor(device.DevInst, CONSUMER_ANCESTOR) {
             Ok(true) => {
-                let package = package(&instance, CONSUMER_SERVICE, CONSUMER_HARDWARE_ID);
+                let package = package(log, &instance, CONSUMER_SERVICE, CONSUMER_HARDWARE_ID);
                 return if package.trusted() {
                     WriteResult::applied()
                 } else {
@@ -459,14 +476,14 @@ fn validate_virtual_consumer_device() -> WriteResult {
 }
 
 /// Managed `ValidateExactPath` for the one stack.
-fn validate_exact_path(path: &str) -> Result<(), String> {
+fn validate_exact_path(path: &str, log: &Log) -> Result<(), String> {
     let set = DeviceSet::open(&CONTROL_INTERFACE, DIGCF_PRESENT | DIGCF_DEVICEINTERFACE)
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| message(&error))?;
     for index in 0..MAXIMUM_ENTRIES {
         let interface = match set.interface(index) {
             Ok(Some(interface)) => interface,
             Ok(None) => break,
-            Err(error) => return Err(error.to_string()),
+            Err(error) => return Err(message(&error)),
         };
         let Ok((current, device)) = set.path(&interface) else {
             continue;
@@ -474,7 +491,7 @@ fn validate_exact_path(path: &str) -> Result<(), String> {
         if !crate::driver_trust::paths::eq_ci(path, &current) {
             continue;
         }
-        return match is_exact_control_device(&set, &device) {
+        return match is_exact_control_device(&set, &device, log) {
             Ok(true) => Ok(()),
             Ok(false) => {
                 Err("The cached Razer control path does not belong to an admitted device.".into())
@@ -486,7 +503,12 @@ fn validate_exact_path(path: &str) -> Result<(), String> {
 }
 
 /// Managed `WriteUsageToPath`.
-fn write_usage(path: &str, usage: u16) -> io::Result<WriteResult> {
+fn write_usage(path: &str, usage: Usage, log: &Log) -> io::Result<WriteResult> {
+    Ok(written(reach(path, usage, log)))
+}
+
+/// How far one write gets (`hid::written` classifies it).
+fn reach(path: &str, usage: Usage, log: &Log) -> Reached {
     let name = wide(path);
     // SAFETY: The path is terminated; no security or template is passed.
     let raw = unsafe {
@@ -502,30 +524,19 @@ fn write_usage(path: &str, usage: u16) -> io::Result<WriteResult> {
     };
     if raw == INVALID_HANDLE_VALUE {
         let error = last_error();
-        let unavailable = matches!(
+        return Reached::Open {
             error,
-            ERROR_FILE_NOT_FOUND
-                | ERROR_PATH_NOT_FOUND
-                | ERROR_INVALID_HANDLE
-                | ERROR_DEVICE_NOT_CONNECTED
-        );
-        return Ok(WriteResult {
-            status: if unavailable {
-                WriteStatus::Unavailable
-            } else {
-                WriteStatus::Failed
-            },
-            error: Some(os_message(error)),
-        });
+            message: os_message(error),
+        };
     }
     // SAFETY: A successful CreateFileW transferred ownership here.
     let handle = unsafe { OwnedHandle::from_raw_handle(raw) };
-    if let Err(failure) = validate_exact_path(path) {
-        return Ok(WriteResult::unavailable(Some(failure)));
+    if let Err(failure) = validate_exact_path(path, log) {
+        return Reached::Path(failure);
     }
-    let consumer = validate_virtual_consumer_device();
+    let consumer = validate_virtual_consumer_device(log);
     if consumer.status != WriteStatus::Applied {
-        return Ok(consumer);
+        return Reached::Consumer(consumer);
     }
     let buffer = control_buffer(usage);
     let mut returned = 0u32;
@@ -543,8 +554,5 @@ fn write_usage(path: &str, usage: u16) -> io::Result<WriteResult> {
             null_mut(),
         )
     };
-    if submitted == 0 {
-        return Ok(WriteResult::failed(Some(os_message(last_error()))));
-    }
-    Ok(WriteResult::applied())
+    Reached::Ioctl((submitted == 0).then(|| os_message(last_error())))
 }

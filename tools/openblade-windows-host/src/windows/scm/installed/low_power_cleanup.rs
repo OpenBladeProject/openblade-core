@@ -8,6 +8,8 @@
 //! another suspend ends it at its next authorization. With the lifecycle
 //! triggers, owned HyperBoost then leaves in what is left of the window,
 //! under the same generation's cleanup admission (`hyperboost::cleanup`).
+//! A display-brightness usage still held is released before the keyboard
+//! (`service-brightness-hid-usage-v1`), as managed releases it first.
 //! Saved intent is unchanged; the next active reconciliation applies it, and
 //! nothing is acquired or entered again before Windows reports the system
 //! active. Fast Startup hibernates the Service instead of stopping it, so its
@@ -133,6 +135,29 @@ impl Runtime {
             feature = "service-profile-triggers-v1"
         ))]
         let end = Instant::now() + remaining;
+        // Managed releases a held display-brightness usage first, under the
+        // gate, while the boundary is still this generation's
+        // (`PrepareForLowPowerCoreAsync`). It takes only what the window
+        // holds beyond the keyboard's share, so the keyboard keeps the whole
+        // of it; a release that has not answered by then stays queued on the
+        // lane and runs while the keyboard is released. Its outcome is a
+        // diagnostic, and nothing it does skips the keyboard.
+        #[cfg(feature = "service-brightness-hid-usage-v1")]
+        let remaining = {
+            let start = Instant::now();
+            let current = self.low_power.get().and_then(|read| read());
+            if current.is_some_and(|current| {
+                current.generation == transition.generation && current.suspending()
+            }) {
+                let share = remaining
+                    .saturating_sub(KEYBOARD_SHARE)
+                    .min(BRIGHTNESS_SHUTDOWN_BUDGET);
+                let _ = self
+                    .release_display_brightness(share, start + remaining)
+                    .await;
+            }
+            remaining.saturating_sub(start.elapsed())
+        };
         let keyboard = self
             .release_driver_mode_for(
                 mailbox,

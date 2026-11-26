@@ -95,7 +95,10 @@ const DRAIN_TIMEOUT: Duration = Duration::from_secs(2);
 /// 0.9 s) and the fans keep the 2 s they had. With the listener's 2 s that is
 /// 4.9 s, inside the 5 s Stop wait hint (`scm_host::status_for`) and the
 /// system-shutdown window, WaitToKillServiceTimeout, about 5 s: native
-/// accepts SERVICE_CONTROL_SHUTDOWN, not PRESHUTDOWN.
+/// accepts SERVICE_CONTROL_SHUTDOWN, not PRESHUTDOWN. A display-brightness
+/// usage still held at Stop is released first, within its own share
+/// (`thermal_mutation::BRIGHTNESS_SHUTDOWN_BUDGET`, 0.3 s), out of this bound:
+/// only then do the fans start with less than their 2 s, at least 1.7 s.
 #[cfg(feature = "service-keyboard-driver-mode-v1")]
 const SOURCE_DRAIN_TIMEOUT: Duration =
     DRAIN_TIMEOUT.saturating_add(thermal_mutation::KEYBOARD_SHUTDOWN_BUDGET);
@@ -980,10 +983,18 @@ async fn serve_mutation(
     let future = {
         let mut source = source.lock().await;
         source.verify_origin().map_err(Runtime)?;
-        timeout_at(deadline, source.snapshot(caller, Instant::now()))
-            .await
-            .map_err(|e| Runtime(e.into()))?
-            .map_err(Runtime)?;
+        // A display-brightness request observes nothing first: managed answers
+        // a repeat of the held usage and a release before its device check,
+        // and a press takes its own fresh admission before it writes
+        // (`Runtime::set_display_brightness_hid_usage`). The Session Agent
+        // repeats a held key at about 30 Hz, so an observation per repeat
+        // would queue the key-up behind them.
+        if !matches!(request, StatusRequest::SetDisplayBrightnessHidUsage { .. }) {
+            timeout_at(deadline, source.snapshot(caller, Instant::now()))
+                .await
+                .map_err(|e| Runtime(e.into()))?
+                .map_err(Runtime)?;
+        }
         source.mutate(caller, sid.clone(), request.clone(), deadline)
     };
     // A request that may reconcile after committing is never canceled at its

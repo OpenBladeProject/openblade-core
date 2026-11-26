@@ -879,6 +879,16 @@ impl StatusSource for GuardedStatus {
         let mailbox = self.mailbox.clone();
         let publisher = self.inner.publisher.clone();
         Box::pin(async move {
+            // Managed `SetDisplayBrightnessHidUsageAsync`: one usage under the
+            // thermal gate. It reads no status, stores nothing and changes no
+            // status member, so it needs no publication and none follows.
+            #[cfg(feature = "service-brightness-hid-usage-v1")]
+            if let Some(usage) = request.display_brightness_hid_usage() {
+                let outcome = runtime
+                    .set_display_brightness_hid_usage(mailbox, caller, sid, usage, deadline)
+                    .await?;
+                return Ok((outcome, None));
+            }
             let Some(publisher) = publisher else {
                 return Ok((
                     super::thermal_mutation::Outcome::blocked("Status is not initialized."),
@@ -1253,24 +1263,6 @@ impl StatusSource for GuardedStatus {
                     let status = publish_reconciled(&publisher, &mailbox, status)?;
                     Ok((outcome, Some(status)))
                 }
-                // Managed `SetDisplayBrightnessHidUsageAsync`: one usage under
-                // the thermal gate. It stores nothing and changes no status
-                // member, so no status follows.
-                #[cfg(feature = "service-brightness-hid-usage-v1")]
-                crate::service_status::StatusRequest::SetDisplayBrightnessHidUsage {
-                    usage, ..
-                } => Ok((
-                    runtime
-                        .set_display_brightness_hid_usage(
-                            mailbox.clone(),
-                            caller,
-                            sid,
-                            usage,
-                            deadline,
-                        )
-                        .await?,
-                    None,
-                )),
                 // Managed `RecoverHyperBoostRestoreAsync`: native answers from
                 // managed's ownership journal and writes nothing, so no
                 // status follows (`Runtime::recover_hyperboost_restore`).
@@ -1470,7 +1462,12 @@ impl StatusSource for GuardedStatus {
                 // fails and skips nothing (`Runtime::release_display_brightness`).
                 #[cfg(feature = "service-brightness-hid-usage-v1")]
                 if self.origin.admit_owned_stop().is_ok() {
-                    let _ = runtime.release_display_brightness(deadline).await;
+                    let _ = runtime
+                        .release_display_brightness(
+                            super::thermal_mutation::BRIGHTNESS_SHUTDOWN_BUDGET,
+                            deadline,
+                        )
+                        .await;
                 }
                 #[cfg(feature = "service-keyboard-driver-mode-v1")]
                 {

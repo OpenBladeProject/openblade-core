@@ -21,7 +21,13 @@ fn usage(n: u8, usage: u16) -> Value {
 }
 
 fn usages(rig: &Rig) -> Vec<u16> {
-    rig.brightness.lock().unwrap().usages.clone()
+    rig.brightness
+        .lock()
+        .unwrap()
+        .usages
+        .iter()
+        .map(|usage| usage.wire())
+        .collect()
 }
 
 fn result(status: u8, message: &str) -> Value {
@@ -305,4 +311,110 @@ async fn status_publishes_the_lanes_resolution_without_a_usage() {
     assert_eq!(status["status"]["displayBrightnessHidAvailability"], 0);
     assert!(usages(&rig).is_empty());
     rig.stop().await;
+}
+
+/// Waits on the real clock until the lane has taken `count` submissions.
+async fn taken(rig: &Rig, count: usize) {
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while usages(rig).len() < count {
+        assert!(std::time::Instant::now() < deadline, "the lane takes it");
+        tokio::time::sleep(Duration::from_millis(1)).await;
+    }
+}
+
+#[tokio::test]
+async fn stop_releases_a_press_still_running_when_its_connection_went() {
+    let rig = Rig::new(MemoryFiles::default());
+    rig.get().await;
+    assert_eq!(
+        rig.request(usage(1, 0)).await["result"],
+        result(1, SUBMITTED)
+    );
+    let release = fake::hold(&rig.brightness);
+    tokio::select! {
+        _ = rig.request(usage(2, 0x6F)) => panic!("the press is held on the lane"),
+        () = taken(&rig, 2) => {}
+    }
+    // Stop waits its share behind the press, then leaves its release queued.
+    rig.stop().await;
+    assert_eq!(usages(&rig), [0, 0x6F]);
+    rig.brightness.lock().unwrap().hold = None;
+    release();
+    // The press ends and the release Stop queued runs after it: the driver
+    // is left released.
+    taken(&rig, 3).await;
+    assert_eq!(usages(&rig), [0, 0x6F, 0]);
+}
+
+#[tokio::test]
+async fn stop_gives_a_slow_release_its_whole_share() {
+    let rig = Rig::new(MemoryFiles::default());
+    rig.get().await;
+    assert_eq!(
+        rig.request(usage(1, 0x6F)).await["result"],
+        result(1, SUBMITTED)
+    );
+    // The release takes 150 ms on the lane, inside Stop's 300 ms share but
+    // past what a request would keep of it.
+    let release = fake::hold(&rig.brightness);
+    let finished = Arc::new(std::sync::Mutex::new(None));
+    let seen = finished.clone();
+    let worker = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(150));
+        *seen.lock().unwrap() = Some(std::time::Instant::now());
+        release();
+    });
+    rig.stop().await;
+    let stopped = std::time::Instant::now();
+    worker.join().unwrap();
+    assert!(
+        finished.lock().unwrap().unwrap() < stopped,
+        "Stop waited for the release"
+    );
+    assert_eq!(usages(&rig), [0, 0x6F, 0]);
+}
+
+#[tokio::test]
+async fn repeats_and_releases_answer_without_observing_status() {
+    let rig = Rig::new(MemoryFiles::default());
+    rig.get().await;
+    let observed = rig.observations.load(Ordering::Acquire);
+    assert_eq!(
+        rig.request(usage(1, 0x6F)).await["result"],
+        result(1, SUBMITTED)
+    );
+    // The Session Agent repeats a held key at about 30 Hz.
+    for n in 2..17 {
+        assert_eq!(
+            rig.request(usage(n, 0x6F)).await["result"],
+            result(1, REMAINS_ASSERTED)
+        );
+    }
+    assert_eq!(
+        rig.request(usage(17, 0)).await["result"],
+        result(1, SUBMITTED)
+    );
+    // No request observed status first, and the repeats reached no device.
+    assert_eq!(rig.observations.load(Ordering::Acquire), observed);
+    assert_eq!(usages(&rig), [0, 0x6F, 0]);
+    rig.stop().await;
+}
+
+#[tokio::test]
+async fn a_press_is_admitted_without_a_profile_store() {
+    let rig = Rig::new(MemoryFiles::default());
+    rig.get().await;
+    let files = rig.files.bytes.lock().unwrap().clone();
+    // Every store capture now fails, as native's does for a SID it cannot
+    // root under ProgramData or a store it cannot open.
+    rig.store_unavailable.store(true, Ordering::Release);
+    assert_eq!(
+        rig.request(usage(1, 0x70)).await["result"],
+        result(1, SUBMITTED)
+    );
+    assert_eq!(usages(&rig), [0, 0x70]);
+    untouched(&rig, &files);
+    rig.store_unavailable.store(false, Ordering::Release);
+    rig.stop().await;
+    assert_eq!(usages(&rig), [0, 0x70, 0]);
 }

@@ -380,13 +380,14 @@ fn the_compiled_identity_ends_with_the_refused_marker() {
     let identity = std::str::from_utf8(&crate::NATIVE_ARTIFACT_IDENTITY).unwrap();
     let fields: Vec<&str> = identity.split('\n').collect();
     assert_eq!(fields[2], "service");
-    // An ownership build, then a live-reading build, an owned
-    // HyperBoost build and a display-brightness build append their own
-    // refused markers after it.
+    // An ownership build, then a live-reading build, a diagnostic-export
+    // build, an owned HyperBoost build and a display-brightness build
+    // append their own markers after it, in that order.
     let marked = [
         ",service-brightness-hid-usage-v1",
         ",service-hyperboost-v1",
         ",service-thermal-hyperboost-exit-v1",
+        ",service-diagnostics-export-v1",
         ",service-live-readings-v1",
     ]
     .iter()

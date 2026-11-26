@@ -46,6 +46,35 @@ pub(crate) mod live_sensors {
     pub(crate) const GPU_TEMPERATURE: u8 = 8;
 }
 
+/// Managed `DisplayBrightnessHidUsage`: the one input a
+/// `setDisplayBrightnessHidUsage` request may hold, from its validation to
+/// the IOCTL that submits it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u16)]
+pub(crate) enum DisplayBrightnessHidUsage {
+    Released = 0x0000,
+    Increment = 0x006F,
+    Decrement = 0x0070,
+}
+
+impl DisplayBrightnessHidUsage {
+    /// Managed `Enum.IsDefined(usage)`: the defined usage of a wire value.
+    pub(crate) const fn from_wire(value: u16) -> Option<Self> {
+        match value {
+            0x0000 => Some(Self::Released),
+            0x006F => Some(Self::Increment),
+            0x0070 => Some(Self::Decrement),
+            _ => None,
+        }
+    }
+
+    /// The Consumer Control usage the IOCTL carries.
+    #[cfg_attr(not(feature = "service-brightness-hid-usage-v1"), allow(dead_code))]
+    pub(crate) const fn wire(self) -> u16 {
+        self as u16
+    }
+}
+
 // Decoded through `json_object`: managed reads the request and every nested
 // struct member only from a JSON object, never a positional array.
 #[derive(Clone, Deserialize, Serialize)]
@@ -186,8 +215,8 @@ pub(crate) enum StatusRequest {
         request_id: String,
     },
     /// Managed `SetDisplayBrightnessHidUsageRequest`: a
-    /// `DisplayBrightnessHidUsage` wire value (Released 0, Increment 0x6F,
-    /// Decrement 0x70).
+    /// `DisplayBrightnessHidUsage` wire value, defined once validated
+    /// (`DisplayBrightnessHidUsage::from_wire`).
     SetDisplayBrightnessHidUsage {
         version: i32,
         request_id: String,
@@ -670,6 +699,19 @@ impl StatusRequest {
             _ => None,
         }
     }
+
+    /// The usage of a `setDisplayBrightnessHidUsage` request. Validation
+    /// refuses an undefined one, so every decoded request has one.
+    #[cfg_attr(not(feature = "service-brightness-hid-usage-v1"), allow(dead_code))]
+    pub(crate) fn display_brightness_hid_usage(&self) -> Option<DisplayBrightnessHidUsage> {
+        match self {
+            Self::SetDisplayBrightnessHidUsage { usage, .. } => {
+                DisplayBrightnessHidUsage::from_wire(*usage)
+            }
+            _ => None,
+        }
+    }
+
     fn validate(&self) -> io::Result<()> {
         if let Some(request) = self.battery_request() {
             if !cfg!(feature = "service-battery-policy-v1") {
@@ -755,7 +797,7 @@ impl StatusRequest {
                     "signed display-brightness input composition is unavailable",
                 ));
             }
-            if !matches!(*usage, 0x0000 | 0x006F | 0x0070) {
+            if DisplayBrightnessHidUsage::from_wire(*usage).is_none() {
                 return Err(invalid("display-brightness HID usage is undefined"));
             }
         }

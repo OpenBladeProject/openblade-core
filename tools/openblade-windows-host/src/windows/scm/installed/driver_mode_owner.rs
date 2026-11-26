@@ -460,6 +460,14 @@ impl Runtime {
             return Ok(());
         };
         verify_retained_failure(&self.fatal)?;
+        // Managed neutralizes a display-brightness usage a previous process
+        // may have left held on this step, under its gate, once the device is
+        // verified (`MaintainDriverModeAsync`), whatever the keyboard's own
+        // record says. It only releases.
+        #[cfg(feature = "service-brightness-hid-usage-v1")]
+        if reader.driver_mode_verified() {
+            self.neutralize_display_brightness().await;
+        }
         let ledger = self.driver_mode_ledger(reader)?;
         // A closed record admits no write for the rest of the process.
         if ledger.standing() == Standing::Closed {
