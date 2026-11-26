@@ -688,16 +688,74 @@ Native differs from managed here in these ways:
   off.` while a GPU clock confirmation is pending. Managed's WritesBlocked
   refusal (6943-6952), which counts an unconfirmed write, comes first and
   replies `HyperBoost control is unavailable right now.` Neither writes.
-- Native records no HyperBoost ownership of its own: the battery boundary,
-  low power and shutdown exits, and a status projection of owned HyperBoost,
-  are not part of this feature. HyperBoost entered natively stays active after
-  an unplug until an explicit exit, where managed leaves it at the battery
-  boundary.
-- Managed treats a natively entered HyperBoost as an external change: it sees
-  HyperBoost active without a managed ownership journal.
+- Native ownership is derived from its thermal history, not held in memory
+  or a second file: native owns HyperBoost while the active journal tail ends
+  with a HyperBoost row settled Confirmed and no later performance row
+  settled Confirmed for another destination, nor a later HyperBoost row
+  settled KnownNotSubmitted (`thermal_history::hyperboost_owned`,
+  `Storage::owns_hyperboost`). Managed holds `ownsHyperBoost` in memory beside
+  its ownership journal. A HyperBoost reading native does not own stays
+  external and excluded, as before. A rollover seals rows into a segment, so
+  a session whose entry rolled out reads as not owned and is no longer exited
+  by a lifecycle boundary; an explicit exit still works.
+- The battery boundary (managed `ApplyFullTransitionAsync` setting
+  `pendingOwnedHyperBoostPowerBoundaryExit` on Battery, then
+  `ExitOwnedHyperBoostForPowerSourceTransitionAsync`) runs in
+  `reconcile_locked` before the performance and fan steps, whenever an
+  unscoped reconciliation's classes hold Battery: a lifecycle power change, a
+  resume, a report or a save. It is H2's exit step, with all of its admission,
+  under the step id `hyperboost`. The transition goes on only once the exit
+  settled; a refused, unfinished or possibly submitted exit stops it, and a
+  possible submission fences the store without replay. A convergence attempt
+  never runs it.
+- Firmware already out of HyperBoost at the boundary is not written to. As
+  managed's `RestoreFirmwareExitedHyperBoostForPowerSourceTransitionAsync`
+  marks the reading intentional, native makes the exit's fresh reading
+  OpenBlade's own for performance and fans (`Tracker::own_reading`), so the
+  transition after it applies the battery intent rather than pausing on
+  drift. Native then settles ownership in its journal with a HyperBoost row
+  Prepared and KnownNotSubmitted under a fresh write capture; managed retires
+  its ownership journal. An outstanding owned fan change, a refused capture or
+  a fenced store leaves ownership for the next boundary to read again.
+- The boundary needs the console user's admitted write capture, as every
+  native reconciliation does. An unplug at the lock screen exits at the first
+  admitted attempt after the unlock; managed exits at once.
+- Native has no Stop exit yet. Managed exits owned HyperBoost first in its
+  shutdown (`PrepareForShutdownAsync`, 13313-13390), before the keyboard
+  release and the fan handback. Native SCM STOP and SHUTDOWN revoke the loaded
+  origin before the drain runs (`scm_host::installed_notice`), so no ordinary
+  write capture is admitted at Stop, and the owned-Stop cleanup admission
+  covers only the keyboard release and the fan handback. An exit there needs
+  the same reviewed cleanup permit as the low-power exit. Stop leaves owned
+  HyperBoost with no setter and no row, its keyboard release and fan handback
+  are unchanged, and a later start reads the ownership again from the journal.
+- Native has no low-power or display-off HyperBoost exit. Managed exits owned
+  HyperBoost at a display-off (`PrepareOwnedHyperBoostForDisplayOffAsync`,
+  `ServiceLifecycleRefreshLoop.cs` 139) and during low-power preparation
+  before the keyboard release. Native receives no display-off signal (its
+  power-setting reader reports only DisplayOn), and once the low-power gate is
+  set the only write admission is the Service's cleanup admission, which only
+  the keyboard release and the fan handback hold. A HyperBoost exit under it
+  needs its own reviewed cleanup permit, so owned HyperBoost stays through a
+  suspend on AC until the next battery boundary or an explicit exit.
+- After a native Stop, managed adopts no native ownership, and the handback
+  record carries no ownership item (option b). Managed's own shutdown exits
+  its HyperBoost before handing back, its crash recovery exits at its next
+  start rather than adopting a session, and the handback already declines
+  inherited fan ownership. A native session left active, by a Stop or a
+  crash, is HyperBoost active without a managed ownership journal, which
+  managed treats as an external change; a native restart reads its ownership
+  again from the journal.
+- Without the lifecycle triggers, the native composition has no HyperBoost
+  probes, so every request replies `HyperBoost control is unavailable right
+  now.` before any read or write, and nothing natively enters HyperBoost
+  that no boundary would leave.
 
-Packaging stays refused until the lifecycle exits land (H3): a package must not
-leave HyperBoost running on battery after an unplug.
+Packaging stays refused (`service-hyperboost-v1` by name, in
+`native_package.rs` and `WindowsNativePackage.cs`) until the low-power exit
+and the Stop exits, under a reviewed cleanup permit, and the owned status
+projection land (H3b): a package must not leave HyperBoost running through a
+suspend or a Stop, or unreported.
 
 `ServiceControlRuntimeTests.NativeHyperBoostOwnedVectors` records managed's
 reply and writes for entry and exit from each confirmed state the getter
