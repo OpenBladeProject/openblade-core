@@ -158,6 +158,11 @@ pub(super) struct Tracker {
     /// step dropped at its bound or deadline, or failed after an intent.
     /// The next reading that reports the subsystem settles it.
     submitted: Own,
+    /// A reading since the last entry OpenBlade confirmed showed firmware out
+    /// of HyperBoost, so no HyperBoost seen from then on is that entry's
+    /// (`Tracker::left_hyperboost`).
+    #[cfg(feature = "service-hyperboost-v1")]
+    left_hyperboost: bool,
     /// How many published readings it has observed
     /// (`Tracker::observe_published`).
     #[cfg(feature = "service-thermal-convergence-v1")]
@@ -214,6 +219,10 @@ impl Tracker {
         #[cfg(feature = "service-thermal-convergence-v1")]
         {
             self.evidence = None;
+        }
+        #[cfg(feature = "service-hyperboost-v1")]
+        if reading != ObservedPerformance::HyperBoostObserved {
+            self.left_hyperboost = true;
         }
         // The first reading after a possible submission shows whether it
         // landed: OpenBlade's own write if it shows what was written, else
@@ -304,6 +313,33 @@ impl Tracker {
         self.own.performance = Some(destination);
         self.hold = None;
         self.submitted.performance = None;
+        // An entry OpenBlade just confirmed starts a session nothing has
+        // contradicted yet.
+        #[cfg(feature = "service-hyperboost-v1")]
+        if destination == Destination::HyperBoost {
+            self.left_hyperboost = false;
+        }
+    }
+
+    /// Whether a reading since the last entry OpenBlade confirmed showed
+    /// firmware out of HyperBoost. Managed clears `ownsHyperBoost` at any
+    /// published observation with HyperBoost inactive
+    /// (`ServiceControlRuntime.cs` 18394-18405), so the history's ownership
+    /// (`Storage::owns_hyperboost`) counts only while this is false: a
+    /// HyperBoost that appears after such a reading was entered outside
+    /// OpenBlade. Every reading this process takes passes `observe`, and a
+    /// new process starts unset, so the first reading after a start decides:
+    /// HyperBoost keeps the journal's ownership, anything else ends it.
+    #[cfg(feature = "service-hyperboost-v1")]
+    pub(super) fn left_hyperboost(&self) -> bool {
+        self.left_hyperboost
+    }
+
+    /// A fresh reading no `observe` carried showed firmware out of
+    /// HyperBoost: an explicit exit that found it already off.
+    #[cfg(feature = "service-hyperboost-v1")]
+    pub(super) fn leave_hyperboost(&mut self) {
+        self.left_hyperboost = true;
     }
 
     /// Managed `ConfirmIntentional(Fans, matched: true)`: a reading confirmed

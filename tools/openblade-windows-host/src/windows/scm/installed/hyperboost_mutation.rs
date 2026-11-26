@@ -532,7 +532,7 @@ impl Runtime {
     /// reconciliation (`ExitOwnedHyperBoostForPowerSourceTransitionAsync`),
     /// under the held gate. `None`
     /// when there is nothing to exit: no HyperBoost probes, or native does
-    /// not own HyperBoost (`Storage::owns_hyperboost`), so a HyperBoost
+    /// not own HyperBoost (`Runtime::owns_hyperboost`), so a HyperBoost
     /// reading stays external and is excluded as before.
     ///
     /// Otherwise one H2 exit step (`Step::lifecycle`) with every admission of
@@ -571,6 +571,14 @@ impl Runtime {
             return Ok(None);
         }
         let id = triggers::step_id(request, EXIT_STEP);
+        // An observation since the entry showed firmware out of HyperBoost,
+        // so nothing here is OpenBlade's: whatever firmware shows now stays
+        // external and is neither exited nor adopted. Only the journal is
+        // settled, at this first admitted write since.
+        if self.left_hyperboost() {
+            self.settle_ownership(mailbox, caller, sid, &id)?;
+            return Ok(None);
+        }
         let (step, exited) = Step::lifecycle(probes);
         let run = self.apply_locked(
             mailbox.clone(),
@@ -629,14 +637,12 @@ impl Runtime {
     }
 
     /// The read-only settlement of an exit whose fresh reading found
-    /// firmware already out of HyperBoost: the reading is OpenBlade's own
-    /// (managed `driftTracker.Observe` then `ConfirmIntentional` for
-    /// Performance and Fans), and the journal records the exit's HyperBoost
-    /// row Prepared and KnownNotSubmitted (`Storage::settle_hyperboost`)
-    /// under a fresh capture's write authorization. Says whether ownership
-    /// settled. A refused capture or an outstanding owned fan change leaves
-    /// ownership as it was, to be read again at the next boundary; a failed
-    /// append fences the store as every append does.
+    /// firmware already out of HyperBoost, with no earlier observation
+    /// against the entry: the reading is OpenBlade's own (managed
+    /// `driftTracker.Observe` then `ConfirmIntentional` for Performance and
+    /// Fans), which also ends the ownership in memory
+    /// (`Tracker::left_hyperboost`), and the journal records it
+    /// (`settle_ownership`).
     fn settle_exited(
         &self,
         mailbox: &MailboxSource,
@@ -649,6 +655,41 @@ impl Runtime {
             .lock()
             .map_err(|_| io::ErrorKind::Other)?
             .own_reading(reading);
+        self.settle_ownership(mailbox, caller, sid, id)
+    }
+
+    /// Whether a reading since the last confirmed entry showed firmware out
+    /// of HyperBoost (`Tracker::left_hyperboost`). A poisoned tracker reads
+    /// as left: a missed exit is recoverable, and exiting a HyperBoost that
+    /// is not OpenBlade's is not.
+    pub(super) fn left_hyperboost(&self) -> bool {
+        self.drift
+            .lock()
+            .map_or(true, |drift| drift.left_hyperboost())
+    }
+
+    /// Whether native owns the HyperBoost a lifecycle exit may leave: the
+    /// history says so (`Storage::owns_hyperboost`) and no reading since
+    /// the entry contradicted it.
+    pub(super) fn owns_hyperboost(&self, storage: &Storage) -> bool {
+        storage.owns_hyperboost() && !self.left_hyperboost()
+    }
+
+    /// Records in the journal that an ownership the history still shows has
+    /// ended with no firmware write: the HyperBoost row of `id` Prepared and
+    /// KnownNotSubmitted (`Storage::settle_hyperboost`) under a fresh
+    /// capture's write authorization. Says whether it was recorded. A
+    /// refused capture, an unsettled row or an outstanding owned fan change
+    /// leaves the journal as it was, for the next admitted exit to settle,
+    /// while the tracker keeps the ownership ended for this process; a
+    /// failed append fences the store as every append does.
+    fn settle_ownership(
+        &self,
+        mailbox: &MailboxSource,
+        caller: Caller,
+        sid: &str,
+        id: &str,
+    ) -> io::Result<bool> {
         let MailboxSource::Reader(reader) = mailbox else {
             return Ok(false);
         };
@@ -657,7 +698,7 @@ impl Runtime {
             Err(error) if is_fatal_admission(&error) => return Err(error),
             Err(_) => return Ok(false),
         };
-        if storage.pending() || storage.outstanding_fan() {
+        if !storage.owns_hyperboost() || storage.pending() || storage.outstanding_fan() {
             return Ok(false);
         }
         fresh.verify_health()?;
@@ -697,24 +738,46 @@ impl Runtime {
             return Ok((Outcome::blocked(UNAVAILABLE), None));
         };
         let _serial = self.gate.lock().await;
-        self.apply_locked(
-            mailbox,
-            ThermalStep {
-                caller,
-                sid,
-                request,
-                value: None,
-                reconcile: None,
-                #[cfg(feature = "service-profile-triggers-v1")]
-                transition: None,
-                #[cfg(feature = "service-performance-shortcut-v1")]
-                shortcut: None,
-                hyperboost: Some(Step::new(enabled, probes)),
-                deadline,
-                status,
-            },
-        )
-        .await
-        .map(Stepped::reply)
+        let step = Step::new(enabled, probes);
+        #[cfg(feature = "service-profile-triggers-v1")]
+        let (exited, settle) = (
+            step.exited.clone(),
+            (mailbox.clone(), sid.clone(), request.clone()),
+        );
+        let stepped = self
+            .apply_locked(
+                mailbox,
+                ThermalStep {
+                    caller,
+                    sid,
+                    request,
+                    value: None,
+                    reconcile: None,
+                    #[cfg(feature = "service-profile-triggers-v1")]
+                    transition: None,
+                    #[cfg(feature = "service-performance-shortcut-v1")]
+                    shortcut: None,
+                    hyperboost: Some(step),
+                    deadline,
+                    status,
+                },
+            )
+            .await?;
+        // An explicit exit that found HyperBoost already off ends native
+        // ownership, as managed's clears `ownsHyperBoost` and retires its
+        // journal there (6965-6994): a HyperBoost entered outside OpenBlade
+        // afterwards is not left by a lifecycle exit. The journal records it
+        // when this request's capture admits the write.
+        #[cfg(feature = "service-profile-triggers-v1")]
+        if exited.lock().map_err(|_| io::ErrorKind::Other)?.is_some() {
+            self.drift
+                .lock()
+                .map_err(|_| io::ErrorKind::Other)?
+                .leave_hyperboost();
+            let (mailbox, sid, request) = settle;
+            let id = triggers::step_id(&request, EXIT_STEP);
+            self.settle_ownership(&mailbox, caller, &sid, &id)?;
+        }
+        Ok(stepped.reply())
     }
 }

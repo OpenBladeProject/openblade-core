@@ -261,3 +261,124 @@ async fn a_pending_gpu_confirmation_holds_the_boundary_exit() {
     assert!(owns(&rig));
     rig.stop_in_hyperboost().await;
 }
+
+const SELECTOR_SILENT: u8 = 5;
+const ALREADY_OFF: &str = "HyperBoost is already off.";
+
+fn set_selectors(rig: &Rig, selector: u8) {
+    rig.port.state.lock().unwrap().selectors = [selector; 2];
+}
+/// What a tick's reconciliation on battery left, for comparing a rig with
+/// native history against one without: the setters it sent, the device, and
+/// what a fresh reading then reports as confirmed and as changed outside
+/// OpenBlade.
+async fn after_unplug(rig: &Rig) -> (usize, [u8; 2], Value, Value) {
+    let before = writes(rig);
+    unplug(rig);
+    tick(rig).await;
+    let status = observed(rig, 9).await;
+    (
+        writes(rig) - before,
+        selectors(rig),
+        status["status"]["confirmedState"].clone(),
+        status["status"]["externalChanges"].clone(),
+    )
+}
+
+/// Managed clears `ownsHyperBoost` at any published observation with
+/// HyperBoost inactive (18394-18405). Once a reading shows firmware out of
+/// owned HyperBoost, native owns nothing either, whatever appears next: an
+/// external Silent keeps its drift pause at the battery boundary and an
+/// external HyperBoost stays excluded, exactly as on a rig that never
+/// entered HyperBoost. The observation holds no write admission, so the
+/// journal still names the entry until the boundary's first admitted write
+/// settles it; nothing is written to firmware.
+#[tokio::test]
+async fn an_observed_firmware_exit_ends_ownership_whatever_appears_next() {
+    for next in [SELECTOR_SILENT, SELECTOR_HYPERBOOST] {
+        let rig = owned().await;
+        set_selectors(&rig, SELECTOR_BALANCED);
+        observed(&rig, 1).await;
+        // Only the tracker knows yet; the journal is settled at the boundary.
+        assert!(owns(&rig), "{next}");
+        set_selectors(&rig, next);
+        observed(&rig, 2).await;
+        let rows = journal(&rig).len();
+        let left = after_unplug(&rig).await;
+        assert_eq!((left.0, left.1), (0, [next; 2]), "{next}");
+        assert_eq!(rows_after(&rig, rows), [(100, 0), (100, 6)], "{next}");
+        assert!(!owns(&rig) && !pending(&rig), "{next}");
+        // The control: the same readings with no native HyperBoost history.
+        let control = applied_game().await;
+        set_selectors(&control, SELECTOR_BALANCED);
+        observed(&control, 1).await;
+        set_selectors(&control, next);
+        observed(&control, 2).await;
+        let rows = journal(&control).len();
+        assert_eq!(after_unplug(&control).await, left, "{next}");
+        assert_eq!(journal(&control).len(), rows, "{next}");
+        rig.stop().await;
+        control.stop().await;
+    }
+}
+
+/// Managed's explicit disable that finds HyperBoost already off clears its
+/// ownership and retires its journal (6965-6994). Native's reply is the
+/// same, and it ends the ownership too, in the journal under the request's
+/// own capture: a HyperBoost entered outside OpenBlade afterwards is not
+/// left at the battery boundary, as on a rig that never entered it.
+#[tokio::test]
+async fn an_explicit_exit_that_finds_hyperboost_off_ends_ownership() {
+    let rig = owned().await;
+    set_selectors(&rig, SELECTOR_BALANCED);
+    let rows = journal(&rig).len();
+    let off = hyperboost(&rig, 2, false).await;
+    assert_eq!(off["result"], json!({"status":1,"message":ALREADY_OFF}));
+    assert_eq!(rows_after(&rig, rows), [(100, 0), (100, 6)]);
+    assert!(!owns(&rig) && !pending(&rig));
+    set_selectors(&rig, SELECTOR_HYPERBOOST);
+    let left = after_unplug(&rig).await;
+    assert_eq!((left.0, left.1), (0, [SELECTOR_HYPERBOOST; 2]));
+    let control = applied_game().await;
+    set_selectors(&control, SELECTOR_BALANCED);
+    let off = hyperboost(&control, 2, false).await;
+    assert_eq!(off["result"], json!({"status":1,"message":ALREADY_OFF}));
+    set_selectors(&control, SELECTOR_HYPERBOOST);
+    assert_eq!(after_unplug(&control).await, left);
+    rig.stop().await;
+    control.stop().await;
+}
+
+/// A restarted Service has no reading of its own yet, and the journal still
+/// names the entry. Its first reading decides: HyperBoost keeps the
+/// journal's ownership, and the battery boundary exits it; anything else
+/// ends it, so a HyperBoost that appears afterwards was entered outside
+/// OpenBlade and stays, as on a rig with no history.
+#[tokio::test]
+async fn a_restarted_service_owns_hyperboost_only_while_its_first_reading_shows_it() {
+    for first in [SELECTOR_HYPERBOOST, SELECTOR_BALANCED] {
+        let entered = owned().await;
+        let files = entered.files.clone();
+        entered.stop_in_hyperboost().await;
+        let rig = Rig::restarted(files);
+        *rig.custody.origin_for_fan.lock().unwrap() = Some(rig.origin.clone());
+        rig.port.state.lock().unwrap().fans = [0; 2];
+        set_selectors(&rig, first);
+        rig.get().await;
+        observed(&rig, 1).await;
+        assert!(owns(&rig), "{first}");
+        set_selectors(&rig, SELECTOR_HYPERBOOST);
+        observed(&rig, 2).await;
+        wired(&rig).await;
+        let left = after_unplug(&rig).await;
+        if first == SELECTOR_HYPERBOOST {
+            assert!(left.0 > 0, "{left:?}");
+            assert_eq!(left.2["hyperBoostActive"], false, "{left:?}");
+            assert_eq!(left.2["performance"], saved_battery_performance(&rig));
+        } else {
+            assert_eq!((left.0, left.1), (0, [SELECTOR_HYPERBOOST; 2]), "{left:?}");
+        }
+        assert!(!owns(&rig) && !pending(&rig), "{first}");
+        rig.stop_in_hyperboost().await;
+    }
+}

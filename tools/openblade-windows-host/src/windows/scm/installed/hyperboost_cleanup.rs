@@ -52,14 +52,17 @@ const CLEANUP_STEP: &str = "hyperboost-cleanup";
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in super::super::super) enum CleanupExit {
     /// Nothing to exit: no HyperBoost probes, no store captured in this
-    /// process, or its journal does not leave HyperBoost owned. Nothing was
-    /// read from firmware or written.
+    /// process, its journal does not leave HyperBoost owned, or a reading
+    /// since the entry showed firmware out of HyperBoost and the journal
+    /// could not record that here. Nothing was read from firmware or
+    /// submitted.
     NotOwned,
     /// HyperBoost is off by the exit's own readback of Balanced with
     /// Automatic fans.
     Exited,
-    /// Firmware had already left HyperBoost: nothing was written to it and
-    /// ownership settled in the journal (`Storage::settle_hyperboost`).
+    /// Firmware had already left HyperBoost, by this exit's reading or an
+    /// earlier one: nothing was written to it and ownership settled in the
+    /// journal (`Storage::settle_hyperboost`).
     Settled,
     /// The time ran out before ownership could be read. Nothing was sent.
     Exhausted,
@@ -168,7 +171,11 @@ impl Permit for ExitPermit {
         // Ownership is read again under the job: only HyperBoost the journal
         // still says native owns is exited, and no row follows an unsettled
         // one.
-        if self.storage.pending() || !self.storage.owns_hyperboost() {
+        let left = self
+            .drift
+            .lock()
+            .map_or(true, |drift| drift.left_hyperboost());
+        if left || self.storage.pending() || !self.storage.owns_hyperboost() {
             return Ok(None);
         }
         if baseline != ObservedPerformance::HyperBoostObserved {
@@ -265,6 +272,32 @@ impl Runtime {
         if !storage.owns_hyperboost() {
             return Ok(CleanupExit::NotOwned);
         }
+        // A reading since the entry showed firmware out of HyperBoost
+        // (`Tracker::left_hyperboost`), so nothing is owned whatever
+        // firmware shows now: nothing is read or exited, and the outcome is
+        // the unowned one. Only the journal still names the entry; it is
+        // settled when this admission allows the rows.
+        let contradicted = self.left_hyperboost();
+        let exit = self
+            .exit_recorded_hyperboost(reader, scope, deadline, (storage, probes), contradicted)
+            .await?;
+        Ok(if contradicted && exit != CleanupExit::Settled {
+            CleanupExit::NotOwned
+        } else {
+            exit
+        })
+    }
+
+    /// `exit_owned_hyperboost_for` once the history shows an owned entry,
+    /// under the held gate. `contradicted` only settles the journal.
+    async fn exit_recorded_hyperboost(
+        &self,
+        reader: &super::super::super::mailbox_read::ReadSource,
+        scope: CleanupScope,
+        deadline: Instant,
+        (storage, probes): (Arc<Storage>, Probes),
+        contradicted: bool,
+    ) -> io::Result<CleanupExit> {
         if storage.pending() {
             return Ok(CleanupExit::Unresolved);
         }
@@ -294,6 +327,9 @@ impl Runtime {
             accepted: AtomicBool::new(false),
             exited: AtomicBool::new(false),
         });
+        if contradicted {
+            return self.settle_exited_cleanup(&permit, deadline);
+        }
         let result = reader
             .mutate_cleanup_in(permit.clone(), scope, deadline)
             .await;
@@ -321,6 +357,12 @@ impl Runtime {
             return Ok(CleanupExit::Exited);
         }
         if permit.exited.load(Ordering::Acquire) {
+            // The reading ends the ownership for this process whether or
+            // not the journal can record it now.
+            self.drift
+                .lock()
+                .map_err(|_| io::ErrorKind::Other)?
+                .leave_hyperboost();
             return self.settle_exited_cleanup(&permit, deadline);
         }
         Ok(
@@ -332,8 +374,8 @@ impl Runtime {
         )
     }
 
-    /// The read-only settlement of a cleanup exit whose fresh reading found
-    /// firmware already out of HyperBoost: the journal records the exit's
+    /// The read-only settlement of a cleanup exit whose fresh reading, or an
+    /// earlier one, found firmware out of HyperBoost: the journal records the exit's
     /// HyperBoost row Prepared and KnownNotSubmitted, under the same cleanup
     /// admission, authorized again, and only before the deadline. Without
     /// either, ownership stays in the journal for a later exit to read.
@@ -400,7 +442,7 @@ impl Runtime {
                 .captured
                 .borrow()
                 .as_ref()
-                .is_some_and(|storage| storage.owns_hyperboost())
+                .is_some_and(|storage| self.owns_hyperboost(storage))
         {
             Err(io::Error::other(
                 "Unexpected origin loss cannot authorize the owned HyperBoost exit.",
