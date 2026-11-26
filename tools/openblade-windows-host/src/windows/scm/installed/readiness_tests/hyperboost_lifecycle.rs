@@ -10,19 +10,20 @@ use super::*;
 
 const SELECTOR_HYPERBOOST: u8 = 7;
 const SELECTOR_BALANCED: u8 = 0;
+const SELECTOR_PERFORMANCE: u8 = 2;
 
 /// One owned HyperBoost request, as the tray sends it.
 async fn hyperboost(rig: &Rig, n: u8, enabled: bool) -> Value {
     rig.request(json!({"operation":"setHyperBoost","version":90,"requestId":format!("aaaaaaaa-bbbb-cccc-eeee-{n:012}"),"enabled":enabled}))
         .await
 }
-/// A rig on a full adapter at Balanced with the tick wired, whose owned
-/// HyperBoost entry settled.
+/// A rig on a full adapter whose Game rule applied Performance as its
+/// user's startup reconciliation, with the tick wired, and whose owned
+/// HyperBoost entry then settled. Later reconciliations compare with
+/// OpenBlade's own state (`thermal_drift::Mode::WithPrior`).
 async fn owned() -> Rig {
-    let files = MemoryFiles::default();
-    files.profiles(1);
-    let rig = rig_at(files, SELECTOR_BALANCED);
-    wired(&rig).await;
+    let rig = applied_game().await;
+    assert_eq!(selectors(&rig), [SELECTOR_PERFORMANCE; 2]);
     let entered = hyperboost(&rig, 1, true).await;
     assert_eq!(entered["result"]["status"], 1, "{entered}");
     assert_eq!(selectors(&rig), [SELECTOR_HYPERBOOST; 2]);
@@ -118,6 +119,8 @@ async fn an_unplug_exits_owned_hyperboost_to_the_saved_battery_intent() {
 /// becomes OpenBlade's own, so the transition applies the battery intent
 /// instead of pausing on drift, and ownership settles in the journal with a
 /// HyperBoost row Prepared and KnownNotSubmitted.
+/// Firmware left for Balanced, not the Performance native owned before the
+/// entry, so only that marking keeps the reading from reading as drift.
 #[tokio::test]
 async fn firmware_already_out_of_hyperboost_settles_ownership_read_only() {
     let rig = owned().await;
@@ -176,7 +179,8 @@ async fn a_reconciliation_on_ac_leaves_owned_hyperboost() {
 
 /// Managed owns the recovery of its own journal: one it has not
 /// relinquished refuses the boundary exit before any row or setter, the
-/// transition does not go on, and ownership stays for a later boundary.
+/// transition does not go on, and ownership stays: once managed
+/// relinquishes it, the next attempt exits.
 #[tokio::test]
 async fn a_pending_managed_journal_refuses_the_boundary_exit_without_a_write() {
     let rig = owned().await;
@@ -189,6 +193,21 @@ async fn a_pending_managed_journal_refuses_the_boundary_exit_without_a_write() {
     assert_eq!(journal(&rig).len(), rows);
     assert_eq!(selectors(&rig), [SELECTOR_HYPERBOOST; 2]);
     assert!(owns(&rig));
+    // Once managed relinquishes its journal, the next boundary exits.
+    *rig.hyperboost.journal.lock().unwrap() = Some(Some(managed_journal(3)));
+    replug(&rig, 15);
+    tick(&rig).await;
+    assert_eq!(writes(&rig), before);
+    unplug(&rig);
+    tick(&rig).await;
+    assert!(writes(&rig) > before);
+    assert_eq!(
+        performance(&rig.get().await),
+        &saved_battery_performance(&rig)
+    );
+    assert!(hyperboost_off(&rig.get().await));
+    assert!(!owns(&rig));
+    assert!(!pending(&rig));
     rig.stop().await;
 }
 
@@ -210,7 +229,14 @@ async fn an_ambiguous_boundary_exit_fences_the_store_without_replay() {
     }
     assert_eq!(rig.port.state.lock().unwrap().writes, writes + 1);
     assert!(pending(&rig));
-    rig.stop().await;
+    // Stop reports the unresolved submission and replays nothing either.
+    let mut source = rig.source.lock().await;
+    let drained = source.drain().await;
+    source.confirm_drained().unwrap();
+    drop(source);
+    let error = drained.unwrap_err().to_string();
+    assert!(error.contains("unresolved"), "{error}");
+    assert_eq!(rig.port.state.lock().unwrap().writes, writes + 1);
 }
 
 /// A pending GPU clock confirmation fences the attempt before any read, so
