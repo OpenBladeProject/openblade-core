@@ -477,6 +477,72 @@ async fn an_entry_settled_at_stop_is_not_owned_by_the_next_start() {
     }
 }
 
+/// The Stop exit leaves Balanced and records nothing as intent: the
+/// restarted Service applies the saved Performance for the Game rule over
+/// it, reports no change outside OpenBlade, owns nothing, and its own Stop
+/// sends no thermal frame.
+#[tokio::test]
+async fn a_restart_after_the_stop_exit_applies_the_saved_intent() {
+    let rig = owned_with_cleanup().await;
+    stop(&rig).await.unwrap();
+    assert_eq!(selectors(&rig), [SELECTOR_BALANCED; 2]);
+    let restarted = restarted_at(rig.files.clone(), SELECTOR_BALANCED).await;
+    let applied = report(&restarted, 1, Some(r"C:\Games\Game.exe")).await;
+    assert_eq!(applied["result"]["status"], 1, "{applied}");
+    assert_eq!(selectors(&restarted), [SELECTOR_PERFORMANCE; 2]);
+    assert!(!owns(&restarted));
+    let status = observed(&restarted, 2).await;
+    assert_eq!(status["status"]["externalChanges"], json!([]), "{status}");
+    let from = sent(&restarted);
+    stop(&restarted).await.unwrap();
+    assert_eq!(thermal_sent(&restarted, from), 0);
+}
+
+/// The exit journals its rows for the session that entered, through that
+/// user's store. When the entry is another user's than the latest capture's,
+/// the Stop reads the ownership but cannot write its rows: it sends nothing
+/// and reports the HyperBoost it leaves on.
+#[tokio::test]
+async fn stop_refuses_an_entry_the_latest_captures_user_did_not_make() {
+    const OTHER: &str = "S-1-5-21-111-222-333-1002";
+    let entered = owned().await;
+    let files = entered.files.clone();
+    entered.stop_in_hyperboost().await;
+    // The entry as another user made it: its rows name that user.
+    let rows = files.read("thermal-mutation.journal").unwrap().unwrap();
+    let rows: String = String::from_utf8(rows)
+        .unwrap()
+        .lines()
+        .map(|row| {
+            let row = if row.contains(r#""destination":100"#) {
+                row.replace(SID, OTHER)
+            } else {
+                row.to_owned()
+            };
+            row + "\n"
+        })
+        .collect();
+    files
+        .bytes
+        .lock()
+        .unwrap()
+        .insert("thermal-mutation.journal".into(), rows.into_bytes());
+    let rig = restarted_at(files, SELECTOR_HYPERBOOST).await;
+    // The rig's own user captures: its store is the latest.
+    report(&rig, 1, Some(r"C:\Games\Game.exe")).await;
+    assert!(owns(&rig));
+    assert_eq!(rig.storage.hyperboost_owner(), None);
+    let (rows, from) = (journal(&rig).len(), sent(&rig));
+    let error = stop(&rig).await.unwrap_err().to_string();
+    assert!(
+        error.contains(NOT_EXITED) && !error.contains("unresolved"),
+        "{error}"
+    );
+    assert_eq!(thermal_sent(&rig, from), 0);
+    assert_eq!(journal(&rig).len(), rows);
+    assert_eq!(selectors(&rig), [SELECTOR_HYPERBOOST; 2]);
+}
+
 /// Beside the keyboard owner (`service-keyboard-driver-mode-v1`), whose
 /// Normal release shares the Stop drain and is the suspend preparation the
 /// HyperBoost exit follows (`low_power_cleanup`).
