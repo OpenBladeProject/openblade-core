@@ -194,3 +194,40 @@ pub(crate) fn resolve_service_image(
     }
     Ok(path)
 }
+
+/// Managed `WindowsDriverApiTrust.MaximumPathLength`, in UTF-16 units.
+pub(crate) const MAXIMUM_PATH: usize = 4096;
+
+/// Managed `NormalizeFilePath`: a bounded, fully qualified local drive path
+/// without alternate streams.
+pub(crate) fn normalize(path: &str) -> Result<String, &'static str> {
+    let bounded = |path: &str| path.encode_utf16().count() <= MAXIMUM_PATH;
+    if path.trim().is_empty() || !bounded(path) || !is_fully_qualified(path) {
+        return Err("Driver API paths must be bounded, fully qualified local paths.");
+    }
+    match full_path(path) {
+        Some(full) if bounded(&full) && !full[3..].contains(':') => Ok(full),
+        _ => Err("Driver API paths must use a bounded local drive path without alternate streams."),
+    }
+}
+
+/// Managed `EnsureNoReparsePoints` over `is_reparse_point`, which reads one
+/// path's attributes: the path and every directory above it, up to but not
+/// including the drive root.
+pub(crate) fn ensure_no_reparse_points(
+    path: &str,
+    mut is_reparse_point: impl FnMut(&str) -> std::io::Result<bool>,
+) -> std::io::Result<()> {
+    let mut current = path;
+    while current.len() > 3 {
+        if is_reparse_point(current)? {
+            return Err(std::io::Error::other(
+                "Driver API paths cannot contain reparse points.",
+            ));
+        }
+        current = parent(current).ok_or_else(|| {
+            std::io::Error::other("The driver API path has no local filesystem root.")
+        })?;
+    }
+    Ok(())
+}

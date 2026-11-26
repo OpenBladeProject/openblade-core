@@ -102,3 +102,35 @@ pub(crate) fn validate_publishers<'a>(publishers: &[&'a str]) -> std::io::Result
 pub(crate) fn matches_publisher(subject: &str, expected: &[&str]) -> bool {
     expected.contains(&subject)
 }
+
+/// One verified file as the content identity reads it: its path, length
+/// and SHA256 hash.
+pub(crate) struct Content<'a> {
+    pub(crate) path: &'a str,
+    pub(crate) length: u64,
+    pub(crate) hash: [u8; 32],
+}
+
+/// Managed `ComputeObservedContentIdentity`: a SHA256 over a versioned
+/// prefix, the file count and, per file in order, its upper-cased file
+/// name's UTF-8 length and bytes, its length and its own hash. It names an
+/// observed runtime instance; it is never compared with an allowlist.
+pub(crate) fn content_identity(files: &[Content<'_>]) -> String {
+    use sha2::{Digest, Sha256};
+    let mut identity = Sha256::new();
+    identity.update(b"OpenBlade.WindowsDriverApiTrust.v1\0");
+    identity.update((files.len() as i32).to_le_bytes());
+    for file in files {
+        let name = paths::file_name(file.path).to_uppercase();
+        identity.update((name.len() as i32).to_le_bytes());
+        identity.update(name.as_bytes());
+        identity.update((file.length as i64).to_le_bytes());
+        identity.update(file.hash);
+    }
+    let digest: String = identity
+        .finalize()
+        .iter()
+        .map(|byte| format!("{byte:02X}"))
+        .collect();
+    format!("SHA256:{digest}")
+}

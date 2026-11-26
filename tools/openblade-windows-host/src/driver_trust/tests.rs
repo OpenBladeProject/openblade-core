@@ -725,3 +725,168 @@ fn capture_refuses_an_endpoint_it_cannot_name() {
         )
     );
 }
+
+/// Managed `NormalizeFilePath`: a bounded (in UTF-16 units), fully
+/// qualified local drive path, normalized, without alternate streams.
+#[test]
+fn normalize_admits_only_bounded_local_drive_paths_without_streams() {
+    use super::paths::{MAXIMUM_PATH, normalize};
+    const UNQUALIFIED: &str = "Driver API paths must be bounded, fully qualified local paths.";
+    const NOT_LOCAL: &str =
+        "Driver API paths must use a bounded local drive path without alternate streams.";
+    assert_eq!(
+        normalize(r"c:/Windows\System32\.\drivers\..\drivers\x.sys").as_deref(),
+        Ok(r"C:\Windows\System32\drivers\x.sys")
+    );
+    for unqualified in ["", "   ", r"x.sys", r"C:x.sys", r"\Windows\x.sys"] {
+        assert_eq!(normalize(unqualified), Err(UNQUALIFIED), "{unqualified:?}");
+    }
+    for not_local in [r"\\server\share\x.sys", r"\\?\C:\x.sys", r"C:\x.sys:stream"] {
+        assert_eq!(normalize(not_local), Err(NOT_LOCAL), "{not_local:?}");
+    }
+    // The bound counts UTF-16 units, as managed's string length does, not
+    // UTF-8 bytes.
+    let at_bound = format!(r"C:\{}", "\u{e9}".repeat(MAXIMUM_PATH - 3));
+    assert!(at_bound.len() > MAXIMUM_PATH);
+    assert_eq!(normalize(&at_bound).as_deref(), Ok(at_bound.as_str()));
+    let past_bound = format!(r"C:\{}", "\u{1F600}".repeat((MAXIMUM_PATH - 2) / 2));
+    assert!(past_bound.encode_utf16().count() > MAXIMUM_PATH);
+    assert_eq!(normalize(&past_bound), Err(UNQUALIFIED));
+}
+
+/// Managed `RejectsAReparsePointInAnyPathComponent`: the file and every
+/// directory above it are read, the drive root is not, and a reparse point
+/// anywhere refuses.
+#[test]
+fn the_reparse_walk_reads_every_component_above_the_root() {
+    use super::paths::ensure_no_reparse_points;
+    let path = r"C:\safe\linked\driver.sys";
+    let mut read = Vec::new();
+    ensure_no_reparse_points(path, |component| {
+        read.push(component.to_owned());
+        Ok(false)
+    })
+    .unwrap();
+    assert_eq!(read, [path, r"C:\safe\linked", r"C:\safe"]);
+    let refused = ensure_no_reparse_points(path, |component| {
+        Ok(component.eq_ignore_ascii_case(r"C:\SAFE\LINKED"))
+    })
+    .unwrap_err();
+    assert_eq!(
+        refused.to_string(),
+        "Driver API paths cannot contain reparse points."
+    );
+    // A component that cannot be read refuses with its own error.
+    let unreadable = ensure_no_reparse_points(path, |_| {
+        Err(io::Error::from(io::ErrorKind::PermissionDenied))
+    })
+    .unwrap_err();
+    assert_eq!(unreadable.kind(), io::ErrorKind::PermissionDenied);
+    // The root alone has nothing to read.
+    ensure_no_reparse_points(r"C:\", |_| panic!("the root is not read")).unwrap();
+}
+
+/// Managed `ComputeObservedContentIdentity`'s byte layout, spelled out: the
+/// versioned prefix, the count as a little-endian i32, then per file its
+/// upper-cased file name's UTF-8 length (i32) and bytes, its length (i64)
+/// and its SHA256.
+#[test]
+fn the_content_identity_is_managed_byte_layout_over_file_names_and_hashes() {
+    use super::{Content, content_identity};
+    use sha2::{Digest, Sha256};
+    let catalog = Content {
+        path: r"C:\Windows\System32\DriverStore\FileRepository\x\rzcommon.cat",
+        length: 7,
+        hash: Sha256::digest(b"catalog").into(),
+    };
+    let image = Content {
+        path: r"C:\Windows\System32\drivers\RzCommon.sys",
+        length: 6,
+        hash: Sha256::digest(b"driver").into(),
+    };
+    let mut bytes = b"OpenBlade.WindowsDriverApiTrust.v1\0".to_vec();
+    bytes.extend(2i32.to_le_bytes());
+    for (name, file) in [("RZCOMMON.CAT", &catalog), ("RZCOMMON.SYS", &image)] {
+        bytes.extend((name.len() as i32).to_le_bytes());
+        bytes.extend(name.as_bytes());
+        bytes.extend((file.length as i64).to_le_bytes());
+        bytes.extend(file.hash);
+    }
+    let expected: String = Sha256::digest(&bytes)
+        .iter()
+        .map(|byte| format!("{byte:02X}"))
+        .collect();
+    let identity = content_identity(&[catalog, image]);
+    assert_eq!(identity, format!("SHA256:{expected}"));
+    // The directory and the name's case are not part of it; the order and
+    // every length and hash are.
+    let named = |path, length, data: &[u8]| Content {
+        path,
+        length,
+        hash: Sha256::digest(data).into(),
+    };
+    let one = content_identity(&[named(r"C:\a\RzCommon.sys", 6, b"driver")]);
+    assert_eq!(
+        one,
+        content_identity(&[named(r"D:\b\rzcommon.SYS", 6, b"driver")])
+    );
+    assert_ne!(
+        one,
+        content_identity(&[named(r"C:\a\RzCommon.sys", 7, b"driver")])
+    );
+    assert_ne!(
+        one,
+        content_identity(&[named(r"C:\a\RzCommon.sys", 6, b"driver 2")])
+    );
+    assert_ne!(
+        content_identity(&[named(r"C:\a", 1, b"a"), named(r"C:\b", 1, b"b")]),
+        content_identity(&[named(r"C:\b", 1, b"b"), named(r"C:\a", 1, b"a")])
+    );
+}
+
+/// The trust cache keeps at most `TRUST_ENTRIES` identities: a new one when
+/// it is full clears it first, so every earlier identity is verified again
+/// on its next capture. A poisoned cache refuses the package without
+/// verifying it, rather than trust an identity it cannot read.
+#[test]
+fn the_trust_cache_clears_when_full_and_refuses_when_poisoned() {
+    let fake = Fake::installed();
+    let cache = Mutex::default();
+    let now = Instant::now();
+    let capture = |build: usize| {
+        let data = format!("driver {build}").into_bytes();
+        fake.file(&store("RzCommon.sys"), data.clone());
+        fake.file(ACTIVE, data);
+        fake.capture(&cache, now)
+    };
+    for build in 0..16 {
+        assert!(capture(build).trusted(), "{build}");
+    }
+    assert_eq!(fake.verified.get(), 16);
+    for build in 0..16 {
+        assert!(capture(build).trusted(), "{build}");
+    }
+    assert_eq!(fake.verified.get(), 16, "every identity is still cached");
+    assert!(capture(16).trusted());
+    assert_eq!(fake.verified.get(), 17);
+    assert!(capture(16).trusted());
+    assert_eq!(fake.verified.get(), 17, "the new identity is kept");
+    assert!(capture(0).trusted());
+    assert_eq!(fake.verified.get(), 18, "the earlier ones were cleared");
+
+    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _held = cache.lock().unwrap();
+        panic!("poisoned for the trust-cache test");
+    }));
+    let package = capture(0);
+    let (installed, _, reason, message) = rejected(&package);
+    assert_eq!(
+        (installed, reason, message),
+        (
+            true,
+            "PackageInspectionFailed",
+            "driver trust cache poisoned"
+        )
+    );
+    assert_eq!(fake.verified.get(), 18);
+}

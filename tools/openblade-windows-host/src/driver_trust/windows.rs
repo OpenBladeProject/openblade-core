@@ -54,14 +54,13 @@ use windows_sys::{
 };
 
 use super::package::{MAXIMUM_PACKAGE_FILE, Machine as PackageMachine, Opened, Registry};
-use super::paths::{eq_ci, file_name, full_path, is_fully_qualified, parent};
+use super::paths::{self, eq_ci, full_path, parent};
 use super::{
-    MICROSOFT_HARDWARE_COMPATIBILITY_PUBLISHER, Reject, matches_publisher, reject,
+    Content, MICROSOFT_HARDWARE_COMPATIBILITY_PUBLISHER, Reject, matches_publisher, reject,
     validate_publishers, verify_member_algorithms,
 };
 
 const MAXIMUM_MEMBERS: usize = 128;
-const MAXIMUM_PATH: usize = 4096;
 const MAXIMUM_FILE: u64 = 256 * 1024 * 1024;
 const MAXIMUM_TOTAL: u64 = 1024 * 1024 * 1024;
 const MAXIMUM_VALUE: u32 = 64 * 1024;
@@ -270,34 +269,17 @@ struct LockedFile {
     length: u64,
 }
 
-/// Managed `NormalizeFilePath`: a bounded, fully qualified local drive path
-/// without alternate streams.
+/// Managed `NormalizeFilePath` (`paths::normalize`).
 fn normalize(path: &str) -> io::Result<String> {
-    if path.trim().is_empty() || path.len() > MAXIMUM_PATH || !is_fully_qualified(path) {
-        return Err(other(
-            "Driver API paths must be bounded, fully qualified local paths.",
-        ));
-    }
-    match full_path(path) {
-        Some(full) if full.len() <= MAXIMUM_PATH && !full[3..].contains(':') => Ok(full),
-        _ => Err(other(
-            "Driver API paths must use a bounded local drive path without alternate streams.",
-        )),
-    }
+    paths::normalize(path).map_err(other)
 }
 
-/// Managed `EnsureNoReparsePoints`: every component below the drive root.
+/// Managed `EnsureNoReparsePoints` over the file system's attributes.
 fn ensure_no_reparse_points(path: &str) -> io::Result<()> {
-    let mut current = path;
-    while current.len() > 3 {
-        if std::fs::symlink_metadata(current)?.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
-        {
-            return Err(other("Driver API paths cannot contain reparse points."));
-        }
-        current = parent(current)
-            .ok_or_else(|| other("The driver API path has no local filesystem root."))?;
-    }
-    Ok(())
+    paths::ensure_no_reparse_points(path, |component| {
+        let attributes = std::fs::symlink_metadata(component)?.file_attributes();
+        Ok(attributes & FILE_ATTRIBUTE_REPARSE_POINT != 0)
+    })
 }
 
 fn open_locked(path: &str) -> io::Result<LockedFile> {
@@ -577,26 +559,19 @@ fn verified_publisher(data: &WINTRUST_DATA, description: &str) -> io::Result<Str
     Ok(String::from_utf16_lossy(&buffer[..end]))
 }
 
-/// Managed `ComputeObservedContentIdentity`.
+/// Managed `ComputeObservedContentIdentity` over each locked file's hash.
 fn content_identity(files: &[LockedFile]) -> io::Result<String> {
-    let mut identity = Sha256::new();
-    identity.update(b"OpenBlade.WindowsDriverApiTrust.v1\0");
-    identity.update((files.len() as i32).to_le_bytes());
-    for file in files {
-        let name = file_name(&file.path).to_uppercase();
-        identity.update((name.len() as i32).to_le_bytes());
-        identity.update(name.as_bytes());
-        identity.update((file.length as i64).to_le_bytes());
-        identity.update(hash_file(file)?);
-    }
-    Ok(format!(
-        "SHA256:{}",
-        identity
-            .finalize()
-            .iter()
-            .map(|byte| format!("{byte:02X}"))
-            .collect::<String>()
-    ))
+    let contents = files
+        .iter()
+        .map(|file| {
+            Ok(Content {
+                path: &file.path,
+                length: file.length,
+                hash: hash_file(file)?,
+            })
+        })
+        .collect::<io::Result<Vec<_>>>()?;
+    Ok(super::content_identity(&contents))
 }
 
 fn hash_file(file: &LockedFile) -> io::Result<[u8; 32]> {

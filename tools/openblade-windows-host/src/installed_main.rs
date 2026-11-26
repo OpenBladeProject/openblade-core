@@ -15,6 +15,9 @@ mod diagnostic_export;
 #[allow(dead_code)] // Installed firmware access requires an admitted runtime owner.
 mod discovery;
 #[cfg(all(windows, feature = "driver-api-trust"))]
+// Only its consumers call it (`service-brightness-hid-usage-v1`); the
+// feature enabled on its own compiles it unused.
+#[cfg_attr(not(feature = "service-brightness-hid-usage-v1"), allow(dead_code))]
 mod driver_trust;
 #[cfg(windows)]
 #[path = "windows/scm/installed.rs"]
