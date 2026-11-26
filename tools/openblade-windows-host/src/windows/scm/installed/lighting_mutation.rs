@@ -90,6 +90,8 @@ const APPLIED: u8 = 1;
 const FAILED: u8 = 3;
 
 const COMMITTED: &str = "Lighting override intent was stored.";
+/// A clear stored while the low-power gate is set (`store_deferred`).
+#[cfg(feature = "service-profile-triggers-v1")]
 const CLEARED: &str = "Lighting override was cleared.";
 /// A clear on a classified adapter, which applies no profile lighting until
 /// slice L2.
