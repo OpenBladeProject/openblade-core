@@ -135,13 +135,14 @@ impl Runtime {
             feature = "service-profile-triggers-v1"
         ))]
         let end = Instant::now() + remaining;
-        // Managed releases a held display-brightness usage first, under the
-        // gate, while the boundary is still this generation's
-        // (`PrepareForLowPowerCoreAsync`). It takes only what the window
-        // holds beyond the keyboard's share, so the keyboard keeps the whole
-        // of it; a release that has not answered by then stays queued on the
-        // lane and runs while the keyboard is released. Its outcome is a
-        // diagnostic, and nothing it does skips the keyboard.
+        // Managed releases a held display-brightness usage first, while the
+        // boundary is still this generation's (`PrepareForLowPowerCoreAsync`).
+        // It ends every brightness request's wait and needs no gate, so no
+        // press keeps the gate from the keyboard, and it takes only what the
+        // window holds beyond the keyboard's share, so the keyboard keeps the
+        // whole of it; a release that has not answered by then stays queued
+        // on the lane and runs while the keyboard is released. Its outcome is
+        // a diagnostic, and nothing it does skips the keyboard.
         #[cfg(feature = "service-brightness-hid-usage-v1")]
         let remaining = {
             let start = Instant::now();

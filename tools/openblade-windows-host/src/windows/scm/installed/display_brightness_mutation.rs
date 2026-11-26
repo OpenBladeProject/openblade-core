@@ -45,10 +45,10 @@ pub(in super::super) const SHUTDOWN_BUDGET: std::time::Duration =
 /// The one model whose stack the lane resolves.
 pub(in super::super) const MODEL: &str = "RZ09-0581";
 
-/// Native only: Stop found another operation holding the gate for the whole
-/// of the release's share, so the release did not start.
-pub(in super::super) const GATE_BUSY: &str =
-    "The display-brightness release did not start: another operation held the hardware gate.";
+/// Native only: why a request still waiting when a cleanup boundary started
+/// stopped waiting. A press it may have submitted stays held, and the
+/// boundary's release runs after it on the lane.
+pub(in super::super) const INTERRUPTED: &str = "the laptop entered low power or is stopping";
 
 /// Managed's maintenance summary for a release that failed.
 #[cfg(feature = "service-keyboard-driver-mode-v1")]
@@ -65,6 +65,11 @@ pub(in super::super) struct Brightness {
     lane: std::cell::OnceCell<Arc<Lane>>,
     held: RefCell<Held>,
     guard: std::cell::OnceCell<Box<Guard>>,
+    // Ends the wait of every request when a cleanup boundary starts.
+    boundary: tokio::sync::Notify,
+    // When the maintenance step may next try a pending neutralization.
+    #[cfg(feature = "service-keyboard-driver-mode-v1")]
+    neutralize_due: std::cell::Cell<Option<Instant>>,
 }
 
 impl Brightness {
@@ -186,6 +191,33 @@ impl Runtime {
                 "The active interactive Windows user is required.",
             ));
         }
+        // A cleanup boundary ends the wait, at the gate or on the lane, so
+        // the gate is free for its keyboard release. Dropping the request
+        // withdraws a press that has not started and keeps one that has
+        // held (`hid::set_usage`); the boundary's release follows it.
+        let boundary = self.brightness.boundary.notified();
+        tokio::pin!(boundary);
+        boundary.as_mut().enable();
+        tokio::select! {
+            biased;
+            () = &mut boundary => Ok(hid::reply(&hid::WriteResult::failed(Some(
+                INTERRUPTED.to_owned(),
+            )))),
+            outcome = self.set_display_brightness_gated(mailbox, caller, sid, usage, deadline) => {
+                outcome
+            }
+        }
+    }
+
+    /// The request after its session check, under the gate.
+    async fn set_display_brightness_gated(
+        &self,
+        mailbox: MailboxSource,
+        caller: Caller,
+        sid: String,
+        usage: Usage,
+        deadline: Instant,
+    ) -> io::Result<Outcome> {
         // One mutation at a time, as managed's operation gate allows.
         let _serial = self.gate.lock().await;
         verify_retained_failure(&self.fatal)?;
@@ -218,54 +250,69 @@ impl Runtime {
     }
 
     /// Managed's cleanup release (`PrepareForShutdownAsync` and
-    /// `PrepareForLowPowerCoreAsync`): a usage still held is released once,
-    /// under the gate, within `share` and by `end`. A request that could
-    /// still hold one has ended by then (Stop shuts every connection down
-    /// first; a suspend's preparation runs on the origin tick), recording
-    /// what it may have pressed, so nothing owed waits for the gate. The
-    /// release is never withdrawn: queued behind a press still running, it
-    /// runs after it. The outcome is a diagnostic: nothing it does fails or
-    /// delays the boundary past its share.
+    /// `PrepareForLowPowerCoreAsync`), within `share` and by `end`. It
+    /// first ends the wait of every request, so none keeps the gate from
+    /// the keyboard's release after it, and then queues the release a usage
+    /// still held owes without the gate: managed's operation gate would
+    /// keep it behind a press still running, and the lane already does.
+    /// Queued behind that press, it runs after it, and one that has not
+    /// answered by the share's end stays owed and runs then
+    /// (`hid::release_owed`). The outcome is a diagnostic: nothing it does
+    /// fails or delays the boundary past its share.
     pub(in super::super) async fn release_display_brightness(
         &self,
         share: std::time::Duration,
         end: Instant,
     ) -> Option<Outcome> {
-        if !self.brightness.held.borrow().release_required {
-            return None;
-        }
+        self.brightness.boundary.notify_waiters();
         let until = (Instant::now() + share.min(SHUTDOWN_BUDGET)).min(end);
-        let Ok(_serial) = tokio::time::timeout_at(until, self.gate.lock()).await else {
-            return Some(Outcome::blocked(GATE_BUSY));
-        };
-        // A request released it while this waited for the gate.
-        if !self.brightness.held.borrow().release_required {
-            return None;
-        }
         let lane = self.brightness.lane.get().map(Arc::as_ref);
-        Some(hid::release_owed(&self.brightness.held, lane, until).await)
+        hid::release_owed(&self.brightness.held, lane, until, |held| {
+            held.release_required
+        })
+        .await
     }
 
     /// Managed `MaintainDriverModeAsync`'s neutralization, under the gate
     /// the maintenance step holds and after its verified-device check: a
     /// Service that has not yet released since it started releases now, and
-    /// a failure is recorded as managed records it. Nothing is pressed.
+    /// a failure is recorded as managed records it. Nothing is pressed. A
+    /// pending one is tried once every `keyboard::INTERVAL`, whatever the
+    /// keyboard's own record says, so a step that returns before its own
+    /// cadence does not retry it on every tick.
     #[cfg(feature = "service-keyboard-driver-mode-v1")]
     pub(in super::super) async fn neutralize_display_brightness(&self) {
-        if !self.brightness.held.borrow().neutralization_pending {
+        let brightness = &self.brightness;
+        let now = Instant::now();
+        if !brightness.held.borrow().neutralization_pending
+            || brightness.neutralize_due.get().is_some_and(|due| now < due)
+        {
             return;
         }
-        let lane = self.brightness.lane.get().map(Arc::as_ref);
-        let until = Instant::now() + hid::CALL_BUDGET;
-        let outcome = hid::release_owed(&self.brightness.held, lane, until).await;
-        if outcome.status == 3 {
-            #[cfg(feature = "service-diagnostics-export-v1")]
+        brightness
+            .neutralize_due
+            .set(Some(now + super::keyboard::INTERVAL));
+        let lane = brightness.lane.get().map(Arc::as_ref);
+        let until = now + hid::CALL_BUDGET;
+        let outcome = hid::release_owed(&brightness.held, lane, until, |held| {
+            held.neutralization_pending
+        })
+        .await;
+        #[cfg(feature = "service-diagnostics-export-v1")]
+        if let Some(outcome) = outcome.filter(|outcome| outcome.status == 3) {
             self.diagnostic_history.record_summary(
                 "Failed",
                 &format!("{NEUTRALIZATION_FAILED}: {}", outcome.message),
             );
         }
         #[cfg(not(feature = "service-diagnostics-export-v1"))]
-        let _ = NEUTRALIZATION_FAILED;
+        let _ = (outcome, NEUTRALIZATION_FAILED);
+    }
+
+    /// Moves the next neutralization `by` earlier, or makes it due now.
+    #[cfg(all(test, feature = "service-keyboard-driver-mode-v1"))]
+    pub(in super::super) fn neutralize_age_for_tests(&self, by: Option<std::time::Duration>) {
+        let due = &self.brightness.neutralize_due;
+        due.set(by.and_then(|by| due.get().map(|due| due - by)));
     }
 }

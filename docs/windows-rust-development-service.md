@@ -1304,7 +1304,9 @@ confirmation the driver gives, and there is no readback.
 Every Windows call runs off the Service runtime, so a stalled IOCTL never
 holds it. Presses and releases run on the input's own thread, and availability
 resolutions on a separate probe thread, so a release never waits behind a
-probe. A press waits behind at most the call in progress and two queued calls,
+probe. The driver-trust cache is locked only around its own entries, not
+across WinVerifyTrust, so a write whose package trust is cached never waits
+for a probe's verification. A press waits behind at most the call in progress and two queued calls,
 and is refused at once beyond that. A repeat of the held usage and a release
 answer without observing status first; a press that writes still takes its
 fresh capture.
@@ -1312,12 +1314,21 @@ fresh capture.
 Stop releases a held usage before the keyboard release, within 300 ms taken
 from the fans' part of the drain. A confirmed suspend releases it before the
 keyboard returns to Normal mode, from what the suspend window holds beyond
-the keyboard's 900 ms share. Neither release is withdrawn: queued behind a
-press still running, it runs after it. One that has not answered when its
-share ends leaves the usage owed, so the next request or boundary releases
-again. Its outcome is diagnostic only. The keyboard maintenance step
-neutralizes on the first due step that finds the device verified, as managed's
-does, and records a failed release in the diagnostic history.
+the keyboard's 900 ms share. Either boundary first ends the wait of every
+brightness request still waiting, at the gate or on the input thread, which
+then answers status 3. Its release then needs no gate: it is queued at once,
+even behind a press still running, and runs after it. So no press keeps the
+gate from the keyboard release, which keeps its whole share. The input thread
+keeps one queue place for such a release, so requests that timed out and wait
+to be dropped never refuse it. A release that has not answered when its share
+ends stays owed: until it answers no boundary queues another, and a later
+press of the same direction is sent again rather than answered as still
+asserted. When it answers Applied, the held usage is cleared; otherwise the
+next request or boundary releases again. It may answer after Stop has
+confirmed the drain. Its outcome is diagnostic only. The keyboard maintenance
+step neutralizes on the first due step that finds the device verified, as
+managed's does, tries a pending neutralization at most once every 15 s, and
+records a failed release in the diagnostic history.
 
 Native differs from managed in these ways, each failing safe:
 
@@ -1326,6 +1337,10 @@ Native differs from managed in these ways, each failing safe:
   keyboard Driver-mode owner (`service-keyboard-driver-mode-v1`). Without it,
   a usage held across a suspend is released by the next request or by Stop.
 - SYSTEM is refused as "The active interactive Windows user is required."
+- A Stop or a confirmed suspend ends a brightness request still waiting, and
+  its release does not take the operation gate.
+- A pending neutralization is retried once every 15 s, also while the
+  keyboard's record is closed or a release is in doubt.
 - A press's fresh capture opens no profile store, as managed's device check
   needs none. The shared capture factory admits only `S-1-5-21-` users and
   opens their store, so the press takes its own capture instead.

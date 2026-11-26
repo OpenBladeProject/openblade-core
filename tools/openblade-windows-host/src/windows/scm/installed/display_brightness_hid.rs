@@ -28,7 +28,7 @@ use std::{
     panic::{self, AssertUnwindSafe},
     sync::{
         Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         mpsc::{Receiver, SyncSender, sync_channel},
     },
     thread,
@@ -123,18 +123,8 @@ impl WriteResult {
     }
 }
 
-/// Managed `Exception.Message` of an error: a Windows error's system text
-/// alone, as `Win32Exception.Message` carries it, without the
-/// " (os error N)" Rust appends.
-pub(crate) fn message(error: &io::Error) -> String {
-    let text = error.to_string();
-    match error.raw_os_error() {
-        Some(code) => text
-            .strip_suffix(&format!(" (os error {code})"))
-            .map_or_else(|| text.clone(), str::to_owned),
-        None => text,
-    }
-}
+/// Managed `Exception.Message`, as the driver checks word it.
+pub(crate) use crate::driver_trust::error_message as message;
 
 /// How far one managed `WriteUsageToPath` got before it ended.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -174,6 +164,56 @@ pub(crate) fn written(reached: Reached) -> WriteResult {
         Reached::Consumer(validation) => validation,
         Reached::Ioctl(None) => WriteResult::applied(),
         Reached::Ioctl(Some(error)) => WriteResult::failed(Some(error)),
+    }
+}
+
+/// What a managed device search saw of the candidates it did not admit:
+/// whether the exact device was among them, with why it failed, and the
+/// last candidate that could not be inspected. Its verdicts are managed
+/// `ResolveDevicePath`'s and `ValidateVirtualConsumerDevice`'s ends, which
+/// tell a device that is absent (Unavailable) from one that is present but
+/// unproven (Failed).
+#[derive(Debug, Default)]
+pub(crate) struct Search {
+    exact: Option<Option<String>>,
+    inspection: Option<String>,
+}
+
+impl Search {
+    /// A candidate that could not be inspected.
+    pub(crate) fn inspection_failed(&mut self, failure: String) {
+        self.inspection = Some(failure);
+    }
+
+    /// The exact device, seen and not admitted, for `failure` or for none
+    /// it could name.
+    pub(crate) fn exact_seen(&mut self, failure: Option<String>) {
+        self.exact = Some(failure);
+    }
+
+    /// Managed `ResolveDevicePath`'s end: an exact control interface seen
+    /// fails with its own reason, whatever else failed; otherwise a failed
+    /// inspection fails and nothing found is Unavailable.
+    pub(crate) fn control_verdict(self) -> WriteResult {
+        match (self.exact, self.inspection) {
+            (Some(failure), _) => WriteResult::failed(Some(failure.unwrap_or_else(|| {
+                "The exact Razer control interface failed identity validation.".into()
+            }))),
+            (None, None) => WriteResult::unavailable(None),
+            (None, inspection) => WriteResult::failed(inspection),
+        }
+    }
+
+    /// Managed `ValidateVirtualConsumerDevice`'s end: an exact device seen
+    /// or a failed inspection fails, with the inspection's reason when
+    /// there is one; nothing found is Unavailable.
+    pub(crate) fn consumer_verdict(self) -> WriteResult {
+        if self.exact.is_none() && self.inspection.is_none() {
+            return WriteResult::unavailable(None);
+        }
+        WriteResult::failed(Some(self.inspection.unwrap_or_else(|| {
+            "The exact Razer virtual Consumer Control device failed identity validation.".into()
+        })))
     }
 }
 
@@ -371,10 +411,32 @@ type Published = Mutex<(u8, Option<std::time::Instant>)>;
 
 const CALL_THREAD: &str = "openblade-display-brightness-hid";
 const PROBE_THREAD: &str = "openblade-display-brightness-probe";
-/// Submissions that may wait behind the one in progress. Two, so a release
-/// owed at a cleanup boundary still fits behind a started press and a
-/// withdrawn call the thread has not yet dropped.
+/// Request submissions that may wait behind the one in progress. A release
+/// owed at a cleanup boundary has one more place, so withdrawn requests the
+/// thread has not yet dropped never refuse it (`withdrawal_lane::Lane`).
 const WAITING: usize = 2;
+
+/// How the last owed release the lane took ended, by its ticket. The lane
+/// records it even when its caller stopped waiting, so a release that
+/// answers late still settles the held state (`Held::owed`).
+type Finished = Mutex<Option<(u64, WriteStatus)>>;
+
+/// Records an owed release's end when dropped: its write's status, or
+/// Failed when it panicked or the lane dropped it unrun.
+struct Settles {
+    finished: Arc<Finished>,
+    ticket: u64,
+    status: WriteStatus,
+}
+
+impl Drop for Settles {
+    fn drop(&mut self) {
+        *self
+            .finished
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some((self.ticket, self.status));
+    }
+}
 
 /// The transport's two threads: submissions in order on one
 /// (`withdrawal_lane::Lane`), availability resolutions on the other.
@@ -385,6 +447,8 @@ pub(crate) struct Lane {
     published: Arc<Published>,
     stopped: Arc<AtomicBool>,
     log: Arc<Log>,
+    tickets: AtomicU64,
+    finished: Arc<Finished>,
 }
 
 impl Drop for Lane {
@@ -423,6 +487,8 @@ impl Lane {
             published,
             stopped,
             log,
+            tickets: AtomicU64::new(0),
+            finished: Arc::default(),
         })
     }
 
@@ -443,10 +509,54 @@ impl Lane {
         usage: Usage,
         budget: Duration,
     ) -> Called<WriteResult> {
+        self.call(claim, waiting, budget, move |hid| hid.set_usage(usage))
+            .await
+    }
+
+    /// Submits the release a cleanup boundary owes: it stays queued
+    /// (`Waiting::Stays`), and its ticket names how it ends (`owed_end`).
+    async fn submit_owed(&self, budget: Duration) -> (Called<WriteResult>, u64) {
+        let ticket = self.tickets.fetch_add(1, Ordering::AcqRel) + 1;
+        let settles = Settles {
+            finished: self.finished.clone(),
+            ticket,
+            status: WriteStatus::Failed,
+        };
         let called = self
-            .calls
-            .call_claimed(claim, waiting, budget, move |hid| hid.set_usage(usage))
+            .call(&Claim::default(), Waiting::Stays, budget, move |hid| {
+                // The whole guard, so it records however the call ends.
+                let mut settles = settles;
+                let write = hid.set_usage(Usage::Released);
+                settles.status = write.status;
+                write
+            })
             .await;
+        (called, ticket)
+    }
+
+    /// How the owed release `ticket` ended, or None while it is queued or
+    /// running. A later one that ended means it ended too, unobserved, so
+    /// it counts as not applied.
+    fn owed_end(&self, ticket: u64) -> Option<WriteStatus> {
+        let finished = *self
+            .finished
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        match finished {
+            Some((last, status)) if last == ticket => Some(status),
+            Some((last, _)) if last > ticket => Some(WriteStatus::Failed),
+            _ => None,
+        }
+    }
+
+    async fn call(
+        &self,
+        claim: &Claim,
+        waiting: Waiting,
+        budget: Duration,
+        job: impl FnOnce(&mut Box<dyn Hid>) -> WriteResult + Send + 'static,
+    ) -> Called<WriteResult> {
+        let called = self.calls.call_claimed(claim, waiting, budget, job).await;
         if let Called::Done(write) = &called
             && write.status == WriteStatus::Unavailable
             && let Some(error) = write
@@ -516,14 +626,21 @@ fn probe<H: Hid>(
     }
 }
 
-/// Managed's three runtime fields (`ServiceControlRuntime.cs:770-772`). They
-/// are in memory only, as managed's are: a restarted Service starts with a
-/// neutralization pending, so its first press releases first.
+/// Managed's three runtime fields (`ServiceControlRuntime.cs:770-772`), and
+/// native's ticket of an owed release still on the lane. They are in memory
+/// only, as managed's are: a restarted Service starts with a neutralization
+/// pending, so its first press releases first.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Held {
     pub(crate) asserted: Usage,
     pub(crate) release_required: bool,
     pub(crate) neutralization_pending: bool,
+    /// An owed release that had not answered when its boundary stopped
+    /// waiting (`release_owed`). It is the next usage the driver sees, so
+    /// `asserted` reads Released while it is queued and a press of the same
+    /// usage is sent again; `release_required` stays set until a release is
+    /// confirmed, by it (`reconcile`) or by a later one.
+    pub(crate) owed: Option<u64>,
 }
 
 impl Default for Held {
@@ -532,12 +649,31 @@ impl Default for Held {
             asserted: Usage::Released,
             release_required: false,
             neutralization_pending: true,
+            owed: None,
         }
     }
 }
 
+impl Held {
+    /// What a confirmed release leaves.
+    const RELEASED: Self = Self {
+        asserted: Usage::Released,
+        release_required: false,
+        neutralization_pending: false,
+        owed: None,
+    };
+}
+
 const APPLIED: u8 = 1;
 const BLOCKED: u8 = 2;
+
+fn called_reply(called: Called<WriteResult>) -> Outcome {
+    match called {
+        Called::Done(write) => reply(&write),
+        Called::NotStarted => Outcome::blocked(PATH_UNAVAILABLE),
+        Called::Abandoned => reply(&WriteResult::failed(Some(UNFINISHED.to_owned()))),
+    }
+}
 
 async fn submit(
     lane: Option<&Lane>,
@@ -549,29 +685,42 @@ async fn submit(
     let Some(lane) = lane else {
         return Outcome::blocked(PATH_UNAVAILABLE);
     };
-    match lane.submit_claimed(claim, waiting, usage, budget).await {
-        Called::Done(write) => reply(&write),
-        Called::NotStarted => Outcome::blocked(PATH_UNAVAILABLE),
-        Called::Abandoned => reply(&WriteResult::failed(Some(UNFINISHED.to_owned()))),
-    }
+    called_reply(lane.submit_claimed(claim, waiting, usage, budget).await)
 }
 
-/// A request's share of its deadline: what is left of it after the answer.
-fn request_budget(deadline: Instant) -> Duration {
+/// A request's share of its deadline at `now`: what is left of it after the
+/// answer.
+fn request_budget(deadline: Instant, now: Instant) -> Duration {
     deadline
-        .saturating_duration_since(Instant::now())
+        .saturating_duration_since(now)
         .saturating_sub(ANSWER_MARGIN)
         .min(CALL_BUDGET)
+}
+
+/// A cleanup boundary's share at `now`: all of it up to `until`, since its
+/// caller answers nobody.
+fn owed_budget(until: Instant, now: Instant) -> Duration {
+    until.saturating_duration_since(now).min(CALL_BUDGET)
 }
 
 /// Managed: only an Applied release clears the held state.
 fn settle_release(held: &RefCell<Held>, outcome: &Outcome) {
     if outcome.status == APPLIED {
-        *held.borrow_mut() = Held {
-            asserted: Usage::Released,
-            release_required: false,
-            neutralization_pending: false,
-        };
+        *held.borrow_mut() = Held::RELEASED;
+    }
+}
+
+/// Settles an owed release that answered after its boundary stopped
+/// waiting: Applied clears the held state, anything else leaves the release
+/// owed for the next one.
+fn reconcile(held: &RefCell<Held>, lane: Option<&Lane>) {
+    let Some(ticket) = held.borrow().owed else {
+        return;
+    };
+    match lane.map_or(Some(WriteStatus::Failed), |lane| lane.owed_end(ticket)) {
+        None => {}
+        Some(WriteStatus::Applied) => *held.borrow_mut() = Held::RELEASED,
+        Some(_) => held.borrow_mut().owed = None,
     }
 }
 
@@ -582,7 +731,7 @@ pub(crate) async fn release(
     lane: Option<&Lane>,
     deadline: Instant,
 ) -> Outcome {
-    let budget = request_budget(deadline);
+    let budget = request_budget(deadline, Instant::now());
     let outcome = submit(
         lane,
         &Claim::default(),
@@ -596,30 +745,52 @@ pub(crate) async fn release(
 }
 
 /// The release core at a cleanup boundary (Stop, a confirmed suspend, the
-/// maintenance step's neutralization): no answer is kept back, so the whole
-/// time to `until` is the release's, and it is never withdrawn. Queued
-/// behind a call still running, a press whose request is gone included, it
-/// runs after it, however long this caller waits; a release that has not
-/// answered by `until` is reported unfinished and leaves the held state
-/// owing, so the next request releases again rather than assume it.
+/// maintenance step's neutralization), when the held state `owes` one,
+/// after any owed release that answered late is settled. No answer is kept
+/// back, so the whole time to `until` is the release's, and it is never
+/// withdrawn. Queued behind a call still running, a press whose request is
+/// gone included, it runs after it, however long this caller waits. One
+/// that has not answered by `until` is reported unfinished and stays owed
+/// (`Held::owed`); while it is queued no boundary queues another. It may
+/// answer after Stop confirmed the drain, on the lane thread that outlives
+/// the drain, and then settles nothing further: its release is what the
+/// driver is left with.
 pub(crate) async fn release_owed(
     held: &RefCell<Held>,
     lane: Option<&Lane>,
     until: Instant,
-) -> Outcome {
-    let budget = until
-        .saturating_duration_since(Instant::now())
-        .min(CALL_BUDGET);
-    let outcome = submit(
-        lane,
-        &Claim::default(),
-        Waiting::Stays,
-        Usage::Released,
-        budget,
-    )
-    .await;
+    owes: impl Fn(&Held) -> bool,
+) -> Option<Outcome> {
+    reconcile(held, lane);
+    if !owes(&held.borrow()) {
+        return None;
+    }
+    if held.borrow().owed.is_some() {
+        return Some(reply(&WriteResult::failed(Some(UNFINISHED.to_owned()))));
+    }
+    let Some(lane) = lane else {
+        return Some(Outcome::blocked(PATH_UNAVAILABLE));
+    };
+    let (called, ticket) = lane.submit_owed(owed_budget(until, Instant::now())).await;
+    let abandoned = matches!(called, Called::Abandoned);
+    let outcome = called_reply(called);
     settle_release(held, &outcome);
-    outcome
+    if abandoned {
+        let mut held = held.borrow_mut();
+        held.asserted = Usage::Released;
+        held.owed = Some(ticket);
+    }
+    // It may have answered while this stopped waiting.
+    reconcile(held, Some(lane));
+    Some(outcome)
+}
+
+/// Puts back the state a press replaced when the press never started. An
+/// owed release queued meanwhile stays owed: it still runs.
+fn restore(held: &RefCell<Held>, prior: Held) {
+    let mut held = held.borrow_mut();
+    let owed = held.owed;
+    *held = Held { owed, ..prior };
 }
 
 /// Restores the held state a press replaced when the press never started:
@@ -634,7 +805,7 @@ struct Pressing<'a> {
 impl Drop for Pressing<'_> {
     fn drop(&mut self) {
         if self.claim.withdraw() {
-            *self.held.borrow_mut() = self.prior;
+            restore(self.held, self.prior);
         }
     }
 }
@@ -653,6 +824,7 @@ pub(crate) async fn set_usage<A: Fn() -> bool>(
     deadline: Instant,
     admit: impl FnOnce() -> io::Result<Option<A>>,
 ) -> io::Result<Outcome> {
+    reconcile(held, lane);
     if usage == Usage::Released {
         return Ok(release(held, lane, deadline).await);
     }
@@ -701,11 +873,11 @@ pub(crate) async fn set_usage<A: Fn() -> bool>(
         &pressing.claim,
         Waiting::Withdraws,
         usage,
-        request_budget(deadline),
+        request_budget(deadline, Instant::now()),
     )
     .await;
     if outcome.status == BLOCKED {
-        *held.borrow_mut() = pressing.prior;
+        restore(held, pressing.prior);
     }
     Ok(outcome)
 }

@@ -354,13 +354,14 @@ async fn stop_gives_a_slow_release_its_whole_share() {
         rig.request(usage(1, 0x6F)).await["result"],
         result(1, SUBMITTED)
     );
-    // The release takes 150 ms on the lane, inside Stop's 300 ms share but
-    // past what a request would keep of it.
+    // The release takes 100 ms on the lane, well inside Stop's 300 ms share
+    // but past the 50 ms a request would keep of it. The budgets themselves
+    // are pinned without the clock (`hid::tests::budgets_*`).
     let release = fake::hold(&rig.brightness);
     let finished = Arc::new(std::sync::Mutex::new(None));
     let seen = finished.clone();
     let worker = std::thread::spawn(move || {
-        std::thread::sleep(Duration::from_millis(150));
+        std::thread::sleep(Duration::from_millis(100));
         *seen.lock().unwrap() = Some(std::time::Instant::now());
         release();
     });

@@ -386,7 +386,8 @@ async fn held_usage_is_submitted_once_then_released() {
         Held {
             asserted: Usage::Released,
             release_required: false,
-            neutralization_pending: false
+            neutralization_pending: false,
+            owed: None,
         }
     );
 }
@@ -487,7 +488,8 @@ async fn a_press_that_outlives_its_budget_is_held_and_never_replayed() {
         Held {
             asserted: Usage::Increment,
             release_required: true,
-            neutralization_pending: false
+            neutralization_pending: false,
+            owed: None,
         }
     );
     script.lock().unwrap().hold = None;
@@ -572,7 +574,8 @@ async fn a_request_dropped_before_its_press_started_submits_nothing() {
         Held {
             asserted: Usage::Released,
             release_required: false,
-            neutralization_pending: false
+            neutralization_pending: false,
+            owed: None,
         }
     );
     // The same press is therefore sent, not answered as already held.
@@ -661,17 +664,6 @@ async fn managed_sequences_replay() {
     }
 }
 
-/// Releases a hold from another thread after `after` on the real clock.
-fn release_after(
-    release: impl Fn() + Send + 'static,
-    after: Duration,
-) -> std::thread::JoinHandle<()> {
-    std::thread::spawn(move || {
-        std::thread::sleep(after);
-        release();
-    })
-}
-
 #[tokio::test]
 async fn an_owed_release_queued_behind_a_running_press_runs_after_it() {
     let (lane, script) = fake::lane();
@@ -691,52 +683,172 @@ async fn an_owed_release_queued_behind_a_running_press_runs_after_it() {
     }
     assert!(held.borrow().release_required);
     // Stop's release waits its whole share behind the press; it is not
-    // withdrawn when the share ends.
-    let outcome = release_owed(&held, lane_ref, Instant::now() + Duration::from_millis(50)).await;
-    assert_eq!(
-        outcome,
-        failed(
-            "The display-brightness HID state could not be confirmed: \
-             the submission did not finish within its budget"
-        )
-    );
+    // withdrawn when the share ends, and stays owed.
+    let owed = |held: &Held| held.release_required;
+    let outcome = release_owed(
+        &held,
+        lane_ref,
+        Instant::now() + Duration::from_millis(50),
+        owed,
+    )
+    .await;
+    assert_eq!(outcome, Some(failed(UNFINISHED_REPLY)));
     assert_eq!(usages(&script), [Usage::Released, Usage::Increment]);
+    // The driver sees Released next, so a same-direction press is sent
+    // again rather than answered as still asserted.
+    assert_eq!(held.borrow().asserted, Usage::Released);
+    assert!(held.borrow().owed.is_some());
+    // A boundary while it is queued queues no other.
+    assert_eq!(
+        release_owed(&held, lane_ref, Instant::now(), owed).await,
+        Some(failed(UNFINISHED_REPLY))
+    );
     script.lock().unwrap().hold = None;
     unblock();
     // The press finishes, then the queued release runs: the usage the
-    // driver saw last is Released.
+    // driver saw last is Released, and its late Applied answer settles the
+    // held state.
     taken(&script, 3).await;
+    settled(&held, lane_ref).await;
+    assert_eq!(*held.borrow(), Held::RELEASED);
+    assert_eq!(release_owed(&held, lane_ref, later(), owed).await, None);
     assert_eq!(
         usages(&script),
         [Usage::Released, Usage::Increment, Usage::Released]
     );
-    // Its answer came after Stop stopped waiting, so the state still owes a
-    // release rather than assume it.
-    assert!(held.borrow().release_required);
 }
 
+const UNFINISHED_REPLY: &str = "The display-brightness HID state could not be confirmed: \
+                                the submission did not finish within its budget";
+
+/// Waits, without holding the runtime, until an owed release has answered
+/// and its answer is settled.
+async fn settled(held: &RefCell<Held>, lane: Option<&Lane>) {
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        reconcile(held, lane);
+        if held.borrow().owed.is_none() {
+            return;
+        }
+        assert!(std::time::Instant::now() < deadline, "the release answers");
+        tokio::time::sleep(Duration::from_millis(1)).await;
+    }
+}
+
+/// A boundary with no time left still queues the release it owes. It is
+/// owed until it answers: a same-direction press meanwhile releases first
+/// and is then sent, and one that fails leaves the release required.
 #[tokio::test]
-async fn an_owed_release_keeps_its_whole_share_without_the_answer_margin() {
+async fn an_owed_release_with_no_share_stays_owed_until_it_answers() {
+    for applies in [true, false] {
+        let (lane, script) = fake::lane();
+        let lane_ref = Some(&*lane);
+        let held = RefCell::new(Held {
+            asserted: Usage::Increment,
+            release_required: true,
+            neutralization_pending: false,
+            owed: None,
+        });
+        let unblock = fake::hold(&script);
+        if !applies {
+            push(&script, WriteResult::failed(Some("IOCTL failed".into())));
+        }
+        let outcome = release_owed(&held, lane_ref, Instant::now(), |held| {
+            held.release_required
+        })
+        .await;
+        assert_eq!(outcome, Some(failed(UNFINISHED_REPLY)), "{applies}");
+        taken(&script, 1).await;
+        unblock();
+        settled(&held, lane_ref).await;
+        let expected = if applies {
+            Held::RELEASED
+        } else {
+            Held {
+                asserted: Usage::Released,
+                release_required: true,
+                neutralization_pending: false,
+                owed: None,
+            }
+        };
+        assert_eq!(*held.borrow(), expected, "{applies}");
+        assert_eq!(
+            set_usage(&held, lane_ref, Usage::Increment, later(), verified)
+                .await
+                .unwrap(),
+            applied(SUBMITTED),
+            "{applies}"
+        );
+        let mut sent = vec![Usage::Released];
+        if !applies {
+            sent.push(Usage::Released);
+        }
+        sent.push(Usage::Increment);
+        assert_eq!(usages(&script), sent, "{applies}");
+    }
+}
+
+/// A boundary's release keeps all its share; a request's keeps back the
+/// answer margin. Both stop at the longest one call may take.
+#[test]
+fn budgets_keep_back_the_answer_margin_only_for_a_request() {
+    let now = Instant::now();
+    let ms = Duration::from_millis;
+    assert_eq!(owed_budget(now + ms(400), now), ms(400));
+    assert_eq!(request_budget(now + ms(400), now), ms(150));
+    assert_eq!(owed_budget(now, now), Duration::ZERO);
+    assert_eq!(request_budget(now + ANSWER_MARGIN, now), Duration::ZERO);
+    assert_eq!(owed_budget(now + ms(100), now + ms(200)), Duration::ZERO);
+    assert_eq!(owed_budget(now + ms(9000), now), CALL_BUDGET);
+    assert_eq!(request_budget(now + ms(9000), now), CALL_BUDGET);
+}
+
+/// A hung press and two request releases withdrawn behind it, which the
+/// lane has not yet dropped, fill the requests' places; the boundary's
+/// release still finds its own and runs after the press.
+#[tokio::test]
+async fn an_owed_release_is_queued_when_withdrawn_requests_fill_the_queue() {
     let (lane, script) = fake::lane();
-    let held = RefCell::new(Held {
-        asserted: Usage::Increment,
-        release_required: true,
-        neutralization_pending: false,
-    });
-    // The release takes 200 ms on the lane. Its 400 ms share is enough only
-    // if no answer margin (250 ms) is kept back from it.
-    let release = fake::hold(&script);
-    let unblock = release_after(release, Duration::from_millis(200));
+    let held = RefCell::default();
+    let lane_ref = Some(&*lane);
+    set_usage(&held, lane_ref, Usage::Released, later(), verified)
+        .await
+        .unwrap();
+    let unblock = fake::hold(&script);
+    tokio::select! {
+        _ = set_usage(&held, lane_ref, Usage::Increment, later(), verified) => {
+            panic!("the press is held on the lane");
+        }
+        () = taken(&script, 2) => {}
+    }
+    for _ in 0..2 {
+        let deadline = Instant::now() + ANSWER_MARGIN + Duration::from_millis(20);
+        assert_eq!(
+            release(&held, lane_ref, deadline).await,
+            Outcome::blocked(PATH_UNAVAILABLE)
+        );
+    }
+    // The requests' places are full.
+    assert_eq!(
+        release(&held, lane_ref, later()).await,
+        Outcome::blocked(PATH_UNAVAILABLE)
+    );
     let outcome = release_owed(
         &held,
-        Some(&lane),
-        Instant::now() + Duration::from_millis(400),
+        lane_ref,
+        Instant::now() + Duration::from_millis(20),
+        |held| held.release_required,
     )
     .await;
-    unblock.join().unwrap();
-    assert_eq!(outcome, applied(SUBMITTED));
-    assert_eq!(usages(&script), [Usage::Released]);
-    assert!(!held.borrow().release_required);
+    assert_eq!(outcome, Some(failed(UNFINISHED_REPLY)));
+    unblock();
+    taken(&script, 3).await;
+    settled(&held, lane_ref).await;
+    assert_eq!(
+        usages(&script),
+        [Usage::Released, Usage::Increment, Usage::Released]
+    );
+    assert_eq!(*held.borrow(), Held::RELEASED);
 }
 
 #[tokio::test]
@@ -755,6 +867,7 @@ async fn a_release_never_waits_behind_an_availability_probe() {
         asserted: Usage::Decrement,
         release_required: true,
         neutralization_pending: false,
+        owed: None,
     });
     assert_eq!(
         set_usage(&held, Some(&lane), Usage::Released, later(), verified)
@@ -928,4 +1041,61 @@ fn a_write_is_unavailable_only_before_its_ioctl() {
         );
     }
     assert_eq!(written(Reached::Ioctl(None)), WriteResult::applied());
+}
+
+/// Managed's search ends: the exact control interface's own failure wins
+/// over any inspection failure, a failed inspection fails rather than reads
+/// as absent, and only a search that saw nothing is Unavailable. The
+/// consumer search fails with the inspection's reason when it has one.
+#[test]
+fn a_search_fails_once_it_saw_the_exact_device_or_could_not_inspect() {
+    let seen = |exact: Option<Option<&str>>, inspection: Option<&str>| {
+        let mut search = Search::default();
+        if let Some(inspection) = inspection {
+            search.inspection_failed(inspection.to_owned());
+        }
+        if let Some(exact) = exact {
+            search.exact_seen(exact.map(str::to_owned));
+        }
+        search
+    };
+    let failed = |reason: &str| WriteResult::failed(Some(reason.to_owned()));
+    const CONTROL: &str = "The exact Razer control interface failed identity validation.";
+    const CONSUMER: &str =
+        "The exact Razer virtual Consumer Control device failed identity validation.";
+    assert_eq!(
+        seen(None, None).control_verdict(),
+        WriteResult::unavailable(None)
+    );
+    assert_eq!(
+        seen(None, Some("access denied")).control_verdict(),
+        failed("access denied")
+    );
+    assert_eq!(seen(Some(None), None).control_verdict(), failed(CONTROL));
+    assert_eq!(
+        seen(Some(Some("untrusted")), Some("access denied")).control_verdict(),
+        failed("untrusted")
+    );
+    assert_eq!(
+        seen(Some(None), Some("access denied")).control_verdict(),
+        failed(CONTROL)
+    );
+    assert_eq!(
+        seen(None, None).consumer_verdict(),
+        WriteResult::unavailable(None)
+    );
+    assert_eq!(seen(Some(None), None).consumer_verdict(), failed(CONSUMER));
+    assert_eq!(
+        seen(None, Some("access denied")).consumer_verdict(),
+        failed("access denied")
+    );
+    assert_eq!(
+        seen(Some(Some("ignored")), Some("access denied")).consumer_verdict(),
+        failed("access denied")
+    );
+    // The last inspection failure is the one reported.
+    let mut search = Search::default();
+    search.inspection_failed("first".into());
+    search.inspection_failed("last".into());
+    assert_eq!(search.control_verdict(), failed("last"));
 }

@@ -42,8 +42,8 @@ use windows_sys::{
 };
 
 use super::hid::{
-    Device, Log, Reached, SUBMIT_INPUT_IOCTL, Usage, WriteResult, WriteStatus, control_buffer,
-    message, written,
+    Device, Log, Reached, SUBMIT_INPUT_IOCTL, Search, Usage, WriteResult, WriteStatus,
+    control_buffer, message, written,
 };
 use crate::driver_trust::package::{self, Package};
 
@@ -357,9 +357,7 @@ fn is_exact_control_device(
 /// Managed `ResolveDevicePath(stack)` for the one stack.
 fn resolve_path(log: &Log) -> io::Result<(Option<String>, WriteResult)> {
     let set = DeviceSet::open(&CONTROL_INTERFACE, DIGCF_PRESENT | DIGCF_DEVICEINTERFACE)?;
-    let mut exact_observed = false;
-    let mut exact_failure = None;
-    let mut inspection_failure = None;
+    let mut search = Search::default();
     for index in 0..MAXIMUM_ENTRIES {
         let Some(interface) = set.interface(index)? else {
             break;
@@ -367,7 +365,7 @@ fn resolve_path(log: &Log) -> io::Result<(Option<String>, WriteResult)> {
         let (path, device) = match set.path(&interface) {
             Ok(found) => found,
             Err(error) => {
-                inspection_failure = Some(message(&error));
+                search.inspection_failed(message(&error));
                 continue;
             }
         };
@@ -381,29 +379,16 @@ fn resolve_path(log: &Log) -> io::Result<(Option<String>, WriteResult)> {
             }
             result => {
                 let failure = result.err();
-                if failure.is_some() {
-                    inspection_failure.clone_from(&failure);
+                if let Some(failure) = &failure {
+                    search.inspection_failed(failure.clone());
                 }
                 if instance_id(device.DevInst).is_ok_and(|id| starts_with_ci(&id, CONTROL_PREFIX)) {
-                    exact_observed = true;
-                    exact_failure = failure;
+                    search.exact_seen(failure);
                 }
             }
         }
     }
-    Ok(if exact_observed {
-        (
-            None,
-            WriteResult::failed(Some(exact_failure.unwrap_or_else(|| {
-                "The exact Razer control interface failed identity validation.".into()
-            }))),
-        )
-    } else {
-        match inspection_failure {
-            None => (None, WriteResult::unavailable(None)),
-            failure => (None, WriteResult::failed(failure)),
-        }
-    })
+    Ok((None, search.control_verdict()))
 }
 
 /// Managed `ValidateVirtualConsumerDevice`: Applied admits the device. An
@@ -413,8 +398,7 @@ fn validate_virtual_consumer_device(log: &Log) -> WriteResult {
         Ok(set) => set,
         Err(error) => return WriteResult::failed(Some(message(&error))),
     };
-    let mut exact_observed = false;
-    let mut inspection_failure = None;
+    let mut search = Search::default();
     for index in 0..MAXIMUM_ENTRIES {
         let device = match set.device(index) {
             Ok(Some(device)) => device,
@@ -424,18 +408,18 @@ fn validate_virtual_consumer_device(log: &Log) -> WriteResult {
         let instance = match instance_id(device.DevInst) {
             Ok(instance) => instance,
             Err(error) => {
-                inspection_failure = Some(error);
+                search.inspection_failed(error);
                 continue;
             }
         };
         if !starts_with_ci(&instance, CONSUMER_PREFIX) {
             continue;
         }
-        exact_observed = true;
+        search.exact_seen(None);
         let service = match set.service(&device) {
             Ok(service) => service,
             Err(error) => {
-                inspection_failure = Some(message(&error));
+                search.inspection_failed(message(&error));
                 continue;
             }
         };
@@ -460,16 +444,10 @@ fn validate_virtual_consumer_device(log: &Log) -> WriteResult {
                 };
             }
             Ok(_) => {}
-            Err(error) => inspection_failure = Some(error),
+            Err(error) => search.inspection_failed(error),
         }
     }
-    if exact_observed || inspection_failure.is_some() {
-        WriteResult::failed(Some(inspection_failure.unwrap_or_else(|| {
-            "The exact Razer virtual Consumer Control device failed identity validation.".into()
-        })))
-    } else {
-        WriteResult::unavailable(None)
-    }
+    search.consumer_verdict()
 }
 
 /// Managed `ValidateExactPath` for the one stack.

@@ -1003,11 +1003,15 @@ impl Runtime {
     /// Makes the next tick's step due now.
     pub(in super::super) fn driver_mode_due_for_tests(&self) {
         self.keyboard.due.set(None);
+        #[cfg(feature = "service-brightness-hid-usage-v1")]
+        self.neutralize_age_for_tests(None);
     }
     /// Moves the next step's due time `by` earlier, as if that much time had
     /// passed.
     pub(in super::super) fn driver_mode_age_for_tests(&self, by: Duration) {
         let due = self.keyboard.due.get();
         self.keyboard.due.set(due.map(|due| due - by));
+        #[cfg(feature = "service-brightness-hid-usage-v1")]
+        self.neutralize_age_for_tests(Some(by));
     }
 }
