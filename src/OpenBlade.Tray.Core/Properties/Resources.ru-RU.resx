@@ -1847,8 +1847,8 @@
   <data name="Quiet" xml:space="preserve">
     <value>Тихий</value>
   </data>
-  <data name="A change to the cooling pad could not be confirmed. Check the pad before making another change." xml:space="preserve">
-    <value>Не удалось подтвердить изменение настроек подставки. Проверьте подставку, прежде чем вносить новые изменения.</value>
+  <data name="A change to the cooling pad could not be confirmed. OpenBlade is checking the pad." xml:space="preserve">
+    <value>Не удалось подтвердить изменение настроек подставки. OpenBlade проверяет подставку.</value>
   </data>
   <data name="Choose a setting, or release control to restore the pad's own settings." xml:space="preserve">
     <value>Выберите настройку или передайте управление, чтобы вернуть собственные настройки подставки.</value>
@@ -1858,6 +1858,9 @@
   </data>
   <data name="The cooling pad did not accept the change. Check Troubleshooting for the reason." xml:space="preserve">
     <value>Подставка не приняла изменение. Причину можно узнать в разделе «Устранение неполадок».</value>
+  </data>
+  <data name="The cooling pad has not accepted the change yet. OpenBlade will try again." xml:space="preserve">
+    <value>Подставка пока не приняла изменение. OpenBlade повторит попытку.</value>
   </data>
   <data name="Check the cooling-pad settings and try again." xml:space="preserve">
     <value>Проверьте настройки подставки и повторите попытку.</value>

@@ -1957,8 +1957,8 @@ Détáíls: {1} ~~~ !!]</value>
   <data name="Quiet" xml:space="preserve">
     <value>[!! Qúíét ~~ !!]</value>
   </data>
-  <data name="A change to the cooling pad could not be confirmed. Check the pad before making another change." xml:space="preserve">
-    <value>[!! Á chángé tó thé cóólíng pád cóúld nót bé cónfírméd. Chéck thé pád béfóré mákíng ánóthér chángé. ~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  <data name="A change to the cooling pad could not be confirmed. OpenBlade is checking the pad." xml:space="preserve">
+    <value>[!! Á chángé tó thé cóólíng pád cóúld nót bé cónfírméd. OpenBlade ís chéckíng thé pád. ~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="Choose a setting, or release control to restore the pad's own settings." xml:space="preserve">
     <value>[!! Chóósé á séttíng, ór réléásé cóntról tó réstóré thé pád's ówn séttíngs. ~~~~~~~~~~~~~~~~~~~~ !!]</value>
@@ -1968,6 +1968,9 @@ Détáíls: {1} ~~~ !!]</value>
   </data>
   <data name="The cooling pad did not accept the change. Check Troubleshooting for the reason." xml:space="preserve">
     <value>[!! Thé cóólíng pád díd nót áccépt thé chángé. Chéck Tróúbléshóótíng fór thé réásón. ~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="The cooling pad has not accepted the change yet. OpenBlade will try again." xml:space="preserve">
+    <value>[!! Thé cóólíng pád hás nót áccéptéd thé chángé ýét. OpenBlade wíll trý ágáín. ~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="Check the cooling-pad settings and try again." xml:space="preserve">
     <value>[!! Chéck thé cóólíng-pád séttíngs ánd trý ágáín. ~~~~~~~~~~~~~ !!]</value>

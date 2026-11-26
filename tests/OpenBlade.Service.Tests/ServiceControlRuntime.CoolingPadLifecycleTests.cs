@@ -243,6 +243,48 @@ public sealed partial class ServiceControlRuntimeTests
         Assert.Equal(2, pad.FanWrites);
     }
 
+    [Theory]
+    // Notify me, and an upgraded Restore them whose disclosure the user has not seen yet.
+    [InlineData(ThermalControlPolicy.Strict, ThermalPolicyUpgradeDisclosureState.NotRequired)]
+    [InlineData(ThermalControlPolicy.MaintainDesiredState, ThermalPolicyUpgradeDisclosureState.UpgradeDisclosurePending)]
+    public async Task CoolingPadResumptionFollowsTheNotifyMePolicy(ThermalControlPolicy policy,
+        ThermalPolicyUpgradeDisclosureState disclosure)
+    {
+        var time = new ManualTimeProvider();
+        var gate = new LowPowerGate();
+        var pad = new LifecyclePad();
+        string machineRoot = Path.Combine(directory, $"pad-{policy}-{disclosure}");
+        var user = new SecurityIdentifier("S-1-5-21-100-200-300-1001");
+        string userRoot = Path.Combine(machineRoot, "users", user.Value);
+        var validator = ProfileSetValidator.CreateUnverifiedSafeDefaults();
+        var configurationStore = new BatteryConfigurationStore(Path.Combine(userRoot, "profiles.json"),
+            Path.Combine(userRoot, "battery-preferences.json"), Path.Combine(userRoot, "battery-configuration.commit.json"), validator);
+        BatteryConfiguration configuration = await configurationStore.LoadAsync(default);
+        await configurationStore.SaveConfigurationAsync(configuration.Profiles,
+            configuration.Preferences with { ThermalControlPolicy = policy, ThermalPolicyUpgradeDisclosure = disclosure }, default);
+        TestContext context = CreateContext(providerAvailable: true, lowPowerGate: gate, timeProvider: time,
+            userConfigurationRepository: new ThermalTestUserConfigurationRepository(machineRoot, validator),
+            coolingPadDeviceProvider: new LifecyclePadProvider(pad));
+        await context.Runtime.ObserveAsync(default);
+        await context.Runtime.ActivateUserAsync(user, () => true, default);
+        Assert.Equal(ControlOperationStatus.Applied, (await context.Runtime.SetCoolingPadSettingsAsync(
+            new CoolingPadSettings { FanMode = CoolingPadFanMode.Fixed, FixedRpm = 1500 }, user, () => true, default)).Status);
+        gate.Enter();
+        _ = await context.Runtime.PrepareForLowPowerAsync(gate.Generation, () => true, default);
+        Assert.Equal(1, pad.RestoreCalls);
+
+        // "Notify me" leaves the pad on its own settings after the handback; "Restore them"
+        // resumes them, as CoolingPadResumesSavedSettingsAfterWakeButNotAfterShutdownHandback shows.
+        gate.Exit();
+        for (int attempt = 0; attempt < 3; attempt++)
+        {
+            time.Advance(CoolingPadControlRuntime.ResumeRetryInterval);
+            await context.Runtime.MaintainCoolingPadAsync(default);
+        }
+        Assert.False(context.Runtime.GetStatus().CoolingPad.Active);
+        Assert.Equal(1, pad.FanWrites);
+    }
+
     private async Task<(TestContext Context, SecurityIdentifier User)> CreateActiveLifecyclePadContextAsync(
         LifecyclePad pad, LowPowerGate? gate = null, bool laptopAvailable = true, TimeProvider? timeProvider = null)
     {
@@ -277,14 +319,16 @@ public sealed partial class ServiceControlRuntimeTests
         internal Func<Task>? Dispose;
         internal int RestoreCalls;
         internal int FanWrites;
+        // Runs inside a fan write before its admission check, as a concurrent service task would.
+        internal Func<Task>? DuringFanWrite;
         public Task<CoolingPadDeviceSnapshot> ReadSnapshotAsync(CancellationToken token) => Task.FromResult(snapshot);
-        public Task SetFanAsync(CoolingPadFanMode mode, int? rpm, Func<bool> allowed, CancellationToken token,
+        public async Task SetFanAsync(CoolingPadFanMode mode, int? rpm, Func<bool> allowed, CancellationToken token,
             CoolingPadFanPreset? smartPreset = null)
         {
+            if (DuringFanWrite is { } during) { await during(); }
             if (!allowed()) { throw new CoolingPadOperationException("Admission closed.", false); }
             FanWrites++;
             snapshot = snapshot with { FanMode = mode, TargetRpm = rpm };
-            return Task.CompletedTask;
         }
         public Task SetLightingAsync(CoolingPadSettings settings, Func<bool> allowed, CancellationToken token) =>
             throw new InvalidOperationException("This lifecycle test must not write pad lighting.");

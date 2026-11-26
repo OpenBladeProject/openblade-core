@@ -41,6 +41,38 @@ public sealed partial class ServiceControlRuntimeTests
     }
 
     [Fact]
+    public async Task CoolingPadChangeSurvivesPeriodicPowerClassificationDuringItsWrite()
+    {
+        var pad = new LifecyclePad();
+        var (context, user) = await CreateActiveLifecyclePadContextAsync(pad);
+        // The 15 s classification holds no pad gate. Without its own epoch, a tick that
+        // overlapped a change refused it, sometimes after part of it reached the pad.
+        pad.DuringFanWrite = () => context.Runtime.RefreshPowerSourceClassificationAsync(default);
+        ControlOperationResult result = await context.Runtime.SetCoolingPadSettingsAsync(
+            new CoolingPadSettings { FanMode = CoolingPadFanMode.Fixed, FixedRpm = 2000 }, user, () => true, default);
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        Assert.Equal(2, pad.FanWrites);
+        Assert.True(context.Runtime.GetStatus().CoolingPad.Active);
+        Assert.False(context.Runtime.GetStatus().CoolingPad.WritesPaused);
+    }
+
+    [Fact]
+    public async Task CoolingPadChangeStopsWhenWindowsReportsAPowerSourceChangeDuringItsWrite()
+    {
+        var pad = new LifecyclePad();
+        var (context, user) = await CreateActiveLifecyclePadContextAsync(pad);
+        pad.DuringFanWrite = async () =>
+        {
+            pad.DuringFanWrite = null;
+            await context.Runtime.HandlePowerSourceChangedAsync(default);
+        };
+        ControlOperationResult result = await context.Runtime.SetCoolingPadSettingsAsync(
+            new CoolingPadSettings { FanMode = CoolingPadFanMode.Fixed, FixedRpm = 2000 }, user, () => true, default);
+        Assert.NotEqual(ControlOperationStatus.Applied, result.Status);
+        Assert.Equal(1, pad.FanWrites);
+    }
+
+    [Fact]
     public async Task CoolingPadUnchangedMaintenancePreservesThePublishedSnapshotInstance()
     {
         var (context, _) = await CreateActiveLifecyclePadContextAsync(new LifecyclePad());
