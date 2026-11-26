@@ -121,6 +121,39 @@ async fn stop_leaves_an_external_hyperboost_without_a_read_or_a_write() {
     assert_eq!(selectors(&rig), [SELECTOR_HYPERBOOST; 2]);
 }
 
+/// A reading since the entry that showed firmware out of HyperBoost ends the
+/// ownership for the Stop exit too (`Tracker::left_hyperboost`). A
+/// HyperBoost that appeared afterwards was entered outside OpenBlade: the
+/// Stop reads and exits nothing and succeeds. Under its cleanup admission it
+/// settles the journal, which still named the entry; without one it writes
+/// nothing at all.
+#[tokio::test]
+async fn stop_leaves_a_hyperboost_entered_after_an_observed_exit() {
+    for composed in [true, false] {
+        let rig = owned().await;
+        if composed {
+            cleanup(&rig);
+        }
+        rig.port.state.lock().unwrap().selectors = [SELECTOR_BALANCED; 2];
+        observed(&rig, 1).await;
+        rig.port.state.lock().unwrap().selectors = [SELECTOR_HYPERBOOST; 2];
+        observed(&rig, 2).await;
+        let (rows, from) = (journal(&rig).len(), sent(&rig));
+        stop(&rig).await.unwrap();
+        // Beside the keyboard owner the Stop still queries the keyboard.
+        let thermal = rig.port.state.lock().unwrap().sent[from..]
+            .iter()
+            .filter(|(class, ..)| *class != 0)
+            .count();
+        assert_eq!(thermal, 0, "{composed}");
+        assert_eq!(selectors(&rig), [SELECTOR_HYPERBOOST; 2], "{composed}");
+        let settled: &[(i64, u64)] = if composed { &[(100, 0), (100, 6)] } else { &[] };
+        assert_eq!(rows_after(&rig, rows), settled, "{composed}");
+        assert_eq!(owns(&rig), !composed, "{composed}");
+        assert!(!pending(&rig), "{composed}");
+    }
+}
+
 /// Firmware that already left HyperBoost gets no exit write at Stop. The
 /// cleanup admission admits the read, so ownership settles in the journal
 /// with a HyperBoost row Prepared and KnownNotSubmitted, as at the battery
@@ -587,6 +620,30 @@ mod beside_the_keyboard {
             assert_eq!(writes(&rig) - before, 1, "{case}");
             assert_eq!(rows_after(&rig, rows), [(BALANCED, 0), (BALANCED, 1)]);
         }
+    }
+
+    /// A HyperBoost entered after a reading showed firmware out of the
+    /// owned one is not OpenBlade's at a suspend either: the keyboard is
+    /// released, no thermal frame is sent, and only the journal is settled.
+    #[tokio::test]
+    async fn a_suspend_leaves_a_hyperboost_entered_after_an_observed_exit() {
+        let rig = owned_with_keyboard().await;
+        rig.port.state.lock().unwrap().selectors = [SELECTOR_BALANCED; 2];
+        observed(&rig, 1).await;
+        rig.port.state.lock().unwrap().selectors = [SELECTOR_HYPERBOOST; 2];
+        observed(&rig, 2).await;
+        let (rows, from) = (journal(&rig).len(), sent(&rig));
+        suspend(&rig);
+        keyboard_tick(&rig).await;
+        assert_eq!(
+            prepared(&rig),
+            (Some(Release::Restored), Some(Exit::Settled))
+        );
+        assert_eq!(rows_after(&rig, rows), [(100, 0), (100, 6)]);
+        assert!(!owns(&rig));
+        let state = rig.port.state.lock().unwrap();
+        assert!(state.sent[from..].iter().all(|(class, ..)| *class == 0));
+        assert_eq!(state.selectors, [SELECTOR_HYPERBOOST; 2]);
     }
 
     /// A HyperBoost reading native did not enter stays external at a
