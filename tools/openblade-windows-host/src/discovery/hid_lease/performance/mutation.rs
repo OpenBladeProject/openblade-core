@@ -495,6 +495,24 @@ impl<P: Port> Reader<P, ReadAdmission> {
             reader: self,
             completed: false,
         };
+        // An owned cleanup is paced once more, before its Prepared row, as
+        // the owned fan handback is before its 31 (`Pace::covers_before_rows`):
+        // a recipe that cannot finish by the cleanup's deadline, the end of
+        // the Stop drain or of the suspend preparation, ends with no row and
+        // no setter. Nothing was sent, so the Reader is not sealed.
+        if permit.cleanup()
+            && !Pace::covers_before_rows(
+                attempt.reader,
+                remaining,
+                all_setters,
+                permit.reserve(),
+                limit,
+            )
+        {
+            attempt.completed = true;
+            permit.refused(Refusal::Deadline);
+            return None;
+        }
         attempt.checkpoint(&mut authorize, admission, limit).ok()?;
         pace.prepared(attempt.reader, || permit.record(Progress::Prepared))
             .ok()?;

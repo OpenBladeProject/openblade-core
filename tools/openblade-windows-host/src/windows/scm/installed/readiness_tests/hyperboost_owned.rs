@@ -131,7 +131,7 @@ async fn entry_is_the_enable_pair_from_every_admitted_confirmed_state() {
                     );
                 }
             }
-            rig.stop().await;
+            rig.stop_in_hyperboost().await;
         }
     }
 }
@@ -252,7 +252,7 @@ async fn a_pending_or_unreadable_managed_journal_refuses_entry_and_exit() {
                     "{case}"
                 );
             }
-            rig.stop().await;
+            rig.stop_in_hyperboost().await;
         }
     }
     // A journal that becomes pending between the setters stops before the
@@ -278,7 +278,7 @@ async fn a_pending_or_unreadable_managed_journal_refuses_entry_and_exit() {
     assert_eq!(setters(&rig), enable()[..1]);
     assert_eq!(reads.load(Ordering::Acquire), 3);
     assert!(Storage::open(Box::new(rig_files), SID).unwrap().pending());
-    rig.stop().await;
+    rig.stop_in_hyperboost().await;
 }
 
 /// Managed's exit restores the saved intent; on RZ09-0581 every saved base is
@@ -581,7 +581,7 @@ async fn a_pending_gpu_confirmation_refuses_entry_and_exit_before_any_row() {
             "{enabled} resolved: {result}"
         );
         assert_eq!(setters(&rig).len(), 2, "{enabled}");
-        rig.stop().await;
+        rig.stop_in_hyperboost().await;
     }
     // Already active writes nothing, so managed replies before its thermal
     // fence (6965-7002), as native does.
@@ -714,7 +714,7 @@ async fn managed_owned_hyperboost_vectors_replay_through_the_dispatcher() {
             assert_eq!(row["hyperBoostWrites"], 0, "{name}");
             assert_eq!(row["performanceWrites"], 0, "{name}");
         }
-        rig.stop().await;
+        rig.stop_in_hyperboost().await;
     }
 }
 

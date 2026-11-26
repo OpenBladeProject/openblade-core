@@ -498,14 +498,18 @@ shares):
   `ReadCustody::authorize_cleanup`, which names the admitted device. A fan
   handback also needs the owner's own custody generation.
 
-Its authority is the release's `00/04:0000` and the owned fan handback, and
-nothing else. `Cleanup` is not a `Fresh` or a `Settle`, so no request,
-reconciliation, acquire or settle permit can hold it. Exactly two permits do:
-`DriverModePermit::release`, whose job writes Normal only after a fresh
-`00/84` read of Driver, and `FanHandbackPermit`, which journals only the
-owner's cleanup stages (31, 40-43, 50 and 51) for its exact retained record
-and refuses every request stage, preparation, resolution and no-op
-confirmation. The lane runs either job only through
+Its authority is the release's `00/04:0000`, the owned fan handback and the
+exit of owned HyperBoost, and nothing else. `Cleanup` is not a `Fresh` or a
+`Settle`, so no request, reconciliation, acquire or settle permit can hold
+it. Exactly three permits do: `DriverModePermit::release`, whose job writes
+Normal only after a fresh `00/84` read of Driver, `FanHandbackPermit`, which
+journals only the owner's cleanup stages (31, 40-43, 50 and 51) for its exact
+retained record and refuses every request stage, preparation, resolution and
+no-op confirmation, and the owned HyperBoost exit's
+(`hyperboost_cleanup.rs`), which journals only managed's Balanced restore
+after a fresh read of HyperBoost the journal says native owns
+([Owned HyperBoost](windows-native-thermal-mutation.md#owned-hyperboost-service-hyperboost-v1)).
+None resolves or applies saved intent. The lane runs each job only through
 `ReadSource::mutate_cleanup_in`, which requires the permit's admission to
 equal the custody's cleanup admission of that scope, and each journal row is
 written under that same scope (`ReadCustody::journal_replace_cleanup`).
@@ -523,7 +527,7 @@ managed order (`ServiceControlRuntime.cs:12925-12950`,
 - The managed skip reasons the native Service can observe leave the mode
   unchanged: an unsettled fan row, an unsettled journal row, and no cleanup
   admission. The journal row is read from the latest capture's store, of any
-  user (`Runtime::captured_store`): the captures are serialized and every
+  user (`Runtime::captured`): the captures are serialized and every
   store recovers the one custody journal's last row when it opens, so that
   store has seen every row. The last covers a competing
   controller, unknown Windows power, lost origin or custody trust, low power
@@ -677,6 +681,12 @@ intent is unchanged: the next active reconciliation or request applies it.
 - In low power the 15 s step reads and writes nothing, so nothing is
   reacquired until Windows reports the system active again (a resume, or a
   DisplayOn that clears the gate); the cadence then reacquires.
+- With owned HyperBoost and the lifecycle triggers, its exit follows the
+  keyboard in what is left of the window, under the same generation's
+  cleanup admission, and never before it: no HyperBoost failure, refusal or
+  timeout skips the release
+  ([Owned HyperBoost](windows-native-thermal-mutation.md#owned-hyperboost-service-hyperboost-v1)).
+  At shutdown it follows the fan handback the same way.
 - Fast Startup hibernates the system session instead of stopping services,
   so its PBT_APMSUSPEND runs this path, not the shutdown release. Windows
   logs users off first, which the cleanup admission does not depend on.

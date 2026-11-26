@@ -1293,8 +1293,16 @@ impl Runtime {
         {
             return Err(io::ErrorKind::PermissionDenied.into());
         }
-        #[cfg(feature = "service-keyboard-driver-mode-v1")]
-        self.captured_store(&captured.0);
+        #[cfg(any(
+            feature = "service-keyboard-driver-mode-v1",
+            all(
+                feature = "service-hyperboost-v1",
+                feature = "service-profile-triggers-v1"
+            )
+        ))]
+        {
+            *self.captured.borrow_mut() = Some(captured.0.clone());
+        }
         Ok(captured)
     }
 

@@ -57,9 +57,9 @@ const RECORDED: &str = "The active application profile was recorded.";
 const RENEWED: &str = "The active application profile lease was renewed.";
 const INACTIVE: &str = "No application profile is active.";
 /// A reconciliation answered at its bound while a step had not finished.
-const UNFINISHED: &str = "The reconciliation did not finish within its budget.";
+pub(super) const UNFINISHED: &str = "The reconciliation did not finish within its budget.";
 /// The same, when that step had journaled nothing that could be submitted.
-const UNFINISHED_UNSUBMITTED: &str =
+pub(super) const UNFINISHED_UNSUBMITTED: &str =
     "The reconciliation did not finish within its budget; no thermal setter was submitted.";
 /// A pair whose reconciliation was refused for a cause that may clear by
 /// itself, before any submission (`Stepped::transient`), stays owed and is
@@ -171,7 +171,7 @@ pub(super) struct DeferredStore<'a> {
 /// request `id`: a journal row of it that is not known unsubmitted, or a
 /// fence that may hide a submission. A fence that provably reached none,
 /// such as a changed override document, is not.
-fn submission_possible(storage: &Storage, id: &str) -> bool {
+pub(super) fn submission_possible(storage: &Storage, id: &str) -> bool {
     storage.submission_possible()
         || (storage.last_request().as_deref() == Some(id)
             && storage.progress() != Some(Progress::KnownNotSubmitted as u8))
@@ -317,10 +317,17 @@ enum Step {
 /// 8 and the RFC 9562 variant: deterministic for its trigger, and distinct
 /// from the version 4 ids managed clients send (`Guid.NewGuid`).
 fn step_request(request: &str, step: Step) -> String {
-    let name = match step {
-        Step::Performance => "performance",
-        Step::Fans => "fans",
-    };
+    step_id(
+        request,
+        match step {
+            Step::Performance => "performance",
+            Step::Fans => "fans",
+        },
+    )
+}
+/// `step_request` for the step named `name`, such as a lifecycle HyperBoost
+/// exit's (`hyperboost`).
+pub(super) fn step_id(request: &str, name: &str) -> String {
     let digest = Sha256::digest(format!(
         "OpenBlade.ReconcileStep.v1\n{}\n{name}",
         request.to_ascii_lowercase()
@@ -423,6 +430,30 @@ impl Reconciled {
             }
         } else {
             Debt::Settled
+        }
+    }
+    /// A reconciliation that stopped at the battery boundary's HyperBoost
+    /// exit, which did not settle: no other step runs, as managed's
+    /// transition does not go on while owned HyperBoost has not left. A
+    /// transient refusal with nothing possibly submitted may be retried; a
+    /// possible submission fences the store and is never replayed.
+    #[cfg(feature = "service-hyperboost-v1")]
+    fn exit_unsettled(exit: hyperboost::LifecycleExit, storage: &Storage) -> Self {
+        let stepped = exit.stepped;
+        Self {
+            applied: false,
+            submitted: exit.possible,
+            unchanged: false,
+            retry: stepped.transient && !exit.possible && !storage.pending(),
+            deferred: false,
+            read: Classes::of(stepped.class),
+            unfinished: exit.unfinished,
+            #[cfg(feature = "service-thermal-convergence-v1")]
+            refused_last: !exit.possible,
+            #[cfg(feature = "service-thermal-convergence-v1")]
+            outcomes: Vec::new(),
+            message: stepped.outcome.message,
+            snapshot: stepped.snapshot,
         }
     }
     /// The attempts a save's retryable reconciliation spent: the save itself,
@@ -893,6 +924,18 @@ impl Runtime {
         };
         let transition =
             thermal_drift::Transition::new(self.drift.clone(), mode, resume, Instant::now());
+        // A convergence attempt runs only the subsystems it declared, so it
+        // never runs the battery boundary's HyperBoost exit.
+        #[cfg(all(
+            feature = "service-hyperboost-v1",
+            feature = "service-thermal-convergence-v1"
+        ))]
+        let scoped = scope.is_some();
+        #[cfg(all(
+            feature = "service-hyperboost-v1",
+            not(feature = "service-thermal-convergence-v1")
+        ))]
+        let scoped = false;
         #[cfg(feature = "service-thermal-convergence-v1")]
         let transition = transition.scoped(scope);
         let transition = Arc::new(transition);
@@ -925,6 +968,39 @@ impl Runtime {
         let mut steps: Vec<(Stepped, bool)> = Vec::with_capacity(order.len());
         let mut unfinished = false;
         let mut deferred = false;
+        // Managed `ApplyFullTransitionAsync` on Battery with owned HyperBoost
+        // (`pendingOwnedHyperBoostPowerBoundaryExit`): the exit runs first,
+        // from a fresh reading, and the transition goes on only once it
+        // settled (`ExitOwnedHyperBoostForPowerSourceTransitionAsync`). The
+        // battery class is the one Windows alone establishes, so `classes`
+        // holds it exactly when fresh Windows power reports battery.
+        #[cfg(feature = "service-hyperboost-v1")]
+        let boundary = if !scoped
+            && classes.contains(BATTERY)
+            && !storage.pending()
+            && self.gate() != Gate::Low
+        {
+            self.exit_owned_hyperboost_locked(
+                mailbox,
+                hyperboost::Exit {
+                    caller,
+                    sid: &sid,
+                    request: &request,
+                    storage,
+                    deadline,
+                    bound,
+                    status: status.clone(),
+                },
+            )
+            .await?
+        } else {
+            None
+        };
+        #[cfg(feature = "service-hyperboost-v1")]
+        let boundary = match boundary {
+            Some(exit) if !exit.settled => return Ok(Reconciled::exit_unsettled(exit, storage)),
+            boundary => boundary,
+        };
         for &kind in &order {
             if storage.pending() {
                 break;
@@ -1105,8 +1181,19 @@ impl Runtime {
         if deferred {
             steps.push((Stepped::transient(Outcome::blocked(LOW_POWER_STEP)), false));
         }
-        let submitted = steps.iter().any(|(_, possible)| *possible);
+        // A settled boundary exit counts as a step that ran before the
+        // others: one that wrote needed a change and was confirmed, and one
+        // that settled read-only changed nothing (`Stepped::unchanged`).
+        #[cfg(feature = "service-hyperboost-v1")]
+        let exit: Option<(Stepped, bool)> = boundary.map(|exit| (exit.stepped, exit.possible));
+        #[cfg(not(feature = "service-hyperboost-v1"))]
+        let exit: Option<(Stepped, bool)> = None;
         let ran = !unfinished && !deferred && steps.len() == order.len();
+        // The convergence outcomes below pair order with its own steps.
+        #[cfg(feature = "service-thermal-convergence-v1")]
+        let offset = usize::from(exit.is_some());
+        let steps: Vec<(Stepped, bool)> = exit.into_iter().chain(steps).collect();
+        let submitted = steps.iter().any(|(_, possible)| *possible);
         let unchanged = ran && steps.iter().all(|(s, _)| s.unchanged);
         // A step whose class did not change needed nothing; every other step
         // must be confirmed.
@@ -1143,7 +1230,7 @@ impl Runtime {
         let outcomes = order
             .iter()
             .copied()
-            .zip(steps.iter().map(|(s, _)| s.outcome.clone()))
+            .zip(steps.iter().skip(offset).map(|(s, _)| s.outcome.clone()))
             .collect();
         Ok(Reconciled {
             applied,

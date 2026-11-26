@@ -379,6 +379,15 @@ jobs:
           # the fan writes.
           $hyperboost = @('openblade-windows-service-candidate', 'service-hyperboost-v1')
           $hyperboostAll = @('openblade-windows-service-candidate', 'service-hyperboost-v1,service-performance-shortcut-v1,service-profile-triggers-v1,service-gpu-clock-tuning-v1,service-fan-mutation-v2')
+          # Owned HyperBoost with only the lifecycle triggers, which compose its
+          # probes and carry its battery-boundary exit.
+          $hyperboostTriggers = @('openblade-windows-service-candidate', 'service-hyperboost-v1,service-profile-triggers-v1')
+          # Beside the keyboard owner, whose suspend preparation carries the
+          # owned HyperBoost exit and whose release shares the Stop drain.
+          $hyperboostKeyboard = @('openblade-windows-service-candidate', 'service-hyperboost-v1,service-keyboard-driver-mode-v1,service-profile-triggers-v1')
+          # Beside thermal convergence, whose attempts and reapply never run
+          # the owned HyperBoost exit.
+          $hyperboostConvergence = @('openblade-windows-service-candidate', 'service-hyperboost-v1,service-thermal-convergence-v1')
           # One run per filter, so a filter that matches no test fails the step.
           foreach ($run in @(
               @('openblade-windows-service-candidate', 'service-temporary-charge-v1', 'service_status::object_tests'),
@@ -535,6 +544,13 @@ jobs:
               # The compiled identity, which the owned HyperBoost marker follows.
               ($hyperboostAll + 'profiles::'),
               ($hyperboostAll + 'request_triggers'),
+              ($hyperboostTriggers + 'hyperboost'),
+              ($hyperboostTriggers + 'request_triggers'),
+              ($hyperboostKeyboard + 'hyperboost'),
+              ($hyperboostKeyboard + 'driver_mode'),
+              ($hyperboostConvergence + 'hyperboost'),
+              ($hyperboostConvergence + 'convergence'),
+              ($hyperboostConvergence + 'reapply'),
               @('openblade-windows-service-candidate', 'service-mailbox-observation-v1', 'capability_tests'),
               @('openblade-windows-service-candidate', 'service-mailbox-observation-v1', 'readiness::tests::observation'),
               @('openblade-windows-service-candidate', 'service-mailbox-observation-v1', 'driver_mode_absent'),
@@ -610,6 +626,9 @@ jobs:
               @('openblade-windows-service-candidate', 'service-gpu-clock-tuning-v1,service-thermal-hyperboost-exit-v1'),
               @('openblade-windows-service-candidate', 'service-hyperboost-v1'),
               @('openblade-windows-service-candidate', 'service-hyperboost-v1,service-performance-shortcut-v1,service-profile-triggers-v1,service-gpu-clock-tuning-v1,service-fan-mutation-v2'),
+              @('openblade-windows-service-candidate', 'service-hyperboost-v1,service-profile-triggers-v1'),
+              @('openblade-windows-service-candidate', 'service-hyperboost-v1,service-keyboard-driver-mode-v1,service-profile-triggers-v1'),
+              @('openblade-windows-service-candidate', 'service-hyperboost-v1,service-thermal-convergence-v1'),
               @('openblade-windows-agent-candidate', 'agent-display-brightness-write-v1'),
               @('openblade-windows-agent-candidate', 'agent-display-profile-apply-v1'),
               @('openblade-windows-agent-candidate', 'agent-battery-report-v1'),

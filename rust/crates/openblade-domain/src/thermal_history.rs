@@ -780,6 +780,41 @@ pub fn validate_prepared_retirement(expected: &[u8], bytes: &[u8], owner: &str) 
     }
     Ok(())
 }
+/// Whether the rows leave HyperBoost owned by native (`service-hyperboost-v1`
+/// lifecycle exits): a performance row (no TFC, battery or fan member) that
+/// settled Confirmed (5) for `thermal_mutation::HYPERBOOST`, with no later
+/// performance row settled Confirmed for another destination (a confirmed
+/// exit) and no later HyperBoost row settled KnownNotSubmitted (6). The
+/// latter is an entry retired unsubmitted, which runs only when firmware was
+/// not in HyperBoost, or the read-only settlement of an exit that found
+/// firmware already out of HyperBoost. Unsettled rows, retired exits and
+/// other row families leave ownership as it was; an unsettled tail fences
+/// every write until a read-only reconciliation. The rows are validated as
+/// `rows` validates them.
+#[cfg(feature = "hyperboost")]
+pub fn hyperboost_owned(bytes: &[u8]) -> io::Result<bool> {
+    hyperboost_owner(bytes).map(|owner| owner.is_some())
+}
+/// The Confirmed HyperBoost row that leaves it owned (`hyperboost_owned`).
+/// It names the user and session that entered, for whom an exit the Service
+/// makes on its own, at Stop or at a suspend, journals its rows.
+#[cfg(feature = "hyperboost")]
+pub fn hyperboost_owner(bytes: &[u8]) -> io::Result<Option<Entry>> {
+    use crate::thermal_mutation::{HYPERBOOST, Progress};
+    let mut owner = None;
+    rows(bytes, |e, _| {
+        if e.tfc.is_none() && e.battery.is_none() && e.fan.is_none() {
+            if e.progress == Progress::Confirmed as u8 {
+                owner = (e.destination == HYPERBOOST).then(|| e.clone());
+            } else if e.progress == Progress::KnownNotSubmitted as u8 && e.destination == HYPERBOOST
+            {
+                owner = None;
+            }
+        }
+        Ok(())
+    })?;
+    Ok(owner)
+}
 pub fn handback_complete(bytes: &[u8]) -> io::Result<bool> {
     let (_, _, owners) = rows_with_owners(bytes, |_, _| Ok(()))?;
     Ok(owners.fan.is_none())
@@ -1395,5 +1430,73 @@ mod tests {
             assert!(inspect(&b, &active(Some(empty)).unwrap(), |_, _| Ok(())).is_err());
             assert_eq!(*b.files.borrow(), before);
         }
+    }
+    /// Native ownership of HyperBoost is the history's: a settled HyperBoost
+    /// entry with no later confirmed exit or HyperBoost retirement.
+    #[cfg(feature = "hyperboost")]
+    #[test]
+    fn hyperboost_ownership_follows_settled_performance_rows() {
+        use crate::thermal_mutation::{HYPERBOOST, Preset};
+        let balanced = crate::thermal_mutation::Destination::Preset(Preset::Balanced).wire();
+        let battery = crate::thermal_mutation::Destination::Preset(Preset::BatterySaver).wire();
+        let mut next = 0u32;
+        let mut request = |destination: i32, progress: &[u8]| {
+            next += 1;
+            let mut bytes = Vec::new();
+            for &progress in progress {
+                let entry = Entry {
+                    tfc: None,
+                    battery: None,
+                    fan: None,
+                    request: format!("00000000-0000-4000-8000-{next:012}"),
+                    owner: "a".repeat(64),
+                    user_sid: "S-1-5-21-1-2-3-1001".into(),
+                    caller_pid: 7,
+                    session: 1,
+                    requested: None,
+                    destination,
+                    intent: digest(b"null"),
+                    progress,
+                };
+                bytes.extend(serde_json::to_vec(&entry).unwrap());
+                bytes.push(b'\n');
+            }
+            bytes
+        };
+        let entered = request(HYPERBOOST, &[0, 1, 2, 3, 4, 5]);
+        let owned = |parts: &[&[u8]]| hyperboost_owned(&parts.concat()).unwrap();
+        assert!(!owned(&[]));
+        assert!(owned(&[&entered]));
+        // A confirmed exit, direct or through the restore chain, ends it.
+        assert!(!owned(&[&entered, &request(balanced, &[0, 1, 2, 3, 4, 5])]));
+        assert!(!owned(&[
+            &entered,
+            &request(battery, &[0, 80, 81, 82, 83, 1, 2, 3, 4, 5])
+        ]));
+        // So does the read-only settlement of an exit firmware already made.
+        assert!(!owned(&[&entered, &request(HYPERBOOST, &[0, 6])]));
+        // A retired exit and an unsettled one leave it owned.
+        assert!(owned(&[&entered, &request(balanced, &[0, 6])]));
+        assert!(owned(&[&entered, &request(balanced, &[0, 1, 2])]));
+        // An entry that did not settle, or settled unsubmitted, owns nothing.
+        assert!(!owned(&[&request(HYPERBOOST, &[0, 1, 2])]));
+        assert!(!owned(&[&request(HYPERBOOST, &[0, 6])]));
+        // An entry after an exit owns again, and that entry is the owner.
+        let again = [
+            entered.clone(),
+            request(balanced, &[0, 1, 2, 3, 4, 5]),
+            request(HYPERBOOST, &[0, 1, 2, 3, 4, 5]),
+        ]
+        .concat();
+        assert!(hyperboost_owned(&again).unwrap());
+        let first = hyperboost_owner(&entered).unwrap().unwrap();
+        let second = hyperboost_owner(&again).unwrap().unwrap();
+        assert_eq!((second.destination, second.progress), (HYPERBOOST, 5));
+        assert_ne!(second.request, first.request);
+        assert!(hyperboost_owner(&[]).unwrap().is_none());
+        // Rows that do not validate are refused, never read as unowned.
+        let mut broken = entered.clone();
+        broken.pop();
+        assert!(hyperboost_owned(&broken).is_err());
     }
 }

@@ -10,6 +10,9 @@ use openblade_domain::power_setting::{PBT_POWERSETTINGCHANGE, PowerSetting};
 #[cfg(feature = "service-thermal-convergence-v1")]
 #[path = "thermal_convergence_loop.rs"]
 mod convergence_loop;
+#[cfg(feature = "service-hyperboost-v1")]
+#[path = "hyperboost_lifecycle.rs"]
+mod hyperboost_lifecycle;
 #[path = "power_only_release.rs"]
 mod power_only_release;
 #[path = "request_triggers_startup.rs"]
