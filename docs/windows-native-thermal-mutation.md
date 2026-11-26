@@ -719,10 +719,14 @@ Native differs from managed here in these ways:
   decides: HyperBoost keeps the journal's ownership, and anything else ends
   it. Native cannot tell a HyperBoost entered outside OpenBlade while the
   Service was down from the one it entered. Where the earlier process had
-  seen HyperBoost off and could not settle the journal before it stopped (no
-  admitted write: an unsettled row, an outstanding owned fan change, or no
-  cleanup admission at Stop), a HyperBoost active at the restart's first
-  reading reads as owned and is exited at the next boundary.
+  seen HyperBoost off and could not settle the journal before it stopped, a
+  HyperBoost active at the restart's first reading reads as owned and is
+  exited at the next boundary. The journal stays unsettled only where no
+  write was admitted: an unsettled row, an owned fan change the Stop's
+  handback could not close, no cleanup admission (a competing controller,
+  unknown Windows power, a lease that never activated), a journal segment
+  with no room, or an entry another user made. The adapter's power class is
+  not among them: the settlement sends no setter and needs none.
 - The battery boundary (managed `ApplyFullTransitionAsync` setting
   `pendingOwnedHyperBoostPowerBoundaryExit` on Battery, then
   `ExitOwnedHyperBoostForPowerSourceTransitionAsync`) runs in
@@ -793,16 +797,27 @@ Native differs from managed here in these ways:
     the journal over, which only the ordinary admission may do.
   - The rows are journaled for the session that entered, which the owning
     entry row names, through the store of the latest capture. A process that
-    captured no store, or whose latest capture is another user's, exits
-    nothing. Like the other cleanups, a process whose mailbox lease never
-    activated refuses it.
+    captured no store reads no ownership: it exits nothing and its Stop
+    succeeds. An entry another user than the latest capture's made is
+    refused, since that store cannot write its rows, and so is the exit of a
+    process whose mailbox lease never activated, as for the other cleanups.
   - Firmware already out of HyperBoost is settled read-only, as at the
-    battery boundary, but the reading stays an external change: managed only
-    retires its journal there, and no transition follows.
+    battery boundary, on the exit's own reading and before any power check:
+    the settlement sends no setter, so an adapter 07/8C cannot classify, or
+    a battery reading under Windows AC, does not refuse it. The explicit
+    exit still refuses the latter before it reads the mode
+    (`battery_reading_contradicts_windows`). The reading stays an external
+    change: managed only retires its journal there, and no transition
+    follows.
   - A setter that may have been submitted leaves its row unsettled, which
     fences every write. Nothing is replayed, by this exit, a later suspend or
-    the next process. A Stop that did not leave owned HyperBoost fails, as an
-    unconfirmed fan handback does, and the ownership stays in the journal.
+    the next process.
+  - A Stop fails, as an unconfirmed fan handback does, when the HyperBoost
+    it owns was still on at its reading, or could not be read, and it did
+    not exit it: a refusal, an exit the drain had no time for, or an
+    unsettled submission. The ownership stays in the journal. A Stop that
+    finds firmware out, an ended ownership or nothing owned succeeds,
+    whether or not the journal could record that end.
   - The suspend exit is composed with the keyboard owner
     (`service-keyboard-driver-mode-v1`), which carries the suspend
     preparation. Without it only Stop and the battery boundary exit.
