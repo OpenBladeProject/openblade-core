@@ -1370,6 +1370,16 @@ impl ReadSource {
             metadata: Rc::default(),
         }
     }
+    /// Joins a lighting request's fresh reading to the retained thermal read,
+    /// so each later projection of that read (`decorate`) carries the lighting
+    /// members until the next thermal read replaces it. That read does not
+    /// read lighting (slice L2), so it confirms no lighting.
+    #[cfg(feature = "service-lighting-v1")]
+    pub(super) fn record_lighting(&self, brightness: Option<u8>, logo: Option<i32>) {
+        if let Some((thermal, _)) = self.last.borrow_mut().as_mut() {
+            *thermal = thermal.clone().with_lighting_reading(brightness, logo);
+        }
+    }
     pub(super) fn decorate(
         &self,
         publisher: &watch::Sender<Arc<Publication>>,

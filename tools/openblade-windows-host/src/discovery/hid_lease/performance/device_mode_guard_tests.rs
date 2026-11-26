@@ -29,6 +29,10 @@ const CONSTRUCTIONS: &[(&str, usize)] = &[
     ("rust/crates/openblade-protocol/src/fan.rs", 1),
     // The 0D/88 fan speed query alone.
     ("rust/crates/openblade-protocol/src/fan_rpm.rs", 1),
+    // The reviewed 03/83, 03/80 and 03/82 queries and, behind
+    // `lighting-setters`, the 03/03, 03/00 and 03/02 setters, through one
+    // fixed-length builder.
+    ("rust/crates/openblade-protocol/src/lighting.rs", 1),
     // The 00/87 MCU version query alone.
     ("rust/crates/openblade-protocol/src/mcu_version.rs", 1),
     // The definition of `encode_report`.

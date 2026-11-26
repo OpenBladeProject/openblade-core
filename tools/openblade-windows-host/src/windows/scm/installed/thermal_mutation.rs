@@ -138,6 +138,11 @@ mod hyperboost_journal;
 #[cfg(feature = "service-keyboard-driver-mode-v1")]
 #[path = "driver_mode_owner.rs"]
 mod keyboard;
+#[cfg(feature = "service-lighting-v1")]
+#[path = "lighting_mutation.rs"]
+mod lighting;
+#[cfg(feature = "service-lighting-v1")]
+pub(super) use lighting::{LightingRequest, logo_wire};
 #[cfg(feature = "service-keyboard-driver-mode-v1")]
 #[path = "low_power_cleanup.rs"]
 mod low_power;
@@ -463,6 +468,10 @@ pub(super) struct Runtime {
     // Managed's automatic Fan Stop eligibility (`fan_stop::Automation`).
     #[cfg(feature = "service-fan-stop-v1")]
     fan_stop: Rc<RefCell<fan_stop::Automation>>,
+    // A lighting setter may have been submitted unconfirmed: the next
+    // lighting request resolves it read-only (`lighting`).
+    #[cfg(feature = "service-lighting-v1")]
+    lighting_doubt: Rc<std::cell::Cell<bool>>,
     fan_owner: Rc<RefCell<Option<Arc<fan::FanPermit>>>>,
     temporary_owner: Rc<RefCell<Option<Arc<battery::BatteryPermit>>>>,
     temporary_pending: Rc<RefCell<Option<Arc<battery::BatteryPermit>>>>,
@@ -739,6 +748,8 @@ impl Runtime {
             gpu: Rc::default(),
             #[cfg(feature = "service-fan-stop-v1")]
             fan_stop: Rc::default(),
+            #[cfg(feature = "service-lighting-v1")]
+            lighting_doubt: Rc::default(),
             application: Rc::default(),
             #[cfg(feature = "service-profile-triggers-v1")]
             debts: Rc::default(),
@@ -982,6 +993,8 @@ impl Runtime {
             gpu,
             #[cfg(feature = "service-fan-stop-v1")]
             fan_stop: Rc::default(),
+            #[cfg(feature = "service-lighting-v1")]
+            lighting_doubt: Rc::default(),
             application: Rc::default(),
             #[cfg(feature = "service-profile-triggers-v1")]
             debts: Rc::default(),
@@ -1191,6 +1204,9 @@ impl Runtime {
             let projected = projected.with_thermal_convergence(convergence);
             #[cfg(feature = "service-fan-stop-v1")]
             let projected = runtime.project_fan_stop(projected, &store, &policy_sid, session)?;
+            #[cfg(feature = "service-lighting-v1")]
+            let projected =
+                projected.lighting_intent(store.current_lighting_override(query)?.as_ref());
             Ok(projected)
         })
     }

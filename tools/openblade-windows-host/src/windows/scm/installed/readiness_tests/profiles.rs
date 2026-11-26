@@ -718,9 +718,12 @@ fn this_composition_declares_profile_serving_in_its_compiled_identity() {
     // And the HyperBoost exit to a battery preset.
     #[cfg(feature = "service-thermal-hyperboost-exit-v1")]
     let expected = format!("{expected},service-thermal-hyperboost-exit-v1");
-    // Owned HyperBoost, which implies the exit, last.
+    // Owned HyperBoost, which implies the exit.
     #[cfg(feature = "service-hyperboost-v1")]
     let expected = format!("{expected},service-hyperboost-v1");
+    // Keyboard lighting, last.
+    #[cfg(feature = "service-lighting-v1")]
+    let expected = format!("{expected},service-lighting-v1");
     assert_eq!(fields[8], expected);
 }
 

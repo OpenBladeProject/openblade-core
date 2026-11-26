@@ -115,6 +115,12 @@ service-thermal-hyperboost-exit-v1 = ["service-thermal-mutation-v1", "openblade-
 service-hyperboost-v1 = ["service-thermal-hyperboost-exit-v1", "openblade-domain/hyperboost", "openblade-domain/thermal-convergence"]
 # Thermal overrides are checked with the managed ProfileSetValidator thermal
 # rules before anything is stored, so this lane needs the domain profile set.
+# Keyboard lighting on exact RZ09-0581 (`setLightingOverride`), slice L1:
+# brightness and logo through the reviewed 03/83, 03/03, 03/80, 03/82,
+# 03/00 and 03/02 commands under managed's semantic admission, Off only.
+# No capture evidence covers a native write, so no packaged composition
+# implies it, and both package readers refuse it by name.
+service-lighting-v1 = ["service-thermal-mutation-v1", "openblade-protocol/lighting-setters"]
 service-thermal-mutation-v1 = ["service-mailbox-observation-v1", "controller-admission-compile-check", "openblade-domain/profile-set"]
 service-mailbox-observation-v1 = ["service-hardware-compile-check"]
 # Read-only RZ09-0581 keyboard Driver mode: the reviewed 00/84 query on the

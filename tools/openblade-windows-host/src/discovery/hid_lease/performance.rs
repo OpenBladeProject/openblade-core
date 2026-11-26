@@ -31,6 +31,16 @@ pub(crate) use device_mode::DeviceModeRead;
 pub(crate) use device_mode::{DeviceModeJob, DeviceModeStep};
 #[cfg(feature = "service-thermal-mutation-v1")]
 mod battery;
+#[cfg(feature = "service-lighting-v1")]
+mod lighting;
+#[cfg(feature = "service-lighting-v1")]
+mod lighting_admission;
+#[cfg(feature = "service-lighting-v1")]
+#[allow(unused_imports)] // Shared with the standalone discovery binary.
+pub(crate) use lighting::{LightingJob, LightingOutcome, LightingReading, LightingTarget};
+#[cfg(feature = "service-lighting-v1")]
+#[allow(unused_imports)] // Shared with the standalone discovery binary.
+pub(crate) use lighting_admission::approved as lighting_approved;
 #[cfg(any(test, feature = "service-live-readings-v1"))]
 mod fan_rpm;
 #[cfg(any(test, feature = "service-live-readings-v1"))]

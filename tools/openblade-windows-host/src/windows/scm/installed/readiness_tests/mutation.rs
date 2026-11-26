@@ -10,6 +10,9 @@ mod driver_mode_record_model;
 #[cfg(feature = "service-gpu-clock-tuning-v1")]
 #[path = "gpu_clock_tuning.rs"]
 mod gpu_clock_tuning;
+#[cfg(feature = "service-lighting-v1")]
+#[path = "lighting_override.rs"]
+mod lighting_override;
 #[cfg(feature = "service-performance-shortcut-v1")]
 #[path = "performance_shortcut.rs"]
 mod performance_shortcut;
@@ -1560,6 +1563,23 @@ impl Rig {
     }
     async fn request_as(&self, request: Value, caller: Caller, sid: &str) -> Value {
         let operation = request["operation"].as_str().unwrap().to_owned();
+        self.request_payload(
+            &operation,
+            serde_json::to_vec(&request).unwrap(),
+            caller,
+            sid,
+        )
+        .await
+    }
+    /// A request sent as `payload` exactly, member order included, which a
+    /// `Value` sorts.
+    async fn request_payload(
+        &self,
+        operation: &str,
+        payload: Vec<u8>,
+        caller: Caller,
+        sid: &str,
+    ) -> Value {
         let (client, server) = duplex(65536);
         let source = self.source.clone();
         let publications = source.lock().await.publications();
@@ -1574,12 +1594,9 @@ impl Rig {
         );
         let client = async move {
             let mut client = client;
-            crate::service_frame::write_payload(
-                &mut client,
-                &serde_json::to_vec(&request).unwrap(),
-            )
-            .await
-            .unwrap();
+            crate::service_frame::write_payload(&mut client, &payload)
+                .await
+                .unwrap();
             crate::service_frame::read_payload(&mut client).await
         };
         // Boxed: the debug build keeps every nested future on the stack, and
@@ -1597,7 +1614,7 @@ impl Rig {
         // Preserve the actual encoder bytes. Re-serializing Value sorts object
         // keys and can move the managed polymorphic discriminator out of first place.
         assert!(bytes.starts_with(br#"{"frame":"response","#));
-        emit_fixture_frame("peer_response", &operation, "response", &bytes);
+        emit_fixture_frame("peer_response", operation, "response", &bytes);
         println!(
             "NATIVE_THERMAL_EDGE_TRACE {} {}",
             operation,

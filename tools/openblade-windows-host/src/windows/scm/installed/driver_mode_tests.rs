@@ -381,8 +381,10 @@ fn the_compiled_identity_ends_with_the_refused_marker() {
     let fields: Vec<&str> = identity.split('\n').collect();
     assert_eq!(fields[2], "service");
     // An ownership build, then a live-reading build, then an owned
-    // HyperBoost build append their own refused markers after it.
+    // HyperBoost build, then a lighting build append their own refused
+    // markers after it.
     let marked = [
+        ",service-lighting-v1",
         ",service-hyperboost-v1",
         ",service-thermal-hyperboost-exit-v1",
         ",service-live-readings-v1",

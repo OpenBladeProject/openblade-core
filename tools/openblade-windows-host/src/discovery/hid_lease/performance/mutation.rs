@@ -78,6 +78,12 @@ pub(crate) trait Permit: Send + Sync {
     fn budget(&self) -> Option<std::time::Duration> {
         None
     }
+    /// The keyboard lighting job this permit carries, if it is one
+    /// (`Reader::apply_lighting`). Its result travels through the job.
+    #[cfg(feature = "service-lighting-v1")]
+    fn lighting(&self) -> Option<&super::LightingJob> {
+        None
+    }
     fn is_fan(&self) -> bool {
         false
     }
@@ -405,6 +411,12 @@ impl<P: Port> Reader<P, ReadAdmission> {
         #[cfg(feature = "service-keyboard-driver-mode-v1")]
         if let Some(job) = permit.device_mode() {
             self.apply_device_mode(permit, job, limit).await;
+            return None;
+        }
+        // A lighting job runs its own recipe and reads no thermal state.
+        #[cfg(feature = "service-lighting-v1")]
+        if let Some(job) = permit.lighting() {
+            self.apply_lighting(permit, job, limit).await;
             return None;
         }
         if let Some(enabled) = permit.temporary_target() {

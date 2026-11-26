@@ -664,7 +664,8 @@ fn publish_preview(
     feature = "service-profile-triggers-v1",
     feature = "service-fan-stop-v1",
     feature = "service-performance-shortcut-v1",
-    feature = "service-hyperboost-v1"
+    feature = "service-hyperboost-v1",
+    feature = "service-lighting-v1"
 ))]
 fn publish_next(
     publisher: &watch::Sender<Arc<Publication>>,
@@ -1118,6 +1119,39 @@ impl StatusSource for GuardedStatus {
                     let latest = publisher.borrow().active.clone();
                     let status = publish_reconciled(&publisher, &mailbox, latest)?;
                     Ok((outcome, Some(status)))
+                }
+                // Managed `SetLightingOverrideAsync`, slice L1
+                // (`Runtime::set_lighting`). Its status projects the stored
+                // override and the lighting members this request read.
+                #[cfg(feature = "service-lighting-v1")]
+                crate::service_status::StatusRequest::SetLightingOverride { value, .. } => {
+                    let status = publisher.borrow().active.clone();
+                    let lit = runtime
+                        .set_lighting(
+                            mailbox.clone(),
+                            super::thermal_mutation::LightingRequest {
+                                caller,
+                                sid,
+                                value: value.value().cloned(),
+                                deadline,
+                                status,
+                            },
+                        )
+                        .await?;
+                    if !lit.publish {
+                        return Ok((lit.outcome, None));
+                    }
+                    let mut status = publisher.borrow().active.clone();
+                    if let super::mailbox_read::MailboxSource::Reader(reader) = &mailbox {
+                        status = reader.current_policy(status)?;
+                        if let Some(reading) = lit.reading {
+                            let logo = reading.logo.map(super::thermal_mutation::logo_wire);
+                            reader.record_lighting(reading.brightness, logo);
+                            status = status.with_lighting_reading(reading.brightness, logo);
+                        }
+                    }
+                    let status = publish_next(&publisher, status)?;
+                    Ok((lit.outcome, Some(status)))
                 }
                 crate::service_status::StatusRequest::SetPerformanceOverride {
                     request_id,

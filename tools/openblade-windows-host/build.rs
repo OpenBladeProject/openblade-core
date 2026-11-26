@@ -235,6 +235,12 @@ fn main() {
         } else {
             capabilities
         };
+        // Nor keyboard lighting, under the same rule.
+        let capabilities = if role == "service" && has("service-lighting-v1") {
+            format!("{capabilities},service-lighting-v1")
+        } else {
+            capabilities
+        };
         let record = format!(
             "OpenBlade.NativeArtifact.v2\n{id}\n{role}\n{target}\n{source}\n{}\n{}\n{profile}\n{capabilities}\n",
             features.join(","),

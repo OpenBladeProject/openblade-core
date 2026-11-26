@@ -830,6 +830,14 @@ fn capabilities(schema: u8, role: &str, features: &str, value: &str) -> io::Resu
     if has(HYPERBOOST) || value.split(',').any(|capability| capability == HYPERBOOST) {
         return Err(deny());
     }
+    // Keyboard lighting writes the 03/03, 03/00 and 03/02 setters, which no
+    // admitted composition sends, and its attended RZ09-0581 validation is
+    // outstanding. Admitting it is a separate packaging decision. Refuse the
+    // feature and its marker by name (docs/windows-native-lighting.md).
+    const LIGHTING: &str = "service-lighting-v1";
+    if has(LIGHTING) || value.split(',').any(|capability| capability == LIGHTING) {
+        return Err(deny());
+    }
     // The application-context reporter is not admitted for packaging either:
     // refuse its feature and its capability marker by name, whatever else the
     // record claims, until a packaging stage admits both.
@@ -1010,7 +1018,8 @@ fn require_submission(epoch: &Epoch, origin: &[u8], submission: &[u8]) -> io::Re
     any(
         feature = "service-keyboard-driver-mode-read-v1",
         feature = "service-live-readings-v1",
-        feature = "service-diagnostics-export-v1"
+        feature = "service-diagnostics-export-v1",
+        feature = "service-lighting-v1"
     )
 ))]
 pub(crate) fn startup_policy_for_tests(identity: &[u8]) -> io::Result<&'static str> {
