@@ -110,11 +110,16 @@ mod battery;
 pub(super) use battery::BatteryUpdate;
 #[cfg(feature = "service-thermal-convergence-v1")]
 pub(super) use triggers::convergence_loop::OBSERVE_BUDGET as CONVERGENCE_OBSERVE_BUDGET;
+#[cfg(feature = "service-brightness-hid-usage-v1")]
+#[path = "display_brightness_mutation.rs"]
+mod brightness;
 #[path = "fan_mutation.rs"]
 mod fan;
 #[cfg(feature = "service-fan-stop-v1")]
 #[path = "fan_stop_mutation.rs"]
 mod fan_stop;
+#[cfg(feature = "service-brightness-hid-usage-v1")]
+pub(super) use brightness::{availability as brightness_availability, hid as brightness_hid};
 #[cfg(feature = "service-performance-shortcut-v1")]
 #[path = "performance_shortcut.rs"]
 mod shortcut;
@@ -463,6 +468,9 @@ pub(super) struct Runtime {
     // Managed's automatic Fan Stop eligibility (`fan_stop::Automation`).
     #[cfg(feature = "service-fan-stop-v1")]
     fan_stop: Rc<RefCell<fan_stop::Automation>>,
+    // Display-brightness HID input and its held usage (`brightness`).
+    #[cfg(feature = "service-brightness-hid-usage-v1")]
+    brightness: Rc<brightness::Brightness>,
     fan_owner: Rc<RefCell<Option<Arc<fan::FanPermit>>>>,
     temporary_owner: Rc<RefCell<Option<Arc<battery::BatteryPermit>>>>,
     temporary_pending: Rc<RefCell<Option<Arc<battery::BatteryPermit>>>>,
@@ -692,6 +700,7 @@ pub(super) fn convergence_power(
     })
 }
 #[derive(Clone, serde::Serialize)]
+#[cfg_attr(test, derive(Debug, PartialEq, Eq))]
 pub(super) struct Outcome {
     pub(super) status: u8,
     pub(super) message: String,
@@ -739,6 +748,8 @@ impl Runtime {
             gpu: Rc::default(),
             #[cfg(feature = "service-fan-stop-v1")]
             fan_stop: Rc::default(),
+            #[cfg(feature = "service-brightness-hid-usage-v1")]
+            brightness: Rc::default(),
             application: Rc::default(),
             #[cfg(feature = "service-profile-triggers-v1")]
             debts: Rc::default(),
@@ -982,6 +993,8 @@ impl Runtime {
             gpu,
             #[cfg(feature = "service-fan-stop-v1")]
             fan_stop: Rc::default(),
+            #[cfg(feature = "service-brightness-hid-usage-v1")]
+            brightness: Rc::new(brightness::Brightness::production()),
             application: Rc::default(),
             #[cfg(feature = "service-profile-triggers-v1")]
             debts: Rc::default(),

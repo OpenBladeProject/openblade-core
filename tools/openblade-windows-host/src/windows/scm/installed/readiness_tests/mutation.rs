@@ -1330,6 +1330,8 @@ impl HyperBoostProbes {
     }
 }
 struct Rig {
+    #[cfg(feature = "service-brightness-hid-usage-v1")]
+    brightness: crate::installed::readiness::thermal_mutation::brightness_hid::fake::Shared,
     #[cfg(feature = "service-hyperboost-v1")]
     hyperboost: HyperBoostProbes,
     #[cfg(feature = "service-fan-mutation-v2")]
@@ -1522,6 +1524,14 @@ impl Rig {
         let observed_hyperboost = hyperboost.status_probes();
         #[cfg(not(feature = "service-hyperboost-v1"))]
         let observed_hyperboost = ();
+        // A scripted display-brightness lane: no Windows call is reached.
+        #[cfg(feature = "service-brightness-hid-usage-v1")]
+        let brightness = {
+            let (lane, script) =
+                crate::installed::readiness::thermal_mutation::brightness_hid::fake::lane();
+            runtime.compose_brightness(lane);
+            script
+        };
         let source = injected_mutation_source(
             Arc::new(Origin(origin.clone(), custody.clone())),
             mailbox,
@@ -1536,6 +1546,8 @@ impl Rig {
         Self {
             #[cfg(feature = "service-hyperboost-v1")]
             hyperboost,
+            #[cfg(feature = "service-brightness-hid-usage-v1")]
+            brightness,
             #[cfg(feature = "service-fan-mutation-v2")]
             runtime,
             #[cfg(feature = "service-fan-mutation-v2")]
@@ -10324,6 +10336,9 @@ mod request_triggers;
 #[path = "thermal_policy.rs"]
 mod thermal_policy;
 
+#[cfg(feature = "service-brightness-hid-usage-v1")]
+#[path = "display_brightness.rs"]
+mod display_brightness;
 #[cfg(feature = "service-fan-stop-v1")]
 #[path = "fan_stop.rs"]
 mod fan_stop;

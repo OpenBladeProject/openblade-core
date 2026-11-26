@@ -1264,6 +1264,65 @@ source-reviewed and has not been run on a laptop. See
 [owned HyperBoost](windows-native-thermal-mutation.md#owned-hyperboost-service-hyperboost-v1)
 for the gates, the journal decision and the differences from managed.
 
+#### Display-brightness input
+
+A Service built with `service-brightness-hid-usage-v1` serves
+`setDisplayBrightnessHidUsage` on exact RZ09-0581 (`1532:02E0`), and publishes
+`displayBrightnessHidAvailability`. It follows managed's
+`SetDisplayBrightnessHidUsageAsync` (`ServiceControlRuntime.cs:3409-3510`) under
+the thermal operation gate. Repeating a held usage answers "remains asserted"
+without a write. The opposite direction is released before it is pressed. The
+first press after a start releases first, because a restarted Service cannot
+know what an earlier one left. Only an Applied release clears the held usage.
+A press that may have reached the driver stays held and is never resent. That
+covers a Failed reply, a submission that outlives its budget, and a request
+dropped after its IOCTL started. Managed persists nothing for this input, and
+neither does native. The feature implies `service-thermal-mutation-v1` and adds
+the capability marker `service-brightness-hid-usage-v1` last.
+
+Each press needs the caller to control the active interactive session. It also
+needs a fresh Write capture at managed's device check, which re-checks exact
+device, session, power and competing-controller admission. That capture is
+asked again just before the IOCTL. A release needs no device admission, as in
+managed. A fatal capture is retained and fails the Service closed. Before every
+write the transport re-resolves the exact stack:
+
+- the RzCommon control interface on `RAZER\DeviceContol`, and the
+  `RzDev_02e0` virtual consumer collection
+  `RZVIRTUAL\VID_1532&PID_02E0&MI_00&COL03` under the exact `1532:02E0`
+  ancestor;
+- each endpoint's installed driver package (`driver_trust::package::capture`,
+  managed `WindowsRazerDriverApiDiscovery.Capture`);
+- WinVerifyTrust of the package catalog and its members under the Microsoft
+  Windows Hardware Compatibility Publisher.
+
+No driver build or hash is allowlisted, so a compatible update that keeps the
+binding and the trust is admitted. The usage then reaches RzCommon as one
+type-10 Consumer Control IOCTL (`0x88883020`). Its completion is the only
+confirmation the driver gives, and there is no readback.
+
+Every Windows call runs on the input's own thread, so a stalled IOCTL never
+holds the Service runtime. A press waits behind at most the call in progress
+and one probe, and is refused at once beyond that. Stop releases a held usage
+within 300 ms of the drain's budget before the keyboard release. Its outcome
+is diagnostic only.
+
+Native differs from managed in these ways, each failing safe:
+
+- Only the RZ09-0581 stack is resolved. RZ09-0528 publishes Unavailable.
+- There is no maintenance-tick neutralization and no low-power release. A usage
+  held across a suspend is released by the next request or by Stop.
+- SYSTEM is refused as "The active interactive Windows user is required."
+- The published availability is the input thread's last resolution, refreshed
+  at most every 10 s, not a resolution per status.
+
+Both package readers refuse the feature and the marker by name ("Native
+display-brightness input is not admitted for packaging."), so no packaged image
+carries it. `tests/data/display-brightness-hid-vectors.json` holds managed's
+replies and transport usages. `ServiceControlRuntimeTests.NativeDisplayBrightnessHidVectors`
+records them, and the Rust state machine replays them. The feature is
+source-reviewed and has not been run on a laptop.
+
 ### Phase 10n ownership binding
 
 The installed candidate's conditional firmware factory now requires a private

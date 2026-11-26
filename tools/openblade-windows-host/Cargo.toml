@@ -113,6 +113,13 @@ service-thermal-hyperboost-exit-v1 = ["service-thermal-mutation-v1", "openblade-
 # capture evidence covers a native entry, so no packaged
 # composition implies it, and both package readers refuse it by name.
 service-hyperboost-v1 = ["service-thermal-hyperboost-exit-v1", "openblade-domain/hyperboost", "openblade-domain/thermal-convergence"]
+# Display-brightness HID input on exact RZ09-0581 (`setDisplayBrightnessHidUsage`):
+# managed's held-usage state machine under the thermal operation gate, each
+# press admitted by a fresh Write capture, and RzCommon's type-10 input IOCTL
+# on the exact control interface after its stack, ancestry and installed
+# package trust are verified again. The IOCTL has no readback, so no packaged
+# composition implies it, and both package readers refuse it by name.
+service-brightness-hid-usage-v1 = ["service-thermal-mutation-v1", "driver-api-trust"]
 # The installed-driver package binding and WinVerifyTrust catalog checks
 # (`driver_trust`), shared by the driver-API backends that load or open an
 # installed driver's files. It reads only.

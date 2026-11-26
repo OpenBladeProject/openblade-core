@@ -595,6 +595,7 @@ async fn serve_connection(
                 | StatusRequest::SetPerformanceShortcutPreview { .. }
                 | StatusRequest::SetHyperBoost { .. }
                 | StatusRequest::RecoverHyperBoostRestore { .. }
+                | StatusRequest::SetDisplayBrightnessHidUsage { .. }
                 | StatusRequest::ReportApplicationContext { .. }
                 | StatusRequest::UpdateProfiles { .. }
                 | StatusRequest::SetThermalControlPolicy { .. }
@@ -912,6 +913,13 @@ fn mutation_budget(request: &StatusRequest) -> Duration {
             | StatusRequest::ResumeAutomaticFanStop { .. }
             | StatusRequest::SetBatterySaverFanStop { .. }
     ) {
+        return RECIPE_BUDGET;
+    }
+    // A display-brightness usage writes no thermal state, but it waits for
+    // the same gate, and its lane bounds each submission within this budget
+    // (`display_brightness_hid::submit`).
+    #[cfg(feature = "service-brightness-hid-usage-v1")]
+    if matches!(request, StatusRequest::SetDisplayBrightnessHidUsage { .. }) {
         return RECIPE_BUDGET;
     }
     // And the HyperBoost recovery request, which reads managed's journal

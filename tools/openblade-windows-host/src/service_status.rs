@@ -185,6 +185,14 @@ pub(crate) enum StatusRequest {
         version: i32,
         request_id: String,
     },
+    /// Managed `SetDisplayBrightnessHidUsageRequest`: a
+    /// `DisplayBrightnessHidUsage` wire value (Released 0, Increment 0x6F,
+    /// Decrement 0x70).
+    SetDisplayBrightnessHidUsage {
+        version: i32,
+        request_id: String,
+        usage: u16,
+    },
     ObserveState {
         include_live_readings: bool,
         #[serde(default = "all_live_readings")]
@@ -329,7 +337,7 @@ impl StatusRequest {
     /// The discriminator of every variant. `operation` maps each variant to
     /// its entry, so a new variant cannot be added without listing it here.
     #[cfg(feature = "installed-service-candidate")]
-    pub(crate) const OPERATIONS: [&'static str; 22] = [
+    pub(crate) const OPERATIONS: [&'static str; 23] = [
         "setBatteryPolicy",
         "setBatteryProtection",
         "setFullChargeOverride",
@@ -352,6 +360,7 @@ impl StatusRequest {
         "setPerformanceShortcutPreview",
         "setHyperBoost",
         "recoverHyperBoostRestore",
+        "setDisplayBrightnessHidUsage",
     ];
 
     #[cfg(all(test, feature = "installed-service-candidate"))]
@@ -379,6 +388,7 @@ impl StatusRequest {
             Self::SetPerformanceShortcutPreview { .. } => 19,
             Self::SetHyperBoost { .. } => 20,
             Self::RecoverHyperBoostRestore { .. } => 21,
+            Self::SetDisplayBrightnessHidUsage { .. } => 22,
         }]
     }
 
@@ -398,7 +408,8 @@ impl StatusRequest {
         const FAN_STOP: bool = cfg!(feature = "service-fan-stop-v1");
         const SHORTCUT: bool = cfg!(feature = "service-performance-shortcut-v1");
         const HYPERBOOST: bool = cfg!(feature = "service-hyperboost-v1");
-        const COMPILED: [bool; 22] = [
+        const BRIGHTNESS: bool = cfg!(feature = "service-brightness-hid-usage-v1");
+        const COMPILED: [bool; 23] = [
             BATTERY,
             BATTERY,
             BATTERY,
@@ -421,6 +432,7 @@ impl StatusRequest {
             SHORTCUT,
             HYPERBOOST,
             HYPERBOOST,
+            BRIGHTNESS,
         ];
         Self::OPERATIONS
             .iter()
@@ -600,6 +612,11 @@ impl StatusRequest {
                 version,
                 request_id,
                 ..
+            }
+            | Self::SetDisplayBrightnessHidUsage {
+                version,
+                request_id,
+                ..
             } => (*version, request_id),
             Self::ExportDiagnostics {
                 version,
@@ -730,6 +747,17 @@ impl StatusRequest {
         ) && !cfg!(feature = "service-hyperboost-v1")
         {
             return Err(invalid("signed HyperBoost composition is unavailable"));
+        }
+        // Managed `IpcMessageCodec`: `Enum.IsDefined(set.Usage)`.
+        if let Self::SetDisplayBrightnessHidUsage { usage, .. } = self {
+            if !cfg!(feature = "service-brightness-hid-usage-v1") {
+                return Err(invalid(
+                    "signed display-brightness input composition is unavailable",
+                ));
+            }
+            if !matches!(*usage, 0x0000 | 0x006F | 0x0070) {
+                return Err(invalid("display-brightness HID usage is undefined"));
+            }
         }
         // Managed `IpcMessageCodec`: `Enum.IsDefined(cycle.Source)`, and for a
         // preview a non-empty session, a positive generation and a defined or
@@ -1352,6 +1380,18 @@ impl Snapshot {
         ] {
             self.feature_fields.insert(member.into(), value);
         }
+        self
+    }
+    /// Managed `displayBrightnessHidAvailability`: its
+    /// `DisplayBrightnessHidAvailability` wire value (Unknown 0, Available 1,
+    /// Unavailable 2). Without the request the member is absent and decodes
+    /// as Unknown.
+    #[cfg(feature = "service-brightness-hid-usage-v1")]
+    pub(crate) fn with_display_brightness_hid(mut self, availability: u8) -> Self {
+        self.feature_fields.insert(
+            "displayBrightnessHidAvailability".into(),
+            Value::from(availability),
+        );
         self
     }
     /// Managed's Fan Stop status once the host is identified as the model
