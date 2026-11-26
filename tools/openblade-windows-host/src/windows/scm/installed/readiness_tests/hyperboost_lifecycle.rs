@@ -417,3 +417,101 @@ async fn the_battery_boundary_names_the_outstanding_fan_change_not_hyperboost() 
     }
     assert_eq!(replies[0], replies[1]);
 }
+
+/// The low-power gate skips the boundary exit: an unplug while suspended
+/// reads and writes nothing, ownership stays, and the tick after the resume
+/// exits to the saved battery intent.
+#[tokio::test]
+async fn the_low_power_gate_defers_the_boundary_exit_to_the_resume() {
+    let rig = owned().await;
+    let (before, rows) = (sent(&rig), journal(&rig).len());
+    suspend(&rig);
+    unplug(&rig);
+    for _ in 0..2 {
+        tick(&rig).await;
+    }
+    assert_eq!(sent(&rig), before);
+    assert_eq!(journal(&rig).len(), rows);
+    assert!(owns(&rig));
+    resume(&rig);
+    tick(&rig).await;
+    assert!(hyperboost_off(&rig.get().await));
+    assert_eq!(
+        performance(&rig.get().await),
+        &saved_battery_performance(&rig)
+    );
+    assert!(!owns(&rig) && !pending(&rig));
+    rig.stop().await;
+}
+
+/// A report and a save on battery are unscoped reconciliations too, so each
+/// exits owned HyperBoost before its transition, without the tick.
+#[tokio::test]
+async fn a_report_and_a_save_on_battery_exit_owned_hyperboost() {
+    for save in [false, true] {
+        let rig = owned().await;
+        // Windows reports battery; no tick runs before the trigger.
+        rig.port.state.lock().unwrap().actual = 0;
+        rig.metadata.store(1, Ordering::Release);
+        let before = writes(&rig);
+        let reply = if save {
+            let mut profiles = rig.files.document("profiles.json")["profiles"].clone();
+            profiles["battery"]["performance"] = json!(4);
+            rig.request(update(3, &profiles)).await
+        } else {
+            report(&rig, 2, Some(r"C:\Tools\Other.exe")).await
+        };
+        assert_eq!(reply["result"]["status"], 1, "{save}: {reply}");
+        assert!(writes(&rig) > before, "{save}");
+        let status = rig.get().await;
+        assert!(hyperboost_off(&status), "{save}: {status}");
+        assert_eq!(
+            performance(&status),
+            &saved_battery_performance(&rig),
+            "{save}"
+        );
+        assert!(!owns(&rig) && !pending(&rig), "{save}");
+        rig.stop().await;
+    }
+}
+
+/// An exit dropped at the reconciliation's bound is not finished and is
+/// reported so. A host stall before its first setter, past the real-time
+/// bound, leaves that setter's journaled intent unsettled: the reply is
+/// Failed, the store is fenced, and neither the next tick nor a Stop
+/// replays the exit. Real time.
+#[tokio::test]
+async fn an_exit_dropped_at_its_bound_fences_the_store_without_replay() {
+    keep_real_clock();
+    let rig = owned().await;
+    rig.port.state.lock().unwrap().actual = 0;
+    rig.metadata.store(1, Ordering::Release);
+    let first = writes(&rig) + 1;
+    let bound = crate::service_frame::RECONCILE_BUDGET + crate::service_frame::RECONCILE_MARGIN;
+    rig.port.state.lock().unwrap().before_write = Some(Arc::new(move |number| {
+        if number == first {
+            std::thread::sleep(bound + std::time::Duration::from_secs(3));
+        }
+    }));
+    let reply = report(&rig, 2, Some(r"C:\Tools\Other.exe")).await;
+    assert_eq!(reply["result"]["status"], 3, "{reply}");
+    assert!(
+        reply["result"]["message"]
+            .as_str()
+            .unwrap()
+            .contains(UNFINISHED),
+        "{reply}"
+    );
+    rig.reader.drain_active().await.unwrap();
+    rig.port.state.lock().unwrap().before_write = None;
+    assert!(pending(&rig));
+    let after = writes(&rig);
+    assert_eq!(after, first);
+    unlock(&rig);
+    age(&rig, pace());
+    tick(&rig).await;
+    assert_eq!(writes(&rig), after);
+    rig.origin.stop();
+    assert!(rig.source.lock().await.drain().await.is_err());
+    assert_eq!(writes(&rig), after);
+}
