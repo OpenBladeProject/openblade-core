@@ -44,18 +44,7 @@
 #![cfg_attr(not(test), allow(dead_code))]
 
 use openblade_domain::profile_set::model::GpuClockOffsets;
-use std::{
-    ops::RangeInclusive,
-    panic::{self, AssertUnwindSafe},
-    sync::{
-        Arc,
-        atomic::{AtomicBool, AtomicU8, Ordering},
-        mpsc::{Receiver, SyncSender, TrySendError, sync_channel},
-    },
-    thread,
-    time::Duration,
-};
-use tokio::sync::oneshot;
+use std::{ops::RangeInclusive, time::Duration};
 
 #[cfg(windows)]
 // Only `service-gpu-clock-tuning-v1` composes the writer (`production`).
@@ -888,68 +877,20 @@ impl<N: Nvml> Management<N> {
     }
 }
 
-/// How a [`Worker`] call ended.
-#[derive(Debug, PartialEq, Eq)]
-pub(super) enum Called<R> {
-    Done(R),
-    /// The call never started: the worker was busy with another and one more
-    /// was queued, it had stopped, or the budget ran out first. Nothing was
-    /// submitted.
-    NotStarted,
-    /// The call started and returned no result: the budget ran out, so it
-    /// finishes on the worker, which records what the driver did, or it
-    /// panicked, and the worker recovered its state. A write is
-    /// indeterminate to its caller.
-    Abandoned,
-}
+pub(super) use super::withdrawal_lane::Called;
+use super::withdrawal_lane::{Lane, Recover};
 
-const QUEUED: u8 = 0;
-const STARTED: u8 = 1;
-const WITHDRAWN: u8 = 2;
-
-/// A caller's hold on its queued call. The worker starts the call only by
-/// moving it from queued to started; the caller withdraws it when it stops
-/// waiting, and on drop, so a cancelled call never starts later with nobody
-/// observing it.
-struct Claim(Arc<AtomicU8>);
-
-impl Claim {
-    /// Whether the call was withdrawn before it started.
-    fn withdraw(&self) -> bool {
-        self.0
-            .compare_exchange(QUEUED, WITHDRAWN, Ordering::AcqRel, Ordering::Acquire)
-            .is_ok()
-    }
-
-    fn started(&self) -> bool {
-        self.0.load(Ordering::Acquire) == STARTED
+impl<N: Nvml> Recover for Management<N> {
+    fn recover_from_panic(&mut self) {
+        Management::recover_from_panic(self);
     }
 }
 
-impl Drop for Claim {
-    fn drop(&mut self) {
-        self.withdraw();
-    }
-}
-
-/// One call, run on the worker with its management.
-type Run<N> = Box<dyn FnOnce(&mut Management<N>) + Send>;
-type Job<N> = (Arc<AtomicU8>, Run<N>);
-
-/// The thread that owns one [`Management`]. At most one call runs and one
-/// waits; a further call is refused at once. Dropping the worker stops it
-/// after the call in progress, without waiting: nothing is written at Stop.
-pub(super) struct Worker<N: 'static> {
-    jobs: SyncSender<Job<N>>,
-    stopped: Arc<AtomicBool>,
-}
-
-impl<N: 'static> Drop for Worker<N> {
-    fn drop(&mut self) {
-        // A queued call must not start once its owner has gone.
-        self.stopped.store(true, Ordering::Release);
-    }
-}
+/// The thread that owns one [`Management`] (`withdrawal_lane::Lane`). At
+/// most one call runs and one waits; a further call is refused at once.
+/// Dropping the worker stops it after the call in progress, without
+/// waiting: nothing is written at Stop.
+pub(super) struct Worker<N: 'static>(Lane<Management<N>>);
 
 impl<N: Nvml + 'static> Worker<N> {
     /// Starts the thread and builds the management on it, so the NVML
@@ -957,13 +898,7 @@ impl<N: Nvml + 'static> Worker<N> {
     pub(super) fn spawn(
         build: impl FnOnce() -> Management<N> + Send + 'static,
     ) -> std::io::Result<Self> {
-        let (jobs, queue) = sync_channel::<Job<N>>(1);
-        let stopped = Arc::new(AtomicBool::new(false));
-        let running = stopped.clone();
-        thread::Builder::new()
-            .name("openblade-gpu-clock-offsets".into())
-            .spawn(move || run(build(), queue, &running))?;
-        Ok(Self { jobs, stopped })
+        Lane::spawn("openblade-gpu-clock-offsets", 1, build).map(Self)
     }
 
     /// Runs `job` on the worker within `budget`. Dropping the future before
@@ -974,30 +909,7 @@ impl<N: Nvml + 'static> Worker<N> {
         budget: Duration,
         job: impl FnOnce(&mut Management<N>) -> R + Send + 'static,
     ) -> Called<R> {
-        let claim = Claim(Arc::new(AtomicU8::new(QUEUED)));
-        let (reply, mut result) = oneshot::channel();
-        let job: Run<N> = Box::new(move |management| {
-            let _ = reply.send(job(management));
-        });
-        match self.jobs.try_send((claim.0.clone(), job)) {
-            Ok(()) => {}
-            Err(TrySendError::Full(_) | TrySendError::Disconnected(_)) => {
-                return Called::NotStarted;
-            }
-        }
-        match tokio::time::timeout(budget, &mut result).await {
-            Ok(Ok(value)) => Called::Done(value),
-            // A started call that sent nothing panicked; one never started
-            // was dropped unrun by a stopped worker.
-            Ok(Err(_)) if claim.started() => Called::Abandoned,
-            Ok(Err(_)) => Called::NotStarted,
-            Err(_) if claim.withdraw() => Called::NotStarted,
-            // It started; it may have just finished.
-            Err(_) => match result.try_recv() {
-                Ok(value) => Called::Done(value),
-                Err(_) => Called::Abandoned,
-            },
-        }
+        self.0.call(budget, job).await
     }
 
     /// [`call`](Self::call) for a caller off the async runtime, or one that
@@ -1010,29 +922,7 @@ impl<N: Nvml + 'static> Worker<N> {
         budget: Duration,
         job: impl FnOnce(&mut Management<N>) -> R + Send + 'static,
     ) -> Called<R> {
-        let claim = Claim(Arc::new(AtomicU8::new(QUEUED)));
-        let (reply, result) = sync_channel(1);
-        let job: Run<N> = Box::new(move |management| {
-            let _ = reply.send(job(management));
-        });
-        match self.jobs.try_send((claim.0.clone(), job)) {
-            Ok(()) => {}
-            Err(TrySendError::Full(_) | TrySendError::Disconnected(_)) => {
-                return Called::NotStarted;
-            }
-        }
-        use std::sync::mpsc::RecvTimeoutError;
-        match result.recv_timeout(budget) {
-            Ok(value) => Called::Done(value),
-            // As in `call`: a started call that sent nothing panicked.
-            Err(RecvTimeoutError::Disconnected) if claim.started() => Called::Abandoned,
-            Err(RecvTimeoutError::Disconnected) => Called::NotStarted,
-            Err(RecvTimeoutError::Timeout) if claim.withdraw() => Called::NotStarted,
-            Err(RecvTimeoutError::Timeout) => match result.try_recv() {
-                Ok(value) => Called::Done(value),
-                Err(_) => Called::Abandoned,
-            },
-        }
+        self.0.call_blocking(budget, job)
     }
 }
 
@@ -1047,29 +937,6 @@ pub(super) fn production() -> std::io::Result<Worker<Box<dyn Nvml>>> {
             RZ09_0581,
         )
     })
-}
-
-fn run<N: Nvml>(mut management: Management<N>, queue: Receiver<Job<N>>, stopped: &AtomicBool) {
-    // The queue disconnects when the worker is dropped; a call still queued
-    // then is dropped unrun.
-    while let Ok((claim, job)) = queue.recv() {
-        if stopped.load(Ordering::Acquire) {
-            break;
-        }
-        if claim
-            .compare_exchange(QUEUED, STARTED, Ordering::AcqRel, Ordering::Acquire)
-            .is_err()
-        {
-            continue;
-        }
-        // A panicking call must not end the worker: its in-memory record of
-        // an uncertain submission is the only one. The management is
-        // recovered before the next call, so a broken invariant is not
-        // observed.
-        if panic::catch_unwind(AssertUnwindSafe(|| job(&mut management))).is_err() {
-            management.recover_from_panic();
-        }
-    }
 }
 
 #[cfg(test)]

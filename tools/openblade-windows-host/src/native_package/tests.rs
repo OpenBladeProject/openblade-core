@@ -946,6 +946,33 @@ fn an_owned_hyperboost_service_is_not_admitted_by_feature_or_marker() {
 }
 
 #[test]
+fn a_display_brightness_input_service_is_not_admitted_by_feature_or_marker() {
+    // The features and marker build.rs gives the admitted temporary-charge
+    // composition built with service-brightness-hid-usage-v1. Its IOCTLs have
+    // no readback and no capture evidence, so the reader refuses the image by
+    // name, and refuses the marker alone.
+    const MARKER: &str = "service-brightness-hid-usage-v1";
+    let features = "controller-admission-compile-check,firmware-performance-compile-check,hid-identity-compile-check,installed-service-candidate,lifecycle-evidence-compile-check,service-battery-policy-v1,service-fan-mutation-v2,service-hardware-compile-check,service-mailbox-observation-v1,service-temporary-charge-v1,service-thermal-mutation-v1,startup-custody-v1";
+    let admitted = "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1,service-fan-mutation-v2,service-battery-policy-v1,service-temporary-charge-v1";
+    assert!(capabilities(2, "service", features, admitted).is_ok());
+    let mut built: Vec<&str> = features
+        .split(',')
+        .chain(["driver-api-trust", MARKER])
+        .collect();
+    built.sort_unstable();
+    let built = built.join(",");
+    let marked = format!("{admitted},{MARKER}");
+    for claimed in [marked.as_str(), admitted, "none"] {
+        for role in ["service", "agent"] {
+            assert!(capabilities(2, role, &built, claimed).is_err());
+            assert!(capabilities(1, role, &built, claimed).is_err());
+        }
+    }
+    // A forged marker without the feature is no better.
+    assert!(capabilities(2, "service", features, &marked).is_err());
+}
+
+#[test]
 fn a_profile_trigger_service_is_not_admitted_by_feature_or_marker() {
     // The features and the capability build.rs gives a build with
     // service-profile-triggers-v1. Packaging has not admitted automatic

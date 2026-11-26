@@ -235,6 +235,12 @@ fn main() {
         } else {
             capabilities
         };
+        // Nor display-brightness input, which submits RzCommon input IOCTLs.
+        let capabilities = if role == "service" && has("service-brightness-hid-usage-v1") {
+            format!("{capabilities},service-brightness-hid-usage-v1")
+        } else {
+            capabilities
+        };
         let record = format!(
             "OpenBlade.NativeArtifact.v2\n{id}\n{role}\n{target}\n{source}\n{}\n{}\n{profile}\n{capabilities}\n",
             features.join(","),

@@ -388,6 +388,16 @@ jobs:
           # Beside thermal convergence, whose attempts and reapply never run
           # the owned HyperBoost exit.
           $hyperboostConvergence = @('openblade-windows-service-candidate', 'service-hyperboost-v1,service-thermal-convergence-v1')
+          # Display-brightness input on RZ09-0581 over a scripted lane, alone and
+          # beside the profile store, whose identity chain carries its marker.
+          # The lanes without it pin managed's unsupported reply.
+          $brightness = @('openblade-windows-service-candidate', 'service-brightness-hid-usage-v1')
+          $brightnessProfiles = @('openblade-windows-service-candidate', 'service-brightness-hid-usage-v1,service-profiles-v1')
+          # Beside the keyboard owner, whose suspend preparation and maintenance
+          # step release a held usage, and with the export, which records a
+          # failed release and the lane's warnings.
+          $brightnessKeyboard = @('openblade-windows-service-candidate', 'service-brightness-hid-usage-v1,service-keyboard-driver-mode-v1')
+          $brightnessExport = @('openblade-windows-service-candidate', 'service-brightness-hid-usage-v1,service-diagnostics-export-v1,service-keyboard-driver-mode-v1')
           # One run per filter, so a filter that matches no test fails the step.
           foreach ($run in @(
               @('openblade-windows-service-candidate', 'service-temporary-charge-v1', 'service_status::object_tests'),
@@ -519,6 +529,7 @@ jobs:
               ($gpuTuning + 'gpu_clock_tuning'),
               ($gpuTuning + 'thermal_gpu'),
               ($gpuTuning + 'gpu_clock_offsets'),
+              ($gpuTuning + 'withdrawal_lane'),
               ($gpuTuning + 'native_package'),
               ($gpuTuning + 'request_triggers'),
               ($gpuConvergence + 'convergence_loop'),
@@ -551,6 +562,17 @@ jobs:
               ($hyperboostConvergence + 'hyperboost'),
               ($hyperboostConvergence + 'convergence'),
               ($hyperboostConvergence + 'reapply'),
+              ($brightness + 'brightness'),
+              ($brightness + 'withdrawal_lane'),
+              ($brightness + 'driver_trust'),
+              ($brightness + 'native_package'),
+              ($brightness + 'unserved'),
+              ($brightnessProfiles + 'brightness'),
+              ($brightnessProfiles + 'profiles::'),
+              ($brightnessKeyboard + 'brightness'),
+              ($brightnessKeyboard + 'driver_mode'),
+              ($brightnessExport + 'brightness'),
+              ($brightnessExport + 'diagnostic_export'),
               @('openblade-windows-service-candidate', 'service-mailbox-observation-v1', 'capability_tests'),
               @('openblade-windows-service-candidate', 'service-mailbox-observation-v1', 'readiness::tests::observation'),
               @('openblade-windows-service-candidate', 'service-mailbox-observation-v1', 'driver_mode_absent'),
@@ -629,6 +651,10 @@ jobs:
               @('openblade-windows-service-candidate', 'service-hyperboost-v1,service-profile-triggers-v1'),
               @('openblade-windows-service-candidate', 'service-hyperboost-v1,service-keyboard-driver-mode-v1,service-profile-triggers-v1'),
               @('openblade-windows-service-candidate', 'service-hyperboost-v1,service-thermal-convergence-v1'),
+              @('openblade-windows-service-candidate', 'service-brightness-hid-usage-v1'),
+              @('openblade-windows-service-candidate', 'service-brightness-hid-usage-v1,service-profiles-v1'),
+              @('openblade-windows-service-candidate', 'service-brightness-hid-usage-v1,service-keyboard-driver-mode-v1'),
+              @('openblade-windows-service-candidate', 'service-brightness-hid-usage-v1,service-diagnostics-export-v1,service-keyboard-driver-mode-v1'),
               @('openblade-windows-agent-candidate', 'agent-display-brightness-write-v1'),
               @('openblade-windows-agent-candidate', 'agent-display-profile-apply-v1'),
               @('openblade-windows-agent-candidate', 'agent-battery-report-v1'),

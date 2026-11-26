@@ -721,6 +721,9 @@ fn this_composition_declares_profile_serving_in_its_compiled_identity() {
     // Owned HyperBoost, which implies the exit, last.
     #[cfg(feature = "service-hyperboost-v1")]
     let expected = format!("{expected},service-hyperboost-v1");
+    // Display-brightness input after it.
+    #[cfg(feature = "service-brightness-hid-usage-v1")]
+    let expected = format!("{expected},service-brightness-hid-usage-v1");
     assert_eq!(fields[8], expected);
 }
 

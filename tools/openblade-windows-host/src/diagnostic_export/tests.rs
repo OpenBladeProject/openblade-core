@@ -616,3 +616,68 @@ fn redaction_replaces_the_longer_of_two_nested_tokens() {
         "on [REDACTED] now"
     );
 }
+
+/// Managed `AddLog`: each logical line of the redacted message, a carriage
+/// return read as a break and empty lines skipped, under managed's prefix
+/// (`GetUtcNow():O`, pid, run, version, level and category), cut so each
+/// line fits the line bound with its prefix. A cut keeps whole characters,
+/// where a managed UTF-16 substring could split a surrogate pair.
+#[test]
+fn a_log_line_carries_managed_prefix_redaction_and_line_cuts() {
+    let prefix =
+        "2026-11-26T10:00:00.1234567+00:00 pid=42 run=0123abcd version=1.2.3 Warning Cat: ";
+    let history = History::new(
+        Limits {
+            line: prefix.len() + 5,
+            ..Limits::DEFAULT
+        },
+        vec!["CONTOSO".to_owned()],
+        Box::new(|| at("2026-11-26T10:00:00.1234567+00:00")),
+    )
+    .with_process(42, "0123abcd", "1.2.3");
+    history.record_summary("Stored", "kept");
+    history.record_log("Warning", "Cat", "abc\r\n\nabcd\u{1F600}e\rCONTOSO");
+    let snapshot = history.snapshot().unwrap();
+    let lines: Vec<String> = ["abc", "abcd", "\u{1F600}e", "[REDA", "CTED]"]
+        .iter()
+        .map(|content| format!("{prefix}{content}"))
+        .collect();
+    assert_eq!(snapshot.log_lines, lines);
+    assert_eq!(snapshot.results.len(), 1);
+    assert_eq!(snapshot.retained_entries, 6);
+    assert_eq!(
+        snapshot.retained_characters,
+        "ServiceReconcileStoredkept".len()
+            + lines
+                .iter()
+                .map(|line| line.encode_utf16().count())
+                .sum::<usize>()
+    );
+    assert_eq!(
+        (snapshot.dropped, snapshot.evicted, snapshot.truncated),
+        (0, 0, 0)
+    );
+}
+
+/// A prefix past the line bound leaves one character of content a line, and
+/// managed `Clamp` cuts each line to the bound and counts it truncated.
+#[test]
+fn a_log_line_longer_than_the_bound_is_clamped_and_counted() {
+    let history = History::new(
+        Limits {
+            line: 20,
+            ..Limits::DEFAULT
+        },
+        Vec::new(),
+        Box::new(|| Timestamp::from_ticks(0)),
+    )
+    .with_process(1, "run", "1");
+    history.record_log("Warning", "Category", "ab");
+    let snapshot = history.snapshot().unwrap();
+    assert_eq!(snapshot.log_lines.len(), 2);
+    for line in &snapshot.log_lines {
+        assert_eq!(line.len(), 20, "{line}");
+        assert!(line.ends_with("...[truncated]"), "{line}");
+    }
+    assert_eq!(snapshot.truncated, 2);
+}
