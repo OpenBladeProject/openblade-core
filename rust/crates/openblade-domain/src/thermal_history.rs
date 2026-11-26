@@ -793,20 +793,27 @@ pub fn validate_prepared_retirement(expected: &[u8], bytes: &[u8], owner: &str) 
 /// `rows` validates them.
 #[cfg(feature = "hyperboost")]
 pub fn hyperboost_owned(bytes: &[u8]) -> io::Result<bool> {
+    hyperboost_owner(bytes).map(|owner| owner.is_some())
+}
+/// The Confirmed HyperBoost row that leaves it owned (`hyperboost_owned`).
+/// It names the user and session that entered, for whom an exit the Service
+/// makes on its own, at Stop or at a suspend, journals its rows.
+#[cfg(feature = "hyperboost")]
+pub fn hyperboost_owner(bytes: &[u8]) -> io::Result<Option<Entry>> {
     use crate::thermal_mutation::{HYPERBOOST, Progress};
-    let mut owned = false;
+    let mut owner = None;
     rows(bytes, |e, _| {
         if e.tfc.is_none() && e.battery.is_none() && e.fan.is_none() {
             if e.progress == Progress::Confirmed as u8 {
-                owned = e.destination == HYPERBOOST;
+                owner = (e.destination == HYPERBOOST).then(|| e.clone());
             } else if e.progress == Progress::KnownNotSubmitted as u8 && e.destination == HYPERBOOST
             {
-                owned = false;
+                owner = None;
             }
         }
         Ok(())
     })?;
-    Ok(owned)
+    Ok(owner)
 }
 pub fn handback_complete(bytes: &[u8]) -> io::Result<bool> {
     let (_, _, owners) = rows_with_owners(bytes, |_, _| Ok(()))?;
@@ -1474,12 +1481,19 @@ mod tests {
         // An entry that did not settle, or settled unsubmitted, owns nothing.
         assert!(!owned(&[&request(HYPERBOOST, &[0, 1, 2])]));
         assert!(!owned(&[&request(HYPERBOOST, &[0, 6])]));
-        // An entry after an exit owns again.
-        assert!(owned(&[
-            &entered,
-            &request(balanced, &[0, 1, 2, 3, 4, 5]),
-            &request(HYPERBOOST, &[0, 1, 2, 3, 4, 5]),
-        ]));
+        // An entry after an exit owns again, and that entry is the owner.
+        let again = [
+            entered.clone(),
+            request(balanced, &[0, 1, 2, 3, 4, 5]),
+            request(HYPERBOOST, &[0, 1, 2, 3, 4, 5]),
+        ]
+        .concat();
+        assert!(hyperboost_owned(&again).unwrap());
+        let first = hyperboost_owner(&entered).unwrap().unwrap();
+        let second = hyperboost_owner(&again).unwrap().unwrap();
+        assert_eq!((second.destination, second.progress), (HYPERBOOST, 5));
+        assert_ne!(second.request, first.request);
+        assert!(hyperboost_owner(&[]).unwrap().is_none());
         // Rows that do not validate are refused, never read as unowned.
         let mut broken = entered.clone();
         broken.pop();
