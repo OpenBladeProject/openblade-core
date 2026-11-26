@@ -550,7 +550,7 @@ jobs:
               ($hyperboostKeyboard + 'driver_mode'),
               ($hyperboostConvergence + 'hyperboost'),
               ($hyperboostConvergence + 'convergence'),
-              ($hyperboostConvergence + 'thermal_reapply'),
+              ($hyperboostConvergence + 'reapply'),
               @('openblade-windows-service-candidate', 'service-mailbox-observation-v1', 'capability_tests'),
               @('openblade-windows-service-candidate', 'service-mailbox-observation-v1', 'readiness::tests::observation'),
               @('openblade-windows-service-candidate', 'service-mailbox-observation-v1', 'driver_mode_absent'),
