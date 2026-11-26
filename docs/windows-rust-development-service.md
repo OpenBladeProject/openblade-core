@@ -1241,7 +1241,12 @@ manual fans, and exit to the saved performance destination. The feature implies
 as destination 100 and adds the capability marker `service-hyperboost-v1`
 after the HyperBoost exit's. Native reads managed's HyperBoost ownership
 journal read-only and refuses while it is pending; managed recovers an
-unsettled native row through the `hyperBoost` handback family. Both package
+unsettled native row through the `hyperBoost` handback family. The feature
+also serves `recoverHyperBoostRestore`, which answers from managed's journal
+and writes nothing, and fills the status members
+`padlessHyperBoostEligibility`, `hyperBoostRestorePending` and
+`hyperBoostBlockingControllers` from the metadata observation; all four are
+in the managed contract at protocol 90. Both package
 readers refuse the feature and the marker by name ("Owned HyperBoost is not
 admitted for packaging."), so no packaged image carries it. It is
 source-reviewed and has not been run on a laptop. See

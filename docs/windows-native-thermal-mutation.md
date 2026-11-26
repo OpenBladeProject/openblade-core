@@ -841,11 +841,96 @@ Native differs from managed here in these ways:
   now.` before any read or write, and nothing natively enters HyperBoost
   that no boundary would leave.
 
+##### Status members and the recovery request
+
+The managed contract carries the three HyperBoost status members and
+`recoverHyperBoostRestore` at protocol 90, so native fills and serves them
+with no protocol change. The metadata observer reads the members with each
+status, on its own thread and for every caller
+(`status_source::observe_hyperboost`):
+
+| Member | Managed | Native |
+|---|---|---|
+| `padlessHyperBoostEligibility` | A pad observation with each verified device observation whose capabilities name a HyperBoost access (`ResolvePadlessHyperBoostEligibility`, 22990-23013) | The pad probe the entry gates read (`Probes::eligibility`): CoolingPadAbsent, CoolingPadPresent, or Unknown for a failed or incomplete scan |
+| `hyperBoostRestorePending` | Its ownership journal is RestorePending: an exit whose saved performance and fan intent was not confirmed restored (10116, 10143) | Managed's journal names that state (`hyperboost_journal::restore_pending`) |
+| `hyperBoostBlockingControllers` | The controller observation's HyperBoost blockers that the status also lists as potential controllers (16139-16145) | The same observation's `hyperboost_blockers`, filtered and spelled the same way (`HyperBoostStatus::blocking`) |
+
+Native differs from managed here in these ways:
+
+- The pad and the journal are read only on the host matched as RZ09-0581,
+  and only where the composition has the HyperBoost probes, which the
+  lifecycle triggers compose. Managed keys the pad on a capability record;
+  the native status carries none, so the matched host stands in for it and
+  the member is published before any device is opened. Every other host, a
+  composition without probes and a status published before any observation
+  report Unknown and no pending restore.
+- Native has no pending restore of its own. A native exit is one journaled
+  performance step: refused before a setter, it leaves HyperBoost on and
+  owned; possibly submitted, it leaves an unsettled row that fences the
+  store, which the handback gives managed as a pending confirmation rather
+  than a restore. The member therefore reports managed's journal only.
+- The journal's state is read without managed's `IsWellFormed` verdict. A
+  RestorePending document managed would call invalid, and so report as not
+  pending, reads as pending natively. Both refuse every HyperBoost write.
+- The status observer scans processes only, so it lists no blocking service
+  and always carries the detection warning, which the tray treats as a
+  block. Each write still takes its own controller admission. A status
+  published before any observation carries managed's null, which leaves
+  consumers the name policy (`RazerThermalControllerPolicy`). The managed
+  codec refuses blockers that are not a sorted, distinct subset of the
+  status's potential controllers, which `blocking` keeps.
+
+`recoverHyperBoostRestore` ports the admission of managed
+`RecoverHyperBoostRestoreAsync` (4040-4555) and none of its writes. Managed's
+retry re-applies the performance and fan intent its journal saved, against
+the recovery baseline that journal recorded, and then retires the journal.
+Native never writes that journal (the journal decision above) and has no
+restore of its own to retry, so the request reads managed's journal once,
+under the operation gate, and answers. It sends no setter, appends no native
+row and publishes no status:
+
+| Managed | Journal | Native reply |
+|---|---|---|
+| 6943-6952 | No probes composed | Blocked, `HyperBoost control is unavailable right now.` |
+| native only | The caller is not the active interactive user | Blocked, `The active interactive Windows user is required.` The journal is not read |
+| 4082-4091 | Absent | Stored, `There is no saved HyperBoost restore to retry.` |
+| 4093-4104 | Relinquished | Blocked, `The HyperBoost ownership journal is not awaiting a user-authorized restore retry.` |
+| 4053-4080, 4108-4555 | Unreadable, RestorePending, any other state, or a document native cannot read as managed does | Blocked, the journal-pending reply above |
+
+Native differs from managed here in these ways:
+
+- Managed retries a RestorePending journal once; native refuses it and names
+  the previous service, which owns that recovery.
+- Managed replies Failed when the journal cannot be inspected and Blocked
+  with its own text for an invalid journal; native gives the one
+  journal-pending reply for every journal it cannot hand to the user as
+  settled.
+- An unsettled native row does not change the answer, and the answer does
+  not change the row: the fence stays until the handback, in this process and
+  after a restart.
+
+A native retry of an uncertain exit would need a journal row that settles an
+earlier owner's unsettled row from a later read. The row format admits none
+(a row of another request cannot follow an unsettled one), and adding one
+changes the format the package readers and the managed handback read. That
+is a separate decision; this stage adds no such row.
+
 Packaging stays refused (`service-hyperboost-v1` by name, in
-`native_package.rs` and `WindowsNativePackage.cs`) until the owned status
-projection lands (H3b) and the Stop and suspend exits have been timed on a
-laptop: a package must not leave HyperBoost unreported, or running through a
-suspend or a Stop its window could not cover.
+`native_package.rs` and `WindowsNativePackage.cs`). The status members and
+the recovery request above report an owned session and a pending restore.
+A package is still blocked by the following:
+
+- The Stop and suspend exits have not been timed on a laptop, so a package
+  could leave HyperBoost running through a suspend or a Stop its window could
+  not cover.
+- The status carries no writable HyperBoost capability: `capabilities` is
+  null, or the observation record beside an active HyperBoost. The managed
+  tray therefore offers neither the toggle nor the retry against a native
+  Service.
+- `validatePadlessHyperBoostLifecycle`, managed's developer validation
+  request, is not served.
+- A result carries no `HyperBoostRestoredPerformance`.
+- There is no display-off exit.
 
 `ServiceControlRuntimeTests.NativeHyperBoostOwnedVectors` records managed's
 reply and writes for entry and exit from each confirmed state the getter
