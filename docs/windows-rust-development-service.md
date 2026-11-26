@@ -543,7 +543,13 @@ managed order (`ServiceControlRuntime.cs:12925-12950`,
   runs the recipe again. Before row 31 the recipe is paced once against what
   is left of the source drain (`StatusSource::drain_by`: 2 s, or 2.9 s with
   the keyboard share, from the drain's start), with each cleanup job also
-  bounded by its own 3 s. Every exchange left is charged as `Pace` charges
+  bounded by its own 3 s. The drain cancels a running status observation
+  first and waits for it last, and only until that deadline
+  (`retire_observer`): the observer runs synchronous Windows calls on its own
+  thread and holds no device handle or gate, so a call stalled in it takes no
+  time from the keyboard release, the fan handback or the HyperBoost exit.
+  An observer still running at the deadline fails the Stop after the
+  cleanup, where it used to wait first and skip it. Every exchange left is charged as `Pace` charges
   any recipe, and every row left at the second longest exchange; when they
   do not fit it ends with no row and no setter. A job that ends after 31 or
   40-43 leaves a tail that cannot be closed in the process (51 follows only

@@ -872,6 +872,20 @@ Native differs from managed here in these ways:
 - The journal's state is read without managed's `IsWellFormed` verdict. A
   RestorePending document managed would call invalid, and so report as not
   pending, reads as pending natively. Both refuse every HyperBoost write.
+  An absent journal, every other state and a document that names no state
+  report none, as managed does for an invalid journal (10505-10518).
+- A journal that cannot be read establishes neither answer, so the status
+  keeps the one it last published (`HyperBoostStatus::resolved`), as managed
+  preserves its presentation when its durable state cannot be read
+  (10133-10152). One failed read neither hides a pending restore nor invents
+  one. With no earlier answer the restore reads as pending, as managed's
+  recovery treats a journal it cannot inspect (4057-4069) and as every
+  native HyperBoost request treats it. A status that observed nothing keeps
+  the last answer too.
+- The pad scan and the journal read run on the observer's thread after its
+  other checks of the cancellation, so neither starts once it is set, and
+  the pad scan takes the flag itself. A refresh past its budget and a drain
+  both end the scan; a request's own gates still wait for theirs.
 - The status observer scans processes only, so it lists no blocking service
   and always carries the detection warning, which the tray treats as a
   block. Each write still takes its own controller admission. A status
@@ -892,19 +906,25 @@ row and publishes no status:
 | Managed | Journal | Native reply |
 |---|---|---|
 | 6943-6952 | No probes composed | Blocked, `HyperBoost control is unavailable right now.` |
-| native only | The caller is not the active interactive user | Blocked, `The active interactive Windows user is required.` The journal is not read |
+| native only | The caller is not the active interactive user | Blocked, `The active interactive Windows user is required.` The request reads no journal; the status the dispatcher takes before every mutation has read it, and scanned the pad, for any caller |
 | 4082-4091 | Absent | Stored, `There is no saved HyperBoost restore to retry.` |
-| 4093-4104 | Relinquished | Blocked, `The HyperBoost ownership journal is not awaiting a user-authorized restore retry.` |
-| 4053-4080, 4108-4555 | Unreadable, RestorePending, any other state, or a document native cannot read as managed does | Blocked, the journal-pending reply above |
+| 4093-4104 | EnablePending, OwnedConfirmed or Relinquished | Blocked, `The HyperBoost ownership journal is not awaiting a user-authorized restore retry.` |
+| 4053-4080, 4108-4555 | RestorePending, unreadable, or a document that names no state | Blocked, the journal-pending reply above |
 
 Native differs from managed here in these ways:
 
 - Managed retries a RestorePending journal once; native refuses it and names
   the previous service, which owns that recovery.
 - Managed replies Failed when the journal cannot be inspected and Blocked
-  with its own text for an invalid journal; native gives the one
-  journal-pending reply for every journal it cannot hand to the user as
-  settled.
+  with its own text for an invalid journal; native gives the journal-pending
+  reply for both.
+- The state is the one the document names (`hyperboost_journal::state`).
+  Managed also answers that the journal is not awaiting a retry for a
+  RestorePending journal without a restore intent, and its invalid-journal
+  text for a document of any state that `IsWellFormed` rejects. Native
+  tells neither apart: the first gets the journal-pending reply, the second
+  the reply of the state it names. Every one of these is a refusal that
+  writes nothing.
 - An unsettled native row does not change the answer, and the answer does
   not change the row: the fence stays until the handback, in this process and
   after a restart.
