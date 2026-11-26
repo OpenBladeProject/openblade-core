@@ -21,7 +21,7 @@ use std::{
     panic::{self, AssertUnwindSafe},
     sync::{
         Arc,
-        atomic::{AtomicBool, AtomicU8, Ordering},
+        atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering},
         mpsc::{Receiver, SyncSender, sync_channel},
     },
     thread,
@@ -120,12 +120,16 @@ type Run<S> = Box<dyn FnOnce(&mut S) + Send>;
 type Job<S> = (Claim, Run<S>);
 
 /// The thread that owns one `S`. At most one call runs and `waiting` more
-/// wait; a further call is refused at once. Dropping the lane stops it after
-/// the call in progress, without waiting; a call still queued then never
-/// starts.
+/// wait; a further call is refused at once. One more place is kept for a
+/// call that stays (`Waiting::Stays`), so withdrawn calls the thread has not
+/// yet dropped never crowd it out. Dropping the lane stops it after the
+/// call in progress, without waiting; a call still queued then never starts.
 pub(super) struct Lane<S: 'static> {
     jobs: SyncSender<Job<S>>,
     stopped: Arc<AtomicBool>,
+    // Calls sent and not yet taken by the thread, withdrawn ones included.
+    queued: Arc<AtomicUsize>,
+    waiting: usize,
 }
 
 impl<S: 'static> Drop for Lane<S> {
@@ -143,13 +147,19 @@ impl<S: Recover + 'static> Lane<S> {
         waiting: usize,
         build: impl FnOnce() -> S + Send + 'static,
     ) -> io::Result<Self> {
-        let (jobs, queue) = sync_channel::<Job<S>>(waiting);
+        let (jobs, queue) = sync_channel::<Job<S>>(waiting + 1);
         let stopped = Arc::new(AtomicBool::new(false));
-        let running = stopped.clone();
+        let queued = Arc::new(AtomicUsize::new(0));
+        let (running, taken) = (stopped.clone(), queued.clone());
         thread::Builder::new()
             .name(name.into())
-            .spawn(move || run(build(), &queue, &running))?;
-        Ok(Self { jobs, stopped })
+            .spawn(move || run(build(), &queue, &running, &taken))?;
+        Ok(Self {
+            jobs,
+            stopped,
+            queued,
+            waiting,
+        })
     }
 
     /// Runs `job` within `budget`, withdrawn if it has not started when the
@@ -178,7 +188,7 @@ impl<S: Recover + 'static> Lane<S> {
         let job: Run<S> = Box::new(move |state| {
             let _ = reply.send(job(state));
         });
-        if self.jobs.try_send((claim.clone(), job)).is_err() {
+        if !self.enqueue(waiting, (claim.clone(), job)) {
             return Called::NotStarted;
         }
         let _withdrawing = Withdrawing((waiting == Waiting::Withdraws).then_some(claim));
@@ -213,7 +223,7 @@ impl<S: Recover + 'static> Lane<S> {
         let job: Run<S> = Box::new(move |state| {
             let _ = reply.send(job(state));
         });
-        if self.jobs.try_send((claim.clone(), job)).is_err() {
+        if !self.enqueue(Waiting::Withdraws, (claim.clone(), job)) {
             return Called::NotStarted;
         }
         let _withdrawing = Withdrawing(Some(&claim));
@@ -231,22 +241,54 @@ impl<S: Recover + 'static> Lane<S> {
     }
 }
 
-#[cfg(test)]
 impl<S: 'static> Lane<S> {
+    /// Sends `job` if its kind has a place: `waiting` for a withdrawing
+    /// call, one more for a call that stays.
+    fn enqueue(&self, waiting: Waiting, job: Job<S>) -> bool {
+        let places = match waiting {
+            Waiting::Withdraws => self.waiting,
+            Waiting::Stays => self.waiting + 1,
+        };
+        let mut queued = self.queued.load(Ordering::Acquire);
+        loop {
+            if queued >= places {
+                return false;
+            }
+            match self.queued.compare_exchange_weak(
+                queued,
+                queued + 1,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => break,
+                Err(now) => queued = now,
+            }
+        }
+        // Only a stopped thread refuses a send within the places counted.
+        if self.jobs.try_send(job).is_err() {
+            self.queued.fetch_sub(1, Ordering::AcqRel);
+            return false;
+        }
+        true
+    }
+
     /// Queues `job` with no caller waiting, as a call whose caller is gone.
+    #[cfg(test)]
     pub(super) fn enqueue_for_tests(&self, job: impl FnOnce(&mut S) + Send + 'static) {
-        assert!(
-            self.jobs
-                .try_send((Claim::default(), Box::new(job)))
-                .is_ok()
-        );
+        assert!(self.enqueue(Waiting::Withdraws, (Claim::default(), Box::new(job))));
     }
 }
 
-fn run<S: Recover>(mut state: S, queue: &Receiver<Job<S>>, stopped: &AtomicBool) {
+fn run<S: Recover>(
+    mut state: S,
+    queue: &Receiver<Job<S>>,
+    stopped: &AtomicBool,
+    queued: &AtomicUsize,
+) {
     // The queue disconnects when the lane is dropped; a call still queued
     // then is dropped unrun.
     while let Ok((claim, job)) = queue.recv() {
+        queued.fetch_sub(1, Ordering::AcqRel);
         if stopped.load(Ordering::Acquire) {
             break;
         }

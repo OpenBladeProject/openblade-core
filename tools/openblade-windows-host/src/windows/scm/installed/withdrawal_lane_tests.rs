@@ -161,6 +161,40 @@ async fn a_call_beyond_the_queue_is_refused_at_once() {
     assert_eq!(ran(&log), ["busy", "queued"]);
 }
 
+/// Withdrawn calls the thread has not yet dropped still fill the withdrawing
+/// calls' places, and a further one is refused; a staying call has its own
+/// place and runs after the busy one, and the withdrawn calls never start.
+#[tokio::test]
+async fn a_staying_call_finds_its_place_when_withdrawn_calls_fill_the_queue() {
+    let (lane, log) = lane(2);
+    let lane = Arc::new(lane);
+    let release = busy(&lane, &log).await;
+    for _ in 0..2 {
+        let withdrawn = lane.call(Duration::from_millis(10), step("withdrawn", None));
+        assert_eq!(withdrawn.await, Called::NotStarted);
+    }
+    assert_eq!(
+        lane.call(LONG, step("refused", None)).await,
+        Called::NotStarted
+    );
+    let (claim, again) = (Claim::default(), Claim::default());
+    let staying = lane.call_claimed(
+        &claim,
+        Waiting::Stays,
+        Duration::from_millis(10),
+        step("stays", None),
+    );
+    assert_eq!(staying.await, Called::Abandoned);
+    // Only one place is kept, so a second staying call is refused.
+    let second = lane.call_claimed(&again, Waiting::Stays, LONG, step("second", None));
+    assert_eq!(second.await, Called::NotStarted);
+    release.send(()).unwrap();
+    started(&log, 2).await;
+    // Every place is free again once the thread has taken the queue.
+    assert_eq!(lane.call(LONG, |_| 7).await, Called::Done(7));
+    assert_eq!(ran(&log), ["busy", "stays"]);
+}
+
 #[tokio::test]
 async fn a_panicking_call_is_abandoned_and_the_state_recovered() {
     let (lane, log) = lane(1);
