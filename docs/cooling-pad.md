@@ -243,7 +243,9 @@ replies:
   selection written last runs; no command reports which owner that was.
 - `0D/81` (`0x3190`) reports the ramping speed, and the target only once the
   two are within 50 RPM. It cannot confirm a new `0D/01` demand; the verified
-  echo does.
+  echo does. The ramping speed can pass the 3200 RPM maximum: an RC21-0230
+  ramping to 3200 replied `[1,5,65]` (3250 RPM). A speed above 3200 reports no
+  target, and control continues.
 
 Fan readback therefore queries the owner OpenBlade just wrote. Until a session
 confirms its own fan write, status reports the firmware owner's selection.

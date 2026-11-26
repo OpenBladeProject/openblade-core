@@ -29,6 +29,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- The cooling pad could get stuck at full speed on Blade 16 (2026, RZ09-0581) after briefly running at its maximum, because OpenBlade stopped controlling it when the fan sped slightly past 3200 RPM. OpenBlade now keeps controlling the pad and lowers the speed again. ([#1016](https://github.com/OpenBladeProject/openblade-core/pull/1016))
 - Links in the app and installer, including About, the changelog and the update check, now go straight to the project's current GitHub home instead of relying on a redirect from its former name. ([#1012](https://github.com/OpenBladeProject/openblade-core/pull/1012))
 - The notice shown while Synapse or other Razer software is running listed process names and didn't say what to do. It now names the app, says what it can change, and tells you to quit Synapse from its tray icon. ([#1011](https://github.com/OpenBladeProject/openblade-core/pull/1011))
 - Experimental Razer-driver SnapTap and function-row handling now hands A, D and the F keys back to Windows when a key it sends doesn't arrive, instead of leaving them untypeable. Turn the feature off and on to retry. ([#1008](https://github.com/OpenBladeProject/openblade-core/pull/1008))
