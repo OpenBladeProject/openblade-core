@@ -581,7 +581,7 @@ async fn a_pending_gpu_confirmation_refuses_entry_and_exit_before_any_row() {
             "{enabled} resolved: {result}"
         );
         assert_eq!(setters(&rig).len(), 2, "{enabled}");
-        rig.stop().await;
+        rig.stop_in_hyperboost().await;
     }
     // Already active writes nothing, so managed replies before its thermal
     // fence (6965-7002), as native does.
