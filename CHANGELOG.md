@@ -7,6 +7,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- Install a newer OpenBlade release from Settings with **Install update**. OpenBlade downloads the installer, checks it against the published release, and opens the usual setup. ([#1013](https://github.com/OpenBladeProject/openblade-core/pull/1013))
 - Add GPU core and memory clock offsets on Blade 18 (2025, RZ09-0529) and Blade 14 (2025, RZ09-0530). They need external power and exactly one NVIDIA laptop GPU, and are hidden on battery. Physical validation is pending. ([#991](https://github.com/OpenBladeProject/openblade-core/pull/991))
 - Add experimental temporary full charge on Blade 14 (2025, RZ09-0530) and Blade 18 (2025, RZ09-0529). It needs a charge limit set and the charger connected. If Synapse is running with Windows HDR on, turn off HDR and close Synapse first. ([#987](https://github.com/OpenBladeProject/openblade-core/pull/987))
 - Use the keyboard's own firmware edition on Blade 14 (2025, RZ09-0530) to pick its regional key map, so Reactive, Ripple and Keyboard .chroma imports include regional Enter, Alt, ISO and Japanese keys. If the edition can't be read, only keys shared by every regional map respond. ([#984](https://github.com/OpenBladeProject/openblade-core/pull/984))
