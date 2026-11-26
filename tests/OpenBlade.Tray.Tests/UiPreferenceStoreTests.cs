@@ -603,7 +603,7 @@ public sealed class UiPreferenceStoreTests : IDisposable
             UpdateCheckEntityTag: "\"release-etag\"",
             LastKnownReleaseTag: "v1.2.0",
             LastKnownReleaseUrl:
-                "https://github.com/OSSBlade/openblade-core/releases/tag/v1.2.0",
+                "https://github.com/OpenBladeProject/openblade-core/releases/tag/v1.2.0",
             FirmwareUpdateCheckInterval: UpdateCheckInterval.Weekly,
             LastSuccessfulFirmwareUpdateCheckAt: new DateTimeOffset(
                 2026,

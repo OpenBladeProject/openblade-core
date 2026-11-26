@@ -107,7 +107,7 @@ public sealed class ReleaseUpdateCheckingTests
         Assert.Equal("v1.4.0", result.Release?.TagName);
         Assert.Equal("\"new-tag\"", result.EntityTag);
         Assert.Equal(
-            "https://api.github.com/repos/OSSBlade/openblade-core/releases/latest",
+            "https://api.github.com/repos/OpenBladeProject/openblade-core/releases/latest",
             handler.RequestUri?.AbsoluteUri);
         Assert.Contains(
             handler.Accept,
@@ -126,13 +126,13 @@ public sealed class ReleaseUpdateCheckingTests
             [
               {
                 "tag_name": "v1.5.0",
-                "html_url": "https://github.com/OSSBlade/openblade-core/releases/tag/v1.5.0",
+                "html_url": "https://github.com/OpenBladeProject/openblade-core/releases/tag/v1.5.0",
                 "draft": false,
                 "prerelease": false
               },
               {
                 "tag_name": "v1.4.0-nightly.42-attempt.2",
-                "html_url": "https://github.com/OSSBlade/openblade-core/releases/tag/v1.4.0-nightly.42-attempt.2",
+                "html_url": "https://github.com/OpenBladeProject/openblade-core/releases/tag/v1.4.0-nightly.42-attempt.2",
                 "draft": false,
                 "prerelease": true
               }
@@ -151,7 +151,7 @@ public sealed class ReleaseUpdateCheckingTests
         Assert.Equal(new Version(1, 4, 0, 42), result.Release?.Version);
         Assert.Equal("v1.4.0-nightly.42-attempt.2", result.Release?.TagName);
         Assert.Equal(
-            "https://api.github.com/repos/OSSBlade/openblade-core/releases?per_page=20",
+            "https://api.github.com/repos/OpenBladeProject/openblade-core/releases?per_page=20",
             handler.RequestUri?.AbsoluteUri);
     }
 
@@ -190,11 +190,11 @@ public sealed class ReleaseUpdateCheckingTests
 
     [Theory]
     [InlineData(
-        """{"tag_name":"v1.0.0","html_url":"https://github.com/OSSBlade/openblade-core/releases","draft":true,"prerelease":false}""")]
+        """{"tag_name":"v1.0.0","html_url":"https://github.com/OpenBladeProject/openblade-core/releases","draft":true,"prerelease":false}""")]
     [InlineData(
-        """{"tag_name":"v1.0.0","html_url":"https://github.com/OSSBlade/openblade-core/releases","draft":false,"prerelease":true}""")]
+        """{"tag_name":"v1.0.0","html_url":"https://github.com/OpenBladeProject/openblade-core/releases","draft":false,"prerelease":true}""")]
     [InlineData(
-        """{"tag_name":"bad","html_url":"https://github.com/OSSBlade/openblade-core/releases","draft":false,"prerelease":false}""")]
+        """{"tag_name":"bad","html_url":"https://github.com/OpenBladeProject/openblade-core/releases","draft":false,"prerelease":false}""")]
     public async Task GitHubClientTreatsIneligibleMetadataAsSuccessfulCheck(string json)
     {
         using var httpClient = new HttpClient(
@@ -227,7 +227,7 @@ public sealed class ReleaseUpdateCheckingTests
 
     [Theory]
     [InlineData(
-        """{"tag_name":"v1.0.0","html_url":"http://github.com/OSSBlade/openblade-core/releases/tag/v1.0.0","draft":false,"prerelease":false}""")]
+        """{"tag_name":"v1.0.0","html_url":"http://github.com/OpenBladeProject/openblade-core/releases/tag/v1.0.0","draft":false,"prerelease":false}""")]
     [InlineData(
         """{"tag_name":"v1.0.0","html_url":"https://example.com/release","draft":false,"prerelease":false}""")]
     public async Task GitHubClientRejectsUntrustedReleaseUrl(string json)
@@ -377,7 +377,7 @@ public sealed class ReleaseUpdateCheckingTests
         """
         {
           "tag_name": "v1.4.0",
-          "html_url": "https://github.com/OSSBlade/openblade-core/releases/tag/v1.4.0",
+          "html_url": "https://github.com/OpenBladeProject/openblade-core/releases/tag/v1.4.0",
           "draft": false,
           "prerelease": false
         }

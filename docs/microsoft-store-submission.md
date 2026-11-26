@@ -45,7 +45,7 @@ synchronized with the deployed documentation and Partner Center.
   caller-controlled Tray relaunch used by direct automation. A Store install
   or upgrade can therefore leave the Tray and Session Agent stopped in the
   current sign-in session. The original
-  [launch-gap report](https://github.com/OSSBlade/openblade-core/issues/25)
+  [launch-gap report](https://github.com/OpenBladeProject/openblade-core/issues/25)
   describes this limitation; the interactive Launch action does not solve it.
 - Windows may show UAC because OpenBlade installs a per-machine LocalSystem
   service. UAC is the only permitted Store-install prompt.

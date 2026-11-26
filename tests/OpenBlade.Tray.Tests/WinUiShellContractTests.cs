@@ -1398,10 +1398,10 @@ public sealed class WinUiShellContractTests
         Assert.Contains("AboutPage.Visibility = destination == \"about\"", window, StringComparison.Ordinal);
         Assert.Contains("LaptopPage.Visibility = destination == \"laptop\"", window, StringComparison.Ordinal);
         Assert.Contains("MainNavigation.SelectedItem = AboutNavigationItem", window, StringComparison.Ordinal);
-        Assert.Contains("https://github.com/OSSBlade/openblade-core/issues", xaml, StringComparison.Ordinal);
-        Assert.Contains("https://github.com/OSSBlade/openblade-docs", xaml, StringComparison.Ordinal);
-        Assert.Contains("https://github.com/OSSBlade/openblade-core/blob/main/CHANGELOG.md", xaml, StringComparison.Ordinal);
-        Assert.Contains("https://github.com/OSSBlade/openblade-core\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("https://github.com/OpenBladeProject/openblade-core/issues", xaml, StringComparison.Ordinal);
+        Assert.Contains("https://github.com/OpenBladeProject/openblade-docs", xaml, StringComparison.Ordinal);
+        Assert.Contains("https://github.com/OpenBladeProject/openblade-core/blob/main/CHANGELOG.md", xaml, StringComparison.Ordinal);
+        Assert.Contains("https://github.com/OpenBladeProject/openblade-core\"", xaml, StringComparison.Ordinal);
         Assert.Contains("ms-appx:///Assets/Brand/OpenBlade.png", xaml, StringComparison.Ordinal);
         Assert.Contains("Glyph=\"&#xE8A7;\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Style=\"{StaticResource IconActionButtonStyle}\"", xaml, StringComparison.Ordinal);

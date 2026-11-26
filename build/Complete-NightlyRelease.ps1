@@ -27,7 +27,7 @@ function Complete-OpenBladeNightlyRelease {
     . (Join-Path $PSScriptRoot 'NightlyChangelog.ps1')
     $details = ConvertFrom-OpenBladeNightlyTag -TagName $Tag
     if ($null -eq $details) { throw 'An exact nightly release tag is required.' }
-    $repo = 'OSSBlade/openblade-core'
+    $repo = 'OpenBladeProject/openblade-core'
     $release = (Invoke-OpenBladeReleaseGh -Arguments @('release', 'view', $Tag,
         '--repo', $repo, '--json',
         'tagName,targetCommitish,isDraft,isPrerelease,createdAt,assets,body')) | ConvertFrom-Json

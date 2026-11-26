@@ -3,7 +3,7 @@
   <h1>OpenBlade</h1>
   <p><strong>Управляйте своим Razer Blade без Razer Synapse.</strong></p>
   <p>
-    <a href="https://github.com/OSSBlade/openblade-core/releases">Скачать</a>
+    <a href="https://github.com/OpenBladeProject/openblade-core/releases">Скачать</a>
     ·
     <a href="https://openblade.sh/ru-RU/">Руководство пользователя</a>
     ·
@@ -93,7 +93,7 @@ OpenBlade показывает доступные для вашей модели
 ## Установка
 
 1. Скачайте `OpenBlade-Setup.exe` из
-   [последнего выпуска](https://github.com/OSSBlade/openblade-core/releases/latest).
+   [последнего выпуска](https://github.com/OpenBladeProject/openblade-core/releases/latest).
 2. Дважды щёлкните файл и выберите **Установить**. Запускайте его обычным способом:
    установщик запросит разрешение администратора, когда оно потребуется.
    Если .NET 10 Desktop Runtime отсутствует, установщик предложит скачать и установить его.
@@ -124,9 +124,9 @@ OpenBlade работает самостоятельно. Если вы хоти�
 [руководстве разработчика](docs/developer-guide.md). Правила участия в проекте
 приведены в [AGENTS.md](AGENTS.md) и [VERSIONING.md](VERSIONING.md).
 
-Связанные репозитории: [документация пользователя](https://github.com/OSSBlade/openblade-docs),
+Связанные репозитории: [документация пользователя](https://github.com/OpenBladeProject/openblade-docs),
 [Synapse Observer](https://github.com/OpenBladeProject/synapse-observer) и
-[фирменные материалы](https://github.com/OSSBlade/openblade-branding).
+[фирменные материалы](https://github.com/OpenBladeProject/openblade-branding).
 
 <a id="license"></a>
 ## Лицензия

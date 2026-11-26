@@ -144,7 +144,7 @@ function Write-OpenBladeNightlyArtifactMetadata {
         informationalVersion = $BuildIdentity.InformationalVersion
         buildRevision = $BuildIdentity.BuildRevision
         sourceRevision = $BuildIdentity.SourceRevision
-        sourceUrl = "https://github.com/OSSBlade/openblade-core/commit/$($BuildIdentity.SourceRevision)"
+        sourceUrl = "https://github.com/OpenBladeProject/openblade-core/commit/$($BuildIdentity.SourceRevision)"
         workflowRunId = if ([string]::IsNullOrWhiteSpace($WorkflowRunId)) {
             $null
         }

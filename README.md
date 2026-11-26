@@ -3,9 +3,9 @@
   <h1>OpenBlade</h1>
   <p><strong>Control your Razer Blade without Razer Synapse.</strong></p>
   <p>
-    <a href="https://github.com/OSSBlade/openblade-core/releases">Download</a>
+    <a href="https://github.com/OpenBladeProject/openblade-core/releases">Download</a>
     ·
-    <a href="https://github.com/OSSBlade/openblade-docs">User guide</a>
+    <a href="https://github.com/OpenBladeProject/openblade-docs">User guide</a>
     ·
     <a href="CHANGELOG.md">What's new</a>
   </p>
@@ -52,7 +52,7 @@ OpenBlade requires Windows 11 x64, version 24H2 or later.
 | Razer Blade Pro 17 (Late 2019) | `RZ09-0314` |
 
 OpenBlade shows the controls available on your model. See the
-[user guide](https://github.com/OSSBlade/openblade-docs) for compatibility and the
+[user guide](https://github.com/OpenBladeProject/openblade-docs) for compatibility and the
 [model support guide](docs/experimental-blade-support.md) for features and testing details.
 
 On an unlisted Razer laptop, select **Help add support** in OpenBlade. Save the
@@ -87,7 +87,7 @@ Update checks are optional, with Stable and Nightly channels.
 ## Install
 
 1. Download `OpenBlade-Setup.exe` from the
-   [latest release](https://github.com/OSSBlade/openblade-core/releases/latest).
+   [latest release](https://github.com/OpenBladeProject/openblade-core/releases/latest).
 2. Double-click it and choose **Install**. Start it normally; setup asks for
    administrator permission when needed.
    If .NET 10 Desktop Runtime is missing, setup offers to download and install it.
@@ -116,9 +116,9 @@ Start with the [developer guide](docs/developer-guide.md) for architecture,
 builds, tests, and hardware tooling. Contribution rules are in
 [AGENTS.md](AGENTS.md) and [VERSIONING.md](VERSIONING.md).
 
-Related repositories: [user documentation](https://github.com/OSSBlade/openblade-docs),
+Related repositories: [user documentation](https://github.com/OpenBladeProject/openblade-docs),
 [Synapse Observer](https://github.com/OpenBladeProject/synapse-observer), and
-[branding](https://github.com/OSSBlade/openblade-branding).
+[branding](https://github.com/OpenBladeProject/openblade-branding).
 
 ## License
 

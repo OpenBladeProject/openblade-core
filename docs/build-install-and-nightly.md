@@ -63,7 +63,7 @@ the final installer.
   confirm that the Tray and Session Agent are running.
 - This caller-controlled relaunch does not apply to the Microsoft Store EXE
   channel because Partner Center owns the quiet invocation. The original
-  [launch-gap report](https://github.com/OSSBlade/openblade-core/issues/25)
+  [launch-gap report](https://github.com/OpenBladeProject/openblade-core/issues/25)
   describes this limitation.
 
 ## Versioned development builds
@@ -132,7 +132,7 @@ If the graphical installer is gone but its ownership marker remains, use:
   graphical UI.
 - The Store caller cannot perform the normal-integrity relaunch required after
   a quiet install. Store lifecycle support remains incomplete for this step;
-  see the original [report](https://github.com/OSSBlade/openblade-core/issues/25).
+  see the original [report](https://github.com/OpenBladeProject/openblade-core/issues/25).
 
 See [Microsoft Store submission](microsoft-store-submission.md) for the package
 contract, certification notes, hardware disclosure, and remaining external
@@ -169,7 +169,7 @@ support, maintainers can set `OPENBLADE_ENABLE_ATTESTATIONS` to `true` and
 verify an enabled attestation with:
 
 ```powershell
-gh attestation verify .\OpenBlade-Setup.exe --repo OSSBlade/openblade-core
+gh attestation verify .\OpenBlade-Setup.exe --repo OpenBladeProject/openblade-core
 ```
 
 The included JSON identifies the exact commit, ordered Nightly version, build

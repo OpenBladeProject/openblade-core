@@ -26,6 +26,6 @@ the target machine and are not redistributed. Clean installation remains unvalid
 The fixtures contain no vendor binaries and tests make no network requests.
 
 `DriverCatalogApplicability.json` is copied from `catalog/applicability.json` in
-[commit 2a6fa71](https://github.com/OSSBlade/blade-driver-catalog/tree/2a6fa71773cfcddf29011c8e7ed0c9582782fb42)
+[commit 2a6fa71](https://github.com/OpenBladeProject/blade-driver-catalog/tree/2a6fa71773cfcddf29011c8e7ed0c9582782fb42)
 for RZ09-0409, RZ09-0287 and RZ09-0314 (22 models, 154 artifact decisions). Other snapshots
 retain the original component pins above.

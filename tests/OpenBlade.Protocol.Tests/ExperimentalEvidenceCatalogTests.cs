@@ -30,7 +30,7 @@ public sealed class ExperimentalEvidenceCatalogTests
                         contract.Model == model.ModelNumber).ToArray();
                     Assert.NotEmpty(contracts);
                     Assert.Equal(contracts.Length + 1, feature.Sources.Count);
-                    Assert.Equal("https://github.com/OSSBlade/openblade-core/blob/main/docs/fan-stop-model-coverage.md",
+                    Assert.Equal("https://github.com/OpenBladeProject/openblade-core/blob/main/docs/fan-stop-model-coverage.md",
                         feature.Sources[0]);
                     foreach (FanStopModelContract contract in contracts)
                     {
