@@ -1269,8 +1269,8 @@ for the gates, the journal decision and the differences from managed.
 A Service built with `service-lighting-v1` serves `setLightingOverride` on
 exact RZ09-0581, slice L1: the keyboard Off with every logo mode, through the
 reviewed 03/83, 03/03, 03/80, 03/82, 03/00 and 03/02 commands, admitted by
-managed's pinned semantic lighting manifest. It classifies power in the job
-as managed does, stores the override in managed's `manual-overrides.json`
+managed's pinned semantic lighting manifest. It classifies power inside the job
+under its own admission, stores the override in managed's `manual-overrides.json`
 format, reads back each setter, restores a confirmed mismatch, and stops on an
 unconfirmed submission until a read-only resolution. Lit effects, transitions and profile reconciliation are slice L2.
 The feature adds the capability marker `service-lighting-v1` after owned

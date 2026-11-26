@@ -45,28 +45,36 @@ The order is managed `ExecuteScopedMutationAsync` (ServiceControlRuntime.cs
 14868-15060) for the Lighting subsystem:
 
 1. Low-power gate set (lifecycle triggers): the intent is stored and nothing
-   is read or written. A temporary override needs Windows battery, the one
-   class known without an adapter read. The reply is Stored with the
-   committed message (see the interim divergences).
+   is read or written. The reply is Stored with the committed message (see
+   the interim divergences). A temporary override needs Windows battery, the
+   one class known without an adapter read; otherwise it is Blocked with its
+   own text naming the low-power state (see Stricter than managed).
 2. A possible earlier submission left unconfirmed: a read-only job runs, the
    reply is managed's pending refusal (`PendingWriteBlockedResult`, 19255),
    and a complete read clears the doubt. Nothing is replayed.
 3. Keyboard delegated to Windows Dynamic Lighting in the stored preferences
-   (`IsKeyboardLightingDelegated`, 15213): Blocked, managed's delegation text,
-   before anything is stored. Without a profile store there are no stored
-   preferences, and managed's defaults do not delegate.
+   (`IsKeyboardLightingDelegated`): Blocked, managed's delegation text, before
+   anything is stored. Managed checks it in the apply, after the store, and
+   replies with the committed prefix (14965, 15054, 15213); see Stricter than
+   managed. Without a profile store there are no stored preferences, and
+   managed's defaults do not delegate.
 4. Power, inside the job under its own admission (`Reader::lighting_power`):
    Windows battery is the battery class with no adapter read. On Windows AC
    one fresh 07/8C reading, the query every thermal recipe reads, classifies
    the adapter, and Windows must still report AC after it. A classified
    adapter admits lighting. An unclassified one needs managed
-   `CanAdmitUnclassifiedExternalControl` (UnclassifiedExternalPower.cs 60-84),
-   each clause from native's own fresh evidence: fresh Windows AC presence, a
-   fresh firmware observation that HyperBoost is not engaged (a failed one
-   admits nothing), no unsettled thermal step (`Storage::pending`, which also
-   covers managed's `WritesBlocked` and pending indeterminate intents), and,
-   with owned HyperBoost, managed's journal absent or Relinquished and no
-   native ownership in the history. Windows unknown, an adapter battery
+   `CanAdmitUnclassifiedExternalControl` for Lighting
+   (UnclassifiedExternalPower.cs 60-77), each clause from native's own fresh
+   evidence: fresh Windows AC presence; no unsettled journal step
+   (`Storage::pending`: the store's quarantine or an unsettled last row of the
+   one native journal, which holds the thermal, fan and battery rows; native
+   keeps no other battery or HyperBoost doubt, so it stands for managed's
+   pending indeterminate HyperBoost intents, and it is not managed's
+   `WritesBlocked` status flag); and, with owned HyperBoost, managed's journal
+   absent or Relinquished and no native ownership in the history. Native also
+   requires a fresh firmware observation that HyperBoost is not engaged, and
+   a failed one admits nothing; managed's Lighting arm has no such clause (see
+   Stricter than managed). Windows unknown, an adapter battery
    reading Windows AC contradicts, or a refused clause is Blocked with
    managed's unclassified-adapter text (14935-14943), before anything is
    stored.
@@ -80,7 +88,10 @@ The order is managed `ExecuteScopedMutationAsync` (ServiceControlRuntime.cs
    class. A failed store is managed's rejected intent (`RecordRejectedIntent`,
    20495). Only a quarantined override document refuses the store: no thermal
    journal row or recovery rewrites the lighting member, so an unsettled
-   thermal step does not.
+   thermal step does not. A clear is stored and writes nothing: on an
+   unclassified adapter the reply is managed's Stored "Override cleared.
+   Power-profile application waits for adapter classification." (15012); on a
+   classified one see the interim divergences.
 6. Apply: read the baseline, write the brightness, read it back, then the logo
    effect (for a lit mode) and state, each read back, then managed's
    aggregate read. A confirmed mismatch restores the baseline. A setter that
@@ -90,20 +101,30 @@ The order is managed `ExecuteScopedMutationAsync` (ServiceControlRuntime.cs
    other than Applied is prefixed "{committed} Hardware result: ", as managed
    prefixes it.
 
-Managed refreshes competing-controller presence after power resolution and
-before the store. Native's fresh admission confirms controller absence before
-the job and at each of its checkpoints, the one before the 07/8C read
-included, so a controller blocks before anything is stored in both.
+Native's fresh admission confirms competing-controller absence before the job
+(`capture_intent`) and at each of its checkpoints, the one before the 07/8C
+read included, so a controller blocks before anything is stored. Managed's
+refresh after power resolution
+(`RefreshControllerPresenceAndRelinquishLightingAsync`) only observes the
+controller and relinquishes lighting: it stores at 14965 and refuses the
+apply afterwards (see Stricter than managed).
 
 A zero brightness confirms Off only after a second zero sample 750 ms later
 (managed `OwnedRendererOffObservation`), at the baseline and at the final
 read, for every Off write: a keyboard lit again between the samples is
-written.
+written. The read-only resolution samples a zero twice too, and a single zero
+sample, such as a brightness setter's readback, confirms nothing, so status
+publishes the Off record only from a double-sampled read
+(`a_single_zero_brightness_sample_publishes_no_confirmed_off`).
 
-Managed's Driver-mode ensure in `ProductionLightingFactory` builds the Fn
-layer and the M1-M5 input reports for its port; it is no prerequisite of the
-brightness and logo commands, so slice L1 sends none. The keyboard Driver-mode
-owner keeps its own admission.
+Managed's lighting port always enters Driver mode before it writes
+(`EnsureDriverModeAsync`, ProductionLightingFactory.cs 226-242), so managed
+writes these setters in Driver mode. Slice L1 sends no Driver-mode command:
+the reviewed brightness and logo commands name no mode prerequisite, and the
+keyboard Driver-mode owner keeps its own admission. A Service without
+`service-keyboard-driver-mode-v1` therefore normally writes them in Normal
+mode. That is source-backed inference, not a physical observation; the
+attended validation below covers it.
 
 ## Status
 
@@ -133,10 +154,11 @@ Each is named by a test and removed by slice L2:
   effect is stored and then refused as managed refuses an effect its
   capability table lacks
   (`lit_effects_are_refused_until_l2_interim_divergence`).
-- Clearing the override stores the clear and applies no profile lighting.
-  Managed applies the profile's lighting there (ControlCoordinator.cs
-  `ApplyLightingOutcomeAsync`)
-  (`lit_effects_are_refused_until_l2_interim_divergence`).
+- Clearing the override on a classified adapter stores the clear, applies no
+  profile lighting and replies Stored, "Lighting override was cleared. The
+  profile's lighting was not applied." Managed applies the profile's lighting
+  there (ControlCoordinator.cs `ApplyLightingOutcomeAsync`)
+  (`a_clear_is_stored_and_says_what_waits`).
 - Power-source transitions (`ApplyFullTransitionAsync`, ServiceControlRuntime.cs
   14948-14956) and profile reconciliation run no lighting step, and a
   restart writes no lighting
@@ -155,8 +177,29 @@ Each is named by a test and removed by slice L2:
 
 ## Stricter than managed
 
-- Every Off write confirms a zero brightness with the second sample; managed
-  samples twice only while it owns a renderer.
+Each of these is refused before anything is stored; managed stores it:
+
+- A keyboard delegated to Windows Dynamic Lighting. Managed stores the intent
+  and replies "Lighting override intent was stored. Hardware result: ..."
+  with its delegation text (ServiceControlRuntime.cs 14965, 15054, 15213)
+  (`a_keyboard_delegated_to_dynamic_lighting_blocks_before_any_store`).
+- A competing controller. Managed's refresh only observes the controller and
+  relinquishes lighting, so it stores and refuses the apply afterwards
+  (`refused_admission_stores_and_sends_nothing`).
+- An unclassified adapter while firmware reports HyperBoost engaged, or when
+  that fresh observation fails. Managed's Lighting arm has no
+  `HyperBoostActive` clause (UnclassifiedExternalPower.cs 60-77)
+  (`an_unclassified_adapter_admits_lighting_only_without_hyperboost_or_a_pending_step`).
+- A temporary override while the low-power gate is set, off Windows battery.
+  Managed stores it with no power class (14903-14918); native's refusal names
+  the low-power state
+  (`a_low_power_temporary_override_needs_windows_battery_divergence`).
+
+Also stricter:
+
+- Every Off write, and the read-only resolution, confirms a zero brightness
+  with the second sample; managed samples twice only while it owns a
+  renderer.
 - The saved-override loader refuses a document managed would migrate (an
   older schema, or lighting that managed's visibility normalization changes)
   and preserves its bytes for managed.
@@ -172,4 +215,13 @@ codec builds, or enables `lighting-setters` from another feature.
 
 Attended validation on exact RZ09-0581: Off from a lit keyboard with each
 logo mode, readback confirmation, a deliberate restore after a mismatch, and
-restoration of the saved baseline afterwards.
+restoration of the saved baseline afterwards. Record the keyboard device mode
+(Normal or Driver) of each run. Managed writes these setters in Driver mode;
+a Service without `service-keyboard-driver-mode-v1` is expected to write them
+in Normal mode, which no physical run has observed. When the keyboard feature
+is composed, run the checks in both modes.
+
+## Follow-ups
+
+- The native fixture-manifest corpus for lighting must land before lighting
+  joins a packaged tuple or slice L2 makes the Tray path reachable.
