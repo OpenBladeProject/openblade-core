@@ -72,6 +72,8 @@ public sealed record CoolingPadStatusSnapshot
     public int? MeasuredRpm { get; init; }
     public int? ConfirmedBrightnessPercent { get; init; }
     public CoolingPadLightingMode? ConfirmedLightingMode { get; init; }
+    // True while lighting changed on the pad is left in place and OpenBlade controls only the fan.
+    public bool LightingKept { get; init; }
     public string Message { get; init; } = "Cooling pad control is stopped.";
     public string Source { get; init; } = "Razer RC21-0230 source-backed experimental";
     public bool Experimental => true;

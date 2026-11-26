@@ -24,9 +24,9 @@ While OpenBlade controls the pad, it reads the pad every few seconds. If its fan
 mode, lighting effect or brightness changes elsewhere, such as in Synapse or
 with the pad's lighting button, **Restore them** applies your settings again, up to
 three times in ten minutes. Lighting is restored only when **Override external
-lighting changes** is on. Otherwise the pad's new lighting stays and OpenBlade
-keeps controlling the fan. Choose a lighting setting again
-to manage it. OpenBlade releases control instead under **Notify me**, after a
+lighting changes** is on. Otherwise the pad's new lighting stays, OpenBlade
+keeps controlling the fan, and the page shows no lighting selected. Choose a
+lighting setting, including the one you had before, to manage it again. OpenBlade releases control instead under **Notify me**, after a
 fourth change, for a lighting change when it controls only the lighting, or when
 your settings cannot be applied again. The
 changed part stays as it is, the parts OpenBlade changed return to the pad's
@@ -130,8 +130,12 @@ the ownership journal drops its lighting part, so **Release control** and servic
 handback restore only the fan, and later checks, restorations, reconnects,
 keyboard-sync frames and resumption leave lighting alone. The user's next Apply
 manages lighting again, and **Release control** or a user change ends the kept
-state. The kept state is held in memory, so after a service restart resumption
-applies the saved lighting again. When the saved settings control only the
+state. Status reports it as `LightingKept` (IPC protocol 90). The tray then
+selects no lighting mode, so choosing the saved one is a change that applies it;
+without this, the saved mode stayed selected and choosing it again sent nothing.
+A fan change made while no lighting is selected saves lighting as Keep, as it
+does after a release. The kept state is held in memory, so after a service
+restart resumption applies the saved lighting again. When the saved settings control only the
 lighting, there is nothing left to control and the change releases control.
 
 A status read submits nothing. When one times out or finds the session retired,

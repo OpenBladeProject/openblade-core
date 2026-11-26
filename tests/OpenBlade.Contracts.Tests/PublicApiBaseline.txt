@@ -616,6 +616,7 @@ type sealed class OpenBlade.Contracts.CoolingPadStatusSnapshot
   method System.Boolean get_Active()
   method System.Boolean get_Connected()
   method System.Boolean get_Experimental()
+  method System.Boolean get_LightingKept()
   method System.Boolean get_RecoveryRequired()
   method System.Boolean get_WritesPaused()
   method System.Nullable<OpenBlade.Contracts.CoolingPadFanMode> get_ConfirmedFanMode()
@@ -634,6 +635,7 @@ type sealed class OpenBlade.Contracts.CoolingPadStatusSnapshot
   method System.Void set_Connected(System.Boolean value)
   method System.Void set_Connection(OpenBlade.Contracts.CoolingPadConnectionState value)
   method System.Void set_Identity(System.String value)
+  method System.Void set_LightingKept(System.Boolean value)
   method System.Void set_MeasuredRpm(System.Nullable<System.Int32> value)
   method System.Void set_Message(System.String value)
   method System.Void set_RecoveryRequired(System.Boolean value)
@@ -652,6 +654,7 @@ type sealed class OpenBlade.Contracts.CoolingPadStatusSnapshot
   property System.Boolean Active { get; init; }
   property System.Boolean Connected { get; init; }
   property System.Boolean Experimental { get; }
+  property System.Boolean LightingKept { get; init; }
   property System.Boolean RecoveryRequired { get; init; }
   property System.Boolean WritesPaused { get; init; }
   property System.Nullable<OpenBlade.Contracts.CoolingPadFanMode> ConfirmedFanMode { get; init; }
@@ -2485,7 +2488,7 @@ type static class OpenBlade.Contracts.OpenBladeIpc
   field const System.Int32 MaximumDiagnosticArchiveBytes = 16777216
   field const System.Int32 MaximumDiagnosticResponseBytes = 25165824
   field const System.Int32 MaximumMessageBytes = 65536
-  field const System.Int32 ProtocolVersion = 89
+  field const System.Int32 ProtocolVersion = 90
   field const System.Int32 ReadOnlyCompatibilityProtocolVersion = 51
   field const System.String PipeName = "OpenBlade.Service.v2"
 type static class OpenBlade.Contracts.OpenBladeProductVersion

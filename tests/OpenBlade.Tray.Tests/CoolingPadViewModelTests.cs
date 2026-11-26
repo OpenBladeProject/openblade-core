@@ -657,6 +657,38 @@ public sealed class CoolingPadViewModelTests
     }
 
     [Fact]
+    public async Task LightingKeptOnThePadShowsNoLightingSoChoosingTheSavedOneAppliesIt()
+    {
+        var client = new PadClient();
+        await using var vm = Create(client);
+        var autoOff = CoolingPadSettings.Default with
+        {
+            FanMode = CoolingPadFanMode.Auto,
+            AutoProfile = CoolingPadAutoProfile.Quiet,
+            LightingMode = CoolingPadLightingMode.Off,
+        };
+        vm.ApplyStatus(new() { Connected = true, Active = true, Requested = autoOff });
+        Assert.Equal(CoolingPadLightingMode.Off, vm.LightingMode?.Value);
+
+        // The pad's lighting button changed the lighting; the fan stays controlled.
+        vm.ApplyStatus(new() { Connected = true, Active = true, Requested = autoOff, LightingKept = true });
+        Assert.Equal(CoolingPadFanMode.Auto, vm.FanMode?.Value);
+        Assert.Null(vm.LightingMode);
+        await Task.Delay(50);
+        Assert.Equal(0, client.Writes);
+
+        // Choosing the saved lighting again is a change, so it is applied.
+        vm.LightingMode = Choice(vm.LightingModes, CoolingPadLightingMode.Off);
+        Assert.Equal(1, client.Writes);
+        Assert.Equal((CoolingPadFanMode.Auto, CoolingPadLightingMode.Off), (client.Submitted!.FanMode, client.Submitted.LightingMode));
+        Assert.Equal(CoolingPadLightingMode.Off, vm.LightingMode?.Value);
+        // The service manages lighting again and reports it; the editor keeps the choice.
+        vm.ApplyStatus(client.NextStatus with { Requested = client.Submitted });
+        Assert.Equal(CoolingPadLightingMode.Off, vm.LightingMode?.Value);
+        Assert.Equal(1, client.Writes);
+    }
+
+    [Fact]
     public async Task ALocalChangeWaitingToApplyWinsOverAnOlderStatus()
     {
         var client = new PadClient();

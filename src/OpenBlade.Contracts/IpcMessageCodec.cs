@@ -16,7 +16,8 @@ public static class OpenBladeIpc
     // Protocol 88 adds Intel CPU power limits, firmware Gaming-mode GPU overclock,
     // local dimming capability and state, and the local dimming Clear request.
     // Protocol 89 adds the RZ09-0530 keyboard-MCU edition for regional key maps.
-    public const int ProtocolVersion = 89;
+    // Protocol 90 reports cooling-pad lighting left in place while OpenBlade controls the fan.
+    public const int ProtocolVersion = 90;
     public const int ReadOnlyCompatibilityProtocolVersion = 51;
     public const int MaximumMessageBytes = 64 * 1024;
     public const int MaximumDiagnosticArchiveBytes = 16 * 1024 * 1024;

@@ -1047,6 +1047,8 @@ public sealed class CoolingPadControlRuntimeTests
         Assert.True(runtime.Status.Active);
         Assert.Equal("The cooling pad fan was changed outside OpenBlade and restored. Its lighting changed too and is left as it is.",
             runtime.Status.Message);
+        // Status reports it, so the page can show no OpenBlade lighting.
+        Assert.True(runtime.Status.LightingKept);
         CoolingPadOwnershipRecord? owned = await store.LoadOwnershipAsync(default);
         Assert.True(owned!.FanChanged);
         Assert.False(owned.LightingChanged);
@@ -1065,10 +1067,12 @@ public sealed class CoolingPadControlRuntimeTests
         await runtime.ResumeSavedControlAsync("owner", () => true, () => true, default);
         Assert.True(runtime.Status.Active);
         Assert.Equal(["fan:Fixed:1500", "lighting", "fan:Fixed:1500", "fan:Fixed:1500"], provider.Pad.Writes);
+        Assert.True(runtime.Status.LightingKept);
 
         // The user's own Apply manages the lighting again.
         Assert.Equal(ControlOperationStatus.Applied, (await runtime.ApplyAsync(both, () => true, default)).Status);
         Assert.Equal("lighting", provider.Pad.Writes[^1]);
+        Assert.False(runtime.Status.LightingKept);
         Assert.True((await store.LoadOwnershipAsync(default))!.LightingChanged);
     }
 
@@ -1090,6 +1094,7 @@ public sealed class CoolingPadControlRuntimeTests
         Assert.True(runtime.Status.Active);
         Assert.Equal("The cooling pad lighting was changed outside OpenBlade and is left as it is. Apply lighting again to manage it.",
             runtime.Status.Message);
+        Assert.True(runtime.Status.LightingKept);
         Assert.False((await store.LoadOwnershipAsync(default))!.LightingChanged);
 
         // A later fan change is still restored, without rewriting the lighting.
@@ -1103,6 +1108,7 @@ public sealed class CoolingPadControlRuntimeTests
         Assert.Equal(ControlOperationStatus.Applied, (await runtime.ReleaseAsync(() => true, default, userRequested: true)).Status);
         Assert.True(provider.Pad.RestoredFan);
         Assert.False(provider.Pad.RestoredLighting);
+        Assert.False(runtime.Status.LightingKept);
     }
 
     [Fact]

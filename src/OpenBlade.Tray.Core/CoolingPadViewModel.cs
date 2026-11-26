@@ -37,6 +37,8 @@ public sealed class CoolingPadViewModel : INotifyPropertyChanged, IAsyncDisposab
     // The service request and control state the editor currently shows.
     private CoolingPadSettings? editorSource;
     private bool editorShowsModes;
+    // True when the editor shows no lighting because the pad keeps lighting changed on it.
+    private bool editorKeepsLighting;
     private bool serviceAvailable;
     private bool lastConfirmedConnected;
     private bool connectionKnown;
@@ -269,14 +271,15 @@ public sealed class CoolingPadViewModel : INotifyPropertyChanged, IAsyncDisposab
         if (!editorInitialized && confirmedPresent)
         {
             editorInitialized = true;
-            LoadEditor(snapshot.Requested, showModes);
+            LoadEditor(snapshot.Requested, showModes, snapshot.LightingKept);
         }
         else if (editorInitialized && confirmedPresent && !applying && !changePending
-            && (showModes != editorShowsModes || !SameSettings(editorSource, snapshot.Requested)))
+            && (showModes != editorShowsModes || snapshot.LightingKept != editorKeepsLighting
+                || !SameSettings(editorSource, snapshot.Requested)))
         {
             // Another client, a restarted service or an install changed what the service
             // runs. Show that request; a local change still waiting to apply wins.
-            LoadEditor(snapshot.Requested, showModes);
+            LoadEditor(snapshot.Requested, showModes, snapshot.LightingKept);
         }
         NotifyState();
     }
@@ -287,7 +290,7 @@ public sealed class CoolingPadViewModel : INotifyPropertyChanged, IAsyncDisposab
         NotifyState();
     }
 
-    private void LoadEditor(CoolingPadSettings requested, bool showModes)
+    private void LoadEditor(CoolingPadSettings requested, bool showModes, bool keepsLighting)
     {
         suppressApply = true;
         try
@@ -295,7 +298,10 @@ public sealed class CoolingPadViewModel : INotifyPropertyChanged, IAsyncDisposab
             // Saved intent is inert until a change; while the pad runs its own
             // settings, the selectors show no OpenBlade mode.
             FanMode = showModes ? FanModes.FirstOrDefault(x => x.Value == requested.FanMode) : null;
-            LightingMode = showModes ? LightingModes.FirstOrDefault(x => x.Value == requested.LightingMode) : null;
+            // While the pad keeps lighting changed on it, no lighting is selected, so choosing
+            // the saved one again is a change that applies it.
+            LightingMode = showModes && !keepsLighting
+                ? LightingModes.FirstOrDefault(x => x.Value == requested.LightingMode) : null;
             AutoProfile = AutoProfiles.FirstOrDefault(x => x.Value == requested.AutoProfile) ?? AutoProfiles[1];
             WaveDirection = WaveDirections.FirstOrDefault(x => x.Value == requested.WaveDirection) ?? WaveDirections[1];
             TemperatureSource = TemperatureSources.FirstOrDefault(x => x.Value == requested.TemperatureSource) ?? TemperatureSources[2];
@@ -308,6 +314,7 @@ public sealed class CoolingPadViewModel : INotifyPropertyChanged, IAsyncDisposab
             Notify(nameof(CpuCurve)); Notify(nameof(GpuCurve));
             editorSource = requested;
             editorShowsModes = showModes;
+            editorKeepsLighting = keepsLighting;
         }
         finally { suppressApply = false; }
     }
@@ -457,6 +464,7 @@ public sealed class CoolingPadViewModel : INotifyPropertyChanged, IAsyncDisposab
                     // The service stores the accepted request as sent.
                     editorSource = settings;
                     editorShowsModes = readback.CoolingPad.Active || readback.CoolingPad.RecoveryRequired;
+                    editorKeepsLighting = readback.CoolingPad.LightingKept;
                 }
                 ApplyStatus(readback.CoolingPad);
                 // Failed submissions return above without a recovery read. A separate
@@ -473,6 +481,7 @@ public sealed class CoolingPadViewModel : INotifyPropertyChanged, IAsyncDisposab
                     try { FanMode = null; LightingMode = null; }
                     finally { suppressApply = false; }
                     editorShowsModes = false;
+                    editorKeepsLighting = false;
                 }
                 if (operation != Operation.AutomaticRead) { feedback = null; }
             }, token);
