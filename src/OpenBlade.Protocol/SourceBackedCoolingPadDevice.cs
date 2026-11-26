@@ -330,6 +330,9 @@ internal sealed class SourceBackedCoolingPadDevice(
         {
             detail.Add(diagnostic.Phase.ToString());
             if (diagnostic.ProtocolValidationFailure is { } validation) { detail.Add(validation.ToString()); }
+            // A correlated reply whose content the decoder rejected keeps its bounded bytes, so a
+            // report the reviewed decoder does not cover can be read from the diagnostics log.
+            if (diagnostic.RejectedPayloadHex is { Length: > 0 } payload) { detail.Add($"payload {payload}"); }
             if (diagnostic.NativeWin32Error is { } error) { detail.Add($"Win32 {error}"); }
         }
         if (result.QueryResponseStatus is { } status) { detail.Add($"status 0x{status:X2}"); }

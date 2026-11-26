@@ -449,6 +449,21 @@ public sealed class CoolingPadSourceProtocolTests
             CoolingPadProtocol.EffectQuery(), new(default, HidSessionFailureKind.Timeout)));
     }
 
+    [Fact]
+    public void FailureMessageKeepsTheRejectedReplyBytes()
+    {
+        var result = new HidSessionResult<ReadOnlyMemory<byte>>(default, HidSessionFailureKind.ProtocolFailure)
+        {
+            Diagnostic = new(HidSessionFailurePhase.ProtocolValidation, HidSessionFailureKind.ProtocolFailure, null, 0)
+            {
+                ProtocolValidationFailure = HidProtocolValidationFailure.PayloadValidator,
+                RejectedPayloadHex = "01 05 41",
+            },
+        };
+        Assert.Equal("Cooling-pad operation failed: ProtocolFailure (0D/81, ProtocolValidation, PayloadValidator, payload 01 05 41).",
+            SourceBackedCoolingPadDevice.DescribeFailure(CoolingPadProtocol.TargetQuery(), result));
+    }
+
     private sealed class ControllerProcesses(string name) : IRunningProcessSource
     {
         public IReadOnlyList<string> GetProcessNames() => [name];
