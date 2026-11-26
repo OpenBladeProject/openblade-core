@@ -705,9 +705,10 @@ Native differs from managed here in these ways:
   unscoped reconciliation's classes hold Battery: a lifecycle power change, a
   resume, a report or a save. It is H2's exit step, with all of its admission,
   under the step id `hyperboost`. The transition goes on only once the exit
-  settled; a refused, unfinished or possibly submitted exit stops it, and a
-  possible submission fences the store without replay. A convergence attempt
-  never runs it.
+  settled; a refused, unfinished or possibly submitted exit stops it. A
+  refused exit keeps ownership and is tried again at the next boundary, not
+  within the attempt; a possible submission fences the store without replay.
+  A convergence attempt never runs it.
 - Firmware already out of HyperBoost at the boundary is not written to. As
   managed's `RestoreFirmwareExitedHyperBoostForPowerSourceTransitionAsync`
   marks the reading intentional, native makes the exit's fresh reading
@@ -752,9 +753,9 @@ Native differs from managed here in these ways:
   that no boundary would leave.
 
 Packaging stays refused (`service-hyperboost-v1` by name, in
-`native_package.rs` and `WindowsNativePackage.cs`) until the low-power exit
-and the Stop exits, under a reviewed cleanup permit, and the owned status
-projection land (H3b): a package must not leave HyperBoost running through a
+`native_package.rs` and `WindowsNativePackage.cs`) until the low-power and
+Stop exits, under a reviewed cleanup permit, and the owned status projection
+land (H3b): a package must not leave HyperBoost running through a
 suspend or a Stop, or unreported.
 
 `ServiceControlRuntimeTests.NativeHyperBoostOwnedVectors` records managed's
