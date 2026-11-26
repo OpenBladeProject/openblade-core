@@ -21,6 +21,9 @@ branch: feat/native-hyperboost-status
 - Reading the pad in the thermal policy closure: the rig's pad probe is scripted per gate observation, so a status would consume a request's observations; in production it would scan HID on the dispatcher at every status.
 
 ## Watch out
+- A permit gate that waits on an OS call takes the job's cancellation: `Permit::resolve` and `Permit::admits_setter` pass `Limit::cancelled`, which a dropped request and `Worker::stop` set. The HyperBoost pad gate used a fresh never-set flag, so a Stop with an entry in its scan left the keyboard in Driver mode and skipped the fan handback. A rig probe must honour the flag too, or a flag that is always set survives every test.
+- A job thread held in one native call that never returns still holds `drain_active` at Stop. That is the mutation worker's limit, not a gate's.
+- An unobserved status publishes no pending restore but establishes none: `restore_pending` stays `None` so an unreadable journal after it is still the first answer.
 - The wait for the observer before the Stop cleanup predated H3b: `ObservedStatus::drain` waited without a bound for the whole observation (Windows power, HID metadata, process inventory), and `retire` ended it only with the cleanup skipped. H3b added the pad scan and journal read after the observer's last cancel check, which made a stall likelier.
 - A test filter of `stalled` matches every `installed::` test. Name the filter after the test.
 - A drain bound cannot be tested with an observer that never returns: without the bound the test hangs instead of failing. Cap the test observer's hold.
