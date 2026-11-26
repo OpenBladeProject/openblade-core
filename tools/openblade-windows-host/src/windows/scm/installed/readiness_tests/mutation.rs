@@ -1580,6 +1580,18 @@ impl Rig {
         caller: Caller,
         sid: &str,
     ) -> Value {
+        let bytes = self.request_bytes(operation, payload, caller, sid).await;
+        serde_json::from_slice::<Value>(&bytes).unwrap()
+    }
+    /// The response to `payload` exactly as the encoder wrote it, member order
+    /// included.
+    async fn request_bytes(
+        &self,
+        operation: &str,
+        payload: Vec<u8>,
+        caller: Caller,
+        sid: &str,
+    ) -> Vec<u8> {
         let (client, server) = duplex(65536);
         let source = self.source.clone();
         let publications = source.lock().await.publications();
@@ -1610,7 +1622,6 @@ impl Rig {
         // The server's error explains a missing reply.
         assert!(server.is_ok(), "{operation}: {:?}", server.err());
         let bytes = bytes.unwrap();
-        let response = serde_json::from_slice::<Value>(&bytes).unwrap();
         // Preserve the actual encoder bytes. Re-serializing Value sorts object
         // keys and can move the managed polymorphic discriminator out of first place.
         assert!(bytes.starts_with(br#"{"frame":"response","#));
@@ -1620,7 +1631,7 @@ impl Rig {
             operation,
             std::str::from_utf8(&bytes).unwrap()
         );
-        response
+        bytes
     }
     /// Asks whether the test has made a job thread wait for something other
     /// than the clock: a held transfer it has not released, or a deliberate
@@ -1644,6 +1655,12 @@ impl Rig {
                 state.device_mode_latency.is_some() || state.device_mode_retire_delay.is_some();
             #[cfg(not(feature = "service-keyboard-driver-mode-v1"))]
             let real_time = false;
+            #[cfg(feature = "service-lighting-v1")]
+            let real_time = real_time
+                || state
+                    .lighting_held
+                    .as_ref()
+                    .is_some_and(|(_, release)| waiting(release));
             real_time
                 || state.held_read.as_ref().is_some_and(waiting)
                 || state

@@ -23,7 +23,7 @@ use thermal_convergence::ThermalConvergence;
 
 use openblade_windows_host::json_object::{self, nullable_object, object};
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
+use serde_json::Value;
 
 use tokio::{
     io::{AsyncRead, AsyncWrite},
@@ -1108,7 +1108,9 @@ pub(crate) async fn read_status_event(
     Ok(status)
 }
 
-type FeatureRecord = Map<String, Value>;
+#[path = "service_status/record.rs"]
+mod record;
+pub(crate) use record::FeatureRecord;
 
 // Internal diagnostic provenance never crosses the v91 wire. Battery updates
 // replace one family; private policy text is dropped at the redaction boundary.
@@ -1252,14 +1254,14 @@ impl Snapshot {
         const BATTERY: i32 = 1;
         const DEFAULT_CHARGE_LIMIT: i32 = 80;
 
-        let lighting = Map::from_iter([
+        let lighting = FeatureRecord::from_iter([
             ("effect".into(), json!(0)),
             ("color".into(), json!({"red": 0, "green": 0, "blue": 0})),
             ("brightness".into(), json!(0)),
             ("parameters".into(), json!({"kind": "off"})),
         ]);
         let profile = |performance, custom_performance| {
-            let mut feature_fields = Map::from_iter([
+            let mut feature_fields = FeatureRecord::from_iter([
                 (
                     "display".into(),
                     json!({
@@ -1291,7 +1293,7 @@ impl Snapshot {
             battery_policy: BatteryPolicy {
                 charge_limit_percent: DEFAULT_CHARGE_LIMIT,
             },
-            feature_fields: Map::from_iter([(
+            feature_fields: FeatureRecord::from_iter([(
                 "windowsPowerModes".into(),
                 json!({
                     "silent": null, "balanced": null, "performance": null,
@@ -1320,7 +1322,7 @@ impl Snapshot {
                 protection_enabled: true,
                 temporary_full_charge: false,
             },
-            feature_fields: Map::new(),
+            feature_fields: FeatureRecord::default(),
         };
 
         Self {
@@ -1355,7 +1357,7 @@ impl Snapshot {
             full_charge_override: false,
             control_access,
             service_version: env!("CARGO_PKG_VERSION").into(),
-            feature_fields: Map::from_iter([(
+            feature_fields: FeatureRecord::from_iter([(
                 "unsupportedLaptop".into(),
                 json!(unsupported_laptop),
             )]),
@@ -1436,7 +1438,7 @@ impl Snapshot {
         if self.active_power_source != 0 || !matches!(preset, 1 | 2) {
             return None;
         }
-        self.confirm(Some(Map::from_iter([
+        self.confirm(Some(FeatureRecord::from_iter([
             ("performance".into(), json!(preset)),
             ("fans".into(), json!(0)),
             ("battery".into(), Value::Null),
@@ -1463,7 +1465,7 @@ impl Snapshot {
     ) -> Self {
         // The shared Agent status module does not own Service discovery types.
         let (performance, fans, hyper_boost) = observation.projection();
-        self.confirm(Some(Map::from_iter([
+        self.confirm(Some(FeatureRecord::from_iter([
             ("performance".into(), serde_json::json!(performance)),
             ("fans".into(), serde_json::json!(fans)),
             ("battery".into(), Value::Null),
@@ -2097,7 +2099,7 @@ impl Snapshot {
             // a thermal result to carry a confirmed battery reading.
             if !(raw == 0x50 && temporary == Some(true)) {
                 let state = self.confirmed_state.get_or_insert_with(|| {
-                    Map::from_iter([
+                    FeatureRecord::from_iter([
                         ("performance".into(), Value::Null),
                         ("fans".into(), Value::Null),
                         ("lighting".into(), Value::Null),
@@ -2239,7 +2241,7 @@ impl Snapshot {
         self.active_power_source = power;
         self.fan_override = value
             .and_then(|v| serde_json::to_value(v).ok())
-            .and_then(|v| v.as_object().cloned());
+            .and_then(|v| v.as_object().cloned().map(FeatureRecord::from));
         if let Some(settings) = settings {
             self.desired_state.fans = Resolved {
                 value: settings["mode"].as_i64().unwrap_or(0) as i32,
@@ -2269,7 +2271,7 @@ impl Snapshot {
         let record = |json: &openblade_domain::profile_set::Json| {
             serde_json::from_slice::<Value>(&json::write(json, false))
                 .ok()
-                .and_then(|value| value.as_object().cloned())
+                .and_then(|value| value.as_object().cloned().map(FeatureRecord::from))
         };
         self.lighting_override = value.and_then(|value| record(&value.encode()));
         if let Some(value) = value
@@ -2289,15 +2291,18 @@ impl Snapshot {
     /// The lighting members of managed `ConfirmedDeviceState` from a fresh
     /// read: `lighting` is Off only for a zero brightness (managed
     /// `ReadStateCoreAsync` cannot read a lit effect on this model), and
-    /// `logoLighting` is the managed `LogoLightingMode` wire value. A member
-    /// that was not read keeps its current value. The members join a state a
-    /// fresh thermal read confirmed; without one nothing is confirmed, as
-    /// managed publishes no confirmed state before it observes the device.
+    /// `logoLighting` is the managed `LogoLightingMode` wire value. Each
+    /// member is `None` to keep its current value, `Some(None)` to clear it
+    /// (managed's `Lighting = null` once a write leaves it unconfirmed), or
+    /// `Some(Some(value))` for a read that confirmed it. The members join a
+    /// state a fresh thermal read confirmed; without one nothing is
+    /// confirmed, as managed publishes no confirmed state before it observes
+    /// the device.
     #[cfg(feature = "service-lighting-v1")]
     pub(crate) fn with_lighting_reading(
         mut self,
-        brightness: Option<u8>,
-        logo: Option<i32>,
+        brightness: Option<Option<u8>>,
+        logo: Option<Option<i32>>,
     ) -> Self {
         use openblade_domain::profile_set::{LightingSettings, encode, json};
         let Some(state) = self.confirmed_state.as_mut() else {
@@ -2309,7 +2314,8 @@ impl Snapshot {
                 false,
             ))
             .unwrap_or(Value::Null);
-            state.insert("lighting".into(), if raw == 0 { off } else { Value::Null });
+            let lighting = if raw == Some(0) { off } else { Value::Null };
+            state.insert("lighting".into(), lighting);
         }
         if let Some(logo) = logo {
             state.insert("logoLighting".into(), serde_json::json!(logo));
@@ -2326,7 +2332,7 @@ impl Snapshot {
         self.set_private_message(message);
         self.performance_override = value
             .and_then(|value| serde_json::to_value(value).ok())
-            .and_then(|v| v.as_object().cloned());
+            .and_then(|v| v.as_object().cloned().map(FeatureRecord::from));
         if let Some(power) = power {
             self.active_power_source = power;
         }
@@ -2388,23 +2394,6 @@ impl Snapshot {
     }
     pub(crate) fn thermal_power_source(&self) -> i32 {
         self.active_power_source
-    }
-    /// Whether status shows HyperBoost engaged: confirmed active, or a
-    /// restore pending. Managed `CanAdmitUnclassifiedExternalControl`
-    /// refuses lighting on an unclassified adapter then; native, which does
-    /// not classify the adapter for lighting, refuses it on any AC power.
-    #[cfg(feature = "service-lighting-v1")]
-    pub(crate) fn hyperboost_engaged(&self) -> bool {
-        let active = self
-            .confirmed_state
-            .as_ref()
-            .and_then(|state| state.get("hyperBoostActive"))
-            .and_then(Value::as_bool);
-        let pending = self
-            .feature_fields
-            .get("hyperBoostRestorePending")
-            .and_then(Value::as_bool);
-        active == Some(true) || pending == Some(true)
     }
     /// Only this operation's independent result may attach a new witness.
     pub(crate) fn without_thermal_observation(mut self) -> Self {

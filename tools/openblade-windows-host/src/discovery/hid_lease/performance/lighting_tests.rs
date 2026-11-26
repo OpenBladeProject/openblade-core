@@ -23,12 +23,19 @@ struct Lit {
     calls: AtomicUsize,
 }
 impl Lit {
+    /// A write of `target` whose zero brightness one sample confirms, or the
+    /// read-only resolution for `None`: the recipe without the Off
+    /// confirmation.
     fn new(target: Option<LightingTarget>) -> Self {
-        Self::confirming(target, false)
+        Self::with(target.map_or_else(LightingJob::resolution, LightingJob::write_single_sample))
     }
-    fn confirming(target: Option<LightingTarget>, off_confirmation: bool) -> Self {
+    /// The write the runtime runs, a zero brightness confirmed twice.
+    fn write(target: LightingTarget) -> Self {
+        Self::with(LightingJob::write(target))
+    }
+    fn with(job: LightingJob) -> Self {
         Self {
-            job: LightingJob::new(target, off_confirmation),
+            job,
             refuse_from: None,
             calls: AtomicUsize::new(0),
         }
@@ -37,6 +44,15 @@ impl Lit {
 impl Permit for Lit {
     fn lighting(&self) -> Option<&LightingJob> {
         Some(&self.job)
+    }
+    // Windows battery is the battery class with no adapter read, so these
+    // tests pin the lighting reports alone; the power read has its own.
+    fn windows_on_battery(&self) -> Option<bool> {
+        Some(true)
+    }
+    fn admit_lighting(&self, power: i32, performance: Option<ObservedPerformance>) -> bool {
+        assert_eq!((power, performance), (1, None));
+        true
     }
     fn authorize(&self) -> Option<ReadAdmission> {
         let call = self.calls.fetch_add(1, Ordering::AcqRel) + 1;
@@ -341,8 +357,9 @@ async fn a_refused_admission_sends_no_further_setter() {
     let fixture = keyboard([0xc5, 1, 2]);
     let mut permit = Lit::new(off_with(LogoMode::Off));
     // The first checkpoint, the baseline's three queries, the brightness
-    // setter's own checkpoint, the setter and its readback take 24.
-    permit.refuse_from = Some(25);
+    // setter and its readback take 22; the logo setter's checkpoint before
+    // its transfer refuses.
+    permit.refuse_from = Some(23);
     run(&fixture, &permit).await;
     assert_eq!(permit.job.outcome(), LightingOutcome::Interrupted);
     assert_eq!(
@@ -358,7 +375,7 @@ async fn a_refused_admission_sends_no_further_setter() {
 #[tokio::test(start_paused = true)]
 async fn a_zero_brightness_is_confirmed_by_a_second_sample_when_required() {
     let fixture = keyboard([0, 1, 0]);
-    let permit = Lit::confirming(OFF, true);
+    let permit = Lit::write(OFF.unwrap());
     let started = Instant::now();
     run(&fixture, &permit).await;
     assert!(started.elapsed() >= OFF_CONFIRMATION_DELAY);
@@ -368,7 +385,7 @@ async fn a_zero_brightness_is_confirmed_by_a_second_sample_when_required() {
     // A second sample that is not zero is a lit baseline, which is written.
     let fixture = keyboard([0, 1, 0]);
     fixture.state.lock().unwrap().brightness_script = [0, 0x10].into();
-    let permit = Lit::confirming(OFF, true);
+    let permit = Lit::write(OFF.unwrap());
     run(&fixture, &permit).await;
     assert_eq!(permit.job.outcome(), LightingOutcome::Written);
     assert_eq!(permit.job.baseline().unwrap().brightness, Some(0x10));
@@ -401,7 +418,7 @@ async fn the_final_off_confirmation_reports_a_lit_second_sample() {
     let fixture = keyboard([0xc5, 1, 0]);
     // The baseline, the readback, then the final read's two samples.
     fixture.state.lock().unwrap().brightness_script = [0xc5, 0, 0, 0x20].into();
-    let permit = Lit::confirming(OFF, true);
+    let permit = Lit::write(OFF.unwrap());
     run(&fixture, &permit).await;
     assert_eq!(permit.job.outcome(), LightingOutcome::Written);
     assert_eq!(permit.job.final_reading().unwrap().brightness, Some(0x20));
@@ -425,10 +442,7 @@ async fn a_logo_pair_outside_the_contract_writes_nothing() {
         let fixture = keyboard(lighting);
         let permit = Lit::new(off_with(LogoMode::Off));
         run(&fixture, &permit).await;
-        assert_eq!(
-            permit.job.outcome(),
-            LightingOutcome::Unread("Logo lighting response was malformed or unsupported.")
-        );
+        assert_eq!(permit.job.outcome(), LightingOutcome::Malformed);
         assert_eq!(sent(&fixture), [BRIGHTNESS, STATE, EFFECT]);
     }
 }

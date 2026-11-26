@@ -6,7 +6,7 @@ use super::*;
 use serde_json::json;
 
 fn state(hyper_boost: Value) -> FeatureRecord {
-    Map::from_iter([
+    FeatureRecord::from_iter([
         ("performance".into(), Value::Null),
         ("fans".into(), json!(0)),
         ("battery".into(), Value::Null),
@@ -46,7 +46,7 @@ fn only_a_confirmed_active_hyper_boost_needs_a_record() {
 /// false there would tell the tray the model has none.
 #[test]
 fn the_record_admits_no_control_and_keeps_the_exact_model_temporary_full_charge() {
-    let record = Value::Object(record());
+    let record = Value::from(record());
     assert_eq!(record["hyperBoostAccess"], 0);
     for list in [
         "performancePresets",
@@ -235,7 +235,7 @@ fn the_record_is_managed_with_the_fan_stop_evidence_of_this_composition() {
         &rows[1]
     };
     assert_eq!(
-        observed_capabilities(Some(&state(json!(true)))).map(Value::Object),
+        observed_capabilities(Some(&state(json!(true)))).map(Value::from),
         Some(row["record"].clone())
     );
 }

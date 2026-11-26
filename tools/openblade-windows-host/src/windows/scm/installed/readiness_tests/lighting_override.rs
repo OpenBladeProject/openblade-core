@@ -275,28 +275,540 @@ async fn a_restart_keeps_the_saved_intent_and_writes_nothing() {
     rig.stop().await;
 }
 
-/// Lighting reads no adapter, so on AC it needs managed's unclassified
-/// admission: fresh Windows power that agrees with status. An unknown or
-/// disagreeing read is no class, and nothing is stored or sent.
+const UNCLASSIFIED_BLOCKED: &str = "Hardware application was not confirmed. The external power adapter could not be classified; overrides and control writes are blocked.";
+
+/// The keyboard Off with no logo mode.
+const OFF_ONLY: &str = r#"{"effect":0,"color":{"red":0,"green":0,"blue":0},"brightness":0,"parameters":{"kind":"off"},"logoMode":null}"#;
+
+fn power_reads(rig: &Rig) -> usize {
+    rig.port.state.lock().unwrap().power_reads
+}
+/// Whether a lighting override is saved.
+fn stored(rig: &Rig) -> bool {
+    rig.files.read("manual-overrides.json").unwrap().is_some() && saved(rig) != "null"
+}
+
+/// Managed's power resolution, in the job under its own admission: Windows
+/// battery is the battery class with no adapter read, and Windows AC
+/// classifies one fresh 07/8C reading. Windows unknown, or an adapter battery
+/// reading Windows AC contradicts, is no class: nothing is stored or sent.
 #[tokio::test]
-async fn power_windows_cannot_confirm_blocks_before_any_store() {
-    for windows in [None, Some(true)] {
+async fn power_is_classified_in_the_job_before_the_store() {
+    // (Windows on battery, adapter actual level, adapter reads)
+    for (windows, actual, reads) in [(Some(Some(true)), 15, 0), (None, 15, 1)] {
         let rig = Rig::new(MemoryFiles::default());
         lit(&rig, [0xc5, 1, 0]);
-        rig.port.state.lock().unwrap().windows_on_battery = Some(windows);
+        {
+            let mut s = rig.port.state.lock().unwrap();
+            s.windows_on_battery = windows;
+            s.actual = actual;
+        }
+        let before = power_reads(&rig);
+        let (status, message) = set(&rig, 1, Some(OFF), 0).await;
+        assert_eq!((status, message.as_str()), (1, CONFIRMED), "{windows:?}");
+        assert_eq!(power_reads(&rig) - before, reads, "{windows:?}");
+        let status = rig.get().await;
+        assert_eq!(status["status"]["lightingOverride"]["lifetime"], 0);
+        rig.stop().await;
+    }
+    for case in ["Windows unknown", "adapter battery under Windows AC"] {
+        let rig = Rig::new(MemoryFiles::default());
+        lit(&rig, [0xc5, 1, 0]);
+        {
+            let mut s = rig.port.state.lock().unwrap();
+            match case {
+                "Windows unknown" => s.windows_on_battery = Some(None),
+                _ => (s.windows_on_battery, s.actual) = (Some(Some(false)), 0),
+            }
+        }
         let (status, message) = set(&rig, 1, Some(OFF), 1).await;
         assert_eq!(
             (status, message.as_str()),
-            (
-                2,
-                "Hardware application was not confirmed. The external power adapter could not be classified; overrides and control writes are blocked."
-            ),
-            "{windows:?}"
+            (2, UNCLASSIFIED_BLOCKED),
+            "{case}"
         );
-        assert!(sent(&rig).is_empty(), "{windows:?}");
-        assert!(rig.files.read("manual-overrides.json").unwrap().is_none());
+        assert!(sent(&rig).is_empty(), "{case}");
+        assert!(!stored(&rig), "{case}");
         rig.stop().await;
     }
+}
+
+/// Managed `CanAdmitUnclassifiedExternalControl`: on an adapter 07/8C cannot
+/// classify, lighting needs fresh Windows AC, a fresh firmware observation of
+/// HyperBoost inactive and no unsettled thermal step. A classified adapter
+/// needs none of them; an unsettled thermal step does not block its store,
+/// since no thermal recovery rewrites the lighting member.
+#[tokio::test]
+async fn an_unclassified_adapter_admits_lighting_only_without_hyperboost_or_a_pending_step() {
+    // (case, unclassified, HyperBoost in firmware, unsettled thermal step, applies)
+    for (case, unclassified, hyperboost, pending, applies) in [
+        ("unclassified", true, false, false, true),
+        ("unclassified, HyperBoost", true, true, false, false),
+        ("unclassified, pending step", true, false, true, false),
+        ("classified, HyperBoost", false, true, false, true),
+        ("classified, pending step", false, false, true, true),
+    ] {
+        let rig = Rig::new(MemoryFiles::default());
+        lit(&rig, [0xc5, 1, 0]);
+        if pending {
+            rig.port.state.lock().unwrap().fail_write = Some(1);
+            rig.set(9, value(2, 1)).await;
+            assert!(
+                Storage::open(Box::new(rig.files.clone()), SID)
+                    .unwrap()
+                    .pending(),
+                "{case}"
+            );
+        }
+        {
+            let mut s = rig.port.state.lock().unwrap();
+            if hyperboost {
+                (s.selectors, s.fans) = ([7; 2], [0; 2]);
+            }
+            if unclassified {
+                s.power_status = 3;
+            }
+        }
+        let (status, message) = set(&rig, 1, Some(OFF), 1).await;
+        if applies {
+            assert_eq!((status, message.as_str()), (1, CONFIRMED), "{case}");
+            assert_eq!(saved(&rig), OFF, "{case}");
+        } else {
+            assert_eq!(
+                (status, message.as_str()),
+                (2, UNCLASSIFIED_BLOCKED),
+                "{case}"
+            );
+            assert!(sent(&rig).is_empty(), "{case}");
+            assert!(!stored(&rig), "{case}");
+        }
+        rig.stop().await;
+    }
+}
+
+/// With HyperBoost compiled in, managed's journal safety block and pending
+/// restore refuse lighting on an unclassified adapter too: the job reads
+/// managed's HyperBoost journal fresh, and a failed read admits nothing.
+#[cfg(feature = "service-hyperboost-v1")]
+#[tokio::test]
+async fn a_hyperboost_journal_that_is_not_relinquished_blocks_unclassified_lighting() {
+    let journal = |state: u8| {
+        let vectors: Value = serde_json::from_str(include_str!(
+            "../../../../../tests/data/hyperboost-journal-vectors.json"
+        ))
+        .unwrap();
+        vectors["rows"][0]["document"]
+            .as_str()
+            .unwrap()
+            .replace("\"state\": 3,", &format!("\"state\": {state},"))
+            .into_bytes()
+    };
+    // (case, journal read, unclassified, applies)
+    for (case, read, unclassified, applies) in [
+        ("absent", Some(None), true, true),
+        ("relinquished", Some(Some(journal(3))), true, true),
+        ("pending restore", Some(Some(journal(1))), true, false),
+        ("unreadable", None, true, false),
+        (
+            "classified, pending restore",
+            Some(Some(journal(1))),
+            false,
+            true,
+        ),
+    ] {
+        let rig = Rig::new(MemoryFiles::default());
+        lit(&rig, [0xc5, 1, 0]);
+        *rig.hyperboost.journal.lock().unwrap() = read;
+        if unclassified {
+            rig.port.state.lock().unwrap().power_status = 3;
+        }
+        let (status, message) = set(&rig, 1, Some(OFF), 1).await;
+        if applies {
+            assert_eq!((status, message.as_str()), (1, CONFIRMED), "{case}");
+        } else {
+            assert_eq!(
+                (status, message.as_str()),
+                (2, UNCLASSIFIED_BLOCKED),
+                "{case}"
+            );
+            assert!(sent(&rig).is_empty(), "{case}");
+            assert!(!stored(&rig), "{case}");
+        }
+        rig.stop().await;
+    }
+}
+
+/// A temporary override carries the Windows power generation its request
+/// classified, as a thermal step's store does, so the next thermal step on
+/// the same power keeps it; managed retires a temporary on a power change.
+#[tokio::test]
+async fn a_temporary_override_survives_a_thermal_step_on_the_same_power() {
+    let files = MemoryFiles::default();
+    files.profiles(1);
+    let rig = Rig::new(files);
+    lit(&rig, [0xc5, 1, 0]);
+    assert_eq!(set(&rig, 1, Some(OFF), 0).await.0, 1);
+    let out = rig.set(2, value(2, 1)).await;
+    assert_eq!(out["result"]["status"], 1, "{out}");
+    let status = rig.get().await;
+    assert_eq!(status["status"]["lightingOverride"]["lifetime"], 0);
+    assert_eq!(status["status"]["desiredState"]["lighting"]["source"], 3);
+    rig.stop().await;
+}
+
+/// The confirmed lighting members follow the job: a member whose setter may
+/// have been submitted is cleared until a read confirms it, and a restore
+/// that read back the baseline publishes the baseline.
+#[tokio::test]
+async fn status_publishes_only_what_the_last_job_confirmed() {
+    let rig = Rig::new(MemoryFiles::default());
+    lit(&rig, [0xc5, 1, 2]);
+    fresh_observe(&rig).await;
+    assert_eq!(set(&rig, 1, Some(OFF), 1).await.0, 1);
+    let confirmed = |status: &Value| {
+        let state = &status["status"]["confirmedState"];
+        (state["lighting"].clone(), state["logoLighting"].clone())
+    };
+    let off = rig.get().await["status"]["confirmedState"]["lighting"].clone();
+    assert_eq!(off["parameters"]["kind"], "off");
+    assert_eq!(confirmed(&rig.get().await), (off.clone(), json!(2)));
+    // The backlight is raised outside OpenBlade; the next brightness setter
+    // applies and its acknowledgement is lost.
+    {
+        let mut s = rig.port.state.lock().unwrap();
+        s.lighting = [0x80, 1, 0];
+        s.lighting_timeout = Some(s.lighting_sent.iter().filter(|s| s.2).count() + 1);
+    }
+    assert_eq!(set(&rig, 2, Some(OFF), 1).await.0, 3);
+    // Its baseline read confirmed the logo; nothing confirms the brightness.
+    assert_eq!(confirmed(&rig.get().await), (Value::Null, json!(0)));
+    // The read-only resolution confirms both.
+    assert_eq!(set(&rig, 3, Some(OFF), 1).await, (2, PENDING.to_owned()));
+    assert_eq!(confirmed(&rig.get().await), (off, json!(0)));
+    // A mismatch restores the lit baseline, which is not Off.
+    {
+        let mut s = rig.port.state.lock().unwrap();
+        s.lighting = [0x80, 1, 0];
+        s.lighting_ignore = vec![s.lighting_sent.iter().filter(|s| s.2).count() + 1];
+    }
+    assert_eq!(set(&rig, 4, Some(OFF), 1).await.0, 3);
+    assert_eq!(rig.port.state.lock().unwrap().lighting, [0x80, 1, 0]);
+    assert_eq!(confirmed(&rig.get().await), (Value::Null, json!(0)));
+    rig.stop().await;
+}
+
+/// The status writes lighting parameters with `kind` first wherever it
+/// carries them, which managed's polymorphic binding requires.
+#[tokio::test]
+async fn status_writes_lighting_parameters_kind_first() {
+    let rig = Rig::new(MemoryFiles::default());
+    assert_eq!(set(&rig, 1, Some(STATIC), 1).await.0, 2);
+    let request = br#"{"operation":"getStatus","version":91,"requestId":"bbbbbbbb-cccc-dddd-eeee-000000000098"}"#;
+    let bytes = rig
+        .request_bytes("getStatus", request.to_vec(), USER, SID)
+        .await;
+    let text = String::from_utf8(bytes).unwrap();
+    let members: Vec<usize> = text
+        .match_indices(r#""parameters":{"#)
+        .map(|(at, found)| at + found.len())
+        .collect();
+    // The override and the desired state carry the stored static effect.
+    assert!(members.len() >= 2, "{text}");
+    for at in members {
+        assert!(text[at..].starts_with(r#""kind":"#), "{}", &text[at..]);
+    }
+    assert!(
+        text.contains(r#""parameters":{"kind":"static","color":"#),
+        "{text}"
+    );
+    rig.stop().await;
+}
+
+/// Managed `IsKeyboardLightingDelegated`: with the keyboard delegated to
+/// Windows Dynamic Lighting nothing is stored, read or written.
+#[cfg(feature = "service-profiles-v1")]
+#[tokio::test]
+async fn a_keyboard_delegated_to_dynamic_lighting_blocks_before_any_store() {
+    let files = MemoryFiles::default();
+    files.profiles(1);
+    let mut preferences = files.document("battery-preferences.json");
+    preferences["preferences"]["keyboardLightingControlMode"] = json!(1);
+    files.put("battery-preferences.json", preferences);
+    files.commit_configuration();
+    let rig = Rig::new(files);
+    lit(&rig, [0xc5, 1, 0]);
+    let (status, message) = set(&rig, 1, Some(OFF), 1).await;
+    assert_eq!(
+        (status, message.as_str()),
+        (
+            2,
+            "Keyboard lighting is delegated to Windows Dynamic Lighting. OpenBlade did not write the keyboard."
+        )
+    );
+    assert!(sent(&rig).is_empty());
+    assert!(!stored(&rig));
+    rig.stop().await;
+}
+
+/// Managed defers lighting while the low-power gate is set and applies it
+/// after standby; native stores it and says so, with no promise, since
+/// nothing applies a stored lighting intent until slice L2. A temporary
+/// needs Windows battery, the one class known without an adapter read.
+#[cfg(feature = "service-profile-triggers-v1")]
+#[tokio::test]
+async fn the_low_power_store_promises_no_resume_apply_interim_divergence() {
+    use windows_sys::Win32::System::Services::SERVICE_CONTROL_POWEREVENT as POWER;
+    const SUSPEND: u32 = 4;
+    const RESUME: u32 = 18;
+    let rig = Rig::new(MemoryFiles::default());
+    lit(&rig, [0xc5, 1, 0]);
+    let custody = rig.custody.clone();
+    rig.runtime
+        .read_low_power(move || custody.lifecycle.low_power());
+    rig.custody.scoped_fresh.store(true, Ordering::Release);
+    rig.custody.lifecycle.ingress(POWER, SUSPEND);
+    let (status, message) = set(&rig, 1, Some(OFF), 1).await;
+    assert_eq!(
+        (status, message.as_str()),
+        (0, "Lighting override intent was stored.")
+    );
+    assert_eq!(saved(&rig), OFF);
+    let (status, message) = set(&rig, 2, Some(OFF), 0).await;
+    assert_eq!((status, message.as_str()), (2, UNCLASSIFIED_BLOCKED));
+    assert_eq!(saved(&rig), OFF);
+    rig.port.state.lock().unwrap().windows_on_battery = Some(Some(true));
+    assert_eq!(set(&rig, 3, Some(OFF), 0).await.0, 0);
+    assert_eq!(saved(&rig), "null");
+    assert!(sent(&rig).is_empty());
+    rig.custody.lifecycle.ingress(POWER, RESUME);
+    rig.custody.scoped_fresh.store(false, Ordering::Release);
+    assert_eq!(rig.get().await["success"], true);
+    assert!(sent(&rig).is_empty(), "nothing applies it after standby");
+    rig.stop().await;
+}
+
+/// H1: a zero baseline is Off only after a second zero sample 750 ms later,
+/// so a keyboard lit again in between is written.
+#[tokio::test]
+async fn off_writes_a_keyboard_whose_second_baseline_sample_is_lit() {
+    let rig = Rig::new(MemoryFiles::default());
+    lit(&rig, [0, 1, 0]);
+    rig.port.state.lock().unwrap().brightness_script = [0, 0x10].into();
+    let (status, message) = set(&rig, 1, Some(OFF_ONLY), 1).await;
+    assert_eq!((status, message.as_str()), (1, CONFIRMED));
+    assert_eq!(setters(&rig), 1);
+    assert_eq!(rig.port.state.lock().unwrap().lighting, [0, 1, 0]);
+    rig.stop().await;
+}
+
+/// Each stop the job can reach, through the dispatcher: managed's reply, and
+/// whether the next request is held for a read-only resolution.
+#[tokio::test]
+async fn each_stop_replies_as_managed_and_only_possible_submission_latches() {
+    let indeterminate = |reason: &str| format!("{STORED}Lighting write is indeterminate: {reason}");
+    // The keyboard before the request and the fault it meets.
+    type Fault = fn(&mut crate::discovery::performance::mutation_fixture::State);
+    type Setup = ([u8; 3], Fault);
+    // (case, setup, reply, setters sent, latched)
+    let cases: [(&str, Setup, String, usize, bool); 5] = [
+        (
+            "logo mismatch, restored",
+            ([0, 1, 0], |s| s.lighting_ignore = vec![1]),
+            indeterminate("Logo lighting did not match independent readback."),
+            3,
+            false,
+        ),
+        (
+            "restore in doubt",
+            ([0xc5, 1, 2], |s| (s.lighting_ignore, s.lighting_timeout) = (vec![1], Some(2))),
+            indeterminate(
+                "The lighting change failed and the previous lighting state could not be fully restored.",
+            ),
+            2,
+            true,
+        ),
+        (
+            "baseline unread",
+            ([0xc5, 1, 0], |s| s.lighting_query_timeout = Some(1)),
+            format!(
+                "{STORED}Lighting could not be read before writing: Lighting brightness could not be read."
+            ),
+            0,
+            false,
+        ),
+        (
+            "final read unread",
+            // The baseline's three queries, the two readbacks, then the
+            // final brightness query.
+            ([0xc5, 1, 2], |s| s.lighting_query_timeout = Some(7)),
+            indeterminate("Lighting brightness could not be read."),
+            2,
+            true,
+        ),
+        (
+            "baseline logo outside the contract",
+            ([0xc5, 2, 0], |_| {}),
+            format!(
+                "{STORED}Lighting could not be read before writing: Logo lighting response was malformed or unsupported."
+            ),
+            0,
+            false,
+        ),
+    ];
+    for (case, (keyboard, fault), reply, count, latched) in cases {
+        let rig = Rig::new(MemoryFiles::default());
+        lit(&rig, keyboard);
+        fault(&mut rig.port.state.lock().unwrap());
+        let (status, message) = set(&rig, 1, Some(OFF), 1).await;
+        assert_eq!((status, message), (3, reply), "{case}");
+        assert_eq!(setters(&rig), count, "{case}");
+        {
+            let mut s = rig.port.state.lock().unwrap();
+            (
+                s.lighting_ignore,
+                s.lighting_timeout,
+                s.lighting_query_timeout,
+            ) = (Vec::new(), None, None);
+            s.lighting = [0xc5, 1, 0];
+        }
+        let next = set(&rig, 2, Some(OFF), 1).await;
+        if latched {
+            assert_eq!(next, (2, PENDING.to_owned()), "{case}");
+            assert_eq!(
+                setters(&rig),
+                count,
+                "{case}: the resolution writes nothing"
+            );
+        } else {
+            assert_eq!(next, (1, CONFIRMED.to_owned()), "{case}");
+        }
+        rig.stop().await;
+    }
+}
+
+/// A fresh admission refused at any checkpoint of the job stops it there:
+/// before the first setter nothing is written, after a confirmed setter the
+/// change stays and nothing is in doubt (managed's partial submission), and
+/// only a refusal between a setter's transfer and its reply leaves it in
+/// doubt. A refused restore is known not restored.
+#[tokio::test]
+async fn a_refusal_at_any_checkpoint_stops_the_job_without_replay() {
+    let mut replies = std::collections::BTreeSet::new();
+    for mismatch in [false, true] {
+        for at in 1..200 {
+            let rig = Rig::new(MemoryFiles::default());
+            lit(&rig, [0xc5, 1, 2]);
+            if mismatch {
+                rig.port.state.lock().unwrap().lighting_ignore = vec![1];
+            }
+            rig.custody.refuse_at.store(at, Ordering::Release);
+            let (status, message) = set(&rig, 1, Some(OFF), 1).await;
+            rig.custody.refuse_at.store(0, Ordering::Release);
+            rig.custody.fresh_refuse.store(false, Ordering::Release);
+            let finished = status == 1 || (mismatch && message.contains("did not match"));
+            let count = setters(&rig);
+            let next = set(&rig, 2, Some(OFF), 1).await;
+            let latched = next.1 == PENDING;
+            // A setter that may have been submitted latches; a stop before a
+            // setter's transfer, or after its confirmed readback, does not.
+            if message.contains("may have been submitted") {
+                assert!(latched, "{at} {mismatch}: {message}");
+            }
+            if message.contains("partial submission") || message.contains("not applied") {
+                assert!(!latched, "{at} {mismatch}: {message}");
+            }
+            if latched {
+                assert_eq!(setters(&rig), count, "{at} {mismatch}: nothing is replayed");
+            }
+            replies.insert(message.replace(STORED, ""));
+            rig.stop().await;
+            if finished {
+                break;
+            }
+        }
+    }
+    for reply in [
+        "Lighting write is indeterminate: The lighting transition stopped after partial submission.",
+        "Lighting write is indeterminate: The lighting change failed and the previous lighting state could not be fully restored.",
+        "Lighting write is indeterminate: A brightness command may have been submitted and was not confirmed.",
+        "Lighting write was not applied: Current lighting write admission is unavailable; no lighting setter was submitted.",
+    ] {
+        assert!(replies.contains(reply), "{reply}: {replies:#?}");
+    }
+}
+
+/// Too little request time for the recipe at the measured pace writes
+/// nothing and leaves nothing in doubt.
+#[tokio::test]
+async fn a_recipe_without_time_to_finish_writes_nothing() {
+    let rig = Rig::new(MemoryFiles::default());
+    lit(&rig, [0xc5, 1, 2]);
+    rig.port.state.lock().unwrap().latency = Some(Duration::from_millis(400));
+    let (status, message) = set(&rig, 1, Some(OFF), 1).await;
+    assert_eq!(
+        (status, message.as_str()),
+        (
+            3,
+            "Lighting override intent was stored. Hardware result: Lighting write was not applied: The remaining request time cannot cover this recipe at the measured device pace; no lighting setter was submitted."
+        )
+    );
+    assert_eq!(setters(&rig), 0);
+    rig.port.state.lock().unwrap().latency = None;
+    assert_eq!(set(&rig, 2, Some(OFF), 1).await, (1, CONFIRMED.to_owned()));
+    rig.stop().await;
+}
+
+/// A request dropped while its setter is in flight leaves the latch set: the
+/// next request resolves read-only and replays nothing.
+#[tokio::test]
+async fn a_request_dropped_mid_job_leaves_the_latch_set() {
+    let rig = Rig::new(MemoryFiles::default());
+    lit(&rig, [0xc5, 1, 0]);
+    let release = Arc::new(AtomicBool::new(false));
+    rig.port.state.lock().unwrap().lighting_held = Some((1, release.clone()));
+    let mut request = Box::pin(set(&rig, 1, Some(OFF), 1));
+    tokio::select! {
+        _ = &mut request => panic!("the held setter completed"),
+        _ = async {
+            while setters(&rig) == 0 {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        } => {}
+    }
+    drop(request);
+    release.store(true, Ordering::Release);
+    rig.reader.drain_active().await.unwrap();
+    rig.port.state.lock().unwrap().lighting_held = None;
+    assert_eq!(set(&rig, 2, Some(OFF), 1).await, (2, PENDING.to_owned()));
+    assert_eq!(setters(&rig), 1);
+    rig.stop().await;
+}
+
+/// A resolution whose logo pair is outside the contract is a complete read:
+/// it clears the latch, and the next write's own baseline refuses the pair.
+#[tokio::test]
+async fn a_resolution_reading_a_malformed_logo_clears_the_latch() {
+    let rig = Rig::new(MemoryFiles::default());
+    lit(&rig, [0xc5, 1, 0]);
+    assert!(!fresh_observe(&rig).await["status"]["confirmedState"].is_null());
+    rig.port.state.lock().unwrap().lighting_timeout = Some(1);
+    assert_eq!(set(&rig, 1, Some(OFF), 1).await.0, 3);
+    {
+        let mut s = rig.port.state.lock().unwrap();
+        s.lighting_timeout = None;
+        s.lighting = [0, 2, 0];
+    }
+    assert_eq!(set(&rig, 2, Some(OFF), 1).await, (2, PENDING.to_owned()));
+    assert_eq!(
+        rig.get().await["status"]["confirmedState"]["logoLighting"],
+        Value::Null
+    );
+    let (status, message) = set(&rig, 3, Some(OFF), 1).await;
+    assert_eq!(status, 3);
+    assert!(message.ends_with("Logo lighting response was malformed or unsupported."));
+    rig.port.state.lock().unwrap().lighting = [0, 1, 0];
+    assert_eq!(set(&rig, 4, Some(OFF), 1).await, (1, CONFIRMED.to_owned()));
+    rig.stop().await;
 }
 
 /// The compiled identity carries the refused marker, so no package reader
@@ -310,4 +822,41 @@ fn the_compiled_identity_carries_the_refused_lighting_marker() {
     assert!(
         crate::native_package::startup_policy_for_tests(&crate::NATIVE_ARTIFACT_IDENTITY).is_err()
     );
+}
+
+/// Every saved member is projected into the status a request publishes, so a
+/// fan request keeps the saved lighting override in it (`project_saved_members`).
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn a_fan_request_keeps_the_saved_lighting_override_in_status() {
+    let rig = fan_rig_with(0, 0, 2);
+    lit(&rig, [0xc5, 1, 0]);
+    fresh_observe(&rig).await;
+    assert_eq!(set(&rig, 1, Some(OFF_ONLY), 1).await.0, 1);
+    let fan = rig.request(fan_request(101, Some(1), 3700)).await;
+    assert_eq!(fan["result"]["status"], 1, "{fan}");
+    let status = rig.get().await;
+    assert_eq!(status["status"]["lightingOverride"]["lifetime"], 1);
+    assert_eq!(status["status"]["desiredState"]["lighting"]["source"], 4);
+    assert_eq!(saved(&rig), OFF_ONLY);
+    rig.stop().await;
+}
+
+/// The periodic thermal observation reads no lighting, so a thermal read
+/// publishes the lighting members as null until a lighting request reads them
+/// again; managed reads lighting in every observation. Slice L2 reads them.
+#[tokio::test]
+async fn a_thermal_read_publishes_no_lighting_members_interim_divergence() {
+    let rig = Rig::new(MemoryFiles::default());
+    lit(&rig, [0xc5, 1, 2]);
+    fresh_observe(&rig).await;
+    assert_eq!(set(&rig, 1, Some(OFF), 1).await.0, 1);
+    let state = rig.get().await["status"]["confirmedState"].clone();
+    assert_eq!(state["lighting"]["parameters"]["kind"], "off");
+    assert_eq!(state["logoLighting"], 2);
+    let state = fresh_observe(&rig).await["status"]["confirmedState"].clone();
+    assert!(!state.is_null());
+    assert_eq!(state["lighting"], Value::Null);
+    assert_eq!(state["logoLighting"], Value::Null);
+    rig.stop().await;
 }

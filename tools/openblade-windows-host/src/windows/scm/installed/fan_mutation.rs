@@ -1571,7 +1571,13 @@ impl Runtime {
                 .bind_private_user(&policy_sid);
             #[cfg(feature = "service-profile-triggers-v1")]
             let projected = projected.with_thermal_convergence(convergence);
-            Ok(projected)
+            policy_runtime.project_saved_members(
+                projected,
+                &store,
+                &policy_sid,
+                caller.session,
+                query,
+            )
         }));
         // Retain before awaiting: cancellation cannot discard an owned Stop obligation.
         *self.fan_pending.borrow_mut() = Some(permit.clone());

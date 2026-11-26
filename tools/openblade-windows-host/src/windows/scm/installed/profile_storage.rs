@@ -695,6 +695,18 @@ impl Storage {
             .unwrap_or_default())
     }
 
+    /// Managed `IsKeyboardLightingDelegated`: the committed preferences hand
+    /// the keyboard to Windows Dynamic Lighting (`KeyboardLightingControlMode
+    /// .WindowsDynamicLighting`). Where the aggregate is quarantined or absent
+    /// managed reads its default preferences, which do not.
+    #[cfg(feature = "service-lighting-v1")]
+    pub(in super::super) fn lighting_delegated(&self) -> io::Result<bool> {
+        const WINDOWS_DYNAMIC_LIGHTING: i32 = 1;
+        Ok(self.admitted_preferences()?.is_some_and(|preferences| {
+            preferences.keyboard_lighting_control_mode == WINDOWS_DYNAMIC_LIGHTING
+        }))
+    }
+
     /// Managed `ConfigurationIsAdmitted`: the aggregate is committed and this
     /// service neither failed to replace it nor saw it change.
     #[cfg(feature = "service-fan-stop-v1")]
@@ -754,7 +766,8 @@ impl Storage {
     /// this service failed to replace it or saw it change.
     #[cfg(any(
         feature = "service-profile-triggers-v1",
-        feature = "service-fan-stop-v1"
+        feature = "service-fan-stop-v1",
+        feature = "service-lighting-v1"
     ))]
     fn admitted_preferences(&self) -> io::Result<Option<Preferences>> {
         let state = self.state.lock().map_err(|_| denied())?;
@@ -814,7 +827,8 @@ impl Storage {
 /// fences thermal writes only; the configuration itself stays admitted.
 #[cfg(any(
     feature = "service-profile-triggers-v1",
-    feature = "service-fan-stop-v1"
+    feature = "service-fan-stop-v1",
+    feature = "service-lighting-v1"
 ))]
 fn configuration_quarantined(state: &State) -> bool {
     state.configuration_failed || state.configuration_changed

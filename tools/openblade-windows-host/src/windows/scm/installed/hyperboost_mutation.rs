@@ -132,6 +132,14 @@ impl Probes {
     fn journal_safe(&self) -> bool {
         (self.journal)().is_ok_and(|bytes| hyperboost_journal::journal_safe(bytes.as_deref()))
     }
+    /// Managed `CanAdmitUnclassifiedExternalControl`'s journal clauses
+    /// (`!hyperBoostJournalSafetyBlock`, `!hyperBoostRestorePending`): the
+    /// journal is absent or Relinquished (`journal_safe`), which a pending
+    /// restore is not. A read that fails admits nothing.
+    #[cfg(feature = "service-lighting-v1")]
+    pub(in super::super) fn admits_unclassified_control(&self) -> bool {
+        self.journal_safe()
+    }
     /// One pad observation, which ends once `cancelled` is set: a request's
     /// gate passes its job's cancellation, and the status its observer's. A
     /// cancelled scan is a failed one, which admits nothing. The scan checks

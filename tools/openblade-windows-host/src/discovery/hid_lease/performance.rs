@@ -37,7 +37,9 @@ mod lighting;
 mod lighting_admission;
 #[cfg(feature = "service-lighting-v1")]
 #[allow(unused_imports)] // Shared with the standalone discovery binary.
-pub(crate) use lighting::{LightingJob, LightingOutcome, LightingReading, LightingTarget};
+pub(crate) use lighting::{
+    LightingConfirmation, LightingJob, LightingOutcome, LightingReading, LightingTarget,
+};
 #[cfg(feature = "service-lighting-v1")]
 #[allow(unused_imports)] // Shared with the standalone discovery binary.
 pub(crate) use lighting_admission::approved as lighting_approved;

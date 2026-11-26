@@ -5,7 +5,7 @@
 //! The document is otherwise a `serde_json::Value`, which sorts members.
 //! Lighting is kept typed and written by the domain writer, which keeps
 //! managed's member order, `kind` first in `parameters` included.
-use super::{OVERRIDE_SCHEMA, State, Storage, denied, settled};
+use super::{OVERRIDE_SCHEMA, State, Storage, denied};
 use crate::service_status::{LIGHTING_PERSISTENT, LightingOverride};
 use openblade_domain::{
     automation::temporary_expired,
@@ -93,10 +93,20 @@ impl Storage {
     /// saved, and anything else clears the saved one; the bytes hold it
     /// normalized (`document_bytes`) and the store keeps it as requested, as
     /// managed's in-memory state does; a temporary value is
-    /// held for the power class `power` it was requested at. The document is
-    /// replaced only when its bytes change (`PersistOverridesIfChangedAsync`),
-    /// and a failed replacement quarantines the store as every override
-    /// save does.
+    /// held for the power class `power` it was requested at, stamped with the
+    /// Windows power generation the caller observed it at
+    /// (`Storage::observe_power`). The document is replaced only when its
+    /// bytes change (`PersistOverridesIfChangedAsync`), and a failed
+    /// replacement quarantines the store as every override save does.
+    ///
+    /// The document is one file with the thermal overrides, so a quarantined
+    /// store, which no longer trusts its bytes, refuses this save as it
+    /// refuses theirs. An unsettled thermal journal row does not: it fences
+    /// the thermal subsystems, whose intent it may hold in doubt, and no
+    /// journal row or recovery rewrites the lighting member. Managed
+    /// refuses a lighting request only for a pending lighting confirmation
+    /// (`pendingWriteConfirmations.Blocks(Lighting)`), which is native's
+    /// doubt latch.
     pub(in super::super) fn save_lighting(
         &self,
         value: Option<&LightingOverride>,
@@ -104,9 +114,7 @@ impl Storage {
     ) -> io::Result<()> {
         super::aggregate(self.files.as_ref(), self.same_path)?;
         let mut s = self.state.lock().map_err(|_| denied())?;
-        // The override document is shared with the thermal journal's
-        // intent, so a lighting save waits on it as every override save does.
-        if s.quarantined || s.last.as_ref().is_some_and(|e| !settled(e.progress)) {
+        if s.quarantined {
             return Err(denied());
         }
         let persisted = value
@@ -138,16 +146,30 @@ impl Storage {
     /// The lighting override in effect at power class `power`: an unexpired
     /// temporary one, otherwise the saved one. A document changed outside
     /// this store quarantines it, as every override read does.
+    #[cfg(test)]
     pub(in super::super) fn current_lighting_override(
         &self,
         power: i32,
     ) -> io::Result<Option<LightingOverride>> {
-        let mut s = self.state.lock().map_err(|_| denied())?;
-        if self.files.read(super::OVERRIDES)? != s.bytes {
-            s.quarantined = true;
-            s.configuration_changed = true;
-            return Err(denied());
+        {
+            let mut s = self.state.lock().map_err(|_| denied())?;
+            if self.files.read(super::OVERRIDES)? != s.bytes {
+                s.quarantined = true;
+                s.configuration_changed = true;
+                return Err(denied());
+            }
         }
+        self.verified_lighting_override(power)
+    }
+
+    /// `current_lighting_override` for a status projection that has just
+    /// compared the document with this store's bytes (`current_override`),
+    /// so the file is not read again: the typed value this store holds.
+    pub(in super::super) fn verified_lighting_override(
+        &self,
+        power: i32,
+    ) -> io::Result<Option<LightingOverride>> {
+        let mut s = self.state.lock().map_err(|_| denied())?;
         if s.temporary_lighting
             .as_ref()
             .is_some_and(|(_, saved)| temporary_expired(*saved, power))

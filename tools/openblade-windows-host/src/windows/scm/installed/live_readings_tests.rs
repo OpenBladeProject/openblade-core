@@ -1005,11 +1005,22 @@ fn the_compiled_identity_ends_with_the_refused_marker() {
     let identity = std::str::from_utf8(&crate::NATIVE_ARTIFACT_IDENTITY).unwrap();
     let fields: Vec<&str> = identity.split('\n').collect();
     assert_eq!(fields[2], "service");
+    // Only the markers build.rs appends after it may follow it, in its order.
+    let marked = [
+        ",service-lighting-v1",
+        ",service-hyperboost-v1",
+        ",service-thermal-hyperboost-exit-v1",
+        ",service-performance-shortcut-v1",
+        ",service-gpu-clock-tuning-v1",
+        ",service-fan-stop-v1",
+        ",service-diagnostics-export-v1",
+    ]
+    .iter()
+    .fold(fields[8], |marked, later| {
+        marked.strip_suffix(later).unwrap_or(marked)
+    });
     assert!(
-        // Only the diagnostic export's marker may follow it.
-        fields[8]
-            .trim_end_matches(",service-diagnostics-export-v1")
-            .ends_with(",service-live-readings-v1"),
+        marked.ends_with(",service-live-readings-v1"),
         "{}",
         fields[8]
     );

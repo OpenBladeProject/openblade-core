@@ -420,7 +420,8 @@ mod snapshot_tests {
                 "hyperBoostActive": false})
             .as_object()
             .unwrap()
-            .clone(),
+            .clone()
+            .into(),
         );
         assert_eq!(
             value.confirmed_thermal(),
@@ -436,7 +437,8 @@ mod snapshot_tests {
                 "hyperBoostActive": 1})
             .as_object()
             .unwrap()
-            .clone(),
+            .clone()
+            .into(),
         );
         assert_eq!(value.confirmed_thermal(), Default::default());
         assert!(!value.names_potential_controllers());

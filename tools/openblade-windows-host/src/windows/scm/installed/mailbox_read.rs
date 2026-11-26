@@ -1370,12 +1370,17 @@ impl ReadSource {
             metadata: Rc::default(),
         }
     }
-    /// Joins a lighting request's fresh reading to the retained thermal read,
-    /// so each later projection of that read (`decorate`) carries the lighting
-    /// members until the next thermal read replaces it. That read does not
-    /// read lighting (slice L2), so it confirms no lighting.
+    /// Joins what a lighting request left the confirmed lighting members
+    /// (`Snapshot::with_lighting_reading`) to the retained thermal read, so
+    /// each later projection of that read (`decorate`) carries them until the
+    /// next thermal read replaces it. That read does not read lighting (slice
+    /// L2), so it confirms no lighting.
     #[cfg(feature = "service-lighting-v1")]
-    pub(super) fn record_lighting(&self, brightness: Option<u8>, logo: Option<i32>) {
+    pub(super) fn record_lighting(
+        &self,
+        brightness: Option<Option<u8>>,
+        logo: Option<Option<i32>>,
+    ) {
         if let Some((thermal, _)) = self.last.borrow_mut().as_mut() {
             *thermal = thermal.clone().with_lighting_reading(brightness, logo);
         }
@@ -1913,7 +1918,8 @@ impl ReadSource {
 }
 
 /// Whether a write may change the fans, so a retained fan speed pair must
-/// not outlive it. A 00/04 keyboard write cannot.
+/// not outlive it. A 00/04 keyboard write cannot, and neither can a keyboard
+/// lighting job, whose only setters are 03/03, 03/00 and 03/02.
 #[cfg(all(
     feature = "service-live-readings-v1",
     feature = "service-thermal-mutation-v1"
@@ -1921,6 +1927,10 @@ impl ReadSource {
 fn changes_fans(permit: &dyn crate::discovery::performance::mutation::Permit) -> bool {
     #[cfg(feature = "service-keyboard-driver-mode-v1")]
     if permit.device_mode().is_some() {
+        return false;
+    }
+    #[cfg(feature = "service-lighting-v1")]
+    if permit.lighting().is_some() {
         return false;
     }
     let _ = permit;

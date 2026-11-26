@@ -146,6 +146,10 @@ pub(crate) struct State {
     /// That lighting query's (1-based) reply times out.
     #[cfg(feature = "service-lighting-v1")]
     pub(crate) lighting_query_timeout: Option<usize>,
+    /// That lighting setter's (1-based) transfer holds until released, as
+    /// `held_write` holds a thermal setter.
+    #[cfg(feature = "service-lighting-v1")]
+    pub(crate) lighting_held: Option<(usize, Arc<AtomicBool>)>,
     /// Raw brightness values the next 03/83 queries report, in order, before
     /// the stored one.
     #[cfg(feature = "service-lighting-v1")]
@@ -170,6 +174,16 @@ pub(crate) struct Fixture {
     arrivals: Arc<Mutex<Arrivals>>,
     transactions: Arc<Transactions>,
     threads: Arc<Threads>,
+}
+/// Whether no lighting setter is held: a held transfer waits on real time,
+/// as `held_write` does, so the port does not pause the clock for it.
+#[cfg(feature = "service-lighting-v1")]
+fn lighting_unheld(state: &State) -> bool {
+    state.lighting_held.is_none()
+}
+#[cfg(not(feature = "service-lighting-v1"))]
+fn lighting_unheld(_: &State) -> bool {
+    true
 }
 /// Counted threads: started, and exited as their thread-local destructors run.
 #[derive(Default)]
@@ -315,6 +329,7 @@ impl Fixture {
                     let paused = (latency || permit.is_none() || thermal)
                         && s.held_read.is_none()
                         && s.held_write.is_none()
+                        && lighting_unheld(&s)
                         && !real;
                     let arrival = if !paused {
                         None
@@ -701,6 +716,12 @@ impl Port for MemoryPort {
                             }
                             if s.lighting_timeout == Some(number) {
                                 self.reply_timeout = true;
+                            }
+                            if let Some((held, release)) = &s.lighting_held
+                                && *held == number
+                            {
+                                self.held = Some(release.clone());
+                                s.holding.notify_one();
                             }
                             payload.to_vec()
                         } else {

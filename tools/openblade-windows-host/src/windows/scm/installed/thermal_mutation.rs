@@ -1202,13 +1202,30 @@ impl Runtime {
                 .bind_private_user(&policy_sid);
             #[cfg(feature = "service-profile-triggers-v1")]
             let projected = projected.with_thermal_convergence(convergence);
-            #[cfg(feature = "service-fan-stop-v1")]
-            let projected = runtime.project_fan_stop(projected, &store, &policy_sid, session)?;
-            #[cfg(feature = "service-lighting-v1")]
-            let projected =
-                projected.lighting_intent(store.current_lighting_override(query)?.as_ref());
-            Ok(projected)
+            runtime.project_saved_members(projected, &store, &policy_sid, session, query)
         })
+    }
+    /// The private members every retained policy projection carries beside
+    /// its thermal ones, the fan request's included (`fan::Runtime::apply_fan`):
+    /// managed's Fan Stop automation and the lighting override at `query`.
+    /// The caller has compared the override document with `store`'s bytes
+    /// (`Storage::current_override`), so the lighting member is the typed
+    /// value the store holds.
+    pub(super) fn project_saved_members(
+        &self,
+        projected: Snapshot,
+        store: &Storage,
+        sid: &str,
+        session: u32,
+        query: i32,
+    ) -> io::Result<Snapshot> {
+        #[cfg(feature = "service-fan-stop-v1")]
+        let projected = self.project_fan_stop(projected, store, sid, session)?;
+        #[cfg(feature = "service-lighting-v1")]
+        let projected =
+            projected.lighting_intent(store.verified_lighting_override(query)?.as_ref());
+        let _ = (store, sid, session, query);
+        Ok(projected)
     }
     // Every caller, including the shared mutation tests, passes the admitted request fields individually.
     #[allow(clippy::too_many_arguments)]
