@@ -1230,6 +1230,22 @@ impl HyperBoostProbes {
             journal_reads: Arc::default(),
         }
     }
+    /// The same pad and journal as the metadata observer reads them for
+    /// the status: not counted and not scripted, so a status never takes an
+    /// observation a request's gate was scripted to make.
+    fn status_probes(&self) -> Probes {
+        let (pad, journal) = (self.pad.clone(), self.journal.clone());
+        Probes::new(
+            move || *pad.lock().unwrap(),
+            Arc::new(move || {
+                journal
+                    .lock()
+                    .unwrap()
+                    .clone()
+                    .ok_or_else(|| io::Error::other("injected journal read failure"))
+            }),
+        )
+    }
     fn probes(&self) -> Probes {
         let (pad, script, observations) = (
             self.pad.clone(),
@@ -1443,6 +1459,10 @@ impl Rig {
         runtime.read_hyperboost(hyperboost.probes());
         let metadata = Arc::new(AtomicU8::new(0));
         let origin = Arc::new(crate::loaded_origin::lifetime::Lifetime::default());
+        #[cfg(feature = "service-hyperboost-v1")]
+        let observed_hyperboost = hyperboost.status_probes();
+        #[cfg(not(feature = "service-hyperboost-v1"))]
+        let observed_hyperboost = ();
         let source = injected_mutation_source(
             Arc::new(Origin(origin.clone(), custody.clone())),
             mailbox,
@@ -1452,6 +1472,7 @@ impl Rig {
                 let port = port.clone();
                 Arc::new(move || port.count_thread())
             },
+            observed_hyperboost,
         );
         Self {
             #[cfg(feature = "service-hyperboost-v1")]

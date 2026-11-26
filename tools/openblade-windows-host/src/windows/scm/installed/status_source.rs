@@ -18,6 +18,8 @@ use super::{
     subscription::{Publication, REFRESH_INTERVAL},
 };
 use crate::service_frame::invalid;
+#[cfg(feature = "service-hyperboost-v1")]
+use crate::service_status::HyperBoostStatus;
 
 #[cfg(any(test, feature = "service-hardware-compile-check"))]
 use super::FirmwareSource;
@@ -61,6 +63,10 @@ struct Evidence {
     power: Power,
     controllers: Vec<String>,
     controller_warning: Option<&'static str>,
+    /// Managed's HyperBoost status members, read with this evidence
+    /// (`observe_hyperboost`).
+    #[cfg(feature = "service-hyperboost-v1")]
+    hyperboost: HyperBoostStatus,
 }
 
 #[derive(PartialEq, Eq)]
@@ -72,6 +78,8 @@ struct StatusFields {
     fan_stop_evidence: bool,
     controllers: Vec<String>,
     controller_warning: Option<&'static str>,
+    #[cfg(feature = "service-hyperboost-v1")]
+    hyperboost: HyperBoostStatus,
 }
 
 type ReadEvidence = dyn Fn(&AtomicBool) -> Evidence + Send + Sync;
@@ -245,6 +253,12 @@ impl ObservedStatus {
         );
         let fan_stop_evidence =
             has_fan_stop_evidence(evidence.as_ref().map(|current| &current.device));
+        // Nothing observed establishes none of the HyperBoost members.
+        #[cfg(feature = "service-hyperboost-v1")]
+        let hyperboost = evidence
+            .as_ref()
+            .map(|current| current.hyperboost.clone())
+            .unwrap_or_default();
         let (power, controllers, controller_warning) = evidence.map_or(
             (Power::Unknown, vec![], Some(CONTROLLER_UNKNOWN)),
             |current| {
@@ -262,6 +276,8 @@ impl ObservedStatus {
             fan_stop_evidence,
             controllers,
             controller_warning,
+            #[cfg(feature = "service-hyperboost-v1")]
+            hyperboost,
         };
         // Keep one revision across caller projections. Unobservable evidence
         // changes (such as unknown versus unclassified external power) do not
@@ -279,7 +295,7 @@ impl ObservedStatus {
             None => 0,
         };
         let project = |access, message| {
-            Snapshot::observed_read_only(
+            let status = Snapshot::observed_read_only(
                 revision,
                 access,
                 fields.on_battery,
@@ -288,7 +304,10 @@ impl ObservedStatus {
                 fields.controller_warning,
                 message,
             )
-            .with_fan_stop_evidence(fields.fan_stop_evidence)
+            .with_fan_stop_evidence(fields.fan_stop_evidence);
+            #[cfg(feature = "service-hyperboost-v1")]
+            let status = status.with_hyperboost(&fields.hyperboost);
+            status
         };
         let publication = Arc::new(Publication {
             active: project(0, fields.message.clone()),
@@ -1153,6 +1172,13 @@ impl StatusSource for GuardedStatus {
                     let status = publish_reconciled(&publisher, &mailbox, status)?;
                     Ok((outcome, Some(status)))
                 }
+                // Managed `RecoverHyperBoostRestoreAsync`: native answers from
+                // managed's ownership journal and writes nothing, so no
+                // status follows (`Runtime::recover_hyperboost_restore`).
+                #[cfg(feature = "service-hyperboost-v1")]
+                crate::service_status::StatusRequest::RecoverHyperBoostRestore { .. } => {
+                    Ok((runtime.recover_hyperboost_restore(caller).await?, None))
+                }
                 // Managed publishes the preview without the operation gate: it
                 // stores no intent and reads or writes no firmware.
                 #[cfg(feature = "service-performance-shortcut-v1")]
@@ -1413,6 +1439,8 @@ fn read_windows(cancel: &AtomicBool) -> Evidence {
             power,
             controllers: vec![],
             controller_warning: Some(CONTROLLER_UNKNOWN),
+            #[cfg(feature = "service-hyperboost-v1")]
+            hyperboost: HyperBoostStatus::default(),
         };
     }
     let inventory = process_inventory::read();
@@ -1438,10 +1466,54 @@ fn read_windows(cancel: &AtomicBool) -> Evidence {
         _ => CONTROLLER_UNKNOWN,
     };
     Evidence {
+        #[cfg(feature = "service-hyperboost-v1")]
+        hyperboost: observe_hyperboost(
+            &device,
+            &controllers,
+            // The probes the HyperBoost requests read (`Runtime::native`),
+            // composed only with the lifecycle triggers.
+            #[cfg(all(not(test), feature = "service-profile-triggers-v1"))]
+            Some(&super::thermal_mutation::Probes::native()),
+            #[cfg(not(all(not(test), feature = "service-profile-triggers-v1")))]
+            None,
+        ),
         device,
         power,
         controllers: controllers.potential_controllers().to_vec(),
         controller_warning: Some(warning),
+    }
+}
+
+/// Managed's HyperBoost status members from one metadata observation.
+///
+/// - The blocking controllers are this observation's own
+///   (`Observation::hyperboost_blockers`), whatever the host.
+/// - The pad and managed's ownership journal are read only on the host of
+///   the model whose HyperBoost requests native serves
+///   (`hyperboost::MODEL`), through the probes those requests read, and only
+///   where the composition has them. Managed publishes the pad with a
+///   verified device whose capabilities name a HyperBoost access
+///   (`ResolvePadlessHyperBoostEligibility`); this status carries no such
+///   capability, so the matched host stands in for it. Every other host, a
+///   failed pad scan and a composition without probes report Unknown and no
+///   pending restore.
+#[cfg(feature = "service-hyperboost-v1")]
+fn observe_hyperboost(
+    device: &DeviceMetadata,
+    controllers: &openblade_platform_windows::controller_presence::Observation,
+    probes: Option<&super::thermal_mutation::Probes>,
+) -> HyperBoostStatus {
+    let probes = probes.filter(|_| {
+        matches!(device, DeviceMetadata::MatchedHost { model, .. }
+            if model == super::thermal_mutation::HYPERBOOST_MODEL)
+    });
+    HyperBoostStatus {
+        pad: probes.map_or(0, |probes| probes.eligibility()),
+        restore_pending: probes.is_some_and(|probes| probes.restore_pending()),
+        blockers: Some(HyperBoostStatus::blocking(
+            controllers.potential_controllers(),
+            controllers.hyperboost_blockers(),
+        )),
     }
 }
 
@@ -1454,6 +1526,19 @@ pub(super) use tests::{in_memory_source, in_memory_source_with_firmware};
 
 #[cfg(all(test, feature = "service-mailbox-observation-v1"))]
 pub(super) use tests::in_memory_guarded_no_reader;
+
+/// A complete observation that found no controller.
+#[cfg(all(test, feature = "service-hyperboost-v1"))]
+fn no_controllers() -> openblade_platform_windows::controller_presence::Observation {
+    use openblade_platform_windows::controller_presence::{Scan, observe};
+    observe(
+        Scan::Complete(&[]),
+        Scan::Complete(&[]),
+        None,
+        Scan::Complete(&[]),
+        0,
+    )
+}
 
 /// The injected source's metadata bit for production-like controller
 /// evidence: no SCM scan, so a detection warning is always published.
@@ -1468,6 +1553,17 @@ pub(super) const OBSERVER_EXPIRES: u8 = 0x20;
 #[cfg(all(test, feature = "service-thermal-mutation-v1"))]
 pub(super) const OBSERVER_PANICS: u8 = 0x40;
 
+/// The probes the injected source's metadata observer reads for the
+/// HyperBoost status members, as `read_windows` reads the native ones.
+#[cfg(all(test, feature = "service-hyperboost-v1"))]
+pub(super) type InjectedHyperBoost = super::thermal_mutation::Probes;
+#[cfg(all(
+    test,
+    feature = "service-thermal-mutation-v1",
+    not(feature = "service-hyperboost-v1")
+))]
+pub(super) type InjectedHyperBoost = ();
+
 #[cfg(all(test, feature = "service-thermal-mutation-v1"))]
 pub(super) fn injected_mutation_source(
     origin: Arc<dyn StatusOrigin>,
@@ -1476,6 +1572,8 @@ pub(super) fn injected_mutation_source(
     metadata: Arc<std::sync::atomic::AtomicU8>,
     // Runs first on each status-observer thread.
     observer: Arc<dyn Fn() + Send + Sync>,
+    #[cfg_attr(not(feature = "service-hyperboost-v1"), allow(unused_variables))]
+    hyperboost: InjectedHyperBoost,
 ) -> Box<dyn StatusSource> {
     Box::new(GuardedStatus {
         origin,
@@ -1492,15 +1590,18 @@ pub(super) fn injected_mutation_source(
                 std::thread::park_timeout(Duration::from_millis(1));
             }
             let metadata = flags & !(OBSERVER_EXPIRES | OBSERVER_PANICS);
+            let device = if metadata & !PRODUCTION_CONTROLLERS == 3 {
+                DeviceMetadata::Unavailable
+            } else {
+                DeviceMetadata::MatchedHost {
+                    model: "RZ09-0581".into(),
+                    hid: HidMetadata::Candidate,
+                }
+            };
             Evidence {
-                device: if metadata & !PRODUCTION_CONTROLLERS == 3 {
-                    DeviceMetadata::Unavailable
-                } else {
-                    DeviceMetadata::MatchedHost {
-                        model: "RZ09-0581".into(),
-                        hid: HidMetadata::Candidate,
-                    }
-                },
+                #[cfg(feature = "service-hyperboost-v1")]
+                hyperboost: observe_hyperboost(&device, &no_controllers(), Some(&hyperboost)),
+                device,
                 power: match metadata & !PRODUCTION_CONTROLLERS {
                     1 => Power::Battery,
                     4 => Power::Unknown,

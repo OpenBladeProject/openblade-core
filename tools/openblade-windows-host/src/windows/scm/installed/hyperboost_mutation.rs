@@ -32,6 +32,12 @@
 //! - Managed's HyperBoost ownership journal is read before the request and
 //!   before each setter. Native writes nothing on managed's behalf, so a journal
 //!   managed has not relinquished, or one that cannot be read, refuses both.
+//! - `recoverHyperBoostRestore` answers from that journal and writes nothing
+//!   (`Runtime::recover_hyperboost_restore`): the only pending restore is
+//!   managed's own. The status reports the pad, a restore managed left
+//!   pending and the blocking controllers from the metadata observation
+//!   (`Probes::eligibility`, `Probes::restore_pending`,
+//!   `status_source::observe_hyperboost`).
 //!
 //! Native ownership is the thermal history's (`thermal_history::hyperboost_owned`,
 //! `Storage::owns_hyperboost`): a settled HyperBoost entry with no later
@@ -47,6 +53,11 @@ use openblade_domain::thermal_observation::ObservedPerformance;
 #[cfg(feature = "service-profile-triggers-v1")]
 #[path = "hyperboost_cleanup.rs"]
 pub(super) mod cleanup;
+
+/// The exact model whose HyperBoost requests native serves, the thermal
+/// Reader's (`discovery::performance::OBSERVED_IDENTITY`). The status reads
+/// the pad and managed's journal only on its host.
+pub(in super::super) const MODEL: &str = crate::discovery::performance::OBSERVED_IDENTITY.0;
 
 /// The cooling pad's USB identity (managed `HyperBoostEligibilitySource`,
 /// 1532:0F43), as Windows names it in an interface's hardware IDs.
@@ -72,6 +83,14 @@ pub(super) const JOURNAL_PENDING: &str = "HyperBoost recovery from the previous 
 /// HyperBoost reading reports Automatic fans, so owned Stop closes that
 /// change without a setter, and the exit is admitted after a restart.
 pub(super) const FAN_HANDBACK_EXIT: &str = "HyperBoost was not turned off because OpenBlade still owns an earlier fan change. The fans are already on firmware Automatic. Restart OpenBlade to hand them back, then turn HyperBoost off.";
+/// Managed `RecoverHyperBoostRestoreAsync` replies, literally
+/// (`ServiceControlRuntime.cs` 4083-4102).
+pub(super) const NO_RESTORE: &str = "There is no saved HyperBoost restore to retry.";
+pub(super) const NOT_AWAITING_RETRY: &str =
+    "The HyperBoost ownership journal is not awaiting a user-authorized restore retry.";
+/// Native's refusal of a caller that is not the active interactive user, as
+/// the shortcut preview replies it.
+pub(super) const ACTIVE_USER: &str = "The active interactive Windows user is required.";
 
 /// A read-only observation of the cooling pad.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -103,7 +122,7 @@ impl Probes {
         }
     }
     #[cfg(all(not(test), feature = "service-profile-triggers-v1"))]
-    pub(super) fn native() -> Self {
+    pub(in super::super) fn native() -> Self {
         Self::new(observe_pad, Arc::new(hyperboost_journal::read))
     }
     /// Whether managed's journal admits a native HyperBoost write now:
@@ -111,6 +130,25 @@ impl Probes {
     /// fails admits nothing.
     fn journal_safe(&self) -> bool {
         (self.journal)().is_ok_and(|bytes| hyperboost_journal::journal_safe(bytes.as_deref()))
+    }
+    /// Managed `PadlessHyperBoostEligibility` from one pad observation
+    /// (`ResolvePadlessHyperBoostEligibility`): absent, present, or Unknown
+    /// for a scan that failed. Managed reads an ambiguous pad as present on
+    /// a pad-less-only model; this probe names no ambiguous pad, since it
+    /// matches the hardware ID alone.
+    pub(in super::super) fn eligibility(&self) -> u8 {
+        use crate::service_status::HyperBoostStatus;
+        match (self.pad)() {
+            Pad::Absent => HyperBoostStatus::PAD_ABSENT,
+            Pad::Present => HyperBoostStatus::PAD_PRESENT,
+            Pad::ObservationFailed => 0,
+        }
+    }
+    /// Managed `HyperBoostRestorePending`: managed's journal names a restore
+    /// it has not finished (`hyperboost_journal::restore_pending`). A read
+    /// that fails establishes nothing, so it reports none.
+    pub(in super::super) fn restore_pending(&self) -> bool {
+        (self.journal)().is_ok_and(|bytes| hyperboost_journal::restore_pending(bytes.as_deref()))
     }
 }
 /// The present HID interfaces' hardware IDs, read without opening any
@@ -783,5 +821,64 @@ impl Runtime {
             self.settle_ownership(&mailbox, caller, &sid, &id)?;
         }
         Ok(stepped.reply())
+    }
+}
+
+impl Runtime {
+    /// Managed `RecoverHyperBoostRestoreAsync` (`ServiceControlRuntime.cs`
+    /// 4040-4555): the user's one retry of a restore managed's ownership
+    /// journal left pending. Native reads that journal and answers; it
+    /// writes nothing to firmware, to its own journal or to managed's.
+    ///
+    /// Managed's retry re-applies the performance and fan intent its journal
+    /// saved, against the recovery baseline that journal recorded, and then
+    /// retires the journal. Native has no such state of its own: a native
+    /// exit is one journaled performance step, whose refusal leaves
+    /// HyperBoost on and owned and whose possible submission leaves an
+    /// unsettled row, which fences the store and is never replayed
+    /// (`hyperboost_outcome`); the handback gives managed that row as a
+    /// pending confirmation, not as a restore. The only pending restore is
+    /// therefore managed's own, and its recovery stays managed's: native
+    /// never writes that journal (see "Journal decision" under "Owned
+    /// HyperBoost" in docs/windows-native-thermal-mutation.md).
+    ///
+    /// The gates, in managed's order:
+    ///
+    /// | Managed | Journal | Native reply |
+    /// |---|---|---|
+    /// | 6943-6952 | No probes composed | Blocked, `UNAVAILABLE` |
+    /// | native only | Not the active interactive user | Blocked, `ACTIVE_USER` |
+    /// | 4053-4080, 4108-4555 | Unreadable, or neither absent nor Relinquished | Blocked, `JOURNAL_PENDING`: managed inspects, refuses or retries its own journal |
+    /// | 4082-4091 | Absent | Stored, `NO_RESTORE` |
+    /// | 4093-4104 | Relinquished | Blocked, `NOT_AWAITING_RETRY` |
+    pub(in super::super) async fn recover_hyperboost_restore(
+        &self,
+        caller: Caller,
+    ) -> io::Result<Outcome> {
+        #[cfg(test)]
+        self.entered.set(self.entered.get() + 1);
+        let Some(probes) = self.hyperboost.get().cloned() else {
+            return Ok(Outcome::blocked(UNAVAILABLE));
+        };
+        // One operation at a time, as managed's operation gate allows: the
+        // answer never describes a journal an entry or exit is still using.
+        let _serial = self.gate.lock().await;
+        verify_retained_failure(&self.fatal)?;
+        if caller.logon != Logon::Interactive || caller.control_session != Some(caller.session) {
+            return Ok(Outcome::blocked(ACTIVE_USER));
+        }
+        Ok(match (probes.journal)() {
+            Ok(None) => Outcome {
+                status: 0,
+                message: NO_RESTORE.into(),
+            },
+            Ok(Some(bytes)) if hyperboost_journal::journal_safe(Some(&bytes)) => {
+                Outcome::blocked(NOT_AWAITING_RETRY)
+            }
+            // A pending restore, any other state managed has not
+            // relinquished, a document native cannot read as managed does,
+            // or a failed read: the journal is managed's to finish.
+            Ok(Some(_)) | Err(_) => Outcome::blocked(JOURNAL_PENDING),
+        })
     }
 }

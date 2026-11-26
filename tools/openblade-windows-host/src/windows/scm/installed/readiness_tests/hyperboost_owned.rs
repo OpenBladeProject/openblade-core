@@ -781,3 +781,6 @@ async fn entry_refuses_unclassified_external_power() {
     assert!(rows(&rig).is_empty());
     rig.stop().await;
 }
+
+#[path = "hyperboost_status.rs"]
+mod status;

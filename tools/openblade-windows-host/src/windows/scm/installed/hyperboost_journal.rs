@@ -15,6 +15,9 @@ pub(in super::super) type Journal = Arc<dyn Fn() -> io::Result<Option<Vec<u8>>> 
 
 /// Managed `HyperBoostOwnershipJournalState.Relinquished`.
 pub(super) const RELINQUISHED: i64 = 3;
+/// Managed `HyperBoostOwnershipJournalState.RestorePending`.
+#[cfg(feature = "service-hyperboost-v1")]
+const RESTORE_PENDING: i64 = 2;
 /// Managed `PerformancePreset.Custom` and its last value, `Creator`.
 const CUSTOM_PRESET: i64 = 5;
 const PRESETS: i64 = 9;
@@ -65,6 +68,34 @@ pub(super) fn journal_safe(bytes: Option<&[u8]>) -> bool {
         return true;
     };
     json::parse(bytes).is_ok_and(|document| relinquished(&document).is_some())
+}
+
+/// Whether managed's journal names a restore it has not finished: a document
+/// of managed's own members, each once, whose state is RestorePending. That
+/// is what managed's `hyperBoostRestorePending` starts from
+/// (`load.Journal?.State == RestorePending`).
+///
+/// It reads the state only. Managed also refuses a document `IsWellFormed`
+/// rejects ("invalid and was preserved for manual inspection") and then
+/// reports no pending restore; native reads only a Relinquished document
+/// exactly as managed does (`relinquished`), so a RestorePending document
+/// managed would call invalid still reads as pending here. Either way
+/// `journal_safe` refuses every HyperBoost write, and this answer admits
+/// nothing.
+#[cfg(feature = "service-hyperboost-v1")]
+pub(super) fn restore_pending(bytes: Option<&[u8]>) -> bool {
+    bytes
+        .and_then(|bytes| json::parse(bytes).ok())
+        .is_some_and(|document| {
+            document.members().is_some_and(|members| {
+                members
+                    .iter()
+                    .all(|(name, _)| MEMBERS.contains(&name.as_str()))
+            }) && document
+                .member("state")
+                .and_then(|state| state.integer(i32::MIN.into(), i32::MAX.into()))
+                == Some(RESTORE_PENDING)
+        })
 }
 
 /// `Some` for a recognized, well-formed Relinquished document.

@@ -103,6 +103,8 @@ fn evidence(device: DeviceMetadata, power: Power) -> Evidence {
         power,
         controllers: vec![],
         controller_warning: Some(CONTROLLER_UNKNOWN),
+        #[cfg(feature = "service-hyperboost-v1")]
+        hyperboost: HyperBoostStatus::default(),
     }
 }
 
@@ -722,4 +724,116 @@ fn only_the_exact_matched_model_has_fan_stop_evidence() {
         assert!(!has_fan_stop_evidence(Some(&device)));
     }
     assert!(!has_fan_stop_evidence(None));
+}
+
+/// Managed 16139-16145: the blocking controllers are the observation's own
+/// (`Observation::hyperboost_blockers`), in the potential controllers'
+/// spelling and order. A lighting service and the verified updater service
+/// are potential controllers that do not block HyperBoost. Without probes
+/// the pad and the journal stay unread.
+#[cfg(feature = "service-hyperboost-v1")]
+#[test]
+fn hyperboost_blockers_are_the_controller_observation_s_own() {
+    use openblade_platform_windows::controller_presence::{
+        Process, Scan, Service, ServiceState, observe,
+    };
+    let running = |name| Service {
+        name,
+        display_name: name,
+        state: ServiceState::Running,
+    };
+    let observation = observe(
+        Scan::Complete(&[Process {
+            name: "RazerAppEngine",
+            pid: None,
+            identity: None,
+            verified_image: None,
+        }]),
+        Scan::Complete(&[running("Razer Chroma SDK Service"), running("RGS")]),
+        None,
+        Scan::Complete(&[]),
+        0,
+    );
+    assert_eq!(
+        observation.potential_controllers(),
+        ["RGS", "Razer Chroma SDK Service", "RazerAppEngine"]
+    );
+    for device in [
+        matched(HidMetadata::Candidate),
+        DeviceMetadata::Unsupported,
+        DeviceMetadata::Unavailable,
+    ] {
+        assert_eq!(
+            observe_hyperboost(&device, &observation, None),
+            HyperBoostStatus {
+                pad: 0,
+                restore_pending: false,
+                blockers: Some(vec!["RazerAppEngine".to_owned()]),
+            }
+        );
+    }
+    // The potential list's spelling, once each, and only its members.
+    let names = |names: &[&str]| names.iter().map(|n| (*n).to_owned()).collect::<Vec<_>>();
+    assert_eq!(
+        HyperBoostStatus::blocking(
+            &names(&["RGS", "RazerAppEngine", "razerappengine"]),
+            &names(&["RAZERAPPENGINE", "Unlisted"]),
+        ),
+        ["RazerAppEngine"]
+    );
+}
+
+/// The members reach every caller's projection of the published status, and
+/// a source that has observed nothing publishes what managed's absent
+/// members decode to: Unknown, no pending restore and no classification.
+#[cfg(feature = "service-hyperboost-v1")]
+#[tokio::test]
+async fn hyperboost_members_are_published_only_as_observed() {
+    let mut source = ObservedStatus::new(|_| panic!("the cached publication is fresh"));
+    source.publish(None).unwrap();
+    let members = |source: &ObservedStatus, active: bool| {
+        let publication = source.metadata.as_ref().unwrap();
+        let status = to_value(if active {
+            &publication.active
+        } else {
+            &publication.inactive
+        })
+        .unwrap();
+        json!([
+            status["padlessHyperBoostEligibility"],
+            status["hyperBoostRestorePending"],
+            status["hyperBoostBlockingControllers"],
+        ])
+    };
+    for active in [true, false] {
+        assert_eq!(members(&source, active), json!([0, false, null]));
+    }
+    let observed = HyperBoostStatus {
+        pad: HyperBoostStatus::PAD_PRESENT,
+        restore_pending: true,
+        blockers: Some(vec!["RazerAppEngine".to_owned()]),
+    };
+    let published = |hyperboost: &HyperBoostStatus| Evidence {
+        controllers: vec!["RazerAppEngine".to_owned()],
+        hyperboost: hyperboost.clone(),
+        ..evidence(matched(HidMetadata::Candidate), Power::ExternalUnknown)
+    };
+    assert!(source.publish(Some(published(&observed))).unwrap());
+    for active in [true, false] {
+        assert_eq!(
+            members(&source, active),
+            json!([2, true, ["RazerAppEngine"]])
+        );
+    }
+    // A repeated observation is no new revision; a changed member is.
+    assert!(!source.publish(Some(published(&observed))).unwrap());
+    let cleared = HyperBoostStatus {
+        restore_pending: false,
+        ..observed
+    };
+    assert!(source.publish(Some(published(&cleared))).unwrap());
+    assert_eq!(
+        members(&source, true),
+        json!([2, false, ["RazerAppEngine"]])
+    );
 }

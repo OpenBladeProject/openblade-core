@@ -150,6 +150,8 @@ mod profiles;
 #[cfg(feature = "service-profile-triggers-v1")]
 #[path = "request_triggers.rs"]
 mod triggers;
+#[cfg(all(test, feature = "service-hyperboost-v1"))]
+pub(super) use hyperboost::Pad;
 #[cfg(all(
     test,
     feature = "service-hyperboost-v1",
@@ -157,8 +159,8 @@ mod triggers;
     feature = "service-keyboard-driver-mode-v1"
 ))]
 pub(super) use hyperboost::cleanup::CleanupExit as HyperBoostCleanupExit;
-#[cfg(all(test, feature = "service-hyperboost-v1"))]
-pub(super) use hyperboost::{Pad, Probes};
+#[cfg(feature = "service-hyperboost-v1")]
+pub(super) use hyperboost::{MODEL as HYPERBOOST_MODEL, Probes};
 #[cfg(feature = "service-keyboard-driver-mode-v1")]
 pub(super) use keyboard::SHUTDOWN_BUDGET as KEYBOARD_SHUTDOWN_BUDGET;
 #[cfg(all(test, feature = "service-keyboard-driver-mode-v1"))]
