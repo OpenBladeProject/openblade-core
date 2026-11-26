@@ -374,3 +374,22 @@ fn a_rearm_retires_every_suppression_and_keeps_the_rest() {
     assert!(rearmed.validate(SID, true).is_ok());
     assert!(!state.suppresses());
 }
+
+/// Managed binds the record's lighting with its polymorphic parameters,
+/// which need their `kind` first (`kind_first`); serde_json alone sorts it
+/// after `color`.
+#[test]
+fn the_record_writes_lighting_parameters_kind_first() {
+    let mut desired = intent(1, 0);
+    desired.lighting["value"]["parameters"] =
+        json!({"color": {"red": 0, "green": 255, "blue": 0}, "kind": "static"});
+    let state = reserved(
+        &State::empty(SID).refresh_intent(refresh(desired, Power::BATTERY), || guid(EPOCH)),
+    );
+    let (bytes, _) = encode(&state, SID).expect("encode");
+    let text = String::from_utf8(bytes.clone()).unwrap();
+    let parameters = text.find("\"parameters\": {").expect("parameters");
+    let first = text[parameters + "\"parameters\": {".len()..].trim_start();
+    assert!(first.starts_with("\"kind\": \"static\","), "{text}");
+    assert!(matches!(decode(Some(&bytes), SID), Load::Admitted { .. }));
+}

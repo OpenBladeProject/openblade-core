@@ -435,7 +435,10 @@ fn default_curve() -> ManualCurve {
 pub struct Intent {
     pub performance: Resolved,
     pub fans: Resolved,
-    #[serde(deserialize_with = "object_or_null")]
+    #[serde(
+        deserialize_with = "object_or_null",
+        serialize_with = "crate::kind_first::serialize"
+    )]
     pub lighting: Value,
     #[serde(deserialize_with = "object_or_null")]
     pub battery: Value,
@@ -487,7 +490,10 @@ pub struct Observation {
     pub fans: Option<i32>,
     #[serde(deserialize_with = "required")]
     pub battery: Option<Value>,
-    #[serde(deserialize_with = "required")]
+    #[serde(
+        deserialize_with = "required",
+        serialize_with = "crate::kind_first::serialize_option"
+    )]
     pub lighting: Option<Value>,
     /// Managed's initializer makes a missing member false; null is unknown.
     #[serde(default = "known_off")]
@@ -498,7 +504,11 @@ pub struct Observation {
     pub gpu_clock_offsets: Option<Value>,
     #[serde(default)]
     pub logo_lighting: Option<i32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "crate::kind_first::serialize_option"
+    )]
     pub independent_lighting: Option<Value>,
 }
 

@@ -18,6 +18,8 @@ pub mod driver_mode_history;
 #[cfg(feature = "thermal-history")]
 pub mod fan_history;
 pub mod fan_recipe;
+#[cfg(feature = "thermal-history")]
+pub mod kind_first;
 #[cfg(feature = "profile-set")]
 pub mod profile_set;
 #[cfg(feature = "thermal-history")]
