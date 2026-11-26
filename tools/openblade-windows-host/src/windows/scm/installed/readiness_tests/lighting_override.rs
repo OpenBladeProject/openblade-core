@@ -92,16 +92,43 @@ async fn lit_effects_are_refused_until_l2_interim_divergence() {
         "static"
     );
     assert_eq!(status["status"]["desiredState"]["lighting"]["source"], 4);
-    // Clearing stores the clear; applying profile lighting is slice L2's.
-    let (status, message) = set(&rig, 2, None, 0).await;
-    assert_eq!(status, 2);
-    assert_eq!(
-        message,
-        "Lighting override was cleared. Hardware result: Lighting value is not supported by the verified capability table."
-    );
-    assert_eq!(saved(&rig), "null");
-    assert!(sent(&rig).is_empty());
     rig.stop().await;
+}
+
+/// A clear is stored and its reply says what waits. On an unclassified
+/// adapter that lighting admits it is managed's: profile application waits
+/// for adapter classification. On a classified adapter managed applies the
+/// profile's lighting, which slice L1 does not, and the reply says so
+/// (interim divergence). Nothing is sent either way.
+#[tokio::test]
+async fn a_clear_is_stored_and_says_what_waits() {
+    for (unclassified, reply) in [
+        (
+            false,
+            "Lighting override was cleared. The profile's lighting was not applied.",
+        ),
+        (
+            true,
+            "Override cleared. Power-profile application waits for adapter classification.",
+        ),
+    ] {
+        let rig = Rig::new(MemoryFiles::default());
+        assert_eq!(set(&rig, 1, Some(STATIC), 1).await.0, 2);
+        assert_eq!(saved(&rig), STATIC);
+        if unclassified {
+            rig.port.state.lock().unwrap().power_status = 3;
+        }
+        let (status, message) = set(&rig, 2, None, 0).await;
+        assert_eq!((status, message.as_str()), (0, reply), "{unclassified}");
+        assert_eq!(saved(&rig), "null", "{unclassified}");
+        assert!(sent(&rig).is_empty(), "{unclassified}");
+        assert_eq!(
+            rig.get().await["status"]["lightingOverride"],
+            Value::Null,
+            "{unclassified}"
+        );
+        rig.stop().await;
+    }
 }
 
 /// Off from a lit keyboard: the brightness and logo setters, each read back,
@@ -157,7 +184,10 @@ async fn a_temporary_override_clears_the_saved_one() {
     rig.stop().await;
 }
 
-/// Without fresh admission nothing is stored, read or written.
+/// Without fresh admission nothing is stored, read or written. For a
+/// competing controller this is stricter than managed, whose refresh only
+/// observes the controller and relinquishes lighting: managed stores the
+/// intent and then refuses the apply.
 #[tokio::test]
 async fn refused_admission_stores_and_sends_nothing() {
     for refusal in ["competing controller", "fresh admission"] {
@@ -525,7 +555,10 @@ async fn status_writes_lighting_parameters_kind_first() {
 }
 
 /// Managed `IsKeyboardLightingDelegated`: with the keyboard delegated to
-/// Windows Dynamic Lighting nothing is stored, read or written.
+/// Windows Dynamic Lighting nothing is stored, read or written. Stricter than
+/// managed, which stores the intent first and replies with the committed
+/// prefix ("Lighting override intent was stored. Hardware result: ...",
+/// ServiceControlRuntime.cs 14965, 15054, 15213).
 #[cfg(feature = "service-profiles-v1")]
 #[tokio::test]
 async fn a_keyboard_delegated_to_dynamic_lighting_blocks_before_any_store() {
@@ -552,8 +585,7 @@ async fn a_keyboard_delegated_to_dynamic_lighting_blocks_before_any_store() {
 
 /// Managed defers lighting while the low-power gate is set and applies it
 /// after standby; native stores it and says so, with no promise, since
-/// nothing applies a stored lighting intent until slice L2. A temporary
-/// needs Windows battery, the one class known without an adapter read.
+/// nothing applies a stored lighting intent until slice L2.
 #[cfg(feature = "service-profile-triggers-v1")]
 #[tokio::test]
 async fn the_low_power_store_promises_no_resume_apply_interim_divergence() {
@@ -573,17 +605,46 @@ async fn the_low_power_store_promises_no_resume_apply_interim_divergence() {
         (0, "Lighting override intent was stored.")
     );
     assert_eq!(saved(&rig), OFF);
-    let (status, message) = set(&rig, 2, Some(OFF), 0).await;
-    assert_eq!((status, message.as_str()), (2, UNCLASSIFIED_BLOCKED));
-    assert_eq!(saved(&rig), OFF);
-    rig.port.state.lock().unwrap().windows_on_battery = Some(Some(true));
-    assert_eq!(set(&rig, 3, Some(OFF), 0).await.0, 0);
-    assert_eq!(saved(&rig), "null");
     assert!(sent(&rig).is_empty());
     rig.custody.lifecycle.ingress(POWER, RESUME);
     rig.custody.scoped_fresh.store(false, Ordering::Release);
     assert_eq!(rig.get().await["success"], true);
     assert!(sent(&rig).is_empty(), "nothing applies it after standby");
+    rig.stop().await;
+}
+
+/// While the low-power gate is set only Windows battery classifies power
+/// without an adapter read, so a temporary override needs it. Managed stores
+/// one with no power class (ServiceControlRuntime.cs 14903-14918); native
+/// refuses it, naming the low-power state, and keeps the saved override.
+#[cfg(feature = "service-profile-triggers-v1")]
+#[tokio::test]
+async fn a_low_power_temporary_override_needs_windows_battery_divergence() {
+    use windows_sys::Win32::System::Services::SERVICE_CONTROL_POWEREVENT as POWER;
+    const SUSPEND: u32 = 4;
+    let rig = Rig::new(MemoryFiles::default());
+    lit(&rig, [0xc5, 1, 0]);
+    let custody = rig.custody.clone();
+    rig.runtime
+        .read_low_power(move || custody.lifecycle.low_power());
+    rig.custody.scoped_fresh.store(true, Ordering::Release);
+    rig.custody.lifecycle.ingress(POWER, SUSPEND);
+    assert_eq!(set(&rig, 1, Some(OFF), 1).await.0, 0);
+    // Windows AC, which classifies no adapter without a read.
+    rig.port.state.lock().unwrap().windows_on_battery = Some(Some(false));
+    let (status, message) = set(&rig, 2, Some(OFF), 0).await;
+    assert_eq!(
+        (status, message.as_str()),
+        (
+            2,
+            "A temporary lighting override was not stored: OpenBlade does not read the power source while the laptop is entering or leaving a low-power state."
+        )
+    );
+    assert_eq!(saved(&rig), OFF);
+    rig.port.state.lock().unwrap().windows_on_battery = Some(Some(true));
+    assert_eq!(set(&rig, 3, Some(OFF), 0).await.0, 0);
+    assert_eq!(saved(&rig), "null");
+    assert!(sent(&rig).is_empty());
     rig.stop().await;
 }
 
@@ -598,6 +659,33 @@ async fn off_writes_a_keyboard_whose_second_baseline_sample_is_lit() {
     assert_eq!((status, message.as_str()), (1, CONFIRMED));
     assert_eq!(setters(&rig), 1);
     assert_eq!(rig.port.state.lock().unwrap().lighting, [0, 1, 0]);
+    rig.stop().await;
+}
+
+/// A single zero brightness sample confirms no Off. A brightness setter's
+/// readback is one sample, so when the logo setter after it is in doubt the
+/// status publishes no Off record. The read-only resolution samples a zero
+/// twice, so a keyboard lit again between its samples is not published Off.
+#[tokio::test]
+async fn a_single_zero_brightness_sample_publishes_no_confirmed_off() {
+    let confirmed = |status: &Value| status["status"]["confirmedState"].clone();
+    let rig = Rig::new(MemoryFiles::default());
+    lit(&rig, [0xc5, 1, 2]);
+    fresh_observe(&rig).await;
+    // The brightness setter is confirmed by its readback; the logo setter
+    // after it applies and its acknowledgement is lost.
+    rig.port.state.lock().unwrap().lighting_timeout = Some(2);
+    assert_eq!(set(&rig, 1, Some(OFF), 1).await.0, 3);
+    assert_eq!(rig.port.state.lock().unwrap().lighting[0], 0);
+    let state = confirmed(&rig.get().await);
+    assert!(state.is_object(), "{state}");
+    assert_eq!(state["lighting"], Value::Null);
+    // The resolution reads a zero, then a lit keyboard 750 ms later.
+    rig.port.state.lock().unwrap().brightness_script = [0, 0x10].into();
+    assert_eq!(set(&rig, 2, Some(OFF), 1).await, (2, PENDING.to_owned()));
+    let state = confirmed(&rig.get().await);
+    assert_eq!(state["lighting"], Value::Null);
+    assert_eq!(state["logoLighting"], json!(2));
     rig.stop().await;
 }
 
@@ -820,7 +908,11 @@ fn the_compiled_identity_carries_the_refused_lighting_marker() {
     let identity = std::str::from_utf8(&crate::NATIVE_ARTIFACT_IDENTITY).unwrap();
     let fields: Vec<&str> = identity.split('\n').collect();
     assert_eq!(fields[2], "service");
-    assert!(fields[8].ends_with(",service-lighting-v1"), "{}", fields[8]);
+    assert!(
+        crate::native_package::ends_with_marker_for_tests(fields[8], "service-lighting-v1"),
+        "{}",
+        fields[8]
+    );
     assert!(
         crate::native_package::startup_policy_for_tests(&crate::NATIVE_ARTIFACT_IDENTITY).is_err()
     );

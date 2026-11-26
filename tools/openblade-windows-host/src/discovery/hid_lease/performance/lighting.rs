@@ -50,8 +50,10 @@ pub(crate) struct LightingReading {
 /// What a job leaves the published confirmed lighting members, one member at
 /// a time: `None` keeps the published value, since the job changed nothing
 /// that member reports; `Some(None)` clears it, since a setter for it may
-/// have been submitted or its last read was outside the contract; and
-/// `Some(Some(value))` is a read that confirmed `value`.
+/// have been submitted, its last read was outside the contract, or it read
+/// a single zero brightness sample; and `Some(Some(value))` is a read that
+/// confirmed `value`. A zero brightness, which status publishes as the Off
+/// record, is confirmed only by a second zero sample (`Attempt::brightness`).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) struct LightingConfirmation {
     pub(crate) brightness: Option<Option<u8>>,
@@ -85,7 +87,7 @@ pub(crate) enum LightingOutcome {
     /// was stored and no lighting report was sent.
     Unclassified,
     /// The permit refused the classified power or failed to store the intent
-    /// (`Permit::admit_lighting`), and says why. No lighting report was sent.
+    /// (`Permit::store_lighting`), and says why. No lighting report was sent.
     NotAdmitted,
     /// A store-only job stored the intent and sent no lighting report.
     Stored,
@@ -159,6 +161,8 @@ struct State {
     baseline: Option<LightingReading>,
     last: Option<LightingReading>,
     confirmation: LightingConfirmation,
+    /// Setters that reached their transfer (`sending`).
+    sent: usize,
 }
 
 /// Which confirmed member a setter changes.
@@ -178,14 +182,17 @@ impl LightingJob {
                 baseline: None,
                 last: None,
                 confirmation: LightingConfirmation::default(),
+                sent: 0,
             }),
         }
     }
 
     /// The read-only resolution of an earlier job in doubt: the baseline
-    /// alone, with no power read and no store.
+    /// alone, with no power read and no store. A zero brightness is sampled
+    /// twice here too, under the same checkpoints and request deadline, so
+    /// the resolution never confirms Off from one sample.
     pub(crate) fn resolution() -> Self {
-        Self::with(Work::Resolve, false)
+        Self::with(Work::Resolve, true)
     }
 
     /// A request whose intent is stored and not applied: power, then the
@@ -295,6 +302,17 @@ impl LightingJob {
         }
     }
 
+    /// How many setters have reached their transfer (`sent_since`).
+    fn setters_sent(&self) -> usize {
+        self.state.lock().map_or(0, |state| state.sent)
+    }
+
+    /// Whether a setter reached its transfer since `setters_sent` read
+    /// `before`. A poisoned record says so: a setter may have been submitted.
+    fn sent_since(&self, before: usize) -> bool {
+        self.state.lock().map_or(true, |state| state.sent != before)
+    }
+
     /// A setter for `member` may now reach the firmware: the member is not
     /// confirmed until its readback, and the job's outcome says the setter
     /// is in doubt.
@@ -304,6 +322,9 @@ impl LightingJob {
             Member::Logo => self.confirm_logo(None),
         }
         self.record(in_doubt);
+        if let Ok(mut state) = self.state.lock() {
+            state.sent += 1;
+        }
     }
 }
 
@@ -414,7 +435,7 @@ impl<P: Port> Reader<P, ReadAdmission> {
                 job.record(LightingOutcome::Unclassified);
                 return Some(());
             };
-            if !permit.admit_lighting(power, performance) {
+            if !permit.store_lighting(power, performance) {
                 job.record(LightingOutcome::NotAdmitted);
                 return Some(());
             }
@@ -533,17 +554,19 @@ impl<P: Port> Reader<P, ReadAdmission> {
             let mut restored = true;
             if writes_brightness {
                 job.record(unrestored);
+                let sent = job.setters_sent();
                 let result = attempt
                     .set_brightness(authorize, admission, limit, run, raw, in_doubt)
                     .await;
-                restored = restore_confirmed(job, unrestored, result)?;
+                restored = restore_confirmed(result, job.sent_since(sent))?;
             }
             if wrote_logo && let Some(mode) = baseline.logo {
                 job.record(unrestored);
+                let sent = job.setters_sent();
                 let result = attempt
                     .set_logo(authorize, admission, limit, run, mode, in_doubt)
                     .await;
-                restored &= restore_confirmed(job, unrestored, result)?;
+                restored &= restore_confirmed(result, job.sent_since(sent))?;
             }
             job.record(LightingOutcome::Mismatched {
                 failure,
@@ -633,18 +656,13 @@ impl<P: Port> Reader<P, ReadAdmission> {
     }
 }
 
-/// Whether one restore's `result` confirmed the baseline. A restore its
-/// admission refused before it was sent left `unrestored` recorded and is
-/// not restored; `None` stops the job when the restore may have been
-/// submitted.
-fn restore_confirmed(
-    job: &LightingJob,
-    unrestored: LightingOutcome,
-    result: Option<bool>,
-) -> Option<bool> {
+/// Whether one restore's `result` confirmed the baseline. A restore whose
+/// admission refused it before any of its setters was `sent` is not
+/// restored; `None` stops the job when a sent restore was not confirmed.
+fn restore_confirmed(result: Option<bool>, sent: bool) -> Option<bool> {
     match result {
         Some(confirmed) => Some(confirmed),
-        None if job.outcome() == unrestored => Some(false),
+        None if !sent => Some(false),
         None => None,
     }
 }
@@ -701,7 +719,8 @@ impl<P: Port> Attempt<'_, P, ReadAdmission> {
             .exchange(authorize, admission, limit, query.request(), None)
             .await?;
         let mut raw = query.decode(&report).ok()?;
-        if raw == 0 && off_confirmation {
+        let sampled_twice = raw == 0 && off_confirmation;
+        if sampled_twice {
             limit.wait(OFF_CONFIRMATION_DELAY).await.ok()?;
             let query = BrightnessQuery::new(run.take());
             let report = self
@@ -709,7 +728,10 @@ impl<P: Port> Attempt<'_, P, ReadAdmission> {
                 .await?;
             raw = query.decode(&report).ok()?;
         }
-        run.job.confirm_brightness(Some(raw));
+        // A zero confirms Off only from its second sample. One zero sample,
+        // such as a setter's readback, is the reading but confirms nothing.
+        run.job
+            .confirm_brightness((raw != 0 || sampled_twice).then_some(raw));
         Some(raw)
     }
 

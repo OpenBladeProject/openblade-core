@@ -50,7 +50,7 @@ impl Permit for Lit {
     fn windows_on_battery(&self) -> Option<bool> {
         Some(true)
     }
-    fn admit_lighting(&self, power: i32, performance: Option<ObservedPerformance>) -> bool {
+    fn store_lighting(&self, power: i32, performance: Option<ObservedPerformance>) -> bool {
         assert_eq!((power, performance), (1, None));
         true
     }

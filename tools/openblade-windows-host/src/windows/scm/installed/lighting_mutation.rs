@@ -7,29 +7,43 @@
 //!
 //! | Managed | Native reply |
 //! |---|---|
-//! | 14903-14919 low-power gate set: store, then `DeferLightingIntentForLowPower` (20209) | Stored, the committed message (see below) |
+//! | 14903-14919 low-power gate set: store, then `DeferLightingIntentForLowPower` (20209) | Stored, the committed message; a temporary override off Windows battery is Blocked, `LOW_POWER_TEMPORARY` (see below) |
 //! | 14921-14924 `PendingWriteBlockedResult` (19255) | Blocked, `PENDING`, after a read-only resolution |
-//! | 15213-15216 `IsKeyboardLightingDelegated` | Blocked, `DELEGATED` |
-//! | 14926-14943 power resolution and unclassified adapter | Blocked, `UNCLASSIFIED_BLOCKED`, in the job (`LightingPermit::admit_lighting`) |
+//! | 14926-14943 power resolution and unclassified adapter | Blocked, `UNCLASSIFIED_BLOCKED`, in the job (`LightingPermit::store_lighting`) |
 //! | 14965-14981 store (`SetLightingOverrideCoreAsync`, 14820) | Failed, `The requested intent was rejected: ...`, in the job |
+//! | 15005-15013 a clear on an unclassified adapter | Stored, `CLEARED_UNCLASSIFIED` |
 //! | 15034-15053 apply, prefixed with the committed message unless Applied | see `reply` |
+//! | 15213-15216 `IsKeyboardLightingDelegated`, in the apply after the store | Blocked, `DELEGATED`, before the store (stricter) |
 //!
-//! Managed refreshes competing-controller presence after power resolution
-//! and before the store (`RefreshControllerPresenceAndRelinquishLightingAsync`).
-//! Native's fresh admission confirms controller absence before the job
-//! (`capture_intent`) and again at each of its checkpoints, the one before
-//! the 07/8C read included, so a controller blocks before anything is stored
-//! in both.
+//! Stricter than managed, which stores the intent in each case and then
+//! refuses only the apply:
+//!
+//! - A keyboard delegated to Windows Dynamic Lighting is refused before the
+//!   store; managed stores and replies with the committed prefix
+//!   (`a_keyboard_delegated_to_dynamic_lighting_blocks_before_any_store`).
+//! - A competing controller is refused by the fresh admission before the job
+//!   (`capture_intent`) and at each of its checkpoints, so nothing is stored.
+//!   Managed's refresh after power resolution
+//!   (`RefreshControllerPresenceAndRelinquishLightingAsync`) only observes the
+//!   controller and relinquishes lighting; it stores, and the apply is refused
+//!   (`refused_admission_stores_and_sends_nothing`).
+//! - An unclassified adapter also needs a fresh firmware observation that
+//!   HyperBoost is not engaged, which managed's Lighting arm does not ask for
+//!   (`admits_unclassified`).
+//! - A temporary override in low power needs Windows battery; managed stores
+//!   it with no power class
+//!   (`a_low_power_temporary_override_needs_windows_battery_divergence`).
 //!
 //! Interim divergences that slice L2 removes, each named by a test:
 //!
 //! - Capabilities admit the keyboard Off only, with every logo mode; a lit
 //!   effect is stored and then refused as managed refuses an effect its
 //!   capability table lacks (`lit_effects_are_refused_until_l2_interim_divergence`).
-//! - Clearing the override stores the clear and applies no profile lighting:
-//!   managed applies the profile's lighting there (ControlCoordinator.cs
+//! - Clearing the override on a classified adapter stores the clear, applies
+//!   no profile lighting and replies Stored, `CLEARED_UNAPPLIED`: managed
+//!   applies the profile's lighting there (ControlCoordinator.cs
 //!   `ApplyLightingOutcomeAsync`), which is profile reconciliation
-//!   (`lit_effects_are_refused_until_l2_interim_divergence`).
+//!   (`a_clear_is_stored_and_says_what_waits`).
 //! - Power-source transitions (`ApplyFullTransitionAsync`, 14948-14956) and
 //!   profile reconciliation run no lighting step, so a request stored while
 //!   the low-power gate is set is not applied after standby. Its reply is
@@ -40,8 +54,9 @@
 //! admission, from Windows and the admitted 07/8C reading
 //! (`Reader::lighting_power`). A classified adapter, and Windows battery,
 //! admit lighting. An unclassified adapter needs managed's
-//! `CanAdmitUnclassifiedExternalControl` (UnclassifiedExternalPower.cs 60-84),
-//! each clause from native's own fresh evidence (`admits_unclassified`).
+//! `CanAdmitUnclassifiedExternalControl` (UnclassifiedExternalPower.cs 60-77)
+//! for Lighting, from native's own fresh evidence, and the stricter
+//! HyperBoost observation (`admits_unclassified`).
 //!
 //! An uncertain submission latches this process: the next request runs a
 //! read-only resolution instead of any write and replies managed's pending
@@ -70,13 +85,22 @@ use std::{
 };
 use tokio::time::Instant;
 
-#[cfg(feature = "service-profile-triggers-v1")]
 const STORED: u8 = 0;
 const APPLIED: u8 = 1;
 const FAILED: u8 = 3;
 
 const COMMITTED: &str = "Lighting override intent was stored.";
 const CLEARED: &str = "Lighting override was cleared.";
+/// A clear on a classified adapter, which applies no profile lighting until
+/// slice L2.
+const CLEARED_UNAPPLIED: &str =
+    "Lighting override was cleared. The profile's lighting was not applied.";
+/// Managed's clear on an unclassified adapter (ServiceControlRuntime.cs 15012).
+const CLEARED_UNCLASSIFIED: &str =
+    "Override cleared. Power-profile application waits for adapter classification.";
+/// A temporary override while the low-power gate is set, off Windows battery.
+#[cfg(feature = "service-profile-triggers-v1")]
+const LOW_POWER_TEMPORARY: &str = "A temporary lighting override was not stored: OpenBlade does not read the power source while the laptop is entering or leaving a low-power state.";
 const ALREADY: &str = "Lighting is already confirmed.";
 const CONFIRMED: &str = "Lighting setting applied and confirmed by readback.";
 const MISMATCH: &str = "Lighting write is indeterminate because readback did not match.";
@@ -113,10 +137,10 @@ impl Lit {
     }
 }
 
-/// What the job's power admission and store decided (`admit_lighting`).
+/// What the job's power admission and store decided (`store_lighting`).
 enum Admission {
-    /// The intent was stored at the classified power.
-    Stored,
+    /// The intent was stored at this power class.
+    Stored(i32),
     /// Nothing was stored, with this reply.
     Refused(Outcome),
 }
@@ -136,15 +160,20 @@ struct LightingPermit {
 }
 impl LightingPermit {
     /// Managed `CanAdmitUnclassifiedExternalControl(Lighting)`
-    /// (UnclassifiedExternalPower.cs 60-84), each clause from native's own
-    /// fresh evidence. Fresh external presence was required by the job
-    /// (`Reader::lighting_power`). Confirmed HyperBoost inactive is the fresh
-    /// firmware observation; one that failed admits nothing. `WritesBlocked`
-    /// and the pending indeterminate HyperBoost intents are the journal's
-    /// pending state (`Storage::pending`): every native HyperBoost write is a
-    /// journaled thermal step. With owned HyperBoost, managed's journal
-    /// safety block and pending restore are its journal (`Probes`), and
-    /// native's own session is its history (`Storage::owns_hyperboost`).
+    /// (UnclassifiedExternalPower.cs 60-77) from native's own fresh evidence,
+    /// plus one stricter clause. Fresh external presence was required by the
+    /// job (`Reader::lighting_power`). `Storage::pending` is the store's
+    /// quarantine or an unsettled last row of the one native journal, which
+    /// holds the thermal, fan and battery rows; native keeps no other
+    /// battery or HyperBoost doubt, and every native HyperBoost write is a
+    /// journaled thermal step, so it stands for managed's pending
+    /// indeterminate HyperBoost intents. It is not managed's `WritesBlocked`
+    /// status flag; each exchange's fresh admission is native's gate. With
+    /// owned HyperBoost, managed's journal safety block and pending restore
+    /// are its journal (`Probes`), and native's own session is its history
+    /// (`Storage::owns_hyperboost`). Stricter than managed, whose Lighting arm
+    /// has no `HyperBoostActive` clause: a fresh firmware observation must
+    /// confirm HyperBoost inactive, and one that failed admits nothing.
     fn admits_unclassified(&self, performance: Option<ObservedPerformance>) -> bool {
         performance.is_some_and(|observed| observed != ObservedPerformance::HyperBoostObserved)
             && !self.storage.pending()
@@ -181,7 +210,7 @@ impl LightingPermit {
             return Admission::Refused(Outcome::blocked(ADMISSION));
         }
         match self.storage.save_lighting(self.value.as_ref(), power) {
-            Ok(()) => Admission::Stored,
+            Ok(()) => Admission::Stored(power),
             Err(error) => {
                 remember_failure(&self.fatal, &error);
                 Admission::Refused(rejected(&error))
@@ -191,30 +220,28 @@ impl LightingPermit {
     /// The reply, and whether a setter may be in doubt.
     fn finish(&self) -> (Lit, bool) {
         let admission = self.admission.lock().ok().and_then(|mut a| a.take());
-        let stored = match admission {
-            Some(Admission::Stored) => true,
+        let power = match admission {
+            Some(Admission::Stored(power)) => power,
             Some(Admission::Refused(outcome)) => return (Lit::refused(outcome), false),
-            None => false,
+            None => {
+                let refusal = match self.job.outcome() {
+                    LightingOutcome::Unclassified => UNCLASSIFIED_BLOCKED,
+                    _ => ADMISSION,
+                };
+                return (Lit::refused(Outcome::blocked(refusal)), false);
+            }
         };
-        if !stored {
-            let refusal = match self.job.outcome() {
-                LightingOutcome::Unclassified => UNCLASSIFIED_BLOCKED,
-                _ => ADMISSION,
-            };
-            return (Lit::refused(Outcome::blocked(refusal)), false);
+        if self.value.is_none() {
+            // A clear is a store-only job, which wrote nothing.
+            return (stored_clear(power), false);
         }
-        let committed = if self.value.is_some() {
-            COMMITTED
-        } else {
-            CLEARED
-        };
         let (outcome, in_doubt) = reply(&self.job);
         let outcome = if outcome.status == APPLIED {
             outcome
         } else {
             Outcome {
                 status: outcome.status,
-                message: format!("{committed} Hardware result: {}", outcome.message),
+                message: format!("{COMMITTED} Hardware result: {}", outcome.message),
             }
         };
         let lit = Lit {
@@ -235,9 +262,9 @@ impl Permit for LightingPermit {
     fn windows_on_battery(&self) -> Option<bool> {
         self.fresh.on_battery()
     }
-    fn admit_lighting(&self, power: i32, performance: Option<ObservedPerformance>) -> bool {
+    fn store_lighting(&self, power: i32, performance: Option<ObservedPerformance>) -> bool {
         let admission = self.store(power, performance);
-        let stored = matches!(admission, Admission::Stored);
+        let stored = matches!(admission, Admission::Stored(_));
         match self.admission.lock() {
             Ok(mut slot) => *slot = Some(admission),
             Err(_) => return false,
@@ -264,6 +291,25 @@ impl Permit for LightingPermit {
         Err(io::Error::other(
             "A keyboard lighting write keeps no thermal journal row.",
         ))
+    }
+}
+
+/// A stored clear's reply. On an unclassified adapter it is managed's:
+/// profile application waits for adapter classification. On a classified
+/// one managed applies the profile's lighting, which slice L1 does not.
+fn stored_clear(power: i32) -> Lit {
+    let message = if power == UNCLASSIFIED_EXTERNAL {
+        CLEARED_UNCLASSIFIED
+    } else {
+        CLEARED_UNAPPLIED
+    };
+    Lit {
+        outcome: Outcome {
+            status: STORED,
+            message: message.into(),
+        },
+        publish: true,
+        confirmation: LightingConfirmation::default(),
     }
 }
 
@@ -376,7 +422,8 @@ fn reply(job: &LightingJob) -> (Outcome, bool) {
             false,
         ),
         LightingOutcome::Unpaced => (not_applied(UNPACED), false),
-        // A store-only job: a clear, or a value outside the capability table.
+        // A store-only job for a value outside the capability table; a
+        // clear gets its own reply (`stored_clear`).
         LightingOutcome::Stored => (Outcome::blocked(UNSUPPORTED), false),
         LightingOutcome::Refused
         | LightingOutcome::Pending
@@ -434,8 +481,10 @@ impl Runtime {
                 .resolve_lighting_doubt(&reader, storage, fresh, deadline)
                 .await;
         }
-        // Without a profile store there are no stored preferences, and managed's
-        // defaults do not delegate the keyboard.
+        // Stricter than managed, which stores the intent and refuses only the
+        // apply with the committed prefix (15213): a delegated keyboard is
+        // refused before the store. Without a profile store there are no
+        // stored preferences, and managed's defaults do not delegate.
         #[cfg(feature = "service-profiles-v1")]
         match storage.lighting_delegated() {
             Ok(false) => {}
@@ -533,7 +582,9 @@ fn unavailable(error: &io::Error) -> Outcome {
 /// Managed's store while the low-power gate is set, before any other gate,
 /// with no read or write. Only Windows battery classifies power without an
 /// adapter reading, so a temporary override needs it, as an explicit thermal
-/// request's deferred store does (`triggers::deferred_store_refusal`); a
+/// request's deferred store does (`triggers::deferred_store_refusal`), and is
+/// otherwise refused as `LOW_POWER_TEMPORARY`: stricter than managed, which
+/// stores it with no power class (ServiceControlRuntime.cs 14903-14918). A
 /// persistent override and a clear carry no power class. Nothing applies the
 /// stored intent after standby in slice L1, so the reply is managed's
 /// committed message, Stored, without managed's promise.
@@ -554,7 +605,8 @@ fn store_deferred(
                 storage.observe_power(1, generation)?;
                 1
             }
-            _ => return Ok(Lit::refused(Outcome::blocked(UNCLASSIFIED_BLOCKED))),
+            (Some(true), None) => return Ok(Lit::refused(Outcome::blocked(ADMISSION))),
+            _ => return Ok(Lit::refused(Outcome::blocked(LOW_POWER_TEMPORARY))),
         }
     } else {
         -1

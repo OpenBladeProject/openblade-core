@@ -84,13 +84,13 @@ pub(crate) trait Permit: Send + Sync {
     fn lighting(&self) -> Option<&super::LightingJob> {
         None
     }
-    /// A lighting job's power admission and store at class `power`, which
-    /// the job classified under its own admission (`Reader::lighting_power`):
-    /// whether the job may continue. `performance` is the fresh firmware
-    /// observation of an unclassified adapter, `None` for a classified one.
-    /// The permit keeps why it refused.
+    /// Admits a lighting job at class `power`, which the job classified under
+    /// its own admission (`Reader::lighting_power`), and stores its intent:
+    /// whether the intent was stored, and so whether the job may continue.
+    /// `performance` is the fresh firmware observation of an unclassified
+    /// adapter, `None` for a classified one. The permit keeps why it refused.
     #[cfg(feature = "service-lighting-v1")]
-    fn admit_lighting(&self, _power: i32, _performance: Option<ObservedPerformance>) -> bool {
+    fn store_lighting(&self, _power: i32, _performance: Option<ObservedPerformance>) -> bool {
         false
     }
     fn is_fan(&self) -> bool {
