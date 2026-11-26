@@ -88,6 +88,56 @@ public sealed partial class ServiceControlRuntimeTests
     }
 
     [Fact]
+    public async Task CoolingPadShutdown_PadOnlyFailureOrBlockLeavesLaptopCleanupConfirmed()
+    {
+        var pad = new LifecyclePad
+        {
+            Restore = _ => Task.FromException(
+                new CoolingPadOperationException("Synthetic pad restoration failure.", true)),
+        };
+        var (context, _) = await CreateActiveLifecyclePadContextAsync(pad);
+        await context.Runtime.SetFanOverrideAsync(new ManualOverride<FanMode>(FanMode.Maximum, OverrideLifetime.Persistent), default);
+        context.Device.DriverModeActive = true;
+
+        ServiceStopCleanupResult failed = await context.Runtime.PrepareForServiceStopAsync(default);
+
+        // The laptop was handed back; only the pad was not. The pad keeps its journal.
+        Assert.Equal(ControlOperationStatus.Failed, failed.Result.Status);
+        Assert.Contains("Cooling-pad fan cleanup:", failed.Result.Message, StringComparison.Ordinal);
+        Assert.Equal(ControlOperationStatus.Applied, failed.LaptopStatus);
+        Assert.False(context.Device.DriverModeActive);
+        Assert.Equal(FanMode.Automatic, context.Device.ConfirmedState.Fans);
+        Assert.True(context.Runtime.GetStatus().CoolingPad.RecoveryRequired);
+        Assert.True(context.Runtime.GetStatus().CoolingPad.WritesPaused);
+
+        // A retained journal keeps writes paused until the user checks the pad, so a later
+        // stop is Blocked without a pad write, as on every RZ09-0581 stop on 2026-11-24.
+        ServiceStopCleanupResult blocked = await context.Runtime.PrepareForServiceStopAsync(default);
+
+        Assert.Equal(ControlOperationStatus.Blocked, blocked.Result.Status);
+        Assert.Contains("Cooling-pad fan cleanup: Read the cooling pad before restoring retained settings.",
+            blocked.Result.Message, StringComparison.Ordinal);
+        Assert.Contains(blocked.LaptopStatus, new[] { ControlOperationStatus.Applied, ControlOperationStatus.Stored });
+        Assert.Equal(1, pad.RestoreCalls);
+    }
+
+    [Fact]
+    public async Task CoolingPadShutdown_LaptopCleanupFailureStillDecidesLaptopStatusAfterPadRestore()
+    {
+        var pad = new LifecyclePad();
+        var (context, _) = await CreateActiveLifecyclePadContextAsync(pad);
+        context.Device.DriverModeActive = true;
+        context.Device.DriverModeReleaseFailure = new IOException("Synthetic keyboard release failure.");
+
+        ServiceStopCleanupResult result = await context.Runtime.PrepareForServiceStopAsync(default);
+
+        Assert.Equal(1, pad.RestoreCalls);
+        Assert.False(context.Runtime.GetStatus().CoolingPad.RecoveryRequired);
+        Assert.DoesNotContain(result.LaptopStatus, new[] { ControlOperationStatus.Applied, ControlOperationStatus.Stored });
+        Assert.Equal(result.LaptopStatus, result.Result.Status);
+    }
+
+    [Fact]
     public async Task CoolingPadLowPower_ResumeDuringKeyboardReleaseBlocksPadRestoreAtSubmission()
     {
         var gate = new LowPowerGate();
@@ -193,6 +243,48 @@ public sealed partial class ServiceControlRuntimeTests
         Assert.Equal(2, pad.FanWrites);
     }
 
+    [Theory]
+    // Notify me, and an upgraded Restore them whose disclosure the user has not seen yet.
+    [InlineData(ThermalControlPolicy.Strict, ThermalPolicyUpgradeDisclosureState.NotRequired)]
+    [InlineData(ThermalControlPolicy.MaintainDesiredState, ThermalPolicyUpgradeDisclosureState.UpgradeDisclosurePending)]
+    public async Task CoolingPadResumptionFollowsTheNotifyMePolicy(ThermalControlPolicy policy,
+        ThermalPolicyUpgradeDisclosureState disclosure)
+    {
+        var time = new ManualTimeProvider();
+        var gate = new LowPowerGate();
+        var pad = new LifecyclePad();
+        string machineRoot = Path.Combine(directory, $"pad-{policy}-{disclosure}");
+        var user = new SecurityIdentifier("S-1-5-21-100-200-300-1001");
+        string userRoot = Path.Combine(machineRoot, "users", user.Value);
+        var validator = ProfileSetValidator.CreateUnverifiedSafeDefaults();
+        var configurationStore = new BatteryConfigurationStore(Path.Combine(userRoot, "profiles.json"),
+            Path.Combine(userRoot, "battery-preferences.json"), Path.Combine(userRoot, "battery-configuration.commit.json"), validator);
+        BatteryConfiguration configuration = await configurationStore.LoadAsync(default);
+        await configurationStore.SaveConfigurationAsync(configuration.Profiles,
+            configuration.Preferences with { ThermalControlPolicy = policy, ThermalPolicyUpgradeDisclosure = disclosure }, default);
+        TestContext context = CreateContext(providerAvailable: true, lowPowerGate: gate, timeProvider: time,
+            userConfigurationRepository: new ThermalTestUserConfigurationRepository(machineRoot, validator),
+            coolingPadDeviceProvider: new LifecyclePadProvider(pad));
+        await context.Runtime.ObserveAsync(default);
+        await context.Runtime.ActivateUserAsync(user, () => true, default);
+        Assert.Equal(ControlOperationStatus.Applied, (await context.Runtime.SetCoolingPadSettingsAsync(
+            new CoolingPadSettings { FanMode = CoolingPadFanMode.Fixed, FixedRpm = 1500 }, user, () => true, default)).Status);
+        gate.Enter();
+        _ = await context.Runtime.PrepareForLowPowerAsync(gate.Generation, () => true, default);
+        Assert.Equal(1, pad.RestoreCalls);
+
+        // "Notify me" leaves the pad on its own settings after the handback; "Restore them"
+        // resumes them, as CoolingPadResumesSavedSettingsAfterWakeButNotAfterShutdownHandback shows.
+        gate.Exit();
+        for (int attempt = 0; attempt < 3; attempt++)
+        {
+            time.Advance(CoolingPadControlRuntime.ResumeRetryInterval);
+            await context.Runtime.MaintainCoolingPadAsync(default);
+        }
+        Assert.False(context.Runtime.GetStatus().CoolingPad.Active);
+        Assert.Equal(1, pad.FanWrites);
+    }
+
     private async Task<(TestContext Context, SecurityIdentifier User)> CreateActiveLifecyclePadContextAsync(
         LifecyclePad pad, LowPowerGate? gate = null, bool laptopAvailable = true, TimeProvider? timeProvider = null)
     {
@@ -227,14 +319,16 @@ public sealed partial class ServiceControlRuntimeTests
         internal Func<Task>? Dispose;
         internal int RestoreCalls;
         internal int FanWrites;
+        // Runs inside a fan write before its admission check, as a concurrent service task would.
+        internal Func<Task>? DuringFanWrite;
         public Task<CoolingPadDeviceSnapshot> ReadSnapshotAsync(CancellationToken token) => Task.FromResult(snapshot);
-        public Task SetFanAsync(CoolingPadFanMode mode, int? rpm, Func<bool> allowed, CancellationToken token,
+        public async Task SetFanAsync(CoolingPadFanMode mode, int? rpm, Func<bool> allowed, CancellationToken token,
             CoolingPadFanPreset? smartPreset = null)
         {
+            if (DuringFanWrite is { } during) { await during(); }
             if (!allowed()) { throw new CoolingPadOperationException("Admission closed.", false); }
             FanWrites++;
             snapshot = snapshot with { FanMode = mode, TargetRpm = rpm };
-            return Task.CompletedTask;
         }
         public Task SetLightingAsync(CoolingPadSettings settings, Func<bool> allowed, CancellationToken token) =>
             throw new InvalidOperationException("This lifecycle test must not write pad lighting.");

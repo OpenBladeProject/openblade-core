@@ -598,7 +598,7 @@
     <value>Доступно обновление OpenBlade</value>
   </data>
   <data name="MainWindow_Notification_ControllerDetectedTitle" xml:space="preserve">
-    <value>Обнаружен контроллер Razer</value>
+    <value>Запущено ПО Razer</value>
   </data>
   <data name="MainWindow_Notification_FirmwareUpdateTitle" xml:space="preserve">
     <value>Доступно обновление прошивки Razer</value>
@@ -2818,6 +2818,9 @@ OpenBlade повторно проверит этот список и остан�
   <data name="KeyboardBackend_Recovery" xml:space="preserve">
     <value>Переключите способ ввода для повторной попытки. Если сообщение повторяется, перезагрузите Windows.</value>
   </data>
+  <data name="KeyboardBackend_DriverStillOwns" xml:space="preserve">
+    <value>Драйвер Razer всё ещё удерживает эти клавиши. Переключитесь на драйвер Razer, затем обратно на перехват Windows. Если сообщение повторяется, перезагрузите Windows.</value>
+  </data>
   <data name="KeyboardBackend_Unknown" xml:space="preserve">
     <value>Выберите способ ввода, чтобы продолжить.</value>
   </data>
@@ -3151,5 +3154,14 @@ OpenBlade повторно проверит этот список и остан�
   </data>
   <data name="MainWindow_CoolingPadLightingSelectorText.PlaceholderText" xml:space="preserve">
     <value>Задаётся подставкой</value>
+  </data>
+  <data name="MainWindow_ButtonInstallUpdate.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Загрузить и установить доступное обновление OpenBlade</value>
+  </data>
+  <data name="MainWindow_ButtonInstallUpdate.Content" xml:space="preserve">
+    <value>Установить обновление</value>
+  </data>
+  <data name="MainWindow_ProgressRingDownloadingUpdate.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Загрузка обновления OpenBlade</value>
   </data>
 </root>

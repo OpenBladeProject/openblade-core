@@ -598,7 +598,7 @@ Répórtéd fáílúrés:
     <value>[!! OpenBlade úpdáté áváíláblé ~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_Notification_ControllerDetectedTitle" xml:space="preserve">
-    <value>[!! Razer cóntróllér détéctéd ~~~~~~~ !!]</value>
+    <value>[!! Razer sóftwáré ís rúnníng ~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_Notification_FirmwareUpdateTitle" xml:space="preserve">
     <value>[!! Razer fírmwáré úpdáté áváíláblé ~~~~~~~~~ !!]</value>
@@ -2806,6 +2806,9 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   <data name="KeyboardBackend_Recovery" xml:space="preserve">
     <value>[!! Swítch ínpút méthóds tó rétrý. Íf thís kééps áppéáríng, réstárt Windows. ~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
+  <data name="KeyboardBackend_DriverStillOwns" xml:space="preserve">
+    <value>[!! Razer drívér ís stíll hóldíng thésé kéýs. Swítch tó Razer drívér, thén báck tó Windows hóók. Íf thís kééps áppéáríng, réstárt Windows. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
   <data name="KeyboardBackend_SnapTapSelector.AccessibleName" xml:space="preserve">
     <value>[!! SnápTáp ínpút ~~~~~ !!]</value>
   </data>
@@ -3183,5 +3186,14 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_CoolingPadLightingSelectorText.PlaceholderText" xml:space="preserve">
     <value>[!! Sét bý thé pád ~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ButtonInstallUpdate.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! Dównlóád ánd ínstáll thé áváíláblé OpenBlade úpdáté ~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ButtonInstallUpdate.Content" xml:space="preserve">
+    <value>[!! Ínstáll úpdáté ~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ProgressRingDownloadingUpdate.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! Dównlóádíng thé OpenBlade úpdáté ~~~~~~~ !!]</value>
   </data>
 </root>

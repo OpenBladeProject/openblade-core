@@ -1998,9 +1998,9 @@ public sealed partial class MainViewModelTests
         Assert.True(viewModel.SetFanModeCommand.CanExecute(FanMode.Automatic));
         Assert.True(viewModel.HasControllerAdvisory);
         Assert.Equal(
-            "Another controller may change laptop settings: RazerAppEngine, Razer Synapse Service. OpenBlade yields automatic keyboard lighting to Synapse while external lighting override is off. Confirmed external changes pause automatic profile updates; manual actions still apply.",
+            "Synapse can also change performance, fans and lighting, and it may undo changes you make in OpenBlade. Some automatic features pause while it runs. To stop this, quit Synapse from its tray icon.",
             viewModel.ControllerAdvisoryText);
-        Assert.Equal("Other controller may be active", viewModel.LightingSourceLabel);
+        Assert.Equal("Synapse may change lighting", viewModel.LightingSourceLabel);
         Assert.True(viewModel.HasControllerDetectionWarning);
         Assert.Equal("Controller detection was incomplete.", viewModel.ControllerDetectionWarningText);
         Assert.True(viewModel.HasAttention);
@@ -2030,10 +2030,56 @@ public sealed partial class MainViewModelTests
 
         Assert.True(viewModel.HasControllerAdvisory);
         Assert.Equal("Controls unavailable", viewModel.LightingSourceLabel);
-        Assert.DoesNotContain(
-            "yields automatic keyboard lighting",
-            viewModel.ControllerAdvisoryText,
-            StringComparison.Ordinal);
+        Assert.Equal(
+            "Razer software found: Razer Central Service. It may also change laptop settings, and some automatic features pause while it runs. To stop this, close it.",
+            viewModel.ControllerAdvisoryText);
+        Assert.Equal("Other Razer software is running", viewModel.AttentionSummary);
+        Assert.Equal("Razer app active", viewModel.AttentionBadgeLabel);
+        Assert.Equal(viewModel.ControllerAdvisoryText, viewModel.AttentionDetails);
+    }
+
+    [Fact]
+    public async Task ControllerAdvisoryNamesSynapseAndSaysWhatToDo()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(
+            verified: true,
+            blocked: false,
+            conflicts: ["RazerAppEngine", "Razer Chroma SDK Service"]));
+        await WaitUntilAsync(() => viewModel.HasControllerAdvisory);
+
+        const string advisory =
+            "Synapse can also change performance, fans and lighting, and it may undo changes you make in OpenBlade. Some automatic features pause while it runs. To stop this, quit Synapse from its tray icon.";
+        Assert.Equal(advisory, viewModel.ControllerAdvisoryText);
+        Assert.Equal("Razer Synapse is running", viewModel.AttentionSummary);
+        Assert.Equal("Synapse running", viewModel.AttentionBadgeLabel);
+        Assert.Equal(
+            advisory
+                + "\nIf this notice stays after you quit Synapse, open About > Troubleshooting to see which Razer software is still running.",
+            viewModel.AttentionDetails);
+
+        // When the controller clears but another Razer app remains, the notice
+        // switches to that app instead of still pointing at Synapse.
+        client.Publish(CreateStatus(
+            verified: true,
+            blocked: true,
+            conflicts: ["RGS", "Razer Chroma SDK Service"]) with
+        {
+            Revision = 2,
+        });
+        // The summary is computed from state set just before the advisory text, and this test
+        // reads from another thread, so wait for the final values rather than the summary alone.
+        await WaitUntilAsync(() => viewModel.AttentionSummary == "Other Razer software is running"
+            && viewModel.ControllerAdvisoryText.StartsWith("Razer software found", StringComparison.Ordinal)
+            && viewModel.TroubleshootingOtherRazerSoftwareStatus == "RGS, Razer Chroma SDK Service");
+
+        Assert.Equal(
+            "Razer software found: Razer Gaming Services, Razer Chroma SDK Service. It may be blocking OpenBlade’s access to the laptop. Close it to use OpenBlade’s controls.",
+            viewModel.ControllerAdvisoryText);
+        Assert.Equal("Razer app active", viewModel.AttentionBadgeLabel);
+        Assert.Equal("RGS, Razer Chroma SDK Service", viewModel.TroubleshootingOtherRazerSoftwareStatus);
     }
 
     [Fact]
@@ -2054,10 +2100,7 @@ public sealed partial class MainViewModelTests
         Assert.False(viewModel.HasControllerAdvisory);
         Assert.True(viewModel.HasControllerDetectionWarning);
         Assert.Equal("Controls unavailable", viewModel.LightingSourceLabel);
-        Assert.DoesNotContain(
-            "yields automatic keyboard lighting",
-            viewModel.ControllerAdvisoryText,
-            StringComparison.Ordinal);
+        Assert.Empty(viewModel.ControllerAdvisoryText);
     }
 
     [Fact]
@@ -2072,8 +2115,8 @@ public sealed partial class MainViewModelTests
             blocked: false,
             conflicts: ["RazerAppEngine"]));
         await WaitUntilAsync(() => viewModel.HasAttention);
-        Assert.Equal("Another Razer app is running", viewModel.AttentionSummary);
-        Assert.Equal("Razer app active", viewModel.AttentionBadgeLabel);
+        Assert.Equal("Razer Synapse is running", viewModel.AttentionSummary);
+        Assert.Equal("Synapse running", viewModel.AttentionBadgeLabel);
 
         client.Publish(CreateStatus(verified: true, blocked: false) with { Revision = 2 });
         await WaitUntilAsync(() => !viewModel.HasAttention);
@@ -2112,8 +2155,8 @@ public sealed partial class MainViewModelTests
         await WaitUntilAsync(() => !viewModel.HasExternalChanges);
 
         Assert.True(viewModel.HasAttention);
-        Assert.Equal("Another Razer app is running", viewModel.AttentionSummary);
-        Assert.Equal("Razer app active", viewModel.AttentionBadgeLabel);
+        Assert.Equal("Razer Synapse is running", viewModel.AttentionSummary);
+        Assert.Equal("Synapse running", viewModel.AttentionBadgeLabel);
         Assert.NotEmpty(viewModel.AttentionDetails);
 
         client.CompleteWatch();
@@ -3302,7 +3345,7 @@ public sealed partial class MainViewModelTests
         await WaitForStatusAppliedAsync(initial.Message);
         Assert.True(applied.Connected);
         Assert.True(applied.HasAdvisory);
-        Assert.Contains("Razer Synapse Service", applied.Advisory, StringComparison.Ordinal);
+        Assert.Contains("quit Synapse", applied.Advisory, StringComparison.Ordinal);
         Assert.Equal(PowerSource.Battery, applied.PowerSource);
         Assert.Equal(viewModel.BatterySourceLabel, applied.BatterySource);
         Assert.False(Assert.Single(advisoryChanges).Ready);
@@ -3450,8 +3493,12 @@ public sealed partial class MainViewModelTests
         Assert.True(dispatcher.Calls > 0);
         Assert.True(viewModel.IsConnected);
         Assert.True(viewModel.IsReadOnly);
-        Assert.Contains("Razer Central Service", viewModel.ControllerAdvisoryText, StringComparison.Ordinal);
-        Assert.Contains("Razer Synapse Service", viewModel.ControllerAdvisoryText, StringComparison.Ordinal);
+        Assert.Equal(
+            "Synapse may be blocking OpenBlade’s access to the laptop. Quit Synapse from its tray icon to use OpenBlade’s controls.",
+            viewModel.ControllerAdvisoryText);
+        Assert.Equal(
+            "Razer Central Service, Razer Synapse Service",
+            viewModel.TroubleshootingOtherRazerSoftwareStatus);
         Assert.Equal(
             "Razer controller conflicts detected: Razer Central Service, Razer Synapse Service.",
             viewModel.ConnectionStatus);
@@ -8620,8 +8667,8 @@ public sealed partial class MainViewModelTests
         Assert.Equal(
             "RazerAppEngine",
             viewModel.TroubleshootingOtherRazerSoftwareStatus);
-        Assert.Equal("Another Razer app is running", viewModel.AttentionSummary);
-        Assert.Equal("Razer app active", viewModel.AttentionBadgeLabel);
+        Assert.Equal("Razer Synapse is running", viewModel.AttentionSummary);
+        Assert.Equal("Synapse running", viewModel.AttentionBadgeLabel);
         Assert.Equal("Controls unavailable", viewModel.PerformanceSourceLabel);
 
         client.Publish(CreateStatus(verified: true, blocked: true));

@@ -68,6 +68,47 @@ public sealed class CoolingPadSourceProtocolTests
         Assert.False(CoolingPadProtocol.TryDecodeEffect([0, 5, 1, 0, 0, 3, 0, 0, 0, 0, 0, 0], 1, out _));
     }
 
+    [Theory]
+    [InlineData(7, true)]
+    [InlineData(9, true)]
+    [InlineData(5, false)]
+    [InlineData(6, false)]
+    [InlineData(10, false)]
+    public void EffectReplyAcceptsOnlyTheFirmwareEffectsItDoesNotDecode(byte effect, bool accepted)
+    {
+        // Firmware 1.10.00 has effects 7 and 9, which the pad's lighting button selects.
+        byte[] reply = [0, 5, effect, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        Assert.False(CoolingPadProtocol.TryDecodeEffect(reply, 1, out _));
+        Assert.Equal(accepted, CoolingPadProtocol.EffectQuery().PayloadValidator!(reply));
+        Assert.Equal(accepted, CoolingPadProtocol.EffectQuery(0).PayloadValidator!(reply));
+        Assert.False(CoolingPadProtocol.EffectQuery().PayloadValidator!(reply.AsMemory(0, 9)));
+        Assert.False(CoolingPadProtocol.EffectQuery().PayloadValidator!((byte[])[1, .. reply[1..]]));
+        Assert.True(CoolingPadProtocol.EffectQuery().PayloadValidator!((byte[])[0, 5, 1, 0, 0, 1, 255, 0, 0, 9, 9, 9]));
+        Assert.False(CoolingPadProtocol.EffectQuery().PayloadValidator!((byte[])[0, 5, 1, 0, 0, 3, 0, 0, 0, 0, 0, 0]));
+    }
+
+    [Fact]
+    public async Task AnEffectThePadButtonSelectsReadsAsUnknownLightingWithTheFanIntact()
+    {
+        var wire = new Wire { Fan = new(CoolingPadFanOwnership.Firmware, CoolingPadFanPreset.Low, 1000) };
+        wire.SetRawEffectRecords([0, 5, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        await using var device = Create(wire);
+        var snapshot = await device.ReadSnapshotAsync(default);
+        Assert.Null(snapshot.LightingConfiguration);
+        Assert.Null(snapshot.ActiveLightingConfiguration);
+        Assert.Null(snapshot.LightingMode);
+        Assert.Equal(new CoolingPadFanConfiguration(CoolingPadFanOwnership.Firmware, CoolingPadFanPreset.Low, 1000), snapshot.FanConfiguration);
+        Assert.Equal((byte)255, snapshot.BrightnessRaw);
+
+        // Only the volatile record holds the unknown effect: the showing effect is still unknown.
+        wire.Effect = new(1, 0, 1, 0, 0, [new(0, 255, 0)]);
+        wire.SetRawEffectRecords(null, [0, 5, 9, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        snapshot = await device.ReadSnapshotAsync(default);
+        Assert.NotNull(snapshot.LightingConfiguration);
+        Assert.Null(snapshot.ActiveLightingConfiguration);
+        Assert.Null(snapshot.LightingMode);
+    }
+
     [Fact]
     public void EffectConfirmationComparesOnlyFirmwareStoredFields()
     {
@@ -513,6 +554,12 @@ public sealed class CoolingPadSourceProtocolTests
         {
             get => volatileRecord is null ? null : Decode(volatileRecord, 0);
             set => volatileRecord = value is null ? null : Record(value);
+        }
+        // Sets effect records the decoder does not admit, as the pad's lighting button can.
+        internal void SetRawEffectRecords(byte[]? persistent, byte[]? active = null)
+        {
+            if (persistent is not null) { persistentRecord = persistent; }
+            volatileRecord = active;
         }
         internal byte RawBrightness { get; set; } = 255;
         internal CoolingPadDeviceMode Mode { get; set; }

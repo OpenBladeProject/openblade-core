@@ -3294,7 +3294,7 @@ public sealed class CapabilityPresentationTests
         Assert.True(viewModel.IsLightingVisible);
         Assert.False(viewModel.CanControlLighting);
         Assert.Contains(
-            "Another Razer app may be using",
+            "Another Razer app, such as Synapse, may be using",
             viewModel.LightingControlUnavailableMessage,
             StringComparison.Ordinal);
         Assert.False(viewModel.SetLightingCommand.CanExecute(

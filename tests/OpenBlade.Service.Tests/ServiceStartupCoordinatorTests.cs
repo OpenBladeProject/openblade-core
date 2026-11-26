@@ -139,8 +139,9 @@ public sealed class ServiceStartupCoordinatorTests : IDisposable
                         _ =>
                         {
                             events.Add("cleanup");
-                            return Task.FromResult(new ControlOperationResult(
-                                ControlOperationStatus.Applied, "Guarded cleanup completed."));
+                            var result = new ControlOperationResult(
+                                ControlOperationStatus.Applied, "Guarded cleanup completed.");
+                            return Task.FromResult(new ServiceStopCleanupResult(result, result.Status));
                         },
                         logger,
                         token);
@@ -492,7 +493,9 @@ public sealed class ServiceStartupCoordinatorTests : IDisposable
             byte[] interruptedMarker = await File.ReadAllBytesAsync(binding.RunMarkerPath);
             Assert.False(await Worker.PrepareHardwareAndShouldClearRunMarkerAsync(
                 coordinator.RuntimeInitialized, intentionalStop: false,
-                _ => Task.FromResult(new ControlOperationResult(ControlOperationStatus.Applied, "Fake cleanup completed.")),
+                _ => Task.FromResult(new ServiceStopCleanupResult(
+                    new ControlOperationResult(ControlOperationStatus.Applied, "Fake cleanup completed."),
+                    ControlOperationStatus.Applied)),
                 logger, deadline.Token));
             Assert.Equal(interruptedMarker, await File.ReadAllBytesAsync(binding.RunMarkerPath));
 

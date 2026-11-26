@@ -125,6 +125,8 @@ public sealed partial class MainWindow
                     "SnapTap_Status_UnsupportedModel", "SnapTap driver support has not been established for this laptop."),
                 SnapTapRuntimeState.ManualDriverSetupRequired => LocalizedResources.Get(
                     "SnapTap_Status_ManualDriverSetup", "Install this laptop’s Razer keyboard driver through Synapse, then turn SnapTap off and on."),
+                SnapTapRuntimeState.RecoveryRequired when status.WaitsForDriverRelease => LocalizedResources.Get(
+                    "KeyboardBackend_DriverStillOwns", "Razer driver is still holding these keys. Switch to Razer driver, then back to Windows hook. If this keeps appearing, restart Windows."),
                 SnapTapRuntimeState.RecoveryRequired => LocalizedResources.Get(
                     "SnapTap_Status_RecoveryRequired", "Turn SnapTap off and on to retry. If this keeps appearing, restart Windows."),
                 SnapTapRuntimeState.Unavailable when snapTapBackend == KeyboardInputBackend.RazerDriver => LocalizedResources.Get(

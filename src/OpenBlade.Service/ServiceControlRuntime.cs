@@ -8,6 +8,17 @@ using OpenBlade.Protocol;
 
 namespace OpenBlade.Service;
 
+/// <summary>
+/// Intentional service-stop cleanup. <see cref="Result"/> reports every part, including
+/// independent accessories. <see cref="LaptopStatus"/> covers only the laptop controls that
+/// unexpected-exit recovery reconciles, so it alone decides whether the run marker is cleared.
+/// The cooling pad keeps its own durable restoration journal and resume record, which every
+/// start reads whether or not the marker remains; a retained marker gives it no recovery.
+/// </summary>
+public sealed record ServiceStopCleanupResult(
+    ControlOperationResult Result,
+    ControlOperationStatus LaptopStatus);
+
 public interface IServiceControlRuntime
 {
     void Initialize(BatteryConfiguration configuration, PowerSource powerSource) =>
@@ -447,6 +458,14 @@ public interface IServiceControlRuntime
                 ControlOperationStatus.Applied,
                 "Keyboard Driver mode is released."));
 
+    async Task<ServiceStopCleanupResult> PrepareForServiceStopAsync(
+        CancellationToken cancellationToken)
+    {
+        ControlOperationResult result = await PrepareForShutdownAsync(cancellationToken)
+            .ConfigureAwait(false);
+        return new ServiceStopCleanupResult(result, result.Status);
+    }
+
     Task<ControlOperationResult> PrepareForLowPowerAsync(
         CancellationToken cancellationToken) => PrepareForShutdownAsync(cancellationToken);
 
@@ -679,6 +698,10 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
     // thermal transition can observe queued AC/battery/USB-C boundary work.
     private long powerAdmissionEpoch;
     private int pendingPowerAdmissions;
+    // Advances only for Windows AC/DC notifications. The independently powered cooling pad
+    // checks the fresh Windows power source before every write and holds no laptop
+    // operation gate, so periodic classification must not cancel its in-progress commands.
+    private long coolingPadPowerEpoch;
     // Advances before a different interactive user's configuration load can
     // queue behind an already-running thermal transition.
     private long sessionAdmissionEpoch;
@@ -12613,7 +12636,17 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         unexpectedExitRecoveryDeferredForUserConfiguration = false;
         startupProfileReconciliationRequested = true;
         ObserveAutomaticState(confirmed);
-        if (!deferredFanStateConverged && !recoveredAutomaticFansReinstated)
+        // Recovery starts from a manual-fan safety baseline, so firmware
+        // Automatic loses that ownership. When the user's intent is also
+        // Automatic, nothing needs restoring and nothing changed: firmware
+        // Automatic needs no ownership. Any other unconverged state is drift.
+        DesiredDeviceState recoveredIntent = ResolveAutomationDesired(confirmed);
+        FanMode recoveredFanMode = recoveredIntent.FanControl?.Mode
+            ?? recoveredIntent.Fans.Value;
+        bool automaticFansMatchIntent = confirmed.Fans == FanMode.Automatic
+            && recoveredFanMode == FanMode.Automatic;
+        if (!deferredFanStateConverged && !recoveredAutomaticFansReinstated
+            && !automaticFansMatchIntent)
         {
             driftTracker.ConfirmIntentional(DeviceSubsystem.Fans, matched: false);
         }
@@ -12731,6 +12764,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             ThermalConvergenceReason.PowerUnsettled,
             thermalConvergenceShutdown: false);
         Interlocked.Increment(ref powerAdmissionEpoch);
+        Interlocked.Increment(ref coolingPadPowerEpoch);
         Interlocked.Increment(ref pendingPowerAdmissions);
         try
         {
@@ -13311,6 +13345,10 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
     }
 
     public async Task<ControlOperationResult> PrepareForShutdownAsync(
+        CancellationToken cancellationToken) =>
+        (await PrepareForServiceStopAsync(cancellationToken).ConfigureAwait(false)).Result;
+
+    public async Task<ServiceStopCleanupResult> PrepareForServiceStopAsync(
         CancellationToken cancellationToken)
     {
         EnsureInitialized();
@@ -13374,14 +13412,14 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             padCleanup = await ReleaseCoolingPadForLifecycleAsync(
                 allowLowPower: true, cleanupToken).ConfigureAwait(false);
 
-            ControlOperationResult combined = CombineShutdownCleanupResults(
-                hyperBoostResult,
-                coolingPadFanResult: padCleanup,
-                coolingPadLightingResult: null,
-                fanResult,
-                driverModeResult);
-            combined = CombineDisplayBrightnessCleanup(brightnessResult, combined);
-            return combined;
+            return CombineDisplayBrightnessCleanup(
+                brightnessResult,
+                CombineShutdownCleanupResults(
+                    hyperBoostResult,
+                    coolingPadFanResult: padCleanup,
+                    coolingPadLightingResult: null,
+                    fanResult,
+                    driverModeResult));
         }
         finally
         {
@@ -14089,13 +14127,17 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
     }
 
 
-    private static ControlOperationResult CombineShutdownCleanupResults(
+    private static ServiceStopCleanupResult CombineShutdownCleanupResults(
         ControlOperationResult hyperBoostResult,
         ControlOperationResult? coolingPadFanResult,
         ControlOperationResult? coolingPadLightingResult,
         ControlOperationResult fanResult,
         ControlOperationResult driverModeResult)
     {
+        // The pad's outcome stays in the reported result. It is left out of the laptop
+        // status because its own journal, not the run marker, recovers it at the next start.
+        ControlOperationStatus laptopStatus = CombineCleanupStatus(
+            hyperBoostResult, fanResult, driverModeResult);
         var results = new List<ControlOperationResult> { hyperBoostResult };
         var messages = new List<string>
         {
@@ -14115,9 +14157,11 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         messages.Add($"Fan cleanup: {fanResult.Message}");
         results.Add(driverModeResult);
         messages.Add($"Keyboard cleanup: {driverModeResult.Message}");
-        return new ControlOperationResult(
-            CombineCleanupStatus([.. results]),
-            string.Join(' ', messages));
+        return new ServiceStopCleanupResult(
+            new ControlOperationResult(
+                CombineCleanupStatus([.. results]),
+                string.Join(' ', messages)),
+            laptopStatus);
     }
 
     private static ControlOperationResult CombineLowPowerCleanupResults(
@@ -14183,23 +14227,35 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             : ControlOperationStatus.Stored;
     }
 
+    private static ServiceStopCleanupResult CombineDisplayBrightnessCleanup(
+        ControlOperationResult? brightnessResult,
+        ServiceStopCleanupResult otherResult) => new(
+            CombineDisplayBrightnessCleanup(brightnessResult, otherResult.Result),
+            CombineDisplayBrightnessStatus(brightnessResult, otherResult.LaptopStatus));
+
     private static ControlOperationResult CombineDisplayBrightnessCleanup(
         ControlOperationResult? brightnessResult,
-        ControlOperationResult otherResult)
+        ControlOperationResult otherResult) =>
+        brightnessResult is null || brightnessResult.Status == ControlOperationStatus.Applied
+            ? otherResult
+            : new ControlOperationResult(
+                CombineDisplayBrightnessStatus(brightnessResult, otherResult.Status),
+                $"Display-brightness input cleanup: {brightnessResult.Message} {otherResult.Message}");
+
+    private static ControlOperationStatus CombineDisplayBrightnessStatus(
+        ControlOperationResult? brightnessResult,
+        ControlOperationStatus otherStatus)
     {
         if (brightnessResult is null
             || brightnessResult.Status == ControlOperationStatus.Applied)
         {
-            return otherResult;
+            return otherStatus;
         }
 
-        ControlOperationStatus status = brightnessResult.Status == ControlOperationStatus.Failed
-            || otherResult.Status == ControlOperationStatus.Failed
+        return brightnessResult.Status == ControlOperationStatus.Failed
+            || otherStatus == ControlOperationStatus.Failed
                 ? ControlOperationStatus.Failed
                 : ControlOperationStatus.Blocked;
-        return new ControlOperationResult(
-            status,
-            $"Display-brightness input cleanup: {brightnessResult.Message} {otherResult.Message}");
     }
 
     public async Task InvalidateLightingRendererForLowPowerAsync(CancellationToken cancellationToken)

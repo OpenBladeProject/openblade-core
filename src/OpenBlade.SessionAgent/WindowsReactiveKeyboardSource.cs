@@ -98,6 +98,9 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
     private readonly Blade18FnHookCorrelation blade18Correlation = new();
     private readonly HashSet<(uint ScanCode, bool Extended)> blade18ConfirmedPresses = [];
     private readonly Action resetFunctionRowInput;
+    private readonly Action<ushort, ushort>? observeKeyboardInput;
+    private readonly Action? observeKeyboardInputCaughtUp;
+    private const uint QueueStatusRawInput = 0x0400;
     private int blade18ResetRequested;
     private readonly RazerBladeFunctionRowInputState functionRowInput = new();
     private readonly SpecialKeyKeyboardSuppressionState specialKeyKeyboardInput = new();
@@ -156,6 +159,8 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
         readSpecialKeyInputAdmitted = options.IsSpecialKeyInputAdmitted
             ?? throw new ArgumentNullException(nameof(options.IsSpecialKeyInputAdmitted));
         resetFunctionRowInput = options.ResetFunctionRowInput;
+        observeKeyboardInput = options.ObserveKeyboardInput;
+        observeKeyboardInputCaughtUp = options.ObserveKeyboardInputCaughtUp;
         readFunctionRowBackend = options.ReadFunctionRowBackend;
         observeOnly = options.ObserveOnly;
         publishBlade18FnShortcut = options.PublishBlade18FnShortcut;
@@ -240,10 +245,21 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
 
     public void ResetFunctionPInput()
     {
-        functionKeyObservation.Invalidate();
-        blade18Fn.InvalidateKnowledge();
+        ResetFunctionKeyKnowledge(functionKeyObservation, blade18Fn);
         rz090528FunctionPInput.RequestReset();
         Interlocked.Exchange(ref blade18ResetRequested, 1);
+    }
+
+    // Status, driver-mode and device arrival or removal resets treat Blade 16
+    // Fn like a fresh start, released, so the F-row prompt does not return and
+    // a missed release cannot stick. Unlike this helper, the Windows hook never
+    // resets and keeps a held Fn. RZ09-0484 binds Fn to the collection that
+    // first reports it, so it has no collection to seed and stays unknown.
+    internal static void ResetFunctionKeyKnowledge(FunctionKeyObservation functionKey,
+        Rz090484FnInputState blade18)
+    {
+        functionKey.AssumeReleased();
+        blade18.InvalidateKnowledge();
     }
 
     private bool ReadBlade18Admission()
@@ -520,6 +536,22 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
 
                 _ = TranslateMessage(ref message);
                 _ = DispatchMessage(ref message);
+                // Tell the delivery check that every keyboard packet Windows has
+                // queued for this thread so far has been reported.
+                if (observeKeyboardInputCaughtUp is not null
+                    && ((GetQueueStatus(QueueStatusRawInput) >> 16) & QueueStatusRawInput) == 0)
+                {
+                    try
+                    {
+                        observeKeyboardInputCaughtUp();
+                    }
+                    catch (Exception exception) when (exception is not OutOfMemoryException)
+                    {
+                        // Without a catch-up the delivery check counts no pumps, so it
+                        // never reports a loss; Fn handling here is unaffected.
+                        Trace.TraceWarning("Keyboard input catch-up observer failed: {0}", exception.GetType().Name);
+                    }
+                }
             }
         }
         catch (Exception exception)
@@ -537,6 +569,8 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
         finally
         {
             ResetFunctionPInput();
+            // A source whose thread is exiting no longer observes Fn reports.
+            functionKeyObservation.Invalidate();
             bool hookCleanupConfirmed = keyboardHooks.ReleaseAll();
             Interlocked.CompareExchange(ref keyboardHookOwner, null, this);
             ReleaseRawInputBuffer();
@@ -604,6 +638,8 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
             {
                 source.rz090528FunctionPInput.Reset();
                 source.ResetFunctionPInput();
+                // A failed packet may have hidden an Fn transition.
+                source.functionKeyObservation.Invalidate();
                 Trace.TraceError(
                     "Reactive keyboard packet processing failed: {0}",
                     exception.GetType().Name);
@@ -946,6 +982,23 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
 
         if (receivedHeader.Type == RawInputTypeKeyboard)
         {
+            // SendInput packets carry no device; only real keyboard input is reported.
+            if (observeKeyboardInput is not null && receivedHeader.Device != 0
+                && receivedSize >= headerSize + Marshal.SizeOf<RawKeyboard>())
+            {
+                RawKeyboard observed = Marshal.PtrToStructure<RawKeyboard>(
+                    nint.Add(buffer, checked((int)headerSize)));
+                try
+                {
+                    observeKeyboardInput(observed.MakeCode, observed.Flags);
+                }
+                catch (Exception exception) when (exception is not OutOfMemoryException)
+                {
+                    // An observer failure must not change Fn or keyboard handling here.
+                    // The delivery check then sees no packet and fails closed.
+                    Trace.TraceWarning("Keyboard input observer failed: {0}", exception.GetType().Name);
+                }
+            }
             ProcessKeyboard(buffer, headerSize, receivedSize, deviceKind, messageTime);
         }
         else if (receivedHeader.Type == RawInputTypeHid
@@ -1615,6 +1668,9 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
         uint message,
         nuint windowParameter,
         nint messageParameter);
+
+    [DllImport("user32.dll")]
+    private static extern uint GetQueueStatus(uint flags);
 
     [DllImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]

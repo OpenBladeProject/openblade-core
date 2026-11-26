@@ -36,13 +36,27 @@ state and blocks another backend from bypassing it. Missing-driver admission
 before any write permits an explicit switch to the Windows hook. No failure
 automatically changes the saved choice.
 
+Keys the driver helper sends back must reach Windows. The helper watches
+Windows keyboard input and stops if a key it sent has not arrived within two
+seconds, so the driver's hooks are cleared and Windows receives A, D and the
+function row directly. The check runs as keys are handled, so a key lost just
+before typing stops is noticed at the next key press. Turn the feature off and
+on to retry. Keys sent to an app running as administrator are not checked.
+
 The source contract is the pinned [driver review](snap-tap-driver-review.md)
 and [per-file subscriber review](snap-tap-0255-catalog-api-review.md#subscriber-lifetime-and-restoration-limits).
 The function-row extension uses the same reviewed keyboard record type and
 fixed F1-F12 scan positions already used by OpenBlade's function-row translator;
-it adds no firmware command or model admission. A newly started driver helper
-waits for an actual Fn report before interpreting the multimedia layer; press
-Fn once when the app asks. Until then, F keys pass through unchanged.
+it adds no firmware command or model admission. The keyboard reports Fn only
+when it changes, so on RZ09-0581 and RZ09-0528 the driver helper assumes Fn is
+released when it starts, as the Windows hook does, and again after a status,
+driver-mode or input-device reset. If Fn is held across that point, F-row
+presses use the other layer until Fn is released. After a malformed Fn report
+or a failed input packet, the helper waits for the next Fn report or reset, and
+F keys pass through unchanged; the app asks you to press Fn once. It also shows
+that prompt while the service has not verified the laptop. RZ09-0484 binds Fn to the
+collection that first reports it, so its helper always waits for an actual Fn
+report after starting or resetting.
 Diagnostics report each
 feature's backend independently. Windows-hook status does not claim driver
 validation.

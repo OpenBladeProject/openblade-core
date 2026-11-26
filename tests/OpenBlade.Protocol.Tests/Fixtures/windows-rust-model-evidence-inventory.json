@@ -391,7 +391,7 @@
             "feature": "FanStopAndGuardianAuto",
             "basis": "FirmwareSourceBackedWithoutPhysicalValidation",
             "sources": [
-              "https://github.com/OSSBlade/openblade-core/blob/main/docs/fan-stop-model-coverage.md",
+              "https://github.com/OpenBladeProject/openblade-core/blob/main/docs/fan-stop-model-coverage.md",
               "SO690-EC2.01;SHA256=CBEE52C89DB0E9415865867BA053B415E0239BBEC56A41AB25A35013370FCA3C",
               "SO695-LB-EC1.01;SHA256=486DAAB302359085B421C0C68D8092BE910930A2EF3912EC39DD8F04C89464B8"
             ]
@@ -718,7 +718,7 @@
             "feature": "FanStopAndGuardianAuto",
             "basis": "FirmwareSourceBackedWithoutPhysicalValidation",
             "sources": [
-              "https://github.com/OSSBlade/openblade-core/blob/main/docs/fan-stop-model-coverage.md",
+              "https://github.com/OpenBladeProject/openblade-core/blob/main/docs/fan-stop-model-coverage.md",
               "PI4110-EC1.03;SHA256=AECACCA42102C17F4B2731A2AB28EBD92E154D0D997A708E41E7E36D56FC2224"
             ]
           },
@@ -1344,7 +1344,7 @@
             "feature": "FanStopAndGuardianAuto",
             "basis": "FirmwareSourceBackedWithoutPhysicalValidation",
             "sources": [
-              "https://github.com/OSSBlade/openblade-core/blob/main/docs/fan-stop-model-coverage.md",
+              "https://github.com/OpenBladeProject/openblade-core/blob/main/docs/fan-stop-model-coverage.md",
               "SO6100-EC1.02;SHA256=D2BA85D82E76B594C448EAAA578DF0EC2817AF5AF509D548A54A51A3845E4D43"
             ]
           },
@@ -2483,7 +2483,7 @@
             "feature": "FanStopAndGuardianAuto",
             "basis": "FirmwareSourceBackedWithoutPhysicalValidation",
             "sources": [
-              "https://github.com/OSSBlade/openblade-core/blob/main/docs/fan-stop-model-coverage.md",
+              "https://github.com/OpenBladeProject/openblade-core/blob/main/docs/fan-stop-model-coverage.md",
               "PI480-EC1.03;SHA256=312343A3CEBD56FCB97CEFCFC103B17BD481098E4122F2B6680AB46E93FC0B9F",
               "PI480-EC1.06;SHA256=2482E6DED196B6378E92AD857CC07B2F9DB0B9AA392996172D09548F6CF6EF86"
             ]
@@ -2741,7 +2741,7 @@
             "feature": "FanStopAndGuardianAuto",
             "basis": "FirmwareSourceBackedWithoutPhysicalValidation",
             "sources": [
-              "https://github.com/OSSBlade/openblade-core/blob/main/docs/fan-stop-model-coverage.md",
+              "https://github.com/OpenBladeProject/openblade-core/blob/main/docs/fan-stop-model-coverage.md",
               "CH580-EC1.03;SHA256=F96A009F65C49E89C76BB0874587472BEACE315A6CC616BC8DA1BDE845CB9C1B"
             ]
           },
@@ -3164,7 +3164,7 @@
             "feature": "FanStopAndGuardianAuto",
             "basis": "FirmwareSourceBackedWithoutPhysicalValidation",
             "sources": [
-              "https://github.com/OSSBlade/openblade-core/blob/main/docs/fan-stop-model-coverage.md",
+              "https://github.com/OpenBladeProject/openblade-core/blob/main/docs/fan-stop-model-coverage.md",
               "CH551-EC1.01;SHA256=0487BD1357B6AC6C2C18B8E514B6A1098CB8E198B534E588045770A8C7140689"
             ]
           },

@@ -574,9 +574,9 @@ capture the WinUI context: the bare `await Task.Yield()` in
 `SetCustomPerformanceAsync`, `ApplyFanControlAsync`, `SetLightingAsync`,
 `SetChargeLimitAsync`, `ToggleBatteryProtectionAsync`, and
 `ToggleFullChargeAsync` mutate bound state in a `finally` after an await.
-`UpdateCheckViewModel.RunAutomaticCheckAsync` and `CheckCoreAsync` also capture
-the UI context because they mutate bound update status after awaiting the
-release client. `FirmwareUpdateAssistantViewModel.RunAutomaticCheckAsync` and
+`UpdateCheckViewModel.RunAutomaticCheckAsync`, `CheckCoreAsync` and
+`InstallCoreAsync` also capture the UI context because they mutate bound update
+status after awaiting the release client or update installer. `FirmwareUpdateAssistantViewModel.RunAutomaticCheckAsync` and
 `CheckAsync` capture it for the same reason after awaiting the Razer firmware
 client.
 `TrayCompleteShutdownCoordinator.ShutdownAsync` also captures it because its
@@ -690,7 +690,7 @@ unrelated worktrees and checkout changes.
 8. Update `CHANGELOG.md` under `Unreleased` for user-visible changes. Every
    new or materially changed changelog bullet must include a Markdown link to
    its implementing pull request, using
-   `([#123](https://github.com/OSSBlade/openblade-core/pull/123))`. Reference
+   `([#123](https://github.com/OpenBladeProject/openblade-core/pull/123))`. Reference
    pull requests, not tracking issues; include each implementing PR when a
    bullet combines changes. If the PR number is not yet available, open the
    draft PR first, then add the verified reference before marking it ready or
@@ -772,7 +772,7 @@ unrelated worktrees and checkout changes.
 ## README, documentation, and UI language
 
 Use the concise [README](README.md), approved in
-[PR #558](https://github.com/OSSBlade/openblade-core/pull/558), as the writing
+[PR #558](https://github.com/OpenBladeProject/openblade-core/pull/558), as the writing
 reference for user-facing documentation and app UI text. These rules cover
 labels, helper text, tooltips, status messages, notifications, and confirmation
 dialogs in the tray, graphical installer, and native setup, including their

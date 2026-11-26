@@ -1,6 +1,6 @@
 {
   "design": "Monolith",
-  "source": "https://github.com/OSSBlade/openblade-branding",
+  "source": "https://github.com/OpenBladeProject/openblade-branding",
   "sourceRevision": "836546348ddd770c38bb620e24ab3305051f1a8b",
   "generatorSha256": "B679A80805FBDA48E76E12FAFDAC78AF7E6C5D40652D053F19493279D7690641",
   "generator": "tools/monolith_geometry.py",

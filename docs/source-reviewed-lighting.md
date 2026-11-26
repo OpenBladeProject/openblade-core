@@ -1,6 +1,6 @@
 # Source-reviewed lighting coverage
 
-The issue [#959](https://github.com/OSSBlade/openblade-core/issues/959)
+The issue [#959](https://github.com/OpenBladeProject/openblade-core/issues/959)
 diagnostics identify RZ09-0330 / `1532:0253`. Its thermal interface was admitted,
 but the lighting factory rejected it before opening a lighting session. The
 keyboard-driver messages concern SnapTap and function-row input handling.

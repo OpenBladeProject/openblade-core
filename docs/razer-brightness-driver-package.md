@@ -65,7 +65,7 @@ Razer support pages:
 
 The exported RZ09-0581 archive, its sanitized manifest, and the release record
 that binds the two live in the separate
-[`blade-driver-catalog`](https://github.com/OSSBlade/blade-driver-catalog),
+[`blade-driver-catalog`](https://github.com/OpenBladeProject/blade-driver-catalog),
 together with read-only export instructions for other Razer devices. The
 catalog publishes the archive as a prerelease; clean installation is still
 pending. Running Synapse once installs the same stack. An entry in that
@@ -85,7 +85,7 @@ the repository.
 
 The archive's `manifest.json` uses manifest type
 `OpenBlade.RazerDriverPackageArchive`. Its `catalogReference` names
-`OSSBlade/blade-driver-catalog` and
+`OpenBladeProject/blade-driver-catalog` and
 `devices/rz09-0581/1532-02e0/1.0.0.78-1.0.0.76/manifest.json`. It deliberately
 does not embed the catalog manifest hash because the catalog records the outer
 package archive hash. The checked release attestation binds the catalog

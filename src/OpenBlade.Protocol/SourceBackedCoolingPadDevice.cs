@@ -23,6 +23,7 @@ internal sealed class SourceBackedCoolingPadDevice(
     // effect written, so it identifies the showing record while that record still holds it.
     private CoolingPadLightingConfiguration? lastConfirmedEffect;
     public string Identity { get; } = identity;
+    public bool Usable => !disposed && actor.Session.Disposition == RazerCommandSessionDisposition.Healthy;
 
     public void BindLightingBaseline(CoolingPadDeviceSnapshot baseline)
     {
@@ -71,8 +72,10 @@ internal sealed class SourceBackedCoolingPadDevice(
             : fan.Ownership == CoolingPadFanOwnership.Synapse ? CoolingPadFanMode.Fixed : (CoolingPadFanMode?)null;
         // Profile 1 is the stored effect and profile 0 the unsaved one; the strip shows the last
         // one written. Two different effects say which is showing only when this session wrote
-        // the last one and its record still holds it; otherwise neither is confirmed.
-        var lightMode = light!.Effect == activeLight!.Effect ? DecodeLight(light.Effect)
+        // the last one and its record still holds it; otherwise neither is confirmed. A record holding
+        // an effect that is not decoded (7 or 9) reads as null, and the showing effect is then unknown.
+        var lightMode = light is null || activeLight is null ? null
+            : light.Effect == activeLight.Effect ? DecodeLight(light.Effect)
             : lastConfirmedEffect is { } last && CoolingPadProtocol.ConfirmsEffect(last, last.Profile == 1 ? light : activeLight)
                 ? DecodeLight(last.Effect)
                 : null;
@@ -204,7 +207,7 @@ internal sealed class SourceBackedCoolingPadDevice(
             {
                 var active = await Execute(CoolingPadProtocol.EffectQuery(0), false, null, cancellationToken).ConfigureAwait(false);
                 CoolingPadProtocol.TryDecodeEffect(active.Span, 0, out var activeConfiguration);
-                if (!CoolingPadProtocol.ConfirmsEffect(effect, activeConfiguration!)) { FailReadback("Cooling-pad custom activation was not confirmed."); }
+                if (activeConfiguration is null || !CoolingPadProtocol.ConfirmsEffect(effect, activeConfiguration)) { FailReadback("Cooling-pad custom activation was not confirmed."); }
                 customBufferOwned = true;
                 lastConfirmedEffect = effect;
             }
@@ -212,7 +215,7 @@ internal sealed class SourceBackedCoolingPadDevice(
             {
                 var actual = await Execute(CoolingPadProtocol.EffectQuery(), false, null, cancellationToken).ConfigureAwait(false);
                 CoolingPadProtocol.TryDecodeEffect(actual.Span, 1, out var confirmed);
-                if (!CoolingPadProtocol.ConfirmsEffect(effect, confirmed!)) { FailReadback("Cooling-pad effect readback differs from the request."); }
+                if (confirmed is null || !CoolingPadProtocol.ConfirmsEffect(effect, confirmed)) { FailReadback("Cooling-pad effect readback differs from the request."); }
                 lastConfirmedEffect = effect;
                 if (originalMirrorMode is { } saved)
                 {
@@ -280,7 +283,7 @@ internal sealed class SourceBackedCoolingPadDevice(
                     await Execute(CoolingPadProtocol.EffectSet(activeBaseline), true, submissionAllowed, cancellationToken).ConfigureAwait(false);
                     var active = await Execute(CoolingPadProtocol.EffectQuery(0), false, null, cancellationToken).ConfigureAwait(false);
                     CoolingPadProtocol.TryDecodeEffect(active.Span, 0, out var confirmedActive);
-                    if (!CoolingPadProtocol.ConfirmsEffect(activeBaseline, confirmedActive!)) { FailReadback("Cooling-pad active effect restoration was not confirmed."); }
+                    if (confirmedActive is null || !CoolingPadProtocol.ConfirmsEffect(activeBaseline, confirmedActive)) { FailReadback("Cooling-pad active effect restoration was not confirmed."); }
                 }
                 if (baseline.DeviceMode is { } mode)
                 {
@@ -290,7 +293,7 @@ internal sealed class SourceBackedCoolingPadDevice(
                 }
                 var actual = await Execute(CoolingPadProtocol.EffectQuery(), false, null, cancellationToken).ConfigureAwait(false);
                 CoolingPadProtocol.TryDecodeEffect(actual.Span, 1, out var confirmed);
-                if (!CoolingPadProtocol.ConfirmsEffect(light, confirmed!)) { FailReadback("Cooling-pad lighting restoration was not confirmed."); }
+                if (confirmed is null || !CoolingPadProtocol.ConfirmsEffect(light, confirmed)) { FailReadback("Cooling-pad lighting restoration was not confirmed."); }
                 // The active record is written after the stored one when the baseline has it.
                 lastConfirmedEffect = baseline.ActiveLightingConfiguration ?? light;
                 mirrorActive = false;

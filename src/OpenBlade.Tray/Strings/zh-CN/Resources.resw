@@ -587,7 +587,7 @@
     <value>OpenBlade 有新版本</value>
   </data>
   <data name="MainWindow_Notification_ControllerDetectedTitle" xml:space="preserve">
-    <value>检测到 Razer 控制器</value>
+    <value>Razer 软件正在运行</value>
   </data>
   <data name="MainWindow_Notification_FirmwareUpdateTitle" xml:space="preserve">
     <value>有可用的 Razer 固件更新</value>
@@ -2801,6 +2801,9 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
   <data name="KeyboardBackend_Recovery" xml:space="preserve">
     <value>请切换输入方式以重试。如果仍然出现此提示，请重启 Windows。</value>
   </data>
+  <data name="KeyboardBackend_DriverStillOwns" xml:space="preserve">
+    <value>Razer 驱动仍在占用这些按键。请切换到 Razer 驱动，再切换回 Windows 钩子。如果仍然出现此提示，请重启 Windows。</value>
+  </data>
   <data name="KeyboardBackend_Unknown" xml:space="preserve">
     <value>请选择输入方式以恢复。</value>
   </data>
@@ -3134,5 +3137,14 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
   </data>
   <data name="MainWindow_CoolingPadLightingSelectorText.PlaceholderText" xml:space="preserve">
     <value>由底座控制</value>
+  </data>
+  <data name="MainWindow_ButtonInstallUpdate.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>下载并安装可用的 OpenBlade 更新</value>
+  </data>
+  <data name="MainWindow_ButtonInstallUpdate.Content" xml:space="preserve">
+    <value>安装更新</value>
+  </data>
+  <data name="MainWindow_ProgressRingDownloadingUpdate.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>正在下载 OpenBlade 更新</value>
   </data>
 </root>

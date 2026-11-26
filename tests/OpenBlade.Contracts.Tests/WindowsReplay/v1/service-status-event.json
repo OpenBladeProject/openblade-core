@@ -342,6 +342,7 @@
       "measuredRpm": null,
       "confirmedBrightnessPercent": null,
       "confirmedLightingMode": null,
+      "lightingKept": false,
       "message": "Cooling pad control is stopped.",
       "source": "Razer RC21-0230 source-backed experimental",
       "experimental": true

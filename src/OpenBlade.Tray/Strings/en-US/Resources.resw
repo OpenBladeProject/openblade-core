@@ -598,7 +598,7 @@ Reported failures:
     <value>OpenBlade update available</value>
   </data>
   <data name="MainWindow_Notification_ControllerDetectedTitle" xml:space="preserve">
-    <value>Razer controller detected</value>
+    <value>Razer software is running</value>
   </data>
   <data name="MainWindow_Notification_FirmwareUpdateTitle" xml:space="preserve">
     <value>Razer firmware update available</value>
@@ -2806,6 +2806,9 @@ OpenBlade did not retry any stop request.</value>
   <data name="KeyboardBackend_Recovery" xml:space="preserve">
     <value>Switch input methods to retry. If this keeps appearing, restart Windows.</value>
   </data>
+  <data name="KeyboardBackend_DriverStillOwns" xml:space="preserve">
+    <value>Razer driver is still holding these keys. Switch to Razer driver, then back to Windows hook. If this keeps appearing, restart Windows.</value>
+  </data>
   <data name="KeyboardBackend_SnapTapSelector.AccessibleName" xml:space="preserve">
     <value>SnapTap input</value>
   </data>
@@ -3183,5 +3186,14 @@ OpenBlade did not retry any stop request.</value>
   </data>
   <data name="MainWindow_CoolingPadLightingSelectorText.PlaceholderText" xml:space="preserve">
     <value>Set by the pad</value>
+  </data>
+  <data name="MainWindow_ButtonInstallUpdate.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Download and install the available OpenBlade update</value>
+  </data>
+  <data name="MainWindow_ButtonInstallUpdate.Content" xml:space="preserve">
+    <value>Install update</value>
+  </data>
+  <data name="MainWindow_ProgressRingDownloadingUpdate.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Downloading the OpenBlade update</value>
   </data>
 </root>

@@ -173,7 +173,7 @@ internal sealed class Worker(
         bool? clearRunMarker = await PrepareHardwareAndShouldClearRunMarkerAsync(
             runtimeInitialized,
             intentionalStop,
-            runtime.PrepareForShutdownAsync,
+            runtime.PrepareForServiceStopAsync,
             logger,
             cancellationToken).ConfigureAwait(false);
 
@@ -214,7 +214,7 @@ internal sealed class Worker(
     internal static async Task<bool?> PrepareHardwareAndShouldClearRunMarkerAsync(
         bool runtimeInitialized,
         bool intentionalStop,
-        Func<CancellationToken, Task<ControlOperationResult>> prepareHardwareAsync,
+        Func<CancellationToken, Task<ServiceStopCleanupResult>> prepareHardwareAsync,
         ILogger logger,
         CancellationToken cancellationToken)
     {
@@ -227,11 +227,13 @@ internal sealed class Worker(
 
         try
         {
-            ControlOperationResult result = await prepareHardwareAsync(cancellationToken)
+            ServiceStopCleanupResult cleanup = await prepareHardwareAsync(cancellationToken)
                 .ConfigureAwait(false);
-            LogShutdownCleanupResult(logger, result);
+            LogShutdownCleanupResult(logger, cleanup.Result);
+            // The marker selects laptop unexpected-exit recovery only. An accessory that
+            // was not handed back keeps its own journal, which the next start reads anyway.
             return intentionalStop
-                && result.Status is
+                && cleanup.LaptopStatus is
                     ControlOperationStatus.Applied or ControlOperationStatus.Stored;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

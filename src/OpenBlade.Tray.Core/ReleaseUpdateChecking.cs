@@ -241,12 +241,20 @@ public static class UpdateCheckSchedule
 public sealed class GitHubReleaseUpdateClient : IReleaseUpdateClient
 {
     public const string ApiVersion = "2022-11-28";
+
+    /// <summary>
+    /// The repository's current owner. Release metadata selects the installer the
+    /// tray downloads and runs, so it must not depend on GitHub redirecting a
+    /// former owner name that someone else could register.
+    /// </summary>
+    public const string RepositoryApi =
+        "https://api.github.com/repos/OpenBladeProject/openblade-core";
     private const int MaximumResponseBytes = 256 * 1024;
     private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(10);
     private static readonly Uri LatestStableReleaseEndpoint = new(
-        "https://api.github.com/repos/OSSBlade/openblade-core/releases/latest");
+        RepositoryApi + "/releases/latest");
     private static readonly Uri NightlyReleasesEndpoint = new(
-        "https://api.github.com/repos/OSSBlade/openblade-core/releases?per_page=20");
+        RepositoryApi + "/releases?per_page=20");
     private static readonly HttpClient SharedHttpClient = CreateSharedHttpClient();
     private readonly HttpClient httpClient;
 

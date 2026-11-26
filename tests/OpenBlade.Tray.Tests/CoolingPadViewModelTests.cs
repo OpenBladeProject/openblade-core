@@ -172,7 +172,67 @@ public sealed class CoolingPadViewModelTests
         Assert.Equal(0, client.Reads);
         Assert.Equal(release ? 0 : 1, client.Writes);
         Assert.Equal(release ? 1 : 0, client.Releases);
+        Assert.Equal(release
+            ? TrayText.Get("The cooling pad did not accept the change. Check Troubleshooting for the reason.")
+            : TrayText.Get("The cooling pad has not accepted the change yet. OpenBlade will try again."), vm.StatusText);
+    }
+
+    [Fact]
+    public async Task RefusedChangeIsRetriedAndTheMessageClearsOnceTheServiceAcceptsIt()
+    {
+        var client = new PadClient { BlockedResult = true };
+        await using var vm = new CoolingPadViewModel(client, new InlineDispatcher(), applyDelay: TimeSpan.Zero,
+            refreshInterval: TimeSpan.FromHours(1), retryDelay: TimeSpan.FromMilliseconds(20));
+        vm.ApplyStatus(new() { Connected = true, Active = true, Requested = CoolingPadSettings.Default with { FanMode = CoolingPadFanMode.Fixed } });
+        vm.FixedRpm = 2000;
+        Assert.Equal(1, client.Writes);
+        // The refused draft stays in the editor while the retry waits.
+        vm.ApplyStatus(new() { Connected = true, Active = true, Requested = CoolingPadSettings.Default with { FanMode = CoolingPadFanMode.Fixed } });
+        Assert.Equal(2000, vm.FixedRpm);
+        client.BlockedResult = false;
+        await WaitUntilAsync(() => client.Writes == 2 && !vm.IsBusy);
+        Assert.Equal(2000, client.Submitted!.FixedRpm);
+        Assert.Equal(TrayText.Get("OpenBlade is controlling the cooling pad."), vm.StatusText);
+        await Task.Delay(100);
+        Assert.Equal(2, client.Writes);
+    }
+
+    [Fact]
+    public async Task ReleasingControlCancelsARefusedChangeWaitingToBeRetried()
+    {
+        var client = new PadClient { BlockedResult = true };
+        await using var vm = new CoolingPadViewModel(client, new InlineDispatcher(), applyDelay: TimeSpan.Zero,
+            refreshInterval: TimeSpan.FromHours(1), retryDelay: TimeSpan.FromMilliseconds(150));
+        vm.ApplyStatus(new() { Connected = true, Active = true, Requested = CoolingPadSettings.Default with { FanMode = CoolingPadFanMode.Fixed } });
+        vm.FixedRpm = 2000;
+        Assert.Equal(1, client.Writes);
+        Assert.Equal(TrayText.Get("The cooling pad has not accepted the change yet. OpenBlade will try again."), vm.StatusText);
+
+        client.BlockedResult = false;
+        client.NextStatus = new() { Connected = true, Active = false };
+        await vm.ReleaseCommand.ExecuteAsync(null);
+        Assert.Equal(1, client.Releases);
+        await Task.Delay(400);
+        Assert.Equal(1, client.Writes);
+        Assert.NotEqual(TrayText.Get("The cooling pad has not accepted the change yet. OpenBlade will try again."), vm.StatusText);
+    }
+
+    [Fact]
+    public async Task PersistentRefusalStopsRetryingAndReportsIt()
+    {
+        var client = new PadClient { BlockedResult = true };
+        await using var vm = new CoolingPadViewModel(client, new InlineDispatcher(), applyDelay: TimeSpan.Zero,
+            refreshInterval: TimeSpan.FromHours(1), retryDelay: TimeSpan.FromMilliseconds(10));
+        vm.ApplyStatus(new() { Connected = true, Active = true, Requested = CoolingPadSettings.Default with { FanMode = CoolingPadFanMode.Fixed } });
+        vm.FixedRpm = 2000;
+        await WaitUntilAsync(() => client.Writes == 1 + CoolingPadViewModel.MaxRefusedRetries && !vm.IsBusy);
+        await Task.Delay(100);
+        Assert.Equal(1 + CoolingPadViewModel.MaxRefusedRetries, client.Writes);
         Assert.Equal(TrayText.Get("The cooling pad did not accept the change. Check Troubleshooting for the reason."), vm.StatusText);
+        Assert.False(vm.NeedsCheck);
+        // A new change gets its own retries.
+        vm.FixedRpm = 2400;
+        await WaitUntilAsync(() => client.Writes == 2 * (1 + CoolingPadViewModel.MaxRefusedRetries) && !vm.IsBusy);
     }
 
     [Theory]
@@ -209,7 +269,7 @@ public sealed class CoolingPadViewModelTests
         Assert.False(vm.CanRelease);
         Assert.True(vm.NeedsCheck);
         Assert.False(vm.ShowRelease);
-        Assert.Equal(TrayText.Get("A change to the cooling pad could not be confirmed. Check the pad before making another change."), vm.StatusText);
+        Assert.Equal(TrayText.Get("A change to the cooling pad could not be confirmed. OpenBlade is checking the pad."), vm.StatusText);
         vm.FixedRpm = 2200;
         Assert.Equal(1, client.Writes);
         // An unknown read result keeps the gate.
@@ -239,7 +299,7 @@ public sealed class CoolingPadViewModelTests
     }
 
     [Fact]
-    public async Task AutomaticRefreshRunsOnlyWhileVisibleAndPausesWhileACheckIsNeeded()
+    public async Task AutomaticRefreshRunsOnlyWhileVisibleAndClearsAnUnconfirmedChangeWithoutWriting()
     {
         var fixedSpeed = CoolingPadSettings.Default with { FanMode = CoolingPadFanMode.Fixed };
         var client = new PadClient { NextStatus = new() { Connected = true, Active = true, ConfirmedTargetRpm = 1500, Requested = fixedSpeed } };
@@ -259,16 +319,20 @@ public sealed class CoolingPadViewModelTests
         client.FailWrite = true;
         vm.FixedRpm = 2000;
         Assert.True(vm.NeedsCheck);
+        Assert.False(vm.CanApply);
         int beforeGate = client.Reads;
+        // An unknown result keeps the gate through automatic reads.
+        client.NextStatus = new CoolingPadStatusSnapshot();
         vm.IsPageVisible = true;
-        await Task.Delay(150);
-        Assert.Equal(beforeGate, client.Reads);
-        // An automatic read never clears the gate; the explicit check does.
+        await WaitUntilAsync(() => client.Reads >= beforeGate + 2);
+        Assert.True(vm.NeedsCheck);
+        // A confirmed automatic read clears it; the uncertain change is not sent again.
         client.FailWrite = false;
-        await vm.RefreshCommand.ExecuteAsync(null);
-        Assert.False(vm.NeedsCheck);
-        await WaitUntilAsync(() => client.Reads >= beforeGate + 3);
+        client.NextStatus = new() { Connected = true, Active = true, ConfirmedTargetRpm = 1500, Requested = fixedSpeed };
+        await WaitUntilAsync(() => !vm.NeedsCheck);
         vm.IsPageVisible = false;
+        Assert.True(vm.CanApply);
+        Assert.Equal(1, client.Writes);
     }
 
     [Fact]
@@ -593,6 +657,38 @@ public sealed class CoolingPadViewModelTests
     }
 
     [Fact]
+    public async Task LightingKeptOnThePadShowsNoLightingSoChoosingTheSavedOneAppliesIt()
+    {
+        var client = new PadClient();
+        await using var vm = Create(client);
+        var autoOff = CoolingPadSettings.Default with
+        {
+            FanMode = CoolingPadFanMode.Auto,
+            AutoProfile = CoolingPadAutoProfile.Quiet,
+            LightingMode = CoolingPadLightingMode.Off,
+        };
+        vm.ApplyStatus(new() { Connected = true, Active = true, Requested = autoOff });
+        Assert.Equal(CoolingPadLightingMode.Off, vm.LightingMode?.Value);
+
+        // The pad's lighting button changed the lighting; the fan stays controlled.
+        vm.ApplyStatus(new() { Connected = true, Active = true, Requested = autoOff, LightingKept = true });
+        Assert.Equal(CoolingPadFanMode.Auto, vm.FanMode?.Value);
+        Assert.Null(vm.LightingMode);
+        await Task.Delay(50);
+        Assert.Equal(0, client.Writes);
+
+        // Choosing the saved lighting again is a change, so it is applied.
+        vm.LightingMode = Choice(vm.LightingModes, CoolingPadLightingMode.Off);
+        Assert.Equal(1, client.Writes);
+        Assert.Equal((CoolingPadFanMode.Auto, CoolingPadLightingMode.Off), (client.Submitted!.FanMode, client.Submitted.LightingMode));
+        Assert.Equal(CoolingPadLightingMode.Off, vm.LightingMode?.Value);
+        // The service manages lighting again and reports it; the editor keeps the choice.
+        vm.ApplyStatus(client.NextStatus with { Requested = client.Submitted });
+        Assert.Equal(CoolingPadLightingMode.Off, vm.LightingMode?.Value);
+        Assert.Equal(1, client.Writes);
+    }
+
+    [Fact]
     public async Task ALocalChangeWaitingToApplyWinsOverAnOlderStatus()
     {
         var client = new PadClient();
@@ -627,17 +723,18 @@ public sealed class CoolingPadViewModelTests
     }
 
     [Fact]
-    public async Task ARefusedChangeReturnsTheEditorToTheServiceRequest()
+    public async Task ARefusedChangeReturnsTheEditorToTheServiceRequestOnceItsRetriesEnd()
     {
         var client = new PadClient { BlockedResult = true };
-        await using var vm = Create(client);
+        await using var vm = new CoolingPadViewModel(client, new InlineDispatcher(), applyDelay: TimeSpan.Zero,
+            refreshInterval: TimeSpan.FromHours(1), retryDelay: TimeSpan.FromMilliseconds(10));
         var fixedSpeed = CoolingPadSettings.Default with { FanMode = CoolingPadFanMode.Fixed };
         vm.ApplyStatus(new() { Connected = true, Active = true, Requested = fixedSpeed });
         vm.FixedRpm = 2400;
-        await WaitUntilAsync(() => client.Writes == 1 && !vm.IsBusy);
+        await WaitUntilAsync(() => client.Writes == 1 + CoolingPadViewModel.MaxRefusedRetries && !vm.IsBusy);
         vm.ApplyStatus(new() { Connected = true, Active = true, Requested = fixedSpeed });
         Assert.Equal(fixedSpeed.FixedRpm, vm.FixedRpm);
-        Assert.Equal(1, client.Writes);
+        Assert.Equal(1 + CoolingPadViewModel.MaxRefusedRetries, client.Writes);
     }
 
     private static CoolingPadViewModel Create(PadClient client) =>
@@ -671,7 +768,7 @@ public sealed class CoolingPadViewModelTests
         public int Releases => Volatile.Read(ref releases);
         public bool FailWrite { get; set; }
         public bool FailedResult { get; init; }
-        public bool BlockedResult { get; init; }
+        public bool BlockedResult { get; set; }
         public bool FailRead { get; set; }
         public TaskCompletionSource? Gate { get; init; }
         public CoolingPadSettings? Submitted { get; private set; }
