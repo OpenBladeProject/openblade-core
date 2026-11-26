@@ -82,7 +82,7 @@ mod scratch {
     #[serde(rename_all = "camelCase", deny_unknown_fields)]
     struct StartupFrame {
         frame: String,
-        version: u32,
+        version: i32,
         request_id: String,
         deployment_request_id: String,
         step: u8,
@@ -242,7 +242,7 @@ mod scratch {
             .ok_or_else(|| denied("scratch readiness has no kernel-observed Setup peer"))?;
         let frame: StartupFrame = serde_json::from_slice(&bytes)?;
         if frame.frame != "verifyProvisional"
-            || frame.version != 80
+            || frame.version != crate::service_frame::PROTOCOL_VERSION
             || !is_guid(&frame.request_id)
             || !is_guid(&frame.deployment_request_id)
             || frame.step != step

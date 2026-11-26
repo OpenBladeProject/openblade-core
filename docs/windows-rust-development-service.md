@@ -2064,8 +2064,11 @@ Main e9852834 published its own protocol 90, which adds
 `CoolingPadStatusSnapshot.LightingKept` (b5f246b7). The branch protocol 90 (a
 confirmed Custom preset with unreported levels) therefore moved to protocol
 91. Protocol 91 keeps main's protocol 90 contracts, and its JSON fields and
-types equal protocol 90. The native host, the reporter pipe, every native test
-frame and the managed replay fixtures speak 91. The branch v90 `service.json`
+types equal protocol 90. The native host, the reporter pipe, the native test
+frames and the managed replay fixtures speak 91. The native roles and the
+scratch candidate receipt fixture read one constant,
+`service_frame::PROTOCOL_VERSION`; the receipt fixture had still required
+protocol 80. The branch v90 `service.json`
 and `service-runtime.json` are frozen under `tests/data/ipc90`, and the
 development host closes every request in them without a reply.
 

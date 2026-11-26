@@ -5,6 +5,9 @@ use serde::Serialize;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::time::timeout;
 
+/// The Service IPC protocol every native role and fixture speaks, matching
+/// managed `OpenBladeIpc.ProtocolVersion`.
+pub(crate) const PROTOCOL_VERSION: i32 = 91;
 const MAX_FRAME_BYTES: i32 = 65_536;
 pub(crate) const FRAME_TIMEOUT: Duration = Duration::from_secs(2);
 /// The deadline of a request that may reconcile saved intent

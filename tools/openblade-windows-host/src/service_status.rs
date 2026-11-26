@@ -28,7 +28,7 @@ use tokio::{
 use crate::service_frame::{FRAME_TIMEOUT, invalid, is_guid, read_payload, write_frame};
 
 pub(crate) const PIPE_NAME: &str = "OpenBlade.Service.v2";
-pub(crate) const PROTOCOL_VERSION: i32 = 91;
+pub(crate) const PROTOCOL_VERSION: i32 = crate::service_frame::PROTOCOL_VERSION;
 
 pub(crate) fn production_path() -> String {
     format!(r"\\.\pipe\{PIPE_NAME}")
