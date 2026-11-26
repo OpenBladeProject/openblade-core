@@ -163,6 +163,9 @@ async fn capture(
     status.verify(0).map_err(Runtime)?;
     #[cfg(feature = "service-thermal-mutation-v1")]
     let status = project_private_status(stream, current, &status)?;
+    // The archive reads this value by member name and writes no status
+    // record whole, so the member order serde_json gives it never reaches
+    // the archive (`an_archive_writes_no_lighting_parameters_from_the_status`).
     let status = serde_json::to_value(&status).map_err(|e| Runtime(e.into()))?;
     Ok(Some((status, source.diagnostics())))
 }

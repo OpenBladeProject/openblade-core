@@ -616,3 +616,23 @@ fn redaction_replaces_the_longer_of_two_nested_tokens() {
         "on [REDACTED] now"
     );
 }
+
+/// The archive reads the status by member name and writes no status record
+/// whole, so no lighting parameters, whose `kind` managed needs first, reach
+/// its bytes; an entry that ever writes one must use `kind_first`.
+#[test]
+fn an_archive_writes_no_lighting_parameters_from_the_status() {
+    let mut status = native_status();
+    let lighting = json!({
+        "effect": 1, "color": {"red": 200, "green": 10, "blue": 5}, "brightness": 10,
+        "parameters": {"kind": "static", "color": {"red": 200, "green": 10, "blue": 5}},
+        "logoMode": null,
+    });
+    status["lightingOverride"] = json!({"value": lighting, "lifetime": 1});
+    status["desiredState"]["lighting"] = json!({"value": lighting, "source": 4});
+    let archive = build(request(status, Snapshot::default()), &Cancel::default()).unwrap();
+    for (name, text) in archive_texts(&archive.bytes) {
+        assert!(!text.contains("parameters"), "{name}: {text}");
+        assert!(!text.contains("\"kind\""), "{name}: {text}");
+    }
+}
