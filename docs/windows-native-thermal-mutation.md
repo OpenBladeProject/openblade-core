@@ -881,11 +881,22 @@ Native differs from managed here in these ways:
   one. With no earlier answer the restore reads as pending, as managed's
   recovery treats a journal it cannot inspect (4057-4069) and as every
   native HyperBoost request treats it. A status that observed nothing keeps
-  the last answer too.
+  the last answer too and establishes none of its own, so an unreadable
+  journal after a first observation that yielded nothing is still pending.
 - The pad scan and the journal read run on the observer's thread after its
   other checks of the cancellation, so neither starts once it is set, and
   the pad scan takes the flag itself. A refresh past its budget and a drain
-  both end the scan; a request's own gates still wait for theirs.
+  both end the scan.
+- A request's gates hand the scan their job's cancellation the same way
+  (`Permit::resolve`, `Permit::admits_setter`, `Probes::pad`), which a
+  dropped request and the Stop's `Worker::stop` set. A cancelled scan is a
+  failed one: the entry refuses, with no row at the request or with its
+  Prepared row retired before a setter, and the job thread is free for the
+  keyboard release, the fan handback and the exit. The scan checks the flag
+  between its enumeration calls (`discovery::scan_hid`), so one call that
+  never returns still holds its thread. On the job thread that is the
+  mutation worker's limit: the fan handback waits for the job, and the Stop
+  ends at its bound with that step and the ones after it not run.
 - The status observer scans processes only, so it lists no blocking service
   and always carries the detection warning, which the tray treats as a
   block. Each write still takes its own controller admission. A status

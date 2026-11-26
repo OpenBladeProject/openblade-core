@@ -549,7 +549,12 @@ managed order (`ServiceControlRuntime.cs:12925-12950`,
   thread and holds no device handle or gate, so a call stalled in it takes no
   time from the keyboard release, the fan handback or the HyperBoost exit.
   An observer still running at the deadline fails the Stop after the
-  cleanup, where it used to wait first and skip it. Every exchange left is charged as `Pace` charges
+  cleanup, where it used to wait first and skip it. A mutation job is
+  different: the keyboard release cancels one still running, and every job
+  step checks that between its device and Windows calls, a HyperBoost
+  request's pad scan included, but a single call that does not return holds
+  the job thread, and the fan handback then waits for it until the drain's
+  caller ends the Stop. Every exchange left is charged as `Pace` charges
   any recipe, and every row left at the second longest exchange; when they
   do not fit it ends with no row and no setter. A job that ends after 31 or
   40-43 leaves a tail that cannot be closed in the process (51 follows only
