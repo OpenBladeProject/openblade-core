@@ -13,6 +13,8 @@ const BALANCED_PAIR: [[u8; 4]; 2] = [[1, 1, 0, 0], [1, 2, 0, 0]];
 /// The Balanced destination's wire value, which the exit's rows carry.
 const BALANCED: i64 = 1;
 const NOT_EXITED: &str = "Owned HyperBoost was not exited at Stop";
+/// What a case changes on its rig before the boundary.
+type Arrange = fn(&Rig);
 
 /// `owned` with the Service's cleanup admission wired over the rig custody,
 /// as `Runtime::native` wires `CleanupGuard`.
@@ -180,7 +182,6 @@ async fn stop_settles_ownership_read_only_when_firmware_already_left() {
 /// and a battery reading Windows does not agree with.
 #[tokio::test]
 async fn a_refused_stop_exit_writes_nothing_and_is_reported() {
-    type Arrange = fn(&Rig);
     let cases: [(&str, bool, Arrange); 7] = [
         ("unclassified power", true, |rig| {
             rig.port.state.lock().unwrap().actual = UNMAPPED_LEVEL;
@@ -407,7 +408,7 @@ async fn a_failed_fan_handback_leaves_owned_hyperboost_without_a_row() {
 const UNMAPPED_LEVEL: u8 = 0x10;
 /// The power readings that refuse the exit's setters: unclassified external
 /// power, and a battery reading while Windows reports AC.
-const NO_EXIT_CLASS: [(&str, fn(&Rig)); 2] = [
+const NO_EXIT_CLASS: [(&str, Arrange); 2] = [
     ("unclassified", |rig| {
         rig.port.state.lock().unwrap().actual = UNMAPPED_LEVEL;
     }),
@@ -624,7 +625,6 @@ mod beside_the_keyboard {
     /// which the release refuses (`Release::Unsettled`).
     #[tokio::test]
     async fn a_failed_stop_exit_never_skips_the_keyboard_release() {
-        type Arrange = fn(&Rig);
         // The drain's bound from the Stop. The keyboard keeps its own share
         // from its start, so a drain with no time left still releases it.
         let cases: [(&str, Duration, Arrange); 3] = [
@@ -727,7 +727,6 @@ mod beside_the_keyboard {
     /// fences the store, and the next suspend replays nothing.
     #[tokio::test]
     async fn a_failed_suspend_exit_never_skips_the_keyboard_release() {
-        type Arrange = fn(&Rig);
         let cases: [(&str, Exit, Arrange); 3] = [
             ("refused", Exit::Refused, |rig| {
                 *rig.hyperboost.journal.lock().unwrap() = Some(Some(managed_journal(1)));
