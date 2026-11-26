@@ -1301,20 +1301,41 @@ binding and the trust is admitted. The usage then reaches RzCommon as one
 type-10 Consumer Control IOCTL (`0x88883020`). Its completion is the only
 confirmation the driver gives, and there is no readback.
 
-Every Windows call runs on the input's own thread, so a stalled IOCTL never
-holds the Service runtime. A press waits behind at most the call in progress
-and one probe, and is refused at once beyond that. Stop releases a held usage
-within 300 ms of the drain's budget before the keyboard release. Its outcome
-is diagnostic only.
+Every Windows call runs off the Service runtime, so a stalled IOCTL never
+holds it. Presses and releases run on the input's own thread, and availability
+resolutions on a separate probe thread, so a release never waits behind a
+probe. A press waits behind at most the call in progress and two queued calls,
+and is refused at once beyond that. A repeat of the held usage and a release
+answer without observing status first; a press that writes still takes its
+fresh capture.
+
+Stop releases a held usage before the keyboard release, within 300 ms taken
+from the fans' part of the drain. A confirmed suspend releases it before the
+keyboard returns to Normal mode, from what the suspend window holds beyond
+the keyboard's 900 ms share. Neither release is withdrawn: queued behind a
+press still running, it runs after it. One that has not answered when its
+share ends leaves the usage owed, so the next request or boundary releases
+again. Its outcome is diagnostic only. The keyboard maintenance step
+neutralizes on the first due step that finds the device verified, as managed's
+does, and records a failed release in the diagnostic history.
 
 Native differs from managed in these ways, each failing safe:
 
 - Only the RZ09-0581 stack is resolved. RZ09-0528 publishes Unavailable.
-- There is no maintenance-tick neutralization and no low-power release. A usage
-  held across a suspend is released by the next request or by Stop.
+- The suspend release and the maintenance neutralization belong to the
+  keyboard Driver-mode owner (`service-keyboard-driver-mode-v1`). Without it,
+  a usage held across a suspend is released by the next request or by Stop.
 - SYSTEM is refused as "The active interactive Windows user is required."
-- The published availability is the input thread's last resolution, refreshed
-  at most every 10 s, not a resolution per status.
+- A press's fresh capture opens no profile store, as managed's device check
+  needs none. The shared capture factory admits only `S-1-5-21-` users and
+  opens their store, so the press takes its own capture instead.
+- The published availability is the probe thread's last resolution, refreshed
+  at most every 10 s. A status never waits on a resolution, so a changed
+  availability reaches the status published after it resolves.
+- With `service-diagnostics-export-v1`, the history records managed's warning
+  for an Unavailable write that carries an error, and each driver-package
+  rejection's stage, reason and installed state. Native records a rejection
+  once until it changes; managed traces only rejections that throw.
 
 Both package readers refuse the feature and the marker by name ("Native
 display-brightness input is not admitted for packaging."), so no packaged image
