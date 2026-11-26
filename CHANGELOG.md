@@ -5,6 +5,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+## [0.77.1] - 2026-11-26
+
 ### Added
 
 - Install a newer OpenBlade release from Settings with **Install update**. OpenBlade downloads the installer, checks it against the published release, and opens the usual setup. ([#1013](https://github.com/OpenBladeProject/openblade-core/pull/1013))
@@ -1324,7 +1326,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Unrecognized external adapters are read-only. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 - Controls that aren't supported on your laptop are unavailable. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 
-[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.65.1-nightly.117...HEAD
+[Unreleased]: https://github.com/OpenBladeProject/openblade-core/compare/v0.77.1...HEAD
+[0.77.1]: https://github.com/OpenBladeProject/openblade-core/compare/v0.65.1-nightly.117...v0.77.1
 [0.65.1-nightly.117]: https://github.com/OSSBlade/openblade-core/compare/v0.64.2-nightly.116...v0.65.1-nightly.117
 [0.64.2-nightly.116]: https://github.com/OSSBlade/openblade-core/compare/v0.63.2-nightly.115...v0.64.2-nightly.116
 [0.63.2-nightly.115]: https://github.com/OSSBlade/openblade-core/compare/v0.61.1-nightly.114...v0.63.2-nightly.115
