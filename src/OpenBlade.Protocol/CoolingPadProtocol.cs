@@ -23,10 +23,13 @@ internal static class CoolingPadProtocol
             : throw new ArgumentOutOfRangeException(nameof(owner));
     /// <summary>
     /// Image 0x3190 reports the ramping fan speed, and the target only once the two are within
-    /// 50 RPM. It cannot confirm a newly requested target.
+    /// 50 RPM. It cannot confirm a newly requested target. The ramping speed can pass the
+    /// 3200 RPM maximum target: an RC21-0230 ramping to 3200 replied [1,5,65] (3250 RPM).
     /// </summary>
     internal static RazerCommandSpec TargetQuery() => new(0x0D, 0x81, [1, 5, 0], 3,
-        p => p.Span is [1, 5, <= 64]);
+        p => p.Span is [1, 5, _]);
+    /// <summary>The target a 0D/81 speed reports, or null while the ramp is above any target.</summary>
+    internal static int? DecodeTarget(byte speed) => speed <= 64 ? speed * 50 : null;
     internal static RazerCommandSpec DeviceModeQuery() => new(0, 0x84, [0, 0], 2,
         p => p.Span is [0 or 3, 0]);
     internal static RazerCommandSpec DeviceModeSet(CoolingPadDeviceMode mode) =>

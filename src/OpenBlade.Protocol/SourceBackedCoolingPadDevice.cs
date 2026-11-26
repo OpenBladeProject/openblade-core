@@ -80,9 +80,9 @@ internal sealed class SourceBackedCoolingPadDevice(
                 ? DecodeLight(last.Effect)
                 : null;
         // Low/Medium/High report their configured speed; Smart presets only the ramping speed from 0D/81.
-        int configuredTarget = fan.Preset is CoolingPadFanPreset.Low or CoolingPadFanPreset.Medium or CoolingPadFanPreset.High
+        int? configuredTarget = fan.Preset is CoolingPadFanPreset.Low or CoolingPadFanPreset.Medium or CoolingPadFanPreset.High
             ? fan.ConfiguredRpm
-            : fan.Preset == CoolingPadFanPreset.Off ? 0 : target.Span[2] * 50;
+            : fan.Preset == CoolingPadFanPreset.Off ? 0 : CoolingPadProtocol.DecodeTarget(target.Span[2]);
         return new(Identity, appMode, configuredTarget,
             CoolingPadProtocol.RawToPercent(brightness.Span[2]), lightMode)
         {

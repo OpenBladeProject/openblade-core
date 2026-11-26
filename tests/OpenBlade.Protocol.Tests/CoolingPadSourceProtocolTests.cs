@@ -457,11 +457,27 @@ public sealed class CoolingPadSourceProtocolTests
             Diagnostic = new(HidSessionFailurePhase.ProtocolValidation, HidSessionFailureKind.ProtocolFailure, null, 0)
             {
                 ProtocolValidationFailure = HidProtocolValidationFailure.PayloadValidator,
-                RejectedPayloadHex = "01 05 41",
+                RejectedPayloadHex = "01 04 00",
             },
         };
-        Assert.Equal("Cooling-pad operation failed: ProtocolFailure (0D/81, ProtocolValidation, PayloadValidator, payload 01 05 41).",
+        Assert.Equal("Cooling-pad operation failed: ProtocolFailure (0D/81, ProtocolValidation, PayloadValidator, payload 01 04 00).",
             SourceBackedCoolingPadDevice.DescribeFailure(CoolingPadProtocol.TargetQuery(), result));
+    }
+
+    [Fact]
+    public async Task ARampingSpeedAboveTheMaximumTargetReadsWithoutATarget()
+    {
+        // An RC21-0230 ramping to 3200 RPM in Quiet replied [1,5,65]; that read used to fail and stop control.
+        Assert.True(CoolingPadProtocol.TargetQuery().PayloadValidator!((byte[])[1, 5, 255]));
+        Assert.False(CoolingPadProtocol.TargetQuery().PayloadValidator!((byte[])[1, 4, 0]));
+        Assert.False(CoolingPadProtocol.TargetQuery().PayloadValidator!((byte[])[1, 5]));
+        var wire = new Wire { Fan = new(CoolingPadFanOwnership.Firmware, CoolingPadFanPreset.Quiet, 0), RampingSpeed = 65 };
+        await using var device = Create(wire);
+        var snapshot = await device.ReadSnapshotAsync(default);
+        Assert.Null(snapshot.TargetRpm);
+        Assert.Equal(CoolingPadFanPreset.Quiet, snapshot.FanConfiguration!.Preset);
+        wire.RampingSpeed = 64;
+        Assert.Equal(3200, (await device.ReadSnapshotAsync(default)).TargetRpm);
     }
 
     private sealed class ControllerProcesses(string name) : IRunningProcessSource
@@ -581,6 +597,7 @@ public sealed class CoolingPadSourceProtocolTests
         internal bool ControllerBlocked { get; set; }
         internal bool WrongFanReadback { get; set; }
         internal bool FailNextSet { get; set; }
+        internal byte? RampingSpeed { get; set; }
         internal int SetOnlyFrames { get; private set; }
         internal List<string> Commands { get; } = [];
         private int target;
@@ -604,7 +621,7 @@ public sealed class CoolingPadSourceProtocolTests
                     p = selected < 3 ? [p[0], selected, (byte)(WrongFanReadback ? 11 : speeds[selected])] : [p[0], selected];
                     break;
                 case (13, 1): target = p[2] * 50; break;
-                case (13, 129): p = [1, 5, (byte)(target / 50)]; break;
+                case (13, 129): p = [1, 5, RampingSpeed ?? (byte)(target / 50)]; break;
                 case (0, 4): Mode = (CoolingPadDeviceMode)p[0]; break;
                 case (0, 132): p = [(byte)Mode, 0]; break;
                 case (15, 128): p = [5, 0x19, 3, 1, 18]; break;
