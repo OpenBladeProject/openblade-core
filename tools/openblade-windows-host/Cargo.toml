@@ -113,6 +113,12 @@ service-thermal-hyperboost-exit-v1 = ["service-thermal-mutation-v1", "openblade-
 # capture evidence covers a native entry, so no packaged
 # composition implies it, and both package readers refuse it by name.
 service-hyperboost-v1 = ["service-thermal-hyperboost-exit-v1", "openblade-domain/hyperboost", "openblade-domain/thermal-convergence"]
+# Keyboard lighting on exact RZ09-0581 (`setLightingOverride`), slice L1:
+# brightness and logo through the reviewed 03/83, 03/03, 03/80, 03/82,
+# 03/00 and 03/02 commands under managed's semantic admission, Off only.
+# No capture evidence covers a native write, so no packaged composition
+# implies it, and both package readers refuse it by name.
+service-lighting-v1 = ["service-thermal-mutation-v1", "openblade-protocol/lighting-setters"]
 # Display-brightness HID input on exact RZ09-0581 (`setDisplayBrightnessHidUsage`):
 # managed's held-usage state machine under the thermal operation gate, each
 # press admitted by a fresh Write capture, and RzCommon's type-10 input IOCTL

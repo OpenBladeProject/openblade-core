@@ -124,6 +124,36 @@ pub(crate) struct State {
     // retire would.
     #[cfg(feature = "service-keyboard-driver-mode-v1")]
     pub(crate) device_mode_retire_delay: Option<Duration>,
+    /// The keyboard lighting the 03/83, 03/80 and 03/82 queries report: the
+    /// raw brightness, the logo state (0 off, 1 on) and the logo effect.
+    /// An accepted 03/03, 03/00 or 03/02 setter changes its byte.
+    #[cfg(feature = "service-lighting-v1")]
+    pub(crate) lighting: [u8; 3],
+    /// Every lighting report received: its command, payload, and whether it
+    /// came as a mutation transfer.
+    #[cfg(feature = "service-lighting-v1")]
+    pub(crate) lighting_sent: Vec<(u8, Vec<u8>, bool)>,
+    /// Lighting setters (1-based, in the order received) acknowledged
+    /// without being applied.
+    #[cfg(feature = "service-lighting-v1")]
+    pub(crate) lighting_ignore: Vec<usize>,
+    /// That lighting setter (1-based) fails at submission, applying nothing.
+    #[cfg(feature = "service-lighting-v1")]
+    pub(crate) lighting_fail: Option<usize>,
+    /// That lighting setter's (1-based) reply times out after it applies.
+    #[cfg(feature = "service-lighting-v1")]
+    pub(crate) lighting_timeout: Option<usize>,
+    /// That lighting query's (1-based) reply times out.
+    #[cfg(feature = "service-lighting-v1")]
+    pub(crate) lighting_query_timeout: Option<usize>,
+    /// That lighting setter's (1-based) transfer holds until released, as
+    /// `held_write` holds a thermal setter.
+    #[cfg(feature = "service-lighting-v1")]
+    pub(crate) lighting_held: Option<(usize, Arc<AtomicBool>)>,
+    /// Raw brightness values the next 03/83 queries report, in order, before
+    /// the stored one.
+    #[cfg(feature = "service-lighting-v1")]
+    pub(crate) brightness_script: std::collections::VecDeque<u8>,
 }
 /// When the test sent the request a job serves, on the test's clock. They sit
 /// beside the state, not in it: the state is locked for as long as a test hook
@@ -144,6 +174,16 @@ pub(crate) struct Fixture {
     arrivals: Arc<Mutex<Arrivals>>,
     transactions: Arc<Transactions>,
     threads: Arc<Threads>,
+}
+/// Whether no lighting setter is held: a held transfer waits on real time,
+/// as `held_write` does, so the port does not pause the clock for it.
+#[cfg(feature = "service-lighting-v1")]
+fn lighting_unheld(state: &State) -> bool {
+    state.lighting_held.is_none()
+}
+#[cfg(not(feature = "service-lighting-v1"))]
+fn lighting_unheld(_: &State) -> bool {
+    true
 }
 /// Counted threads: started, and exited as their thread-local destructors run.
 #[derive(Default)]
@@ -289,6 +329,7 @@ impl Fixture {
                     let paused = (latency || permit.is_none() || thermal)
                         && s.held_read.is_none()
                         && s.held_write.is_none()
+                        && lighting_unheld(&s)
                         && !real;
                     let arrival = if !paused {
                         None
@@ -419,6 +460,8 @@ impl Port for MemoryPort {
             .unwrap()
             .latency
             .map(|latency| Instant::now() + latency);
+        #[cfg(feature = "service-lighting-v1")]
+        let mutation = matches!(transfer, Transfer::SendMutation(_));
         match transfer {
             Transfer::ReceiveReply => {
                 if self.reply_timeout {
@@ -650,6 +693,50 @@ impl Port for MemoryPort {
                         }
                         ack
                     }
+                    #[cfg(feature = "service-lighting-v1")]
+                    (3, 0x83 | 0x80 | 0x82 | 0x03 | 0x00 | 0x02) => {
+                        s.lighting_sent.push((command, payload.to_vec(), mutation));
+                        let setter = matches!(command, 0x03 | 0x00 | 0x02);
+                        assert_eq!(setter, mutation, "{command:x}");
+                        let led = if command & 0x7f == 0x03 { 5 } else { 4 };
+                        assert_eq!(payload[..2], [1, led], "{command:x}");
+                        assert_eq!(payload.len(), 3);
+                        let byte = match command & 0x7f {
+                            0x03 => 0,
+                            0x00 => 1,
+                            _ => 2,
+                        };
+                        if setter {
+                            let number = s.lighting_sent.iter().filter(|sent| sent.2).count();
+                            if s.lighting_fail == Some(number) {
+                                return Err(io::ErrorKind::Other.into());
+                            }
+                            if !s.lighting_ignore.contains(&number) {
+                                s.lighting[byte] = payload[2];
+                            }
+                            if s.lighting_timeout == Some(number) {
+                                self.reply_timeout = true;
+                            }
+                            if let Some((held, release)) = &s.lighting_held
+                                && *held == number
+                            {
+                                self.held = Some(release.clone());
+                                s.holding.notify_one();
+                            }
+                            payload.to_vec()
+                        } else {
+                            let number = s.lighting_sent.iter().filter(|sent| !sent.2).count();
+                            if s.lighting_query_timeout == Some(number) {
+                                self.reply_timeout = true;
+                            }
+                            let value = if byte == 0 {
+                                s.brightness_script.pop_front().unwrap_or(s.lighting[0])
+                            } else {
+                                s.lighting[byte]
+                            };
+                            vec![1, led, value]
+                        }
+                    }
                     _ => panic!("unexpected typed fixture command {class:x}/{command:x}"),
                 };
                 let mut reply = [0; FRAME_LENGTH];
@@ -724,6 +811,9 @@ impl Port for MemoryPort {
         Ok(true)
     }
 }
+#[cfg(feature = "service-lighting-v1")]
+#[path = "lighting_tests.rs"]
+mod lighting_tests;
 #[path = "mutation_pace_tests.rs"]
 mod pace_tests;
 #[path = "mutation_pool_tests.rs"]

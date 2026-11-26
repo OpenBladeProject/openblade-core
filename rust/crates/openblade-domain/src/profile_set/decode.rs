@@ -347,7 +347,7 @@ fn lighting_parameters(json: &Json) -> Decoded<LightingParameters> {
     })
 }
 
-pub(super) fn lighting(json: &Json) -> Decoded<LightingSettings> {
+pub fn lighting(json: &Json) -> Decoded<LightingSettings> {
     let object = Object::of(
         json,
         &[

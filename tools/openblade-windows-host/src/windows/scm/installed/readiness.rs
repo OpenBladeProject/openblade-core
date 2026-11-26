@@ -613,6 +613,7 @@ async fn serve_connection(
                 | StatusRequest::SetFanStopSettings { .. }
                 | StatusRequest::ResumeAutomaticFanStop { .. }
                 | StatusRequest::SetBatterySaverFanStop { .. }
+                | StatusRequest::SetLightingOverride { .. }
         )
     {
         #[cfg(feature = "service-thermal-mutation-v1")]
@@ -943,6 +944,7 @@ fn mutation_budget(request: &StatusRequest) -> Duration {
                 | StatusRequest::SetFanOverride { .. }
                 | StatusRequest::CyclePerformanceShortcut { .. }
                 | StatusRequest::SetHyperBoost { .. }
+                | StatusRequest::SetLightingOverride { .. }
         )
     {
         RECIPE_BUDGET

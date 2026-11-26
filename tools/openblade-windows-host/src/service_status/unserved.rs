@@ -130,7 +130,7 @@ mod tests {
     }
 
     // One valid request per variant: each decodes wherever it is compiled.
-    fn variants() -> [StatusRequest; 23] {
+    fn variants() -> [StatusRequest; 24] {
         let id = || ID.to_owned();
         let version = PROTOCOL_VERSION;
         [
@@ -246,6 +246,11 @@ mod tests {
             StatusRequest::RecoverHyperBoostRestore {
                 version,
                 request_id: id(),
+            },
+            StatusRequest::SetLightingOverride {
+                version,
+                request_id: id(),
+                value: crate::service_status::LightingBody::cleared(),
             },
             StatusRequest::SetDisplayBrightnessHidUsage {
                 version,

@@ -10,6 +10,9 @@ mod driver_mode_record_model;
 #[cfg(feature = "service-gpu-clock-tuning-v1")]
 #[path = "gpu_clock_tuning.rs"]
 mod gpu_clock_tuning;
+#[cfg(feature = "service-lighting-v1")]
+#[path = "lighting_override.rs"]
+mod lighting_override;
 #[cfg(feature = "service-performance-shortcut-v1")]
 #[path = "performance_shortcut.rs"]
 mod performance_shortcut;
@@ -1621,6 +1624,35 @@ impl Rig {
     }
     async fn request_as(&self, request: Value, caller: Caller, sid: &str) -> Value {
         let operation = request["operation"].as_str().unwrap().to_owned();
+        self.request_payload(
+            &operation,
+            serde_json::to_vec(&request).unwrap(),
+            caller,
+            sid,
+        )
+        .await
+    }
+    /// A request sent as `payload` exactly, member order included, which a
+    /// `Value` sorts.
+    async fn request_payload(
+        &self,
+        operation: &str,
+        payload: Vec<u8>,
+        caller: Caller,
+        sid: &str,
+    ) -> Value {
+        let bytes = self.request_bytes(operation, payload, caller, sid).await;
+        serde_json::from_slice::<Value>(&bytes).unwrap()
+    }
+    /// The response to `payload` exactly as the encoder wrote it, member order
+    /// included.
+    async fn request_bytes(
+        &self,
+        operation: &str,
+        payload: Vec<u8>,
+        caller: Caller,
+        sid: &str,
+    ) -> Vec<u8> {
         let (client, server) = duplex(65536);
         let source = self.source.clone();
         let publications = source.lock().await.publications();
@@ -1635,12 +1667,9 @@ impl Rig {
         );
         let client = async move {
             let mut client = client;
-            crate::service_frame::write_payload(
-                &mut client,
-                &serde_json::to_vec(&request).unwrap(),
-            )
-            .await
-            .unwrap();
+            crate::service_frame::write_payload(&mut client, &payload)
+                .await
+                .unwrap();
             crate::service_frame::read_payload(&mut client).await
         };
         // Boxed: the debug build keeps every nested future on the stack, and
@@ -1654,17 +1683,16 @@ impl Rig {
         // The server's error explains a missing reply.
         assert!(server.is_ok(), "{operation}: {:?}", server.err());
         let bytes = bytes.unwrap();
-        let response = serde_json::from_slice::<Value>(&bytes).unwrap();
         // Preserve the actual encoder bytes. Re-serializing Value sorts object
         // keys and can move the managed polymorphic discriminator out of first place.
         assert!(bytes.starts_with(br#"{"frame":"response","#));
-        emit_fixture_frame("peer_response", &operation, "response", &bytes);
+        emit_fixture_frame("peer_response", operation, "response", &bytes);
         println!(
             "NATIVE_THERMAL_EDGE_TRACE {} {}",
             operation,
             std::str::from_utf8(&bytes).unwrap()
         );
-        response
+        bytes
     }
     /// Asks whether the test has made a job thread wait for something other
     /// than the clock: a held transfer it has not released, or a deliberate
@@ -1688,6 +1716,12 @@ impl Rig {
                 state.device_mode_latency.is_some() || state.device_mode_retire_delay.is_some();
             #[cfg(not(feature = "service-keyboard-driver-mode-v1"))]
             let real_time = false;
+            #[cfg(feature = "service-lighting-v1")]
+            let real_time = real_time
+                || state
+                    .lighting_held
+                    .as_ref()
+                    .is_some_and(|(_, release)| waiting(release));
             real_time
                 || state.held_read.as_ref().is_some_and(waiting)
                 || state

@@ -146,6 +146,11 @@ mod hyperboost_journal;
 #[cfg(feature = "service-keyboard-driver-mode-v1")]
 #[path = "driver_mode_owner.rs"]
 mod keyboard;
+#[cfg(feature = "service-lighting-v1")]
+#[path = "lighting_mutation.rs"]
+mod lighting;
+#[cfg(feature = "service-lighting-v1")]
+pub(super) use lighting::{LightingRequest, logo_wire};
 #[cfg(feature = "service-keyboard-driver-mode-v1")]
 #[path = "low_power_cleanup.rs"]
 mod low_power;
@@ -471,6 +476,10 @@ pub(super) struct Runtime {
     // Managed's automatic Fan Stop eligibility (`fan_stop::Automation`).
     #[cfg(feature = "service-fan-stop-v1")]
     fan_stop: Rc<RefCell<fan_stop::Automation>>,
+    // A lighting setter may have been submitted unconfirmed: the next
+    // lighting request resolves it read-only (`lighting`).
+    #[cfg(feature = "service-lighting-v1")]
+    lighting_doubt: Rc<std::cell::Cell<bool>>,
     // Display-brightness HID input and its held usage (`brightness`).
     #[cfg(feature = "service-brightness-hid-usage-v1")]
     brightness: Rc<brightness::Brightness>,
@@ -751,6 +760,8 @@ impl Runtime {
             gpu: Rc::default(),
             #[cfg(feature = "service-fan-stop-v1")]
             fan_stop: Rc::default(),
+            #[cfg(feature = "service-lighting-v1")]
+            lighting_doubt: Rc::default(),
             #[cfg(feature = "service-brightness-hid-usage-v1")]
             brightness: Rc::default(),
             application: Rc::default(),
@@ -1017,6 +1028,8 @@ impl Runtime {
             gpu,
             #[cfg(feature = "service-fan-stop-v1")]
             fan_stop: Rc::default(),
+            #[cfg(feature = "service-lighting-v1")]
+            lighting_doubt: Rc::default(),
             #[cfg(feature = "service-brightness-hid-usage-v1")]
             brightness,
             application: Rc::default(),
@@ -1226,10 +1239,30 @@ impl Runtime {
                 .bind_private_user(&policy_sid);
             #[cfg(feature = "service-profile-triggers-v1")]
             let projected = projected.with_thermal_convergence(convergence);
-            #[cfg(feature = "service-fan-stop-v1")]
-            let projected = runtime.project_fan_stop(projected, &store, &policy_sid, session)?;
-            Ok(projected)
+            runtime.project_saved_members(projected, &store, &policy_sid, session, query)
         })
+    }
+    /// The private members every retained policy projection carries beside
+    /// its thermal ones, the fan request's included (`fan::Runtime::apply_fan`):
+    /// managed's Fan Stop automation and the lighting override at `query`.
+    /// The caller has compared the override document with `store`'s bytes
+    /// (`Storage::current_override`), so the lighting member is the typed
+    /// value the store holds.
+    pub(super) fn project_saved_members(
+        &self,
+        projected: Snapshot,
+        store: &Storage,
+        sid: &str,
+        session: u32,
+        query: i32,
+    ) -> io::Result<Snapshot> {
+        #[cfg(feature = "service-fan-stop-v1")]
+        let projected = self.project_fan_stop(projected, store, sid, session)?;
+        #[cfg(feature = "service-lighting-v1")]
+        let projected =
+            projected.lighting_intent(store.verified_lighting_override(query)?.as_ref());
+        let _ = (store, sid, session, query);
+        Ok(projected)
     }
     // Every caller, including the shared mutation tests, passes the admitted request fields individually.
     #[allow(clippy::too_many_arguments)]

@@ -380,25 +380,12 @@ fn the_compiled_identity_ends_with_the_refused_marker() {
     let identity = std::str::from_utf8(&crate::NATIVE_ARTIFACT_IDENTITY).unwrap();
     let fields: Vec<&str> = identity.split('\n').collect();
     assert_eq!(fields[2], "service");
-    // An ownership build, then a live-reading build, a diagnostic-export
-    // build, an owned HyperBoost build and a display-brightness build
-    // append their own markers after it, in that order.
-    let marked = [
-        ",service-brightness-hid-usage-v1",
-        ",service-hyperboost-v1",
-        ",service-thermal-hyperboost-exit-v1",
-        ",service-diagnostics-export-v1",
-        ",service-live-readings-v1",
-    ]
-    .iter()
-    .fold(fields[8], |marked, later| {
-        marked.strip_suffix(later).unwrap_or(marked)
-    });
-    let marked = marked
-        .strip_suffix(",service-keyboard-driver-mode-v1")
-        .unwrap_or(marked);
+    // Every later build.rs marker may follow it.
     assert!(
-        marked.ends_with(",service-keyboard-driver-mode-read-v1"),
+        crate::native_package::ends_with_marker_for_tests(
+            fields[8],
+            "service-keyboard-driver-mode-read-v1"
+        ),
         "{}",
         fields[8]
     );

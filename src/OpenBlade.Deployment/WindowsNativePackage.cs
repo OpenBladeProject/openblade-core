@@ -141,6 +141,11 @@ internal sealed record NativeArtifact(string Id, string Role, string Target, str
         // feature and its capability marker by name (docs/windows-rust-development-service.md).
         if (features.Contains("service-hyperboost-v1", StringComparer.Ordinal) || capabilities.Split(',').Contains("service-hyperboost-v1", StringComparer.Ordinal))
         { throw new InvalidDataException("Owned HyperBoost is not admitted for packaging."); }
+        // Keyboard lighting writes the 03/03, 03/00 and 03/02 setters, which no admitted composition sends,
+        // and its attended RZ09-0581 validation is outstanding. Admitting it is a separate packaging decision.
+        // Refuse the feature and its capability marker by name (docs/windows-native-lighting.md).
+        if (features.Contains("service-lighting-v1", StringComparer.Ordinal) || capabilities.Split(',').Contains("service-lighting-v1", StringComparer.Ordinal))
+        { throw new InvalidDataException("Keyboard lighting is not admitted for packaging."); }
         // Display-brightness input submits RzCommon input IOCTLs that have no readback and no capture
         // evidence. Admitting it is a separate packaging decision. Refuse the feature and its capability
         // marker by name (docs/windows-rust-development-service.md).

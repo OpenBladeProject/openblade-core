@@ -45,6 +45,9 @@ pub(super) use profiles::{PolicyChange, PolicySave, SavedPolicy};
 #[cfg(feature = "service-thermal-convergence-v1")]
 #[path = "thermal_convergence_ledger.rs"]
 mod convergence;
+#[cfg(feature = "service-lighting-v1")]
+#[path = "lighting_storage.rs"]
+mod lighting;
 
 pub(super) const RELEASE_PAUSED: &str = "Temporary charge journal release is deferred.";
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -214,6 +217,17 @@ fn denied() -> io::Error {
         "thermal configuration or submission journal is quarantined",
     )
 }
+/// The override document bytes of `document`, with the saved lighting in
+/// managed's member order where lighting is composed (`lighting_storage`).
+fn document_bytes(document: &Value, s: &State) -> io::Result<Vec<u8>> {
+    #[cfg(feature = "service-lighting-v1")]
+    return lighting::document_bytes(document, s.lighting.as_ref());
+    #[cfg(not(feature = "service-lighting-v1"))]
+    {
+        let _ = s;
+        Ok(serde_json::to_vec(document)?)
+    }
+}
 fn decode(bytes: &[u8]) -> io::Result<Value> {
     configuration::validate_json_members(bytes).map_err(io::Error::other)?;
     serde_json::from_slice(bytes).map_err(io::Error::other)
@@ -343,6 +357,8 @@ fn overrides(bytes: Option<&[u8]>) -> io::Result<Value> {
         fan_control(v)?;
     }
     // Schema 9 independent-intent preservation rewrites only non-null lighting.
+    // With lighting composed, `lighting::saved` admits a current one.
+    #[cfg(not(feature = "service-lighting-v1"))]
     if !value["lighting"].is_null() {
         return Err(io::Error::new(
             io::ErrorKind::Unsupported,
@@ -668,6 +684,14 @@ struct State {
     last: Option<Entry>,
     temporary: Option<(Override, i32)>,
     temporary_fan: Option<(Value, i32)>,
+    // The saved lighting override and the temporary one with its class
+    // (`lighting_storage`).
+    #[cfg(feature = "service-lighting-v1")]
+    lighting: Option<openblade_domain::profile_set::LightingSettings>,
+    #[cfg(feature = "service-lighting-v1")]
+    temporary_lighting: Option<(openblade_domain::profile_set::LightingSettings, i32)>,
+    #[cfg(feature = "service-lighting-v1")]
+    temporary_lighting_generation: Option<u64>,
     // Windows power generations for `automation::temporary_after`: the latest
     // fresh power reading's, and each temporary's at its save.
     generation: Option<u64>,
@@ -758,7 +782,10 @@ impl Storage {
             aggregate(files.as_ref(), same_path)?;
         }
         let bytes = files.read(OVERRIDES)?;
-        let document = overrides(bytes.as_deref())?;
+        #[cfg_attr(not(feature = "service-lighting-v1"), allow(unused_mut))]
+        let mut document = overrides(bytes.as_deref())?;
+        #[cfg(feature = "service-lighting-v1")]
+        let lighting = lighting::saved(bytes.as_deref(), &mut document)?;
         let journal = files.read(JOURNAL)?;
         let last =
             crate::thermal_history::rows(journal.as_deref().unwrap_or_default(), |_, _| Ok(()))?.1;
@@ -791,6 +818,12 @@ impl Storage {
                 last,
                 temporary: None,
                 temporary_fan: None,
+                #[cfg(feature = "service-lighting-v1")]
+                lighting,
+                #[cfg(feature = "service-lighting-v1")]
+                temporary_lighting: None,
+                #[cfg(feature = "service-lighting-v1")]
+                temporary_lighting_generation: None,
                 generation: None,
                 #[cfg(feature = "service-profile-triggers-v1")]
                 power: None,
@@ -930,7 +963,7 @@ impl Storage {
             .and_then(|v| v.gpu_clock_tuning.clone())
             .unwrap_or(Value::Null);
         next["schemaVersion"] = json!(OVERRIDE_SCHEMA);
-        let bytes = serde_json::to_vec(&next)?;
+        let bytes = document_bytes(&next, &s)?;
         // Accepted intent is published only after atomic protected replacement
         // and independent byte readback. Unrelated overrides remain intact.
         if let Err(error) = self.files.replace(OVERRIDES, s.bytes.as_deref(), &bytes) {
@@ -963,6 +996,8 @@ impl Storage {
             temporary_after(saved, s.temporary_fan_generation, power, generation)
                 .map(|next| (value, next))
         });
+        #[cfg(feature = "service-lighting-v1")]
+        lighting::observe_power(s, power, generation);
         Ok(())
     }
     /// The power class the latest step classified (`observe_power`) while
@@ -1390,7 +1425,7 @@ impl Storage {
             Value::Null
         };
         next["schemaVersion"] = json!(OVERRIDE_SCHEMA);
-        let bytes = serde_json::to_vec(&next)?;
+        let bytes = document_bytes(&next, &s)?;
         if let Err(e) = self.files.replace(OVERRIDES, s.bytes.as_deref(), &bytes) {
             s.quarantined = true;
             s.configuration_failed = true;

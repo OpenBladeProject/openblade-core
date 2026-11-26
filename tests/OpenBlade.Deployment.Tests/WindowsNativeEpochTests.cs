@@ -848,6 +848,29 @@ public sealed class WindowsNativeEpochTests
     }
 
     [Fact]
+    public void KeyboardLightingIsNotAdmittedByFeatureOrMarker()
+    {
+        // The features and marker build.rs gives the admitted temporary-charge composition built with
+        // service-lighting-v1. Packaging has not admitted the lighting setters, so the image is refused by
+        // name, and the feature or a forged marker alone is refused too.
+        const string marker = "service-lighting-v1";
+        const string refusal = "Keyboard lighting is not admitted for packaging.";
+        const string features = "controller-admission-compile-check,firmware-performance-compile-check,hid-identity-compile-check,installed-service-candidate,lifecycle-evidence-compile-check,service-battery-policy-v1,service-fan-mutation-v2,service-hardware-compile-check,service-mailbox-observation-v1,service-temporary-charge-v1,service-thermal-mutation-v1,startup-custody-v1";
+        const string admitted = "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1,service-fan-mutation-v2,service-battery-policy-v1,service-temporary-charge-v1";
+        string built = string.Join(',', features.Split(',').Append(marker).Order(StringComparer.Ordinal));
+        foreach (string claimed in new[] { admitted + "," + marker, admitted })
+        {
+            var refused = Assert.Throws<InvalidDataException>(() => NativeArtifact.Inspect(
+                [.. Image("service", schema: 2, features: built, capabilities: claimed)], "service", new string('a', 40)));
+            Assert.Equal(refusal, refused.Message);
+        }
+
+        var forged = Assert.Throws<InvalidDataException>(() => NativeArtifact.Inspect(
+            [.. Image("service", schema: 2, features: features, capabilities: admitted + "," + marker)], "service", new string('a', 40)));
+        Assert.Equal(refusal, forged.Message);
+    }
+
+    [Fact]
     public void DisplayBrightnessInputIsNotAdmittedByFeatureOrMarker()
     {
         // The features and marker build.rs gives the admitted temporary-charge composition built with

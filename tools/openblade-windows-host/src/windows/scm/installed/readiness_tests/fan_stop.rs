@@ -435,3 +435,30 @@ async fn a_caller_that_does_not_hold_the_session_is_refused_untouched() {
     no_hardware(&rig);
     rig.stop().await;
 }
+
+/// A fan request's status carries the caller's saved Fan Stop members, as
+/// every request's does (`Runtime::project_saved_members`).
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn a_fan_request_status_carries_the_saved_fan_stop_members() {
+    let saved = json!({"endMode": 1, "automaticEnabled": true, "secondsBelowLimits": 60});
+    let files = MemoryFiles::default();
+    files.profiles_with(2, Some(2));
+    let mut document = files.document(PREFERENCES);
+    document["preferences"]["fanStopSettings"] = settings_over_defaults(&saved);
+    files.put(PREFERENCES, document);
+    files.commit_configuration();
+    let rig = fan_rig_files(0, 0, files);
+    let before = fresh_observe(&rig).await["status"]["fanStopStatus"].clone();
+    assert_eq!(
+        before,
+        unprojected(&before),
+        "no request captured the store"
+    );
+    let fan = rig.request(fan_request(101, Some(1), 3700)).await;
+    assert_eq!(fan["result"]["status"], 1, "{fan}");
+    let after = fan_stop(&rig).await;
+    assert_eq!(after["settings"], settings_over_defaults(&saved), "{after}");
+    assert_ne!(after, unprojected(&after), "{after}");
+    rig.stop().await;
+}

@@ -9,6 +9,11 @@ pub(crate) use fan_request::FanOverride;
 #[path = "service_status/profiles.rs"]
 mod profiles;
 pub(crate) use profiles::ProfilesBody;
+#[path = "service_status/lighting.rs"]
+mod lighting;
+pub(crate) use lighting::LightingBody;
+#[cfg(feature = "service-lighting-v1")]
+pub(crate) use lighting::{LightingOverride, PERSISTENT as LIGHTING_PERSISTENT};
 #[cfg(feature = "service-fan-stop-v1")]
 #[path = "service_status/fan_stop.rs"]
 pub(crate) mod fan_stop;
@@ -18,7 +23,7 @@ use thermal_convergence::ThermalConvergence;
 
 use openblade_windows_host::json_object::{self, nullable_object, object};
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
+use serde_json::Value;
 
 use tokio::{
     io::{AsyncRead, AsyncWrite},
@@ -214,6 +219,13 @@ pub(crate) enum StatusRequest {
         version: i32,
         request_id: String,
     },
+    /// Managed `SetLightingOverrideRequest`.
+    SetLightingOverride {
+        version: i32,
+        request_id: String,
+        // Bound from the frame bytes by `decode`, not by serde.
+        value: LightingBody,
+    },
     /// Managed `SetDisplayBrightnessHidUsageRequest`: a
     /// `DisplayBrightnessHidUsage` wire value, defined once validated
     /// (`DisplayBrightnessHidUsage::from_wire`).
@@ -366,7 +378,7 @@ impl StatusRequest {
     /// The discriminator of every variant. `operation` maps each variant to
     /// its entry, so a new variant cannot be added without listing it here.
     #[cfg(feature = "installed-service-candidate")]
-    pub(crate) const OPERATIONS: [&'static str; 23] = [
+    pub(crate) const OPERATIONS: [&'static str; 24] = [
         "setBatteryPolicy",
         "setBatteryProtection",
         "setFullChargeOverride",
@@ -389,6 +401,7 @@ impl StatusRequest {
         "setPerformanceShortcutPreview",
         "setHyperBoost",
         "recoverHyperBoostRestore",
+        "setLightingOverride",
         "setDisplayBrightnessHidUsage",
     ];
 
@@ -417,7 +430,8 @@ impl StatusRequest {
             Self::SetPerformanceShortcutPreview { .. } => 19,
             Self::SetHyperBoost { .. } => 20,
             Self::RecoverHyperBoostRestore { .. } => 21,
-            Self::SetDisplayBrightnessHidUsage { .. } => 22,
+            Self::SetLightingOverride { .. } => 22,
+            Self::SetDisplayBrightnessHidUsage { .. } => 23,
         }]
     }
 
@@ -437,8 +451,9 @@ impl StatusRequest {
         const FAN_STOP: bool = cfg!(feature = "service-fan-stop-v1");
         const SHORTCUT: bool = cfg!(feature = "service-performance-shortcut-v1");
         const HYPERBOOST: bool = cfg!(feature = "service-hyperboost-v1");
+        const LIGHTING: bool = cfg!(feature = "service-lighting-v1");
         const BRIGHTNESS: bool = cfg!(feature = "service-brightness-hid-usage-v1");
-        const COMPILED: [bool; 23] = [
+        const COMPILED: [bool; 24] = [
             BATTERY,
             BATTERY,
             BATTERY,
@@ -461,6 +476,7 @@ impl StatusRequest {
             SHORTCUT,
             HYPERBOOST,
             HYPERBOOST,
+            LIGHTING,
             BRIGHTNESS,
         ];
         Self::OPERATIONS
@@ -504,13 +520,20 @@ impl StatusRequest {
     pub(crate) fn decode(payload: &[u8]) -> io::Result<Self> {
         openblade_domain::thermal_history::validate_json_members(payload)
             .map_err(|_| invalid("duplicate Service request member"))?;
-        #[cfg_attr(not(feature = "service-profiles-v1"), allow(unused_mut))]
+        #[cfg_attr(
+            not(any(feature = "service-profiles-v1", feature = "service-lighting-v1")),
+            allow(unused_mut)
+        )]
         let mut request: Self = json_object::from_slice(payload)
             .map_err(|_| invalid("invalid Service status request"))?;
         request.validate()?;
         #[cfg(feature = "service-profiles-v1")]
         if let Self::UpdateProfiles { profiles, .. } = &mut request {
             *profiles = ProfilesBody::bind(payload)?;
+        }
+        #[cfg(feature = "service-lighting-v1")]
+        if let Self::SetLightingOverride { value, .. } = &mut request {
+            *value = LightingBody::bind(payload)?;
         }
         Ok(request)
     }
@@ -638,6 +661,11 @@ impl StatusRequest {
                 ..
             }
             | Self::SetHyperBoost {
+                version,
+                request_id,
+                ..
+            }
+            | Self::SetLightingOverride {
                 version,
                 request_id,
                 ..
@@ -789,6 +817,11 @@ impl StatusRequest {
         ) && !cfg!(feature = "service-hyperboost-v1")
         {
             return Err(invalid("signed HyperBoost composition is unavailable"));
+        }
+        if matches!(self, Self::SetLightingOverride { .. })
+            && !cfg!(feature = "service-lighting-v1")
+        {
+            return Err(invalid("signed lighting composition is unavailable"));
         }
         // Managed `IpcMessageCodec`: `Enum.IsDefined(set.Usage)`.
         if let Self::SetDisplayBrightnessHidUsage { usage, .. } = self {
@@ -1145,7 +1178,9 @@ pub(crate) async fn read_status_event(
     Ok(status)
 }
 
-type FeatureRecord = Map<String, Value>;
+#[path = "service_status/record.rs"]
+mod record;
+pub(crate) use record::FeatureRecord;
 
 // Internal diagnostic provenance never crosses the v91 wire. Battery updates
 // replace one family; private policy text is dropped at the redaction boundary.
@@ -1289,14 +1324,14 @@ impl Snapshot {
         const BATTERY: i32 = 1;
         const DEFAULT_CHARGE_LIMIT: i32 = 80;
 
-        let lighting = Map::from_iter([
+        let lighting = FeatureRecord::from_iter([
             ("effect".into(), json!(0)),
             ("color".into(), json!({"red": 0, "green": 0, "blue": 0})),
             ("brightness".into(), json!(0)),
             ("parameters".into(), json!({"kind": "off"})),
         ]);
         let profile = |performance, custom_performance| {
-            let mut feature_fields = Map::from_iter([
+            let mut feature_fields = FeatureRecord::from_iter([
                 (
                     "display".into(),
                     json!({
@@ -1328,7 +1363,7 @@ impl Snapshot {
             battery_policy: BatteryPolicy {
                 charge_limit_percent: DEFAULT_CHARGE_LIMIT,
             },
-            feature_fields: Map::from_iter([(
+            feature_fields: FeatureRecord::from_iter([(
                 "windowsPowerModes".into(),
                 json!({
                     "silent": null, "balanced": null, "performance": null,
@@ -1357,7 +1392,7 @@ impl Snapshot {
                 protection_enabled: true,
                 temporary_full_charge: false,
             },
-            feature_fields: Map::new(),
+            feature_fields: FeatureRecord::default(),
         };
 
         Self {
@@ -1392,7 +1427,7 @@ impl Snapshot {
             full_charge_override: false,
             control_access,
             service_version: env!("CARGO_PKG_VERSION").into(),
-            feature_fields: Map::from_iter([(
+            feature_fields: FeatureRecord::from_iter([(
                 "unsupportedLaptop".into(),
                 json!(unsupported_laptop),
             )]),
@@ -1485,7 +1520,7 @@ impl Snapshot {
         if self.active_power_source != 0 || !matches!(preset, 1 | 2) {
             return None;
         }
-        self.confirm(Some(Map::from_iter([
+        self.confirm(Some(FeatureRecord::from_iter([
             ("performance".into(), json!(preset)),
             ("fans".into(), json!(0)),
             ("battery".into(), Value::Null),
@@ -1512,7 +1547,7 @@ impl Snapshot {
     ) -> Self {
         // The shared Agent status module does not own Service discovery types.
         let (performance, fans, hyper_boost) = observation.projection();
-        self.confirm(Some(Map::from_iter([
+        self.confirm(Some(FeatureRecord::from_iter([
             ("performance".into(), serde_json::json!(performance)),
             ("fans".into(), serde_json::json!(fans)),
             ("battery".into(), Value::Null),
@@ -2146,7 +2181,7 @@ impl Snapshot {
             // a thermal result to carry a confirmed battery reading.
             if !(raw == 0x50 && temporary == Some(true)) {
                 let state = self.confirmed_state.get_or_insert_with(|| {
-                    Map::from_iter([
+                    FeatureRecord::from_iter([
                         ("performance".into(), Value::Null),
                         ("fans".into(), Value::Null),
                         ("lighting".into(), Value::Null),
@@ -2288,7 +2323,7 @@ impl Snapshot {
         self.active_power_source = power;
         self.fan_override = value
             .and_then(|v| serde_json::to_value(v).ok())
-            .and_then(|v| v.as_object().cloned());
+            .and_then(|v| v.as_object().cloned().map(FeatureRecord::from));
         if let Some(settings) = settings {
             self.desired_state.fans = Resolved {
                 value: settings["mode"].as_i64().unwrap_or(0) as i32,
@@ -2308,6 +2343,67 @@ impl Snapshot {
         }
         self
     }
+    /// Managed `AutomationStatus.LightingOverride` and the desired lighting
+    /// it selects: the override record, and its settings with the override
+    /// source (4 persistent, 3 until the power source changes). Without an
+    /// override both keep the public view.
+    #[cfg(feature = "service-lighting-v1")]
+    pub(crate) fn lighting_intent(mut self, value: Option<&LightingOverride>) -> Self {
+        use openblade_domain::profile_set::{encode, json};
+        let record = |json: &openblade_domain::profile_set::Json| {
+            serde_json::from_slice::<Value>(&json::write(json, false))
+                .ok()
+                .and_then(|value| value.as_object().cloned().map(FeatureRecord::from))
+        };
+        self.lighting_override = value.and_then(|value| record(&value.encode()));
+        if let Some(value) = value
+            && let Some(settings) = record(&encode::lighting(&value.settings))
+        {
+            self.desired_state.lighting = Resolved {
+                value: settings,
+                source: if value.lifetime == LIGHTING_PERSISTENT {
+                    4
+                } else {
+                    3
+                },
+            };
+        }
+        self
+    }
+    /// The lighting members of managed `ConfirmedDeviceState` from a fresh
+    /// read: `lighting` is Off only for a zero brightness (managed
+    /// `ReadStateCoreAsync` cannot read a lit effect on this model), and
+    /// `logoLighting` is the managed `LogoLightingMode` wire value. Each
+    /// member is `None` to keep its current value, `Some(None)` to clear it
+    /// (managed's `Lighting = null` once a write leaves it unconfirmed), or
+    /// `Some(Some(value))` for a read that confirmed it. The members join a
+    /// state a fresh thermal read confirmed; without one nothing is
+    /// confirmed, as managed publishes no confirmed state before it observes
+    /// the device.
+    #[cfg(feature = "service-lighting-v1")]
+    pub(crate) fn with_lighting_reading(
+        mut self,
+        brightness: Option<Option<u8>>,
+        logo: Option<Option<i32>>,
+    ) -> Self {
+        use openblade_domain::profile_set::{LightingSettings, encode, json};
+        let Some(state) = self.confirmed_state.as_mut() else {
+            return self;
+        };
+        if let Some(raw) = brightness {
+            let off = serde_json::from_slice::<Value>(&json::write(
+                &encode::lighting(&LightingSettings::off()),
+                false,
+            ))
+            .unwrap_or(Value::Null);
+            let lighting = if raw == Some(0) { off } else { Value::Null };
+            state.insert("lighting".into(), lighting);
+        }
+        if let Some(logo) = logo {
+            state.insert("logoLighting".into(), serde_json::json!(logo));
+        }
+        self
+    }
     pub(crate) fn thermal_intent(
         mut self,
         value: Option<&PerformanceOverride>,
@@ -2318,7 +2414,7 @@ impl Snapshot {
         self.set_private_message(message);
         self.performance_override = value
             .and_then(|value| serde_json::to_value(value).ok())
-            .and_then(|v| v.as_object().cloned());
+            .and_then(|v| v.as_object().cloned().map(FeatureRecord::from));
         if let Some(power) = power {
             self.active_power_source = power;
         }
@@ -2407,6 +2503,11 @@ impl Snapshot {
                 .insert("fanControl".into(), v.clone());
         }
         result.desired_state.performance = self.desired_state.performance.clone();
+        #[cfg(feature = "service-lighting-v1")]
+        {
+            result.lighting_override = self.lighting_override.clone();
+            result.desired_state.lighting = self.desired_state.lighting.clone();
+        }
         result.diagnostics.private = self.diagnostics.private.clone();
         // Both accepted fan/performance deltas reaching this shared rebase
         // reconstructed and decoded private profiles before returning a status.

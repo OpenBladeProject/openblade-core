@@ -204,7 +204,7 @@ fn lighting_parameters(value: &LightingParameters) -> Json {
     }
 }
 
-pub(super) fn lighting(value: &LightingSettings) -> Json {
+pub fn lighting(value: &LightingSettings) -> Json {
     let mut members = Vec::from([
         (String::from("effect"), int(value.effect.0)),
         ("color".into(), color(value.color)),
