@@ -107,7 +107,7 @@ public sealed class ReleaseUpdateCheckingTests
         Assert.Equal("v1.4.0", result.Release?.TagName);
         Assert.Equal("\"new-tag\"", result.EntityTag);
         Assert.Equal(
-            "https://api.github.com/repos/OSSBlade/openblade-core/releases/latest",
+            "https://api.github.com/repos/OpenBladeProject/openblade-core/releases/latest",
             handler.RequestUri?.AbsoluteUri);
         Assert.Contains(
             handler.Accept,
@@ -151,7 +151,7 @@ public sealed class ReleaseUpdateCheckingTests
         Assert.Equal(new Version(1, 4, 0, 42), result.Release?.Version);
         Assert.Equal("v1.4.0-nightly.42-attempt.2", result.Release?.TagName);
         Assert.Equal(
-            "https://api.github.com/repos/OSSBlade/openblade-core/releases?per_page=20",
+            "https://api.github.com/repos/OpenBladeProject/openblade-core/releases?per_page=20",
             handler.RequestUri?.AbsoluteUri);
     }
 

@@ -1898,4 +1898,31 @@
   <data name="Another Razer app, such as Synapse, may be using the laptop’s lighting. Close it to use these controls." xml:space="preserve">
     <value>Другое приложение Razer, например Synapse, может использовать подсветку ноутбука. Закройте его, чтобы пользоваться этими элементами управления.</value>
   </data>
+  <data name="Downloading OpenBlade {0}..." xml:space="preserve">
+    <value>Загрузка OpenBlade {0}...</value>
+  </data>
+  <data name="Downloading OpenBlade {0}: {1}%" xml:space="preserve">
+    <value>Загрузка OpenBlade {0}: {1}%</value>
+  </data>
+  <data name="Checking the download..." xml:space="preserve">
+    <value>Проверка загруженного файла...</value>
+  </data>
+  <data name="Opening the installer..." xml:space="preserve">
+    <value>Открытие установщика...</value>
+  </data>
+  <data name="The installer is open. Follow its steps to finish the update." xml:space="preserve">
+    <value>Установщик открыт. Следуйте его инструкциям, чтобы завершить обновление.</value>
+  </data>
+  <data name="Update download canceled." xml:space="preserve">
+    <value>Загрузка обновления отменена.</value>
+  </data>
+  <data name="The download didn't match the published release, so nothing was installed. Try again or use View release." xml:space="preserve">
+    <value>Загруженный файл не совпадает с опубликованным выпуском, поэтому ничего не установлено. Повторите попытку или нажмите «Просмотреть выпуск».</value>
+  </data>
+  <data name="Couldn't open the installer. Try again or use View release." xml:space="preserve">
+    <value>Не удалось открыть установщик. Повторите попытку или нажмите «Просмотреть выпуск».</value>
+  </data>
+  <data name="Couldn't download the update. Check your connection and try again." xml:space="preserve">
+    <value>Не удалось загрузить обновление. Проверьте подключение и повторите попытку.</value>
+  </data>
 </root>

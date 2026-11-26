@@ -574,9 +574,9 @@ capture the WinUI context: the bare `await Task.Yield()` in
 `SetCustomPerformanceAsync`, `ApplyFanControlAsync`, `SetLightingAsync`,
 `SetChargeLimitAsync`, `ToggleBatteryProtectionAsync`, and
 `ToggleFullChargeAsync` mutate bound state in a `finally` after an await.
-`UpdateCheckViewModel.RunAutomaticCheckAsync` and `CheckCoreAsync` also capture
-the UI context because they mutate bound update status after awaiting the
-release client. `FirmwareUpdateAssistantViewModel.RunAutomaticCheckAsync` and
+`UpdateCheckViewModel.RunAutomaticCheckAsync`, `CheckCoreAsync` and
+`InstallCoreAsync` also capture the UI context because they mutate bound update
+status after awaiting the release client or update installer. `FirmwareUpdateAssistantViewModel.RunAutomaticCheckAsync` and
 `CheckAsync` capture it for the same reason after awaiting the Razer firmware
 client.
 `TrayCompleteShutdownCoordinator.ShutdownAsync` also captures it because its

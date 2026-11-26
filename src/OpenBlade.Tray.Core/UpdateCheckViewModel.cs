@@ -24,6 +24,12 @@ public sealed class UpdateCheckViewModel : INotifyPropertyChanged, IAsyncDisposa
     private readonly Version? currentVersion;
     private readonly CancellationTokenSource lifetime = new();
     private readonly AsyncRelayCommand checkForUpdatesCommand;
+    private readonly IAppUpdateInstaller? installer;
+    private readonly AsyncRelayCommand installUpdateCommand;
+    private ReleaseUpdateInfo? availableRelease;
+    private bool isInstalling;
+    private bool installerLaunched;
+    private CancellationTokenSource? installCancellation;
     private Task automaticCheckTask = Task.CompletedTask;
     private UpdateChannel channel = UpdateChannel.Stable;
     private UpdateCheckInterval interval = UpdateCheckInterval.Daily;
@@ -43,8 +49,10 @@ public sealed class UpdateCheckViewModel : INotifyPropertyChanged, IAsyncDisposa
     public UpdateCheckViewModel(
         IReleaseUpdateClient releaseClient,
         string currentVersion,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        IAppUpdateInstaller? installer = null)
     {
+        this.installer = installer;
         this.releaseClient = releaseClient
             ?? throw new ArgumentNullException(nameof(releaseClient));
         this.currentVersion = ReleaseVersion.TryParse(
@@ -55,7 +63,11 @@ public sealed class UpdateCheckViewModel : INotifyPropertyChanged, IAsyncDisposa
         this.timeProvider = timeProvider ?? TimeProvider.System;
         checkForUpdatesCommand = new AsyncRelayCommand(
             (_, token) => CheckCoreAsync(token),
-            _ => !IsChecking,
+            _ => !IsChecking && !IsInstalling,
+            lifetime.Token);
+        installUpdateCommand = new AsyncRelayCommand(
+            (_, token) => InstallCoreAsync(token),
+            _ => CanInstallUpdate && !IsChecking && !IsInstalling,
             lifetime.Token);
     }
 
@@ -182,14 +194,60 @@ public sealed class UpdateCheckViewModel : INotifyPropertyChanged, IAsyncDisposa
             }
 
             checkForUpdatesCommand.NotifyCanExecuteChanged();
+            installUpdateCommand.NotifyCanExecuteChanged();
         }
     }
 
     public bool IsUpdateAvailable
     {
         get => isUpdateAvailable;
-        private set => SetField(ref isUpdateAvailable, value);
+        private set
+        {
+            if (!SetField(ref isUpdateAvailable, value))
+            {
+                return;
+            }
+
+            Notify(nameof(CanInstallUpdate));
+            installUpdateCommand.NotifyCanExecuteChanged();
+        }
     }
+
+    public bool IsInstalling
+    {
+        get => isInstalling;
+        private set
+        {
+            if (!SetField(ref isInstalling, value))
+            {
+                return;
+            }
+
+            checkForUpdatesCommand.NotifyCanExecuteChanged();
+            installUpdateCommand.NotifyCanExecuteChanged();
+        }
+    }
+
+    /// <summary>
+    /// True when a newer release was found and this tray can install it. Once its
+    /// installer is open, the button stays off until the next check, because a
+    /// second download can't replace the file the running installer holds.
+    /// </summary>
+    public bool CanInstallUpdate => installer is not null && IsUpdateAvailable && !installerLaunched;
+
+    private void SetInstallerLaunched(bool value)
+    {
+        if (installerLaunched == value)
+        {
+            return;
+        }
+
+        installerLaunched = value;
+        Notify(nameof(CanInstallUpdate));
+        installUpdateCommand.NotifyCanExecuteChanged();
+    }
+
+    public ICommand InstallUpdateCommand => installUpdateCommand;
 
     public Uri? ReleasePageUri
     {
@@ -267,6 +325,8 @@ public sealed class UpdateCheckViewModel : INotifyPropertyChanged, IAsyncDisposa
         try
         {
             await checkForUpdatesCommand.DisposeAsync();
+            await installUpdateCommand.DisposeAsync();
+            installer?.Dispose();
             try
             {
                 await automaticCheckTask;
@@ -316,7 +376,9 @@ public sealed class UpdateCheckViewModel : INotifyPropertyChanged, IAsyncDisposa
         }
 
         IsChecking = true;
+        SetInstallerLaunched(false);
         StatusText = TrayText.Get("Checking GitHub for updates...");
+        availableRelease = null;
         IsUpdateAvailable = false;
         ReleasePageUri = null;
 
@@ -415,6 +477,91 @@ public sealed class UpdateCheckViewModel : INotifyPropertyChanged, IAsyncDisposa
         }
     }
 
+    // Command path: continuations keep the caller's UI context because they
+    // update bound status. Progress<T> also posts its reports to that context.
+    private async Task InstallCoreAsync(CancellationToken cancellationToken)
+    {
+        if (installer is null || availableRelease is not ReleaseUpdateInfo release || IsInstalling)
+        {
+            return;
+        }
+
+        IsInstalling = true;
+        bool finished = false;
+        string version = release.TagName.TrimStart('v', 'V');
+        StatusText = TrayText.Format("Downloading OpenBlade {0}...", version);
+        // A channel change cancels this download; its own status then stays shown.
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        installCancellation = cancellation;
+        var progress = new Progress<AppUpdateInstallProgress>(report =>
+        {
+            if (finished || cancellation.IsCancellationRequested)
+            {
+                return;
+            }
+
+            StatusText = report.Stage switch
+            {
+                AppUpdateInstallStage.Downloading when report.TotalBytes > 0 => TrayText.Format(
+                    "Downloading OpenBlade {0}: {1}%",
+                    version,
+                    report.BytesReceived * 100 / report.TotalBytes),
+                AppUpdateInstallStage.Verifying => TrayText.Get("Checking the download..."),
+                AppUpdateInstallStage.Launching => TrayText.Get("Opening the installer..."),
+                _ => StatusText,
+            };
+        });
+
+        try
+        {
+            await installer.InstallAsync(release, progress, cancellation.Token);
+            finished = true;
+            SetInstallerLaunched(true);
+            StatusText = TrayText.Get(
+                "The installer is open. Follow its steps to finish the update.");
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            finished = true;
+            StatusText = TrayText.Get("Update download canceled.");
+            throw;
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+            finished = true;
+        }
+        catch (Exception exception)
+        {
+            finished = true;
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.UpdateCheckViewModel",
+                "InstallUpdate",
+                exception);
+            if (cancellation.IsCancellationRequested)
+            {
+                return;
+            }
+
+            StatusText = exception is AppUpdateInstallException { Failure: var failure }
+                ? failure switch
+                {
+                    AppUpdateInstallFailure.VerificationFailed => TrayText.Get(
+                        "The download didn't match the published release, so nothing was installed. Try again or use View release."),
+                    AppUpdateInstallFailure.LaunchFailed => TrayText.Get(
+                        "Couldn't open the installer. Try again or use View release."),
+                    _ => TrayText.Get(
+                        "Couldn't download the update. Check your connection and try again."),
+                }
+                : TrayText.Get(
+                    "Couldn't download the update. Check your connection and try again.");
+        }
+        finally
+        {
+            installCancellation = null;
+            IsInstalling = false;
+        }
+    }
+
     private void PresentRelease(ReleaseUpdateInfo? release)
     {
         if (release is null)
@@ -434,6 +581,7 @@ public sealed class UpdateCheckViewModel : INotifyPropertyChanged, IAsyncDisposa
 
         if (release.Version > currentVersion)
         {
+            availableRelease = release;
             IsUpdateAvailable = true;
             ReleasePageUri = release.ReleasePageUri;
             StatusText = TrayText.Format(
@@ -453,10 +601,13 @@ public sealed class UpdateCheckViewModel : INotifyPropertyChanged, IAsyncDisposa
 
     private void ResetReleaseStateForChannelChange()
     {
+        installCancellation?.Cancel();
+        SetInstallerLaunched(false);
         lastSuccessfulCheckAt = null;
         retryAfter = null;
         entityTag = null;
         cachedRelease = null;
+        availableRelease = null;
         IsUpdateAvailable = false;
         ReleasePageUri = null;
         StatusText = TrayText.Format(

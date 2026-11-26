@@ -3187,4 +3187,13 @@ OpenBlade did not retry any stop request.</value>
   <data name="MainWindow_CoolingPadLightingSelectorText.PlaceholderText" xml:space="preserve">
     <value>Set by the pad</value>
   </data>
+  <data name="MainWindow_ButtonInstallUpdate.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Download and install the available OpenBlade update</value>
+  </data>
+  <data name="MainWindow_ButtonInstallUpdate.Content" xml:space="preserve">
+    <value>Install update</value>
+  </data>
+  <data name="MainWindow_ProgressRingDownloadingUpdate.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Downloading the OpenBlade update</value>
+  </data>
 </root>

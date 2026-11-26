@@ -5764,10 +5764,20 @@
                                                           IsActive="{x:Bind UpdateViewModel.IsChecking, Mode=OneWay}"
                                                           Visibility="{x:Bind UpdateViewModel.IsChecking, Mode=OneWay}"
                                                           AutomationProperties.Name="{CustomResource MainWindow_ProgressRingCheckingGitHubForUpdates.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name}" />
+                                            <ProgressRing Width="20"
+                                                          Height="20"
+                                                          IsActive="{x:Bind UpdateViewModel.IsInstalling, Mode=OneWay}"
+                                                          Visibility="{x:Bind UpdateViewModel.IsInstalling, Mode=OneWay}"
+                                                          AutomationProperties.Name="{CustomResource MainWindow_ProgressRingDownloadingUpdate.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name}" />
                                             <HyperlinkButton Content="{CustomResource MainWindow_HyperlinkButtonViewRelease.Content}"
                                                              NavigateUri="{x:Bind UpdateViewModel.ReleasePageUri, Mode=OneWay}"
                                                              Visibility="{x:Bind UpdateViewModel.HasReleasePage, Mode=OneWay}"
                                                              AutomationProperties.Name="{CustomResource MainWindow_HyperlinkButtonViewRelease.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name}" />
+                                            <Button x:Name="InstallUpdateButton" Content="{CustomResource MainWindow_ButtonInstallUpdate.Content}"
+                                                    Style="{StaticResource AccentButtonStyle}"
+                                                    Command="{x:Bind UpdateViewModel.InstallUpdateCommand}"
+                                                    Visibility="{x:Bind UpdateViewModel.CanInstallUpdate, Mode=OneWay}"
+                                                    AutomationProperties.Name="{CustomResource MainWindow_ButtonInstallUpdate.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name}" />
                                             <Button x:Name="CheckNowButton" Content="{CustomResource MainWindow_ButtonCheckNow.Content}"
                                                     Command="{x:Bind UpdateViewModel.CheckForUpdatesCommand}"
                                                     AutomationProperties.Name="{CustomResource MainWindow_ButtonCheckNow.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name}" />

@@ -192,7 +192,11 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
             externalUriLauncher: new WinUiExternalUriLauncher());
         UpdateViewModel = new UpdateCheckViewModel(
             new GitHubReleaseUpdateClient(),
-            uiVersion);
+            uiVersion,
+            // An elevated tray (for example, left by a bundle run as administrator)
+            // would start the installer without a UAC prompt and pass elevation on
+            // to the relaunched tray. Keep the release link only in that case.
+            installer: Environment.IsPrivilegedProcess ? null : new GitHubAppUpdateInstaller());
         UpdateViewModel.PreferencesChanged += OnUpdatePreferencesChanged;
         UpdateViewModel.UpdateAvailable += OnAppUpdateAvailable;
         FirmwareUpdateViewModel = new FirmwareUpdateAssistantViewModel(
