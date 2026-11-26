@@ -1847,8 +1847,8 @@ Details: {1}</value>
   <data name="Quiet" xml:space="preserve">
     <value>Quiet</value>
   </data>
-  <data name="A change to the cooling pad could not be confirmed. Check the pad before making another change." xml:space="preserve">
-    <value>A change to the cooling pad could not be confirmed. Check the pad before making another change.</value>
+  <data name="A change to the cooling pad could not be confirmed. OpenBlade is checking the pad." xml:space="preserve">
+    <value>A change to the cooling pad could not be confirmed. OpenBlade is checking the pad.</value>
   </data>
   <data name="Choose a setting, or release control to restore the pad's own settings." xml:space="preserve">
     <value>Choose a setting, or release control to restore the pad's own settings.</value>
@@ -1858,6 +1858,9 @@ Details: {1}</value>
   </data>
   <data name="The cooling pad did not accept the change. Check Troubleshooting for the reason." xml:space="preserve">
     <value>The cooling pad did not accept the change. Check Troubleshooting for the reason.</value>
+  </data>
+  <data name="The cooling pad has not accepted the change yet. OpenBlade will try again." xml:space="preserve">
+    <value>The cooling pad has not accepted the change yet. OpenBlade will try again.</value>
   </data>
   <data name="Check the cooling-pad settings and try again." xml:space="preserve">
     <value>Check the cooling-pad settings and try again.</value>

@@ -6406,7 +6406,7 @@
                                     </Button>
                                 </Border>
                                 <Border local:CardReorder.CardId="MainWindow_HyperlinkButtonOpenGitHubIssues" Style="{StaticResource SettingsRowStyle}" Padding="0">
-                                    <HyperlinkButton NavigateUri="https://github.com/OSSBlade/openblade-core/issues"
+                                    <HyperlinkButton NavigateUri="https://github.com/OpenBladeProject/openblade-core/issues"
                                                      Style="{StaticResource ExternalLinkButtonStyle}"
                                                      AutomationProperties.Name="{CustomResource MainWindow_HyperlinkButtonOpenGitHubIssues.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name}"
                                                      ToolTipService.ToolTip="{CustomResource MainWindow_HyperlinkButtonOpenGitHubIssues.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip}">
@@ -6424,7 +6424,7 @@
                                     </HyperlinkButton>
                                 </Border>
                                 <Border local:CardReorder.CardId="MainWindow_HyperlinkButtonOpenDocumentation" Style="{StaticResource SettingsRowStyle}" Padding="0">
-                                    <HyperlinkButton NavigateUri="https://github.com/OSSBlade/openblade-docs"
+                                    <HyperlinkButton NavigateUri="https://github.com/OpenBladeProject/openblade-docs"
                                                      Style="{StaticResource ExternalLinkButtonStyle}"
                                                      AutomationProperties.Name="{CustomResource MainWindow_HyperlinkButtonOpenDocumentation.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name}"
                                                      ToolTipService.ToolTip="{CustomResource MainWindow_HyperlinkButtonOpenDocumentation.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip}">
@@ -6442,7 +6442,7 @@
                                     </HyperlinkButton>
                                 </Border>
                                 <Border local:CardReorder.CardId="MainWindow_HyperlinkButtonOpenReleaseNotes" Style="{StaticResource SettingsRowStyle}" Padding="0">
-                                    <HyperlinkButton NavigateUri="https://github.com/OSSBlade/openblade-core/blob/main/CHANGELOG.md"
+                                    <HyperlinkButton NavigateUri="https://github.com/OpenBladeProject/openblade-core/blob/main/CHANGELOG.md"
                                                      Style="{StaticResource ExternalLinkButtonStyle}"
                                                      AutomationProperties.Name="{CustomResource MainWindow_HyperlinkButtonOpenReleaseNotes.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name}"
                                                      ToolTipService.ToolTip="{CustomResource MainWindow_HyperlinkButtonOpenReleaseNotes.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip}">
@@ -6460,7 +6460,7 @@
                                     </HyperlinkButton>
                                 </Border>
                                 <Border local:CardReorder.CardId="MainWindow_HyperlinkButtonOpenSourceCode" Style="{StaticResource SettingsLastRowStyle}" Padding="0">
-                                    <HyperlinkButton NavigateUri="https://github.com/OSSBlade/openblade-core"
+                                    <HyperlinkButton NavigateUri="https://github.com/OpenBladeProject/openblade-core"
                                                      Style="{StaticResource ExternalLinkButtonStyle}"
                                                      CornerRadius="0,0,8,8"
                                                      AutomationProperties.Name="{CustomResource MainWindow_HyperlinkButtonOpenSourceCode.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name}"

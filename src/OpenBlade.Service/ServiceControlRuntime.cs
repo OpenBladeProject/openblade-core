@@ -667,6 +667,10 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
     // thermal transition can observe queued AC/battery/USB-C boundary work.
     private long powerAdmissionEpoch;
     private int pendingPowerAdmissions;
+    // Advances only for Windows AC/DC notifications. The independently powered cooling pad
+    // checks the fresh Windows power source before every write and holds no laptop
+    // operation gate, so periodic classification must not cancel its in-progress commands.
+    private long coolingPadPowerEpoch;
     // Advances before a different interactive user's configuration load can
     // queue behind an already-running thermal transition.
     private long sessionAdmissionEpoch;
@@ -12502,6 +12506,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             ThermalConvergenceReason.PowerUnsettled,
             thermalConvergenceShutdown: false);
         Interlocked.Increment(ref powerAdmissionEpoch);
+        Interlocked.Increment(ref coolingPadPowerEpoch);
         Interlocked.Increment(ref pendingPowerAdmissions);
         try
         {

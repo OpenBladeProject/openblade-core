@@ -129,7 +129,7 @@ public sealed partial class MainWindow
         content.Children.Add(new HyperlinkButton
         {
             Content = LocalizedResources.Get("WhatsNew_FullChangelog", "Full changelog"),
-            NavigateUri = new Uri("https://github.com/OSSBlade/openblade-core/blob/main/CHANGELOG.md"),
+            NavigateUri = new Uri("https://github.com/OpenBladeProject/openblade-core/blob/main/CHANGELOG.md"),
             HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Left,
         });
         return new ContentDialog

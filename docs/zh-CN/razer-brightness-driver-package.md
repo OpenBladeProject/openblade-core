@@ -58,7 +58,7 @@ Razer 支持页面：
 - [Razer Blade 16 (2025)，RZ09-0528x BIOS 支持](https://mysupport.razer.com/app/answers/detail/a_id/15235/)
 
 导出的 RZ09-0581 归档、已脱敏清单，以及绑定二者的发布记录，
-存放在独立的 [`blade-driver-catalog`](https://github.com/OSSBlade/blade-driver-catalog)
+存放在独立的 [`blade-driver-catalog`](https://github.com/OpenBladeProject/blade-driver-catalog)
 仓库，那里也提供其他 Razer 设备的只读导出说明。
 驱动目录仓库以预发布版本提供该归档；在干净系统上的安装验证尚未完成。
 运行一次 Synapse 也会安装同一套驱动。收录到驱动目录只代表已有相关证据，并不表示 OpenBlade 支持该设备。
@@ -75,7 +75,7 @@ Razer 支持页面：
 SHA-256 哈希和 Microsoft 硬件签名。输出必须在仓库之外。
 
 归档的 `manifest.json` 使用清单类型 `OpenBlade.RazerDriverPackageArchive`。
-其 `catalogReference` 指向 `OSSBlade/blade-driver-catalog` 和
+其 `catalogReference` 指向 `OpenBladeProject/blade-driver-catalog` 和
 `devices/rz09-0581/1532-02e0/1.0.0.78-1.0.0.76/manifest.json`。
 它有意不内嵌目录清单哈希，因为目录记录的是外层包归档哈希。
 经检查的发布证明将目录清单路径及 SHA-256 与归档资源名称及 SHA-256 绑定，

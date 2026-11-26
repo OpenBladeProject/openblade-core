@@ -63,7 +63,7 @@ OpenBlade 修复操作不会改动已安装的共享运行时。
   已安装的 `OpenBlade.Tray.exe`，并确认托盘程序和 Session Agent 正在运行。
 - Microsoft Store EXE 渠道不支持这种由调用方重新启动应用的方式，
   因为静默调用由 Partner Center 管理。这个限制记录在原始
-  [议题 #25](https://github.com/OSSBlade/openblade-core/issues/25)中。
+  [议题 #25](https://github.com/OpenBladeProject/openblade-core/issues/25)中。
 
 <a id="versioned-development-builds"></a>
 
@@ -128,7 +128,7 @@ OpenBlade 修复操作不会改动已安装的共享运行时。
 - Store 安装使用 `/install /quiet /norestart`；直接下载仍保留图形界面。
 - Store 无法在静默安装后按要求以普通用户权限重新启动应用，
   这一环节目前尚未实现；原始记录见
-  [议题 #25](https://github.com/OSSBlade/openblade-core/issues/25)。
+  [议题 #25](https://github.com/OpenBladeProject/openblade-core/issues/25)。
 
 安装包要求、认证说明、硬件声明和后续发布步骤，
 请参阅 [Microsoft Store 提交](../microsoft-store-submission.md)。
@@ -163,7 +163,7 @@ GitHub 构建来源证明属于可选功能，能否使用取决于仓库是公�
 并用以下命令验证已启用的证明：
 
 ```powershell
-gh attestation verify .\OpenBlade-Setup.exe --repo OSSBlade/openblade-core
+gh attestation verify .\OpenBlade-Setup.exe --repo OpenBladeProject/openblade-core
 ```
 
 随包附带的 JSON 记录了构建提交、递增的 Nightly 版本号、构建时间、工作流运行记录、

@@ -2069,7 +2069,11 @@ public sealed partial class MainViewModelTests
         {
             Revision = 2,
         });
-        await WaitUntilAsync(() => viewModel.AttentionSummary == "Other Razer software is running");
+        // The summary is computed from state set just before the advisory text, and this test
+        // reads from another thread, so wait for the final values rather than the summary alone.
+        await WaitUntilAsync(() => viewModel.AttentionSummary == "Other Razer software is running"
+            && viewModel.ControllerAdvisoryText.StartsWith("Razer software found", StringComparison.Ordinal)
+            && viewModel.TroubleshootingOtherRazerSoftwareStatus == "RGS, Razer Chroma SDK Service");
 
         Assert.Equal(
             "Razer software found: Razer Gaming Services, Razer Chroma SDK Service. It may be blocking OpenBlade’s access to the laptop. Close it to use OpenBlade’s controls.",

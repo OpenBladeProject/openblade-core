@@ -16,9 +16,33 @@ control automatically.
 
 OpenBlade hands the pad back to its own settings when the laptop sleeps or shuts
 down and when the service stops, for example during an update. Once Windows is
-awake and you are signed in again, it applies your cooling-pad settings again.
-**Release control** stops this until you choose a setting again. If the handback
-was not confirmed, the page asks you to check the pad first.
+awake and you are signed in again, it applies your cooling-pad settings again
+when **If settings change outside OpenBlade** is set to **Restore them**.
+**Release control** stops this until you choose a setting again.
+
+While OpenBlade controls the pad, it reads the pad every few seconds. If its fan
+mode, lighting effect or brightness changes elsewhere, such as in Synapse or
+with the pad's lighting button, **Restore them** applies your settings again, up to
+three times in ten minutes. Lighting is restored only when **Override external
+lighting changes** is on. Otherwise the pad's new lighting stays, OpenBlade
+keeps controlling the fan, and the page shows no lighting selected. Choose a
+lighting setting, including the one you had before, to manage it again. OpenBlade releases control instead under **Notify me**, after a
+fourth change, for a lighting change when it controls only the lighting, or when
+your settings cannot be applied again. The
+changed part stays as it is, the parts OpenBlade changed return to the pad's
+own settings, and control stays off until you choose a setting.
+
+OpenBlade can't see the pad's fan button. In Automatic and with a curve,
+OpenBlade keeps setting the fan speed, so a press lasts only a moment. To use
+the fan button, choose Fixed: the pad keeps the speed you pick with the button,
+and the page still shows your Fixed speed. **Release control** hands the fan
+back to the pad. The fan button also changes the pad's lighting, which OpenBlade
+handles like any other lighting change.
+
+A change the service refuses before sending it, for example while Windows
+settles after waking, is tried again a few times. An unconfirmed change pauses
+the page's controls until a read confirms the pad's state; the page checks
+automatically while it is open, and **Check** reads it at once.
 
 Choose Automatic with a Quiet, Balanced or Performance profile, a fixed target
 from 500 to 3200 RPM in 50-RPM steps, a manual fan curve, or Off. Automatic and
@@ -39,6 +63,10 @@ Lighting supports Off, Static, Breathing, Spectrum and Wave, with brightness and
 colors. Keyboard sync projects OpenBlade's host-rendered keyboard frames onto
 the pad's 18-LED strip. Firmware-rendered keyboard effects have no host frame to
 mirror. The projection averages keyboard columns; it is not a physical key map.
+The pad's lighting button can also select built-in effects OpenBlade can't read.
+While one shows, OpenBlade keeps controlling the fan and leaves the lighting as it
+is. To change the lighting in OpenBlade, first choose another effect with the
+pad's button.
 
 **Release control** restores the saved fan preset, configured target, lighting
 effect and exact raw brightness for the fields OpenBlade changed. It leaves
@@ -59,7 +87,8 @@ sync (profile 0) and restoration (profile 0 when the baseline has it). Otherwise
 write, or after a controller or identity boundary, the lighting mode is
 unconfirmed instead of read from profile 1 alone.
 
-The service resumes control only after a clean service-owned handback. It keeps a
+The service resumes control only after a clean service-owned handback, and only
+under **Restore them**. It keeps a
 per-user resume record beside the saved settings, written by an Apply that takes
 control and removed by **Release control**. A retained restoration journal,
 paused writes, a failed Apply or a configuration failure all wait for the user.
@@ -67,12 +96,74 @@ Resumption uses the same session, power and per-command admission as an Apply,
 checks a closed admission again each second, and waits five seconds after an
 attempt that reached the pad and was refused. Shutdown cleanup is never undone.
 
+An Apply refused before submission saves nothing: the saved request, resume
+record and restoration journal stay as they were, so maintenance and resumption
+cannot later apply a change the page reported as not accepted. Once the request
+is saved, a native deferral before the first write is a failure that leaves
+writes available. Outside-change detection compares the fan record of the running owner,
+both effect records, raw brightness and device mode with the read taken after
+the last confirmed write; the fan demand and ramping speed are not compared.
+A fan write in maintenance runs only after a fresh comparison, because selecting
+a preset would otherwise hide the change. A failed comparison read defers that
+tick, up to two in a row. A third failed read is handled like a lost
+connection, described below: the session is closed and reopened. A refusal, such
+as from a competing controller, stops control as a failed operation. Checks run every five seconds,
+each one full configuration read. The restore allowance is held in memory and
+starts again after a service restart or an accepted Apply. A policy upgraded from
+an earlier version restores nothing, and does not resume, until its disclosure
+has been seen. The firmware cannot report which owner's fan
+record is running, so a change written under the other owner is not detected.
+The pad's own fan button is not detected either. On firmware 1.10.00 the fan
+changed on a press while the record OpenBlade compares stayed the same: the
+firmware owner's in Automatic and the Synapse owner's in Fixed. The product
+middleware declares input report 5 for pad button events (`CycleFanSpeedMode`,
+`TurnOnFan`, `TurnOffFan`), and Synapse writes a button mapping mode (`209` for
+the fan button). In Normal mode, a read-only listener on the readable input
+collections received no report during fan and lighting presses; the
+consumer-control collection is held by Windows. OpenBlade adds no button-mapping write or
+Driver-mode entry to detect the button. In Automatic and a host curve, the next
+`0D/01` demand replaces the button's speed; Fixed sends no demand, so the
+button's speed stays while status reports the confirmed record.
+
+Without the lighting opt-in, a lighting change found during fan control is kept:
+the ownership journal drops its lighting part, so **Release control** and service
+handback restore only the fan, and later checks, restorations, reconnects,
+keyboard-sync frames and resumption leave lighting alone. The user's next Apply
+manages lighting again, and **Release control** or a user change ends the kept
+state. Status reports it as `LightingKept` (IPC protocol 90). The tray then
+selects no lighting mode, so choosing the saved one is a change that applies it;
+without this, the saved mode stayed selected and choosing it again sent nothing.
+A fan change made while no lighting is selected saves lighting as Keep, as it
+does after a release. The kept state is held in memory, so after a service
+restart resumption applies the saved lighting again. When the saved settings control only the
+lighting, there is nothing left to control and the change releases control.
+
+A status read submits nothing. When one times out or finds the session retired,
+control and the last confirmed status, including its message, are kept and
+maintenance reconnects. A control port that cannot be opened, or a refusal, is
+still reported. While control runs, a successful status read keeps the latest
+control message, and after an outside change or a lost connection stops control
+it keeps that reason. Otherwise it reports that the configuration was read.
+
+A timed-out exchange retires the HID session, and its later commands fail as
+`Disposed` without reaching the pad. Reads, Apply and Release then open a fresh
+exact-device session. Three failed comparison reads in a row close the
+session the same way, even when it has not retired itself. A new session cannot tell which fan owner or effect record
+the old one confirmed, so during control it does not compare those. **Restore
+them** applies the saved settings again, counted against the same restore
+allowance; **Notify me** stops control. Without the lighting opt-in, lighting is
+rewritten only when the stored effect, brightness and device mode still match;
+otherwise it is kept as for an outside change and only the fan is applied again.
+
 A failed or ambiguous submission pauses control. Read the current state before
-choosing an explicit recovery action. OpenBlade retains a write-ahead recovery
+choosing an explicit recovery action. The tray's automatic read is read-only and
+never resends the change. OpenBlade retains a write-ahead recovery
 record across service restarts; it does not replay the last demand or erase an
 unresolved operation. User changes restore the original protected baseline
 before binding the new user; unresolved restoration remains visible.
-Power/session transitions revoke queued writes. This
+Power/session transitions revoke queued writes. A power transition is a Windows
+AC/battery notification; every write also checks the current Windows power source.
+The laptop's periodic adapter classification does not revoke pad writes. This
 implementation has simulated validation; new physical acceptance is separate.
 
 ## Source review
@@ -170,7 +261,13 @@ replies:
   every request. Slots beyond the count keep earlier bytes.
 
 Readback compares only those stored fields. The firmware also accepts effects
-7 and 9, which OpenBlade does not admit.
+7 and 9, which OpenBlade does not admit. The pad's lighting button selects them,
+so a well-formed `0F/82` record holding 7 or 9 is accepted and read as unknown
+lighting: the snapshot's effect configuration and lighting mode are null, and the
+fan, brightness and device mode still read. Any other effect id fails the reply.
+A lighting Apply is refused while either record is unknown, because Release could
+not restore it; a lighting readback that reads as unknown fails as a readback
+mismatch.
 
 Brightness GET resolves requested region 0 through the regional descriptor to
 the first actual region (historically 5), while SET retains region 0. That is a

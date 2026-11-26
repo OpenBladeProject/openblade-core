@@ -40,7 +40,7 @@ internal sealed class WindowsUninstallRegistration : IUninstallRegistration
         key.SetValue("InstallLocation", request.InstallLocation, RegistryValueKind.String);
         key.SetValue("DisplayIcon", request.DisplayIcon, RegistryValueKind.String);
         key.SetValue("UninstallString", request.UninstallCommand, RegistryValueKind.String);
-        key.SetValue("URLInfoAbout", "https://github.com/OSSBlade/openblade-core", RegistryValueKind.String);
+        key.SetValue("URLInfoAbout", "https://github.com/OpenBladeProject/openblade-core", RegistryValueKind.String);
         key.SetValue("NoModify", 1, RegistryValueKind.DWord);
         key.SetValue("NoRepair", 1, RegistryValueKind.DWord);
     }

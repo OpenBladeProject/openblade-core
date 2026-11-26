@@ -50,8 +50,8 @@ function New-FinalizationFixture {
 
 - Initial release.
 
-[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/OSSBlade/openblade-core/releases/tag/v0.1.0
+[Unreleased]: https://github.com/OpenBladeProject/openblade-core/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/OpenBladeProject/openblade-core/releases/tag/v0.1.0
 '@
     $baseline = $source.Replace('- Correct the nightly gate.', '')
     [IO.File]::WriteAllText((Join-Path $root 'CHANGELOG.md'), $baseline, [Text.UTF8Encoding]::new($false))

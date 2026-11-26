@@ -1,7 +1,7 @@
 # Application artwork
 
 The selected Monolith artwork is generated in
-[openblade-branding](https://github.com/OSSBlade/openblade-branding) by
+[openblade-branding](https://github.com/OpenBladeProject/openblade-branding) by
 `tools/monolith_geometry.py` and `tools/generate_brand_assets.py`.
 
 The app icon has a 16:10 display, a deeper silver-gray keyboard deck, inset connected hinge
