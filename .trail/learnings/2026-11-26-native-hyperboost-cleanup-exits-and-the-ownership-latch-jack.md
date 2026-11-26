@@ -27,6 +27,8 @@ This extends `2026-11-26-native-hyperboost-lifecycle-exits-h3a-jack.md`. Its "St
 - Ownership counts only while no reading since the entry showed firmware out of HyperBoost (`Tracker::left_hyperboost`, set in `Tracker::observe`, cleared by `own_performance(HyperBoost)`; `Runtime::owns_hyperboost`). An explicit exit that replies "HyperBoost is already off." sets it too. The journal is settled at the next admitted write: the explicit exit's capture, the battery boundary, or the Stop or suspend cleanup.
 - A boundary exit whose own reading finds firmware out is settled whether or not the journal row can be written, so the transition goes on and its steps name the real cause (an outstanding fan change), not "HyperBoost is already off."
 - The cleanup's read-only settle does not adopt the reading as OpenBlade's own: no transition follows it, and managed only retires its journal there.
+- `ExitPermit::resolve` takes the firmware-already-out branch before its power checks. The settle sends no setter, so unclassified power, or a battery reading under Windows AC, must not refuse it: refused, the journal kept the entry and the next start exited a HyperBoost entered outside OpenBlade. The power checks guard only the exit's setters.
+- An entry another user than the latest capture's made is refused and fails the Stop; only a process with no captured store succeeds silently.
 
 ## Tried and ruled out
 
