@@ -8,6 +8,7 @@ pub mod custom_performance;
 pub mod device_mode;
 pub mod fan;
 pub mod fan_rpm;
+pub mod lighting;
 pub mod mcu_version;
 pub mod thermal_preset;
 

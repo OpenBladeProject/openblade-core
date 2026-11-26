@@ -153,9 +153,10 @@ pub fn is_well_formed(settings: &LightingSettings) -> bool {
     }
 }
 
-/// Managed `LightingSettingsFactory.NormalizeAudioMeterDecay`, which begins
-/// with `NormalizeLegacyOff`.
-fn normalize_audio_meter_decay(settings: &mut LightingSettings) {
+/// Managed `LightingSettingsFactory.NormalizeLegacyOff`: an Off setting
+/// without parameters, saved before effect parameters existed, gains the
+/// Off parameters.
+pub fn normalize_legacy_off(settings: &mut LightingSettings) {
     if settings.parameters.is_none()
         && settings.effect == LightingEffect::OFF
         && settings.color == BLACK
@@ -163,6 +164,12 @@ fn normalize_audio_meter_decay(settings: &mut LightingSettings) {
     {
         settings.parameters = Some(LightingParameters::Off);
     }
+}
+
+/// Managed `LightingSettingsFactory.NormalizeAudioMeterDecay`, which begins
+/// with `NormalizeLegacyOff`.
+fn normalize_audio_meter_decay(settings: &mut LightingSettings) {
+    normalize_legacy_off(settings);
     if let Some(LightingParameters::AudioMeter {
         decay_milliseconds, ..
     }) = &mut settings.parameters
