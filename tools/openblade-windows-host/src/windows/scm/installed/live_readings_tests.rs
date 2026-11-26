@@ -1082,7 +1082,7 @@ impl Permit for RefusedFanPermit {
         &self,
         _: i32,
         _: crate::discovery::performance::ObservedPerformance,
-        _: &AtomicBool,
+        _: &std::sync::atomic::AtomicBool,
     ) -> io::Result<Option<openblade_domain::thermal_mutation::Destination>> {
         Err(io::ErrorKind::PermissionDenied.into())
     }

@@ -1692,6 +1692,7 @@ impl Rig {
         response
     }
     async fn stop(&self) {
+        resume_clock_for_stop();
         let mut source = self.source.lock().await;
         source.drain().await.unwrap();
         source.confirm_drained().unwrap();
@@ -1704,6 +1705,7 @@ impl Rig {
     /// (`hyperboost_cleanup` covers the admitted exit).
     #[cfg(feature = "service-hyperboost-v1")]
     async fn stop_in_hyperboost(&self) {
+        resume_clock_for_stop();
         let writes = self.port.state.lock().unwrap().writes;
         self.origin.stop();
         let mut source = self.source.lock().await;
@@ -9033,6 +9035,31 @@ async fn battery_publication_delayed_temporary_does_not_rejuvenate_policy() {
     r.stop().await;
 }
 
+/// A rig's Stop after the test paused the clock gives the status observer its
+/// drain deadline in real time (`resume_clock_for_stop`): an observer still in
+/// one OS call for 50 ms, as a loaded host can leave it, retires inside the
+/// drain. On the paused clock the drain reported it running within a few
+/// milliseconds.
+#[cfg(feature = "service-hyperboost-v1")]
+#[tokio::test]
+async fn stop_on_a_paused_clock_waits_for_the_observer_in_real_time() {
+    let r = Rig::new(MemoryFiles::default());
+    r.get().await;
+    let stall = r.hyperboost.status_stall.clone();
+    stall.store(HyperBoostProbes::STALL_THROUGH_CANCEL, Ordering::Release);
+    tokio::time::pause();
+    // Past the refresh interval, so this status starts a new observation,
+    // which its own budget leaves running.
+    tokio::time::advance(Duration::from_secs(3)).await;
+    r.get().await;
+    let release = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(50));
+        stall.store(0, Ordering::Release);
+    });
+    r.stop().await;
+    release.join().unwrap();
+}
+
 #[cfg(feature = "service-battery-policy-v1")]
 #[tokio::test]
 async fn battery_publication_active_subscription_expires_at_unaligned_battery_deadline() {
@@ -10011,6 +10038,20 @@ fn clock_is_paused() -> bool {
         std::hint::spin_loop();
     }
     true
+}
+/// Runs the test clock again for a rig's Stop (`Rig::stop`,
+/// `Rig::stop_in_hyperboost`), as the Service's clock always runs. A test
+/// that paused the clock to age a result has it paused still, and the drain's
+/// bounds wait on OS threads: the status observer's retirement polls its
+/// thread until the drain deadline (`retire_observer`), and a paused clock
+/// skips to that deadline within microseconds of real time, before a loaded
+/// host need have scheduled the thread at all. A clock an exchange holds
+/// (`HeldClocks`) is that exchange's to let go.
+fn resume_clock_for_stop() {
+    let held = HELD_CLOCKS.with(|held| held.borrow().paused.is_some());
+    if !held && clock_is_paused() {
+        tokio::time::resume();
+    }
 }
 /// Both clocks at one moment, to measure how far a held test clock has fallen
 /// behind the real one.
