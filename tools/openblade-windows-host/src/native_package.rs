@@ -1026,6 +1026,39 @@ pub(crate) fn startup_policy_for_tests(identity: &[u8]) -> io::Result<&'static s
     startup_policy(identity)
 }
 
+/// Whether the compiled identity's service capabilities end with `marker`
+/// once the refused markers build.rs appends after it are removed. The
+/// order is read from build.rs itself, so a marker added there needs no
+/// change in the compiled-identity tests of other modules.
+#[cfg(all(
+    test,
+    any(
+        feature = "service-keyboard-driver-mode-read-v1",
+        feature = "service-live-readings-v1",
+        feature = "service-lighting-v1"
+    )
+))]
+pub(crate) fn ends_with_marker_for_tests(capabilities: &str, marker: &str) -> bool {
+    const APPENDS: &str = r#"let capabilities = if role == "service" && has(""#;
+    let order: Vec<&str> = include_str!("../build.rs")
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix(APPENDS)?.split('"').next())
+        .collect();
+    let Some(at) = order.iter().position(|appended| *appended == marker) else {
+        return false;
+    };
+    let stripped = order[at + 1..]
+        .iter()
+        .rev()
+        .fold(capabilities, |marked, later| {
+            marked
+                .strip_suffix(later)
+                .and_then(|rest| rest.strip_suffix(','))
+                .unwrap_or(marked)
+        });
+    stripped.ends_with(&format!(",{marker}"))
+}
+
 fn startup_policy(identity: &[u8]) -> io::Result<&'static str> {
     if identity.starts_with(b"OpenBlade.NativeArtifact.v2\n") {
         let f = lines(identity, "OpenBlade.NativeArtifact.v2", 8)?;

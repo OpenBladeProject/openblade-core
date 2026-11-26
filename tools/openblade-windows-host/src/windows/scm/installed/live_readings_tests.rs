@@ -322,7 +322,12 @@ async fn a_confirmed_hyper_boost_read_carries_the_managed_observation_record() {
     assert_eq!(observed["capabilities"], Value::Null);
     rig.io.thermal.store(HYPER_BOOST, Ordering::Release);
     let observed = rig.observe(0).await.unwrap();
-    let expected = &vectors()["capabilities"][0]["capabilities"];
+    let mut expected = vectors()["capabilities"][0]["capabilities"].clone();
+    // A Fan Stop build publishes its source and trial evidence.
+    let fan_stop = cfg!(feature = "service-fan-stop-v1");
+    expected["hasFanStopSourceEvidence"] = json!(fan_stop);
+    expected["hasFanStopTrialEvidence"] = json!(fan_stop);
+    let expected = &expected;
     assert_eq!(observed["confirmedState"]["hyperBoostActive"], true);
     assert_eq!(&observed["capabilities"], expected);
     for published in rig.published() {
@@ -1005,28 +1010,34 @@ fn the_compiled_identity_ends_with_the_refused_marker() {
     let identity = std::str::from_utf8(&crate::NATIVE_ARTIFACT_IDENTITY).unwrap();
     let fields: Vec<&str> = identity.split('\n').collect();
     assert_eq!(fields[2], "service");
-    // Only the markers build.rs appends after it may follow it, in its order.
-    let marked = [
-        ",service-lighting-v1",
-        ",service-hyperboost-v1",
-        ",service-thermal-hyperboost-exit-v1",
-        ",service-performance-shortcut-v1",
-        ",service-gpu-clock-tuning-v1",
-        ",service-fan-stop-v1",
-        ",service-diagnostics-export-v1",
-    ]
-    .iter()
-    .fold(fields[8], |marked, later| {
-        marked.strip_suffix(later).unwrap_or(marked)
-    });
+    // Only the markers build.rs appends after it may follow it.
     assert!(
-        marked.ends_with(",service-live-readings-v1"),
+        crate::native_package::ends_with_marker_for_tests(fields[8], "service-live-readings-v1"),
         "{}",
         fields[8]
     );
     assert!(
         crate::native_package::startup_policy_for_tests(&crate::NATIVE_ARTIFACT_IDENTITY).is_err()
     );
+}
+
+/// The marker order is build.rs's: a later marker may follow, an earlier or
+/// unknown one may not.
+#[test]
+fn the_refused_marker_order_is_read_from_build_rs() {
+    use crate::native_package::ends_with_marker_for_tests as ends;
+    const LIVE: &str = "service-live-readings-v1";
+    assert!(ends("a,service-live-readings-v1", LIVE));
+    assert!(ends(
+        "a,service-live-readings-v1,service-fan-stop-v1,service-lighting-v1",
+        LIVE
+    ));
+    assert!(!ends(
+        "a,service-live-readings-v1,service-keyboard-driver-mode-v1",
+        LIVE
+    ));
+    assert!(!ends("a,service-live-readings-v1,service-unknown-v1", LIVE));
+    assert!(!ends("a,service-live-readings-v1", "service-unknown-v1"));
 }
 
 /// A mutation drops the retained pair, so a speed read before a write is
