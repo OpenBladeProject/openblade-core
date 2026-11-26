@@ -39,9 +39,9 @@
 //! The rows are journaled for the session that entered, which the owning
 //! entry row names (`Storage::hyperboost_owner`): the Service has no caller
 //! of its own, and the history admits no row without a user session. The
-//! store is the latest capture's (`Runtime::captured`), so a process that
-//! captured none, or whose latest capture is another user's, exits nothing
-//! and leaves ownership in the journal.
+//! store is the latest capture's (`Runtime::captured`). A process that
+//! captured none reads no ownership and exits nothing. An entry another user
+//! than that store's made is refused, and a Stop reports it.
 use super::*;
 use crate::installed::readiness::thermal_storage::Row;
 
@@ -385,10 +385,13 @@ impl Runtime {
     }
 
     /// The read-only settlement of a cleanup exit whose fresh reading, or an
-    /// earlier one, found firmware out of HyperBoost: the journal records the exit's
-    /// HyperBoost row Prepared and KnownNotSubmitted, under the same cleanup
-    /// admission, authorized again, and only before the deadline. Without
-    /// either, ownership stays in the journal for a later exit to read.
+    /// earlier one, found firmware out of HyperBoost: the journal records
+    /// the exit's HyperBoost row Prepared and KnownNotSubmitted, under the
+    /// same cleanup admission, authorized again, and only before the
+    /// deadline. Without either the journal keeps the entry for a later
+    /// exit to settle. Nothing is owned in either case, since the reading
+    /// ended the ownership for this process, so an unrecorded end is
+    /// `NotOwned` and never a HyperBoost the Stop left on.
     ///
     /// Unlike the battery boundary's settlement (`Runtime::settle_exited`),
     /// the reading does not become OpenBlade's own. No transition follows it
@@ -403,11 +406,11 @@ impl Runtime {
     ) -> io::Result<CleanupExit> {
         let storage = &permit.storage;
         if Instant::now() >= deadline || storage.pending() || storage.outstanding_fan() {
-            return Ok(CleanupExit::Refused);
+            return Ok(CleanupExit::NotOwned);
         }
         permit.cleanup.verify_health()?;
         if permit.authorize().is_none() {
-            return Ok(CleanupExit::Refused);
+            return Ok(CleanupExit::NotOwned);
         }
         match storage.settle_hyperboost(
             &permit.request,
@@ -418,7 +421,7 @@ impl Runtime {
         ) {
             Ok(()) => Ok(CleanupExit::Settled),
             Err(error) if is_fatal_admission(&error) => Err(error),
-            Err(_) => Ok(CleanupExit::Refused),
+            Err(_) => Ok(CleanupExit::NotOwned),
         }
     }
 
