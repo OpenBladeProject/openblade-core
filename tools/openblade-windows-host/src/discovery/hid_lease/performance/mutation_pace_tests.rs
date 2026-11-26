@@ -86,7 +86,12 @@ impl Permit for Paced {
     ) -> io::Result<Option<(FanIntent, Option<Destination>)>> {
         Ok(self.fan.map(|intent| (intent, self.fan_destination)))
     }
-    fn resolve(&self, _: i32, _: ObservedPerformance) -> io::Result<Option<Destination>> {
+    fn resolve(
+        &self,
+        _: i32,
+        _: ObservedPerformance,
+        _: &AtomicBool,
+    ) -> io::Result<Option<Destination>> {
         Ok(self.destination)
     }
     fn refused(&self, cause: Refusal) {

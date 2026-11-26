@@ -513,7 +513,12 @@ impl Permit for FanPermit {
         }
         proof
     }
-    fn resolve(&self, _: i32, _: ObservedPerformance) -> io::Result<Option<Destination>> {
+    fn resolve(
+        &self,
+        _: i32,
+        _: ObservedPerformance,
+        _: &AtomicBool,
+    ) -> io::Result<Option<Destination>> {
         Ok(None)
     }
     fn resolve_fan(
@@ -936,7 +941,12 @@ impl Permit for FanSettlePermit {
     fn prepare_fan(&self, _record: FanRecord) -> io::Result<()> {
         Err(io::ErrorKind::PermissionDenied.into())
     }
-    fn resolve(&self, _: i32, _: ObservedPerformance) -> io::Result<Option<Destination>> {
+    fn resolve(
+        &self,
+        _: i32,
+        _: ObservedPerformance,
+        _: &AtomicBool,
+    ) -> io::Result<Option<Destination>> {
         Err(io::ErrorKind::PermissionDenied.into())
     }
     fn record(&self, _: Progress) -> io::Result<()> {
@@ -1101,7 +1111,12 @@ impl Permit for FanHandbackPermit {
     fn prepare_fan(&self, _record: FanRecord) -> io::Result<()> {
         Err(io::ErrorKind::PermissionDenied.into())
     }
-    fn resolve(&self, _: i32, _: ObservedPerformance) -> io::Result<Option<Destination>> {
+    fn resolve(
+        &self,
+        _: i32,
+        _: ObservedPerformance,
+        _: &AtomicBool,
+    ) -> io::Result<Option<Destination>> {
         Err(io::ErrorKind::PermissionDenied.into())
     }
     fn record(&self, _: Progress) -> io::Result<()> {

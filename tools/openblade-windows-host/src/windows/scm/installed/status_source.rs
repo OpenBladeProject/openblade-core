@@ -18,6 +18,8 @@ use super::{
     subscription::{Publication, REFRESH_INTERVAL},
 };
 use crate::service_frame::invalid;
+#[cfg(feature = "service-hyperboost-v1")]
+use crate::service_status::HyperBoostStatus;
 
 #[cfg(any(test, feature = "service-hardware-compile-check"))]
 use super::FirmwareSource;
@@ -61,6 +63,10 @@ struct Evidence {
     power: Power,
     controllers: Vec<String>,
     controller_warning: Option<&'static str>,
+    /// Managed's HyperBoost status members, read with this evidence
+    /// (`observe_hyperboost`).
+    #[cfg(feature = "service-hyperboost-v1")]
+    hyperboost: HyperBoostStatus,
 }
 
 #[derive(PartialEq, Eq)]
@@ -72,6 +78,8 @@ struct StatusFields {
     fan_stop_evidence: bool,
     controllers: Vec<String>,
     controller_warning: Option<&'static str>,
+    #[cfg(feature = "service-hyperboost-v1")]
+    hyperboost: HyperBoostStatus,
 }
 
 type ReadEvidence = dyn Fn(&AtomicBool) -> Evidence + Send + Sync;
@@ -245,6 +253,25 @@ impl ObservedStatus {
         );
         let fan_stop_evidence =
             has_fan_stop_evidence(evidence.as_ref().map(|current| &current.device));
+        // The pending restore the last status reported stands until a
+        // journal read establishes another (`HyperBoostStatus::resolved`).
+        // Nothing observed establishes none of the members and keeps it,
+        // or keeps none: an unreadable journal after that is still the
+        // first answer.
+        #[cfg(feature = "service-hyperboost-v1")]
+        let hyperboost = {
+            let prior = self
+                .last
+                .as_ref()
+                .and_then(|(_, last)| last.hyperboost.restore_pending);
+            match evidence.as_ref() {
+                Some(current) => current.hyperboost.clone().resolved(prior),
+                None => HyperBoostStatus {
+                    restore_pending: prior,
+                    ..HyperBoostStatus::UNOBSERVED
+                },
+            }
+        };
         let (power, controllers, controller_warning) = evidence.map_or(
             (Power::Unknown, vec![], Some(CONTROLLER_UNKNOWN)),
             |current| {
@@ -262,6 +289,8 @@ impl ObservedStatus {
             fan_stop_evidence,
             controllers,
             controller_warning,
+            #[cfg(feature = "service-hyperboost-v1")]
+            hyperboost,
         };
         // Keep one revision across caller projections. Unobservable evidence
         // changes (such as unknown versus unclassified external power) do not
@@ -279,7 +308,7 @@ impl ObservedStatus {
             None => 0,
         };
         let project = |access, message| {
-            Snapshot::observed_read_only(
+            let status = Snapshot::observed_read_only(
                 revision,
                 access,
                 fields.on_battery,
@@ -288,7 +317,10 @@ impl ObservedStatus {
                 fields.controller_warning,
                 message,
             )
-            .with_fan_stop_evidence(fields.fan_stop_evidence)
+            .with_fan_stop_evidence(fields.fan_stop_evidence);
+            #[cfg(feature = "service-hyperboost-v1")]
+            let status = status.with_hyperboost(&fields.hyperboost);
+            status
         };
         let publication = Arc::new(Publication {
             active: project(0, fields.message.clone()),
@@ -355,32 +387,59 @@ impl StatusSource for ObservedStatus {
     }
 
     fn drain(&mut self) -> Pending<'_, ()> {
+        self.drain_by(Instant::now() + super::SOURCE_DRAIN_TIMEOUT)
+    }
+    fn drain_by(&mut self, deadline: Instant) -> Pending<'_, ()> {
         Box::pin(async move {
-            self.read = None;
-            self.last = None;
-            self.observed_at = None;
-            self.publisher = None;
-            let firmware = async {
-                #[cfg(any(test, feature = "service-hardware-compile-check"))]
-                if let Some(firmware) = &self.firmware {
-                    firmware.stop().await?;
-                }
-                Ok(())
-            };
-            let metadata = async {
-                if let Some(refresh) = &self.refresh {
-                    refresh.cancel.store(true, Ordering::Relaxed);
-                    refresh.wait().await;
-                }
-                if let Some(refresh) = self.refresh.take() {
-                    refresh.finish()?;
-                }
-                Ok(())
-            };
-            let (metadata, firmware) = tokio::join!(metadata, firmware);
-            metadata.and(firmware)
+            self.begin_drain();
+            let (observer, firmware) =
+                tokio::join!(retire_observer(&mut self.refresh, deadline), async {
+                    #[cfg(any(test, feature = "service-hardware-compile-check"))]
+                    if let Some(firmware) = &self.firmware {
+                        firmware.stop().await?;
+                    }
+                    Ok(())
+                });
+            observer.and(firmware)
         })
     }
+}
+
+impl ObservedStatus {
+    /// The first step of a drain: nothing is published or observed again,
+    /// and a running observation is told to stop. It waits for nothing.
+    fn begin_drain(&mut self) {
+        self.read = None;
+        self.last = None;
+        self.observed_at = None;
+        self.publisher = None;
+        if let Some(refresh) = &self.refresh {
+            refresh.cancel.store(true, Ordering::Relaxed);
+        }
+    }
+}
+
+/// The reply of a drain whose observer was still running at its deadline.
+const OBSERVER_RUNNING: &str = "The status observer did not stop before the drain deadline.";
+
+/// Waits for the observation `begin_drain` cancelled to return, until
+/// `deadline` at most.
+///
+/// The observer runs synchronous OS calls on its own thread and holds no
+/// device handle, gate or journal, so nothing a drain does next depends on
+/// it. A call that never returns is therefore reported, not waited for: the
+/// drain fails, as an unconfirmed retirement always has, and the thread is
+/// released with the process.
+async fn retire_observer(refresh: &mut Option<Refresh>, deadline: Instant) -> io::Result<()> {
+    let Some(running) = refresh.as_ref() else {
+        return Ok(());
+    };
+    if timeout_at(deadline, running.wait()).await.is_err() {
+        return Err(io::Error::new(io::ErrorKind::TimedOut, OBSERVER_RUNNING));
+    }
+    refresh
+        .take()
+        .map_or(Ok(()), |retired| retired.finish().map(drop))
 }
 
 impl Drop for ObservedStatus {
@@ -1153,6 +1212,13 @@ impl StatusSource for GuardedStatus {
                     let status = publish_reconciled(&publisher, &mailbox, status)?;
                     Ok((outcome, Some(status)))
                 }
+                // Managed `RecoverHyperBoostRestoreAsync`: native answers from
+                // managed's ownership journal and writes nothing, so no
+                // status follows (`Runtime::recover_hyperboost_restore`).
+                #[cfg(feature = "service-hyperboost-v1")]
+                crate::service_status::StatusRequest::RecoverHyperBoostRestore { .. } => {
+                    Ok((runtime.recover_hyperboost_restore(caller).await?, None))
+                }
                 // Managed publishes the preview without the operation gate: it
                 // stores no intent and reads or writes no firmware.
                 #[cfg(feature = "service-performance-shortcut-v1")]
@@ -1309,7 +1375,19 @@ impl StatusSource for GuardedStatus {
             if let Some(runtime) = &self.mutation {
                 runtime.stop_convergence();
             }
-            let mut result = self.inner.drain().await;
+            // The observer is told to stop here and awaited last
+            // (`retire_observer`). It holds no device handle or gate, so the
+            // cleanup below does not depend on it, and an OS call stalled in
+            // it must not take the time the keyboard release, the fan
+            // handback and the HyperBoost exit are paced to.
+            self.inner.begin_drain();
+            #[cfg(any(test, feature = "service-hardware-compile-check"))]
+            let mut result = match &self.inner.firmware {
+                Some(firmware) => firmware.stop().await,
+                None => Ok(()),
+            };
+            #[cfg(not(any(test, feature = "service-hardware-compile-check")))]
+            let mut result = Ok(());
             #[cfg(feature = "service-thermal-mutation-v1")]
             if let Some(runtime) = &self.mutation {
                 // Managed shutdown order: the keyboard Driver-mode release,
@@ -1318,6 +1396,15 @@ impl StatusSource for GuardedStatus {
                 // evidence fails the Stop, and nothing it does skips the fan
                 // step. The first error is kept. The fan handback is paced to
                 // what is left of the drain (`deadline`), whose end cancels it.
+                //
+                // One limit is the mutation worker's (`Worker::stop`): the
+                // release cancels a job still running, and every job step
+                // checks that between its device and OS calls, a HyperBoost
+                // request's pad scan included (`Permit::resolve`). A single
+                // call that does not return still holds the job thread; the
+                // fan handback then waits for it at `drain_active`, and the
+                // drain ends at its caller's bound with the steps below
+                // not run.
                 #[cfg(feature = "service-keyboard-driver-mode-v1")]
                 {
                     let keyboard = if self.origin.admit_owned_stop().is_ok() {
@@ -1353,7 +1440,8 @@ impl StatusSource for GuardedStatus {
                 //   reads Automatic fans.
                 // A fan or keyboard failure never skips the exit either: it
                 // runs whatever they returned, and only an unsettled journal
-                // row, which fences every write, stops it.
+                // row, which fences every write, stops it. (A job thread
+                // held in one native call is the limit named above.)
                 #[cfg(all(
                     feature = "service-hyperboost-v1",
                     feature = "service-profile-triggers-v1"
@@ -1375,6 +1463,10 @@ impl StatusSource for GuardedStatus {
                 if result.is_ok() {
                     result = drained;
                 }
+            }
+            let observer = retire_observer(&mut self.inner.refresh, deadline).await;
+            if result.is_ok() {
+                result = observer;
             }
             self.origin.revoke();
             result
@@ -1413,6 +1505,8 @@ fn read_windows(cancel: &AtomicBool) -> Evidence {
             power,
             controllers: vec![],
             controller_warning: Some(CONTROLLER_UNKNOWN),
+            #[cfg(feature = "service-hyperboost-v1")]
+            hyperboost: HyperBoostStatus::UNOBSERVED,
         };
     }
     let inventory = process_inventory::read();
@@ -1438,10 +1532,75 @@ fn read_windows(cancel: &AtomicBool) -> Evidence {
         _ => CONTROLLER_UNKNOWN,
     };
     Evidence {
+        #[cfg(feature = "service-hyperboost-v1")]
+        hyperboost: observe_hyperboost(
+            &device,
+            &controllers,
+            // The probes the HyperBoost requests read (`Runtime::native`),
+            // composed only with the lifecycle triggers.
+            #[cfg(all(not(test), feature = "service-profile-triggers-v1"))]
+            Some(&super::thermal_mutation::Probes::native()),
+            #[cfg(not(all(not(test), feature = "service-profile-triggers-v1")))]
+            None,
+            cancel,
+        ),
         device,
         power,
         controllers: controllers.potential_controllers().to_vec(),
         controller_warning: Some(warning),
+    }
+}
+
+/// Managed's HyperBoost status members from one metadata observation.
+///
+/// - The blocking controllers are this observation's own
+///   (`Observation::hyperboost_blockers`), whatever the host.
+/// - The pad and managed's ownership journal are read only on the host of
+///   the model whose HyperBoost requests native serves
+///   (`hyperboost::MODEL`), through the probes those requests read, and only
+///   where the composition has them. Managed publishes the pad with a
+///   verified device whose capabilities name a HyperBoost access
+///   (`ResolvePadlessHyperBoostEligibility`); this status carries no such
+///   capability, so the matched host stands in for it. Every other host, a
+///   failed pad scan and a composition without probes report Unknown and no
+///   pending restore.
+/// - Both reads run on the observer's thread after its last other check of
+///   `cancelled`, so neither starts once it is set, and the pad scan takes
+///   the flag: a refresh past its budget and a drain both end the scan
+///   instead of waiting for it. A journal that could not be read, or was
+///   not read for the cancellation, establishes no pending restore either
+///   way (`HyperBoostStatus::resolved`).
+#[cfg(feature = "service-hyperboost-v1")]
+fn observe_hyperboost(
+    device: &DeviceMetadata,
+    controllers: &openblade_platform_windows::controller_presence::Observation,
+    probes: Option<&super::thermal_mutation::Probes>,
+    cancelled: &AtomicBool,
+) -> HyperBoostStatus {
+    let probes = probes.filter(|_| {
+        matches!(device, DeviceMetadata::MatchedHost { model, .. }
+            if model == super::thermal_mutation::HYPERBOOST_MODEL)
+    });
+    let live = || !cancelled.load(Ordering::Relaxed);
+    let (pad, restore_pending) = match probes {
+        // Native serves no HyperBoost on this host and reads neither probe.
+        None => (0, Some(false)),
+        Some(probes) => (
+            if live() {
+                probes.eligibility(cancelled)
+            } else {
+                0
+            },
+            live().then(|| probes.restore_pending()).flatten(),
+        ),
+    };
+    HyperBoostStatus {
+        pad,
+        restore_pending,
+        blockers: Some(HyperBoostStatus::blocking(
+            controllers.potential_controllers(),
+            controllers.hyperboost_blockers(),
+        )),
     }
 }
 
@@ -1454,6 +1613,19 @@ pub(super) use tests::{in_memory_source, in_memory_source_with_firmware};
 
 #[cfg(all(test, feature = "service-mailbox-observation-v1"))]
 pub(super) use tests::in_memory_guarded_no_reader;
+
+/// A complete observation that found no controller.
+#[cfg(all(test, feature = "service-hyperboost-v1"))]
+fn no_controllers() -> openblade_platform_windows::controller_presence::Observation {
+    use openblade_platform_windows::controller_presence::{Scan, observe};
+    observe(
+        Scan::Complete(&[]),
+        Scan::Complete(&[]),
+        None,
+        Scan::Complete(&[]),
+        0,
+    )
+}
 
 /// The injected source's metadata bit for production-like controller
 /// evidence: no SCM scan, so a detection warning is always published.
@@ -1468,6 +1640,17 @@ pub(super) const OBSERVER_EXPIRES: u8 = 0x20;
 #[cfg(all(test, feature = "service-thermal-mutation-v1"))]
 pub(super) const OBSERVER_PANICS: u8 = 0x40;
 
+/// The probes the injected source's metadata observer reads for the
+/// HyperBoost status members, as `read_windows` reads the native ones.
+#[cfg(all(test, feature = "service-hyperboost-v1"))]
+pub(super) type InjectedHyperBoost = super::thermal_mutation::Probes;
+#[cfg(all(
+    test,
+    feature = "service-thermal-mutation-v1",
+    not(feature = "service-hyperboost-v1")
+))]
+pub(super) type InjectedHyperBoost = ();
+
 #[cfg(all(test, feature = "service-thermal-mutation-v1"))]
 pub(super) fn injected_mutation_source(
     origin: Arc<dyn StatusOrigin>,
@@ -1476,6 +1659,8 @@ pub(super) fn injected_mutation_source(
     metadata: Arc<std::sync::atomic::AtomicU8>,
     // Runs first on each status-observer thread.
     observer: Arc<dyn Fn() + Send + Sync>,
+    #[cfg_attr(not(feature = "service-hyperboost-v1"), allow(unused_variables))]
+    hyperboost: InjectedHyperBoost,
 ) -> Box<dyn StatusSource> {
     Box::new(GuardedStatus {
         origin,
@@ -1492,15 +1677,23 @@ pub(super) fn injected_mutation_source(
                 std::thread::park_timeout(Duration::from_millis(1));
             }
             let metadata = flags & !(OBSERVER_EXPIRES | OBSERVER_PANICS);
+            let device = if metadata & !PRODUCTION_CONTROLLERS == 3 {
+                DeviceMetadata::Unavailable
+            } else {
+                DeviceMetadata::MatchedHost {
+                    model: "RZ09-0581".into(),
+                    hid: HidMetadata::Candidate,
+                }
+            };
             Evidence {
-                device: if metadata & !PRODUCTION_CONTROLLERS == 3 {
-                    DeviceMetadata::Unavailable
-                } else {
-                    DeviceMetadata::MatchedHost {
-                        model: "RZ09-0581".into(),
-                        hid: HidMetadata::Candidate,
-                    }
-                },
+                #[cfg(feature = "service-hyperboost-v1")]
+                hyperboost: observe_hyperboost(
+                    &device,
+                    &no_controllers(),
+                    Some(&hyperboost),
+                    cancel,
+                ),
+                device,
                 power: match metadata & !PRODUCTION_CONTROLLERS {
                     1 => Power::Battery,
                     4 => Power::Unknown,

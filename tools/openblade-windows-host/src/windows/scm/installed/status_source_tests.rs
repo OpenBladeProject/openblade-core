@@ -103,6 +103,12 @@ fn evidence(device: DeviceMetadata, power: Power) -> Evidence {
         power,
         controllers: vec![],
         controller_warning: Some(CONTROLLER_UNKNOWN),
+        // A host on which native reads no pad and no journal.
+        #[cfg(feature = "service-hyperboost-v1")]
+        hyperboost: HyperBoostStatus {
+            restore_pending: Some(false),
+            ..HyperBoostStatus::UNOBSERVED
+        },
     }
 }
 
@@ -722,4 +728,345 @@ fn only_the_exact_matched_model_has_fan_stop_evidence() {
         assert!(!has_fan_stop_evidence(Some(&device)));
     }
     assert!(!has_fan_stop_evidence(None));
+}
+
+/// Probes that count their reads: a pad that is absent and a journal that
+/// names a pending restore.
+#[cfg(feature = "service-hyperboost-v1")]
+fn counted_probes() -> (
+    super::super::thermal_mutation::Probes,
+    Arc<std::sync::atomic::AtomicUsize>,
+) {
+    use super::super::thermal_mutation::{Pad, Probes};
+    let reads = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let (scans, journals) = (reads.clone(), reads.clone());
+    let probes = Probes::new(
+        move |_| {
+            scans.fetch_add(1, Ordering::AcqRel);
+            Pad::Absent
+        },
+        Arc::new(move || {
+            journals.fetch_add(1, Ordering::AcqRel);
+            Ok(Some(br#"{"state": 2}"#.to_vec()))
+        }),
+    );
+    (probes, reads)
+}
+
+/// Managed 16139-16145: the blocking controllers are the observation's own
+/// (`Observation::hyperboost_blockers`), in the potential controllers'
+/// spelling and order. A lighting service and the verified updater service
+/// are potential controllers that do not block HyperBoost. Without probes
+/// the pad and the journal stay unread.
+#[cfg(feature = "service-hyperboost-v1")]
+#[test]
+fn hyperboost_blockers_are_the_controller_observation_s_own() {
+    use openblade_platform_windows::controller_presence::{
+        Process, Scan, Service, ServiceState, observe,
+    };
+    let running = |name| Service {
+        name,
+        display_name: name,
+        state: ServiceState::Running,
+    };
+    let observation = observe(
+        Scan::Complete(&[Process {
+            name: "RazerAppEngine",
+            pid: None,
+            identity: None,
+            verified_image: None,
+        }]),
+        Scan::Complete(&[running("Razer Chroma SDK Service"), running("RGS")]),
+        None,
+        Scan::Complete(&[]),
+        0,
+    );
+    assert_eq!(
+        observation.potential_controllers(),
+        ["RGS", "Razer Chroma SDK Service", "RazerAppEngine"]
+    );
+    for device in [
+        matched(HidMetadata::Candidate),
+        DeviceMetadata::Unsupported,
+        DeviceMetadata::Unavailable,
+    ] {
+        assert_eq!(
+            observe_hyperboost(&device, &observation, None, &AtomicBool::new(false)),
+            HyperBoostStatus {
+                pad: 0,
+                restore_pending: Some(false),
+                blockers: Some(vec!["RazerAppEngine".to_owned()]),
+            }
+        );
+    }
+    // The potential list's spelling, once each, and only its members.
+    let names = |names: &[&str]| names.iter().map(|n| (*n).to_owned()).collect::<Vec<_>>();
+    assert_eq!(
+        HyperBoostStatus::blocking(
+            &names(&["RGS", "RazerAppEngine", "razerappengine"]),
+            &names(&["RAZERAPPENGINE", "Unlisted"]),
+        ),
+        ["RazerAppEngine"]
+    );
+}
+
+/// The managed codec refuses a status whose blockers are not ordinally
+/// sorted, distinct members of its potential controllers
+/// (`IpcMessageCodec.cs` 497-538). Every set of the controller names as
+/// processes, with and without the services, keeps that, and the sets with
+/// two or more blockers pin their order.
+#[cfg(feature = "service-hyperboost-v1")]
+#[test]
+fn hyperboost_blockers_pass_the_managed_codec_in_ordinal_order() {
+    use openblade_platform_windows::controller_presence::{
+        Process, Scan, Service, ServiceState, observe,
+    };
+    const PROCESSES: [&str; 8] = [
+        "RazerAppEngine",
+        "razerappengine",
+        "razerwdl",
+        "RGS",
+        "Razer Gaming Services Updater",
+        "RazerSynapseService",
+        "Razer Synapse Service",
+        "Razer Chroma SDK Service",
+    ];
+    let services = [
+        ("RazerSynapseService", "Razer Synapse Service"),
+        ("rgs2", "RGS"),
+        ("Chroma", "Razer Chroma SDK Service"),
+    ]
+    .map(|(name, display_name)| Service {
+        name,
+        display_name,
+        state: ServiceState::Running,
+    });
+    let ordinal = |names: &[String]| {
+        names
+            .windows(2)
+            .all(|pair| pair[0].encode_utf16().lt(pair[1].encode_utf16()))
+    };
+    let mut several = 0;
+    for mask in 0u32..1 << PROCESSES.len() {
+        let processes: Vec<_> = PROCESSES
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| mask & (1 << index) != 0)
+            .map(|(_, name)| Process {
+                name,
+                pid: None,
+                identity: None,
+                verified_image: None,
+            })
+            .collect();
+        for services in [&services[..], &[]] {
+            let observation = observe(
+                Scan::Complete(&processes),
+                Scan::Complete(services),
+                None,
+                Scan::Incomplete(&[]),
+                0,
+            );
+            let potential = observation.potential_controllers();
+            let blockers = observe_hyperboost(
+                &matched(HidMetadata::Candidate),
+                &observation,
+                None,
+                &AtomicBool::new(false),
+            )
+            .blockers
+            .unwrap();
+            assert!(potential.len() <= 16 && ordinal(potential), "{potential:?}");
+            assert!(ordinal(&blockers), "{blockers:?}");
+            assert!(
+                blockers.iter().all(|blocker| potential.contains(blocker)),
+                "{blockers:?} of {potential:?}"
+            );
+            several += usize::from(blockers.len() > 1);
+        }
+    }
+    assert!(several > 0);
+}
+
+/// The pad and the journal are read only on the host of the model whose
+/// HyperBoost requests native serves. Another matched model, with probes
+/// composed, reads neither: Unknown and nothing pending, whatever the probes
+/// would have read. A cancelled observation reads neither on that model
+/// either, and establishes no answer for the pending restore.
+#[cfg(feature = "service-hyperboost-v1")]
+#[test]
+fn hyperboost_probes_are_read_only_on_the_served_model_and_before_cancellation() {
+    let nothing = no_controllers();
+    let live = AtomicBool::new(false);
+    let observe = |model: &str, cancelled: &AtomicBool| {
+        let (probes, reads) = counted_probes();
+        let device = DeviceMetadata::MatchedHost {
+            model: model.into(),
+            hid: HidMetadata::Candidate,
+        };
+        let status = observe_hyperboost(&device, &nothing, Some(&probes), cancelled);
+        (
+            status.pad,
+            status.restore_pending,
+            reads.load(Ordering::Acquire),
+        )
+    };
+    assert_eq!(observe("RZ09-0581", &live), (1, Some(true), 2));
+    for other in ["RZ09-0528", "RZ09-0483", "rz09-0581", ""] {
+        assert_eq!(observe(other, &live), (0, Some(false), 0), "{other}");
+    }
+    assert_eq!(observe("RZ09-0581", &AtomicBool::new(true)), (0, None, 0));
+}
+
+/// The members reach every caller's projection of the published status, and
+/// a source that has observed nothing publishes what managed's absent
+/// members decode to: Unknown, no pending restore and no classification.
+#[cfg(feature = "service-hyperboost-v1")]
+#[tokio::test]
+async fn hyperboost_members_are_published_only_as_observed() {
+    let mut source = ObservedStatus::new(|_| panic!("the cached publication is fresh"));
+    source.publish(None).unwrap();
+    for active in [true, false] {
+        assert_eq!(hyperboost_members(&source, active), json!([0, false, null]));
+    }
+    let observed = HyperBoostStatus {
+        pad: HyperBoostStatus::PAD_PRESENT,
+        restore_pending: Some(true),
+        blockers: Some(vec!["RazerAppEngine".to_owned()]),
+    };
+    assert!(source.publish(Some(published(&observed))).unwrap());
+    for active in [true, false] {
+        assert_eq!(
+            hyperboost_members(&source, active),
+            json!([2, true, ["RazerAppEngine"]])
+        );
+    }
+    // A repeated observation is no new revision; a changed member is.
+    assert!(!source.publish(Some(published(&observed))).unwrap());
+    let cleared = HyperBoostStatus {
+        restore_pending: Some(false),
+        ..observed
+    };
+    assert!(source.publish(Some(published(&cleared))).unwrap());
+    assert_eq!(
+        hyperboost_members(&source, true),
+        json!([2, false, ["RazerAppEngine"]])
+    );
+}
+#[cfg(feature = "service-hyperboost-v1")]
+fn hyperboost_members(source: &ObservedStatus, active: bool) -> Value {
+    let publication = source.metadata.as_ref().unwrap();
+    let status = to_value(if active {
+        &publication.active
+    } else {
+        &publication.inactive
+    })
+    .unwrap();
+    json!([
+        status["padlessHyperBoostEligibility"],
+        status["hyperBoostRestorePending"],
+        status["hyperBoostBlockingControllers"],
+    ])
+}
+#[cfg(feature = "service-hyperboost-v1")]
+fn published(hyperboost: &HyperBoostStatus) -> Evidence {
+    Evidence {
+        controllers: vec!["RazerAppEngine".to_owned()],
+        hyperboost: hyperboost.clone(),
+        ..evidence(matched(HidMetadata::Candidate), Power::ExternalUnknown)
+    }
+}
+
+/// Managed keeps its presentation when its journal cannot be read
+/// (`ServiceControlRuntime.cs` 10133-10152). A journal read that fails, and
+/// an observation that yields nothing, keep the pending restore the last
+/// status reported, true or false, so neither hides a pending restore nor
+/// invents one. With no earlier answer an unreadable journal is pending, as
+/// managed's recovery treats it (4057-4069).
+#[cfg(feature = "service-hyperboost-v1")]
+#[tokio::test]
+async fn an_unreadable_journal_keeps_the_last_pending_restore() {
+    let reading = |restore_pending| HyperBoostStatus {
+        pad: HyperBoostStatus::PAD_ABSENT,
+        restore_pending,
+        blockers: Some(vec![]),
+    };
+    let pending = |source: &ObservedStatus| hyperboost_members(source, true)[1].clone();
+    for established in [true, false] {
+        let mut source = ObservedStatus::new(|_| panic!("the cached publication is fresh"));
+        source
+            .publish(Some(published(&reading(Some(established)))))
+            .unwrap();
+        assert_eq!(pending(&source), established);
+        // The journal could not be read: no new revision, the answer stands.
+        assert!(!source.publish(Some(published(&reading(None)))).unwrap());
+        assert_eq!(pending(&source), established);
+        // Nothing observed: the other members are unknown, this one stands.
+        source.publish(None).unwrap();
+        assert_eq!(
+            hyperboost_members(&source, true),
+            json!([0, established, null])
+        );
+        source
+            .publish(Some(published(&reading(Some(!established)))))
+            .unwrap();
+        assert_eq!(pending(&source), !established);
+    }
+    let mut source = ObservedStatus::new(|_| panic!("the cached publication is fresh"));
+    source.publish(Some(published(&reading(None)))).unwrap();
+    assert_eq!(pending(&source), true);
+    // A first refresh that yields nothing publishes no pending restore and
+    // establishes none: the unreadable journal after it is still the first
+    // answer, so it is pending.
+    let mut source = ObservedStatus::new(|_| panic!("the cached publication is fresh"));
+    source.publish(None).unwrap();
+    assert_eq!(pending(&source), false);
+    source.publish(Some(published(&reading(None)))).unwrap();
+    assert_eq!(pending(&source), true);
+}
+
+/// A drain tells a running observation to stop and waits for it only until
+/// its deadline. An OS call that does not return is reported at the
+/// deadline, not waited for; one that honours the cancellation retires the
+/// observer at once.
+#[tokio::test]
+async fn drain_waits_for_a_stalled_observer_only_until_its_deadline() {
+    for honours_cancel in [true, false] {
+        let release = Arc::new(AtomicBool::new(false));
+        let (started, running) = mpsc::channel();
+        let held = release.clone();
+        let mut source = ObservedStatus::new(move |cancel| {
+            started.send(()).unwrap();
+            // The cap ends the thread if the test fails before it releases.
+            let began = std::time::Instant::now();
+            while !held.load(Ordering::Acquire)
+                && !(honours_cancel && cancel.load(Ordering::Acquire))
+                && began.elapsed() < Duration::from_secs(3)
+            {
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            evidence(matched(HidMetadata::Candidate), Power::Battery)
+        });
+        // The refresh gives up at its own budget and keeps its worker.
+        let _ = tokio::time::timeout(
+            Duration::from_millis(50),
+            source.snapshot(SYSTEM, Instant::now()),
+        )
+        .await;
+        running.recv().unwrap();
+        let bound = Duration::from_millis(300);
+        let began = std::time::Instant::now();
+        let drained = source.drain_by(Instant::now() + bound).await;
+        let took = began.elapsed();
+        if honours_cancel {
+            assert!(drained.is_ok(), "{drained:?}");
+            assert!(took < bound, "{took:?}");
+        } else {
+            let error = drained.unwrap_err();
+            assert_eq!(error.kind(), io::ErrorKind::TimedOut);
+            assert_eq!(error.to_string(), OBSERVER_RUNNING);
+            assert!(took >= bound && took < bound * 4, "{took:?}");
+        }
+        release.store(true, Ordering::Release);
+    }
 }

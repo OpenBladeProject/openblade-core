@@ -15,6 +15,9 @@ pub(in super::super) type Journal = Arc<dyn Fn() -> io::Result<Option<Vec<u8>>> 
 
 /// Managed `HyperBoostOwnershipJournalState.Relinquished`.
 pub(super) const RELINQUISHED: i64 = 3;
+/// Managed `HyperBoostOwnershipJournalState.RestorePending`.
+#[cfg(feature = "service-hyperboost-v1")]
+pub(super) const RESTORE_PENDING: i64 = 2;
 /// Managed `PerformancePreset.Custom` and its last value, `Creator`.
 const CUSTOM_PRESET: i64 = 5;
 const PRESETS: i64 = 9;
@@ -65,6 +68,26 @@ pub(super) fn journal_safe(bytes: Option<&[u8]>) -> bool {
         return true;
     };
     json::parse(bytes).is_ok_and(|document| relinquished(&document).is_some())
+}
+
+/// The state a journal document names: managed's own members, each once,
+/// and one of its four `HyperBoostOwnershipJournalState` values. `None` for
+/// anything else, which managed's store reads as invalid.
+///
+/// It reads the state only. Managed also calls a document invalid when
+/// `IsWellFormed` rejects it; native reads only a Relinquished document
+/// exactly as managed does (`relinquished`), so a document of another state
+/// that managed would call invalid still names its state here. That answer
+/// admits nothing: `journal_safe` alone admits a HyperBoost write.
+#[cfg(feature = "service-hyperboost-v1")]
+pub(super) fn state(bytes: &[u8]) -> Option<i64> {
+    let document = json::parse(bytes).ok()?;
+    document
+        .members()?
+        .iter()
+        .all(|(name, _)| MEMBERS.contains(&name.as_str()))
+        .then_some(())?;
+    document.member("state")?.integer(0, RELINQUISHED)
 }
 
 /// `Some` for a recognized, well-formed Relinquished document.

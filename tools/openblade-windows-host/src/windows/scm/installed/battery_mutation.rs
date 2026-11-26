@@ -388,7 +388,12 @@ impl Permit for BatteryPermit {
         let p = self.fresh.authorize();
         (p == Some(self.proof)).then_some(self.proof)
     }
-    fn resolve(&self, _: i32, _: ObservedPerformance) -> io::Result<Option<Destination>> {
+    fn resolve(
+        &self,
+        _: i32,
+        _: ObservedPerformance,
+        _: &AtomicBool,
+    ) -> io::Result<Option<Destination>> {
         Ok(None)
     }
     fn record(&self, _: Progress) -> io::Result<()> {

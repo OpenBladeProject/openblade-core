@@ -88,7 +88,12 @@ impl Permit for Refused {
     fn authorize(&self) -> Option<ReadAdmission> {
         self.0
     }
-    fn resolve(&self, _: i32, _: ObservedPerformance) -> io::Result<Option<Destination>> {
+    fn resolve(
+        &self,
+        _: i32,
+        _: ObservedPerformance,
+        _: &AtomicBool,
+    ) -> io::Result<Option<Destination>> {
         panic!("a refused permit never reaches a mutation worker")
     }
     fn record(&self, _: Progress) -> io::Result<()> {

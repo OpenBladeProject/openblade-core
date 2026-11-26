@@ -150,6 +150,8 @@ mod profiles;
 #[cfg(feature = "service-profile-triggers-v1")]
 #[path = "request_triggers.rs"]
 mod triggers;
+#[cfg(all(test, feature = "service-hyperboost-v1"))]
+pub(super) use hyperboost::Pad;
 #[cfg(all(
     test,
     feature = "service-hyperboost-v1",
@@ -157,8 +159,8 @@ mod triggers;
     feature = "service-keyboard-driver-mode-v1"
 ))]
 pub(super) use hyperboost::cleanup::CleanupExit as HyperBoostCleanupExit;
-#[cfg(all(test, feature = "service-hyperboost-v1"))]
-pub(super) use hyperboost::{Pad, Probes};
+#[cfg(feature = "service-hyperboost-v1")]
+pub(super) use hyperboost::{MODEL as HYPERBOOST_MODEL, Probes};
 #[cfg(feature = "service-keyboard-driver-mode-v1")]
 pub(super) use keyboard::SHUTDOWN_BUDGET as KEYBOARD_SHUTDOWN_BUDGET;
 #[cfg(all(test, feature = "service-keyboard-driver-mode-v1"))]
@@ -2473,10 +2475,11 @@ pub(super) fn fan_override_rejected(
     thermal_combination(performance, requested.unwrap_or(profile_fans), power).err()
 }
 impl Permit for RequestPermit {
-    fn admits_setter(&self) -> bool {
+    #[cfg_attr(not(feature = "service-hyperboost-v1"), allow(unused_variables))]
+    fn admits_setter(&self, cancelled: &AtomicBool) -> bool {
         #[cfg(feature = "service-hyperboost-v1")]
         if let Some(step) = &self.hyperboost {
-            return self.hyperboost_admits_setter(step);
+            return self.hyperboost_admits_setter(step, cancelled);
         }
         true
     }
@@ -2553,10 +2556,12 @@ impl Permit for RequestPermit {
         .inspect_err(|error| self.remember_failure(error))
         .unwrap_or(false)
     }
+    #[cfg_attr(not(feature = "service-hyperboost-v1"), allow(unused_variables))]
     fn resolve(
         &self,
         power: i32,
         baseline: ObservedPerformance,
+        cancelled: &AtomicBool,
     ) -> io::Result<Option<Destination>> {
         self.verify_failure()?;
         (|| {
@@ -2601,7 +2606,7 @@ impl Permit for RequestPermit {
             // stores nothing (`hyperboost`).
             #[cfg(feature = "service-hyperboost-v1")]
             if let Some(step) = &self.hyperboost {
-                return self.resolve_hyperboost(step, power, baseline);
+                return self.resolve_hyperboost(step, power, baseline, cancelled);
             }
             // The profile layer is resolved before the override is stored, as
             // the fan path does: a saved document the domain decoder refuses

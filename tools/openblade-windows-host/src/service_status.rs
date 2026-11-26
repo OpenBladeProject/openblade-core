@@ -180,6 +180,11 @@ pub(crate) enum StatusRequest {
         request_id: String,
         enabled: bool,
     },
+    /// Managed `RecoverHyperBoostRestoreRequest`.
+    RecoverHyperBoostRestore {
+        version: i32,
+        request_id: String,
+    },
     ObserveState {
         include_live_readings: bool,
         #[serde(default = "all_live_readings")]
@@ -252,6 +257,69 @@ pub(crate) const FAN_STOP_EVIDENCE_MODEL: &str = "RZ09-0581";
 #[cfg(all(windows, feature = "service-mailbox-observation-v1"))]
 pub(crate) const OBSERVED_CAPABILITIES_MODEL: (&str, u16, u16) = ("RZ09-0581", 0x1532, 0x02e0);
 
+/// Managed's three HyperBoost status members, as the metadata observer
+/// establishes them. The default is what an absent member decodes to:
+/// nothing observed.
+#[cfg(feature = "service-hyperboost-v1")]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct HyperBoostStatus {
+    /// Managed `PadlessHyperBoostEligibilityState`: 0 Unknown,
+    /// 1 CoolingPadAbsent, 2 CoolingPadPresent.
+    pub(crate) pad: u8,
+    /// Managed `HyperBoostRestorePending`: managed's ownership journal names
+    /// a restore it has not finished. `None` when no journal read has
+    /// established an answer: it could not be read, or nothing was observed
+    /// (`resolved`). Published as no pending restore.
+    pub(crate) restore_pending: Option<bool>,
+    /// Managed `HyperBoostBlockingControllers`. `None` is managed's null:
+    /// no source-aware classification, so consumers apply the name policy
+    /// (`RazerThermalControllerPolicy.GetBlockingControllers`).
+    pub(crate) blockers: Option<Vec<String>>,
+}
+#[cfg(feature = "service-hyperboost-v1")]
+impl HyperBoostStatus {
+    pub(crate) const PAD_ABSENT: u8 = 1;
+    pub(crate) const PAD_PRESENT: u8 = 2;
+    /// Nothing established: no pad observation, no journal read and no
+    /// controller classification.
+    pub(crate) const UNOBSERVED: Self = Self {
+        pad: 0,
+        restore_pending: None,
+        blockers: None,
+    };
+
+    /// The status to publish after `prior`, the pending restore the last
+    /// published status reported. A journal that could not be read keeps
+    /// that answer, as managed preserves its presentation when its durable
+    /// state cannot be read (`ServiceControlRuntime.cs` 10133-10152), so one
+    /// failed read neither hides a pending restore nor invents one. With no
+    /// earlier answer it reports the restore pending, as managed's recovery
+    /// does for a journal it cannot inspect (4057-4069) and as every native
+    /// HyperBoost request treats that journal (`JOURNAL_PENDING`).
+    pub(crate) fn resolved(mut self, prior: Option<bool>) -> Self {
+        self.restore_pending = self.restore_pending.or(prior).or(Some(true));
+        self
+    }
+
+    /// Managed `HyperBoostBlockingControllers` from one controller
+    /// observation (`ServiceControlRuntime.cs` 16139-16145): the blockers
+    /// the status also lists as potential controllers, in that list's
+    /// spelling and order (ordinal), once each ignoring case. The managed
+    /// codec refuses a status whose blockers are not such a subset
+    /// (`IpcMessageCodec.cs` 523-538).
+    pub(crate) fn blocking(potential: &[String], blockers: &[String]) -> Vec<String> {
+        let mut blocking: Vec<String> = Vec::new();
+        for name in potential {
+            if blockers.iter().any(|b| b.eq_ignore_ascii_case(name))
+                && !blocking.iter().any(|b| b.eq_ignore_ascii_case(name))
+            {
+                blocking.push(name.clone());
+            }
+        }
+        blocking
+    }
+}
+
 #[cfg(feature = "installed-service-candidate")]
 mod unserved;
 #[cfg(feature = "installed-service-candidate")]
@@ -261,7 +329,7 @@ impl StatusRequest {
     /// The discriminator of every variant. `operation` maps each variant to
     /// its entry, so a new variant cannot be added without listing it here.
     #[cfg(feature = "installed-service-candidate")]
-    pub(crate) const OPERATIONS: [&'static str; 21] = [
+    pub(crate) const OPERATIONS: [&'static str; 22] = [
         "setBatteryPolicy",
         "setBatteryProtection",
         "setFullChargeOverride",
@@ -283,6 +351,7 @@ impl StatusRequest {
         "cyclePerformanceShortcut",
         "setPerformanceShortcutPreview",
         "setHyperBoost",
+        "recoverHyperBoostRestore",
     ];
 
     #[cfg(all(test, feature = "installed-service-candidate"))]
@@ -309,6 +378,7 @@ impl StatusRequest {
             Self::CyclePerformanceShortcut { .. } => 18,
             Self::SetPerformanceShortcutPreview { .. } => 19,
             Self::SetHyperBoost { .. } => 20,
+            Self::RecoverHyperBoostRestore { .. } => 21,
         }]
     }
 
@@ -328,7 +398,7 @@ impl StatusRequest {
         const FAN_STOP: bool = cfg!(feature = "service-fan-stop-v1");
         const SHORTCUT: bool = cfg!(feature = "service-performance-shortcut-v1");
         const HYPERBOOST: bool = cfg!(feature = "service-hyperboost-v1");
-        const COMPILED: [bool; 21] = [
+        const COMPILED: [bool; 22] = [
             BATTERY,
             BATTERY,
             BATTERY,
@@ -349,6 +419,7 @@ impl StatusRequest {
             FAN_STOP,
             SHORTCUT,
             SHORTCUT,
+            HYPERBOOST,
             HYPERBOOST,
         ];
         Self::OPERATIONS
@@ -547,6 +618,10 @@ impl StatusRequest {
                 version,
                 request_id,
             }
+            | Self::RecoverHyperBoostRestore {
+                version,
+                request_id,
+            }
             | Self::GetStatus {
                 version,
                 request_id,
@@ -649,7 +724,11 @@ impl StatusRequest {
                 "signed performance shortcut composition is unavailable",
             ));
         }
-        if matches!(self, Self::SetHyperBoost { .. }) && !cfg!(feature = "service-hyperboost-v1") {
+        if matches!(
+            self,
+            Self::SetHyperBoost { .. } | Self::RecoverHyperBoostRestore { .. }
+        ) && !cfg!(feature = "service-hyperboost-v1")
+        {
             return Err(invalid("signed HyperBoost composition is unavailable"));
         }
         // Managed `IpcMessageCodec`: `Enum.IsDefined(cycle.Source)`, and for a
@@ -1250,6 +1329,30 @@ impl Snapshot {
         }
         .with_unknown_keyboard_driver_mode()
         .with_public_fan_stop()
+    }
+    /// Managed `PadlessHyperBoostEligibility`, `HyperBoostRestorePending` and
+    /// `HyperBoostBlockingControllers`, which the managed contract already
+    /// carries at this protocol version. They are public machine facts, so
+    /// every later projection of this status keeps them.
+    #[cfg(feature = "service-hyperboost-v1")]
+    pub(crate) fn with_hyperboost(mut self, status: &HyperBoostStatus) -> Self {
+        for (member, value) in [
+            (
+                "padlessHyperBoostEligibility",
+                serde_json::json!(status.pad),
+            ),
+            (
+                "hyperBoostRestorePending",
+                serde_json::json!(status.restore_pending == Some(true)),
+            ),
+            (
+                "hyperBoostBlockingControllers",
+                serde_json::json!(status.blockers),
+            ),
+        ] {
+            self.feature_fields.insert(member.into(), value);
+        }
+        self
     }
     /// Managed's Fan Stop status once the host is identified as the model
     /// with reviewed evidence (`FAN_STOP_EVIDENCE_MODEL`). Without the Fan

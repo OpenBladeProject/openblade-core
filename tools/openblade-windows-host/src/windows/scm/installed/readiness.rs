@@ -594,6 +594,7 @@ async fn serve_connection(
                 | StatusRequest::CyclePerformanceShortcut { .. }
                 | StatusRequest::SetPerformanceShortcutPreview { .. }
                 | StatusRequest::SetHyperBoost { .. }
+                | StatusRequest::RecoverHyperBoostRestore { .. }
                 | StatusRequest::ReportApplicationContext { .. }
                 | StatusRequest::UpdateProfiles { .. }
                 | StatusRequest::SetThermalControlPolicy { .. }
@@ -911,6 +912,12 @@ fn mutation_budget(request: &StatusRequest) -> Duration {
             | StatusRequest::ResumeAutomaticFanStop { .. }
             | StatusRequest::SetBatterySaverFanStop { .. }
     ) {
+        return RECIPE_BUDGET;
+    }
+    // And the HyperBoost recovery request, which reads managed's journal
+    // only.
+    #[cfg(feature = "service-hyperboost-v1")]
+    if matches!(request, StatusRequest::RecoverHyperBoostRestore { .. }) {
         return RECIPE_BUDGET;
     }
     if request.battery_request().is_some()

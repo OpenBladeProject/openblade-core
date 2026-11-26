@@ -543,7 +543,18 @@ managed order (`ServiceControlRuntime.cs:12925-12950`,
   runs the recipe again. Before row 31 the recipe is paced once against what
   is left of the source drain (`StatusSource::drain_by`: 2 s, or 2.9 s with
   the keyboard share, from the drain's start), with each cleanup job also
-  bounded by its own 3 s. Every exchange left is charged as `Pace` charges
+  bounded by its own 3 s. The drain cancels a running status observation
+  first and waits for it last, and only until that deadline
+  (`retire_observer`): the observer runs synchronous Windows calls on its own
+  thread and holds no device handle or gate, so a call stalled in it takes no
+  time from the keyboard release, the fan handback or the HyperBoost exit.
+  An observer still running at the deadline fails the Stop after the
+  cleanup, where it used to wait first and skip it. A mutation job is
+  different: the keyboard release cancels one still running, and every job
+  step checks that between its device and Windows calls, a HyperBoost
+  request's pad scan included, but a single call that does not return holds
+  the job thread, and the fan handback then waits for it until the drain's
+  caller ends the Stop. Every exchange left is charged as `Pace` charges
   any recipe, and every row left at the second longest exchange; when they
   do not fit it ends with no row and no setter. A job that ends after 31 or
   40-43 leaves a tail that cannot be closed in the process (51 follows only
@@ -1241,7 +1252,12 @@ manual fans, and exit to the saved performance destination. The feature implies
 as destination 100 and adds the capability marker `service-hyperboost-v1`
 after the HyperBoost exit's. Native reads managed's HyperBoost ownership
 journal read-only and refuses while it is pending; managed recovers an
-unsettled native row through the `hyperBoost` handback family. Both package
+unsettled native row through the `hyperBoost` handback family. The feature
+also serves `recoverHyperBoostRestore`, which answers from managed's journal
+and writes nothing, and fills the status members
+`padlessHyperBoostEligibility`, `hyperBoostRestorePending` and
+`hyperBoostBlockingControllers` from the metadata observation; all four are
+in the managed contract at protocol 90. Both package
 readers refuse the feature and the marker by name ("Owned HyperBoost is not
 admitted for packaging."), so no packaged image carries it. It is
 source-reviewed and has not been run on a laptop. See
