@@ -981,8 +981,21 @@ impl Runtime {
             convergence_loop: Rc::new(std::cell::OnceCell::from(
                 triggers::convergence_loop::Loop::new(Arc::new(hyperboost_journal::read)),
             )),
-            #[cfg(feature = "service-hyperboost-v1")]
+            // Owned HyperBoost leaves at the battery boundary only through
+            // the lifecycle triggers (`hyperboost::Exit`).
+            // Without them nothing would end an owned session after an
+            // unplug, so no probe is composed and every HyperBoost request
+            // replies `hyperboost::UNAVAILABLE` before any read or write.
+            #[cfg(all(
+                feature = "service-hyperboost-v1",
+                feature = "service-profile-triggers-v1"
+            ))]
             hyperboost: Rc::new(std::cell::OnceCell::from(hyperboost::Probes::native())),
+            #[cfg(all(
+                feature = "service-hyperboost-v1",
+                not(feature = "service-profile-triggers-v1")
+            ))]
+            hyperboost: Rc::default(),
             fan_owner: Rc::default(),
             temporary_owner: Rc::default(),
             temporary_pending: Rc::default(),

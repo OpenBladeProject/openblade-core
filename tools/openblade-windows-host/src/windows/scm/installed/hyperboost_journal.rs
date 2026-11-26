@@ -229,6 +229,15 @@ fn timestamp(text: &str) -> bool {
 /// protected path checks every machine record is read with. `None` when the
 /// file does not exist in the verified directory.
 #[cfg(not(test))]
+// Its readers are the HyperBoost probes the lifecycle triggers compose and
+// the convergence loop.
+#[cfg_attr(
+    not(any(
+        feature = "service-profile-triggers-v1",
+        feature = "service-thermal-convergence-v1"
+    )),
+    allow(dead_code)
+)]
 pub(super) fn read() -> io::Result<Option<Vec<u8>>> {
     use crate::windows_protected_path::{self as paths, Policy};
     use std::{ffi::OsStr, io::Read};

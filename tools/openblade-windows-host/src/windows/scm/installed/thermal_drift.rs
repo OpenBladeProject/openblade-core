@@ -315,6 +315,21 @@ impl Tracker {
         self.submitted.manual = None;
     }
 
+    /// Managed `Observe` and then `ConfirmIntentional` for Performance and
+    /// Fans on `reading` (`RestoreFirmwareExitedHyperBoostForPowerSourceTransitionAsync`):
+    /// an exit found firmware already out of owned HyperBoost, so what it
+    /// shows is OpenBlade's own and the transition after it compares from it.
+    #[cfg(feature = "service-hyperboost-v1")]
+    pub(super) fn own_reading(&mut self, reading: ObservedPerformance) {
+        self.observe(reading);
+        if let Some(destination) = destination(reading) {
+            self.own_performance(destination);
+        }
+        if let Some(manual) = manual(reading) {
+            self.own_fans(manual);
+        }
+    }
+
     /// A fan readback that confirmed OpenBlade's fan intent: observed, and
     /// its fans OpenBlade's own. A HyperBoost reading reports no fan mode.
     pub(super) fn own_fans_read(&mut self, readback: ObservedPerformance) {

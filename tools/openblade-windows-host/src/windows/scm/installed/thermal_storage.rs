@@ -812,6 +812,58 @@ impl Storage {
             .lock()
             .map_or(true, |s| fan_owner_outstanding(s.journal.as_deref()))
     }
+    /// Whether native owns HyperBoost (`thermal_history::hyperboost_owned`
+    /// over the active journal tail): only then is a HyperBoost reading
+    /// OpenBlade's own, which the lifecycle exits leave. A poisoned state or
+    /// an unreadable journal reads as not owned, so the reading stays
+    /// external and nothing is written. A rollover moves rows into a sealed
+    /// segment, so a session whose entry rolled out reads as not owned too.
+    #[cfg(all(
+        feature = "service-hyperboost-v1",
+        feature = "service-profile-triggers-v1"
+    ))]
+    pub(super) fn owns_hyperboost(&self) -> bool {
+        self.state.lock().is_ok_and(|s| {
+            crate::thermal_history::hyperboost_owned(s.journal.as_deref().unwrap_or_default())
+                .unwrap_or(false)
+        })
+    }
+    /// Settles native HyperBoost ownership with no firmware write, after an
+    /// exit's fresh reading found firmware already out of HyperBoost: a
+    /// HyperBoost row of `request` Prepared and then KnownNotSubmitted, which
+    /// `hyperboost_owned` reads as the end of ownership. Both appends keep
+    /// `record`'s admission: the Prepared row the ordinary per-write
+    /// authorization and reservation, its retirement the settled-tail checks.
+    #[cfg(all(
+        feature = "service-hyperboost-v1",
+        feature = "service-profile-triggers-v1"
+    ))]
+    pub(super) fn settle_hyperboost(
+        &self,
+        request: &str,
+        owner: &str,
+        caller_pid: u32,
+        session: u32,
+    ) -> io::Result<()> {
+        use sha2::{Digest, Sha256};
+        let intent = format!(
+            "{:x}",
+            Sha256::digest(serde_json::to_vec(&None::<Override>)?)
+        );
+        for progress in [Progress::Prepared, Progress::KnownNotSubmitted] {
+            self.record(
+                request,
+                owner,
+                Destination::HyperBoost,
+                &intent,
+                &None,
+                caller_pid,
+                session,
+                progress,
+            )?;
+        }
+        Ok(())
+    }
     pub(super) fn pending(&self) -> bool {
         self.state.lock().map_or(true, |s| {
             s.quarantined || s.last.as_ref().is_some_and(|e| !settled(e.progress))
