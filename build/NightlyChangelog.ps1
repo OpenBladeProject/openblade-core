@@ -334,7 +334,7 @@ function New-OpenBladeNightlyChangelogContent {
         [Parameter(Mandatory)][string]$BaseVersion,
         [Parameter(Mandatory)][ValidateRange(1, 65535)][int]$CurrentBuildRevision,
         [Parameter(Mandatory)][object[]]$ReleaseRecord,
-        [string]$RepositoryUrl = 'https://github.com/OSSBlade/openblade-core'
+        [string]$RepositoryUrl = 'https://github.com/OpenBladeProject/openblade-core'
     )
 
     $selectedRecords = @(Select-OpenBladeNightlyReleaseRecords `
@@ -603,7 +603,7 @@ function Write-OpenBladeNightlyChangelogSnapshot {
         [Parameter(Mandatory)][string]$CurrentTag,
         [Parameter(Mandatory)][string]$CurrentSourceRevision,
         [Parameter(Mandatory)][DateTimeOffset]$CurrentPublishedAt,
-        [string]$RepositoryUrl = 'https://github.com/OSSBlade/openblade-core'
+        [string]$RepositoryUrl = 'https://github.com/OpenBladeProject/openblade-core'
     )
 
     $currentTagDetails = ConvertFrom-OpenBladeNightlyTag -TagName $CurrentTag

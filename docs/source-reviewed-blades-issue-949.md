@@ -4,7 +4,7 @@ The later [performance and fan review](source-reviewed-thermal-967.md) expands m
 
 The later [lighting review](source-reviewed-lighting.md) adds bounded lighting controls to these profiles. Lighting exclusions below describe the original admission.
 
-Issue [#949](https://github.com/OSSBlade/openblade-core/issues/949) requests
+Issue [#949](https://github.com/OpenBladeProject/openblade-core/issues/949) requests
 RZ09-0409. This review also adds both 2019 Blade Pro 17 variants, RZ09-0287 and
 RZ09-0314. All three are officially supported on reviewed sources; physical validation is pending.
 The [admission manifest](../evidence/source-reviewed-blades/2026-11-12-issue-949-models.json)

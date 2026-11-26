@@ -71,7 +71,7 @@ OpenBlade до их включения в WiX, затем подписывает
   и подтвердить, что приложение в области уведомлений и Session Agent работают.
 - Такой перезапуск недоступен при установке EXE через
   Microsoft Store, поскольку тихую установку запускает Partner Center. Это ограничение
-  описано в исходной [задаче #25](https://github.com/OSSBlade/openblade-core/issues/25).
+  описано в исходной [задаче #25](https://github.com/OpenBladeProject/openblade-core/issues/25).
 
 <a id="versioned-development-builds"></a>
 ## Версии сборок для разработки
@@ -144,7 +144,7 @@ OpenBlade до их включения в WiX, затем подписывает
   графический интерфейс.
 - Вызывающая сторона Store не может выполнить требуемый после тихой установки
   перезапуск с обычным уровнем целостности. Этот этап пока не реализован;
-  см. исходную [задачу #25](https://github.com/OSSBlade/openblade-core/issues/25).
+  см. исходную [задачу #25](https://github.com/OpenBladeProject/openblade-core/issues/25).
 
 Требования к пакету, замечания по сертификации, сведения об используемом оборудовании и оставшиеся
 внешние этапы выпуска описаны в документе
@@ -184,7 +184,7 @@ Nightly — тестовые сборки. Перед установкой пр�
 включённую аттестацию командой:
 
 ```powershell
-gh attestation verify .\OpenBlade-Setup.exe --repo OSSBlade/openblade-core
+gh attestation verify .\OpenBlade-Setup.exe --repo OpenBladeProject/openblade-core
 ```
 
 Прилагаемый JSON содержит точный коммит, последовательный номер версии Nightly,

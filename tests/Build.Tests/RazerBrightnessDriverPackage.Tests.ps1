@@ -58,7 +58,7 @@ Assert-True ($attributeLines -contains
     'The exact package exporter must have canonical LF Git blob content.'
 
 Assert-True ($documentation.IndexOf(
-        'https://github.com/OSSBlade/blade-driver-catalog',
+        'https://github.com/OpenBladeProject/blade-driver-catalog',
         [StringComparison]::Ordinal) -ge 0) `
     'The model-specific exporter documentation must link to the shared catalog.'
 
@@ -83,7 +83,7 @@ foreach ($machineLocalInf in @(
 foreach ($contract in @(
         '/export-driver',
         'OpenBlade.RazerDriverPackageArchive',
-        'OSSBlade/blade-driver-catalog',
+        'OpenBladeProject/blade-driver-catalog',
         'devices/rz09-0581/1532-02e0/1.0.0.78-1.0.0.76/manifest.json',
         'RAZER\DeviceContol',
         'Get-AuthenticodeSignature',
@@ -128,7 +128,7 @@ Assert-True ($archiveManifest.manifestType -eq
 Assert-True ($archiveManifest.schemaVersion -eq 1) `
     'The package archive manifest schema version changed unexpectedly.'
 Assert-True ($archiveManifest.catalogReference.repository -eq
-        'OSSBlade/blade-driver-catalog') `
+        'OpenBladeProject/blade-driver-catalog') `
     'The package archive manifest must identify the catalog repository.'
 Assert-True ($archiveManifest.catalogReference.path -eq
         'devices/rz09-0581/1532-02e0/1.0.0.78-1.0.0.76/manifest.json') `

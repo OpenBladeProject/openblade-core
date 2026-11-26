@@ -3,7 +3,7 @@
   <h1>OpenBlade</h1>
   <p><strong>不用 Razer Synapse，也能管理你的 Razer Blade。</strong></p>
   <p>
-    <a href="https://github.com/OSSBlade/openblade-core/releases">下载</a>
+    <a href="https://github.com/OpenBladeProject/openblade-core/releases">下载</a>
     ·
     <a href="https://openblade.sh/zh-CN/">使用指南</a>
     ·
@@ -86,7 +86,7 @@ OpenBlade 会根据你的型号显示可用设置。兼容性信息见[使用指
 
 ## 安装
 
-1. 从[最新版本](https://github.com/OSSBlade/openblade-core/releases/latest)
+1. 从[最新版本](https://github.com/OpenBladeProject/openblade-core/releases/latest)
    下载 `OpenBlade-Setup.exe`。
 2. 双击运行，选择**安装**。按正常方式启动即可，安装程序会在需要时请求管理员权限。
    如果缺少 .NET 10 Desktop Runtime，安装程序会提供下载和安装选项。
@@ -116,9 +116,9 @@ OpenBlade 检查并确认补丁有效后，才允许两者同时运行。详见
 架构、构建、测试和硬件工具的说明见[开发者指南](docs/developer-guide.md)。
 贡献规则见 [AGENTS.md](AGENTS.md) 和 [VERSIONING.md](VERSIONING.md)。
 
-相关仓库：[用户文档](https://github.com/OSSBlade/openblade-docs)、
+相关仓库：[用户文档](https://github.com/OpenBladeProject/openblade-docs)、
 [Synapse Observer](https://github.com/OpenBladeProject/synapse-observer) 和
-[品牌资源](https://github.com/OSSBlade/openblade-branding)。
+[品牌资源](https://github.com/OpenBladeProject/openblade-branding)。
 
 <a id="license"></a>
 

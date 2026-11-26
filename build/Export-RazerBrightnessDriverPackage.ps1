@@ -9,7 +9,7 @@ Set-StrictMode -Version 3.0
 $ErrorActionPreference = 'Stop'
 
 $script:PackageName = 'Razer-02E0-Driver-Stack-1.0.0.78-1.0.0.76'
-$script:CatalogRepository = 'OSSBlade/blade-driver-catalog'
+$script:CatalogRepository = 'OpenBladeProject/blade-driver-catalog'
 $script:CatalogManifestPath =
     'devices/rz09-0581/1532-02e0/1.0.0.78-1.0.0.76/manifest.json'
 $script:ExpectedSignerSubjectPrefix =

@@ -66,8 +66,8 @@ $nightly6Source = @'
 
 - Initial release.
 
-[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/OSSBlade/openblade-core/releases/tag/v0.1.0
+[Unreleased]: https://github.com/OpenBladeProject/openblade-core/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/OpenBladeProject/openblade-core/releases/tag/v0.1.0
 '@
 
 $nightly7Source = @'
@@ -91,9 +91,9 @@ $nightly7Source = @'
 
 - Initial release.
 
-[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0-nightly.6...HEAD
-[0.1.0-nightly.6]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0...v0.1.0-nightly.6
-[0.1.0]: https://github.com/OSSBlade/openblade-core/releases/tag/v0.1.0
+[Unreleased]: https://github.com/OpenBladeProject/openblade-core/compare/v0.1.0-nightly.6...HEAD
+[0.1.0-nightly.6]: https://github.com/OpenBladeProject/openblade-core/compare/v0.1.0...v0.1.0-nightly.6
+[0.1.0]: https://github.com/OpenBladeProject/openblade-core/releases/tag/v0.1.0
 '@
 
 $nightly8Source = @'
@@ -121,9 +121,9 @@ $nightly8Source = @'
 
 - Initial release.
 
-[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0-nightly.6...HEAD
-[0.1.0-nightly.6]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0...v0.1.0-nightly.6
-[0.1.0]: https://github.com/OSSBlade/openblade-core/releases/tag/v0.1.0
+[Unreleased]: https://github.com/OpenBladeProject/openblade-core/compare/v0.1.0-nightly.6...HEAD
+[0.1.0-nightly.6]: https://github.com/OpenBladeProject/openblade-core/compare/v0.1.0...v0.1.0-nightly.6
+[0.1.0]: https://github.com/OpenBladeProject/openblade-core/releases/tag/v0.1.0
 '@
 
 $latestMain = @'
@@ -155,9 +155,9 @@ $latestMain = @'
 
 - Initial release.
 
-[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0-nightly.6...HEAD
-[0.1.0-nightly.6]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0...v0.1.0-nightly.6
-[0.1.0]: https://github.com/OSSBlade/openblade-core/releases/tag/v0.1.0
+[Unreleased]: https://github.com/OpenBladeProject/openblade-core/compare/v0.1.0-nightly.6...HEAD
+[0.1.0-nightly.6]: https://github.com/OpenBladeProject/openblade-core/compare/v0.1.0...v0.1.0-nightly.6
+[0.1.0]: https://github.com/OpenBladeProject/openblade-core/releases/tag/v0.1.0
 '@
 
 $parsedNightly = ConvertFrom-OpenBladeNightlyTag `
@@ -276,13 +276,13 @@ Assert-Equal 1 ([Regex]::Matches(
         [Regex]::Escape('- Fixed the first nightly regression.')).Count) `
     'A released entry must not remain duplicated under Unreleased.'
 Assert-True ($result.Content.Contains(
-        '[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0-nightly.8...HEAD')) `
+        '[Unreleased]: https://github.com/OpenBladeProject/openblade-core/compare/v0.1.0-nightly.8...HEAD')) `
     'Unreleased must compare from the exact latest nightly tag.'
 Assert-True ($result.Content.Contains(
-        '[0.1.0-nightly.8]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0-nightly.7-attempt.3...v0.1.0-nightly.8')) `
+        '[0.1.0-nightly.8]: https://github.com/OpenBladeProject/openblade-core/compare/v0.1.0-nightly.7-attempt.3...v0.1.0-nightly.8')) `
     'Nightly comparisons must retain the latest successful attempt tag.'
 Assert-True ($result.Content.Contains(
-        '[0.1.0-nightly.7]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0-nightly.6...v0.1.0-nightly.7-attempt.3')) `
+        '[0.1.0-nightly.7]: https://github.com/OpenBladeProject/openblade-core/compare/v0.1.0-nightly.6...v0.1.0-nightly.7-attempt.3')) `
     'The first pending nightly must compare from the recorded baseline tag.'
 Assert-Equal '0.1.0-nightly.7,0.1.0-nightly.8' `
     ($result.PendingVersions -join ',') `
@@ -401,7 +401,7 @@ Assert-True ($markdownEntries[0].Text.Contains('```powershell')) `
 $finalUnreleasedContent = @'
 # Changelog
 
-[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/OpenBladeProject/openblade-core/compare/v0.1.0...HEAD
 
 ## [Unreleased]
 
@@ -673,15 +673,15 @@ try {
         foreach ($reference in @(
                 @{
                     Key = 'Unreleased'
-                    Line = '[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.2.0-nightly.8...HEAD'
+                    Line = '[Unreleased]: https://github.com/OpenBladeProject/openblade-core/compare/v0.2.0-nightly.8...HEAD'
                 },
                 @{
                     Key = '0.2.0-nightly.8'
-                    Line = '[0.2.0-nightly.8]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0-nightly.7-attempt.2...v0.2.0-nightly.8'
+                    Line = '[0.2.0-nightly.8]: https://github.com/OpenBladeProject/openblade-core/compare/v0.1.0-nightly.7-attempt.2...v0.2.0-nightly.8'
                 },
                 @{
                     Key = '0.1.0-nightly.7'
-                    Line = '[0.1.0-nightly.7]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0-nightly.6...v0.1.0-nightly.7-attempt.2'
+                    Line = '[0.1.0-nightly.7]: https://github.com/OpenBladeProject/openblade-core/compare/v0.1.0-nightly.6...v0.1.0-nightly.7-attempt.2'
                 })) {
             Assert-Equal 1 ([Regex]::Matches(
                     $normalizedVersionBump,
@@ -734,10 +734,10 @@ try {
 
 - Initial release.
 
-[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.3.0...HEAD
-[0.3.0]: https://github.com/OSSBlade/openblade-core/compare/v0.2.0-nightly.8...v0.3.0
-[0.2.0-nightly.8]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0-nightly.7-attempt.2...v0.2.0-nightly.8
-[0.1.0]: https://github.com/OSSBlade/openblade-core/releases/tag/v0.1.0
+[Unreleased]: https://github.com/OpenBladeProject/openblade-core/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/OpenBladeProject/openblade-core/compare/v0.2.0-nightly.8...v0.3.0
+[0.2.0-nightly.8]: https://github.com/OpenBladeProject/openblade-core/compare/v0.1.0-nightly.7-attempt.2...v0.2.0-nightly.8
+[0.1.0]: https://github.com/OpenBladeProject/openblade-core/releases/tag/v0.1.0
 '@
         $firstNightlySource = @'
 # Changelog
@@ -766,10 +766,10 @@ try {
 
 - Initial release.
 
-[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.3.0...HEAD
-[0.3.0]: https://github.com/OSSBlade/openblade-core/compare/v0.2.0-nightly.8...v0.3.0
-[0.2.0-nightly.8]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0-nightly.7-attempt.2...v0.2.0-nightly.8
-[0.1.0]: https://github.com/OSSBlade/openblade-core/releases/tag/v0.1.0
+[Unreleased]: https://github.com/OpenBladeProject/openblade-core/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/OpenBladeProject/openblade-core/compare/v0.2.0-nightly.8...v0.3.0
+[0.2.0-nightly.8]: https://github.com/OpenBladeProject/openblade-core/compare/v0.1.0-nightly.7-attempt.2...v0.2.0-nightly.8
+[0.1.0]: https://github.com/OpenBladeProject/openblade-core/releases/tag/v0.1.0
 '@
         [IO.File]::WriteAllText(
             $changelogPath,
