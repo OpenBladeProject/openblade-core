@@ -56,6 +56,11 @@ mod gpu_clock_offsets;
 ))]
 #[path = "nvml_library.rs"]
 mod nvml_library;
+// The claimed, budgeted call thread the GPU worker and the display-brightness
+// lane share.
+#[cfg(feature = "service-thermal-mutation-v1")]
+#[path = "withdrawal_lane.rs"]
+mod withdrawal_lane;
 
 #[cfg(feature = "service-diagnostics-export-v1")]
 #[path = "readiness_export.rs"]

@@ -7,10 +7,11 @@ use serde_json::{Value, json};
 use std::{
     collections::BTreeMap,
     sync::{
-        Mutex,
-        atomic::{AtomicBool, AtomicUsize},
+        Arc, Mutex,
+        atomic::{AtomicBool, AtomicUsize, Ordering},
         mpsc,
     },
+    thread,
 };
 
 // --- The managed-recorded controller vectors ---
@@ -1047,25 +1048,17 @@ fn a_dropped_worker_starts_no_queued_call_and_writes_nothing() {
     let worker = worker(&fake);
     // The first call blocks the worker and a second waits behind it when the
     // worker is dropped, as at Stop.
-    let first: Run<Fake> = Box::new(move |_| {
+    worker.0.enqueue_for_tests(move |_| {
         started.send(()).unwrap();
         hold.recv().unwrap();
     });
-    worker
-        .jobs
-        .try_send((Arc::new(AtomicU8::new(QUEUED)), first))
-        .unwrap();
     running.recv().unwrap();
     let flag = ran.clone();
     let (reply, queued) = mpsc::channel();
-    let job: Run<Fake> = Box::new(move |m| {
+    worker.0.enqueue_for_tests(move |m| {
         flag.store(true, Ordering::SeqCst);
         let _ = reply.send(m.set(DEFAULTS, false).is_ok());
     });
-    worker
-        .jobs
-        .try_send((Arc::new(AtomicU8::new(QUEUED)), job))
-        .unwrap();
     drop(worker);
     release.send(()).unwrap();
     // The worker exits without running the queued call.
