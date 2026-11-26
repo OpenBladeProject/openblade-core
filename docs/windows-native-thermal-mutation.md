@@ -700,6 +700,29 @@ Native differs from managed here in these ways:
   external and excluded, as before. A rollover seals rows into a segment, so
   a session whose entry rolled out reads as not owned and is no longer exited
   by a lifecycle boundary; an explicit exit still works.
+- The history's ownership counts only while no reading since the entry has
+  shown firmware out of HyperBoost (`Tracker::left_hyperboost`,
+  `Runtime::owns_hyperboost`). Managed clears `ownsHyperBoost` at any
+  published observation with HyperBoost inactive (18394-18405), and its
+  explicit disable that finds HyperBoost already off clears it and retires
+  the journal (6965-6994). Natively, every reading the drift tracker observes
+  and an explicit exit that replies `HyperBoost is already off.` end the
+  ownership for every lifecycle exit: the battery boundary, Stop and suspend.
+  A HyperBoost that appears afterwards was entered outside OpenBlade and is
+  neither exited nor adopted. The journal is settled with the HyperBoost row
+  Prepared and KnownNotSubmitted at the next admitted write: the explicit
+  exit's own capture, the next battery boundary, or the Stop or suspend
+  cleanup. A read holds no write admission, so until then only the process
+  knows. The boundary's read-only adoption below stays for an entry no
+  earlier reading contradicted.
+- A restarted Service starts with nothing observed, so its first reading
+  decides: HyperBoost keeps the journal's ownership, and anything else ends
+  it. Native cannot tell a HyperBoost entered outside OpenBlade while the
+  Service was down from the one it entered. Where the earlier process had
+  seen HyperBoost off and could not settle the journal before it stopped (no
+  admitted write: an unsettled row, an outstanding owned fan change, or no
+  cleanup admission at Stop), a HyperBoost active at the restart's first
+  reading reads as owned and is exited at the next boundary.
 - The battery boundary (managed `ApplyFullTransitionAsync` setting
   `pendingOwnedHyperBoostPowerBoundaryExit` on Battery, then
   `ExitOwnedHyperBoostForPowerSourceTransitionAsync`) runs in
@@ -719,7 +742,10 @@ Native differs from managed here in these ways:
   drift. Native then settles ownership in its journal with a HyperBoost row
   Prepared and KnownNotSubmitted under a fresh write capture; managed retires
   its ownership journal. An outstanding owned fan change, a refused capture or
-  a fenced store leaves ownership for the next boundary to read again.
+  a fenced store leaves the journal for the next admitted exit to settle. The
+  reading has ended the ownership either way, so the transition goes on and
+  its own steps name whatever refuses them, such as the outstanding fan
+  change.
 - The boundary needs the console user's admitted write capture, as every
   native reconciliation does. An unplug at the lock screen exits at the first
   admitted attempt after the unlock; managed exits at once.
