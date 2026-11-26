@@ -1,12 +1,15 @@
 //! Lifecycle exits of natively owned HyperBoost (`hyperboost::Exit`) at the
 //! battery boundary of a reconciliation (managed `ApplyFullTransitionAsync`
-//! with `pendingOwnedHyperBoostPowerBoundaryExit`), and the coordinated Stop
-//! (managed `PrepareForShutdownAsync`), which does not exit yet. Ownership
-//! is the thermal history's (`Storage::owns_hyperboost`): a HyperBoost
-//! reading native did not enter stays external. Each case drives the origin
-//! tick or the Stop drain over the rig's lifecycle, store and scripted
-//! mailbox; no hardware or operating-system supplier is reached.
+//! with `pendingOwnedHyperBoostPowerBoundaryExit`). The exits at the
+//! coordinated Stop and at a suspend are in `cleanup`. Ownership is the
+//! thermal history's (`Storage::owns_hyperboost`): a HyperBoost reading
+//! native did not enter stays external. Each case drives the origin tick
+//! over the rig's lifecycle, store and scripted mailbox; no hardware or
+//! operating-system supplier is reached.
 use super::*;
+
+#[path = "hyperboost_cleanup.rs"]
+mod cleanup;
 
 const SELECTOR_HYPERBOOST: u8 = 7;
 const SELECTOR_BALANCED: u8 = 0;
@@ -174,7 +177,7 @@ async fn a_reconciliation_on_ac_leaves_owned_hyperboost() {
     assert_eq!(writes(&rig), before);
     assert_eq!(selectors(&rig), [SELECTOR_HYPERBOOST; 2]);
     assert!(owns(&rig));
-    rig.stop().await;
+    rig.stop_in_hyperboost().await;
 }
 
 /// Managed owns the recovery of its own journal: one it has not
@@ -256,26 +259,5 @@ async fn a_pending_gpu_confirmation_holds_the_boundary_exit() {
     assert_eq!(writes(&rig), before);
     assert_eq!(selectors(&rig), [SELECTOR_HYPERBOOST; 2]);
     assert!(owns(&rig));
-    rig.stop().await;
-}
-
-/// Managed `PrepareForShutdownAsync` exits owned HyperBoost before its
-/// keyboard and fan cleanup; native does not yet. SCM STOP revokes the
-/// loaded origin before the drain (`scm_host::installed_notice`), so no
-/// ordinary write capture is admitted at Stop, and the owned-Stop cleanup
-/// admission covers only the keyboard release and the fan handback. Stop
-/// therefore leaves owned HyperBoost with no setter and no row, completes
-/// its drain, and the ownership survives for the next battery boundary of a
-/// later start.
-#[tokio::test]
-async fn stop_leaves_owned_hyperboost_without_a_write() {
-    let rig = owned().await;
-    let (before, rows) = (writes(&rig), journal(&rig).len());
-    rig.origin.stop();
-    rig.stop().await;
-    assert_eq!(writes(&rig), before);
-    assert_eq!(journal(&rig).len(), rows);
-    assert_eq!(selectors(&rig), [SELECTOR_HYPERBOOST; 2]);
-    assert!(owns(&rig));
-    assert!(!pending(&rig));
+    rig.stop_in_hyperboost().await;
 }

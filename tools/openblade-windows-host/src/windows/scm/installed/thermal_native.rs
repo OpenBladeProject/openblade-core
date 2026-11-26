@@ -386,8 +386,9 @@ impl SettleGuard {
     }
 }
 /// The Service's owned-cleanup admission (`thermal_mutation::Cleanup`): the
-/// keyboard Normal release and the owned fan Automatic handback at Stop, at
-/// shutdown and at a confirmed low-power boundary. It names no console user,
+/// keyboard Normal release, the owned fan Automatic handback and the owned
+/// HyperBoost exit at Stop, at shutdown and at a confirmed low-power
+/// boundary (the fans at Stop and shutdown only). It names no console user,
 /// SID or logon, because the cleanup is the Service's own and must run with
 /// nobody signed in or the session locked (managed
 /// `ReleaseDriverModeCoreAsync` and `FreshLightingCleanupAdmission`). Every

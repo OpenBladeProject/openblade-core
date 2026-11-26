@@ -380,11 +380,17 @@ fn the_compiled_identity_ends_with_the_refused_marker() {
     let identity = std::str::from_utf8(&crate::NATIVE_ARTIFACT_IDENTITY).unwrap();
     let fields: Vec<&str> = identity.split('\n').collect();
     assert_eq!(fields[2], "service");
-    // An ownership build, then a live-reading build, append their own
-    // refused markers after it.
-    let marked = fields[8]
-        .strip_suffix(",service-live-readings-v1")
-        .unwrap_or(fields[8]);
+    // An ownership build, then a live-reading build, then an owned
+    // HyperBoost build append their own refused markers after it.
+    let marked = [
+        ",service-hyperboost-v1",
+        ",service-thermal-hyperboost-exit-v1",
+        ",service-live-readings-v1",
+    ]
+    .iter()
+    .fold(fields[8], |marked, later| {
+        marked.strip_suffix(later).unwrap_or(marked)
+    });
     let marked = marked
         .strip_suffix(",service-keyboard-driver-mode-v1")
         .unwrap_or(marked);

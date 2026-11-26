@@ -5,10 +5,21 @@
 //! generation, within `MAXIMUM_AGE` of the notice, the keyboard's Normal
 //! release under the Service's cleanup admission for that exact generation
 //! (`Cleanup`, `WriteScope::LowPowerCleanup`), so a resume, a DisplayOn or
-//! another suspend ends it at its next authorization. Saved intent is
-//! unchanged; the next active reconciliation applies it. Fast Startup
-//! hibernates the Service instead of stopping it, so its PBT_APMSUSPEND runs
-//! this path, not the shutdown release.
+//! another suspend ends it at its next authorization. With the lifecycle
+//! triggers, owned HyperBoost then leaves in what is left of the window,
+//! under the same generation's cleanup admission (`hyperboost::cleanup`).
+//! Saved intent is unchanged; the next active reconciliation applies it, and
+//! nothing is acquired or entered again before Windows reports the system
+//! active. Fast Startup hibernates the Service instead of stopping it, so its
+//! PBT_APMSUSPEND runs this path, not the shutdown release.
+//!
+//! Managed prepares in the other order, HyperBoost before the keyboard, each
+//! under its own cancellation. Native has the one window, so the keyboard
+//! goes first and keeps the whole share it had. An exit ahead of it could
+//! spend that share, and one that stopped after a setter leaves an unsettled
+//! row, at which the release refuses (`Release::Unsettled`). AGENTS.md rule 1
+//! names the keyboard's Normal release at this boundary, so no HyperBoost
+//! failure, refusal or timeout may skip it.
 //!
 //! The SCM callback that delivered the suspend is held until this
 //! preparation has recorded an outcome for that generation, at most
@@ -50,6 +61,12 @@ const KEYBOARD_SHARE: Duration = keyboard::SHUTDOWN_BUDGET;
 pub(super) struct Prepared {
     generation: Cell<Option<u64>>,
     outcome: Cell<Option<Release>>,
+    // How that generation's owned HyperBoost exit ended.
+    #[cfg(all(
+        feature = "service-hyperboost-v1",
+        feature = "service-profile-triggers-v1"
+    ))]
+    hyperboost: Cell<Option<hyperboost::cleanup::CleanupExit>>,
     // Unset holds nothing: the SCM callback returns at once.
     hold: OnceCell<HoldArm>,
 }
@@ -109,6 +126,13 @@ impl Runtime {
             prepared.outcome.set(Some(Release::Exhausted));
             return Ok(());
         };
+        // The window's end, which bounds the HyperBoost exit after the
+        // keyboard's share.
+        #[cfg(all(
+            feature = "service-hyperboost-v1",
+            feature = "service-profile-triggers-v1"
+        ))]
+        let end = Instant::now() + remaining;
         let keyboard = self
             .release_driver_mode_for(
                 mailbox,
@@ -117,6 +141,20 @@ impl Runtime {
             )
             .await?;
         prepared.outcome.set(Some(keyboard));
+        // After the keyboard, whatever its outcome: only its fatal admission
+        // evidence, which stops the Service, returns before this.
+        #[cfg(all(
+            feature = "service-hyperboost-v1",
+            feature = "service-profile-triggers-v1"
+        ))]
+        {
+            prepared.hyperboost.set(None);
+            let scope = CleanupScope::LowPower {
+                generation: transition.generation,
+            };
+            let exit = self.exit_owned_hyperboost_for(mailbox, scope, end).await?;
+            prepared.hyperboost.set(Some(exit));
+        }
         Ok(())
     }
 }
@@ -126,6 +164,16 @@ impl Runtime {
     /// The last prepared generation's outcome.
     pub(in super::super) fn low_power_outcome_for_tests(&self) -> Option<Release> {
         self.low_power_prepared.outcome.get()
+    }
+    /// How the last prepared generation's owned HyperBoost exit ended.
+    #[cfg(all(
+        feature = "service-hyperboost-v1",
+        feature = "service-profile-triggers-v1"
+    ))]
+    pub(in super::super) fn low_power_hyperboost_for_tests(
+        &self,
+    ) -> Option<hyperboost::cleanup::CleanupExit> {
+        self.low_power_prepared.hyperboost.get()
     }
     /// Arms `lifecycle`'s suspend hold for this preparation, on this thread,
     /// as `Runtime::native` arms the origin's; it may be set once.

@@ -1338,6 +1338,36 @@ impl StatusSource for GuardedStatus {
                 if result.is_ok() {
                     result = fans;
                 }
+                // Owned HyperBoost leaves last (`Runtime::stop_hyperboost`).
+                // Managed exits it first (`PrepareForShutdownAsync`), on the
+                // caller's budget, and then gives the keyboard and the fans
+                // a separate reserve. Native has the one drain deadline, so
+                // the exit goes after them and takes only what they left:
+                // - an exit ahead of them could spend their time, and one
+                //   that stopped after a setter leaves an unsettled row, at
+                //   which the keyboard release and the fan handback both
+                //   refuse (`Release::Unsettled`, "remains unresolved"). Last,
+                //   no HyperBoost failure, refusal or timeout can skip either;
+                // - a fan change OpenBlade still owns refuses every exit, and
+                //   the handback closes it without a setter, since HyperBoost
+                //   reads Automatic fans.
+                // A fan or keyboard failure never skips the exit either: it
+                // runs whatever they returned, and only an unsettled journal
+                // row, which fences every write, stops it.
+                #[cfg(all(
+                    feature = "service-hyperboost-v1",
+                    feature = "service-profile-triggers-v1"
+                ))]
+                {
+                    let hyperboost = if self.origin.admit_owned_stop().is_ok() {
+                        runtime.stop_hyperboost(&self.mailbox, deadline).await
+                    } else {
+                        runtime.refuse_stop_hyperboost()
+                    };
+                    if result.is_ok() {
+                        result = hyperboost;
+                    }
+                }
             }
             #[cfg(feature = "service-mailbox-observation-v1")]
             {

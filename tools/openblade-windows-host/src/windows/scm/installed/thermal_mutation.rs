@@ -150,6 +150,13 @@ mod profiles;
 #[cfg(feature = "service-profile-triggers-v1")]
 #[path = "request_triggers.rs"]
 mod triggers;
+#[cfg(all(
+    test,
+    feature = "service-hyperboost-v1",
+    feature = "service-profile-triggers-v1",
+    feature = "service-keyboard-driver-mode-v1"
+))]
+pub(super) use hyperboost::cleanup::CleanupExit as HyperBoostCleanupExit;
 #[cfg(all(test, feature = "service-hyperboost-v1"))]
 pub(super) use hyperboost::{Pad, Probes};
 #[cfg(feature = "service-keyboard-driver-mode-v1")]
@@ -238,11 +245,14 @@ impl Settle for SettleGuard {
 /// controller absence, and the exact original mailbox custody and generation.
 ///
 /// It is not a `Fresh` or a `Settle`, so no request, reconciliation, acquire
-/// or settle permit can hold one. Exactly two permits do, and each fixes what
-/// it may write: with the keyboard owner, its release (`keyboard::DriverModePermit::release`,
-/// Normal after a fresh read of Driver) and the owned fan handback
+/// or settle permit can hold one. Exactly three permits do, and each fixes
+/// what it may write: with the keyboard owner, its release (`keyboard::DriverModePermit::release`,
+/// Normal after a fresh read of Driver), the owned fan handback
 /// (`fan::FanHandbackPermit`, the owner's own Automatic cleanup stages after a
-/// fresh read of its manual state).
+/// fresh read of its manual state) and, with owned HyperBoost and the
+/// lifecycle triggers, its exit (`hyperboost::cleanup`, managed's Balanced
+/// restore after a fresh read of HyperBoost the journal says native owns).
+/// None resolves or applies saved intent.
 #[cfg(feature = "service-fan-mutation-v2")]
 pub(super) trait Cleanup: Send + Sync {
     fn scope(&self) -> CleanupScope;
@@ -416,8 +426,9 @@ pub(super) struct Runtime {
     #[cfg(feature = "service-profile-triggers-v1")]
     admission_epoch: Rc<std::cell::OnceCell<PowerProbe>>,
     // The Service's owned-cleanup admission (`Cleanup`), for the fan
-    // handback at Stop and shutdown and, with the keyboard owner, its
-    // release there and at low power. Unset admits no cleanup.
+    // handback at Stop and shutdown, with the keyboard owner its release
+    // there and at low power, and the owned HyperBoost exit at both. Unset
+    // admits no cleanup.
     #[cfg(feature = "service-fan-mutation-v2")]
     cleanup: Rc<std::cell::OnceCell<CleanupFactory>>,
     // How long ago a gate transition's QPC timestamp was (`Lifecycle::age`).
@@ -463,6 +474,21 @@ pub(super) struct Runtime {
     // Pins of settled fan and temporary-charge records, which the next
     // mutation Reader to retire unpins (`mutation::SettledPins`).
     settled_pins: Arc<SettledPins>,
+    // The store of the latest capture of any caller (`capture_scoped`), for
+    // the Service's own cleanups, which have no caller to capture one: the
+    // keyboard release's journal check and the owned HyperBoost exit's
+    // ownership and rows. Every write in the process is captured first, the
+    // captures are serialized by the gate, and every store recovers the last
+    // row of the one custody journal when it opens, so this store has seen
+    // every row, whichever user wrote it.
+    #[cfg(any(
+        feature = "service-keyboard-driver-mode-v1",
+        all(
+            feature = "service-hyperboost-v1",
+            feature = "service-profile-triggers-v1"
+        )
+    ))]
+    captured: Rc<RefCell<Option<Arc<Storage>>>>,
     // Keyboard Driver-mode ownership, held in memory (`keyboard`).
     #[cfg(feature = "service-keyboard-driver-mode-v1")]
     keyboard: Rc<keyboard::Keyboard>,
@@ -755,6 +781,14 @@ impl Runtime {
             temporary_event: Rc::default(),
             fan_pending: Rc::default(),
             settled_pins: Arc::default(),
+            #[cfg(any(
+                feature = "service-keyboard-driver-mode-v1",
+                all(
+                    feature = "service-hyperboost-v1",
+                    feature = "service-profile-triggers-v1"
+                )
+            ))]
+            captured: Rc::default(),
             #[cfg(feature = "service-keyboard-driver-mode-v1")]
             keyboard: Rc::default(),
             gate: Rc::default(),
@@ -1007,6 +1041,14 @@ impl Runtime {
             temporary_event: Rc::default(),
             fan_pending: Rc::default(),
             settled_pins: Arc::default(),
+            #[cfg(any(
+                feature = "service-keyboard-driver-mode-v1",
+                all(
+                    feature = "service-hyperboost-v1",
+                    feature = "service-profile-triggers-v1"
+                )
+            ))]
+            captured: Rc::default(),
             #[cfg(feature = "service-keyboard-driver-mode-v1")]
             keyboard: Rc::default(),
             gate: Rc::default(),

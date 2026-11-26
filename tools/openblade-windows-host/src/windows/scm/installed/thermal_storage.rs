@@ -828,12 +828,34 @@ impl Storage {
                 .unwrap_or(false)
         })
     }
+    /// The session whose entry left HyperBoost owned, as its Confirmed row
+    /// names it (`thermal_history::hyperboost_owner`), when that row is this
+    /// store's user's. An exit the Service makes on its own
+    /// (`hyperboost::cleanup`) has no caller, so it journals its rows for the
+    /// session that entered. `None` when native owns nothing, or when the
+    /// entry is another user's, whose rows this store cannot write.
+    #[cfg(all(
+        feature = "service-hyperboost-v1",
+        feature = "service-profile-triggers-v1"
+    ))]
+    pub(super) fn hyperboost_owner(&self) -> Option<HyperBoostOwner> {
+        let s = self.state.lock().ok()?;
+        let owner =
+            crate::thermal_history::hyperboost_owner(s.journal.as_deref().unwrap_or_default())
+                .ok()??;
+        (owner.user_sid == self.user_sid).then_some(HyperBoostOwner {
+            sid: owner.user_sid,
+            caller_pid: owner.caller_pid,
+            session: owner.session,
+        })
+    }
     /// Settles native HyperBoost ownership with no firmware write, after an
     /// exit's fresh reading found firmware already out of HyperBoost: a
     /// HyperBoost row of `request` Prepared and then KnownNotSubmitted, which
     /// `hyperboost_owned` reads as the end of ownership. Both appends keep
     /// `record`'s admission: the Prepared row the ordinary per-write
-    /// authorization and reservation, its retirement the settled-tail checks.
+    /// authorization and reservation, or under `cleanup` that scope's
+    /// (`record_cleanup`), and its retirement the settled-tail checks.
     #[cfg(all(
         feature = "service-hyperboost-v1",
         feature = "service-profile-triggers-v1"
@@ -844,6 +866,7 @@ impl Storage {
         owner: &str,
         caller_pid: u32,
         session: u32,
+        cleanup: Option<CleanupScope>,
     ) -> io::Result<()> {
         use sha2::{Digest, Sha256};
         let intent = format!(
@@ -851,15 +874,18 @@ impl Storage {
             Sha256::digest(serde_json::to_vec(&None::<Override>)?)
         );
         for progress in [Progress::Prepared, Progress::KnownNotSubmitted] {
-            self.record(
-                request,
-                owner,
-                Destination::HyperBoost,
-                &intent,
-                &None,
-                caller_pid,
-                session,
+            self.append(
+                Row {
+                    request,
+                    owner,
+                    destination: Destination::HyperBoost,
+                    intent: &intent,
+                    requested: &None,
+                    caller_pid,
+                    session,
+                },
                 progress,
+                cleanup,
             )?;
         }
         Ok(())
@@ -1798,6 +1824,59 @@ impl Storage {
         session: u32,
         progress: Progress,
     ) -> io::Result<()> {
+        self.append(
+            Row {
+                request,
+                owner,
+                destination,
+                intent,
+                requested,
+                caller_pid,
+                session,
+            },
+            progress,
+            None,
+        )
+    }
+    /// `record` for a row of the Service's own cleanup under `scope`
+    /// (`hyperboost::cleanup`): the same continuity and settled-tail checks,
+    /// journaled under that scope's custody admission
+    /// (`Files::replace_cleanup`) in place of the ordinary one.
+    ///
+    /// A cleanup never rolls the journal over. An ordinary Prepared row
+    /// reserves its chain through custody, which seals the active segment
+    /// when the chain does not fit, under the ordinary admission a cleanup
+    /// does not hold. A cleanup's chain must fit the active segment as it
+    /// is; otherwise the row is refused as known capacity, with nothing
+    /// written, as the fan handback only ever appends rows its request
+    /// reserved.
+    #[cfg(all(
+        feature = "service-hyperboost-v1",
+        feature = "service-profile-triggers-v1"
+    ))]
+    pub(super) fn record_cleanup(
+        &self,
+        scope: CleanupScope,
+        row: Row<'_>,
+        progress: Progress,
+    ) -> io::Result<()> {
+        self.append(row, progress, Some(scope))
+    }
+    fn append(
+        &self,
+        row: Row<'_>,
+        progress: Progress,
+        cleanup: Option<CleanupScope>,
+    ) -> io::Result<()> {
+        let Row {
+            request,
+            owner,
+            destination,
+            intent,
+            requested,
+            caller_pid,
+            session,
+        } = row;
         let mut s = self.state.lock().map_err(|_| denied())?;
         if s.quarantined {
             return Err(denied());
@@ -1887,15 +1966,28 @@ impl Storage {
             {
                 return Err(crate::thermal_history::capacity_refusal());
             }
-            match self.files.reserve(s.journal.as_deref(), needed) {
-                Ok(journal) => s.journal = journal,
-                Err(error) if crate::thermal_history::known_capacity_refusal(&error) => {
-                    return Err(error);
+            if cleanup.is_some() {
+                // No rollover under a cleanup admission (`record_cleanup`).
+                if s.journal
+                    .as_deref()
+                    .unwrap_or_default()
+                    .len()
+                    .checked_add(needed)
+                    .is_none_or(|n| n > crate::thermal_history::SEGMENT)
+                {
+                    return Err(crate::thermal_history::capacity_refusal());
                 }
-                Err(error) => {
-                    s.quarantined = true;
-                    s.preparation_failed = true;
-                    return Err(error);
+            } else {
+                match self.files.reserve(s.journal.as_deref(), needed) {
+                    Ok(journal) => s.journal = journal,
+                    Err(error) if crate::thermal_history::known_capacity_refusal(&error) => {
+                        return Err(error);
+                    }
+                    Err(error) => {
+                        s.quarantined = true;
+                        s.preparation_failed = true;
+                        return Err(error);
+                    }
                 }
             }
         }
@@ -1912,10 +2004,14 @@ impl Storage {
         // custody admits without a live lifecycle epoch, as the fan journal
         // does: the low-power gate or a stop that ends the request must not
         // strand its own Prepared row. Every other append keeps the ordinary
-        // per-write authorization.
+        // per-write authorization, or the cleanup scope's for the Service's
+        // own cleanup.
         let result = if progress == Progress::KnownNotSubmitted {
             self.files
                 .replace_retired(JOURNAL, s.journal.as_deref(), &bytes)
+        } else if let Some(scope) = cleanup {
+            self.files
+                .replace_cleanup(JOURNAL, scope, s.journal.as_deref(), &bytes)
         } else {
             self.files.replace(JOURNAL, s.journal.as_deref(), &bytes)
         };
@@ -1934,6 +2030,29 @@ impl Storage {
         s.last = Some(entry);
         Ok(())
     }
+}
+/// The session that entered the HyperBoost native owns
+/// (`Storage::hyperboost_owner`).
+#[cfg(all(
+    feature = "service-hyperboost-v1",
+    feature = "service-profile-triggers-v1"
+))]
+#[derive(Debug, PartialEq, Eq)]
+pub(super) struct HyperBoostOwner {
+    pub(super) sid: String,
+    pub(super) caller_pid: u32,
+    pub(super) session: u32,
+}
+/// The journal fields of one performance row but its progress
+/// (`Storage::record`).
+pub(super) struct Row<'a> {
+    pub(super) request: &'a str,
+    pub(super) owner: &'a str,
+    pub(super) destination: Destination,
+    pub(super) intent: &'a str,
+    pub(super) requested: &'a Option<Override>,
+    pub(super) caller_pid: u32,
+    pub(super) session: u32,
 }
 
 // This reader never migrates or writes the aggregate; with service-profiles-v1

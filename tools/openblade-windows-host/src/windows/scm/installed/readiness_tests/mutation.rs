@@ -1616,6 +1616,30 @@ impl Rig {
         source.drain().await.unwrap();
         source.confirm_drained().unwrap();
     }
+    /// Stops a rig whose case leaves HyperBoost on, in production order:
+    /// SCM STOP revokes the origin before the drain. With the lifecycle
+    /// triggers native owns that HyperBoost, and these rigs wire no cleanup
+    /// admission, so the Stop's own exit is refused: it reports the
+    /// HyperBoost it leaves and sends no setter
+    /// (`hyperboost_cleanup` covers the admitted exit).
+    #[cfg(feature = "service-hyperboost-v1")]
+    async fn stop_in_hyperboost(&self) {
+        let writes = self.port.state.lock().unwrap().writes;
+        self.origin.stop();
+        let mut source = self.source.lock().await;
+        let drained = source.drain().await;
+        source.confirm_drained().unwrap();
+        if let Err(error) = drained {
+            assert!(
+                cfg!(feature = "service-profile-triggers-v1")
+                    && error
+                        .to_string()
+                        .contains("Owned HyperBoost was not exited at Stop"),
+                "{error}"
+            );
+        }
+        assert_eq!(self.port.state.lock().unwrap().writes, writes);
+    }
 }
 fn value(preset: i32, lifetime: u8) -> Value {
     json!({"value":preset,"lifetime":lifetime,"customPerformance":null,"gpuClockTuning":null})

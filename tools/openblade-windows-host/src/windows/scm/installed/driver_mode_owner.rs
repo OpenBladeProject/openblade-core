@@ -212,10 +212,6 @@ pub(super) struct Keyboard {
     started: Cell<bool>,
     /// When the next step is due; `None` until the first eligible tick.
     due: Cell<Option<Instant>>,
-    /// The store of the latest capture of any caller (`captured_store`),
-    /// whose unsettled journal row blocks a release (managed
-    /// `RequiresReconciliation`).
-    storage: RefCell<Option<Arc<Storage>>>,
     /// The shutdown release job started.
     shut_down: Cell<bool>,
     /// The suspend generation whose release job last started.
@@ -553,17 +549,6 @@ impl Runtime {
         Ok(Some((storage, fresh)))
     }
 
-    /// Keeps the store of every capture for the release's journal check
-    /// (`Runtime::capture_scoped`). Every write in the process is captured
-    /// first, the captures are serialized by the gate, and every store
-    /// recovers the last row of the one custody journal when it opens, so the
-    /// latest capture's store has seen every row, whichever user wrote it.
-    /// A console capture alone would miss a row another console user's
-    /// request wrote after the owner's last step.
-    pub(super) fn captured_store(&self, storage: &Arc<Storage>) {
-        *self.keyboard.storage.borrow_mut() = Some(storage.clone());
-    }
-
     /// One acquire attempt under a fresh capture. `None` when it was refused
     /// before any exchange: managed returns without publishing while a fan or
     /// laptop-control write is unsettled, and a refused capture or job keeps
@@ -789,8 +774,13 @@ impl Runtime {
         if self.fan_unsettled() {
             return Ok(Release::FanBlocked);
         }
-        if keyboard
-            .storage
+        // An unsettled journal row blocks the release (managed
+        // `RequiresReconciliation`). The latest capture's store has seen
+        // every row (`Runtime::captured`); a console capture alone would miss
+        // one another console user's request wrote after the owner's last
+        // step.
+        if self
+            .captured
             .borrow()
             .as_ref()
             .is_some_and(|storage| storage.pending())

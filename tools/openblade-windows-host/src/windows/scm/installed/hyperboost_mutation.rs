@@ -36,12 +36,17 @@
 //! Native ownership is the thermal history's (`thermal_history::hyperboost_owned`,
 //! `Storage::owns_hyperboost`): a settled HyperBoost entry with no later
 //! confirmed exit or HyperBoost retirement. With the lifecycle triggers, an
-//! owned session leaves at the battery boundary of a reconciliation (`Exit`);
-//! without them no probe is composed, so nothing enters. Stop, low-power and
-//! display-off exits are not implemented (see "Owned HyperBoost"
-//! in docs/windows-native-thermal-mutation.md).
+//! owned session leaves at the battery boundary of a reconciliation (`Exit`),
+//! and at the coordinated Stop and a confirmed suspend under the Service's
+//! cleanup admission (`cleanup`); without them no probe is composed, so
+//! nothing enters. There is no display-off exit (see "Owned HyperBoost" in
+//! docs/windows-native-thermal-mutation.md).
 use super::*;
 use openblade_domain::thermal_observation::ObservedPerformance;
+
+#[cfg(feature = "service-profile-triggers-v1")]
+#[path = "hyperboost_cleanup.rs"]
+pub(super) mod cleanup;
 
 /// The cooling pad's USB identity (managed `HyperBoostEligibilitySource`,
 /// 1532:0F43), as Windows names it in an interface's hardware IDs.
@@ -662,7 +667,7 @@ impl Runtime {
             return Ok(false);
         };
         let owner = format!("{:x}", Sha256::digest(proof.generation));
-        match storage.settle_hyperboost(id, &owner, pid, caller.session) {
+        match storage.settle_hyperboost(id, &owner, pid, caller.session, None) {
             Ok(()) => Ok(true),
             Err(error) if is_fatal_admission(&error) => Err(error),
             Err(_) => Ok(false),

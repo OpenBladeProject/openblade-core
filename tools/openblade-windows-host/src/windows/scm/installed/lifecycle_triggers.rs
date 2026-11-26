@@ -666,7 +666,7 @@ impl Runtime {
 /// second row chain under the id of its last row, so the id is distinct
 /// across ticks and Service restarts: the process id, the wall clock and a
 /// process-wide counter.
-fn lifecycle_request() -> String {
+pub(in super::super) fn lifecycle_request() -> String {
     static NEXT: AtomicU64 = AtomicU64::new(0);
     let at = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
