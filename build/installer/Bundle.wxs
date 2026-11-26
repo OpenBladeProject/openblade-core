@@ -8,8 +8,8 @@
       Name="OpenBlade"
       Version="$(OpenBladeVersion)"
       Manufacturer="OSSBlade"
-      AboutUrl="https://github.com/OSSBlade/openblade-core"
-      HelpUrl="https://github.com/OSSBlade/openblade-docs"
+      AboutUrl="https://github.com/OpenBladeProject/openblade-core"
+      HelpUrl="https://github.com/OpenBladeProject/openblade-docs"
       IconSourceFile="!(bindpath.BrandAssets)\OpenBlade.Installer.ico"
       Condition="VersionNT64 &gt;= v10.0 AND WindowsBuildNumber &gt;= 26100"
       Compressed="yes">

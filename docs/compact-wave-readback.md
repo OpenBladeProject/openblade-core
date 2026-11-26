@@ -1,6 +1,6 @@
 # Compact Wave lighting readback
 
-Issue [#945](https://github.com/OSSBlade/openblade-core/issues/945) reports
+Issue [#945](https://github.com/OpenBladeProject/openblade-core/issues/945) reports
 keyboard and logo controls blocked on Blade 14 (2025), RZ09-0530 (`1532:02C5`).
 Its diagnostic export records successful `0F/82 [01 05 00]` queries returning
 `01 05 04`, successful brightness readback `01 05 2D`, and rejection before any

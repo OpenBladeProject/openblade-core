@@ -400,7 +400,7 @@ internal static class ExperimentalBladeModels
             model.ModelNumber, model.ProductId, model.ProductName);
         return contracts.Count == 0 ? [] :
             [new("FanStopAndGuardianAuto", "FirmwareSourceBackedWithoutPhysicalValidation",
-                ["https://github.com/OSSBlade/openblade-core/blob/main/docs/fan-stop-model-coverage.md",
+                ["https://github.com/OpenBladeProject/openblade-core/blob/main/docs/fan-stop-model-coverage.md",
                     .. contracts.Select(contract => $"{contract.FirmwareIdentity};SHA256={contract.FirmwareSha256}")])];
     }
 

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/OSSBlade/openblade-core/main/docs/schemas/openblade-keyboard-lighting-v1.schema.json",
+  "$id": "https://raw.githubusercontent.com/OpenBladeProject/openblade-core/main/docs/schemas/openblade-keyboard-lighting-v1.schema.json",
   "title": "OpenBlade keyboard lighting file version 1",
   "description": "A data-only OpenBlade keyboard lighting effect preset.",
   "type": "object",

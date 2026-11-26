@@ -28,6 +28,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Links in the app and installer, including About, the changelog and the update check, now go straight to the project's current GitHub home instead of relying on a redirect from its former name. ([#1012](https://github.com/OpenBladeProject/openblade-core/pull/1012))
 - The notice shown while Synapse or other Razer software is running listed process names and didn't say what to do. It now names the app, says what it can change, and tells you to quit Synapse from its tray icon. ([#1011](https://github.com/OpenBladeProject/openblade-core/pull/1011))
 - Experimental Razer-driver SnapTap and function-row handling now hands A, D and the F keys back to Windows when a key it sends doesn't arrive, instead of leaving them untypeable. Turn the feature off and on to retry. ([#1008](https://github.com/OpenBladeProject/openblade-core/pull/1008))
 - Experimental Razer-driver function-row media keys on Blade 16 (2026, RZ09-0581) and Blade 16 (2025, RZ09-0528) now work right away, without pressing Fn first after sign-in, unplugging the charger or switching input methods. ([#1007](https://github.com/OpenBladeProject/openblade-core/pull/1007))

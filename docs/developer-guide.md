@@ -325,7 +325,7 @@ entry. `-DotNetRuntimePath` supplies an explicit installer instead of the cache.
   that the Tray and Session Agent are running
 - Microsoft Store quiet installs still lack the caller-owned relaunch above;
   see the [submission notes](microsoft-store-submission.md) and the original
-  [launch-gap report](https://github.com/OSSBlade/openblade-core/issues/25)
+  [launch-gap report](https://github.com/OpenBladeProject/openblade-core/issues/25)
 
 See [build, installation, and Nightly releases](build-install-and-nightly.md)
 for development revisions, recovery commands, signing, Store constraints, and

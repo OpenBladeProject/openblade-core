@@ -479,7 +479,7 @@ public sealed class UpdateCheckViewModelTests
             "\"release\""));
 
     private static Uri ReleaseUri { get; } = new(
-        "https://github.com/OSSBlade/openblade-core/releases/tag/v1.1.0");
+        "https://github.com/OpenBladeProject/openblade-core/releases/tag/v1.1.0");
 
     private static ReleaseUpdateInfo CurrentRelease { get; } =
         new(new Version(1, 0, 0, 0), "v1.0.0", ReleaseUri);
