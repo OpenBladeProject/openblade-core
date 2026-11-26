@@ -231,3 +231,23 @@ pub(crate) fn ensure_no_reparse_points(
     }
     Ok(())
 }
+
+/// Managed `OpenProtectedFile`'s walk over `is_reparse_point`, which reads
+/// one path's attributes: the path and every directory above it, the drive
+/// root included.
+pub(crate) fn ensure_protected_components(
+    path: &str,
+    mut is_reparse_point: impl FnMut(&str) -> std::io::Result<bool>,
+) -> Result<(), Reject> {
+    let mut current = Some(path);
+    while let Some(path) = current {
+        if is_reparse_point(path)? {
+            return Err(reject(
+                "ReparsePoint",
+                "Driver package paths may not contain reparse points.",
+            ));
+        }
+        current = parent(path);
+    }
+    Ok(())
+}

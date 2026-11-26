@@ -333,6 +333,8 @@ struct Fake {
     trust: RefCell<io::Result<()>>,
     verified: Cell<usize>,
     members: RefCell<Vec<String>>,
+    // Called while Windows would be verifying the catalog.
+    verifying: RefCell<Option<Box<dyn Fn()>>>,
 }
 
 fn key(path: &str) -> String {
@@ -350,6 +352,7 @@ impl Fake {
             trust: RefCell::new(Ok(())),
             verified: Cell::new(0),
             members: RefCell::default(),
+            verifying: RefCell::default(),
         };
         let services = format!(r"SYSTEM\CurrentControlSet\Services\{SERVICE}");
         fake.set(&services, "Type", Registry::Number(1));
@@ -436,6 +439,9 @@ impl Machine for Fake {
     fn verify_catalog(&self, catalog: &str, members: &[&str]) -> io::Result<()> {
         assert_eq!(catalog, store("rzcommon.cat"));
         self.verified.set(self.verified.get() + 1);
+        if let Some(verifying) = &*self.verifying.borrow() {
+            verifying();
+        }
         *self.members.borrow_mut() = members.iter().map(|member| (*member).to_owned()).collect();
         match &*self.trust.borrow() {
             Ok(()) => Ok(()),
@@ -889,4 +895,85 @@ fn the_trust_cache_clears_when_full_and_refuses_when_poisoned() {
         )
     );
     assert_eq!(fake.verified.get(), 18);
+}
+
+/// WinVerifyTrust runs without the cache's lock, so another thread's capture
+/// the cache answers never waits behind it; the verified identity is then
+/// cached.
+#[test]
+fn the_trust_cache_is_unlocked_while_windows_verifies() {
+    let fake = Fake::installed();
+    let cache = std::sync::Arc::new(Mutex::default());
+    let unlocked = std::rc::Rc::new(Cell::new(None));
+    *fake.verifying.borrow_mut() = Some(Box::new({
+        let (cache, unlocked) = (cache.clone(), unlocked.clone());
+        move || unlocked.set(Some(cache.try_lock().is_ok()))
+    }));
+    let now = Instant::now();
+    assert!(fake.capture(&cache, now).trusted());
+    assert_eq!(unlocked.get(), Some(true));
+    assert!(fake.capture(&cache, now).trusted());
+    assert_eq!(fake.verified.get(), 1, "the verified identity is cached");
+}
+
+/// Managed `OpenProtectedFile`: the file and every directory above it, the
+/// drive root included, are read, and a reparse point anywhere refuses
+/// before the file is opened.
+#[test]
+fn the_protected_open_walks_every_component_through_the_root() {
+    use super::paths::ensure_protected_components;
+    let path = r"C:\Windows\System32\drivers\RzCommon.sys";
+    let mut read = Vec::new();
+    ensure_protected_components(path, |component| {
+        read.push(component.to_owned());
+        Ok(false)
+    })
+    .unwrap();
+    assert_eq!(
+        read,
+        [
+            path,
+            r"C:\Windows\System32\drivers",
+            r"C:\Windows\System32",
+            r"C:\Windows",
+            r"C:\",
+        ]
+    );
+    for linked in [path, r"C:\Windows\System32", r"C:\"] {
+        let refused =
+            ensure_protected_components(path, |component| Ok(component == linked)).unwrap_err();
+        assert_eq!(
+            (refused.reason, refused.message.as_str()),
+            (
+                "ReparsePoint",
+                "Driver package paths may not contain reparse points."
+            ),
+            "{linked}"
+        );
+    }
+    // A component that cannot be read refuses with its own error.
+    let unreadable =
+        ensure_protected_components(path, |_| Err(io::Error::from_raw_os_error(5))).unwrap_err();
+    assert_eq!(unreadable.reason, "PackageInspectionFailed");
+    assert!(
+        !unreadable.message.contains("os error"),
+        "{}",
+        unreadable.message
+    );
+}
+
+/// A Windows error's reason carries its system text alone, as managed's
+/// `Win32Exception.Message` does.
+#[test]
+fn an_inspection_failure_carries_the_system_text_without_the_os_error_suffix() {
+    let windows = io::Error::from_raw_os_error(2);
+    let text = windows.to_string();
+    let rejected = Reject::from(windows);
+    assert_eq!(rejected.reason, "PackageInspectionFailed");
+    assert_eq!(
+        rejected.message,
+        text.strip_suffix(" (os error 2)").unwrap()
+    );
+    let other = Reject::from(io::Error::other("driver trust cache poisoned"));
+    assert_eq!(other.message, "driver trust cache poisoned");
 }

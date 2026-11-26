@@ -54,7 +54,7 @@ use windows_sys::{
 };
 
 use super::package::{MAXIMUM_PACKAGE_FILE, Machine as PackageMachine, Opened, Registry};
-use super::paths::{self, eq_ci, full_path, parent};
+use super::paths::{self, eq_ci, full_path};
 use super::{
     Content, MICROSOFT_HARDWARE_COMPATIBILITY_PUBLISHER, Reject, matches_publisher, reject,
     validate_publishers, verify_member_algorithms,
@@ -203,18 +203,11 @@ impl PackageMachine for Machine {
                 "The driver path is outside its protected Windows directory.",
             )
         })?;
-        let mut current = Some(full.as_str());
-        while let Some(path) = current {
-            if std::fs::symlink_metadata(path)?.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT
-                != 0
-            {
-                return Err(reject(
-                    "ReparsePoint",
-                    "Driver package paths may not contain reparse points.",
-                ));
-            }
-            current = parent(path);
-        }
+        paths::ensure_protected_components(&full, |component| {
+            Ok(std::fs::symlink_metadata(component)?.file_attributes()
+                & FILE_ATTRIBUTE_REPARSE_POINT
+                != 0)
+        })?;
         let mut file = OpenOptions::new()
             .read(true)
             .share_mode(FILE_SHARE_READ)

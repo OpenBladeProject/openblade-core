@@ -276,16 +276,23 @@ fn capture_core(
         .join("\n")
         .as_bytes(),
     ));
-    let mut cache = cache
-        .lock()
-        .map_err(|_| io::Error::other("driver trust cache poisoned"))?;
-    let fresh = cache
+    let locked = || {
+        cache
+            .lock()
+            .map_err(|_| io::Error::other("driver trust cache poisoned"))
+    };
+    let fresh = locked()?
         .0
         .get(&identity)
         .is_some_and(|verified| now.saturating_duration_since(*verified) < TRUST_LIFETIME);
     if !fresh {
         *stage = "CatalogTrust";
+        // WinVerifyTrust runs without the cache's lock, so a capture the
+        // cache answers, such as a display-brightness release's, never waits
+        // behind another thread's verification. Two may verify one package
+        // at once; the second only repeats the call.
         machine.verify_catalog(&catalog_path, &[&store_inf, &store_image, &image])?;
+        let mut cache = locked()?;
         if cache.0.len() >= TRUST_ENTRIES {
             cache.0.clear();
         }

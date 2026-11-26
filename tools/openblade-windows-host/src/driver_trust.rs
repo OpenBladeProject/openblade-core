@@ -46,9 +46,22 @@ pub(crate) fn reject(reason: &'static str, message: impl Into<String>) -> Reject
     }
 }
 
+/// Managed `Exception.Message` of an error: a Windows error's system text
+/// alone, as `Win32Exception.Message` carries it, without the
+/// " (os error N)" Rust appends.
+pub(crate) fn error_message(error: &std::io::Error) -> String {
+    let text = error.to_string();
+    match error.raw_os_error() {
+        Some(code) => text
+            .strip_suffix(&format!(" (os error {code})"))
+            .map_or_else(|| text.clone(), str::to_owned),
+        None => text,
+    }
+}
+
 impl From<std::io::Error> for Reject {
     fn from(error: std::io::Error) -> Self {
-        reject("PackageInspectionFailed", error.to_string())
+        reject("PackageInspectionFailed", error_message(&error))
     }
 }
 
