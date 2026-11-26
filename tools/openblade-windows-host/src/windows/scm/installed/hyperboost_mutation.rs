@@ -622,9 +622,13 @@ impl Runtime {
         let mut stepped = stepped?;
         let reading = *exited.lock().map_err(|_| io::ErrorKind::Other)?;
         let settled = match (stepped.outcome.status, reading) {
+            // Firmware had left: the reading ends the ownership whether or
+            // not the journal can record it now, so the transition goes on
+            // and its own steps name whatever refuses them.
             (1, Some(reading)) => {
                 stepped.unchanged = true;
-                self.settle_exited(mailbox, caller, sid, &id, reading)?
+                self.settle_exited(mailbox, caller, sid, &id, reading)?;
+                true
             }
             (status, _) => status == 1,
         };

@@ -382,3 +382,38 @@ async fn a_restarted_service_owns_hyperboost_only_while_its_first_reading_shows_
         rig.stop_in_hyperboost().await;
     }
 }
+
+/// With an owned fan change outstanding, the battery boundary names that
+/// cause, as it does on a rig with no HyperBoost history: firmware moved
+/// from owned HyperBoost to Balanced, the user took Fixed fans, and the
+/// reconciliation on battery cannot write a performance row behind the fan
+/// owner. The ended ownership is no reason of its own, and nothing is
+/// written.
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn the_battery_boundary_names_the_outstanding_fan_change_not_hyperboost() {
+    let mut replies = Vec::new();
+    for history in [true, false] {
+        let rig = if history {
+            owned().await
+        } else {
+            applied_game().await
+        };
+        set_selectors(&rig, SELECTOR_BALANCED);
+        observed(&rig, 1).await;
+        let fan = rig.request(fan_request(170, Some(1), 3700)).await;
+        assert_eq!(fan["result"]["status"], 1, "{fan}");
+        let (rows, before) = (journal(&rig).len(), writes(&rig));
+        unplug(&rig);
+        tick(&rig).await;
+        let reply = report(&rig, 5, Some(r"C:\Tools\Other.exe")).await;
+        assert_eq!(writes(&rig), before, "{history}");
+        assert_eq!(journal(&rig).len(), rows, "{history}");
+        let message = reply["result"]["message"].as_str().unwrap().to_owned();
+        assert!(!message.contains(ALREADY_OFF), "{history}: {message}");
+        replies.push(reply["result"].clone());
+        rig.origin.stop();
+        let _ = rig.source.lock().await.drain().await;
+    }
+    assert_eq!(replies[0], replies[1]);
+}
