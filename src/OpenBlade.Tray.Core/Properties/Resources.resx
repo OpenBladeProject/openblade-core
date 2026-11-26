@@ -1901,4 +1901,31 @@ Details: {1}</value>
   <data name="Another Razer app, such as Synapse, may be using the laptop’s lighting. Close it to use these controls." xml:space="preserve">
     <value>Another Razer app, such as Synapse, may be using the laptop’s lighting. Close it to use these controls.</value>
   </data>
+  <data name="Downloading OpenBlade {0}..." xml:space="preserve">
+    <value>Downloading OpenBlade {0}...</value>
+  </data>
+  <data name="Downloading OpenBlade {0}: {1}%" xml:space="preserve">
+    <value>Downloading OpenBlade {0}: {1}%</value>
+  </data>
+  <data name="Checking the download..." xml:space="preserve">
+    <value>Checking the download...</value>
+  </data>
+  <data name="Opening the installer..." xml:space="preserve">
+    <value>Opening the installer...</value>
+  </data>
+  <data name="The installer is open. Follow its steps to finish the update." xml:space="preserve">
+    <value>The installer is open. Follow its steps to finish the update.</value>
+  </data>
+  <data name="Update download canceled." xml:space="preserve">
+    <value>Update download canceled.</value>
+  </data>
+  <data name="The download didn't match the published release, so nothing was installed. Try again or use View release." xml:space="preserve">
+    <value>The download didn't match the published release, so nothing was installed. Try again or use View release.</value>
+  </data>
+  <data name="Couldn't open the installer. Try again or use View release." xml:space="preserve">
+    <value>Couldn't open the installer. Try again or use View release.</value>
+  </data>
+  <data name="Couldn't download the update. Check your connection and try again." xml:space="preserve">
+    <value>Couldn't download the update. Check your connection and try again.</value>
+  </data>
 </root>

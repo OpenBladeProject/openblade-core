@@ -3187,4 +3187,13 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   <data name="MainWindow_CoolingPadLightingSelectorText.PlaceholderText" xml:space="preserve">
     <value>[!! Sét bý thé pád ~~~~ !!]</value>
   </data>
+  <data name="MainWindow_ButtonInstallUpdate.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! Dównlóád ánd ínstáll thé áváíláblé OpenBlade úpdáté ~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ButtonInstallUpdate.Content" xml:space="preserve">
+    <value>[!! Ínstáll úpdáté ~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ProgressRingDownloadingUpdate.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! Dównlóádíng thé OpenBlade úpdáté ~~~~~~~ !!]</value>
+  </data>
 </root>

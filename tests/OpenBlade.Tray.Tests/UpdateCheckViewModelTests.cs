@@ -446,8 +446,191 @@ public sealed class UpdateCheckViewModelTests
             viewModel.StatusText);
     }
 
-    private static UpdateCheckViewModel Create(IReleaseUpdateClient client) =>
-        new(client, "1.0.0+abcdef", new FixedTimeProvider(Now));
+    [Fact]
+    public async Task InstallIsOfferedOnlyForANewerReleaseWithAnInstaller()
+    {
+        await using var withoutInstaller = Create(SuccessfulClient(NewerRelease));
+        await Command(withoutInstaller).ExecuteAsync(null);
+        Assert.True(withoutInstaller.IsUpdateAvailable);
+        Assert.False(withoutInstaller.CanInstallUpdate);
+        Assert.False(withoutInstaller.InstallUpdateCommand.CanExecute(null));
+
+        var installer = new FakeAppUpdateInstaller();
+        await using var upToDate = Create(SuccessfulClient(CurrentRelease), installer);
+        await Command(upToDate).ExecuteAsync(null);
+        Assert.False(upToDate.CanInstallUpdate);
+        Assert.False(upToDate.InstallUpdateCommand.CanExecute(null));
+
+        await using var newer = Create(SuccessfulClient(NewerRelease), installer);
+        await Command(newer).ExecuteAsync(null);
+        Assert.True(newer.CanInstallUpdate);
+        Assert.True(newer.InstallUpdateCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public async Task InstallPassesTheFoundReleaseAndReportsThatTheInstallerIsOpen()
+    {
+        var installer = new FakeAppUpdateInstaller();
+        await using var viewModel = Create(SuccessfulClient(NewerRelease), installer);
+        await Command(viewModel).ExecuteAsync(null);
+
+        await InstallCommand(viewModel).ExecuteAsync(null);
+
+        Assert.Same(NewerRelease, Assert.Single(installer.Releases));
+        Assert.False(viewModel.IsInstalling);
+        Assert.Equal(
+            "The installer is open. Follow its steps to finish the update.",
+            viewModel.StatusText);
+    }
+
+    [Fact]
+    public async Task InstallBlocksChecksWhileRunning()
+    {
+        var installer = new FakeAppUpdateInstaller { Gate = new() };
+        await using var viewModel = Create(SuccessfulClient(NewerRelease), installer);
+        await Command(viewModel).ExecuteAsync(null);
+
+        Task install = InstallCommand(viewModel).ExecuteAsync(null);
+        await installer.Started.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        Assert.True(viewModel.IsInstalling);
+        Assert.False(viewModel.CheckForUpdatesCommand.CanExecute(null));
+        Assert.False(viewModel.InstallUpdateCommand.CanExecute(null));
+        installer.Gate.SetResult();
+        await install;
+        Assert.True(viewModel.CheckForUpdatesCommand.CanExecute(null));
+    }
+
+    [Theory]
+    [InlineData(
+        AppUpdateInstallFailure.VerificationFailed,
+        "The download didn't match the published release, so nothing was installed. Try again or use View release.")]
+    [InlineData(
+        AppUpdateInstallFailure.LaunchFailed,
+        "Couldn't open the installer. Try again or use View release.")]
+    [InlineData(
+        AppUpdateInstallFailure.Unavailable,
+        "Couldn't download the update. Check your connection and try again.")]
+    public async Task InstallFailureExplainsWhatHappened(
+        AppUpdateInstallFailure failure,
+        string expectedStatus)
+    {
+        var installer = new FakeAppUpdateInstaller
+        {
+            Failure = new AppUpdateInstallException(failure, "test"),
+        };
+        await using var viewModel = Create(SuccessfulClient(NewerRelease), installer);
+        await Command(viewModel).ExecuteAsync(null);
+
+        await InstallCommand(viewModel).ExecuteAsync(null);
+
+        Assert.False(viewModel.IsInstalling);
+        Assert.Equal(expectedStatus, viewModel.StatusText);
+        Assert.True(viewModel.InstallUpdateCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public async Task OpenInstallerDisablesInstallUntilTheNextCheck()
+    {
+        var installer = new FakeAppUpdateInstaller();
+        await using var viewModel = Create(SuccessfulClient(NewerRelease), installer);
+        await Command(viewModel).ExecuteAsync(null);
+
+        await InstallCommand(viewModel).ExecuteAsync(null);
+
+        Assert.True(viewModel.IsUpdateAvailable);
+        Assert.False(viewModel.CanInstallUpdate);
+        Assert.False(viewModel.InstallUpdateCommand.CanExecute(null));
+
+        await Command(viewModel).ExecuteAsync(null);
+
+        Assert.True(viewModel.CanInstallUpdate);
+        Assert.True(viewModel.InstallUpdateCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public async Task ChangingChannelCancelsAnInstallAndKeepsTheChannelStatus()
+    {
+        var installer = new FakeAppUpdateInstaller { Gate = new() };
+        await using var viewModel = Create(SuccessfulClient(NewerRelease), installer);
+        await Command(viewModel).ExecuteAsync(null);
+        Task install = InstallCommand(viewModel).ExecuteAsync(null);
+        await installer.Started.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        viewModel.SelectedChannelOption = viewModel.ChannelOptions.Single(
+            option => option.Channel == UpdateChannel.Nightly);
+        await install.WaitAsync(TimeSpan.FromSeconds(2));
+
+        Assert.True(installer.CancellationObserved);
+        Assert.False(viewModel.IsInstalling);
+        Assert.False(viewModel.CanInstallUpdate);
+        Assert.Equal(
+            "Updates have not been checked for the Nightly channel.",
+            viewModel.StatusText);
+    }
+
+    [Fact]
+    public async Task DisposingTheViewModelDisposesTheInstaller()
+    {
+        var installer = new FakeAppUpdateInstaller();
+        var viewModel = Create(SuccessfulClient(NewerRelease), installer);
+
+        await viewModel.DisposeAsync();
+
+        Assert.True(installer.Disposed);
+    }
+
+    private static UpdateCheckViewModel Create(
+        IReleaseUpdateClient client,
+        IAppUpdateInstaller? installer = null) =>
+        new(client, "1.0.0+abcdef", new FixedTimeProvider(Now), installer);
+
+    private static AsyncRelayCommand InstallCommand(UpdateCheckViewModel viewModel) =>
+        Assert.IsType<AsyncRelayCommand>(viewModel.InstallUpdateCommand);
+
+    private sealed class FakeAppUpdateInstaller : IAppUpdateInstaller
+    {
+        public List<ReleaseUpdateInfo> Releases { get; } = [];
+
+        public TaskCompletionSource Started { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource? Gate { get; init; }
+
+        public Exception? Failure { get; init; }
+
+        public bool Disposed { get; private set; }
+
+        public bool CancellationObserved { get; private set; }
+
+        public async Task InstallAsync(
+            ReleaseUpdateInfo release,
+            IProgress<AppUpdateInstallProgress>? progress,
+            CancellationToken cancellationToken)
+        {
+            Releases.Add(release);
+            Started.TrySetResult();
+            if (Gate is not null)
+            {
+                try
+                {
+                    await Gate.Task.WaitAsync(cancellationToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    CancellationObserved = true;
+                    throw;
+                }
+            }
+
+            if (Failure is not null)
+            {
+                throw Failure;
+            }
+        }
+
+        public void Dispose() => Disposed = true;
+    }
 
     private static void Apply(
         UpdateCheckViewModel viewModel,

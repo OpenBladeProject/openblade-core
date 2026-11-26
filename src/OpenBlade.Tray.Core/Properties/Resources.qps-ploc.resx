@@ -2011,4 +2011,31 @@ Détáíls: {1} ~~~ !!]</value>
   <data name="Another Razer app, such as Synapse, may be using the laptop’s lighting. Close it to use these controls." xml:space="preserve">
     <value>[!! Ánóthér Razer ápp, súch ás Sýnápsé, máý bé úsíng thé láptóp’s líghtíng. Clósé ít tó úsé thésé cóntróls. ~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
+  <data name="Downloading OpenBlade {0}..." xml:space="preserve">
+    <value>[!! Dównlóádíng OpenBlade {0}... ~~~~ !!]</value>
+  </data>
+  <data name="Downloading OpenBlade {0}: {1}%" xml:space="preserve">
+    <value>[!! Dównlóádíng OpenBlade {0}: {1}% ~~~~ !!]</value>
+  </data>
+  <data name="Checking the download..." xml:space="preserve">
+    <value>[!! Chéckíng thé dównlóád... ~~~~~~~ !!]</value>
+  </data>
+  <data name="Opening the installer..." xml:space="preserve">
+    <value>[!! Ópéníng thé ínstállér... ~~~~~~~ !!]</value>
+  </data>
+  <data name="The installer is open. Follow its steps to finish the update." xml:space="preserve">
+    <value>[!! Thé ínstállér ís ópén. Fóllów íts stéps tó fínísh thé úpdáté. ~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Update download canceled." xml:space="preserve">
+    <value>[!! Úpdáté dównlóád cáncéléd. ~~~~~~~~ !!]</value>
+  </data>
+  <data name="The download didn't match the published release, so nothing was installed. Try again or use View release." xml:space="preserve">
+    <value>[!! Thé dównlóád dídn't mátch thé públíshéd réléásé, só nóthíng wás ínstálléd. Trý ágáín ór úsé Víéw réléásé. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Couldn't open the installer. Try again or use View release." xml:space="preserve">
+    <value>[!! Cóúldn't ópén thé ínstállér. Trý ágáín ór úsé Víéw réléásé. ~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Couldn't download the update. Check your connection and try again." xml:space="preserve">
+    <value>[!! Cóúldn't dównlóád thé úpdáté. Chéck ýóúr cónnéctíón ánd trý ágáín. ~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
 </root>

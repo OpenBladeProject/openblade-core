@@ -1901,4 +1901,31 @@
   <data name="Another Razer app, such as Synapse, may be using the laptop’s lighting. Close it to use these controls." xml:space="preserve">
     <value>其他 Razer 应用（例如 Synapse）可能正在使用笔记本电脑的灯光。请关闭它以使用这些控制。</value>
   </data>
+  <data name="Downloading OpenBlade {0}..." xml:space="preserve">
+    <value>正在下载 OpenBlade {0}...</value>
+  </data>
+  <data name="Downloading OpenBlade {0}: {1}%" xml:space="preserve">
+    <value>正在下载 OpenBlade {0}：{1}%</value>
+  </data>
+  <data name="Checking the download..." xml:space="preserve">
+    <value>正在校验下载的文件...</value>
+  </data>
+  <data name="Opening the installer..." xml:space="preserve">
+    <value>正在打开安装程序...</value>
+  </data>
+  <data name="The installer is open. Follow its steps to finish the update." xml:space="preserve">
+    <value>安装程序已打开。请按照其中的步骤完成更新。</value>
+  </data>
+  <data name="Update download canceled." xml:space="preserve">
+    <value>已取消下载更新。</value>
+  </data>
+  <data name="The download didn't match the published release, so nothing was installed. Try again or use View release." xml:space="preserve">
+    <value>下载的文件与已发布的版本不一致，因此未安装任何内容。请重试，或使用“查看版本”。</value>
+  </data>
+  <data name="Couldn't open the installer. Try again or use View release." xml:space="preserve">
+    <value>无法打开安装程序。请重试，或使用“查看版本”。</value>
+  </data>
+  <data name="Couldn't download the update. Check your connection and try again." xml:space="preserve">
+    <value>无法下载更新。请检查连接，然后重试。</value>
+  </data>
 </root>
