@@ -18,7 +18,7 @@ use std::{
     mem::size_of,
     os::windows::io::{FromRawHandle, OwnedHandle},
     ptr::{null, null_mut},
-    sync::{Arc, Mutex},
+    sync::Arc,
 };
 
 use windows_sys::{
@@ -106,11 +106,8 @@ impl Device for Windows {
 }
 
 fn package(log: &Log, instance: &str, service: &str, hardware_id: &str) -> Package {
-    // One capture at a time shares the process-wide trust cache.
-    static SERIAL: Mutex<()> = Mutex::new(());
-    let _serial = SERIAL
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    // The process-wide trust cache is shared by both lane threads; it locks
+    // itself only around its own entries, never across WinVerifyTrust.
     let package = package::capture(
         &crate::driver_trust::windows::Machine,
         package::trust_cache(),
