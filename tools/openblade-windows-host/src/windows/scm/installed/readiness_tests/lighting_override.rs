@@ -620,7 +620,9 @@ async fn each_stop_replies_as_managed_and_only_possible_submission_latches() {
         ),
         (
             "restore in doubt",
-            ([0xc5, 1, 2], |s| (s.lighting_ignore, s.lighting_timeout) = (vec![1], Some(2))),
+            ([0xc5, 1, 2], |s| {
+                (s.lighting_ignore, s.lighting_timeout) = (vec![1], Some(2))
+            }),
             indeterminate(
                 "The lighting change failed and the previous lighting state could not be fully restored.",
             ),
