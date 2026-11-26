@@ -1215,17 +1215,30 @@ struct HyperBoostProbes {
     pad: Arc<std::sync::Mutex<Pad>>,
     script: Arc<std::sync::Mutex<std::collections::VecDeque<Pad>>>,
     observations: Arc<AtomicUsize>,
+    /// Holds the status observer's pad scan: `STALL_UNTIL_CANCELLED` until
+    /// the observer cancels it, as the native scan stops, or
+    /// `STALL_THROUGH_CANCEL` for an OS call that does not return.
+    status_stall: Arc<AtomicU8>,
+    /// The status observer's pad scans and journal reads.
+    status_reads: Arc<AtomicUsize>,
     /// `None`: a read that fails.
     journal: Arc<std::sync::Mutex<Option<Option<Vec<u8>>>>>,
     journal_reads: Arc<AtomicUsize>,
 }
 #[cfg(feature = "service-hyperboost-v1")]
 impl HyperBoostProbes {
+    const STALL_UNTIL_CANCELLED: u8 = 1;
+    // Only the Stop tests hold a scan through its cancellation, and they
+    // need the fan runtime.
+    #[cfg_attr(not(feature = "service-fan-mutation-v2"), allow(dead_code))]
+    const STALL_THROUGH_CANCEL: u8 = 2;
     fn new() -> Self {
         Self {
             pad: Arc::new(std::sync::Mutex::new(Pad::Absent)),
             script: Arc::default(),
             observations: Arc::default(),
+            status_stall: Arc::default(),
+            status_reads: Arc::default(),
             journal: Arc::new(std::sync::Mutex::new(Some(None))),
             journal_reads: Arc::default(),
         }
@@ -1235,9 +1248,26 @@ impl HyperBoostProbes {
     /// observation a request's gate was scripted to make.
     fn status_probes(&self) -> Probes {
         let (pad, journal) = (self.pad.clone(), self.journal.clone());
+        let (stall, scans, reads) = (
+            self.status_stall.clone(),
+            self.status_reads.clone(),
+            self.status_reads.clone(),
+        );
         Probes::new(
-            move || *pad.lock().unwrap(),
+            move |cancelled| {
+                scans.fetch_add(1, Ordering::AcqRel);
+                loop {
+                    match stall.load(Ordering::Acquire) {
+                        Self::STALL_UNTIL_CANCELLED if cancelled.load(Ordering::Acquire) => {
+                            return Pad::ObservationFailed;
+                        }
+                        0 => return *pad.lock().unwrap(),
+                        _ => std::thread::sleep(Duration::from_millis(1)),
+                    }
+                }
+            },
             Arc::new(move || {
+                reads.fetch_add(1, Ordering::AcqRel);
                 journal
                     .lock()
                     .unwrap()
@@ -1254,7 +1284,7 @@ impl HyperBoostProbes {
         );
         let (journal, reads) = (self.journal.clone(), self.journal_reads.clone());
         Probes::new(
-            move || {
+            move |_| {
                 observations.fetch_add(1, Ordering::AcqRel);
                 let next = script.lock().unwrap().pop_front();
                 next.unwrap_or(*pad.lock().unwrap())

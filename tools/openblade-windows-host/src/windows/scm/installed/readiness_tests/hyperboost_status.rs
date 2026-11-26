@@ -81,7 +81,10 @@ async fn status_reports_the_pad_the_observer_read() {
 
 /// Managed `hyperBoostRestorePending` starts from its journal's state
 /// (`load.Journal?.State == RestorePending`). Every other state, an absent
-/// or unreadable journal and a document that is not managed's report none.
+/// journal and a document managed's store reads as invalid report none, as
+/// managed does (10505-10518). A journal that cannot be read establishes
+/// neither answer: with none before it, it is pending, as managed's recovery
+/// treats a journal it cannot inspect (4057-4069).
 #[tokio::test]
 async fn status_reports_a_restore_managed_left_pending() {
     let foreign = String::from_utf8(journal_in(RESTORE_PENDING))
@@ -96,8 +99,8 @@ async fn status_reports_a_restore_managed_left_pending() {
         (Some(Some(journal_in(1))), false),
         (Some(Some(b"{".to_vec())), false),
         (Some(Some(foreign)), false),
-        // A read that fails establishes nothing.
-        (None, false),
+        (Some(Some(journal_in(7))), false),
+        (None, true),
     ] {
         let rig = rig_at(0, 0, FULL, saved_files());
         *rig.hyperboost.journal.lock().unwrap() = journal.clone();
@@ -106,6 +109,28 @@ async fn status_reports_a_restore_managed_left_pending() {
         assert_eq!(pad, 1, "{journal:?}");
         rig.stop().await;
     }
+}
+
+/// A journal read that fails keeps the pending restore the last status
+/// reported, as managed keeps its presentation when its durable state cannot
+/// be read (10133-10152): one failed read neither hides a pending restore
+/// nor invents one.
+#[tokio::test]
+async fn status_keeps_the_pending_restore_through_a_failed_journal_read() {
+    let rig = rig_at(0, 0, FULL, saved_files());
+    let journal = |value: Option<Option<Vec<u8>>>| *rig.hyperboost.journal.lock().unwrap() = value;
+    for (read, pending) in [
+        (Some(None), false),
+        (None, false),
+        (Some(Some(journal_in(RESTORE_PENDING))), true),
+        (None, true),
+        (Some(Some(relinquished())), false),
+        (None, false),
+    ] {
+        journal(read.clone());
+        assert_eq!(rig.members().await.1, pending, "{read:?}");
+    }
+    rig.stop().await;
 }
 
 /// The pad and the journal are read only on the host of the model whose
@@ -117,16 +142,20 @@ async fn status_reads_neither_probe_without_the_matched_host() {
     let rig = rig_at(0, 0, FULL, saved_files());
     *rig.hyperboost.journal.lock().unwrap() = Some(Some(journal_in(RESTORE_PENDING)));
     assert_eq!(rig.members().await, (json!(1), json!(true), json!([])));
+    let reads = rig.hyperboost.status_reads.load(Ordering::Acquire);
+    assert!(reads >= 2);
     // The injected source's unavailable device identity.
     rig.metadata.store(3, Ordering::Release);
     assert_eq!(rig.members().await, (json!(0), json!(false), json!([])));
+    assert_eq!(rig.hyperboost.status_reads.load(Ordering::Acquire), reads);
     rig.stop().await;
 }
 
-/// Managed 4053-4104, by the journal managed left. Only an absent journal
-/// and a Relinquished one are native's to answer; every other is managed's
-/// to finish, a pending restore included, since native never writes that
-/// journal. No answer sends a setter, appends a native row or reads firmware
+/// Managed 4053-4104, by the journal managed left: no journal has nothing
+/// to retry, and a journal in any state but RestorePending is not awaiting a
+/// retry. A pending restore is managed's to finish, since native never
+/// writes that journal, and so is a journal that cannot be read or names no
+/// state. No answer sends a setter, appends a native row or reads firmware
 /// for a write.
 #[tokio::test]
 async fn recovery_answers_from_the_managed_journal_and_writes_nothing() {
@@ -138,8 +167,9 @@ async fn recovery_answers_from_the_managed_journal_and_writes_nothing() {
             BLOCKED,
             JOURNAL_PENDING,
         ),
-        (Some(Some(journal_in(0))), BLOCKED, JOURNAL_PENDING),
-        (Some(Some(journal_in(1))), BLOCKED, JOURNAL_PENDING),
+        (Some(Some(journal_in(0))), BLOCKED, NOT_AWAITING_RETRY),
+        (Some(Some(journal_in(1))), BLOCKED, NOT_AWAITING_RETRY),
+        (Some(Some(journal_in(7))), BLOCKED, JOURNAL_PENDING),
         (Some(Some(b"{".to_vec())), BLOCKED, JOURNAL_PENDING),
         (None, BLOCKED, JOURNAL_PENDING),
     ] {
@@ -179,9 +209,11 @@ fn recovery_replies_are_managed_literals() {
     }
 }
 
-/// Only the active interactive user is answered, and the journal is not
-/// read for anyone else. The dispatcher drops such a caller's reply, so this
-/// asks the source as the dispatcher does and reads the runtime's own answer.
+/// Only the active interactive user is answered: the request reads no
+/// journal for anyone else. (The status the dispatcher takes before every
+/// mutation has read it, for any caller.) The dispatcher drops such a
+/// caller's reply, so this asks the source as the dispatcher does and reads
+/// the runtime's own answer.
 #[tokio::test]
 async fn recovery_refuses_a_caller_that_is_not_the_active_user() {
     for (case, caller) in [

@@ -261,14 +261,15 @@ pub(crate) const OBSERVED_CAPABILITIES_MODEL: (&str, u16, u16) = ("RZ09-0581", 0
 /// establishes them. The default is what an absent member decodes to:
 /// nothing observed.
 #[cfg(feature = "service-hyperboost-v1")]
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct HyperBoostStatus {
     /// Managed `PadlessHyperBoostEligibilityState`: 0 Unknown,
     /// 1 CoolingPadAbsent, 2 CoolingPadPresent.
     pub(crate) pad: u8,
     /// Managed `HyperBoostRestorePending`: managed's ownership journal names
-    /// a restore it has not finished.
-    pub(crate) restore_pending: bool,
+    /// a restore it has not finished. `None` when the journal could not be
+    /// read, which establishes neither answer (`resolved`).
+    pub(crate) restore_pending: Option<bool>,
     /// Managed `HyperBoostBlockingControllers`. `None` is managed's null:
     /// no source-aware classification, so consumers apply the name policy
     /// (`RazerThermalControllerPolicy.GetBlockingControllers`).
@@ -278,6 +279,26 @@ pub(crate) struct HyperBoostStatus {
 impl HyperBoostStatus {
     pub(crate) const PAD_ABSENT: u8 = 1;
     pub(crate) const PAD_PRESENT: u8 = 2;
+    /// Nothing established: no pad observation, no journal read and no
+    /// controller classification.
+    pub(crate) const UNOBSERVED: Self = Self {
+        pad: 0,
+        restore_pending: None,
+        blockers: None,
+    };
+
+    /// The status to publish after `prior`, the pending restore the last
+    /// published status reported. A journal that could not be read keeps
+    /// that answer, as managed preserves its presentation when its durable
+    /// state cannot be read (`ServiceControlRuntime.cs` 10133-10152), so one
+    /// failed read neither hides a pending restore nor invents one. With no
+    /// earlier answer it reports the restore pending, as managed's recovery
+    /// does for a journal it cannot inspect (4057-4069) and as every native
+    /// HyperBoost request treats that journal (`JOURNAL_PENDING`).
+    pub(crate) fn resolved(mut self, prior: Option<bool>) -> Self {
+        self.restore_pending = self.restore_pending.or(prior).or(Some(true));
+        self
+    }
 
     /// Managed `HyperBoostBlockingControllers` from one controller
     /// observation (`ServiceControlRuntime.cs` 16139-16145): the blockers
@@ -1321,7 +1342,7 @@ impl Snapshot {
             ),
             (
                 "hyperBoostRestorePending",
-                serde_json::json!(status.restore_pending),
+                serde_json::json!(status.restore_pending == Some(true)),
             ),
             (
                 "hyperBoostBlockingControllers",

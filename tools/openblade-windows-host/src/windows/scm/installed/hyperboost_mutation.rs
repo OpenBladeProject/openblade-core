@@ -106,14 +106,15 @@ pub(in super::super) enum Pad {
 /// Windows; tests inject both.
 #[derive(Clone)]
 pub(in super::super) struct Probes {
-    pad: Arc<dyn Fn() -> Pad + Send + Sync>,
+    /// One pad scan, abandoned once the flag is set.
+    pad: Arc<dyn Fn(&AtomicBool) -> Pad + Send + Sync>,
     journal: hyperboost_journal::Journal,
 }
 impl Probes {
     // Without the lifecycle triggers only tests compose probes.
     #[cfg_attr(not(feature = "service-profile-triggers-v1"), allow(dead_code))]
     pub(in super::super) fn new(
-        pad: impl Fn() -> Pad + Send + Sync + 'static,
+        pad: impl Fn(&AtomicBool) -> Pad + Send + Sync + 'static,
         journal: hyperboost_journal::Journal,
     ) -> Self {
         Self {
@@ -131,24 +132,38 @@ impl Probes {
     fn journal_safe(&self) -> bool {
         (self.journal)().is_ok_and(|bytes| hyperboost_journal::journal_safe(bytes.as_deref()))
     }
+    /// One pad observation for a request's gate. The request waits for it:
+    /// its own deadline bounds the step, and no one else cancels it.
+    fn pad(&self) -> Pad {
+        (self.pad)(&AtomicBool::new(false))
+    }
     /// Managed `PadlessHyperBoostEligibility` from one pad observation
     /// (`ResolvePadlessHyperBoostEligibility`): absent, present, or Unknown
     /// for a scan that failed. Managed reads an ambiguous pad as present on
     /// a pad-less-only model; this probe names no ambiguous pad, since it
-    /// matches the hardware ID alone.
-    pub(in super::super) fn eligibility(&self) -> u8 {
+    /// matches the hardware ID alone. The status observer's `cancelled`
+    /// abandons the scan, so a stalled enumeration ends with the
+    /// observation that started it.
+    pub(in super::super) fn eligibility(&self, cancelled: &AtomicBool) -> u8 {
         use crate::service_status::HyperBoostStatus;
-        match (self.pad)() {
+        match (self.pad)(cancelled) {
             Pad::Absent => HyperBoostStatus::PAD_ABSENT,
             Pad::Present => HyperBoostStatus::PAD_PRESENT,
             Pad::ObservationFailed => 0,
         }
     }
-    /// Managed `HyperBoostRestorePending`: managed's journal names a restore
-    /// it has not finished (`hyperboost_journal::restore_pending`). A read
-    /// that fails establishes nothing, so it reports none.
-    pub(in super::super) fn restore_pending(&self) -> bool {
-        (self.journal)().is_ok_and(|bytes| hyperboost_journal::restore_pending(bytes.as_deref()))
+    /// Managed `HyperBoostRestorePending`: whether managed's journal names
+    /// a restore it has not finished (`load.Journal?.State ==
+    /// RestorePending`). An absent journal, every other state and a
+    /// document managed's store reads as invalid report none, as managed
+    /// does (`ServiceControlRuntime.cs` 10505-10518). `None` when the
+    /// journal could not be read: that establishes neither answer, and the
+    /// status keeps what it last established (`ObservedStatus::publish`).
+    pub(in super::super) fn restore_pending(&self) -> Option<bool> {
+        let bytes = (self.journal)().ok()?;
+        Some(bytes.is_some_and(|bytes| {
+            hyperboost_journal::state(&bytes) == Some(hyperboost_journal::RESTORE_PENDING)
+        }))
     }
 }
 /// The present HID interfaces' hardware IDs, read without opening any
@@ -156,11 +171,8 @@ impl Probes {
 /// zero access and matches 1532:0F43 by its attributes; native admits absence
 /// only when no hardware ID names the pad and every ID was read.
 #[cfg(all(not(test), feature = "service-profile-triggers-v1"))]
-fn observe_pad() -> Pad {
-    match crate::discovery::windows::hid_hardware_id_present(
-        &std::sync::atomic::AtomicBool::new(false),
-        PAD_HARDWARE_ID,
-    ) {
+fn observe_pad(cancelled: &AtomicBool) -> Pad {
+    match crate::discovery::windows::hid_hardware_id_present(cancelled, PAD_HARDWARE_ID) {
         Ok(false) => Pad::Absent,
         Ok(true) => Pad::Present,
         Err(_) => Pad::ObservationFailed,
@@ -387,7 +399,7 @@ impl RequestPermit {
         // 7004-7023: a fresh pad observation selects the path. Native admits
         // only the pad-less one, so a pad refuses here; a failed observation
         // selects pad-less, whose absence check (7142-7159) refuses below.
-        let pad = (step.probes.pad)();
+        let pad = step.probes.pad();
         if pad == Pad::Present {
             return refuse(PAD_PRESENT, 2);
         }
@@ -483,7 +495,7 @@ impl RequestPermit {
             });
             return false;
         }
-        if step.enable && (step.probes.pad)() != Pad::Absent {
+        if step.enable && step.probes.pad() != Pad::Absent {
             self.set_cause(Cause::HyperBoost {
                 message: PAD_ABSENCE,
                 status: 2,
@@ -848,9 +860,15 @@ impl Runtime {
     /// |---|---|---|
     /// | 6943-6952 | No probes composed | Blocked, `UNAVAILABLE` |
     /// | native only | Not the active interactive user | Blocked, `ACTIVE_USER` |
-    /// | 4053-4080, 4108-4555 | Unreadable, or neither absent nor Relinquished | Blocked, `JOURNAL_PENDING`: managed inspects, refuses or retries its own journal |
     /// | 4082-4091 | Absent | Stored, `NO_RESTORE` |
-    /// | 4093-4104 | Relinquished | Blocked, `NOT_AWAITING_RETRY` |
+    /// | 4093-4104 | EnablePending, OwnedConfirmed or Relinquished | Blocked, `NOT_AWAITING_RETRY` |
+    /// | 4053-4080, 4108-4555 | RestorePending, unreadable, or a document that names no state | Blocked, `JOURNAL_PENDING`: managed retries, inspects or preserves its own journal |
+    ///
+    /// The state is the one the document names (`hyperboost_journal::state`).
+    /// Managed also answers `NOT_AWAITING_RETRY` for a RestorePending journal
+    /// without a restore intent, and its own invalid-journal text for a
+    /// document `IsWellFormed` rejects; native tells neither apart, and
+    /// every reply here is a refusal that writes nothing.
     pub(in super::super) async fn recover_hyperboost_restore(
         &self,
         caller: Caller,
@@ -867,18 +885,21 @@ impl Runtime {
         if caller.logon != Logon::Interactive || caller.control_session != Some(caller.session) {
             return Ok(Outcome::blocked(ACTIVE_USER));
         }
-        Ok(match (probes.journal)() {
-            Ok(None) => Outcome {
-                status: 0,
-                message: NO_RESTORE.into(),
-            },
-            Ok(Some(bytes)) if hyperboost_journal::journal_safe(Some(&bytes)) => {
-                Outcome::blocked(NOT_AWAITING_RETRY)
+        let state = match (probes.journal)() {
+            Ok(None) => {
+                return Ok(Outcome {
+                    status: 0,
+                    message: NO_RESTORE.into(),
+                });
             }
-            // A pending restore, any other state managed has not
-            // relinquished, a document native cannot read as managed does,
-            // or a failed read: the journal is managed's to finish.
-            Ok(Some(_)) | Err(_) => Outcome::blocked(JOURNAL_PENDING),
-        })
+            Ok(Some(bytes)) => hyperboost_journal::state(&bytes),
+            Err(_) => None,
+        };
+        Ok(Outcome::blocked(match state {
+            // A pending restore, a document that names no state or a failed
+            // read: the journal is managed's to finish.
+            Some(hyperboost_journal::RESTORE_PENDING) | None => JOURNAL_PENDING,
+            Some(_) => NOT_AWAITING_RETRY,
+        }))
     }
 }
