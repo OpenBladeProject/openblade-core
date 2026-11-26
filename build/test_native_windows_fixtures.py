@@ -66,9 +66,10 @@ class FixtureContracts(unittest.TestCase):
         for data in (self.line('unknown'), self.line('publisher_projection'), self.line()[:-1],
                      b'prefix ' + self.line(), self.line(raw='{}'), self.line(raw=''),
                      self.line().replace(b'"schemaVersion": 1', b'"schemaVersion": 2'),
-                     # Frames from the retired protocol 80 and 85 peers.
+                     # Frames from the retired protocol 80, 85 and 90 peers.
                      self.line(raw='{"frame":"response","version":80,"z":1,"a":2}'),
-                     self.line(raw='{"frame":"response","version":85,"z":1,"a":2}')):
+                     self.line(raw='{"frame":"response","version":85,"z":1,"a":2}'),
+                     self.line(raw='{"frame":"response","version":90,"z":1,"a":2}')):
             with self.subTest(data=data), self.assertRaises((ValueError, KeyError)):
                 f.collect(data, 'test', {'peer_response'})
         with tempfile.TemporaryDirectory() as d, self.assertRaises(ValueError):
