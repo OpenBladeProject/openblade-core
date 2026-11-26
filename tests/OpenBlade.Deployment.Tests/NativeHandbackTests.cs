@@ -538,6 +538,57 @@ public sealed partial class NativeHandbackTests : IDisposable
         }
     }
 
+    // The histories native's lifecycle exits of owned HyperBoost leave
+    // (service-hyperboost-v1 with service-profile-triggers-v1): an entry, then
+    // the battery boundary's restore chain, its direct pair to managed's
+    // Balanced restore, or the read-only settlement of firmware that already
+    // left HyperBoost (a HyperBoost row Prepared then KnownNotSubmitted). Each
+    // settled history, and an entry a Stop left active, hands back empty, so
+    // managed adopts no native ownership; a crash inside the settlement or the
+    // exit is classified as before.
+    [Theory]
+    [InlineData("settled", 100, new[] { 0, 6 }, "")]
+    [InlineData("battery", 3, new[] { 0, 80, 81, 82, 83, 1, 2, 3, 4, 5 }, "")]
+    [InlineData("balanced restore", 1, new[] { 0, 1, 2, 3, 4, 5 }, "")]
+    [InlineData("entry only", 100, new int[0], "")]
+    [InlineData("settlement crash", 100, new[] { 0 }, "abandonedPrepared")]
+    [InlineData("exit crash", 3, new[] { 0, 80, 81 }, "pending")]
+    public void LifecycleHyperBoostExitHistoriesHandBackWithoutAdoptingOwnership(string name, int destination, int[] exit, string slot)
+    {
+        using var stream = new MemoryStream();
+        void Rows(string request, int to, IEnumerable<int> progress)
+        {
+            foreach (int p in progress)
+            {
+                stream.Write(JsonSerializer.SerializeToUtf8Bytes(new { request, owner = Original.Nonce, user_sid = "S-1-5-21-111-222-333-1002", caller_pid = 42, session = 7, requested = (object?)null, destination = to, intent = NativeCanonical.Digest("null"u8), progress = p }));
+                stream.WriteByte(10);
+            }
+        }
+        Rows("aaaaaaaa-bbbb-cccc-eeee-000000000001", 100, [0, 1, 2, 3, 4, 5]);
+        Rows("aaaaaaaa-bbbb-8ccc-8eee-000000000002", destination, exit);
+        byte[] journal = stream.ToArray();
+        using var files = ManagedMailboxCorrectionTests.Bootstrap();
+        Thermal(files, journal);
+        var handback = WindowsNativeThermalHistory.Read(files, [Original], Original).Handback!;
+        AssertClassified(Lines(Encoding.UTF8.GetString(journal)), handback);
+        switch (slot)
+        {
+            case "":
+                Assert.True(handback.IsEmpty, name);
+                Assert.Null(handback.OwnedFan);
+                _ = WindowsNativeThermalHistory.Read(files, [Original]);
+                break;
+            case "abandonedPrepared":
+                Assert.Equal("hyperBoost", handback.AbandonedPrepared!.Family);
+                Assert.Throws<IOException>(() => WindowsNativeThermalHistory.Read(files, [Original]));
+                break;
+            default:
+                Assert.Equal(("performance", "BatterySaver", 81), (handback.Pending!.Family, handback.Pending.Performance, handback.Pending.Progress));
+                Assert.Throws<IOException>(() => WindowsNativeThermalHistory.Read(files, [Original]));
+                break;
+        }
+    }
+
     // Every pair destination native journals hands back under its managed name.
     [Theory]
     [InlineData("Silent")]
