@@ -158,12 +158,6 @@ impl Permit for ExitPermit {
         if self.accepted.load(Ordering::Acquire) {
             return Err(io::ErrorKind::PermissionDenied.into());
         }
-        // Managed's exit needs a classified source that Windows agrees with
-        // (`RequestPermit::resolve`, `battery_reading_contradicts_windows`).
-        if power == UNCLASSIFIED_EXTERNAL || (power == 1 && self.cleanup.on_battery() != Some(true))
-        {
-            return Ok(None);
-        }
         // Managed owns the recovery of its own journal.
         if !self.probes.journal_safe() {
             return Ok(None);
@@ -178,8 +172,24 @@ impl Permit for ExitPermit {
         if left || self.storage.pending() || !self.storage.owns_hyperboost() {
             return Ok(None);
         }
+        // Firmware already out of HyperBoost ends the ownership on this
+        // reading alone, before any power check: the settlement sends no
+        // setter, so the power class has no part in it, and managed clears
+        // its ownership at any observation with HyperBoost inactive
+        // (18394-18405), whatever the source. Refusing here on an adapter
+        // 07/8C cannot classify would leave the journal naming an entry
+        // firmware has left, and a HyperBoost entered outside OpenBlade
+        // before the next start would read as owned.
         if baseline != ObservedPerformance::HyperBoostObserved {
             self.exited.store(true, Ordering::Release);
+            return Ok(None);
+        }
+        // The exit itself needs a classified source that Windows agrees
+        // with, as managed's does (`RequestPermit::resolve`,
+        // `battery_reading_contradicts_windows`); each setter is admitted
+        // again on its own reading.
+        if power == UNCLASSIFIED_EXTERNAL || (power == 1 && self.cleanup.on_battery() != Some(true))
+        {
             return Ok(None);
         }
         // The history admits no performance row while an owned fan change is

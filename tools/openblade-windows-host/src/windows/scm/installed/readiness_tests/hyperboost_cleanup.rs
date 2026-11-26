@@ -174,14 +174,17 @@ async fn stop_settles_ownership_read_only_when_firmware_already_left() {
 }
 
 /// Every refusal before a setter leaves HyperBoost on and owned, with no row
-/// and no setter, and the Stop reports it: no cleanup admission composed, a
-/// competing controller, unknown Windows power, a managed journal it has not
-/// relinquished or that cannot be read, and a battery reading Windows does
-/// not agree with.
+/// and no setter, and the Stop reports it: an adapter 07/8C cannot classify,
+/// no cleanup admission composed, a competing controller, unknown Windows
+/// power, a managed journal it has not relinquished or that cannot be read,
+/// and a battery reading Windows does not agree with.
 #[tokio::test]
 async fn a_refused_stop_exit_writes_nothing_and_is_reported() {
     type Arrange = fn(&Rig);
-    let cases: [(&str, bool, Arrange); 6] = [
+    let cases: [(&str, bool, Arrange); 7] = [
+        ("unclassified power", true, |rig| {
+            rig.port.state.lock().unwrap().actual = UNMAPPED_LEVEL;
+        }),
         ("no cleanup admission", false, |_| {}),
         ("competing controller", true, |rig| {
             rig.custody.controller.store(true, Ordering::Release);
@@ -397,6 +400,81 @@ async fn a_failed_fan_handback_leaves_owned_hyperboost_without_a_row() {
         "{after:?}"
     );
     assert!(owns(&rig));
+}
+
+/// An adapter level 07/8C maps to no class, which reads as unclassified
+/// external power under Windows AC.
+const UNMAPPED_LEVEL: u8 = 0x10;
+/// The power readings that refuse the exit's setters: unclassified external
+/// power, and a battery reading while Windows reports AC.
+const NO_EXIT_CLASS: [(&str, fn(&Rig)); 2] = [
+    ("unclassified", |rig| {
+        rig.port.state.lock().unwrap().actual = UNMAPPED_LEVEL;
+    }),
+    ("battery under Windows AC", |rig| {
+        let mut state = rig.port.state.lock().unwrap();
+        state.actual = 0;
+        state.windows_on_battery = Some(Some(false));
+    }),
+];
+/// A Service restarted over `files`, wired as `owned_with_cleanup` wires its
+/// rig, with firmware at `selector` and Automatic fans.
+async fn restarted_at(files: MemoryFiles, selector: u8) -> Rig {
+    let rig = Rig::restarted(files);
+    *rig.custody.origin_for_fan.lock().unwrap() = Some(rig.origin.clone());
+    {
+        let mut state = rig.port.state.lock().unwrap();
+        state.selectors = [selector; 2];
+        state.fans = [0; 2];
+    }
+    rig.get().await;
+    observed(&rig, 1).await;
+    wired(&rig).await;
+    cleanup(&rig);
+    rig
+}
+
+/// Firmware already out of owned HyperBoost is settled read-only at Stop
+/// whatever the adapter reads. The settlement sends no setter, so the power
+/// class that would refuse the exit's setters has no part in it, and
+/// managed ends its ownership at any observation with HyperBoost inactive.
+/// Refused instead, the journal kept an entry firmware had left and the
+/// Stop reported a HyperBoost that was not on.
+#[tokio::test]
+async fn stop_settles_firmware_already_out_whatever_the_power_reading() {
+    for (case, arrange) in NO_EXIT_CLASS {
+        let rig = owned_with_cleanup().await;
+        rig.port.state.lock().unwrap().selectors = [SELECTOR_BALANCED; 2];
+        arrange(&rig);
+        let (rows, before) = (journal(&rig).len(), writes(&rig));
+        stop(&rig).await.unwrap();
+        assert_eq!(writes(&rig), before, "{case}");
+        assert_eq!(rows_after(&rig, rows), [(100, 0), (100, 6)], "{case}");
+        assert!(!owns(&rig) && !pending(&rig), "{case}");
+    }
+}
+
+/// The settlement reaches the next start: a HyperBoost entered outside
+/// OpenBlade while the Service was down is not owned, and the restarted
+/// Stop sends no setter over it, whether the first Stop read an
+/// unclassifiable adapter or a full one.
+#[tokio::test]
+async fn an_entry_settled_at_stop_is_not_owned_by_the_next_start() {
+    for level in [UNMAPPED_LEVEL, 15] {
+        let rig = owned_with_cleanup().await;
+        {
+            let mut state = rig.port.state.lock().unwrap();
+            state.selectors = [SELECTOR_BALANCED; 2];
+            state.actual = level;
+        }
+        stop(&rig).await.unwrap();
+        let restarted = restarted_at(rig.files.clone(), SELECTOR_HYPERBOOST).await;
+        assert!(!owns(&restarted), "{level}");
+        let from = sent(&restarted);
+        stop(&restarted).await.unwrap();
+        assert_eq!(thermal_sent(&restarted, from), 0, "{level}");
+        assert_eq!(selectors(&restarted), [SELECTOR_HYPERBOOST; 2], "{level}");
+    }
 }
 
 /// Beside the keyboard owner (`service-keyboard-driver-mode-v1`), whose
@@ -653,6 +731,28 @@ mod beside_the_keyboard {
         let state = rig.port.state.lock().unwrap();
         assert!(state.sent[from..].iter().all(|(class, ..)| *class == 0));
         assert_eq!(state.selectors, [SELECTOR_HYPERBOOST; 2]);
+    }
+
+    /// Firmware already out of owned HyperBoost is settled read-only at a
+    /// suspend too, whatever the adapter reads.
+    #[tokio::test]
+    async fn a_suspend_settles_firmware_already_out_whatever_the_power_reading() {
+        for (case, arrange) in NO_EXIT_CLASS {
+            let rig = owned_with_keyboard().await;
+            rig.port.state.lock().unwrap().selectors = [SELECTOR_BALANCED; 2];
+            arrange(&rig);
+            let (rows, before) = (journal(&rig).len(), writes(&rig));
+            suspend(&rig);
+            keyboard_tick(&rig).await;
+            assert_eq!(
+                prepared(&rig),
+                (Some(Release::Restored), Some(Exit::Settled)),
+                "{case}"
+            );
+            assert_eq!(writes(&rig), before, "{case}");
+            assert_eq!(rows_after(&rig, rows), [(100, 0), (100, 6)], "{case}");
+            assert!(!owns(&rig) && !pending(&rig), "{case}");
+        }
     }
 
     /// A HyperBoost reading native did not enter stays external at a
