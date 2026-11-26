@@ -69,6 +69,8 @@ pub(crate) mod device_mode_tests;
 mod fan;
 #[cfg(test)]
 mod job_tests;
+#[cfg(test)]
+mod lighting_guard_tests;
 #[cfg(feature = "service-thermal-mutation-v1")]
 pub(crate) mod mutation;
 #[cfg(feature = "service-thermal-mutation-v1")]
