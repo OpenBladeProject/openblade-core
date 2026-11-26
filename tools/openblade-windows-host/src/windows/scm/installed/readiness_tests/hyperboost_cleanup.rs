@@ -38,6 +38,13 @@ async fn stop(rig: &Rig) -> io::Result<()> {
 fn sent(rig: &Rig) -> usize {
     rig.port.state.lock().unwrap().sent.len()
 }
+/// The frames sent from `from` that are not the keyboard's.
+fn thermal_sent(rig: &Rig, from: usize) -> usize {
+    rig.port.state.lock().unwrap().sent[from..]
+        .iter()
+        .filter(|(class, ..)| *class != 0)
+        .count()
+}
 /// What a Stop that exited nothing left: no setter, no row, HyperBoost on
 /// and still owned.
 fn assert_left_owned(rig: &Rig, writes_before: usize, rows_before: usize) {
@@ -141,11 +148,7 @@ async fn stop_leaves_a_hyperboost_entered_after_an_observed_exit() {
         let (rows, from) = (journal(&rig).len(), sent(&rig));
         stop(&rig).await.unwrap();
         // Beside the keyboard owner the Stop still queries the keyboard.
-        let thermal = rig.port.state.lock().unwrap().sent[from..]
-            .iter()
-            .filter(|(class, ..)| *class != 0)
-            .count();
-        assert_eq!(thermal, 0, "{composed}");
+        assert_eq!(thermal_sent(&rig, from), 0, "{composed}");
         assert_eq!(selectors(&rig), [SELECTOR_HYPERBOOST; 2], "{composed}");
         let settled: &[(i64, u64)] = if composed { &[(100, 0), (100, 6)] } else { &[] };
         assert_eq!(rows_after(&rig, rows), settled, "{composed}");
@@ -277,11 +280,15 @@ async fn an_ambiguous_stop_exit_fences_the_store_without_replay() {
     wired(&restarted).await;
     cleanup(&restarted);
     report(&restarted, 1, Some(r"C:\Games\Game.exe")).await;
+    let from = sent(&restarted);
     let error = stop(&restarted).await.unwrap_err().to_string();
     assert!(
         error.contains(NOT_EXITED) && error.contains("unresolved"),
         "{error}"
     );
+    // The unsettled row stops the exit before any exchange, not only
+    // before its setter.
+    assert_eq!(thermal_sent(&restarted, from), 0);
     assert_eq!(writes(&restarted), 0);
     assert_eq!(rows_after(&restarted, rows), [(BALANCED, 0), (BALANCED, 1)]);
 }
@@ -614,9 +621,11 @@ mod beside_the_keyboard {
             rig.port.state.lock().unwrap().fail_write = None;
             resume(&rig);
             tick(&rig).await;
+            let from = sent(&rig);
             suspend(&rig);
             keyboard_tick(&rig).await;
             assert_eq!(prepared(&rig).1, Some(Exit::Unresolved), "{case}");
+            assert_eq!(thermal_sent(&rig, from), 0, "{case}");
             assert_eq!(writes(&rig) - before, 1, "{case}");
             assert_eq!(rows_after(&rig, rows), [(BALANCED, 0), (BALANCED, 1)]);
         }
