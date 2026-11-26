@@ -14,6 +14,8 @@ mod diagnostic_export;
 #[cfg(windows)]
 #[allow(dead_code)] // Installed firmware access requires an admitted runtime owner.
 mod discovery;
+#[cfg(all(windows, feature = "driver-api-trust"))]
+mod driver_trust;
 #[cfg(windows)]
 #[path = "windows/scm/installed.rs"]
 mod installed;
