@@ -110,11 +110,19 @@ mod battery;
 pub(super) use battery::BatteryUpdate;
 #[cfg(feature = "service-thermal-convergence-v1")]
 pub(super) use triggers::convergence_loop::OBSERVE_BUDGET as CONVERGENCE_OBSERVE_BUDGET;
+#[cfg(feature = "service-brightness-hid-usage-v1")]
+#[path = "display_brightness_mutation.rs"]
+mod brightness;
 #[path = "fan_mutation.rs"]
 mod fan;
 #[cfg(feature = "service-fan-stop-v1")]
 #[path = "fan_stop_mutation.rs"]
 mod fan_stop;
+#[cfg(feature = "service-brightness-hid-usage-v1")]
+pub(super) use brightness::{
+    SHUTDOWN_BUDGET as BRIGHTNESS_SHUTDOWN_BUDGET, availability as brightness_availability,
+    hid as brightness_hid,
+};
 #[cfg(feature = "service-performance-shortcut-v1")]
 #[path = "performance_shortcut.rs"]
 mod shortcut;
@@ -472,6 +480,9 @@ pub(super) struct Runtime {
     // lighting request resolves it read-only (`lighting`).
     #[cfg(feature = "service-lighting-v1")]
     lighting_doubt: Rc<std::cell::Cell<bool>>,
+    // Display-brightness HID input and its held usage (`brightness`).
+    #[cfg(feature = "service-brightness-hid-usage-v1")]
+    brightness: Rc<brightness::Brightness>,
     fan_owner: Rc<RefCell<Option<Arc<fan::FanPermit>>>>,
     temporary_owner: Rc<RefCell<Option<Arc<battery::BatteryPermit>>>>,
     temporary_pending: Rc<RefCell<Option<Arc<battery::BatteryPermit>>>>,
@@ -701,6 +712,7 @@ pub(super) fn convergence_power(
     })
 }
 #[derive(Clone, serde::Serialize)]
+#[cfg_attr(test, derive(Debug, PartialEq, Eq))]
 pub(super) struct Outcome {
     pub(super) status: u8,
     pub(super) message: String,
@@ -750,6 +762,8 @@ impl Runtime {
             fan_stop: Rc::default(),
             #[cfg(feature = "service-lighting-v1")]
             lighting_doubt: Rc::default(),
+            #[cfg(feature = "service-brightness-hid-usage-v1")]
+            brightness: Rc::default(),
             application: Rc::default(),
             #[cfg(feature = "service-profile-triggers-v1")]
             debts: Rc::default(),
@@ -940,6 +954,27 @@ impl Runtime {
             }
             Rc::new(gpu)
         };
+        #[cfg(feature = "service-diagnostics-export-v1")]
+        let diagnostic_history = Arc::new(crate::diagnostic_export::History::service());
+        // A press is admitted by the device capture alone: it selects no
+        // profile root, so it needs no store (`brightness::Guard`).
+        #[cfg(feature = "service-brightness-hid-usage-v1")]
+        let brightness = {
+            let origin = origin.clone();
+            let guard: Box<brightness::Guard> = Box::new(move |sid, session, custody| {
+                Ok(
+                    WindowsGuard::capture(origin.clone(), custody, sid.to_owned(), session)?
+                        as Arc<dyn Fresh>,
+                )
+            });
+            Rc::new(brightness::Brightness::production(
+                brightness::production_log(
+                    #[cfg(feature = "service-diagnostics-export-v1")]
+                    &diagnostic_history,
+                ),
+                guard,
+            ))
+        };
         Self {
             factory: Rc::new(move |sid, session, custody, capture| {
                 let guard: Arc<dyn Fresh> = match capture {
@@ -995,6 +1030,8 @@ impl Runtime {
             fan_stop: Rc::default(),
             #[cfg(feature = "service-lighting-v1")]
             lighting_doubt: Rc::default(),
+            #[cfg(feature = "service-brightness-hid-usage-v1")]
+            brightness,
             application: Rc::default(),
             #[cfg(feature = "service-profile-triggers-v1")]
             debts: Rc::default(),
@@ -1068,7 +1105,7 @@ impl Runtime {
             keyboard: Rc::default(),
             gate: Rc::default(),
             #[cfg(feature = "service-diagnostics-export-v1")]
-            diagnostic_history: Arc::new(crate::diagnostic_export::History::service()),
+            diagnostic_history,
             battery_observation: Arc::default(),
             battery_source: Arc::new(std::sync::atomic::AtomicU8::new(3)),
             battery_warning: Arc::default(),

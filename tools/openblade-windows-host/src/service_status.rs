@@ -51,6 +51,35 @@ pub(crate) mod live_sensors {
     pub(crate) const GPU_TEMPERATURE: u8 = 8;
 }
 
+/// Managed `DisplayBrightnessHidUsage`: the one input a
+/// `setDisplayBrightnessHidUsage` request may hold, from its validation to
+/// the IOCTL that submits it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u16)]
+pub(crate) enum DisplayBrightnessHidUsage {
+    Released = 0x0000,
+    Increment = 0x006F,
+    Decrement = 0x0070,
+}
+
+impl DisplayBrightnessHidUsage {
+    /// Managed `Enum.IsDefined(usage)`: the defined usage of a wire value.
+    pub(crate) const fn from_wire(value: u16) -> Option<Self> {
+        match value {
+            0x0000 => Some(Self::Released),
+            0x006F => Some(Self::Increment),
+            0x0070 => Some(Self::Decrement),
+            _ => None,
+        }
+    }
+
+    /// The Consumer Control usage the IOCTL carries.
+    #[cfg_attr(not(feature = "service-brightness-hid-usage-v1"), allow(dead_code))]
+    pub(crate) const fn wire(self) -> u16 {
+        self as u16
+    }
+}
+
 // Decoded through `json_object`: managed reads the request and every nested
 // struct member only from a JSON object, never a positional array.
 #[derive(Clone, Deserialize, Serialize)]
@@ -197,6 +226,14 @@ pub(crate) enum StatusRequest {
         // Bound from the frame bytes by `decode`, not by serde.
         value: LightingBody,
     },
+    /// Managed `SetDisplayBrightnessHidUsageRequest`: a
+    /// `DisplayBrightnessHidUsage` wire value, defined once validated
+    /// (`DisplayBrightnessHidUsage::from_wire`).
+    SetDisplayBrightnessHidUsage {
+        version: i32,
+        request_id: String,
+        usage: u16,
+    },
     ObserveState {
         include_live_readings: bool,
         #[serde(default = "all_live_readings")]
@@ -341,7 +378,7 @@ impl StatusRequest {
     /// The discriminator of every variant. `operation` maps each variant to
     /// its entry, so a new variant cannot be added without listing it here.
     #[cfg(feature = "installed-service-candidate")]
-    pub(crate) const OPERATIONS: [&'static str; 23] = [
+    pub(crate) const OPERATIONS: [&'static str; 24] = [
         "setBatteryPolicy",
         "setBatteryProtection",
         "setFullChargeOverride",
@@ -365,6 +402,7 @@ impl StatusRequest {
         "setHyperBoost",
         "recoverHyperBoostRestore",
         "setLightingOverride",
+        "setDisplayBrightnessHidUsage",
     ];
 
     #[cfg(all(test, feature = "installed-service-candidate"))]
@@ -393,6 +431,7 @@ impl StatusRequest {
             Self::SetHyperBoost { .. } => 20,
             Self::RecoverHyperBoostRestore { .. } => 21,
             Self::SetLightingOverride { .. } => 22,
+            Self::SetDisplayBrightnessHidUsage { .. } => 23,
         }]
     }
 
@@ -413,7 +452,8 @@ impl StatusRequest {
         const SHORTCUT: bool = cfg!(feature = "service-performance-shortcut-v1");
         const HYPERBOOST: bool = cfg!(feature = "service-hyperboost-v1");
         const LIGHTING: bool = cfg!(feature = "service-lighting-v1");
-        const COMPILED: [bool; 23] = [
+        const BRIGHTNESS: bool = cfg!(feature = "service-brightness-hid-usage-v1");
+        const COMPILED: [bool; 24] = [
             BATTERY,
             BATTERY,
             BATTERY,
@@ -437,6 +477,7 @@ impl StatusRequest {
             HYPERBOOST,
             HYPERBOOST,
             LIGHTING,
+            BRIGHTNESS,
         ];
         Self::OPERATIONS
             .iter()
@@ -628,6 +669,11 @@ impl StatusRequest {
                 version,
                 request_id,
                 ..
+            }
+            | Self::SetDisplayBrightnessHidUsage {
+                version,
+                request_id,
+                ..
             } => (*version, request_id),
             Self::ExportDiagnostics {
                 version,
@@ -681,6 +727,19 @@ impl StatusRequest {
             _ => None,
         }
     }
+
+    /// The usage of a `setDisplayBrightnessHidUsage` request. Validation
+    /// refuses an undefined one, so every decoded request has one.
+    #[cfg_attr(not(feature = "service-brightness-hid-usage-v1"), allow(dead_code))]
+    pub(crate) fn display_brightness_hid_usage(&self) -> Option<DisplayBrightnessHidUsage> {
+        match self {
+            Self::SetDisplayBrightnessHidUsage { usage, .. } => {
+                DisplayBrightnessHidUsage::from_wire(*usage)
+            }
+            _ => None,
+        }
+    }
+
     fn validate(&self) -> io::Result<()> {
         if let Some(request) = self.battery_request() {
             if !cfg!(feature = "service-battery-policy-v1") {
@@ -763,6 +822,17 @@ impl StatusRequest {
             && !cfg!(feature = "service-lighting-v1")
         {
             return Err(invalid("signed lighting composition is unavailable"));
+        }
+        // Managed `IpcMessageCodec`: `Enum.IsDefined(set.Usage)`.
+        if let Self::SetDisplayBrightnessHidUsage { usage, .. } = self {
+            if !cfg!(feature = "service-brightness-hid-usage-v1") {
+                return Err(invalid(
+                    "signed display-brightness input composition is unavailable",
+                ));
+            }
+            if DisplayBrightnessHidUsage::from_wire(*usage).is_none() {
+                return Err(invalid("display-brightness HID usage is undefined"));
+            }
         }
         // Managed `IpcMessageCodec`: `Enum.IsDefined(cycle.Source)`, and for a
         // preview a non-empty session, a positive generation and a defined or
@@ -1387,6 +1457,18 @@ impl Snapshot {
         ] {
             self.feature_fields.insert(member.into(), value);
         }
+        self
+    }
+    /// Managed `displayBrightnessHidAvailability`: its
+    /// `DisplayBrightnessHidAvailability` wire value (Unknown 0, Available 1,
+    /// Unavailable 2). Without the request the member is absent and decodes
+    /// as Unknown.
+    #[cfg(feature = "service-brightness-hid-usage-v1")]
+    pub(crate) fn with_display_brightness_hid(mut self, availability: u8) -> Self {
+        self.feature_fields.insert(
+            "displayBrightnessHidAvailability".into(),
+            Value::from(availability),
+        );
         self
     }
     /// Managed's Fan Stop status once the host is identified as the model

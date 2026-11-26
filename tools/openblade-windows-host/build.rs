@@ -235,6 +235,12 @@ fn main() {
         } else {
             capabilities
         };
+        // Nor display-brightness input, which submits RzCommon input IOCTLs.
+        let capabilities = if role == "service" && has("service-brightness-hid-usage-v1") {
+            format!("{capabilities},service-brightness-hid-usage-v1")
+        } else {
+            capabilities
+        };
         // Nor keyboard lighting, under the same rule.
         let capabilities = if role == "service" && has("service-lighting-v1") {
             format!("{capabilities},service-lighting-v1")

@@ -2612,3 +2612,266 @@ fn the_compiled_identity_carries_the_refused_owner_marker() {
 
 #[path = "driver_mode_record_tests.rs"]
 mod record;
+
+/// A held display-brightness usage at a confirmed suspend and on the
+/// maintenance step (`service-brightness-hid-usage-v1`), over the rig's
+/// scripted lane.
+#[cfg(feature = "service-brightness-hid-usage-v1")]
+mod display_brightness {
+    use super::*;
+    use crate::installed::readiness::thermal_mutation::brightness_hid::{
+        SUBMITTED, Usage, WriteResult, fake,
+    };
+
+    fn usages(rig: &Rig) -> Vec<Usage> {
+        rig.brightness.lock().unwrap().usages.clone()
+    }
+
+    async fn press(rig: &Rig, n: u8, usage: u16) {
+        let response = rig
+            .request(json!({
+                "operation": "setDisplayBrightnessHidUsage",
+                "version": 91,
+                "requestId": format!("aaaaaaaa-bbbb-cccc-eeee-{n:012}"),
+                "usage": usage,
+            }))
+            .await;
+        assert_eq!(
+            response["result"],
+            json!({"status": 1, "message": SUBMITTED}),
+            "{response}"
+        );
+    }
+
+    /// The keyboard's mode as each later usage reaches the lane.
+    fn modes_at_each_usage(rig: &Rig) -> Arc<std::sync::Mutex<Vec<u8>>> {
+        let modes = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let (seen, port) = (modes.clone(), rig.port.state.clone());
+        rig.brightness.lock().unwrap().on_usage = Some(Arc::new(move |_| {
+            seen.lock().unwrap().push(port.lock().unwrap().device_mode);
+        }));
+        modes
+    }
+
+    /// Managed `PrepareForLowPowerCoreAsync`: a usage still held is released
+    /// first, while the keyboard is still in Driver mode, and the release
+    /// settles the held state, so the Stop that follows owes nothing.
+    #[tokio::test]
+    async fn a_suspend_releases_a_held_usage_before_the_keyboard() {
+        let (rig, _) = owner_rig(NORMAL).await;
+        tick(&rig).await;
+        assert_eq!(owner(&rig), (true, false, false));
+        press(&rig, 1, 0x6F).await;
+        let modes = modes_at_each_usage(&rig);
+        suspend(&rig);
+        tick(&rig).await;
+        assert_eq!(prepared(&rig), Some(Release::Restored));
+        assert_eq!(*modes.lock().unwrap(), [DRIVER]);
+        assert_eq!(mode(&rig), NORMAL);
+        assert_eq!(
+            usages(&rig),
+            [Usage::Released, Usage::Increment, Usage::Released]
+        );
+        // The same generation releases nothing twice.
+        tick(&rig).await;
+        rig.custody.lifecycle.ingress(POWER, RESUME);
+        shutdown(&rig).await.unwrap();
+        assert_eq!(usages(&rig).len(), 3);
+    }
+
+    /// The brightness release is a diagnostic: one that fails, or one the
+    /// lane has not answered when its share ends, leaves the keyboard its
+    /// whole share. After a failed one the Stop that follows still owes the
+    /// release; an unfinished one stays owed, so Stop queues no other.
+    #[tokio::test]
+    async fn a_failed_or_unfinished_brightness_release_never_skips_the_keyboard() {
+        for unfinished in [false, true] {
+            let (rig, _) = owner_rig(NORMAL).await;
+            tick(&rig).await;
+            press(&rig, 1, 0x70).await;
+            let release = unfinished.then(|| fake::hold(&rig.brightness));
+            if !unfinished {
+                rig.brightness
+                    .lock()
+                    .unwrap()
+                    .writes
+                    .push_back(WriteResult::failed(Some("IOCTL failed".into())));
+            }
+            suspend(&rig);
+            tick(&rig).await;
+            assert_eq!(prepared(&rig), Some(Release::Restored), "{unfinished}");
+            assert_eq!(mode(&rig), NORMAL, "{unfinished}");
+            assert_eq!(
+                usages(&rig),
+                [Usage::Released, Usage::Decrement, Usage::Released],
+                "{unfinished}"
+            );
+            if let Some(release) = release {
+                rig.brightness.lock().unwrap().hold = None;
+                release();
+            }
+            rig.custody.lifecycle.ingress(POWER, RESUME);
+            shutdown(&rig).await.unwrap();
+            let sent = if unfinished { 3 } else { 4 };
+            assert_eq!(usages(&rig).len(), sent, "{unfinished}");
+        }
+    }
+
+    fn request(n: u8, usage: u16) -> Value {
+        json!({
+            "operation": "setDisplayBrightnessHidUsage",
+            "version": 91,
+            "requestId": format!("aaaaaaaa-bbbb-cccc-eeee-{n:012}"),
+            "usage": usage,
+        })
+    }
+
+    /// Waits on the real clock until the lane has taken `count` usages.
+    async fn taken(rig: &Rig, count: usize) {
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while usages(rig).len() < count {
+            assert!(std::time::Instant::now() < deadline, "the lane takes it");
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+    }
+
+    /// A press still on the lane when a suspend is confirmed, which ends
+    /// `after` into the preparation or, with none, outlasts it. The press's
+    /// request stops waiting, so the keyboard takes the gate and keeps its
+    /// whole share, and the release the press owes is queued behind it at
+    /// once and runs after it, the gate notwithstanding.
+    async fn a_press_running_at_suspend(after: Option<Duration>) {
+        let (rig, _) = owner_rig(NORMAL).await;
+        tick(&rig).await;
+        assert_eq!(owner(&rig), (true, false, false));
+        let release = fake::hold(&rig.brightness);
+        let pressing = rig.request(request(2, 0x6F));
+        tokio::pin!(pressing);
+        tokio::select! {
+            _ = &mut pressing => panic!("the press is held on the lane"),
+            () = taken(&rig, 2) => {}
+        }
+        suspend(&rig);
+        let release = Arc::new(release);
+        let worker = after.map(|after| {
+            let release = release.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(after);
+                (*release)();
+            })
+        });
+        let (reply, ()) = tokio::join!(&mut pressing, tick(&rig));
+        assert_eq!(
+            reply["result"],
+            json!({
+                "status": 3,
+                "message": "The display-brightness HID state could not be confirmed: \
+                            the laptop entered low power or is stopping",
+            }),
+            "{after:?}"
+        );
+        assert_eq!(prepared(&rig), Some(Release::Restored), "{after:?}");
+        assert_eq!(mode(&rig), NORMAL, "{after:?}");
+        if let Some(worker) = worker {
+            worker.join().unwrap();
+        } else {
+            assert_eq!(usages(&rig), [Usage::Released, Usage::Increment]);
+            (*release)();
+        }
+        taken(&rig, 3).await;
+        assert_eq!(
+            usages(&rig),
+            [Usage::Released, Usage::Increment, Usage::Released],
+            "{after:?}"
+        );
+        // The release that answered late is owed no longer.
+        rig.custody.lifecycle.ingress(POWER, RESUME);
+        shutdown(&rig).await.unwrap();
+        assert_eq!(usages(&rig).len(), 3, "{after:?}");
+    }
+
+    #[tokio::test]
+    async fn a_press_outlasting_the_suspend_window_never_starves_the_keyboard() {
+        a_press_running_at_suspend(None).await;
+    }
+
+    #[tokio::test]
+    async fn a_press_ending_inside_the_suspend_window_is_released_after_it() {
+        a_press_running_at_suspend(Some(Duration::from_millis(450))).await;
+    }
+
+    /// A closed Driver-mode record returns the maintenance step before its
+    /// own cadence; a pending neutralization is still tried only once per
+    /// interval.
+    #[tokio::test]
+    async fn a_pending_neutralization_is_tried_once_per_interval() {
+        use super::super::driver_mode_record_model::RECORD;
+        let files = MemoryFiles::default();
+        files.profiles(1);
+        files
+            .bytes
+            .lock()
+            .unwrap()
+            .insert(RECORD.into(), b"not a record".to_vec());
+        let rig = Rig::restarted(files);
+        for _ in 0..4 {
+            rig.brightness
+                .lock()
+                .unwrap()
+                .writes
+                .push_back(WriteResult::failed(Some("IOCTL failed".into())));
+        }
+        let (rig, _) = wired(rig, NORMAL).await;
+        for _ in 0..6 {
+            tick(&rig).await;
+        }
+        assert!(rig.runtime.driver_mode_closed_for_tests());
+        assert_eq!(usages(&rig), [Usage::Released]);
+        rig.runtime
+            .driver_mode_age_for_tests(INTERVAL - Duration::from_secs(1));
+        tick(&rig).await;
+        assert_eq!(usages(&rig).len(), 1);
+        rig.runtime
+            .driver_mode_age_for_tests(Duration::from_secs(1));
+        tick(&rig).await;
+        assert_eq!(usages(&rig), [Usage::Released, Usage::Released]);
+        rig.stop().await;
+    }
+
+    /// Managed `MaintainDriverModeAsync`: a started Service neutralizes on
+    /// the first step that finds the device verified, before the keyboard
+    /// step, and a release that fails leaves it pending for the next due
+    /// step. A failed release never skips the keyboard step, and nothing is
+    /// pressed.
+    #[tokio::test]
+    async fn the_maintenance_step_neutralizes_until_a_release_applies() {
+        let files = MemoryFiles::default();
+        files.profiles(1);
+        let rig = Rig::new(files);
+        rig.brightness
+            .lock()
+            .unwrap()
+            .writes
+            .push_back(WriteResult::failed(Some("IOCTL failed".into())));
+        let modes = modes_at_each_usage(&rig);
+        let (rig, _) = wired(rig, NORMAL).await;
+        tick(&rig).await;
+        assert_eq!(owner(&rig), (true, false, false));
+        assert_eq!(mode(&rig), DRIVER);
+        assert_eq!(usages(&rig), [Usage::Released]);
+        // A step that is not yet due neutralizes nothing.
+        tick(&rig).await;
+        assert_eq!(usages(&rig).len(), 1);
+        step(&rig).await;
+        assert_eq!(usages(&rig), [Usage::Released, Usage::Released]);
+        // Applied: no later step releases again.
+        step(&rig).await;
+        later(&rig).await;
+        assert_eq!(usages(&rig).len(), 2);
+        // The first release ran before the keyboard's acquire, the second
+        // with the keyboard already in Driver mode.
+        assert_eq!(*modes.lock().unwrap(), [NORMAL, DRIVER]);
+        rig.stop().await;
+        assert_eq!(usages(&rig).len(), 2, "nothing held, nothing owed");
+    }
+}

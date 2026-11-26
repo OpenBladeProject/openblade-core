@@ -1333,6 +1333,14 @@ impl HyperBoostProbes {
     }
 }
 struct Rig {
+    #[cfg(feature = "service-brightness-hid-usage-v1")]
+    brightness: crate::installed::readiness::thermal_mutation::brightness_hid::fake::Shared,
+    // Status observations started, and a factory that refuses every capture
+    // as native's refuses a SID it cannot root or a store it cannot open.
+    #[cfg(feature = "service-brightness-hid-usage-v1")]
+    observations: Arc<AtomicUsize>,
+    #[cfg(feature = "service-brightness-hid-usage-v1")]
+    store_unavailable: Arc<AtomicBool>,
     #[cfg(feature = "service-hyperboost-v1")]
     hyperboost: HyperBoostProbes,
     #[cfg(feature = "service-fan-mutation-v2")]
@@ -1474,8 +1482,18 @@ impl Rig {
         let mailbox = MailboxSource::Reader(reader.clone());
         let factory_calls = Arc::new(AtomicUsize::new(0));
         let calls = factory_calls.clone();
+        #[cfg(feature = "service-brightness-hid-usage-v1")]
+        let store_unavailable = Arc::new(AtomicBool::new(false));
+        #[cfg(feature = "service-brightness-hid-usage-v1")]
+        let unrooted = store_unavailable.clone();
+        #[cfg(feature = "service-brightness-hid-usage-v1")]
+        let (guard_custody, guard_capture) = (fresh.clone(), capture.clone());
         let runtime = Runtime::injected(&mailbox, move |sid, session, _, admission| {
             calls.fetch_add(1, Ordering::AcqRel);
+            #[cfg(feature = "service-brightness-hid-usage-v1")]
+            if unrooted.load(Ordering::Acquire) {
+                return Err(io::ErrorKind::PermissionDenied.into());
+            }
             if capture.load(Ordering::Acquire) {
                 return Err(
                     crate::installed::readiness::thermal_mutation::fatal_admission(
@@ -1525,6 +1543,39 @@ impl Rig {
         let observed_hyperboost = hyperboost.status_probes();
         #[cfg(not(feature = "service-hyperboost-v1"))]
         let observed_hyperboost = ();
+        // A scripted display-brightness lane: no Windows call is reached.
+        #[cfg(feature = "service-brightness-hid-usage-v1")]
+        let brightness = {
+            let (lane, script) =
+                crate::installed::readiness::thermal_mutation::brightness_hid::fake::lane();
+            runtime.compose_brightness(lane);
+            script
+        };
+        // The display-brightness press admission: the factory's device checks
+        // without its store, as native composes it.
+        #[cfg(feature = "service-brightness-hid-usage-v1")]
+        runtime.compose_brightness_guard(Box::new(move |sid, session, _| {
+            if guard_capture.load(Ordering::Acquire) {
+                return Err(
+                    crate::installed::readiness::thermal_mutation::fatal_admission(
+                        "injected lifecycle capture lock poisoned",
+                    ),
+                );
+            }
+            if sid != SID
+                || session as usize != guard_custody.current_session.load(Ordering::Acquire)
+            {
+                return Err(io::ErrorKind::PermissionDenied.into());
+            }
+            if guard_custody.controller.load(Ordering::Acquire) {
+                return Err(crate::installed::readiness::thermal_mutation::competing_controller());
+            }
+            Ok(guard_custody.clone() as Arc<dyn Fresh>)
+        }));
+        #[cfg(feature = "service-brightness-hid-usage-v1")]
+        let observations = Arc::new(AtomicUsize::new(0));
+        #[cfg(feature = "service-brightness-hid-usage-v1")]
+        let observed = observations.clone();
         let source = injected_mutation_source(
             Arc::new(Origin(origin.clone(), custody.clone())),
             mailbox,
@@ -1532,13 +1583,23 @@ impl Rig {
             metadata.clone(),
             {
                 let port = port.clone();
-                Arc::new(move || port.count_thread())
+                Arc::new(move || {
+                    #[cfg(feature = "service-brightness-hid-usage-v1")]
+                    observed.fetch_add(1, Ordering::AcqRel);
+                    port.count_thread();
+                })
             },
             observed_hyperboost,
         );
         Self {
             #[cfg(feature = "service-hyperboost-v1")]
             hyperboost,
+            #[cfg(feature = "service-brightness-hid-usage-v1")]
+            brightness,
+            #[cfg(feature = "service-brightness-hid-usage-v1")]
+            observations,
+            #[cfg(feature = "service-brightness-hid-usage-v1")]
+            store_unavailable,
             #[cfg(feature = "service-fan-mutation-v2")]
             runtime,
             #[cfg(feature = "service-fan-mutation-v2")]
@@ -10358,6 +10419,9 @@ mod request_triggers;
 #[path = "thermal_policy.rs"]
 mod thermal_policy;
 
+#[cfg(feature = "service-brightness-hid-usage-v1")]
+#[path = "display_brightness.rs"]
+mod display_brightness;
 #[cfg(feature = "service-fan-stop-v1")]
 #[path = "fan_stop.rs"]
 mod fan_stop;

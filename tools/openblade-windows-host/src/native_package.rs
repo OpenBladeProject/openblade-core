@@ -838,6 +838,18 @@ fn capabilities(schema: u8, role: &str, features: &str, value: &str) -> io::Resu
     if has(LIGHTING) || value.split(',').any(|capability| capability == LIGHTING) {
         return Err(deny());
     }
+    // Display-brightness input submits RzCommon input IOCTLs that have no
+    // readback and no capture evidence. Admitting it is a separate packaging
+    // decision. Refuse the feature and its marker by name
+    // (docs/windows-rust-development-service.md).
+    const BRIGHTNESS_HID: &str = "service-brightness-hid-usage-v1";
+    if has(BRIGHTNESS_HID)
+        || value
+            .split(',')
+            .any(|capability| capability == BRIGHTNESS_HID)
+    {
+        return Err(deny());
+    }
     // The application-context reporter is not admitted for packaging either:
     // refuse its feature and its capability marker by name, whatever else the
     // record claims, until a packaging stage admits both.

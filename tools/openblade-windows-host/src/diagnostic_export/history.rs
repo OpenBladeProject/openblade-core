@@ -1,7 +1,8 @@
 //! Managed `DiagnosticHistory`: a bounded, in-memory record of command
-//! results. Managed keeps it only in process memory, with no file and so no
-//! ACL; a restart starts empty. Native has no `ILogger` or trace producer, so
-//! it retains command results only and its log lines stay empty.
+//! results and log lines. Managed keeps it only in process memory, with no
+//! file and so no ACL; a restart starts empty. Native has no `ILogger`; its
+//! producers record log lines directly (`record_log`), in managed's line
+//! format.
 
 // Only the profile store records a summary; other compositions export an
 // empty history.
@@ -15,6 +16,10 @@ use super::{
 };
 
 const TRUNCATED_MARKER: &str = "...[truncated]";
+/// Managed `AddLog` reads a carriage return as a line break.
+const CARRIAGE_RETURN: char = '\r';
+const LINE_FEED: char = '\n';
+const LINE_FEED_TEXT: &str = "\n";
 
 /// Managed `DiagnosticHistory` bounds, pinned by the contract file.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -56,9 +61,41 @@ pub(crate) struct Snapshot {
     pub(crate) retained_characters: usize,
 }
 
+enum Record {
+    Result(CommandResult),
+    Log(String),
+}
+
 struct Entry {
-    result: CommandResult,
+    record: Record,
     characters: usize,
+}
+
+/// What managed `AddLog` prefixes to each line: this process, this run of
+/// it and the Service version.
+struct Process {
+    pid: u32,
+    run: String,
+    version: &'static str,
+}
+
+impl Process {
+    /// Managed `Guid.NewGuid().ToString("N")` for the run: 32 lowercase hex
+    /// digits from the process's random hash keys. It names a run, not a
+    /// secret.
+    fn current() -> Self {
+        use std::hash::{BuildHasher, Hasher};
+        let half = |salt: u64| {
+            let mut hasher = std::collections::hash_map::RandomState::new().build_hasher();
+            hasher.write_u64(salt);
+            hasher.finish()
+        };
+        Self {
+            pid: std::process::id(),
+            run: format!("{:016x}{:016x}", half(0), half(1)),
+            version: env!("CARGO_PKG_VERSION"),
+        }
+    }
 }
 
 #[derive(Default)]
@@ -78,6 +115,7 @@ pub(crate) struct History {
     // profile, local data, machine and user names.
     tokens: Vec<String>,
     clock: Clock,
+    process: Process,
     state: Mutex<State>,
 }
 
@@ -88,8 +126,21 @@ impl History {
             limits,
             tokens,
             clock,
+            process: Process::current(),
             state: Mutex::default(),
         }
+    }
+
+    /// This history with a fixed process identity, so a test can spell its
+    /// log lines.
+    #[cfg(test)]
+    pub(crate) fn with_process(mut self, pid: u32, run: &str, version: &'static str) -> Self {
+        self.process = Process {
+            pid,
+            run: run.to_owned(),
+            version,
+        };
+        self
     }
 
     /// The Service's history: default bounds, the host's redaction tokens and
@@ -144,6 +195,61 @@ impl History {
             + utf16_len(&result.action)
             + utf16_len(&result.status)
             + result.detail.as_deref().map_or(0, utf16_len);
+        self.retain(Record::Result(result), characters, truncated);
+    }
+
+    /// Managed `AddLog(level, category, message)`: each logical line of the
+    /// redacted message under managed's prefix, cut into pieces that fit
+    /// the line bound with it. A piece keeps whole characters, as `clamp`
+    /// does.
+    #[cfg_attr(not(feature = "service-brightness-hid-usage-v1"), allow(dead_code))]
+    pub(crate) fn record_log(&self, level: &str, category: &str, message: &str) {
+        let (civil, fraction) = (self.clock)().civil();
+        let mut truncated = 0;
+        let prefix = format!(
+            "{civil}.{fraction:07}+00:00 pid={} run={} version={} {level} {category}: ",
+            self.process.pid, self.process.run, self.process.version
+        );
+        let limit = self.limits.line.saturating_sub(utf16_len(&prefix)).max(1);
+        let normalized =
+            redact_text(message, &self.tokens).replace(CARRIAGE_RETURN, LINE_FEED_TEXT);
+        for logical in normalized.split(LINE_FEED).filter(|line| !line.is_empty()) {
+            let mut piece = String::new();
+            let mut units = 0;
+            for character in logical.chars() {
+                if units + character.len_utf16() > limit && !piece.is_empty() {
+                    self.log_line(&prefix, &std::mem::take(&mut piece), &mut truncated);
+                    units = 0;
+                }
+                units += character.len_utf16();
+                piece.push(character);
+            }
+            if !piece.is_empty() {
+                self.log_line(&prefix, &piece, &mut truncated);
+            }
+        }
+        if truncated > 0 {
+            self.count_truncated(truncated);
+        }
+    }
+
+    fn log_line(&self, prefix: &str, content: &str, truncated: &mut u64) {
+        let line = self.clamp(&format!("{prefix}{content}"), truncated);
+        if !line.is_empty() {
+            let characters = utf16_len(&line);
+            self.retain(Record::Log(line), characters, std::mem::take(truncated));
+        }
+    }
+
+    fn count_truncated(&self, truncated: u64) {
+        self.state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .truncated += truncated;
+    }
+
+    /// Managed `Add`: retained, evicting the oldest, or counted as dropped.
+    fn retain(&self, record: Record, characters: usize, truncated: u64) {
         // A poisoned history refuses export (`snapshot`); its producers
         // keep recording into it.
         let mut state = self
@@ -163,7 +269,7 @@ impl History {
             state.characters -= evicted.characters;
             state.evicted += 1;
         }
-        state.entries.push_back(Entry { result, characters });
+        state.entries.push_back(Entry { record, characters });
         state.characters += characters;
     }
 
@@ -206,9 +312,19 @@ impl History {
             results: state
                 .entries
                 .iter()
-                .map(|entry| entry.result.clone())
+                .filter_map(|entry| match &entry.record {
+                    Record::Result(result) => Some(result.clone()),
+                    Record::Log(_) => None,
+                })
                 .collect(),
-            log_lines: Vec::new(),
+            log_lines: state
+                .entries
+                .iter()
+                .filter_map(|entry| match &entry.record {
+                    Record::Log(line) => Some(line.clone()),
+                    Record::Result(_) => None,
+                })
+                .collect(),
             evicted: state.evicted,
             dropped: state.dropped,
             truncated: state.truncated,

@@ -1264,6 +1264,101 @@ source-reviewed and has not been run on a laptop. See
 [owned HyperBoost](windows-native-thermal-mutation.md#owned-hyperboost-service-hyperboost-v1)
 for the gates, the journal decision and the differences from managed.
 
+#### Display-brightness input
+
+A Service built with `service-brightness-hid-usage-v1` serves
+`setDisplayBrightnessHidUsage` on exact RZ09-0581 (`1532:02E0`), and publishes
+`displayBrightnessHidAvailability`. It follows managed's
+`SetDisplayBrightnessHidUsageAsync` (`ServiceControlRuntime.cs:3409-3510`) under
+the thermal operation gate. Repeating a held usage answers "remains asserted"
+without a write. The opposite direction is released before it is pressed. The
+first press after a start releases first, because a restarted Service cannot
+know what an earlier one left. Only an Applied release clears the held usage.
+A press that may have reached the driver stays held and is never resent. That
+covers a Failed reply, a submission that outlives its budget, and a request
+dropped after its IOCTL started. Managed persists nothing for this input, and
+neither does native. The feature implies `service-thermal-mutation-v1` and adds
+the capability marker `service-brightness-hid-usage-v1` after owned
+HyperBoost's.
+
+Each press needs the caller to control the active interactive session. It also
+needs a fresh Write capture at managed's device check, which re-checks exact
+device, session, power and competing-controller admission. That capture is
+asked again just before the IOCTL. A release needs no device admission, as in
+managed. A fatal capture is retained and fails the Service closed. Before every
+write the transport re-resolves the exact stack:
+
+- the RzCommon control interface on `RAZER\DeviceContol`, and the
+  `RzDev_02e0` virtual consumer collection
+  `RZVIRTUAL\VID_1532&PID_02E0&MI_00&COL03` under the exact `1532:02E0`
+  ancestor;
+- each endpoint's installed driver package (`driver_trust::package::capture`,
+  managed `WindowsRazerDriverApiDiscovery.Capture`);
+- WinVerifyTrust of the package catalog and its members under the Microsoft
+  Windows Hardware Compatibility Publisher.
+
+No driver build or hash is allowlisted, so a compatible update that keeps the
+binding and the trust is admitted. The usage then reaches RzCommon as one
+type-10 Consumer Control IOCTL (`0x88883020`). Its completion is the only
+confirmation the driver gives, and there is no readback.
+
+Every Windows call runs off the Service runtime, so a stalled IOCTL never
+holds it. Presses and releases run on the input's own thread, and availability
+resolutions on a separate probe thread, so a release never waits behind a
+probe. The driver-trust cache is locked only around its own entries, not
+across WinVerifyTrust, so a write whose package trust is cached never waits
+for a probe's verification. A press waits behind at most the call in progress and two queued calls,
+and is refused at once beyond that. A repeat of the held usage and a release
+answer without observing status first; a press that writes still takes its
+fresh capture.
+
+Stop releases a held usage before the keyboard release, within 300 ms taken
+from the fans' part of the drain. A confirmed suspend releases it before the
+keyboard returns to Normal mode, from what the suspend window holds beyond
+the keyboard's 900 ms share. Either boundary first ends the wait of every
+brightness request still waiting, at the gate or on the input thread, which
+then answers status 3. Its release then needs no gate: it is queued at once,
+even behind a press still running, and runs after it. So no press keeps the
+gate from the keyboard release, which keeps its whole share. The input thread
+keeps one queue place for such a release, so requests that timed out and wait
+to be dropped never refuse it. A release that has not answered when its share
+ends stays owed: until it answers no boundary queues another, and a later
+press of the same direction is sent again rather than answered as still
+asserted. When it answers Applied, the held usage is cleared; otherwise the
+next request or boundary releases again. It may answer after Stop has
+confirmed the drain. Its outcome is diagnostic only. The keyboard maintenance
+step neutralizes on the first due step that finds the device verified, as
+managed's does, tries a pending neutralization at most once every 15 s, and
+records a failed release in the diagnostic history.
+
+Native differs from managed in these ways, each failing safe:
+
+- Only the RZ09-0581 stack is resolved. RZ09-0528 publishes Unavailable.
+- The suspend release and the maintenance neutralization belong to the
+  keyboard Driver-mode owner (`service-keyboard-driver-mode-v1`). Without it,
+  a usage held across a suspend is released by the next request or by Stop.
+- SYSTEM is refused as "The active interactive Windows user is required."
+- A Stop or a confirmed suspend ends a brightness request still waiting, and
+  its release does not take the operation gate.
+- A pending neutralization is retried once every 15 s, also while the
+  keyboard's record is closed or a release is in doubt.
+- A press's fresh capture opens no profile store, as managed's device check
+  needs none. The shared capture factory admits only `S-1-5-21-` users and
+  opens their store, so the press takes its own capture instead.
+- The published availability is the probe thread's last resolution, refreshed
+  at most every 10 s. A status never waits on a resolution, so a changed
+  availability reaches the status published after it resolves.
+- With `service-diagnostics-export-v1`, the history records managed's warning
+  for an Unavailable write that carries an error, and each driver-package
+  rejection's stage, reason and installed state. Native records a rejection
+  once until it changes; managed traces only rejections that throw.
+
+Both package readers refuse the feature and the marker by name ("Native
+display-brightness input is not admitted for packaging."), so no packaged image
+carries it. `tests/data/display-brightness-hid-vectors.json` holds managed's
+replies and transport usages. `ServiceControlRuntimeTests.NativeDisplayBrightnessHidVectors`
+records them, and the Rust state machine replays them. The feature is
+source-reviewed and has not been run on a laptop.
 #### Keyboard lighting
 
 A Service built with `service-lighting-v1` serves `setLightingOverride` on
@@ -1273,8 +1368,8 @@ managed's pinned semantic lighting manifest. It classifies power inside the job
 under its own admission, stores the override in managed's `manual-overrides.json`
 format, reads back each setter, restores a confirmed mismatch, and stops on an
 unconfirmed submission until a read-only resolution. Lit effects, transitions and profile reconciliation are slice L2.
-The feature adds the capability marker `service-lighting-v1` after owned
-HyperBoost's. Both package readers refuse the feature and the marker by name
+The feature adds the capability marker `service-lighting-v1` last, after
+display-brightness input's. Both package readers refuse the feature and the marker by name
 ("Keyboard lighting is not admitted for packaging."). It is source-reviewed
 and has not been run on a laptop. See
 [native keyboard lighting](windows-native-lighting.md) for the order, the

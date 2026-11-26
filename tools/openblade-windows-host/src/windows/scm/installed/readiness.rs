@@ -56,6 +56,11 @@ mod gpu_clock_offsets;
 ))]
 #[path = "nvml_library.rs"]
 mod nvml_library;
+// The claimed, budgeted call thread the GPU worker and the display-brightness
+// lane share.
+#[cfg(feature = "service-thermal-mutation-v1")]
+#[path = "withdrawal_lane.rs"]
+mod withdrawal_lane;
 
 #[cfg(feature = "service-diagnostics-export-v1")]
 #[path = "readiness_export.rs"]
@@ -90,7 +95,10 @@ const DRAIN_TIMEOUT: Duration = Duration::from_secs(2);
 /// 0.9 s) and the fans keep the 2 s they had. With the listener's 2 s that is
 /// 4.9 s, inside the 5 s Stop wait hint (`scm_host::status_for`) and the
 /// system-shutdown window, WaitToKillServiceTimeout, about 5 s: native
-/// accepts SERVICE_CONTROL_SHUTDOWN, not PRESHUTDOWN.
+/// accepts SERVICE_CONTROL_SHUTDOWN, not PRESHUTDOWN. A display-brightness
+/// usage still held at Stop is released first, within its own share
+/// (`thermal_mutation::BRIGHTNESS_SHUTDOWN_BUDGET`, 0.3 s), out of this bound:
+/// only then do the fans start with less than their 2 s, at least 1.7 s.
 #[cfg(feature = "service-keyboard-driver-mode-v1")]
 const SOURCE_DRAIN_TIMEOUT: Duration =
     DRAIN_TIMEOUT.saturating_add(thermal_mutation::KEYBOARD_SHUTDOWN_BUDGET);
@@ -595,6 +603,7 @@ async fn serve_connection(
                 | StatusRequest::SetPerformanceShortcutPreview { .. }
                 | StatusRequest::SetHyperBoost { .. }
                 | StatusRequest::RecoverHyperBoostRestore { .. }
+                | StatusRequest::SetDisplayBrightnessHidUsage { .. }
                 | StatusRequest::ReportApplicationContext { .. }
                 | StatusRequest::UpdateProfiles { .. }
                 | StatusRequest::SetThermalControlPolicy { .. }
@@ -915,6 +924,13 @@ fn mutation_budget(request: &StatusRequest) -> Duration {
     ) {
         return RECIPE_BUDGET;
     }
+    // A display-brightness usage writes no thermal state, but it waits for
+    // the same gate, and its lane bounds each submission within this budget
+    // (`display_brightness_hid::submit`).
+    #[cfg(feature = "service-brightness-hid-usage-v1")]
+    if matches!(request, StatusRequest::SetDisplayBrightnessHidUsage { .. }) {
+        return RECIPE_BUDGET;
+    }
     // And the HyperBoost recovery request, which reads managed's journal
     // only.
     #[cfg(feature = "service-hyperboost-v1")]
@@ -964,15 +980,27 @@ async fn serve_mutation(
 ) -> Result<(), ExchangeError> {
     use ExchangeError::{Client, Runtime};
     let caller = refresh_caller(stream, original)?;
+    // A caller the endpoint admits no access to is the client's fault and
+    // refuses here, before the snapshot would raise the same refusal as a
+    // runtime failure that stops the Service.
+    caller.access().map_err(Client)?;
     let sid = stream.user_sid_after_read().map_err(Client)?;
     let deadline = Instant::now() + mutation_budget(request);
     let future = {
         let mut source = source.lock().await;
         source.verify_origin().map_err(Runtime)?;
-        timeout_at(deadline, source.snapshot(caller, Instant::now()))
-            .await
-            .map_err(|e| Runtime(e.into()))?
-            .map_err(Runtime)?;
+        // A display-brightness request observes nothing first: managed answers
+        // a repeat of the held usage and a release before its device check,
+        // and a press takes its own fresh admission before it writes
+        // (`Runtime::set_display_brightness_hid_usage`). The Session Agent
+        // repeats a held key at about 30 Hz, so an observation per repeat
+        // would queue the key-up behind them.
+        if !matches!(request, StatusRequest::SetDisplayBrightnessHidUsage { .. }) {
+            timeout_at(deadline, source.snapshot(caller, Instant::now()))
+                .await
+                .map_err(|e| Runtime(e.into()))?
+                .map_err(Runtime)?;
+        }
         source.mutate(caller, sid.clone(), request.clone(), deadline)
     };
     // A request that may reconcile after committing is never canceled at its

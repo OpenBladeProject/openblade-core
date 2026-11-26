@@ -146,6 +146,11 @@ internal sealed record NativeArtifact(string Id, string Role, string Target, str
         // Refuse the feature and its capability marker by name (docs/windows-native-lighting.md).
         if (features.Contains("service-lighting-v1", StringComparer.Ordinal) || capabilities.Split(',').Contains("service-lighting-v1", StringComparer.Ordinal))
         { throw new InvalidDataException("Keyboard lighting is not admitted for packaging."); }
+        // Display-brightness input submits RzCommon input IOCTLs that have no readback and no capture
+        // evidence. Admitting it is a separate packaging decision. Refuse the feature and its capability
+        // marker by name (docs/windows-rust-development-service.md).
+        if (features.Contains("service-brightness-hid-usage-v1", StringComparer.Ordinal) || capabilities.Split(',').Contains("service-brightness-hid-usage-v1", StringComparer.Ordinal))
+        { throw new InvalidDataException("Native display-brightness input is not admitted for packaging."); }
         // The application-context reporter is not admitted for packaging either. Refuse its
         // feature and its capability marker by name until a packaging stage admits both.
         // That stage must also pair the reporter with a Service built with service-thermal-mutation-v1,

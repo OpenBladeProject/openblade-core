@@ -51,6 +51,23 @@ fn has_fan_stop_evidence(device: Option<&DeviceMetadata>) -> bool {
     )
 }
 
+/// Managed `displayBrightnessHidAvailability` for the observed host
+/// (`thermal_mutation::brightness_availability`): an identified host's model,
+/// or none for an unsupported laptop, and nothing while identity is
+/// unavailable.
+#[cfg(feature = "service-brightness-hid-usage-v1")]
+fn brightness_status(
+    device: Option<&DeviceMetadata>,
+    lane: Option<&super::thermal_mutation::brightness_hid::Lane>,
+) -> u8 {
+    let model = match device {
+        Some(DeviceMetadata::MatchedHost { model, .. }) => Some(Some(model.as_str())),
+        Some(DeviceMetadata::Unsupported) => Some(None),
+        Some(DeviceMetadata::Unavailable) | None => None,
+    };
+    super::thermal_mutation::brightness_availability(model, lane)
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Power {
     Battery,
@@ -80,6 +97,8 @@ struct StatusFields {
     controller_warning: Option<&'static str>,
     #[cfg(feature = "service-hyperboost-v1")]
     hyperboost: HyperBoostStatus,
+    #[cfg(feature = "service-brightness-hid-usage-v1")]
+    display_brightness_hid: u8,
 }
 
 type ReadEvidence = dyn Fn(&AtomicBool) -> Evidence + Send + Sync;
@@ -112,6 +131,10 @@ struct ObservedStatus {
     observed_at: Option<Instant>,
     publisher: Option<watch::Sender<Arc<Publication>>>,
     metadata: Option<Arc<Publication>>,
+    /// The display-brightness lane whose last resolution is published as
+    /// managed `displayBrightnessHidAvailability` (`brightness_status`).
+    #[cfg(feature = "service-brightness-hid-usage-v1")]
+    brightness: Option<Arc<super::thermal_mutation::brightness_hid::Lane>>,
 }
 
 impl ObservedStatus {
@@ -125,6 +148,8 @@ impl ObservedStatus {
             observed_at: None,
             publisher: None,
             metadata: None,
+            #[cfg(feature = "service-brightness-hid-usage-v1")]
+            brightness: None,
         }
     }
 
@@ -272,6 +297,11 @@ impl ObservedStatus {
                 },
             }
         };
+        #[cfg(feature = "service-brightness-hid-usage-v1")]
+        let display_brightness_hid = brightness_status(
+            evidence.as_ref().map(|current| &current.device),
+            self.brightness.as_deref(),
+        );
         let (power, controllers, controller_warning) = evidence.map_or(
             (Power::Unknown, vec![], Some(CONTROLLER_UNKNOWN)),
             |current| {
@@ -291,6 +321,8 @@ impl ObservedStatus {
             controller_warning,
             #[cfg(feature = "service-hyperboost-v1")]
             hyperboost,
+            #[cfg(feature = "service-brightness-hid-usage-v1")]
+            display_brightness_hid,
         };
         // Keep one revision across caller projections. Unobservable evidence
         // changes (such as unknown versus unclassified external power) do not
@@ -320,6 +352,8 @@ impl ObservedStatus {
             .with_fan_stop_evidence(fields.fan_stop_evidence);
             #[cfg(feature = "service-hyperboost-v1")]
             let status = status.with_hyperboost(&fields.hyperboost);
+            #[cfg(feature = "service-brightness-hid-usage-v1")]
+            let status = status.with_display_brightness_hid(fields.display_brightness_hid);
             status
         };
         let publication = Arc::new(Publication {
@@ -462,15 +496,22 @@ pub(super) fn native_status_source(
     #[cfg(feature = "service-mailbox-observation-v1")]
     let mailbox = super::mailbox_read::MailboxSource::acquire(origin.clone())?;
     #[cfg(feature = "service-thermal-mutation-v1")]
-    return Ok(Box::new(GuardedStatus {
-        inner: ObservedStatus::new(read_windows),
-        power_epoch: None,
-        mutation: Some(super::thermal_mutation::Runtime::native(
-            origin.clone(),
-            &mailbox,
-        )),
-        origin,
-        mailbox,
+    return Ok(Box::new({
+        let runtime = super::thermal_mutation::Runtime::native(origin.clone(), &mailbox);
+        #[cfg_attr(not(feature = "service-brightness-hid-usage-v1"), allow(unused_mut))]
+        let mut inner = ObservedStatus::new(read_windows);
+        // The observer publishes the requests' own lane's resolution.
+        #[cfg(feature = "service-brightness-hid-usage-v1")]
+        {
+            inner.brightness = runtime.brightness_lane();
+        }
+        GuardedStatus {
+            inner,
+            power_epoch: None,
+            mutation: Some(runtime),
+            origin,
+            mailbox,
+        }
     }));
     #[cfg(not(feature = "service-thermal-mutation-v1"))]
     Ok(compose_guarded_status(
@@ -839,6 +880,16 @@ impl StatusSource for GuardedStatus {
         let mailbox = self.mailbox.clone();
         let publisher = self.inner.publisher.clone();
         Box::pin(async move {
+            // Managed `SetDisplayBrightnessHidUsageAsync`: one usage under the
+            // thermal gate. It reads no status, stores nothing and changes no
+            // status member, so it needs no publication and none follows.
+            #[cfg(feature = "service-brightness-hid-usage-v1")]
+            if let Some(usage) = request.display_brightness_hid_usage() {
+                let outcome = runtime
+                    .set_display_brightness_hid_usage(mailbox, caller, sid, usage, deadline)
+                    .await?;
+                return Ok((outcome, None));
+            }
             let Some(publisher) = publisher else {
                 return Ok((
                     super::thermal_mutation::Outcome::blocked("Status is not initialized."),
@@ -1441,6 +1492,19 @@ impl StatusSource for GuardedStatus {
                 // fan handback then waits for it at `drain_active`, and the
                 // drain ends at its caller's bound with the steps below
                 // not run.
+                // Managed releases a held display-brightness usage before
+                // the keyboard (`PrepareForShutdownAsync`), within its own
+                // budget out of this drain's. Its reply is a diagnostic: it
+                // fails and skips nothing (`Runtime::release_display_brightness`).
+                #[cfg(feature = "service-brightness-hid-usage-v1")]
+                if self.origin.admit_owned_stop().is_ok() {
+                    let _ = runtime
+                        .release_display_brightness(
+                            super::thermal_mutation::BRIGHTNESS_SHUTDOWN_BUDGET,
+                            deadline,
+                        )
+                        .await;
+                }
                 #[cfg(feature = "service-keyboard-driver-mode-v1")]
                 {
                     let keyboard = if self.origin.admit_owned_stop().is_ok() {
@@ -1698,7 +1762,8 @@ pub(super) fn injected_mutation_source(
     #[cfg_attr(not(feature = "service-hyperboost-v1"), allow(unused_variables))]
     hyperboost: InjectedHyperBoost,
 ) -> Box<dyn StatusSource> {
-    Box::new(GuardedStatus {
+    #[cfg_attr(not(feature = "service-brightness-hid-usage-v1"), allow(unused_mut))]
+    let mut source = GuardedStatus {
         origin,
         mailbox,
         mutation: Some(runtime),
@@ -1740,5 +1805,13 @@ pub(super) fn injected_mutation_source(
                     .then_some(CONTROLLER_UNKNOWN),
             }
         }),
-    })
+    };
+    #[cfg(feature = "service-brightness-hid-usage-v1")]
+    {
+        source.inner.brightness = source
+            .mutation
+            .as_ref()
+            .and_then(|runtime| runtime.brightness_lane());
+    }
+    Box::new(source)
 }
