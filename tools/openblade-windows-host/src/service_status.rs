@@ -267,8 +267,9 @@ pub(crate) struct HyperBoostStatus {
     /// 1 CoolingPadAbsent, 2 CoolingPadPresent.
     pub(crate) pad: u8,
     /// Managed `HyperBoostRestorePending`: managed's ownership journal names
-    /// a restore it has not finished. `None` when the journal could not be
-    /// read, which establishes neither answer (`resolved`).
+    /// a restore it has not finished. `None` when no journal read has
+    /// established an answer: it could not be read, or nothing was observed
+    /// (`resolved`). Published as no pending restore.
     pub(crate) restore_pending: Option<bool>,
     /// Managed `HyperBoostBlockingControllers`. `None` is managed's null:
     /// no source-aware classification, so consumers apply the name policy

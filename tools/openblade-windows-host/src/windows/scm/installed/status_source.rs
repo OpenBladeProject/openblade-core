@@ -255,7 +255,9 @@ impl ObservedStatus {
             has_fan_stop_evidence(evidence.as_ref().map(|current| &current.device));
         // The pending restore the last status reported stands until a
         // journal read establishes another (`HyperBoostStatus::resolved`).
-        // Nothing observed establishes none of the members and keeps it.
+        // Nothing observed establishes none of the members and keeps it,
+        // or keeps none: an unreadable journal after that is still the
+        // first answer.
         #[cfg(feature = "service-hyperboost-v1")]
         let hyperboost = {
             let prior = self
@@ -265,7 +267,7 @@ impl ObservedStatus {
             match evidence.as_ref() {
                 Some(current) => current.hyperboost.clone().resolved(prior),
                 None => HyperBoostStatus {
-                    restore_pending: prior.or(Some(false)),
+                    restore_pending: prior,
                     ..HyperBoostStatus::UNOBSERVED
                 },
             }
@@ -1394,6 +1396,15 @@ impl StatusSource for GuardedStatus {
                 // evidence fails the Stop, and nothing it does skips the fan
                 // step. The first error is kept. The fan handback is paced to
                 // what is left of the drain (`deadline`), whose end cancels it.
+                //
+                // One limit is the mutation worker's (`Worker::stop`): the
+                // release cancels a job still running, and every job step
+                // checks that between its device and OS calls, a HyperBoost
+                // request's pad scan included (`Permit::resolve`). A single
+                // call that does not return still holds the job thread; the
+                // fan handback then waits for it at `drain_active`, and the
+                // drain ends at its caller's bound with the steps below
+                // not run.
                 #[cfg(feature = "service-keyboard-driver-mode-v1")]
                 {
                     let keyboard = if self.origin.admit_owned_stop().is_ok() {
@@ -1429,7 +1440,8 @@ impl StatusSource for GuardedStatus {
                 //   reads Automatic fans.
                 // A fan or keyboard failure never skips the exit either: it
                 // runs whatever they returned, and only an unsettled journal
-                // row, which fences every write, stops it.
+                // row, which fences every write, stops it. (A job thread
+                // held in one native call is the limit named above.)
                 #[cfg(all(
                     feature = "service-hyperboost-v1",
                     feature = "service-profile-triggers-v1"

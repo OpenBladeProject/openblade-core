@@ -79,6 +79,20 @@ async fn status_reports_the_pad_the_observer_read() {
     }
 }
 
+/// A request's pad scans run to their answer while nothing cancels their
+/// job: a pad-less entry is admitted on three of them, one for the request
+/// and one before each enable setter, and none ends as a cancelled scan.
+#[tokio::test]
+async fn an_uncancelled_pad_scan_admits_a_padless_entry() {
+    let rig = rig_at(0, 0, FULL, saved_files());
+    let result = rig.hyperboost(1, true).await;
+    assert_eq!(result["result"]["status"], 1, "{result}");
+    assert_eq!(setters(&rig).len(), 2);
+    assert_eq!(rig.hyperboost.observations.load(Ordering::Acquire), 3);
+    assert_eq!(rig.hyperboost.gate_cancellations.load(Ordering::Acquire), 0);
+    rig.stop_in_hyperboost().await;
+}
+
 /// Managed `hyperBoostRestorePending` starts from its journal's state
 /// (`load.Journal?.State == RestorePending`). Every other state, an absent
 /// journal and a document managed's store reads as invalid report none, as

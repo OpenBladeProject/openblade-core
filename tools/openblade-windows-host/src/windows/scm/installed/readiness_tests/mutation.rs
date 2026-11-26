@@ -1221,6 +1221,12 @@ struct HyperBoostProbes {
     status_stall: Arc<AtomicU8>,
     /// The status observer's pad scans and journal reads.
     status_reads: Arc<AtomicUsize>,
+    /// Holds the request gates' pad scans from this one on (the first is 1)
+    /// until their job cancels them, as the native scan stops between its
+    /// enumeration calls. 0 holds none.
+    gate_stall_from: Arc<AtomicUsize>,
+    /// The gate scans that ended at their job's cancellation.
+    gate_cancellations: Arc<AtomicUsize>,
     /// `None`: a read that fails.
     journal: Arc<std::sync::Mutex<Option<Option<Vec<u8>>>>>,
     journal_reads: Arc<AtomicUsize>,
@@ -1239,6 +1245,8 @@ impl HyperBoostProbes {
             observations: Arc::default(),
             status_stall: Arc::default(),
             status_reads: Arc::default(),
+            gate_stall_from: Arc::default(),
+            gate_cancellations: Arc::default(),
             journal: Arc::new(std::sync::Mutex::new(Some(None))),
             journal_reads: Arc::default(),
         }
@@ -1283,9 +1291,30 @@ impl HyperBoostProbes {
             self.observations.clone(),
         );
         let (journal, reads) = (self.journal.clone(), self.journal_reads.clone());
+        let (stall, cancellations) = (
+            self.gate_stall_from.clone(),
+            self.gate_cancellations.clone(),
+        );
         Probes::new(
-            move |_| {
-                observations.fetch_add(1, Ordering::AcqRel);
+            move |cancelled| {
+                let scan = observations.fetch_add(1, Ordering::AcqRel) + 1;
+                let held =
+                    || matches!(stall.load(Ordering::Acquire), from if from != 0 && scan >= from);
+                // The cap ends the job thread of a test that failed before
+                // it released the scan.
+                let began = std::time::Instant::now();
+                loop {
+                    // The native scan checks its cancellation first and
+                    // between its calls, and a cancelled scan failed.
+                    if cancelled.load(Ordering::Acquire) {
+                        cancellations.fetch_add(1, Ordering::AcqRel);
+                        return Pad::ObservationFailed;
+                    }
+                    if !held() || began.elapsed() > Duration::from_secs(8) {
+                        break;
+                    }
+                    std::thread::sleep(Duration::from_millis(1));
+                }
                 let next = script.lock().unwrap().pop_front();
                 next.unwrap_or(*pad.lock().unwrap())
             },
@@ -7572,7 +7601,11 @@ async fn fan_settle_only_permit_cannot_reach_a_setter() {
     assert!(permit.prepare_fan(record).is_err());
     assert!(permit.resolve_fan(2, baseline).is_err());
     assert!(permit.confirm_fan_noop(2, baseline).is_err());
-    assert!(permit.resolve(2, baseline).is_err());
+    assert!(
+        permit
+            .resolve(2, baseline, &AtomicBool::new(false))
+            .is_err()
+    );
     assert!(
         permit
             .record(openblade_domain::thermal_mutation::Progress::FirstIntent)

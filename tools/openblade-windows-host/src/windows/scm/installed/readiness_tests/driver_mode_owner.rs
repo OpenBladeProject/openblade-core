@@ -2016,7 +2016,11 @@ async fn the_handback_refuses_every_stage_beyond_its_recipe() {
     assert!(permit.resolve_fan(2, baseline).is_err());
     assert!(permit.confirm_fan_noop(2, baseline).is_err());
     assert!(permit.prepare_fan(permit.fan_record().unwrap()).is_err());
-    assert!(permit.resolve(2, baseline).is_err());
+    assert!(
+        permit
+            .resolve(2, baseline, &AtomicBool::new(false))
+            .is_err()
+    );
     assert_eq!(fan_rows(&rig).len(), rows);
     assert!(permit.authorize().is_some());
 }

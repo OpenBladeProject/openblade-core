@@ -152,7 +152,8 @@ pub(crate) trait Permit: Send + Sync {
     /// intent row, after its own power reading: managed revalidates HyperBoost
     /// eligibility before each enable command (`requiredPadStatePerCommand`).
     /// A refusal sets its own cause; that setter is not submitted.
-    fn admits_setter(&self) -> bool {
+    /// `cancelled` is the job's cancellation, as for `resolve`.
+    fn admits_setter(&self, _cancelled: &AtomicBool) -> bool {
         true
     }
     /// Time the pace must leave after this recipe's setters for work that
@@ -160,8 +161,16 @@ pub(crate) trait Permit: Send + Sync {
     fn reserve(&self) -> std::time::Duration {
         std::time::Duration::ZERO
     }
-    fn resolve(&self, power: i32, baseline: ObservedPerformance)
-    -> io::Result<Option<Destination>>;
+    /// `cancelled` is the job's cancellation (`Limit::cancelled`), which the
+    /// request's drop and `Worker::stop` set. A permit whose admission waits
+    /// on an OS call hands it to that call, so the job thread is not held
+    /// there past the request or a Stop.
+    fn resolve(
+        &self,
+        power: i32,
+        baseline: ObservedPerformance,
+        cancelled: &AtomicBool,
+    ) -> io::Result<Option<Destination>>;
     fn refused(&self, _cause: Refusal) {}
     fn failed(&self, _error: &io::Error) {}
     fn retired(&self) -> io::Result<Settlement> {
@@ -428,7 +437,9 @@ impl<P: Port> Reader<P, ReadAdmission> {
             power
         };
         let power_source = fence.admit(power)?;
-        let destination = permit.resolve(power_source, baseline).ok()??;
+        let destination = permit
+            .resolve(power_source, baseline, limit.cancelled)
+            .ok()??;
         if permit.thermal_fenced(limit.deadline.saturating_duration_since(Instant::now())) {
             permit.refused(Refusal::ThermalPending);
             return None;
@@ -665,7 +676,7 @@ impl<P: Port> Attempt<'_, P, ReadAdmission> {
         // Refused as a power change is: nothing is submitted for this setter,
         // and an earlier one keeps its acknowledged row unsettled, so nothing
         // is replayed.
-        if !permit.admits_setter() {
+        if !permit.admits_setter(limit.cancelled) {
             return None;
         }
         self.checkpoint(authorize, admission, limit).ok()?;

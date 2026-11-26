@@ -132,10 +132,13 @@ impl Probes {
     fn journal_safe(&self) -> bool {
         (self.journal)().is_ok_and(|bytes| hyperboost_journal::journal_safe(bytes.as_deref()))
     }
-    /// One pad observation for a request's gate. The request waits for it:
-    /// its own deadline bounds the step, and no one else cancels it.
-    fn pad(&self) -> Pad {
-        (self.pad)(&AtomicBool::new(false))
+    /// One pad observation, which ends once `cancelled` is set: a request's
+    /// gate passes its job's cancellation, and the status its observer's. A
+    /// cancelled scan is a failed one, which admits nothing. The scan checks
+    /// the flag between its enumeration calls (`discovery::scan_hid`), so a
+    /// single call that does not return still holds its thread.
+    fn pad(&self, cancelled: &AtomicBool) -> Pad {
+        (self.pad)(cancelled)
     }
     /// Managed `PadlessHyperBoostEligibility` from one pad observation
     /// (`ResolvePadlessHyperBoostEligibility`): absent, present, or Unknown
@@ -146,7 +149,7 @@ impl Probes {
     /// observation that started it.
     pub(in super::super) fn eligibility(&self, cancelled: &AtomicBool) -> u8 {
         use crate::service_status::HyperBoostStatus;
-        match (self.pad)(cancelled) {
+        match self.pad(cancelled) {
             Pad::Absent => HyperBoostStatus::PAD_ABSENT,
             Pad::Present => HyperBoostStatus::PAD_PRESENT,
             Pad::ObservationFailed => 0,
@@ -323,11 +326,14 @@ impl RequestPermit {
     /// `resolve` for a HyperBoost step, after the shared power checks. Each
     /// gate cites the managed line it ports; a refusal sets its cause and
     /// stores and writes nothing.
+    /// `cancelled` is the job's cancellation, which ends the pad scan when
+    /// the request is dropped or the Service stops (`Permit::resolve`).
     pub(super) fn resolve_hyperboost(
         &self,
         step: &Step,
         power: i32,
         baseline: ObservedPerformance,
+        cancelled: &AtomicBool,
     ) -> io::Result<Option<Destination>> {
         let refuse = |message: &'static str, status: u8| {
             self.set_cause(Cause::HyperBoost { message, status });
@@ -399,7 +405,7 @@ impl RequestPermit {
         // 7004-7023: a fresh pad observation selects the path. Native admits
         // only the pad-less one, so a pad refuses here; a failed observation
         // selects pad-less, whose absence check (7142-7159) refuses below.
-        let pad = step.probes.pad();
+        let pad = step.probes.pad(cancelled);
         if pad == Pad::Present {
             return refuse(PAD_PRESENT, 2);
         }
@@ -487,7 +493,7 @@ impl RequestPermit {
     /// (`revalidateEligibilityPerCommand`, `ApplyHyperBoostCommandOnceAsync`
     /// 6806-6812): the pad must still be absent. Managed's journal is read
     /// again before every setter of either direction.
-    pub(super) fn hyperboost_admits_setter(&self, step: &Step) -> bool {
+    pub(super) fn hyperboost_admits_setter(&self, step: &Step, cancelled: &AtomicBool) -> bool {
         if !step.probes.journal_safe() {
             self.set_cause(Cause::HyperBoost {
                 message: JOURNAL_PENDING,
@@ -495,7 +501,7 @@ impl RequestPermit {
             });
             return false;
         }
-        if step.enable && step.probes.pad() != Pad::Absent {
+        if step.enable && step.probes.pad(cancelled) != Pad::Absent {
             self.set_cause(Cause::HyperBoost {
                 message: PAD_ABSENCE,
                 status: 2,

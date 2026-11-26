@@ -146,13 +146,15 @@ impl Permit for ExitPermit {
     }
     // Managed's journal again before each setter, as for an explicit exit
     // (`RequestPermit::hyperboost_admits_setter`).
-    fn admits_setter(&self) -> bool {
+    fn admits_setter(&self, _: &AtomicBool) -> bool {
         self.probes.journal_safe()
     }
     fn resolve(
         &self,
         power: i32,
         baseline: ObservedPerformance,
+        // An exit observes no pad, so it waits on no call this would end.
+        _: &AtomicBool,
     ) -> io::Result<Option<Destination>> {
         verify_retained_failure(&self.fatal)?;
         if self.accepted.load(Ordering::Acquire) {

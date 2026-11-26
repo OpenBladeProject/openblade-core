@@ -946,6 +946,128 @@ mod under_a_stalled_observer {
     use super::*;
     use crate::installed::readiness::thermal_mutation::Release;
 
+    /// A HyperBoost entry is in a pad scan, on the mutation job thread,
+    /// when SCM STOP arrives: the request's own scan, or the one before its
+    /// first enable setter. The scan takes the job's cancellation, which the
+    /// keyboard release's `Worker::stop` sets, so it ends as a failed
+    /// observation: the entry sends no setter (its Prepared row, if it had
+    /// one, retires unsubmitted), the job thread is free, and the Stop
+    /// releases the keyboard, hands the fans back and returns inside the
+    /// production bound. With a scan nothing could cancel, the release gave
+    /// up, the fan handback waited for the job thread, and retire's bound
+    /// ended the drain with the rest not run.
+    #[tokio::test]
+    async fn stop_ends_a_requests_pad_scan_and_completes_its_cleanup() {
+        // The request's own scan, with an owned fan change to hand back;
+        // then the scan before the first setter, which that fan change
+        // would have refused at the request.
+        for (held_scan, fans_owned) in [(1, true), (2, false)] {
+            stop_during_the_pad_scan(held_scan, fans_owned).await;
+        }
+    }
+    async fn stop_during_the_pad_scan(held_scan: usize, fans_owned: bool) {
+        use crate::installed::readiness::SOURCE_DRAIN_TIMEOUT;
+        struct Released<'a>(&'a AtomicUsize);
+        impl Drop for Released<'_> {
+            fn drop(&mut self) {
+                self.0.store(0, Ordering::Release);
+            }
+        }
+        let case = format!("scan {held_scan}");
+        let rig = applied_game().await;
+        cleanup(&rig);
+        let observed = rig
+            .request(json!({"operation":"observeState","version":90,"requestId":"dddddddd-bbbb-cccc-dddd-000000000073","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0}))
+            .await;
+        assert_eq!(observed["success"], true, "{observed}");
+        rig.held(
+            HeldClock::CatchUp,
+            Box::pin(async {
+                let maintain = rig.source.lock().await.maintain_driver_mode();
+                if let Some(maintain) = maintain {
+                    maintain.await.unwrap();
+                }
+            }),
+        )
+        .await;
+        assert_eq!(rig.port.state.lock().unwrap().device_mode, 3);
+        if fans_owned {
+            let fan = rig.request(fan_request(180, Some(1), 3700)).await;
+            assert_eq!(fan["result"]["status"], 1, "{fan}");
+            assert!(rig.storage.outstanding_fan());
+        }
+        let (rows, before) = (journal(&rig).len(), writes(&rig));
+        // The bounds below are the Service's own on the real clock, which a
+        // held test clock would stop while the job thread is in its scan.
+        keep_real_clock();
+        let scans = rig.hyperboost.observations.load(Ordering::Acquire);
+        let held = Released(&rig.hyperboost.gate_stall_from);
+        held.0.store(scans + held_scan, Ordering::Release);
+        {
+            // The entry reaches the held scan, and its caller then goes away.
+            let request = hyperboost(&rig, 1, true);
+            tokio::pin!(request);
+            let waiting = std::time::Instant::now();
+            while rig.hyperboost.observations.load(Ordering::Acquire) < scans + held_scan {
+                assert!(
+                    waiting.elapsed() < Duration::from_secs(5),
+                    "{case}: no scan"
+                );
+                tokio::select! {
+                    reply = &mut request => panic!("{case}: replied before the scan: {reply}"),
+                    () = tokio::time::sleep(Duration::from_millis(1)) => {}
+                }
+            }
+        }
+        // `Ports::retire`: the outer bound and the drain share one deadline.
+        rig.origin.stop();
+        let began = std::time::Instant::now();
+        let deadline = tokio::time::Instant::now() + SOURCE_DRAIN_TIMEOUT;
+        let stopped = tokio::time::timeout_at(deadline, async {
+            rig.source.lock().await.drain_by(deadline).await
+        })
+        .await;
+        let took = began.elapsed();
+        assert!(
+            matches!(stopped, Ok(Ok(()))),
+            "{case}: {stopped:?} after {took:?}"
+        );
+        assert!(took < SOURCE_DRAIN_TIMEOUT, "{case}: {took:?}");
+        // The held scan ended at the cancellation, as a failed observation,
+        // and no scan followed it.
+        assert_eq!(
+            rig.hyperboost.observations.load(Ordering::Acquire),
+            scans + held_scan,
+            "{case}"
+        );
+        assert_eq!(
+            rig.hyperboost.gate_cancellations.load(Ordering::Acquire),
+            1,
+            "{case}"
+        );
+        // The entry submitted nothing. Refused at the request it wrote no
+        // row; refused before its first setter its Prepared row retired.
+        let entry: Vec<_> = journal(&rig)[rows..]
+            .iter()
+            .filter(|row| row["destination"] == 100)
+            .map(|row| row["progress"].as_u64().unwrap())
+            .collect();
+        assert_eq!(entry, [[].as_slice(), &[0, 6]][held_scan - 1], "{case}");
+        assert!(selectors(&rig) != [SELECTOR_HYPERBOOST; 2], "{case}");
+        assert!(!pending(&rig), "{case}");
+        // The cleanup the stalled scan used to prevent.
+        assert_eq!(rig.port.state.lock().unwrap().device_mode, 0, "{case}");
+        assert_eq!(rig.runtime.driver_mode_release(), Some(Release::Restored));
+        if fans_owned {
+            assert_eq!(rig.port.state.lock().unwrap().fans, [0; 2]);
+            assert!(!rig.storage.outstanding_fan());
+            assert!(writes(&rig) > before);
+        } else {
+            // No thermal setter at all: the entry's were never sent.
+            assert_eq!(writes(&rig), before);
+        }
+    }
+
     /// With the keyboard owner composed, the stalled observer takes no time
     /// from the keyboard release either: the keyboard returns to Normal
     /// before HyperBoost is exited, inside the one drain.

@@ -337,7 +337,12 @@ impl Permit for DriverModePermit {
     fn cleanup(&self) -> bool {
         matches!(self.authority, Authority::Release(_))
     }
-    fn resolve(&self, _: i32, _: ObservedPerformance) -> io::Result<Option<Destination>> {
+    fn resolve(
+        &self,
+        _: i32,
+        _: ObservedPerformance,
+        _: &AtomicBool,
+    ) -> io::Result<Option<Destination>> {
         Ok(None)
     }
     fn failed(&self, error: &io::Error) {

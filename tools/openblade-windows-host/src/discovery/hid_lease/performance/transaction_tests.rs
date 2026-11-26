@@ -727,6 +727,7 @@ impl super::mutation::Permit for Owner {
         &self,
         _: i32,
         _: ObservedPerformance,
+        _: &AtomicBool,
     ) -> io::Result<Option<openblade_domain::thermal_mutation::Destination>> {
         Ok(None)
     }

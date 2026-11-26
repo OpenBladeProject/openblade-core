@@ -1015,6 +1015,14 @@ async fn an_unreadable_journal_keeps_the_last_pending_restore() {
     let mut source = ObservedStatus::new(|_| panic!("the cached publication is fresh"));
     source.publish(Some(published(&reading(None)))).unwrap();
     assert_eq!(pending(&source), true);
+    // A first refresh that yields nothing publishes no pending restore and
+    // establishes none: the unreadable journal after it is still the first
+    // answer, so it is pending.
+    let mut source = ObservedStatus::new(|_| panic!("the cached publication is fresh"));
+    source.publish(None).unwrap();
+    assert_eq!(pending(&source), false);
+    source.publish(Some(published(&reading(None)))).unwrap();
+    assert_eq!(pending(&source), true);
 }
 
 /// A drain tells a running observation to stop and waits for it only until

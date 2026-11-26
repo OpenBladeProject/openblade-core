@@ -106,7 +106,12 @@ impl Permit for Request {
     ) -> io::Result<Option<(FanIntent, Option<Destination>)>> {
         Ok(self.fan.map(|intent| (intent, None)))
     }
-    fn resolve(&self, _: i32, _: ObservedPerformance) -> io::Result<Option<Destination>> {
+    fn resolve(
+        &self,
+        _: i32,
+        _: ObservedPerformance,
+        _: &AtomicBool,
+    ) -> io::Result<Option<Destination>> {
         Ok(self.destination)
     }
     fn refused(&self, cause: Refusal) {
