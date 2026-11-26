@@ -978,6 +978,10 @@ async fn serve_mutation(
 ) -> Result<(), ExchangeError> {
     use ExchangeError::{Client, Runtime};
     let caller = refresh_caller(stream, original)?;
+    // A caller the endpoint admits no access to is the client's fault and
+    // refuses here, before the snapshot would raise the same refusal as a
+    // runtime failure that stops the Service.
+    caller.access().map_err(Client)?;
     let sid = stream.user_sid_after_read().map_err(Client)?;
     let deadline = Instant::now() + mutation_budget(request);
     let future = {

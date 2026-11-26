@@ -419,3 +419,32 @@ async fn a_press_is_admitted_without_a_profile_store() {
     rig.stop().await;
     assert_eq!(usages(&rig), [0, 0x70, 0]);
 }
+
+/// A caller that is neither SYSTEM nor interactive is refused as a client
+/// fault, before any mutation's snapshot, so it closes its own connection
+/// without an answer and never stops the Service.
+#[tokio::test]
+async fn a_caller_without_access_is_refused_as_a_client_fault() {
+    let rig = Rig::new(MemoryFiles::default());
+    rig.get().await;
+    let files = rig.files.bytes.lock().unwrap().clone();
+    let other = Caller {
+        logon: Logon::Other,
+        ..USER
+    };
+    let thermal = json!({
+        "operation": "setPerformanceOverride",
+        "version": 91,
+        "requestId": "aaaaaaaa-bbbb-cccc-ffff-000000000101",
+        "value": {"value": 1, "lifetime": 1, "customPerformance": null, "gpuClockTuning": null},
+    });
+    for request in [usage(1, 0x6F), thermal] {
+        let (served, reply) = exchange_as(&rig, &request, other).await;
+        assert!(served && reply.is_empty(), "{request}");
+    }
+    assert!(usages(&rig).is_empty());
+    untouched(&rig, &files);
+    // The Service still answers.
+    rig.get().await;
+    rig.stop().await;
+}
