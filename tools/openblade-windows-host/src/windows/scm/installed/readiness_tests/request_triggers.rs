@@ -15,10 +15,10 @@ const STORED: &str = "Profiles stored without automatic hardware application.";
 const VECTORS: &str = include_str!("../../../../../tests/data/request-trigger-vectors.json");
 
 async fn report(rig: &Rig, sequence: i64, path: Option<&str>) -> Value {
-    rig.request(json!({"operation":"reportApplicationContext","version":90,"requestId":format!("bbbbbbbb-bbbb-cccc-dddd-{sequence:012}"),"instanceId":"cccccccc-bbbb-cccc-dddd-000000000003","sequence":sequence,"executablePath":path})).await
+    rig.request(json!({"operation":"reportApplicationContext","version":91,"requestId":format!("bbbbbbbb-bbbb-cccc-dddd-{sequence:012}"),"instanceId":"cccccccc-bbbb-cccc-dddd-000000000003","sequence":sequence,"executablePath":path})).await
 }
 fn update(n: u8, profiles: &Value) -> Value {
-    json!({"operation":"updateProfiles","version":90,"requestId":format!("aaaaaaaa-bbbb-cccc-dddd-{n:012}"),"profiles":profiles})
+    json!({"operation":"updateProfiles","version":91,"requestId":format!("aaaaaaaa-bbbb-cccc-dddd-{n:012}"),"profiles":profiles})
 }
 fn writes(rig: &Rig) -> usize {
     rig.port.state.lock().unwrap().writes
@@ -784,7 +784,7 @@ async fn a_reconciliation_under_an_override_reports_that_override() {
 async fn assert_manual_fans_observed(rig: &Rig) {
     assert_eq!(rig.get().await["success"], true);
     let observed = rig
-        .request(json!({"operation":"observeState","version":90,"requestId":"dddddddd-bbbb-cccc-dddd-000000000077","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0}))
+        .request(json!({"operation":"observeState","version":91,"requestId":"dddddddd-bbbb-cccc-dddd-000000000077","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0}))
         .await;
     let fans = &observed["status"]["confirmedState"]["fans"];
     assert!(fans.as_i64().is_some_and(|fans| fans != 0), "{observed}");
@@ -976,7 +976,7 @@ async fn owned_fans_go_first_after_firmware_returned_them_to_automatic() {
     rig.port.state.lock().unwrap().fans = [0; 2];
     assert_eq!(rig.get().await["success"], true);
     let observed = rig
-        .request(json!({"operation":"observeState","version":90,"requestId":"dddddddd-bbbb-cccc-dddd-000000000078","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0}))
+        .request(json!({"operation":"observeState","version":91,"requestId":"dddddddd-bbbb-cccc-dddd-000000000078","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0}))
         .await;
     assert_eq!(
         observed["status"]["confirmedState"]["fans"], 0,
@@ -1438,7 +1438,7 @@ fn files_with_profile(performance: i32, fans: i32, game: Value) -> MemoryFiles {
 /// A fresh exact-device reading (observeState), then the published status.
 async fn observed(rig: &Rig, n: u8) -> Value {
     let observed = rig
-        .request(json!({"operation":"observeState","version":90,"requestId":format!("eeeeeeee-bbbb-cccc-dddd-{n:012}"),"includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0}))
+        .request(json!({"operation":"observeState","version":91,"requestId":format!("eeeeeeee-bbbb-cccc-dddd-{n:012}"),"includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0}))
         .await;
     assert_eq!(observed["success"], true, "{observed}");
     rig.get().await

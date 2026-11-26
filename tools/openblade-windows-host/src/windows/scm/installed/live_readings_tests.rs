@@ -121,7 +121,7 @@ impl Rig {
     fn request(mask: u8) -> crate::service_status::StatusRequest {
         serde_json::from_value(json!({
             "operation": "observeState",
-            "version": 90,
+            "version": 91,
             "requestId": "11111111-2222-4333-8444-555555555555",
             "includeLiveReadings": mask != 0,
             "requestedLiveReadings": mask,
@@ -910,7 +910,7 @@ fn live_readings_carry_only_the_asked_sensors() {
 const FRAMES: &str = "live-reading-native-frames.json";
 const REGENERATE: &str = "OPENBLADE_REGENERATE_NATIVE_LIVE_READING_FRAMES";
 
-/// Records production snapshots as v90 status events for the managed codec
+/// Records production snapshots as v91 status events for the managed codec
 /// test (`NativeLiveReadingFrames_DecodeThroughTheManagedCodec`): an
 /// ObserveState reply with every reading, a HyperBoost reply, the
 /// subscription feed after it, and an unverified status. A build with the

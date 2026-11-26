@@ -576,7 +576,7 @@ mod beside_the_keyboard {
     async fn owned_with_keyboard() -> Rig {
         let rig = owned_with_cleanup().await;
         let observed = rig
-            .request(json!({"operation":"observeState","version":90,"requestId":"dddddddd-bbbb-cccc-dddd-000000000071","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0}))
+            .request(json!({"operation":"observeState","version":91,"requestId":"dddddddd-bbbb-cccc-dddd-000000000071","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0}))
             .await;
         assert_eq!(observed["success"], true, "{observed}");
         keyboard_tick(&rig).await;
@@ -977,7 +977,7 @@ mod under_a_stalled_observer {
         let rig = applied_game().await;
         cleanup(&rig);
         let observed = rig
-            .request(json!({"operation":"observeState","version":90,"requestId":"dddddddd-bbbb-cccc-dddd-000000000073","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0}))
+            .request(json!({"operation":"observeState","version":91,"requestId":"dddddddd-bbbb-cccc-dddd-000000000073","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0}))
             .await;
         assert_eq!(observed["success"], true, "{observed}");
         rig.held(
@@ -1076,7 +1076,7 @@ mod under_a_stalled_observer {
         for stall in [UNTIL_CANCELLED, THROUGH_CANCEL] {
             let rig = owned_with_cleanup().await;
             let observed = rig
-                .request(json!({"operation":"observeState","version":90,"requestId":"dddddddd-bbbb-cccc-dddd-000000000072","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0}))
+                .request(json!({"operation":"observeState","version":91,"requestId":"dddddddd-bbbb-cccc-dddd-000000000072","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0}))
                 .await;
             assert_eq!(observed["success"], true, "{observed}");
             rig.held(

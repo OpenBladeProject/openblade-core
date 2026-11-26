@@ -10,7 +10,7 @@ namespace OpenBlade.Service.Tests;
 // same fanStopStatus. These rows pin what managed replies and publishes for the
 // same inputs. Each sequence row saves its settings and Battery profile flag, runs
 // its requests in order through one runtime and records each result with the
-// fanStopStatus member the v90 status codec then writes, and the stored settings,
+// fanStopStatus member the v91 status codec then writes, and the stored settings,
 // flag and whether any configuration document changed. The capability rows record
 // the exact RZ09-0581 evidence and the observation record native publishes. The
 // Rust tests replay all three sections.
@@ -258,7 +258,7 @@ public sealed partial class ServiceControlRuntimeTests
         return (await EncodedStatusAsync(status))["capabilities"]!.DeepClone();
     }
 
-    // One member of the status as the v90 codec writes it. The test device's
+    // One member of the status as the v91 codec writes it. The test device's
     // confirmed state carries no capability record, which the codec requires
     // beside an active HyperBoost, so the frame drops the confirmed state.
     private static async Task<JsonNode?> EncodedStatusMemberAsync(ServiceStatusSnapshot status, string member) =>

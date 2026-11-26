@@ -1,4 +1,4 @@
-//! Managed `FanStopStatus` and `FanStopSettings` on the v90 wire, for a
+//! Managed `FanStopStatus` and `FanStopSettings` on the v91 wire, for a
 //! composition that serves the Fan Stop requests while its guardian is
 //! unavailable (`service-fan-stop-v1`).
 //!

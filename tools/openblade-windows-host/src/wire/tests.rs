@@ -11,13 +11,15 @@ const REPLAY: &str =
     include_str!("../../../../tests/OpenBlade.Contracts.Tests/WindowsReplay/v1/service.json");
 const RUNTIME: &str =
     include_str!("../../../../tests/OpenBlade.Service.Tests/WindowsReplay/v1/service-runtime.json");
-// Frozen IPC79, IPC80 and IPC85 managed requests: the current host must close every one unanswered.
+// Frozen IPC79, IPC80, IPC85 and branch IPC90 managed requests: the current host must close every one unanswered.
 const IPC79_REPLAY: &str = include_str!("../../tests/data/ipc79/service.json");
 const IPC79_RUNTIME: &str = include_str!("../../tests/data/ipc79/service-runtime.json");
 const IPC80_REPLAY: &str = include_str!("../../tests/data/ipc80/service.json");
 const IPC80_RUNTIME: &str = include_str!("../../tests/data/ipc80/service-runtime.json");
 const IPC85_REPLAY: &str = include_str!("../../tests/data/ipc85/service.json");
 const IPC85_RUNTIME: &str = include_str!("../../tests/data/ipc85/service-runtime.json");
+const IPC90_REPLAY: &str = include_str!("../../tests/data/ipc90/service.json");
+const IPC90_RUNTIME: &str = include_str!("../../tests/data/ipc90/service-runtime.json");
 const LEGACY_REQUEST: &str =
     include_str!("../../../../rust/crates/openblade-status-cli/fixtures/request.json");
 const ID: &str = "11111111-2222-4333-8444-555555555555";
@@ -93,7 +95,7 @@ async fn replays_managed_current_reads_and_the_full_status_event() {
             initial,
             json!({
                 "frame": "response",
-                "version": 90,
+                "version": 91,
                 "requestId": ID,
                 "success": true,
                 "error": null,
@@ -115,13 +117,14 @@ async fn replays_managed_current_reads_and_the_full_status_event() {
 }
 
 #[tokio::test]
-async fn rejects_frozen_ipc79_ipc80_and_ipc85_requests_without_reply() {
+async fn rejects_frozen_ipc79_ipc80_ipc85_and_ipc90_requests_without_reply() {
     let status = Arc::new(Status::fixture().unwrap());
     let slots = Arc::new(Semaphore::new(1));
     for (version, runtime, replay) in [
         (79, IPC79_RUNTIME, IPC79_REPLAY),
         (80, IPC80_RUNTIME, IPC80_REPLAY),
         (85, IPC85_RUNTIME, IPC85_REPLAY),
+        (90, IPC90_RUNTIME, IPC90_REPLAY),
     ] {
         let runtime: Value = serde_json::from_str(runtime).unwrap();
         let replay: Value = serde_json::from_str(replay).unwrap();
@@ -158,7 +161,7 @@ async fn rejects_frozen_ipc79_ipc80_and_ipc85_requests_without_reply() {
 
 #[tokio::test]
 async fn rejects_current_requests_at_the_neighbouring_protocols_without_reply() {
-    // The previous protocol is main's last before the merge (89); its frames
+    // The previous protocol is main's published 90; its frames
     // keep the current shape, so only the version can turn them away.
     let runtime: Value = serde_json::from_str(RUNTIME).unwrap();
     let replay: Value = serde_json::from_str(REPLAY).unwrap();
@@ -220,9 +223,9 @@ async fn performance_mutation_requires_explicit_mode_active_session_and_strict_f
     let slots = Arc::new(Semaphore::new(1));
 
     for (status, version, session) in [
-        (passive, 90, Session::Active),
+        (passive, 91, Session::Active),
         (performance.clone(), 51, Session::Active),
-        (performance.clone(), 90, Session::Background),
+        (performance.clone(), 91, Session::Background),
     ] {
         let (mut client, server) = connect(status, slots.clone(), session, 256);
         let request = json!({
@@ -238,7 +241,7 @@ async fn performance_mutation_requires_explicit_mode_active_session_and_strict_f
         let (mut client, server) =
             connect(performance.clone(), slots.clone(), Session::Active, 256);
         let request = format!(
-            r#"{{"operation":"setPerformanceOverride","version":90,"requestId":"{ID}"{fields}}}"#
+            r#"{{"operation":"setPerformanceOverride","version":91,"requestId":"{ID}"{fields}}}"#
         );
         send(&mut client, request.as_bytes()).await;
         assert_eq!(
@@ -254,7 +257,7 @@ async fn performance_mutation_requires_explicit_mode_active_session_and_strict_f
 
     let (mut client, server) = connect(performance.clone(), slots, Session::Active, 256);
     let request = json!({
-        "operation": "setPerformanceOverride", "version": 90, "requestId": ID,
+        "operation": "setPerformanceOverride", "version": 91, "requestId": ID,
         "value": {"value": 2, "lifetime": 1}
     });
     send(&mut client, &serde_json::to_vec(&request).unwrap()).await;
@@ -279,7 +282,7 @@ async fn replay_publication_during_initial_write_remains_pending() {
     let drive = tokio::spawn(drive);
     let slots = Arc::new(Semaphore::new(1));
     let (mut client, server) = connect(Arc::new(status), slots.clone(), Session::Active, 64);
-    let request = json!({"operation":"subscribeStatus","version":90,"requestId":ID});
+    let request = json!({"operation":"subscribeStatus","version":91,"requestId":ID});
     send(&mut client, &serde_json::to_vec(&request).unwrap()).await;
 
     // Reading the prefix proves the server captured its initial revision.
@@ -372,12 +375,12 @@ async fn rejects_malformed_envelopes_and_denies_every_other_operation() {
     }
 
     let families = replay["operationFamilies"].as_object().unwrap();
-    for version in [51, 90] {
+    for version in [51, 91] {
         for operation in families
             .values()
             .flat_map(|items| items.as_array().unwrap())
         {
-            if operation == "getStatus" || (version == 90 && operation == "subscribeStatus") {
+            if operation == "getStatus" || (version == 91 && operation == "subscribeStatus") {
                 continue;
             }
             let (mut client, server) = connect(status.clone(), slots.clone(), Session::Active, 128);
@@ -428,7 +431,7 @@ async fn authorizes_complete_payload_before_json_and_never_replies_to_denied_pee
 async fn preserves_one_shot_reads_at_capacity_and_releases_cancelled_subscriptions() {
     let status = Arc::new(Status::fixture().unwrap());
     let slots = Arc::new(Semaphore::new(1));
-    let subscribe = br#"{"operation":"subscribeStatus","version":90,"requestId":"11111111-2222-4333-8444-555555555555"}"#;
+    let subscribe = br#"{"operation":"subscribeStatus","version":91,"requestId":"11111111-2222-4333-8444-555555555555"}"#;
     let (mut first, first_task) = connect(status.clone(), slots.clone(), Session::Background, 128);
     send(&mut first, subscribe).await;
     let initial = receive(&mut first, "response").await;
@@ -475,7 +478,7 @@ async fn bounds_partial_reads_and_stalled_subscription_writes() {
     idle.write_i32_le(8).await.unwrap();
     idle.write_all(b"x").await.unwrap();
     let (mut stalled, stalled_task) = connect(status, slots.clone(), Session::Active, 128);
-    let subscribe = br#"{"operation":"subscribeStatus","version":90,"requestId":"11111111-2222-4333-8444-555555555555"}"#;
+    let subscribe = br#"{"operation":"subscribeStatus","version":91,"requestId":"11111111-2222-4333-8444-555555555555"}"#;
     send(&mut stalled, subscribe).await;
 
     assert_eq!(
@@ -498,9 +501,9 @@ async fn fan_override_is_confined_to_the_active_current_fan_replay() {
     let slots = Arc::new(Semaphore::new(1));
 
     for (status, version, session) in [
-        (passive, 90, Session::Active),
+        (passive, 91, Session::Active),
         (fan.clone(), 51, Session::Active),
-        (fan.clone(), 90, Session::Background),
+        (fan.clone(), 91, Session::Background),
     ] {
         let (mut client, server) = connect(status, slots.clone(), session, 256);
         let request = json!({
@@ -514,7 +517,7 @@ async fn fan_override_is_confined_to_the_active_current_fan_replay() {
 
     let (mut client, server) = connect(fan.clone(), slots.clone(), Session::Active, 256);
     let malformed = format!(
-        r#"{{"operation":"setFanOverride","version":90,"requestId":"{ID}","value":null,"settings":{{"mode":1,"mode":0}}}}"#
+        r#"{{"operation":"setFanOverride","version":91,"requestId":"{ID}","value":null,"settings":{{"mode":1,"mode":0}}}}"#
     );
     send(&mut client, malformed.as_bytes()).await;
     assert_eq!(
@@ -524,7 +527,7 @@ async fn fan_override_is_confined_to_the_active_current_fan_replay() {
 
     let (mut client, server) = connect(fan.clone(), slots, Session::Active, 256);
     let unsupported = json!({
-        "operation": "setFanOverride", "version": 90, "requestId": ID,
+        "operation": "setFanOverride", "version": 91, "requestId": ID,
         "value": {"value": 4, "lifetime": 1}
     });
     send(&mut client, &serde_json::to_vec(&unsupported).unwrap()).await;
@@ -551,9 +554,9 @@ async fn fan_stop_requires_private_mode_active_session_and_strict_mode() {
     let slots = Arc::new(Semaphore::new(1));
 
     for (endpoint, version, session) in [
-        (passive, 90, Session::Active),
+        (passive, 91, Session::Active),
         (status.clone(), 51, Session::Active),
-        (status.clone(), 90, Session::Background),
+        (status.clone(), 91, Session::Background),
     ] {
         let (mut client, server) = connect(endpoint, slots.clone(), session, 256);
         let request = json!({
@@ -574,7 +577,7 @@ async fn fan_stop_requires_private_mode_active_session_and_strict_mode() {
     ] {
         let (mut client, server) = connect(status.clone(), slots.clone(), Session::Active, 256);
         let request =
-            format!(r#"{{"operation":"setFanStopMode","version":90,"requestId":"{ID}"{fields}}}"#);
+            format!(r#"{{"operation":"setFanStopMode","version":91,"requestId":"{ID}"{fields}}}"#);
         send(&mut client, request.as_bytes()).await;
         assert_eq!(
             server.await.unwrap().unwrap_err().kind(),

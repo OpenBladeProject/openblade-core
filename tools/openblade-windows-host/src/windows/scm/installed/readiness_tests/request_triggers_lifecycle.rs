@@ -1270,7 +1270,7 @@ async fn the_console_users_activation_applies_its_profile_once() {
 async fn observe(rig: &Rig, n: u8) -> Value {
     rig.get().await;
     let observed = rig
-        .request(json!({"operation":"observeState","version":90,"requestId":format!("dddddddd-bbbb-cccc-dddd-{n:012}"),"includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0}))
+        .request(json!({"operation":"observeState","version":91,"requestId":format!("dddddddd-bbbb-cccc-dddd-{n:012}"),"includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0}))
         .await;
     assert_eq!(observed["success"], true, "{observed}");
     rig.get().await

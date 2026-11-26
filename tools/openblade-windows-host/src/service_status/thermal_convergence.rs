@@ -1,4 +1,4 @@
-//! Managed `ThermalConvergenceStatus` (ServiceMessages v90): the status
+//! Managed `ThermalConvergenceStatus` (ServiceMessages v91): the status
 //! member that reports the saved thermal control policy and whether saved
 //! thermal intent is being kept.
 //!

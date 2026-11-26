@@ -4,7 +4,7 @@
   "producerMethod": "OpenBlade.Service.Tests.NativeThermalEdgeFixtureTests.WriteCurrentManagedWireAndPolicyFixtures",
   "producerSource": "tests/OpenBlade.Service.Tests/NativeThermalEdgeFixtureTests.cs",
   "producerSourceSha256": "611e37303756099f048cf65d2d6889cade48d2739eae8433874d1e59c2b95254",
-  "classification": "Actual managed IPC90 codec output and current PersistentOverrideStore schema 10 and ProfileStore schema 27 documents from fresh supplied private roots. The frozen persisted inputs are the earlier schema 8 and schema 25 managed documents, kept as migration cases. No installed runtime, firmware or hardware observation.",
+  "classification": "Actual managed IPC91 codec output and current PersistentOverrideStore schema 10 and ProfileStore schema 27 documents from fresh supplied private roots. The frozen persisted inputs are the earlier schema 8 and schema 25 managed documents, kept as migration cases. No installed runtime, firmware or hardware observation.",
   "originalLegacyInputs": [
     {
       "name": "get-status-v79.frames",
@@ -24,21 +24,21 @@
   ],
   "generated": [
     {
-      "name": "get-status-v90.frames",
-      "length": 7288,
-      "sha256": "ee719ee486ef82313a07ca8a13c53fc939a743330dfd8ef233e50b7fd6980918",
+      "name": "get-status-v91.frames",
+      "length": 7309,
+      "sha256": "ded2fe5a55f076b57bb8b0b8124447d5a5ba0443724757f2e00024f10b9a184f",
       "producer": "IpcMessageCodec"
     },
     {
-      "name": "observe-state-v90.frames",
-      "length": 7247,
-      "sha256": "6b080066a034218d2f0ea53e282709a654809a634b51590a6b11ff7e584bf3c1",
+      "name": "observe-state-v91.frames",
+      "length": 7268,
+      "sha256": "dd31bd0b1da70f09fc45598a0aa5cc7a3b6efdf87d106a1aa918f1aa9df1133d",
       "producer": "IpcMessageCodec"
     },
     {
-      "name": "subscribe-status-v90.frames",
-      "length": 14367,
-      "sha256": "757bf8c2d30e88b54c7fb24a9d8f4bf84897b8cbb80aeb725afa4bb7ab0f725d",
+      "name": "subscribe-status-v91.frames",
+      "length": 14409,
+      "sha256": "1f0bcd90e96002dd1ca2635ea93f8d71a15f73fad07fdabd2da1e62d62ec1d5d",
       "producer": "IpcMessageCodec"
     },
     {

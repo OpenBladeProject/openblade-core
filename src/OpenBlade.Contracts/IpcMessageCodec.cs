@@ -17,7 +17,10 @@ public static class OpenBladeIpc
     // local dimming capability and state, and the local dimming Clear request.
     // Protocol 89 adds the RZ09-0530 keyboard-MCU edition for regional key maps.
     // Protocol 90 reports cooling-pad lighting left in place while OpenBlade controls the fan.
-    public const int ProtocolVersion = 90;
+    // Protocol 91 keeps the protocol 90 contracts and also admits confirmed
+    // Custom performance whose levels the firmware did not report. Protocol 90
+    // peers reject that state, so the two versions cannot share a number.
+    public const int ProtocolVersion = 91;
     public const int ReadOnlyCompatibilityProtocolVersion = 51;
     public const int MaximumMessageBytes = 64 * 1024;
     public const int MaximumDiagnosticArchiveBytes = 16 * 1024 * 1024;

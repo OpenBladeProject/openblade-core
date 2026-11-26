@@ -4,7 +4,7 @@
 //! `ServiceReactiveLightingLoop` with each status and records the device,
 //! Driver-mode knowledge and primary mode its hook reads, beside the status
 //! members as the IPC codec writes them (`wire`). Here those members replace
-//! the v90 fixture's and the Agent's projection must agree. This role admits
+//! the v91 fixture's and the Agent's projection must agree. This role admits
 //! RZ09-0581 only, so every other recorded device projects to none. Each
 //! preference row is a `functionRowBackend` value and the backend managed
 //! `UiPreferenceStore.LoadInputPreferencesAsync` reads from a file holding only
@@ -128,7 +128,7 @@ fn vectors() -> Value {
     root
 }
 
-/// The recorded wire members over the v90 fixture; an unwritten member is
+/// The recorded wire members over the v91 fixture; an unwritten member is
 /// removed, as an older or newer Service may omit it.
 fn snapshot(wire: &Map<String, Value>) -> Snapshot {
     let members: Vec<(&str, Option<Value>)> = WIRE

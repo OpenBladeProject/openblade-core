@@ -393,7 +393,7 @@ pub(super) fn leave_uncertain(rig: &Rig, lane: &Lane, fake: &Fake) {
 }
 
 async fn report(rig: &Rig, sequence: i64, path: Option<&str>) -> Value {
-    rig.request(json!({"operation":"reportApplicationContext","version":90,"requestId":format!("bbbbbbbb-bbbb-cccc-dddd-{sequence:012}"),"instanceId":"cccccccc-bbbb-cccc-dddd-000000000003","sequence":sequence,"executablePath":path})).await
+    rig.request(json!({"operation":"reportApplicationContext","version":91,"requestId":format!("bbbbbbbb-bbbb-cccc-dddd-{sequence:012}"),"instanceId":"cccccccc-bbbb-cccc-dddd-000000000003","sequence":sequence,"executablePath":path})).await
 }
 
 /// Review F-A: the GPU half is bounded by the request. A submission that
@@ -712,7 +712,7 @@ async fn a_profile_save_refused_by_a_pending_gpu_confirmation_stays_owed() {
     let mut profiles = rig.files.document("profiles.json")["profiles"].clone();
     profiles["applicationProfiles"][0]["overrides"]["pluggedIn"]["performance"] = json!(0);
     let saved = rig
-        .request(json!({"operation":"updateProfiles","version":90,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000009","profiles":profiles}))
+        .request(json!({"operation":"updateProfiles","version":91,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000009","profiles":profiles}))
         .await;
     assert_eq!(saved["result"]["status"], 0, "{saved}");
     assert_eq!(
@@ -817,7 +817,7 @@ async fn a_profile_save_with_gpu_clock_tuning_is_refused_as_incomplete() {
     game["gpuClockTuning"] =
         json!({"enabled":true,"offsets":{"coreMegahertz":125,"memoryMegahertz":500}});
     let saved = rig
-        .request(json!({"operation":"updateProfiles","version":90,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000009","profiles":profiles}))
+        .request(json!({"operation":"updateProfiles","version":91,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000009","profiles":profiles}))
         .await;
     assert!(
         saved["result"]["message"]

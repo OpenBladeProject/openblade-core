@@ -207,7 +207,7 @@ async fn a_fatal_journal_admission_failure_is_kept_by_the_restarted_source() {
     let fatal = crate::installed::readiness::thermal_mutation::fatal_admission(message);
     let r = Rig::restarted_failing(files, vec![fatal]);
     assert_eq!(r.port.free_transactions(), 254);
-    let request = json!({"operation":"getStatus","version":90,"requestId":"bbbbbbbb-cccc-dddd-eeee-000000000098"});
+    let request = json!({"operation":"getStatus","version":91,"requestId":"bbbbbbbb-cccc-dddd-eeee-000000000098"});
     let (mut client, server) = duplex(65536);
     let publications = r.source.lock().await.publications();
     let server = serve_connection(

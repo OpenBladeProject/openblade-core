@@ -12,7 +12,7 @@ namespace OpenBlade.Service.Tests;
 // is live, ReadForLiveReadingsAsync, the live-readings path since 8331bbf4, over a scripted
 // activity source, power state, driver session and clock, and record what each step
 // returned, how the session was used and when its lease ends. Publication rows write a
-// status carrying the temperature through the real v90 status codec.
+// status carrying the temperature through the real v91 status codec.
 public sealed partial class ServiceControlRuntimeTests
 {
     private const string NativeGpuTemperatureVectors = "gpu-temperature-vectors.json";
@@ -32,7 +32,7 @@ public sealed partial class ServiceControlRuntimeTests
         + "advances the clock by readMs during the session's read and cancels during the named call. "
         + "Each expect is the reading, whether it was cancelled, the power "
         + "reads of that step, the session's cumulative reads and releases and the timer's absolute due "
-        + "time in milliseconds. A publication row is whether the v90 codec writes a status carrying it.";
+        + "time in milliseconds. A publication row is whether the v91 codec writes a status carrying it.";
 
     private static readonly string[] NativeGpuTemperatureSections =
         ["activity", "power", "sampler", "publication"];

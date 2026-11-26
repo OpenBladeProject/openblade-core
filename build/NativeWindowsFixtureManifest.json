@@ -47,7 +47,7 @@
         }
       ],
       "wrapper": false,
-      "fact": "OpenBlade.Contracts.Tests.NativeThermalMutationResponseTests.ActualNativeMutationResponsesUseManagedV90CodecAndOutcomes"
+      "fact": "OpenBlade.Contracts.Tests.NativeThermalMutationResponseTests.ActualNativeMutationResponsesUseManagedV91CodecAndOutcomes"
     },
     {
       "emitters": [

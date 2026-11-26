@@ -403,7 +403,7 @@ fn the_sampler_matches_the_managed_sampler_vectors() {
     }
 }
 
-/// Only what the managed v90 codec writes is published.
+/// Only what the managed v91 codec writes is published.
 #[tokio::test]
 async fn publication_matches_the_managed_codec() {
     let vectors = vectors();

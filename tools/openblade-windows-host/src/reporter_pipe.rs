@@ -1,4 +1,4 @@
-//! Private development transport for the existing v90 application reporter.
+//! Private development transport for the existing v91 application reporter.
 
 use std::io::{self, ErrorKind};
 
@@ -10,13 +10,13 @@ use tokio::{
     net::windows::named_pipe::NamedPipeClient,
 };
 
-pub const VERSION: i32 = 90;
+pub const VERSION: i32 = 91;
 const MAX_FRAME: i32 = 65_536;
 
 fn invalid() -> io::Error {
     io::Error::new(
         ErrorKind::InvalidData,
-        "invalid private v90 application frame",
+        "invalid private v91 application frame",
     )
 }
 
@@ -147,12 +147,12 @@ mod tests {
 
     const ID: &str = "11111111-2222-4333-8444-555555555555";
 
-    // The managed v90 response and its result are objects; serde's derive
+    // The managed v91 response and its result are objects; serde's derive
     // alone would also bind these positional arrays.
     #[test]
     fn responses_are_read_only_from_objects() {
         let stored = format!(
-            r#"{{"frame":"response","version":90,"requestId":"{ID}","success":true,"error":null,"status":null,"result":{{"status":0,"message":"Stored"}},"archive":null,"errorCode":null}}"#
+            r#"{{"frame":"response","version":91,"requestId":"{ID}","success":true,"error":null,"status":null,"result":{{"status":0,"message":"Stored"}},"archive":null,"errorCode":null}}"#
         );
         let (outcome, message) = Response::decode(stored.as_bytes(), ID)
             .unwrap()
@@ -162,7 +162,7 @@ mod tests {
         assert_eq!(message, "Stored");
         // An absent result stays absent.
         let rejected = format!(
-            r#"{{"frame":"response","version":90,"requestId":"{ID}","success":false,"error":"Denied"}}"#
+            r#"{{"frame":"response","version":91,"requestId":"{ID}","success":false,"error":"Denied"}}"#
         );
         let (outcome, _) = Response::decode(rejected.as_bytes(), ID)
             .unwrap()
@@ -172,14 +172,14 @@ mod tests {
 
         for refused in [
             format!(
-                r#"["response",90,"{ID}",true,null,null,{{"status":0,"message":"Stored"}},null,null]"#
+                r#"["response",91,"{ID}",true,null,null,{{"status":0,"message":"Stored"}},null,null]"#
             ),
             format!(
-                r#"{{"frame":"response","version":90,"requestId":"{ID}","success":true,"error":null,"status":null,"result":[0,"Stored",null,null],"archive":null,"errorCode":null}}"#
+                r#"{{"frame":"response","version":91,"requestId":"{ID}","success":true,"error":null,"status":null,"result":[0,"Stored",null,null],"archive":null,"errorCode":null}}"#
             ),
         ] {
             let error = Response::decode(refused.as_bytes(), ID).err().unwrap();
-            assert_eq!(error.to_string(), "invalid private v90 application frame");
+            assert_eq!(error.to_string(), "invalid private v91 application frame");
         }
     }
 }

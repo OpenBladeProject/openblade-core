@@ -9,7 +9,7 @@ namespace OpenBlade.Service.Tests;
 // policy requests from its own derivation. These rows pin what managed publishes
 // and replies for the same inputs: each status row drives the managed runtime from
 // the row's saved policy, saved intent and confirmed state through one observation,
-// and records the thermalConvergence member as the v90 status codec writes it. Each
+// and records the thermalConvergence member as the v91 status codec writes it. Each
 // reply row runs one policy request from the row's saved preferences and records
 // the result and the stored preferences. The Rust tests replay both.
 public sealed partial class ServiceControlRuntimeTests

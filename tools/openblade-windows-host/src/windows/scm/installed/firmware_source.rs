@@ -12,7 +12,7 @@ use crate::discovery::performance::native_worker;
 type Project = dyn Fn(Admission) -> Option<Snapshot>;
 
 // An installed owner must supply both live HID admission and independently
-// verified v90 status guards tied to the same authority epoch. The metadata
+// verified v91 status guards tied to the same authority epoch. The metadata
 // source alone cannot supply either.
 #[derive(Clone)]
 pub(in crate::installed) struct FirmwareSource {

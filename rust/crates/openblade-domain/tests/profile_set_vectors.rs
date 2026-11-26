@@ -45,7 +45,7 @@ fn frame(profiles: Json) -> Vec<u8> {
     json::write(
         &Json::Object(vec![
             ("operation".into(), Json::string("updateProfiles")),
-            ("version".into(), Json::int(90)),
+            ("version".into(), Json::int(91)),
             (
                 "requestId".into(),
                 Json::string("aaaaaaaa-bbbb-cccc-dddd-000000000001"),

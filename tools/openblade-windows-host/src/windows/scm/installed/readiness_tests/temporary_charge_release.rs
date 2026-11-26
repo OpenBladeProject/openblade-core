@@ -15,10 +15,10 @@ async fn origin_tick(r: &Rig) {
     r.source.lock().await.process_power_source().await.unwrap();
 }
 fn get_request() -> Value {
-    json!({"operation":"getStatus","version":90,"requestId":"bbbbbbbb-cccc-dddd-eeee-000000000901"})
+    json!({"operation":"getStatus","version":91,"requestId":"bbbbbbbb-cccc-dddd-eeee-000000000901"})
 }
 fn performance_request(n: u32) -> Value {
-    json!({"operation":"setPerformanceOverride","version":90,"requestId":format!("aaaaaaaa-bbbb-cccc-dddd-{n:012}"),"value":value(1,1)})
+    json!({"operation":"setPerformanceOverride","version":91,"requestId":format!("aaaaaaaa-bbbb-cccc-dddd-{n:012}"),"value":value(1,1)})
 }
 async fn enable(r: &Rig, n: u32) {
     r.get().await;

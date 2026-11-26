@@ -1,6 +1,6 @@
 use super::*;
 
-const REPLAY: &[u8] = include_bytes!("../../../../tests/fixtures/observe-state-v90.frames");
+const REPLAY: &[u8] = include_bytes!("../../../../tests/fixtures/observe-state-v91.frames");
 
 impl InstalledObservationAuthority for Authority {}
 

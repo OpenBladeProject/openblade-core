@@ -906,7 +906,7 @@ mod tests {
 
     pub(super) async fn read_status(path: &str) {
         let mut pipe = open_pipe(path).await;
-        let request = br#"{"operation":"getStatus","version":90,"requestId":"11111111-2222-4333-8444-555555555555"}"#;
+        let request = br#"{"operation":"getStatus","version":91,"requestId":"11111111-2222-4333-8444-555555555555"}"#;
         pipe.write_all(&(request.len() as i32).to_le_bytes())
             .await
             .unwrap();
@@ -940,7 +940,7 @@ mod tests {
                 wait_ready.await.unwrap();
                 let mut pipe = ClientOptions::new().security_qos_flags(0) // SecurityAnonymous
                     .open(&path).unwrap();
-                let request = br#"{"operation":"getStatus","version":90,"requestId":"11111111-2222-4333-8444-555555555555"}"#;
+                let request = br#"{"operation":"getStatus","version":91,"requestId":"11111111-2222-4333-8444-555555555555"}"#;
                 pipe.write_all(&(request.len() as i32).to_le_bytes()).await.unwrap();
                 pipe.write_all(request).await.unwrap();
                 let mut byte = [0];

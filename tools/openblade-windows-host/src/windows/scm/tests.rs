@@ -102,7 +102,7 @@ fn scripted_controls_wait_for_both_the_accepted_save_and_owned_renderer() {
                 request
                     .send(serde_json::to_vec(&serde_json::json!({
                         "operation": "updateProfiles",
-                        "version": 90,
+                        "version": 91,
                         "requestId": "11111111-2222-4333-8444-555555555555",
                         "profiles": changed
                     }))?)

@@ -8,7 +8,7 @@ namespace OpenBlade.Contracts.Tests;
 public sealed class NativeThermalMutationResponseTests
 {
     [NativeThermalEdgeFact]
-    public async Task ActualNativeMutationResponsesUseManagedV90CodecAndOutcomes()
+    public async Task ActualNativeMutationResponsesUseManagedV91CodecAndOutcomes()
     {
         // The evidence runner extracts actual emitted Rust test replies into a
         // held, hashed private input. There is deliberately no product fallback.
@@ -130,7 +130,7 @@ public sealed class NativeThermalMutationResponseTests
         Assert.True(sawUnsupported, "An unserved managed operation gets managed's unsupported-operation failure.");
         Assert.True(decodeErrors.Count == 0, string.Join(Environment.NewLine, decodeErrors));
         Assert.True(sawPartialCustom, "Actual CustomManual observation must retain known selectors and unknown settings.");
-        using var requestedFrame = FrameJson("""{"operation":"setPerformanceOverride","version":90,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000001","value":{"value":5,"lifetime":1,"customPerformance":null,"gpuClockTuning":null}}""");
+        using var requestedFrame = FrameJson("""{"operation":"setPerformanceOverride","version":91,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000001","value":{"value":5,"lifetime":1,"customPerformance":null,"gpuClockTuning":null}}""");
         await Assert.ThrowsAsync<InvalidDataException>(() => IpcMessageCodec.ReadRequestAsync(requestedFrame, CancellationToken.None));
         Assert.True(sawConfirmedPreset, "Actual status retains confirmed hardware separately from the result-only reply without renewing write authority.");
         Assert.Contains(ControlOperationStatus.Stored, seen);

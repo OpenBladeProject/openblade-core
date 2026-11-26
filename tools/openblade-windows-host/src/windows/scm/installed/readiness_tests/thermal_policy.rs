@@ -20,7 +20,7 @@ const STRICT_STORED: &str = "Strict thermal control is active; externally drifte
 
 fn set_policy(n: u8, policy: Value) -> Value {
     json!({
-        "operation": "setThermalControlPolicy", "version": 90,
+        "operation": "setThermalControlPolicy", "version": 91,
         "requestId": format!("aaaaaaaa-bbbb-cccc-dddd-{n:012}"),
         "policy": policy,
     })
@@ -28,14 +28,14 @@ fn set_policy(n: u8, policy: Value) -> Value {
 
 fn acknowledge(n: u8) -> Value {
     json!({
-        "operation": "acknowledgeThermalPolicyUpgradeDisclosure", "version": 90,
+        "operation": "acknowledgeThermalPolicyUpgradeDisclosure", "version": 91,
         "requestId": format!("aaaaaaaa-bbbb-cccc-dddd-{n:012}"),
     })
 }
 
 fn result(status: u8, message: &str, n: u8) -> Value {
     json!({
-        "frame": "response", "version": 90,
+        "frame": "response", "version": 91,
         "requestId": format!("aaaaaaaa-bbbb-cccc-dddd-{n:012}"),
         "success": true, "error": null, "status": null,
         "result": {"status": status, "message": message},
@@ -190,7 +190,7 @@ async fn managed_reply_vectors_replay_through_the_dispatcher() {
 /// A fresh exact-device reading (observeState), then the published member.
 async fn observed(rig: &Rig, n: u8) -> Value {
     let observed = rig
-        .request(json!({"operation":"observeState","version":90,"requestId":format!("eeeeeeee-bbbb-cccc-dddd-{n:012}"),"includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0}))
+        .request(json!({"operation":"observeState","version":91,"requestId":format!("eeeeeeee-bbbb-cccc-dddd-{n:012}"),"includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0}))
         .await;
     assert_eq!(observed["success"], true, "{observed}");
     convergence(rig).await
@@ -259,7 +259,7 @@ async fn a_stored_policy_is_published_and_strict_stays_advisory() {
     assert_eq!(active["thermalConvergence"], paused(1, 0, 1));
     let public = rig
         .request_as(
-            json!({"operation":"getStatus","version":90,"requestId":"bbbbbbbb-cccc-dddd-eeee-000000000077"}),
+            json!({"operation":"getStatus","version":91,"requestId":"bbbbbbbb-cccc-dddd-eeee-000000000077"}),
             USER,
             "S-1-5-21-111-222-333-1002",
         )

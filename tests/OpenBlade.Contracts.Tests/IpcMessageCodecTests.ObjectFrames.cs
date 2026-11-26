@@ -99,9 +99,9 @@ public sealed partial class IpcMessageCodecTests
     {
         (string file, int index) = row["base"]!.GetValue<string>() switch
         {
-            "get-status" => ("get-status-v90.frames", 1),
-            "observe-state" => ("observe-state-v90.frames", 1),
-            "status-event" => ("subscribe-status-v90.frames", 2),
+            "get-status" => ("get-status-v91.frames", 1),
+            "observe-state" => ("observe-state-v91.frames", 1),
+            "status-event" => ("subscribe-status-v91.frames", 2),
             string other => throw new InvalidOperationException("Unknown base " + other),
         };
         byte[] frames = File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, file));

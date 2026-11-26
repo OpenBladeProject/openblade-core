@@ -38,9 +38,9 @@ use crate::{
 
 mod vectors;
 
-const FRAMES: &[u8] = include_bytes!("../../../tests/fixtures/get-status-v90.frames");
+const FRAMES: &[u8] = include_bytes!("../../../tests/fixtures/get-status-v91.frames");
 
-/// The managed v90 fixture status with the given members replaced (`None`
+/// The managed v91 fixture status with the given members replaced (`None`
 /// removes one).
 pub(super) fn status(members: &[(&str, Option<Value>)]) -> Value {
     let request = i32::from_le_bytes(FRAMES[..4].try_into().unwrap()) as usize;

@@ -37,7 +37,7 @@ use crate::{service_status::Snapshot, session_native::service_client::StatusUpda
 const GAME: &str = r"C:\Games\Game.exe";
 const OTHER: &str = r"C:\Games\Other.exe";
 const THIRD: &str = r"C:\Games\Third.exe";
-const FRAMES: &[u8] = include_bytes!("../../../tests/fixtures/get-status-v90.frames");
+const FRAMES: &[u8] = include_bytes!("../../../tests/fixtures/get-status-v91.frames");
 
 impl Watcher for ScriptedWatcher {
     fn set_notice(&mut self, wake: Wake) {
@@ -80,7 +80,7 @@ fn entry(number: u8, path: &str, mode: i32) -> Value {
     })
 }
 
-/// A verified v90 status carrying these application profiles.
+/// A verified v91 status carrying these application profiles.
 fn snapshot(profiles: Value) -> Snapshot {
     let request = i32::from_le_bytes(FRAMES[..4].try_into().unwrap()) as usize;
     let mut frame: Value = serde_json::from_slice(&FRAMES[4 + request + 4..]).unwrap();
@@ -187,7 +187,7 @@ fn the_owner_applies_profiles_before_the_poll_and_never_reuses_a_request_id() {
     let mut script = Script::default();
     let _game = script.process(1, 41, 1, GAME);
     script.focus(1);
-    let mut watcher = script.start(90, Guid([9; 16]), Arc::default()).unwrap();
+    let mut watcher = script.start(91, Guid([9; 16]), Arc::default()).unwrap();
     watcher.wait_ready(Duration::from_secs(2)).unwrap();
     let mut owner = Owner::new(watcher, feed.subscribe(), guid_source()).unwrap();
 
@@ -198,7 +198,7 @@ fn the_owner_applies_profiles_before_the_poll_and_never_reuses_a_request_id() {
     let first = owner.step(Duration::ZERO).unwrap().expect("first report");
     assert_eq!(first.sequence, 1);
     assert_eq!(first.executable_path.as_deref(), Some(GAME));
-    assert_eq!(first.version, 90);
+    assert_eq!(first.version, 91);
     assert_eq!(first.instance_id, Guid([9; 16]));
     assert_eq!(first.request_id, Guid([1; 16]));
     // One request is in flight; nothing else is produced until it completes.
@@ -232,7 +232,7 @@ fn a_closed_feed_keeps_the_last_profiles() {
     let mut script = Script::default();
     let _game = script.process(1, 41, 1, GAME);
     script.focus(1);
-    let mut watcher = script.start(90, Guid([9; 16]), Arc::default()).unwrap();
+    let mut watcher = script.start(91, Guid([9; 16]), Arc::default()).unwrap();
     watcher.wait_ready(Duration::from_secs(2)).unwrap();
     let receiver = feed.subscribe();
     feed.observe(&snapshot(json!([entry(1, GAME, 0)])));
@@ -445,7 +445,7 @@ async fn rig_timed<R>(
     };
     let make = move |instance, cancel| {
         let mut script = Script::default();
-        let watcher = script.start(90, instance, cancel)?;
+        let watcher = script.start(91, instance, cancel)?;
         Ok(Driven {
             watcher: Some(watcher),
             script,
@@ -527,7 +527,7 @@ async fn reports_the_foreground_profile_renews_at_the_lease_and_clears_on_leavin
     .await;
     result.unwrap();
     let log = rig.log.borrow();
-    assert!(log.iter().all(|sent| sent.version == 90));
+    assert!(log.iter().all(|sent| sent.version == 91));
     // One reporter instance, a fresh request id for every attempt.
     assert_eq!(
         log.iter()
@@ -855,7 +855,7 @@ async fn dropping_the_role_without_a_stop_still_retires_the_watcher() {
         let registered = registered.clone();
         move |instance, cancel| {
             let mut script = Script::default();
-            let watcher = script.start(90, instance, cancel)?;
+            let watcher = script.start(91, instance, cancel)?;
             Ok(Driven {
                 watcher: Some(watcher),
                 script,
@@ -1130,7 +1130,7 @@ impl Watcher for Chatty {
             return None;
         }
         Some(ReportApplicationContextRequest {
-            version: 90,
+            version: 91,
             request_id,
             instance_id: Guid([3; 16]),
             sequence: 1,

@@ -100,7 +100,7 @@ async fn exchange_with(
 
 fn unsupported(id: &str) -> Value {
     json!({
-        "frame": "response", "version": 90, "requestId": id.to_ascii_lowercase(),
+        "frame": "response", "version": 91, "requestId": id.to_ascii_lowercase(),
         "success": false, "error": "IPC request operation is unsupported.",
         "status": null, "result": null, "archive": null, "errorCode": null,
     })
@@ -122,7 +122,7 @@ async fn every_absent_managed_operation_gets_the_typed_unsupported_reply() {
             // The body is never interpreted, including members that managed
             // would bind to typed hardware or profile intent.
             let request = json!({
-                "operation": operation, "version": 90, "requestId": ID,
+                "operation": operation, "version": 91, "requestId": ID,
                 "profiles": {"pluggedIn": {"performance": 1}}, "enabled": true,
             });
             let (result, reply) =
@@ -146,23 +146,23 @@ async fn every_absent_managed_operation_gets_the_typed_unsupported_reply() {
 async fn unknown_malformed_and_refused_requests_still_close_without_a_reply() {
     let operation = unserved_operations().remove(0);
     let mut payloads = vec![
-        json!({"operation": "notAManagedOperation", "version": 90, "requestId": ID}).to_string(),
+        json!({"operation": "notAManagedOperation", "version": 91, "requestId": ID}).to_string(),
         json!({"operation": operation, "version": 51, "requestId": ID}).to_string(),
         json!({"operation": operation, "version": PROTOCOL_VERSION - 1, "requestId": ID})
             .to_string(),
         json!({"operation": operation, "version": PROTOCOL_VERSION + 1, "requestId": ID})
             .to_string(),
-        json!({"operation": operation, "version": 90, "requestId": "not-a-guid"}).to_string(),
-        json!({"operation": operation, "version": 90}).to_string(),
-        json!([operation, 90, ID]).to_string(),
-        format!(r#"{{"operation":"{operation}","version":90,"version":90,"requestId":"{ID}"}}"#),
-        format!(r#"{{"operation":"{operation}","version":90,"requestId":"{ID}""#),
+        json!({"operation": operation, "version": 91, "requestId": "not-a-guid"}).to_string(),
+        json!({"operation": operation, "version": 91}).to_string(),
+        json!([operation, 91, ID]).to_string(),
+        format!(r#"{{"operation":"{operation}","version":91,"version":91,"requestId":"{ID}"}}"#),
+        format!(r#"{{"operation":"{operation}","version":91,"requestId":"{ID}""#),
     ];
     // A served operation that fails its own decoder is not reclassified.
     payloads.push(
-        json!({"operation": "getStatus", "version": 90, "requestId": ID, "x": 1}).to_string(),
+        json!({"operation": "getStatus", "version": 91, "requestId": ID, "x": 1}).to_string(),
     );
-    payloads.push(json!({"operation": "observeState", "version": 90, "requestId": ID}).to_string());
+    payloads.push(json!({"operation": "observeState", "version": 91, "requestId": ID}).to_string());
     for payload in payloads {
         let events = Events::default();
         let (result, reply) = exchange_payload(payload.as_bytes(), SETUP, &events).await;
@@ -176,7 +176,7 @@ async fn unknown_malformed_and_refused_requests_still_close_without_a_reply() {
 
     // A caller the status endpoint refuses is not answered either.
     let events = Events::default();
-    let request = json!({"operation": operation, "version": 90, "requestId": ID});
+    let request = json!({"operation": operation, "version": 91, "requestId": ID});
     let other = Caller {
         logon: Logon::Other,
         ..SETUP
@@ -194,7 +194,7 @@ async fn unknown_malformed_and_refused_requests_still_close_without_a_reply() {
 #[tokio::test]
 async fn refusal_is_published_only_while_the_status_origin_holds() {
     let operation = unserved_operations().remove(0);
-    let request = json!({"operation": operation, "version": 90, "requestId": ID});
+    let request = json!({"operation": operation, "version": 91, "requestId": ID});
     let payload = serde_json::to_vec(&request).unwrap();
     // The guard runs before the write and again after it.
     for (fails_from, replied, failed) in [(0, false, true), (1, true, true), (2, true, false)] {
@@ -235,7 +235,7 @@ async fn concurrent_refusals_stay_correlated_beside_a_status_read() {
     let shared = source(&events);
     let refuse = |n: usize| {
         let id = format!("dddddddd-eeee-4fff-8aaa-{n:012}");
-        let request = json!({"operation": operations[n], "version": 90, "requestId": id});
+        let request = json!({"operation": operations[n], "version": 91, "requestId": id});
         let shared = shared.clone();
         async move {
             let (result, reply) =
@@ -248,7 +248,7 @@ async fn concurrent_refusals_stay_correlated_beside_a_status_read() {
         }
     };
     let status = async {
-        let request = json!({"operation": "getStatus", "version": 90, "requestId": ID});
+        let request = json!({"operation": "getStatus", "version": 91, "requestId": ID});
         let (result, reply) = exchange_with(
             &serde_json::to_vec(&request).unwrap(),
             SETUP,

@@ -10,7 +10,7 @@ namespace OpenBlade.Service.Tests;
 // FanRpmProtocol through the managed RazerReport codec with the three-byte
 // payload length FanRpmQueryPort gives the 0D/88 getter. Battery rows replay the
 // WindowsPowerStateProvider mappings. The capability row is the record native
-// publishes only beside a confirmed HyperBoost state, written through the real v90
+// publishes only beside a confirmed HyperBoost state, written through the real v91
 // status codec. Native frames are recorded by the Rust tests and decoded here
 // through the same codec.
 public sealed partial class ServiceControlRuntimeTests
@@ -28,7 +28,7 @@ public sealed partial class ServiceControlRuntimeTests
         + "Its expect is the decoded RPM or the managed validation failure. A battery-health row is "
         + "WindowsPowerStateProvider.MapBatteryHealth over its (design, full charge) capacities; a power-flow "
         + "row is MapBatteryPowerFlow. The capability row is DeviceCapabilities.Unavailable() with "
-        + "HyperBoostAccess ObservedOnly and the exact RZ09-0581 SupportsTemporaryFullCharge as the v90 "
+        + "HyperBoostAccess ObservedOnly and the exact RZ09-0581 SupportsTemporaryFullCharge as the v91 "
         + "status codec writes it beside a confirmed HyperBoost state.";
 
     private static readonly string[] NativeLiveReadingSections =
@@ -183,7 +183,7 @@ public sealed partial class ServiceControlRuntimeTests
     }
 
     // Every native frame the Rust tests recorded decodes through the strict
-    // v90 codec. Only a confirmed HyperBoost frame carries a capability record,
+    // v91 codec. Only a confirmed HyperBoost frame carries a capability record,
     // and no record denies the exact model's temporary full charge.
     [Fact]
     public async Task NativeLiveReadingFrames_DecodeThroughTheManagedCodec()

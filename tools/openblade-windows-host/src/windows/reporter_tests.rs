@@ -1,4 +1,4 @@
-//! Scripted current-user caller for the development host's private v90 pipe.
+//! Scripted current-user caller for the development host's private v91 pipe.
 //! No desktop, process, or native device observations are used here.
 
 use std::{cell::Cell, future::Future, rc::Rc, time::Duration};
@@ -164,16 +164,16 @@ fn report_codec_requires_explicit_null_and_correlated_result() {
     };
     assert_eq!(
         std::str::from_utf8(&encode(&request).unwrap()).unwrap(),
-        r#"{"operation":"reportApplicationContext","version":90,"requestId":"11111111-1111-1111-1111-111111111111","instanceId":"22222222-2222-2222-2222-222222222222","sequence":1,"executablePath":null}"#,
+        r#"{"operation":"reportApplicationContext","version":91,"requestId":"11111111-1111-1111-1111-111111111111","instanceId":"22222222-2222-2222-2222-222222222222","sequence":1,"executablePath":null}"#,
     );
 
-    let valid = r#"{"frame":"response","version":90,"requestId":"11111111-2222-4333-8444-555555555555","success":true,"result":{"status":0,"message":"stored"}}"#;
+    let valid = r#"{"frame":"response","version":91,"requestId":"11111111-2222-4333-8444-555555555555","success":true,"result":{"status":0,"message":"stored"}}"#;
     let outcome =
         |payload: &str, id: &str| Response::decode(payload.as_bytes(), id)?.report_outcome();
     assert_eq!(outcome(valid, STATUS_ID).unwrap().0, ReportOutcome::Stored);
     assert!(outcome(valid, &guid_text(request.request_id)).is_err());
     for malformed in [
-        valid.replace("90", "79"),
+        valid.replace("91", "79"),
         valid.replace(r#""status":0"#, r#""status":4"#),
         valid.replace(r#""status":0"#, r#""status":0,"status":1"#),
         valid.replace(r#""success":true"#, r#""success":true,"error":"conflict""#),

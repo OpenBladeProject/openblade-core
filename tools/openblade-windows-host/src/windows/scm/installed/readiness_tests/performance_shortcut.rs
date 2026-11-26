@@ -94,7 +94,7 @@ fn selector(preset: i32) -> u8 {
 }
 impl Rig {
     async fn cycle(&self, n: u8, source: i32) -> Value {
-        let response = self.request(json!({"operation":"cyclePerformanceShortcut","version":90,"requestId":format!("cccccccc-bbbb-cccc-dddd-{n:012}"),"source":source})).await;
+        let response = self.request(json!({"operation":"cyclePerformanceShortcut","version":91,"requestId":format!("cccccccc-bbbb-cccc-dddd-{n:012}"),"source":source})).await;
         assert!(response["status"].is_null(), "{response}");
         assert!(!response["result"].is_null(), "{response}");
         response
@@ -110,7 +110,7 @@ impl Rig {
         preset: Option<i32>,
         caller: Caller,
     ) -> Value {
-        self.request_as(json!({"operation":"setPerformanceShortcutPreview","version":90,"requestId":format!("dddddddd-bbbb-cccc-dddd-{n:012}"),"sessionId":session,"generation":generation,"preset":preset}), caller, SID).await
+        self.request_as(json!({"operation":"setPerformanceShortcutPreview","version":91,"requestId":format!("dddddddd-bbbb-cccc-dddd-{n:012}"),"sessionId":session,"generation":generation,"preset":preset}), caller, SID).await
     }
 }
 
@@ -360,7 +360,7 @@ async fn refused_admission_stores_nothing() {
     // A caller that is not the interactive user reads nothing.
     let rig = rig_at(2, 0, FULL, MemoryFiles::default());
     let before = sent(&rig);
-    let result = rig.request_as(json!({"operation":"cyclePerformanceShortcut","version":90,"requestId":"cccccccc-bbbb-cccc-dddd-000000000001","source":1}), SYSTEM, SID).await;
+    let result = rig.request_as(json!({"operation":"cyclePerformanceShortcut","version":91,"requestId":"cccccccc-bbbb-cccc-dddd-000000000001","source":1}), SYSTEM, SID).await;
     assert_eq!(
         result["result"],
         json!({"status":2,"message":INTERACTIVE_REQUIRED}),
@@ -612,7 +612,7 @@ async fn the_preview_follows_the_managed_generation_rules_without_firmware() {
     // Only the active client sees it.
     let inactive = rig
         .request_as(
-            json!({"operation":"getStatus","version":90,"requestId":"bbbbbbbb-cccc-dddd-eeee-000000000098"}),
+            json!({"operation":"getStatus","version":91,"requestId":"bbbbbbbb-cccc-dddd-eeee-000000000098"}),
             SETUP,
             SID,
         )
@@ -644,12 +644,12 @@ async fn an_undefined_shortcut_request_is_refused_by_the_codec() {
     let rig = rig_at(2, 0, FULL, MemoryFiles::default());
     let before = sent(&rig);
     for request in [
-        json!({"operation":"cyclePerformanceShortcut","version":90,"requestId":"cccccccc-bbbb-cccc-dddd-000000000001","source":2}),
-        json!({"operation":"setPerformanceShortcutPreview","version":90,"requestId":"cccccccc-bbbb-cccc-dddd-000000000002","sessionId":"00000000-0000-0000-0000-000000000000","generation":1,"preset":0}),
-        json!({"operation":"setPerformanceShortcutPreview","version":90,"requestId":"cccccccc-bbbb-cccc-dddd-000000000003","sessionId":SESSION,"generation":0,"preset":0}),
-        json!({"operation":"setPerformanceShortcutPreview","version":90,"requestId":"cccccccc-bbbb-cccc-dddd-000000000004","sessionId":SESSION,"generation":1,"preset":10}),
+        json!({"operation":"cyclePerformanceShortcut","version":91,"requestId":"cccccccc-bbbb-cccc-dddd-000000000001","source":2}),
+        json!({"operation":"setPerformanceShortcutPreview","version":91,"requestId":"cccccccc-bbbb-cccc-dddd-000000000002","sessionId":"00000000-0000-0000-0000-000000000000","generation":1,"preset":0}),
+        json!({"operation":"setPerformanceShortcutPreview","version":91,"requestId":"cccccccc-bbbb-cccc-dddd-000000000003","sessionId":SESSION,"generation":0,"preset":0}),
+        json!({"operation":"setPerformanceShortcutPreview","version":91,"requestId":"cccccccc-bbbb-cccc-dddd-000000000004","sessionId":SESSION,"generation":1,"preset":10}),
         // `preset` is a required member, null included.
-        json!({"operation":"setPerformanceShortcutPreview","version":90,"requestId":"cccccccc-bbbb-cccc-dddd-000000000005","sessionId":SESSION,"generation":1}),
+        json!({"operation":"setPerformanceShortcutPreview","version":91,"requestId":"cccccccc-bbbb-cccc-dddd-000000000005","sessionId":SESSION,"generation":1}),
     ] {
         assert!(
             StatusRequest::decode(&serde_json::to_vec(&request).unwrap()).is_err(),

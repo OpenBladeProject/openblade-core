@@ -1,4 +1,4 @@
-//! Managed `ResolveTarget` and the watcher's hand-off over the managed v90
+//! Managed `ResolveTarget` and the watcher's hand-off over the managed v91
 //! status fixture: display members decode with the profile-set codec, the
 //! active application profile is the first enabled match, and a status
 //! managed would refuse makes the context unavailable.
@@ -9,9 +9,9 @@ use crate::{
 };
 use serde_json::{Value, json};
 
-const FRAMES: &[u8] = include_bytes!("../../../tests/fixtures/get-status-v90.frames");
+const FRAMES: &[u8] = include_bytes!("../../../tests/fixtures/get-status-v91.frames");
 
-/// The v90 fixture status with `change` applied.
+/// The v91 fixture status with `change` applied.
 fn status(change: impl FnOnce(&mut Value)) -> Snapshot {
     let request = i32::from_le_bytes(FRAMES[..4].try_into().unwrap()) as usize;
     let mut frame: Value = serde_json::from_slice(&FRAMES[4 + request + 4..]).unwrap();

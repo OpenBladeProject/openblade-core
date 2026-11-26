@@ -1074,7 +1074,7 @@ impl Rig {
     fn request(mask: u8) -> crate::service_status::StatusRequest {
         serde_json::from_value(json!({
             "operation": "observeState",
-            "version": 90,
+            "version": 91,
             "requestId": "11111111-2222-4333-8444-555555555555",
             "includeLiveReadings": mask != 0,
             "requestedLiveReadings": mask,
@@ -1274,7 +1274,7 @@ async fn stopping_the_source_does_not_wait_for_a_held_capture() {
 const FRAMES: &str = "firmware-version-native-frames.json";
 const REGENERATE: &str = "OPENBLADE_REGENERATE_NATIVE_FIRMWARE_FRAMES";
 
-/// Records production snapshots as v90 status events for the managed codec
+/// Records production snapshots as v91 status events for the managed codec
 /// test (`NativeFirmwareVersionFrames_DecodeThroughTheManagedCodec`): an
 /// ObserveState reply and the subscription feed with the complete record,
 /// both again after the read job read the MCU version, and a feed whose
@@ -1457,7 +1457,7 @@ fn fake_of(row: &Json) -> Fake {
 }
 
 /// The record `WindowsFirmwareVersionSource.Capture()` produced for each
-/// scenario, written through the managed v90 status codec, is the record the
+/// scenario, written through the managed v91 status codec, is the record the
 /// native capture produces over the same Windows reads.
 #[test]
 fn the_capture_matches_the_managed_vectors() {

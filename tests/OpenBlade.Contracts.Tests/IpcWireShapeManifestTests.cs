@@ -103,6 +103,8 @@ public sealed class IpcWireShapeManifestTests
             89 => "DF84C6FAB3E8A12689F1F0CFC6AFECFC75A1411F8BA10B51757DE3FF5C931DE3",
             // Protocol 90 reports cooling-pad lighting left in place while OpenBlade controls the fan.
             90 => "5272DE3A5FC984CA2D9E78FB756E1667E07D26C7A11B1AAE61794E63E5B87BCE",
+            // Protocol 91 admits confirmed Custom with unreported levels; JSON fields and types equal 90.
+            91 => "5272DE3A5FC984CA2D9E78FB756E1667E07D26C7A11B1AAE61794E63E5B87BCE",
             _ => null,
         };
 

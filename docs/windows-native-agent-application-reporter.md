@@ -56,7 +56,7 @@ subscription and decoding the profile list of each status. Only `Stored` and
 - A report is sent when the selected path changes, at the five-second renewal
   while a context is selected or a report is unacknowledged, and for a clear
   that was not acknowledged.
-- The request is `reportApplicationContext` v90 with a fresh request id and
+- The request is `reportApplicationContext` v91 with a fresh request id and
   sequence for every attempt, one instance id for the Agent's lifetime, and an
   explicit `null` path for a clear.
 - Each report uses its own connection, and the connect is bounded at two
@@ -130,7 +130,7 @@ subscription and decoding the profile list of each status. Only `Stored` and
   the hooks are still being installed waits at most the five-second startup
   budget. After that the Agent moves on and the owner retires itself when the
   OS call returns.
-- The private v90 fixture in the development host still refuses reports while
+- The private v91 fixture in the development host still refuses reports while
   its session is inactive. It does not model the managed Service's rule above.
 
 ## Offline verification

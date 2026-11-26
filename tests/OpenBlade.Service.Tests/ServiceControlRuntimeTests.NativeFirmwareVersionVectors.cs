@@ -9,7 +9,7 @@ namespace OpenBlade.Service.Tests;
 // The native Service's firmware versions are pinned against managed. A record
 // row feeds one set of Windows reads through WindowsFirmwareVersionSource and
 // the two WindowsDeviceFirmwareVersionReader selectors, and writes the result
-// through the real v90 status codec. The native capture over the same reads must
+// through the real v91 status codec. The native capture over the same reads must
 // produce the same record. The registry loop and the USB4 enumeration filter
 // are private to managed, so this test repeats their rules where a row feeds
 // them. A version row is Version.TryParse and an integer row is
@@ -28,7 +28,7 @@ public sealed partial class ServiceControlRuntimeTests
         + "regenerate with OPENBLADE_REGENERATE_NATIVE_FIRMWARE_VERSION_VECTORS set to this directory. "
         + "A record row is WindowsFirmwareVersionSource.Capture() over its registry values, its "
         + "video adapter instances (one list per adapter key), its USB4 devices and its touchpad HID "
-        + "collections, as the v90 status codec writes the firmware member. A version row is "
+        + "collections, as the v91 status codec writes the firmware member. A version row is "
         + "Version.TryParse and an integer row is Convert.ToInt32 with the invariant culture.";
 
     private static readonly string[] NativeFirmwareSections = ["records", "versions", "integers"];
@@ -206,7 +206,7 @@ public sealed partial class ServiceControlRuntimeTests
         return candidates;
     }
 
-    // The v90 status codec's firmware member for a status carrying `firmware`,
+    // The v91 status codec's firmware member for a status carrying `firmware`,
     // after the strict decoder accepted the frame.
     private static async Task<JsonNode> FirmwareMemberAsync(
         ServiceStatusSnapshot baseline,
@@ -225,7 +225,7 @@ public sealed partial class ServiceControlRuntimeTests
         return JsonNode.Parse(framed.AsSpan(4))!["status"]!["firmware"]!.DeepClone();
     }
 
-    // Every native frame the Rust tests recorded decodes through the strict v90
+    // Every native frame the Rust tests recorded decodes through the strict v91
     // codec to the expected record, including those whose MCU version the native
     // read job read.
     [Fact]

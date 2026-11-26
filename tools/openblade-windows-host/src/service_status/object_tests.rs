@@ -1,4 +1,4 @@
-//! Service v90 frames are read only from JSON objects, like the managed
+//! Service v91 frames are read only from JSON objects, like the managed
 //! IpcMessageCodec. Every row of the shared fixture is also run through the
 //! managed codec (IpcMessageCodecTests.ObjectFrames.cs).
 use super::*;
@@ -6,9 +6,9 @@ use openblade_windows_host::json_object;
 use serde_json::json;
 
 const FIXTURE: &str = include_str!("../../tests/fixtures/service-object-frames.json");
-const GET_STATUS: &[u8] = include_bytes!("../../tests/fixtures/get-status-v90.frames");
-const OBSERVE_STATE: &[u8] = include_bytes!("../../tests/fixtures/observe-state-v90.frames");
-const SUBSCRIBE_STATUS: &[u8] = include_bytes!("../../tests/fixtures/subscribe-status-v90.frames");
+const GET_STATUS: &[u8] = include_bytes!("../../tests/fixtures/get-status-v91.frames");
+const OBSERVE_STATE: &[u8] = include_bytes!("../../tests/fixtures/observe-state-v91.frames");
+const SUBSCRIBE_STATUS: &[u8] = include_bytes!("../../tests/fixtures/subscribe-status-v91.frames");
 
 fn rows(group: &str) -> Vec<Value> {
     let fixture: Value = serde_json::from_str(FIXTURE).unwrap();
@@ -519,7 +519,7 @@ fn laptop_control_sets_are_arrays_when_present() {
             let error = decode(&edited)
                 .err()
                 .unwrap_or_else(|| panic!("{set} as {shape} was accepted"));
-            assert_eq!(error.to_string(), "invalid v90 status snapshot", "{set}");
+            assert_eq!(error.to_string(), "invalid v91 status snapshot", "{set}");
         }
     }
 }

@@ -56,7 +56,7 @@ mod windows;
 #[cfg(windows)]
 pub(super) use windows::Windows;
 
-/// The managed v90 codec refuses a fan speed above this.
+/// The managed v91 codec refuses a fan speed above this.
 const MAXIMUM_RPM: u16 = 20_000;
 /// Consecutive unconfirmed fan reads that still publish the last pair.
 const RETAINED_MISSES: u8 = 2;

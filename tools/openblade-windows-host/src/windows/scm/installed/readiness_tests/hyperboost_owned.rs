@@ -24,7 +24,7 @@ const FAN_HANDBACK_EXIT: &str = "HyperBoost was not turned off because OpenBlade
 impl Rig {
     async fn hyperboost(&self, n: u8, enabled: bool) -> Value {
         let response = self
-            .request(json!({"operation":"setHyperBoost","version":90,"requestId":format!("aaaaaaaa-bbbb-cccc-eeee-{n:012}"),"enabled":enabled}))
+            .request(json!({"operation":"setHyperBoost","version":91,"requestId":format!("aaaaaaaa-bbbb-cccc-eeee-{n:012}"),"enabled":enabled}))
             .await;
         assert!(response["status"].is_null(), "{response}");
         assert!(!response["result"].is_null(), "{response}");

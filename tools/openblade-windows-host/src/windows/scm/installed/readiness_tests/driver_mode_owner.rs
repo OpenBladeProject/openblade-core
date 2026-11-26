@@ -83,7 +83,7 @@ async fn fan_owner_rig() -> Rig {
 async fn observe(rig: &Rig) {
     assert_eq!(rig.get().await["success"], true);
     let observed = rig
-        .request(json!({"operation":"observeState","version":90,"requestId":"dddddddd-bbbb-cccc-dddd-000000000071","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0}))
+        .request(json!({"operation":"observeState","version":91,"requestId":"dddddddd-bbbb-cccc-dddd-000000000071","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0}))
         .await;
     assert_eq!(observed["success"], true, "{observed}");
     assert!(rig.reader.driver_mode_verified());
@@ -125,7 +125,7 @@ async fn later(rig: &Rig) {
 /// query of its own, so only the owner records a mode here.
 async fn published(rig: &Rig) -> Option<bool> {
     let observed = rig
-        .request(json!({"operation":"observeState","version":90,"requestId":"dddddddd-bbbb-cccc-dddd-000000000072","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0}))
+        .request(json!({"operation":"observeState","version":91,"requestId":"dddddddd-bbbb-cccc-dddd-000000000072","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0}))
         .await;
     observed["status"]["keyboardDriverModeActive"].as_bool()
 }
@@ -1490,7 +1490,7 @@ async fn a_shutdown_while_suspended_refuses_the_release() {
 /// read; its reply.
 #[cfg(feature = "service-profile-triggers-v1")]
 async fn observed(rig: &Rig, n: u32) -> Value {
-    rig.request(json!({"operation":"observeState","version":90,"requestId":format!("dddddddd-bbbb-cccc-dddd-{n:012}"),"includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0}))
+    rig.request(json!({"operation":"observeState","version":91,"requestId":format!("dddddddd-bbbb-cccc-dddd-{n:012}"),"includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0}))
         .await
 }
 /// One lifecycle tick and the reconciliation it starts.

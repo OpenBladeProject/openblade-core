@@ -15,7 +15,7 @@ TARGET = 'openblade-windows-service-candidate'
 TUPLES = ('service-battery-policy-v1', 'service-temporary-charge-v1')
 EMITTERS = {'peer_response', 'peer_subscription', 'publisher_projection', 'synthetic_projection'}
 # OpenBladeIpc.ProtocolVersion: the native peer speaks the combined protocol.
-FRAME_VERSION = 90
+FRAME_VERSION = 91
 PREFIX = b'OPENBLADE_FIXTURE_FRAME '
 PURE_ZERO_CHECKS = {'installed::readiness::thermal_storage::release_read_tests::tfc_release_only_exact_read_operations_tag_retryable_errors'}
 MAX_LOG = 16 * 1024 * 1024

@@ -53,7 +53,7 @@ fn glitching(rig: &Rig) -> (Journal, Arc<AtomicBool>) {
 /// Selects thermal policy `policy`; the fixture saves Maintain.
 async fn select(rig: &Rig, policy: u8) {
     let reply = rig
-        .request(json!({"operation":"setThermalControlPolicy","version":90,"requestId":format!("aaaaaaaa-bbbb-cccc-dddd-0000000000c{policy}"),"policy":policy}))
+        .request(json!({"operation":"setThermalControlPolicy","version":91,"requestId":format!("aaaaaaaa-bbbb-cccc-dddd-0000000000c{policy}"),"policy":policy}))
         .await;
     assert_eq!(reply["success"], true, "{reply}");
 }

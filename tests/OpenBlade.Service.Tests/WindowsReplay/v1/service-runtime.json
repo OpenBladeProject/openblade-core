@@ -2,10 +2,10 @@
   "schema": 1,
   "dispatch": [
     {
-      "id": "v90-active-status",
+      "id": "v91-active-status",
       "input": {
         "operation": "getStatus",
-        "version": 90,
+        "version": 91,
         "requestId": "11111111-2222-4333-8444-555555555555"
       },
       "session": "active",
@@ -19,10 +19,10 @@
       }
     },
     {
-      "id": "v90-active-subscription-initial-status",
+      "id": "v91-active-subscription-initial-status",
       "input": {
         "operation": "subscribeStatus",
-        "version": 90,
+        "version": 91,
         "requestId": "11111111-2222-4333-8444-555555555555"
       },
       "session": "active",
@@ -36,10 +36,10 @@
       }
     },
     {
-      "id": "v90-background-status",
+      "id": "v91-background-status",
       "input": {
         "operation": "getStatus",
-        "version": 90,
+        "version": 91,
         "requestId": "11111111-2222-4333-8444-555555555555"
       },
       "session": "inactive",
@@ -53,10 +53,10 @@
       }
     },
     {
-      "id": "v90-active-observation",
+      "id": "v91-active-observation",
       "input": {
         "operation": "observeState",
-        "version": 90,
+        "version": 91,
         "requestId": "11111111-2222-4333-8444-555555555555",
         "includeLiveReadings": true,
         "requestedLiveReadings": 2
@@ -74,10 +74,10 @@
       }
     },
     {
-      "id": "v90-active-write-stored",
+      "id": "v91-active-write-stored",
       "input": {
         "operation": "setBatteryProtection",
-        "version": 90,
+        "version": 91,
         "requestId": "11111111-2222-4333-8444-555555555555",
         "enabled": false
       },
@@ -92,10 +92,10 @@
       }
     },
     {
-      "id": "v90-background-write-denied",
+      "id": "v91-background-write-denied",
       "input": {
         "operation": "setBatteryProtection",
-        "version": 90,
+        "version": 91,
         "requestId": "11111111-2222-4333-8444-555555555555",
         "enabled": false
       },
@@ -107,10 +107,10 @@
       }
     },
     {
-      "id": "v90-pre-dispatch-cancel",
+      "id": "v91-pre-dispatch-cancel",
       "input": {
         "operation": "setBatteryProtection",
-        "version": 90,
+        "version": 91,
         "requestId": "11111111-2222-4333-8444-555555555555",
         "enabled": false
       },

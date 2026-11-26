@@ -1,6 +1,6 @@
 use super::*;
 
-const REPLAY: &[u8] = include_bytes!("../../../../../tests/fixtures/observe-state-v90.frames");
+const REPLAY: &[u8] = include_bytes!("../../../../../tests/fixtures/observe-state-v91.frames");
 const ID: &str = "11111111-2222-4333-8444-555555555555";
 
 fn managed_frames() -> (&'static [u8], Value) {
@@ -83,7 +83,7 @@ async fn serve(
 fn refusal(reply: &[u8]) {
     let frame: Value = serde_json::from_slice(&reply[4..]).unwrap();
     assert_eq!(frame["frame"], "response");
-    assert_eq!(frame["version"], 90);
+    assert_eq!(frame["version"], 91);
     assert_eq!(frame["requestId"], ID);
     assert_eq!(frame["success"], false);
     assert!(frame["error"].as_str().is_some());
@@ -230,7 +230,7 @@ async fn original_v79_wire_fixtures_are_rejected_before_dispatch() {
         assert_eq!(reads.get(), 0);
         assert!(response.is_empty());
         let mut current: Value = serde_json::from_slice(old_request).unwrap();
-        current["version"] = json!(90);
+        current["version"] = json!(91);
         let request = StatusRequest::decode(&serde_json::to_vec(&current).unwrap()).unwrap();
         let tail = &legacy[size + 4..];
         let size = u32::from_le_bytes(tail[..4].try_into().unwrap()) as usize;

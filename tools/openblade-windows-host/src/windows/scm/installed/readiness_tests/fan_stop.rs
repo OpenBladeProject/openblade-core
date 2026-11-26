@@ -17,19 +17,19 @@ fn id(n: u8) -> String {
 }
 
 fn mode(n: u8, mode: Value) -> Value {
-    json!({"operation": "setFanStopMode", "version": 90, "requestId": id(n), "mode": mode})
+    json!({"operation": "setFanStopMode", "version": 91, "requestId": id(n), "mode": mode})
 }
 
 fn settings(n: u8, settings: Value) -> Value {
-    json!({"operation": "setFanStopSettings", "version": 90, "requestId": id(n), "settings": settings})
+    json!({"operation": "setFanStopSettings", "version": 91, "requestId": id(n), "settings": settings})
 }
 
 fn resume(n: u8) -> Value {
-    json!({"operation": "resumeAutomaticFanStop", "version": 90, "requestId": id(n)})
+    json!({"operation": "resumeAutomaticFanStop", "version": 91, "requestId": id(n)})
 }
 
 fn battery_saver(n: u8, enabled: Value) -> Value {
-    json!({"operation": "setBatterySaverFanStop", "version": 90, "requestId": id(n), "enabled": enabled})
+    json!({"operation": "setBatterySaverFanStop", "version": 91, "requestId": id(n), "enabled": enabled})
 }
 
 /// A vector row's request as the framed request the Tray sends.
@@ -341,7 +341,7 @@ async fn a_frame_managed_refuses_is_closed_without_a_change() {
         settings(1, json!([])),
         battery_saver(1, json!(1)),
         battery_saver(1, json!(null)),
-        json!({"operation": "resumeAutomaticFanStop", "version": 90, "requestId": id(1), "extra": 0}),
+        json!({"operation": "resumeAutomaticFanStop", "version": 91, "requestId": id(1), "extra": 0}),
     ] {
         assert!(
             exchange_as(&rig, &request, USER).await.is_empty(),
@@ -368,7 +368,7 @@ async fn another_users_view_has_no_saved_settings() {
     assert_eq!(own["settings"]["endMode"], 1);
     let other = rig
         .request_as(
-            json!({"operation": "getStatus", "version": 90, "requestId": id(2)}),
+            json!({"operation": "getStatus", "version": 91, "requestId": id(2)}),
             USER,
             "S-1-5-21-1-2-3-1002",
         )

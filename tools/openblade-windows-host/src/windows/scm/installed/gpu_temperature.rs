@@ -94,7 +94,7 @@ const AFTER_READING: Duration = Duration::from_millis(250);
 const PLAUSIBLE: std::ops::RangeInclusive<i32> = 10..=125;
 /// Managed `NvidiaNvmlTemperatureSession`'s own bound.
 const MAXIMUM_SENSOR: u32 = 125;
-/// The GPU temperatures the managed v90 codec writes.
+/// The GPU temperatures the managed v91 codec writes.
 const PUBLISHED: std::ops::RangeInclusive<i32> = 0..=115;
 /// `NVML_TEMPERATURE_GPU`.
 const TEMPERATURE_GPU: u32 = 0;

@@ -630,7 +630,7 @@ async fn an_unconfirmed_restore_intent_append_reports_a_possible_submission() {
 
 #[cfg(feature = "service-profile-triggers-v1")]
 async fn observe(rig: &Rig, n: u8) -> Value {
-    rig.request(json!({"operation":"observeState","version":90,"requestId":format!("eeeeeeee-bbbb-cccc-dddd-{n:012}"),"includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0}))
+    rig.request(json!({"operation":"observeState","version":91,"requestId":format!("eeeeeeee-bbbb-cccc-dddd-{n:012}"),"includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0}))
         .await
 }
 #[cfg(feature = "service-profile-triggers-v1")]

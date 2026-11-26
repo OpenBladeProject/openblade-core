@@ -17,7 +17,7 @@ const SELECTOR_PERFORMANCE: u8 = 2;
 
 /// One owned HyperBoost request, as the tray sends it.
 async fn hyperboost(rig: &Rig, n: u8, enabled: bool) -> Value {
-    rig.request(json!({"operation":"setHyperBoost","version":90,"requestId":format!("aaaaaaaa-bbbb-cccc-eeee-{n:012}"),"enabled":enabled}))
+    rig.request(json!({"operation":"setHyperBoost","version":91,"requestId":format!("aaaaaaaa-bbbb-cccc-eeee-{n:012}"),"enabled":enabled}))
         .await
 }
 /// A rig on a full adapter whose Game rule applied Performance as its

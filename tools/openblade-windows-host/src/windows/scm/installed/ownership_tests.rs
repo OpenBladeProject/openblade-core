@@ -328,7 +328,7 @@ async fn in_memory_bound_getter_projects_only_the_live_owner_epoch() {
     use crate::service_status::Snapshot;
     use serde_json::{Value, json};
 
-    const REPLAY: &[u8] = include_bytes!("../../../../tests/fixtures/observe-state-v90.frames");
+    const REPLAY: &[u8] = include_bytes!("../../../../tests/fixtures/observe-state-v91.frames");
     let length = u32::from_le_bytes(REPLAY[..4].try_into().unwrap()) as usize;
     let reply: Value = serde_json::from_slice(&REPLAY[8 + length..]).unwrap();
     let mut guards = reply["status"].clone();

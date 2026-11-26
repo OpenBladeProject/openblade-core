@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "protocol": {
-    "version": 90,
+    "version": 91,
     "compatibilityVersion": 51,
     "pipeName": "OpenBlade.Service.v2",
     "maxMessageBytes": 65536,
@@ -90,12 +90,12 @@
       "id": "cached-status",
       "input": {
         "operation": "getStatus",
-        "version": 90,
+        "version": 91,
         "requestId": "11111111-2222-4333-8444-555555555555"
       },
       "output": {
         "operation": "getStatus",
-        "version": 90,
+        "version": 91,
         "requestId": "11111111-2222-4333-8444-555555555555"
       }
     },
@@ -103,12 +103,12 @@
       "id": "subscribe-status",
       "input": {
         "operation": "subscribeStatus",
-        "version": 90,
+        "version": 91,
         "requestId": "11111111-2222-4333-8444-555555555555"
       },
       "output": {
         "operation": "subscribeStatus",
-        "version": 90,
+        "version": 91,
         "requestId": "11111111-2222-4333-8444-555555555555"
       }
     },
@@ -116,13 +116,13 @@
       "id": "legacy-observation-mask",
       "input": {
         "operation": "observeState",
-        "version": 90,
+        "version": 91,
         "requestId": "11111111-2222-4333-8444-555555555555",
         "includeLiveReadings": true
       },
       "output": {
         "operation": "observeState",
-        "version": 90,
+        "version": 91,
         "requestId": "11111111-2222-4333-8444-555555555555",
         "includeLiveReadings": true,
         "requestedLiveReadings": 15,
@@ -133,14 +133,14 @@
       "id": "explicit-empty-observation-mask",
       "input": {
         "operation": "observeState",
-        "version": 90,
+        "version": 91,
         "requestId": "11111111-2222-4333-8444-555555555555",
         "includeLiveReadings": true,
         "requestedLiveReadings": 0
       },
       "output": {
         "operation": "observeState",
-        "version": 90,
+        "version": 91,
         "requestId": "11111111-2222-4333-8444-555555555555",
         "includeLiveReadings": true,
         "requestedLiveReadings": 0,
@@ -151,7 +151,7 @@
       "id": "unsupported-observation-mask",
       "input": {
         "operation": "observeState",
-        "version": 90,
+        "version": 91,
         "requestId": "11111111-2222-4333-8444-555555555555",
         "includeLiveReadings": true,
         "requestedLiveReadings": 16
@@ -162,13 +162,13 @@
       "id": "numeric-fan-stop",
       "input": {
         "operation": "setFanStopMode",
-        "version": 90,
+        "version": 91,
         "requestId": "11111111-2222-4333-8444-555555555555",
         "mode": 1
       },
       "output": {
         "operation": "setFanStopMode",
-        "version": 90,
+        "version": 91,
         "requestId": "11111111-2222-4333-8444-555555555555",
         "mode": 1
       }
@@ -177,7 +177,7 @@
       "id": "unknown-fan-mode",
       "input": {
         "operation": "setFanStopMode",
-        "version": 90,
+        "version": 91,
         "requestId": "11111111-2222-4333-8444-555555555555",
         "mode": 2
       },
@@ -187,7 +187,7 @@
       "id": "missing-fan-mode",
       "input": {
         "operation": "setFanStopMode",
-        "version": 90,
+        "version": 91,
         "requestId": "11111111-2222-4333-8444-555555555555"
       },
       "failure": "invalidData"
@@ -196,13 +196,13 @@
       "id": "battery-protection-false",
       "input": {
         "operation": "setBatteryProtection",
-        "version": 90,
+        "version": 91,
         "requestId": "11111111-2222-4333-8444-555555555555",
         "enabled": false
       },
       "output": {
         "operation": "setBatteryProtection",
-        "version": 90,
+        "version": 91,
         "requestId": "11111111-2222-4333-8444-555555555555",
         "enabled": false
       }
@@ -211,7 +211,7 @@
       "id": "battery-protection-missing",
       "input": {
         "operation": "setBatteryProtection",
-        "version": 90,
+        "version": 91,
         "requestId": "11111111-2222-4333-8444-555555555555"
       },
       "failure": "invalidData"
@@ -220,7 +220,7 @@
       "id": "nested-legacy-battery-member",
       "input": {
         "operation": "setBatteryPolicy",
-        "version": 90,
+        "version": 91,
         "requestId": "11111111-2222-4333-8444-555555555555",
         "value": {
           "chargeLimitPercent": 80,
@@ -233,7 +233,7 @@
       "id": "unknown-outer-field",
       "input": {
         "operation": "getStatus",
-        "version": 90,
+        "version": 91,
         "requestId": "11111111-2222-4333-8444-555555555555",
         "futureExtension": {
           "sample": "synthetic"
@@ -245,7 +245,7 @@
       "id": "unknown-operation",
       "input": {
         "operation": "futureOperation",
-        "version": 90,
+        "version": 91,
         "requestId": "11111111-2222-4333-8444-555555555555"
       },
       "failure": "invalidData"
@@ -263,14 +263,14 @@
       "id": "empty-id",
       "input": {
         "operation": "getStatus",
-        "version": 90,
+        "version": 91,
         "requestId": "00000000-0000-0000-0000-000000000000"
       },
       "failure": "invalidData"
     },
     {
       "id": "duplicate-version",
-      "json": "{\"operation\":\"getStatus\",\"version\":90,\"version\":79,\"requestId\":\"11111111-2222-4333-8444-555555555555\"}",
+      "json": "{\"operation\":\"getStatus\",\"version\":91,\"version\":79,\"requestId\":\"11111111-2222-4333-8444-555555555555\"}",
       "failure": "invalidData"
     },
     {
@@ -294,7 +294,7 @@
       "id": "stored",
       "input": {
         "frame": "response",
-        "version": 90,
+        "version": 91,
         "requestId": "11111111-2222-4333-8444-555555555555",
         "success": true,
         "error": null,
@@ -311,7 +311,7 @@
       "id": "applied",
       "input": {
         "frame": "response",
-        "version": 90,
+        "version": 91,
         "requestId": "11111111-2222-4333-8444-555555555555",
         "success": true,
         "error": null,
@@ -328,7 +328,7 @@
       "id": "blocked",
       "input": {
         "frame": "response",
-        "version": 90,
+        "version": 91,
         "requestId": "11111111-2222-4333-8444-555555555555",
         "success": true,
         "error": null,
@@ -345,7 +345,7 @@
       "id": "failed",
       "input": {
         "frame": "response",
-        "version": 90,
+        "version": 91,
         "requestId": "11111111-2222-4333-8444-555555555555",
         "success": true,
         "error": null,
@@ -362,7 +362,7 @@
       "id": "capacity-failure",
       "input": {
         "frame": "response",
-        "version": 90,
+        "version": 91,
         "requestId": "11111111-2222-4333-8444-555555555555",
         "success": false,
         "error": "Synthetic capacity exhausted",
@@ -376,7 +376,7 @@
       "id": "invalid-dual-outcome",
       "input": {
         "frame": "response",
-        "version": 90,
+        "version": 91,
         "requestId": "11111111-2222-4333-8444-555555555555",
         "success": false,
         "error": "Synthetic failure",
@@ -393,7 +393,7 @@
   ],
   "statusProjection": [
     {
-      "protocol": 90,
+      "protocol": 91,
       "writeBlocked": false,
       "confirmedHyperBoostActive": null,
       "desiredPerformance": 1,

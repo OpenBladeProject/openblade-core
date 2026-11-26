@@ -20,7 +20,7 @@ async fn report_once<S: AsyncRead + AsyncWrite + Unpin>(
 
 fn request(path: Option<&str>) -> ReportApplicationContextRequest {
     ReportApplicationContextRequest {
-        version: 90,
+        version: 91,
         request_id: Guid([0x11; 16]),
         instance_id: Guid([0x22; 16]),
         sequence: 7,
@@ -31,7 +31,7 @@ fn request(path: Option<&str>) -> ReportApplicationContextRequest {
 fn reply(request_id: &str, edit: impl FnOnce(&mut serde_json::Value)) -> Vec<u8> {
     let mut frame = serde_json::json!({
         "frame": "response",
-        "version": 90,
+        "version": 91,
         "requestId": request_id,
         "success": true,
         "error": null,
@@ -78,12 +78,12 @@ async fn request_is_the_managed_frame_and_only_stored_or_applied_acknowledge() {
     for (path, expected) in [
         (
             Some(r"C:\Games\Game.exe"),
-            r#"{"operation":"reportApplicationContext","version":90,"requestId":"11111111-1111-1111-1111-111111111111","instanceId":"22222222-2222-2222-2222-222222222222","sequence":7,"executablePath":"C:\\Games\\Game.exe"}"#,
+            r#"{"operation":"reportApplicationContext","version":91,"requestId":"11111111-1111-1111-1111-111111111111","instanceId":"22222222-2222-2222-2222-222222222222","sequence":7,"executablePath":"C:\\Games\\Game.exe"}"#,
         ),
         // An explicit null clears the context; the member is never omitted.
         (
             None,
-            r#"{"operation":"reportApplicationContext","version":90,"requestId":"11111111-1111-1111-1111-111111111111","instanceId":"22222222-2222-2222-2222-222222222222","sequence":7,"executablePath":null}"#,
+            r#"{"operation":"reportApplicationContext","version":91,"requestId":"11111111-1111-1111-1111-111111111111","instanceId":"22222222-2222-2222-2222-222222222222","sequence":7,"executablePath":null}"#,
         ),
     ] {
         let seen = Cell::new(false);

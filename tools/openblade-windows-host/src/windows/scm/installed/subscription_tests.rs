@@ -4,7 +4,7 @@ use tokio::{
     time::{advance, sleep},
 };
 
-const REPLAY: &[u8] = include_bytes!("../../../../tests/fixtures/subscribe-status-v90.frames");
+const REPLAY: &[u8] = include_bytes!("../../../../tests/fixtures/subscribe-status-v91.frames");
 const ID: &str = "11111111-2222-4333-8444-555555555555";
 
 fn replay() -> [&'static [u8]; 3] {
@@ -125,7 +125,7 @@ async fn in_memory_observe_state_refusal_coexists_with_get_status_and_subscripti
         assert_eq!(
             send_subscribe(&mut overflow).await,
             json!({
-                "frame": "response", "version": 90, "requestId": ID, "success": false,
+                "frame": "response", "version": 91, "requestId": ID, "success": false,
                 "error": "Status subscription capacity is unavailable.", "status": null,
                 "result": null, "archive": null, "errorCode": 0,
             })
@@ -134,7 +134,7 @@ async fn in_memory_observe_state_refusal_coexists_with_get_status_and_subscripti
         get_status(&tx).await;
 
         let mut observer = connect(&tx, 128);
-        let replay = include_bytes!("../../../../tests/fixtures/observe-state-v90.frames");
+        let replay = include_bytes!("../../../../tests/fixtures/observe-state-v91.frames");
         let length = u32::from_le_bytes(replay[..4].try_into().unwrap()) as usize;
         observer.write_all(&replay[..4 + length]).await.unwrap();
         let refused = read_json(&mut observer).await;
@@ -282,7 +282,7 @@ async fn installed_subscription_without_a_live_publisher_returns_no_snapshot() {
             assert_eq!(
                 send_subscribe(&mut client).await,
                 json!({
-                    "frame": "response", "version": 90, "requestId": ID, "success": false,
+                    "frame": "response", "version": 91, "requestId": ID, "success": false,
                     "error": "Status publication is unavailable.", "status": null,
                     "result": null, "archive": null, "errorCode": null,
                 })
@@ -615,7 +615,7 @@ async fn in_memory_phase_10g_watcher_receives_native_observer_change_through_the
         );
         let clients = async {
             let StatusUpdate::Opened(initial) = updates.recv().await.unwrap() else {
-                panic!("expected the correlated v90 subscription response");
+                panic!("expected the correlated v91 subscription response");
             };
             let initial = initial.into_observation().snapshot;
             initial.verify(0).unwrap();
@@ -637,7 +637,7 @@ async fn in_memory_phase_10g_watcher_receives_native_observer_change_through_the
 
             battery.store(true, Ordering::Relaxed);
             let StatusUpdate::Event(event) = updates.recv().await.unwrap() else {
-                panic!("expected a changed observation on the existing v90 stream");
+                panic!("expected a changed observation on the existing v91 stream");
             };
             event.require_fresh().unwrap();
             event.snapshot.verify(0).unwrap();
@@ -671,7 +671,7 @@ async fn in_memory_firmware_observation_allows_status_and_subscription_progress(
     use crate::discovery::performance::worker_tests::{BlockAt, blocking_worker};
     use std::sync::atomic::{AtomicBool, Ordering};
 
-    const OBSERVE: &[u8] = include_bytes!("../../../../tests/fixtures/observe-state-v90.frames");
+    const OBSERVE: &[u8] = include_bytes!("../../../../tests/fixtures/observe-state-v91.frames");
     let length = u32::from_le_bytes(OBSERVE[..4].try_into().unwrap()) as usize;
     let (request, response) = OBSERVE.split_at(4 + length);
     let mut guards = frame_value(response)["status"].clone();
@@ -753,7 +753,7 @@ async fn in_memory_firmware_shutdown_reports_pending_native_ownership() {
     use crate::discovery::performance::worker_tests::{BlockAt, blocking_worker};
     use std::sync::atomic::Ordering;
 
-    const OBSERVE: &[u8] = include_bytes!("../../../../tests/fixtures/observe-state-v90.frames");
+    const OBSERVE: &[u8] = include_bytes!("../../../../tests/fixtures/observe-state-v91.frames");
     let length = u32::from_le_bytes(OBSERVE[..4].try_into().unwrap()) as usize;
     let request = &OBSERVE[..4 + length];
     let (worker, held) = blocking_worker(BlockAt::Submit, None);

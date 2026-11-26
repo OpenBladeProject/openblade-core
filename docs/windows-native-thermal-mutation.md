@@ -16,7 +16,7 @@ selection and Setup handoff consumers retain the same authenticated mailbox
 handoff requirement. A correctly authenticated role inventory can carry this
 composition. There is no new default native publishing or installation path.
 
-The installed v90 dispatcher accepts typed `setPerformanceOverride` and
+The installed v91 dispatcher accepts typed `setPerformanceOverride` and
 `reportApplicationContext` requests only in this composition. The SID comes
 from the actual named-pipe peer token, with active interactive session continuity
 checked before and after the operation. The real supplier independently matches
@@ -844,7 +844,7 @@ Native differs from managed here in these ways:
 ##### Status members and the recovery request
 
 The managed contract carries the three HyperBoost status members and
-`recoverHyperBoostRestore` at protocol 90, so native fills and serves them
+`recoverHyperBoostRestore` at protocol 91, so native fills and serves them
 with no protocol change. The metadata observer reads the members with each
 status, on its own thread and for every caller
 (`status_source::observe_hyperboost`):
@@ -1292,7 +1292,7 @@ ineligible saved request also replies Blocked with that prefix, even when the
 policy-selected preset is confirmed; the hardware result then says that the
 policy selects another destination. Requested override, effective
 selected value/provenance, and observed state remain distinct. Mutation success
-frames contain only the operation result, as required by the unchanged v90
+frames contain only the operation result, as required by the unchanged v91
 single-body response contract. Status travels separately through GetStatus,
 ObserveState and subscriptions.
 
@@ -3141,7 +3141,7 @@ A tombstone or a spent budget suppresses its contradiction, and the status
 publishes Suppressed with its components, `Tombstoned` or `BudgetExhausted`
 and `explicitReapplyRequired`, as managed does. With
 `service-thermal-convergence-v1`, native serves managed's
-`reapplyChangedSettings` at protocol 90 (`thermal_reapply.rs`), its only
+`reapplyChangedSettings` at protocol 91 (`thermal_reapply.rs`), its only
 exit. It needs no wire change: the request carries only its version and
 request ID, and the reply is an ordinary operation result with the status
 the request published.
@@ -3255,7 +3255,7 @@ message, and the observation record carries `hasFanStopTrialEvidence` and
 without the feature keeps the no-evidence status and both flags false.
 
 `ServiceControlRuntimeTests.NativeFanStopVectors` records managed's replies
-and statuses for each case through the real runtime and the v90 codec into
+and statuses for each case through the real runtime and the v91 codec into
 `tests/data/fan-stop-vectors.json`, and the evidence flags from the
 production factory's own predicates. The native readiness tests replay every
 row through the framed dispatcher (`readiness_tests/fan_stop.rs`) and the
@@ -3486,7 +3486,7 @@ ProtectedFiles, with only the security verifier injected, in a private directory
 under the temporary directory, through a refused rename, leftover and held staging files, a recorded transaction
 and exact-byte deletion. Constructors take those inputs before any default
 root resolution. Real controller/token/session/SCM/HID suppliers are compiled,
-not executed. Managed tests parse emitted native replies with the actual v90 codec
+not executed. Managed tests parse emitted native replies with the actual v91 codec
 and inspect explicit artifact capabilities and conservative recovery refusal.
 The native test marker emits the original received UTF-8 payload, preserving
 property order and the leading polymorphic discriminator. Extraction retains

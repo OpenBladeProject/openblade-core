@@ -20,7 +20,7 @@ impl BatteryObservation {
             .map(|(v, _)| v)
     }
     fn projection(&self, now: Instant) -> Option<(u8, Option<bool>)> {
-        // v90 requires policy/protection when a battery group is present.
+        // v91 requires policy/protection when a battery group is present.
         // A still-young TFC observation remains internally retained at its own age.
         let raw = Self::current(self.policy, now)?;
         let temporary = Self::current(self.temporary, now);

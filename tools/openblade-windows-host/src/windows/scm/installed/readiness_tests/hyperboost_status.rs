@@ -22,7 +22,7 @@ impl Rig {
     async fn recover_as(&self, n: u8, caller: Caller) -> Value {
         let response = self
             .request_as(
-                json!({"operation":"recoverHyperBoostRestore","version":90,"requestId":format!("aaaaaaaa-bbbb-cccc-ffff-{n:012}")}),
+                json!({"operation":"recoverHyperBoostRestore","version":91,"requestId":format!("aaaaaaaa-bbbb-cccc-ffff-{n:012}")}),
                 caller,
                 SID,
             )
@@ -255,7 +255,7 @@ async fn recovery_refuses_a_caller_that_is_not_the_active_user() {
         *rig.hyperboost.journal.lock().unwrap() = Some(Some(journal_in(RESTORE_PENDING)));
         let before = untouched(&rig);
         let request = crate::service_status::StatusRequest::decode(
-            br#"{"operation":"recoverHyperBoostRestore","version":90,"requestId":"aaaaaaaa-bbbb-cccc-ffff-000000000001"}"#,
+            br#"{"operation":"recoverHyperBoostRestore","version":91,"requestId":"aaaaaaaa-bbbb-cccc-ffff-000000000001"}"#,
         )
         .unwrap();
         let mutation = rig.source.lock().await.mutate(

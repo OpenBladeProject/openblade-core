@@ -11,7 +11,7 @@ use crate::installed::readiness::thermal_mutation::{
 const VECTORS: &str = include_str!("../../../../../tests/data/thermal-reapply-vectors.json");
 
 fn reapply_request(n: u8) -> Value {
-    json!({"operation":"reapplyChangedSettings","version":90,"requestId":format!("ffffffff-bbbb-cccc-dddd-{n:012}")})
+    json!({"operation":"reapplyChangedSettings","version":91,"requestId":format!("ffffffff-bbbb-cccc-dddd-{n:012}")})
 }
 async fn reapply(rig: &Rig, n: u8) -> Value {
     let reply = rig.request(reapply_request(n)).await;

@@ -14,7 +14,7 @@ spec.loader.exec_module(f)
 
 
 class FixtureContracts(unittest.TestCase):
-    def line(self, emitter='peer_response', raw='{"frame":"response","version":90,"z":1,"a":2}'):
+    def line(self, emitter='peer_response', raw='{"frame":"response","version":91,"z":1,"a":2}'):
         return f.PREFIX + json.dumps(dict(schemaVersion=1, emitter=emitter, operation='getStatus',
                                            method='response', raw=raw)).encode() + b'\n'
 
@@ -47,7 +47,7 @@ class FixtureContracts(unittest.TestCase):
             self.assertEqual(json.loads(edge.read_bytes())[0]['raw'], rows[0]['raw'])
 
     def test_missing_producer_and_legacy_emissions_fail(self):
-        legacy = b'NATIVE_THERMAL_MUTATION_RESPONSE {"frame":"response","version":90}\n'
+        legacy = b'NATIVE_THERMAL_MUTATION_RESPONSE {"frame":"response","version":91}\n'
         for data in (b'', legacy, legacy + self.line(), self.line() + legacy):
             with self.subTest(data=data), self.assertRaises(ValueError):
                 f.collect(data, 'intended_frame_producer', {'peer_response'})
