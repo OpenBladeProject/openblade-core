@@ -15,6 +15,8 @@ pub(crate) use hid_lease::performance;
 pub(crate) use hid_lease::tests::service_fixture;
 mod pnp;
 #[cfg(test)]
+mod probe_inventory;
+#[cfg(test)]
 mod tests;
 #[cfg(all(
     windows,
@@ -71,6 +73,19 @@ impl Inventory<'_> {
             ));
         }
         Ok(inventory)
+    }
+
+    /// The catalog's USB vendors, protected in every scan: an interface of
+    /// one is ruled out only by IDs the grammar reads in full.
+    fn vendors(&self) -> Vec<u16> {
+        let mut vendors: Vec<u16> = self
+            .models
+            .iter()
+            .filter_map(|model| Some(model.device_id()?.0))
+            .collect();
+        vendors.sort_unstable();
+        vendors.dedup();
+        vendors
     }
 }
 
@@ -326,7 +341,7 @@ fn discover(source: &impl DiscoverySource, cancelled: &AtomicBool) -> io::Result
     let host = source.read_host(cancelled)?;
     check_cancelled(cancelled)?;
     let (registry_match, model) = host.resolve(&inventory);
-    let (hid, _) = discover_hid(source, model, cancelled)?;
+    let (hid, _) = discover_hid(source, &inventory, model, cancelled)?;
     let snapshot = serde_json::to_string(&Snapshot {
         schema_version: 1,
         platform: host.platform,
@@ -399,7 +414,7 @@ mod status_metadata {
             });
         };
         // A SetupAPI/PnP hint does not open a device or verify a lease.
-        let hid = match discover_hid(&windows::WindowsMetadata, Some(model), cancel) {
+        let hid = match discover_hid(&windows::WindowsMetadata, &inventory, Some(model), cancel) {
             Ok((evidence, _)) => match evidence.candidates {
                 CandidateState::None => StatusHid::NoCandidate,
                 CandidateState::SingleUnresolved => StatusHid::Candidate,
@@ -428,14 +443,19 @@ struct CandidateHint {
 /// One bounded HID scan: every interface by its case-folded path, with its
 /// PnP facts, or none when unreadable or contradicted by a duplicate.
 struct Scan {
-    inventory: ScanState,
+    state: ScanState,
     interface_count: usize,
     unreadable_interfaces: usize,
     duplicate_interfaces: usize,
     interfaces: HashMap<String, (String, Option<pnp::Facts>)>,
 }
 
-fn scan(source: &impl DiscoverySource, cancelled: &AtomicBool) -> io::Result<Scan> {
+fn scan(
+    source: &impl DiscoverySource,
+    inventory: &Inventory<'_>,
+    cancelled: &AtomicBool,
+) -> io::Result<Scan> {
+    let protected = inventory.vendors();
     let mut interfaces = HashMap::new();
     let mut interface_count = 0;
     let mut unreadable_interfaces = 0;
@@ -453,7 +473,10 @@ fn scan(source: &impl DiscoverySource, cancelled: &AtomicBool) -> io::Result<Sca
             unreadable_interfaces += 1;
             return Ok(());
         };
-        let facts = interface.hardware_ids.as_deref().and_then(pnp::facts);
+        let facts = interface
+            .hardware_ids
+            .as_deref()
+            .and_then(|ids| pnp::facts(ids, &protected));
         if facts.is_none() {
             unreadable_interfaces += 1;
         }
@@ -472,7 +495,7 @@ fn scan(source: &impl DiscoverySource, cancelled: &AtomicBool) -> io::Result<Sca
     })?;
     check_cancelled(cancelled)?;
 
-    let inventory = if scan == ScanState::Complete
+    let state = if scan == ScanState::Complete
         && (unreadable_interfaces != 0 || duplicate_interfaces != 0)
     {
         ScanState::Incomplete
@@ -480,7 +503,7 @@ fn scan(source: &impl DiscoverySource, cancelled: &AtomicBool) -> io::Result<Sca
         scan
     };
     Ok(Scan {
-        inventory,
+        state,
         interface_count,
         unreadable_interfaces,
         duplicate_interfaces,
@@ -490,17 +513,18 @@ fn scan(source: &impl DiscoverySource, cancelled: &AtomicBool) -> io::Result<Sca
 
 fn discover_hid(
     source: &impl DiscoverySource,
+    inventory: &Inventory<'_>,
     model: Option<&Model<'_>>,
     cancelled: &AtomicBool,
 ) -> io::Result<(HidEvidence, Option<CandidateHint>)> {
     let expected_id = model.and_then(Model::device_id);
     let Scan {
-        inventory,
+        state,
         interface_count,
         unreadable_interfaces,
         duplicate_interfaces,
         interfaces,
-    } = scan(source, cancelled)?;
+    } = scan(source, inventory, cancelled)?;
     let mut hint = None;
     let counts = model.zip(expected_id).map(|(model, expected_id)| {
         let mut counts = CandidateCounts {
@@ -526,7 +550,7 @@ fn discover_hid(
     let candidates = match &counts {
         None => CandidateState::NotEvaluated,
         Some(counts) if counts.matching_hints > 1 => CandidateState::Ambiguous,
-        Some(counts) if inventory != ScanState::Complete || counts.missing_usage_hint > 0 => {
+        Some(counts) if state != ScanState::Complete || counts.missing_usage_hint > 0 => {
             CandidateState::Incomplete
         }
         Some(counts) if counts.matching_hints == 1 => CandidateState::SingleUnresolved,
@@ -535,7 +559,7 @@ fn discover_hid(
     let hint = hint.filter(|_| candidates == CandidateState::SingleUnresolved);
     Ok((
         HidEvidence {
-            inventory,
+            inventory: state,
             interface_count,
             unreadable_interfaces,
             duplicate_interfaces,
@@ -554,6 +578,7 @@ fn discover_hid(
 #[cfg_attr(not(feature = "service-lighting-v1"), allow(dead_code))]
 fn discover_role(
     source: &impl DiscoverySource,
+    inventory: &Inventory<'_>,
     model: &Model<'_>,
     usage: (u16, u16),
     cancelled: &AtomicBool,
@@ -561,8 +586,8 @@ fn discover_role(
     let expected_id = model
         .device_id()
         .ok_or_else(|| role_refused("no exact HID device ID"))?;
-    let scan = scan(source, cancelled)?;
-    if scan.inventory != ScanState::Complete {
+    let scan = scan(source, inventory, cancelled)?;
+    if scan.state != ScanState::Complete {
         return Err(role_refused("HID inventory is incomplete"));
     }
     let mut hints = Vec::new();

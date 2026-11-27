@@ -697,3 +697,140 @@ fn the_reviewed_matrix_identity_needs_the_model_and_the_device() {
     device.descriptor.device = (0x1532, 0x02c6);
     assert!(!performance::reviewed_matrix(&device), "another device");
 }
+
+/// The probed RZ09-0581 host's interfaces, by label.
+fn probed_host() -> Rc<Fake> {
+    let fake = fake();
+    fake.rows.replace(
+        crate::discovery::probe_inventory::RZ09_0581_HOST
+            .iter()
+            .map(|(label, ids)| {
+                Some(Interface {
+                    path: (*label).into(),
+                    hardware_ids: Some(ids.iter().map(|id| (*id).into()).collect()),
+                })
+            })
+            .collect(),
+    );
+    fake
+}
+
+/// On the probed host, the control lease opens MI_02 alone, and every exact
+/// collection with the matrix usage, the nested one included, is described.
+/// The nested one's feature report is not the matrix's, so it is not chosen.
+#[test]
+fn the_probed_host_selects_the_exact_control_and_matrix_collections() {
+    let cancelled = AtomicBool::new(false);
+    let fake = probed_host();
+    let mut owner = scripted_owner(&fake);
+    owner.acquire(&cancelled).unwrap();
+    assert_eq!(*fake.opened.borrow(), ["02e0-mi02"]);
+    assert_eq!(owner.stop(), Retirement::Complete);
+
+    let fake = probed_host();
+    fake.descriptors
+        .replace([consumer(3), consumer(91), Ok(MATRIX)].into());
+    let identity = RoleIdentity::select(&fake, MATRIX_ROLE, &cancelled).unwrap();
+    assert_eq!(identity.path(), "02e0-mi03");
+    assert_eq!(
+        *fake.opened.borrow(),
+        ["02e0-mi00-col03-col01", "02e0-mi01-col02", "02e0-mi03"]
+    );
+}
+
+/// A nested collection with the matrix descriptor is a candidate like any
+/// other: beside a second one, nothing is selected.
+#[test]
+fn a_nested_matrix_collection_counts_toward_matrix_uniqueness() {
+    let cancelled = AtomicBool::new(false);
+    let fake = probed_host();
+    fake.descriptors
+        .replace([Ok(MATRIX), consumer(91), Ok(MATRIX)].into());
+    assert!(RoleIdentity::select(&fake, MATRIX_ROLE, &cancelled).is_err());
+    assert_eq!(fake.opened.borrow().len(), 3);
+
+    let fake = probed_host();
+    fake.descriptors
+        .replace([Ok(MATRIX), consumer(91), consumer(3)].into());
+    let identity = RoleIdentity::select(&fake, MATRIX_ROLE, &cancelled).unwrap();
+    assert_eq!(identity.path(), "02e0-mi00-col03-col01");
+}
+
+/// A Razer interface whose identity is not fully parsed refuses both
+/// selections before anything is opened.
+#[test]
+fn an_unparsed_razer_interface_on_the_probed_host_opens_nothing() {
+    let cancelled = AtomicBool::new(false);
+    for ids in [
+        &[
+            r"HID\VID_1532&PID_02E0&MI_00&Col03&Col01&Col02",
+            "HID_DEVICE_UP:000C_U:0001",
+        ][..],
+        &[
+            r"HID\VEN_RAZR&DEV_0001&Col01",
+            r"HID\VID_1532&UP:000C_U:0001",
+        ],
+    ] {
+        let fake = probed_host();
+        fake.rows.borrow_mut().push(Some(Interface {
+            path: "unparsed".into(),
+            hardware_ids: Some(ids.iter().map(|id| (*id).into()).collect()),
+        }));
+        assert!(scripted_owner(&fake).acquire(&cancelled).is_err());
+        assert!(RoleIdentity::select(&fake, MATRIX_ROLE, &cancelled).is_err());
+        assert!(fake.opened.borrow().is_empty());
+    }
+}
+
+fn peripheral(path: &str, ids: &[&str]) -> Option<Interface> {
+    Some(Interface {
+        path: path.into(),
+        hardware_ids: Some(ids.iter().map(|id| (*id).into()).collect()),
+    })
+}
+
+/// A game controller or a Razer Bluetooth LE mouse, present at the start or
+/// plugged in while the leases are held, neither refuses a selection nor
+/// retires a held lease.
+#[test]
+fn common_peripherals_keep_the_probed_leases() {
+    let cancelled = AtomicBool::new(false);
+    let pad = peripheral(
+        "xinput-pad",
+        &[
+            r"HID\VID_045E&PID_0B12&IG_00",
+            r"HID\VID_045E&UP:0001_U:0005",
+            "HID_DEVICE_UP:0001_U:0005",
+        ],
+    );
+    let mouse = peripheral(
+        "razer-le-mouse",
+        &[
+            r"HID\{00001812-0000-1000-8000-00805f9b34fb}_Dev_VID&021532_PID&0095_REV&0001&Col01",
+            r"HID\{00001812-0000-1000-8000-00805f9b34fb}_Dev_VID&021532_PID&0095&Col01",
+            r"HID\VID_1532&UP:0001_U:0002",
+            "HID_DEVICE_UP:0001_U:0002",
+        ],
+    );
+
+    let fake = probed_host();
+    fake.rows.borrow_mut().extend([pad.clone(), mouse.clone()]);
+    let mut owner = scripted_owner(&fake);
+    owner.acquire(&cancelled).unwrap();
+    assert_eq!(*fake.opened.borrow(), ["02e0-mi02"]);
+    assert_eq!(owner.stop(), Retirement::Complete);
+
+    let fake = probed_host();
+    let mut owner = scripted_owner(&fake);
+    let epoch = owner.acquire(&cancelled).unwrap();
+    fake.descriptors
+        .replace([consumer(3), consumer(91), Ok(MATRIX)].into());
+    let matrix = RoleIdentity::select(&fake, MATRIX_ROLE, &cancelled).unwrap();
+    let handle = fake.open_metadata(matrix.path()).unwrap();
+    fake.rows.borrow_mut().extend([pad, mouse]);
+    owner.revalidate(&epoch, &cancelled).unwrap();
+    fake.descriptors.replace([Ok(MATRIX)].into());
+    matrix.verify(&fake, &handle, &cancelled).unwrap();
+    assert_eq!(fake.drops.get(), 3);
+    assert_eq!(owner.stop(), Retirement::Complete);
+}
