@@ -1358,7 +1358,7 @@ struct Rig {
     store_unavailable: Arc<AtomicBool>,
     #[cfg(feature = "service-hyperboost-v1")]
     hyperboost: HyperBoostProbes,
-    #[cfg(feature = "service-fan-mutation-v2")]
+    #[cfg(any(feature = "service-fan-mutation-v2", feature = "service-lighting-v1"))]
     runtime: Runtime,
     #[cfg(feature = "service-fan-mutation-v2")]
     factory_calls: Arc<AtomicUsize>,
@@ -1615,7 +1615,7 @@ impl Rig {
             observations,
             #[cfg(feature = "service-brightness-hid-usage-v1")]
             store_unavailable,
-            #[cfg(feature = "service-fan-mutation-v2")]
+            #[cfg(any(feature = "service-fan-mutation-v2", feature = "service-lighting-v1"))]
             runtime,
             #[cfg(feature = "service-fan-mutation-v2")]
             factory_calls,
