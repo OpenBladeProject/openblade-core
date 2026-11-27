@@ -21,6 +21,7 @@
 //!   within 5 s is reported as unconfirmed, not as success. See the platform
 //!   backend for the remaining process-level differences.
 use super::diagnostics;
+use super::feature_lifetime::stopped;
 use openblade_platform_windows::gpu_apps::{
     self, GpuAppInventory, Kind, MAXIMUM_APPS, QueryUnavailable, Report, Target,
 };
@@ -514,17 +515,6 @@ impl From<io::Error> for ServeError {
 impl From<tokio::time::error::Elapsed> for ServeError {
     fn from(error: tokio::time::error::Elapsed) -> Self {
         Self::Connection(error.into())
-    }
-}
-
-async fn stopped(stop: &mut watch::Receiver<bool>) {
-    loop {
-        if *stop.borrow_and_update() {
-            return;
-        }
-        if stop.changed().await.is_err() {
-            return;
-        }
     }
 }
 

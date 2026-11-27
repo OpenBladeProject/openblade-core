@@ -53,6 +53,18 @@ agent-gpu-v1 = ["native-agent-entry-compile-check", "openblade-platform-windows/
 # Service's confirmed keyboard Driver mode. It issues no Service command and
 # admits no action effect. Packaging refuses an image that carries it.
 agent-function-row-v1 = ["native-agent-entry-compile-check"]
+# Current-user Windows power-mode automation (managed
+# ServicePowerModeAutomationLoop with WindowsPowerModeAutomationCoordinator): a
+# confirmed performance preset applies its profiles.windowsPowerModes
+# association to the user's configured AC or DC power mode. It changes a
+# Windows setting without a request, so packaging refuses an image that
+# carries it.
+agent-power-mode-automation-v1 = ["native-agent-entry-compile-check", "openblade-domain/profile-set"]
+# Session suspend/resume relay (managed SessionPowerTransitionRelay): each
+# transition is reported to the Service's reportSessionPowerTransition within
+# the managed 1.5 s callback budget. Packaging refuses an image that carries
+# it until the Service that serves the report is admitted beside it.
+agent-session-power-relay-v1 = ["native-agent-entry-compile-check", "windows-sys/Win32_System_Power"]
 native-agent-entry-compile-check = ["windows-sys/Win32_System_RemoteDesktop"]
 cpu-worker-fixture = []
 scratch-writer-fence = []

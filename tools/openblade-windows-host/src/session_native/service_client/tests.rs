@@ -1,3 +1,5 @@
+#[cfg(feature = "agent-session-power-relay-v1")]
+mod exchange;
 mod observation;
 #[cfg(feature = "agent-application-reporter-v1")]
 mod report;
@@ -18,14 +20,14 @@ pub(in crate::session_native) use subscription::fixture_initial;
 
 const FRAMES: &[u8] = include_bytes!("../../../tests/fixtures/get-status-v91.frames");
 const REQUEST_ID: &str = "11111111-2222-4333-8444-555555555555";
-const PID: u32 = 42;
+pub(in crate::session_native) const PID: u32 = 42;
 
-struct Authority {
+pub(in crate::session_native) struct Authority {
     pid: Cell<Option<NonZeroU32>>,
 }
 
 impl Authority {
-    fn live() -> Self {
+    pub(in crate::session_native) fn live() -> Self {
         Self {
             pid: Cell::new(NonZeroU32::new(PID)),
         }

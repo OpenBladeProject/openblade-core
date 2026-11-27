@@ -20,6 +20,11 @@ pub(crate) mod fan_stop;
 #[path = "service_status/thermal_convergence.rs"]
 pub(crate) mod thermal_convergence;
 use thermal_convergence::ThermalConvergence;
+#[cfg(feature = "agent-power-mode-automation-v1")]
+#[path = "service_status/power_mode.rs"]
+mod power_mode;
+#[cfg(feature = "agent-power-mode-automation-v1")]
+pub(crate) use power_mode::PowerModeFields;
 
 use openblade_windows_host::json_object::{self, nullable_object, object};
 use serde::{Deserialize, Serialize};

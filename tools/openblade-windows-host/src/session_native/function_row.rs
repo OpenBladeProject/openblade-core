@@ -18,6 +18,7 @@
 //! The renewal tick runs on the Agent's shared runtime, beside the status
 //! subscription whose idle checks it stands in for. The supervisor runs on its
 //! own thread because it reads files and joins threads.
+use super::feature_lifetime::stopped;
 use std::{
     io,
     sync::{
@@ -122,17 +123,6 @@ struct Retire(Arc<Signals>, Arc<Admission>);
 impl Drop for Retire {
     fn drop(&mut self) {
         self.0.retire(&self.1);
-    }
-}
-
-async fn stopped(stop: &mut watch::Receiver<bool>) {
-    loop {
-        if *stop.borrow_and_update() {
-            return;
-        }
-        if stop.changed().await.is_err() {
-            return;
-        }
     }
 }
 

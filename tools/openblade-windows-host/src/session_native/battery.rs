@@ -1,4 +1,5 @@
 //! Selected installed Battery.v1 endpoint. No fixture scenarios enter this composition.
+use super::feature_lifetime::stopped;
 use openblade_platform_windows::battery_report::{self, Failure};
 use openblade_windows_host::json_object;
 use openblade_windows_host::pipe::Endpoint;
@@ -145,17 +146,6 @@ impl ServeError {
     fn kind(&self) -> io::ErrorKind {
         match self {
             Self::Connection(error) | Self::Fatal(error) => error.kind(),
-        }
-    }
-}
-
-async fn stopped(stop: &mut watch::Receiver<bool>) {
-    loop {
-        if *stop.borrow_and_update() {
-            return;
-        }
-        if stop.changed().await.is_err() {
-            return;
         }
     }
 }

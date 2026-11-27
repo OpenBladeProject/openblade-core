@@ -5,6 +5,7 @@
 //! all four writes it composes); every other mutation stays outside this
 //! endpoint.
 use super::diagnostics;
+use super::feature_lifetime::stopped;
 use openblade_windows_host::json_object;
 #[cfg(feature = "agent-display-profile-apply-v1")]
 use openblade_windows_host::json_object::Object;
@@ -614,16 +615,6 @@ impl From<io::Error> for ServeError {
 impl From<tokio::time::error::Elapsed> for ServeError {
     fn from(error: tokio::time::error::Elapsed) -> Self {
         Self::Connection(error.into())
-    }
-}
-async fn stopped(stop: &mut watch::Receiver<bool>) {
-    loop {
-        if *stop.borrow_and_update() {
-            return;
-        }
-        if stop.changed().await.is_err() {
-            return;
-        }
     }
 }
 async fn origin_invalid(verify: &impl Fn() -> io::Result<()>) -> io::Error {

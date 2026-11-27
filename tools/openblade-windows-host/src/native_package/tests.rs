@@ -1182,6 +1182,51 @@ fn a_display_automation_agent_is_not_admitted_by_feature_or_marker() {
     assert!(capabilities(2, "agent", combined, "agent-battery-report-v1").is_err());
 }
 
+/// An unadmitted Agent role is refused by its feature and by the marker
+/// build.rs gives it, whatever else the record claims, beside an admitted
+/// contract too, and a forged marker without the feature is no better.
+fn assert_unadmitted_agent_role(feature: &str, marker: &str) {
+    let features = format!("{feature},native-agent-entry-compile-check");
+    for claimed in [
+        marker.to_owned(),
+        feature.to_owned(),
+        "none".to_owned(),
+        format!("agent-battery-report-v1,{marker}"),
+    ] {
+        assert!(capabilities(2, "agent", &features, &claimed).is_err());
+        assert!(capabilities(1, "agent", &features, &claimed).is_err());
+        assert!(capabilities(2, "service", &features, &claimed).is_err());
+    }
+    assert!(capabilities(2, "agent", "native-agent-entry-compile-check", marker).is_err());
+    let combined = format!("agent-battery-report-v1,{feature},native-agent-entry-compile-check");
+    assert!(capabilities(2, "agent", &combined, "agent-battery-report-v1").is_err());
+    // The admitted contract alone still reads.
+    assert!(
+        capabilities(
+            2,
+            "agent",
+            "agent-battery-report-v1,native-agent-entry-compile-check",
+            "agent-battery-report-v1"
+        )
+        .is_ok()
+    );
+}
+
+#[test]
+fn a_power_mode_automation_agent_is_not_admitted_by_feature_or_marker() {
+    // It changes the user's Windows power mode without a request.
+    assert_unadmitted_agent_role(
+        "agent-power-mode-automation-v1",
+        "session-power-mode-automation-v1",
+    );
+}
+
+#[test]
+fn a_session_power_relay_agent_is_not_admitted_by_feature_or_marker() {
+    // No native Service serves reportSessionPowerTransition yet.
+    assert_unadmitted_agent_role("agent-session-power-relay-v1", "session-power-relay-v1");
+}
+
 #[test]
 fn legacy_artifact_record_and_compiled_identity_reencode_byte_exact() {
     let v = vector();

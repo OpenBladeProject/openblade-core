@@ -79,6 +79,19 @@ pub(super) async fn run_all<'a>(
     .await;
     result.and(drained)
 }
+
+/// Wait until `stop` is signaled or its sender is gone.
+pub(super) async fn stopped(stop: &mut watch::Receiver<bool>) {
+    loop {
+        if *stop.borrow_and_update() {
+            return;
+        }
+        if stop.changed().await.is_err() {
+            return;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
