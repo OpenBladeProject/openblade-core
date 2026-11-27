@@ -161,7 +161,10 @@ pub(in super::super) const KEEPALIVE_INTERVAL: Duration = Duration::from_secs(5)
 const KEEPALIVE_BUDGET: Duration = Duration::from_secs(2);
 
 /// What lighting this process holds between requests (`Runtime::lighting`).
-/// Requests and the keepalive change it only under the operation gate.
+/// Requests and the keepalive change it only under the operation gate. Stop
+/// ends the renderer without it (`Runtime::retire_renderer`): the Service is
+/// stopping, and the mutation worker's stop cancels a keepalive still
+/// running.
 #[derive(Default)]
 pub(super) struct Session {
     /// A lighting setter or matrix report may have been submitted
@@ -174,6 +177,10 @@ pub(super) struct Session {
     /// The Static renderer this process owns, which the origin tick keeps
     /// alive (`Runtime::maintain_lighting`).
     owner: RefCell<Option<Owner>>,
+    /// A test withholds the semantic admission from this session's
+    /// requests (`approved`).
+    #[cfg(test)]
+    withheld: Cell<bool>,
 }
 
 /// An owned renderer, the request whose admission its keepalive frames
@@ -183,9 +190,21 @@ struct Owner {
     sid: String,
     session: u32,
     due: Instant,
+    /// The low-power generation it was drawn under (`Runtime::lighting_boundary`).
+    boundary: Option<u64>,
 }
 
 impl Session {
+    /// The semantic admission a request's target needs
+    /// (`lighting_approved`), which only a test can withhold.
+    fn approved(&self) -> bool {
+        #[cfg(test)]
+        if self.withheld.get() {
+            return false;
+        }
+        lighting_approved()
+    }
+
     fn renderer(&self) -> Option<Renderer> {
         self.owner.borrow().as_ref().map(|owner| owner.renderer)
     }
@@ -231,7 +250,14 @@ impl Session {
     /// The renderer a render job left (`LightingJob::matrix`): a new one
     /// owned by this request from now, the same one kept for this request's
     /// user, or none.
-    fn render(&self, job: &LightingJob, sid: &str, session: u32, now: Instant) {
+    fn render(
+        &self,
+        job: &LightingJob,
+        sid: &str,
+        session: u32,
+        boundary: Option<u64>,
+        now: Instant,
+    ) {
         if let Some(layout) = job.layout() {
             self.layout.set(Some(layout));
         }
@@ -242,6 +268,7 @@ impl Session {
                     sid: sid.into(),
                     session,
                     due: now + KEEPALIVE_INTERVAL,
+                    boundary,
                 }));
             }
             MatrixState::Lost => self.retire(),
@@ -688,7 +715,13 @@ impl Runtime {
         }
         let request = value
             .as_ref()
-            .and_then(|value| target(&value.settings, lighting_approved()));
+            .and_then(|value| target(&value.settings, self.lighting.approved()));
+        // A renderer drawn before a low-power boundary is not retained: the
+        // keyboard may have reset under it.
+        if self.crossed_low_power() {
+            self.retire_renderer();
+        }
+        let boundary = self.lighting_boundary();
         let lighting = &self.lighting;
         let job = match request {
             Some(Request::Off(target)) => LightingJob::write(target),
@@ -729,7 +762,7 @@ impl Runtime {
         match request {
             Some(Request::Off(_)) if retires_renderer(permit.job.outcome()) => lighting.retire(),
             Some(Request::Static { .. }) => {
-                lighting.render(&permit.job, &sid, caller.session, Instant::now())
+                lighting.render(&permit.job, &sid, caller.session, boundary, Instant::now())
             }
             _ => {}
         }
@@ -795,16 +828,24 @@ impl Runtime {
     /// takes the owning request's fresh write admission. A frame refused
     /// before submission keeps the renderer and waits for the next instant;
     /// one that may have been submitted unconfirmed latches the doubt, which
-    /// ends the renderer. In low power the renderer ends without a write.
-    /// Only fatal admission evidence is an error.
+    /// ends the renderer. The next instant follows the tick's instant plus
+    /// the frame's own time, as managed advances from the instant observed
+    /// after the write. A renderer that crossed a low-power boundary ends
+    /// without a write (`crossed_low_power`). Only fatal admission evidence
+    /// is an error.
     pub(in super::super) async fn maintain_lighting(
         &self,
         mailbox: &MailboxSource,
         now: Instant,
     ) -> io::Result<()> {
+        let started = Instant::now();
         let Ok(_serial) = self.gate.try_lock() else {
             return Ok(());
         };
+        if self.crossed_low_power() {
+            self.retire_renderer();
+            return Ok(());
+        }
         let lighting = &self.lighting;
         let Some((renderer, sid, session, due)) = lighting
             .owner
@@ -814,10 +855,6 @@ impl Runtime {
         else {
             return Ok(());
         };
-        if self.lighting_low_power() {
-            self.retire_renderer();
-            return Ok(());
-        }
         if now < due {
             return Ok(());
         }
@@ -825,13 +862,14 @@ impl Runtime {
             return Ok(());
         };
         verify_retained_failure(&self.fatal)?;
-        let next = advance(due, now);
+        // The tick's instant on its own clock, after what this step took.
+        let observed = || now + started.elapsed();
         reader.custody().verify_integrity()?;
         let (storage, fresh) = match self.capture(&sid, session, reader.custody()) {
             Ok(captured) => captured,
             Err(error) if is_fatal_admission(&error) => return Err(error),
             Err(_) => {
-                lighting.defer(next);
+                lighting.defer(advance(due, observed()));
                 return Ok(());
             }
         };
@@ -859,17 +897,51 @@ impl Runtime {
         let in_doubt = permit.job.outcome().in_doubt();
         claim.settle(in_doubt);
         if !in_doubt {
-            lighting.defer(next);
+            lighting.defer(advance(due, observed()));
         }
         Ok(())
     }
 
     /// Ends the owned renderer without a write, at Stop (managed's port
-    /// disposal stops its stream) and at the low-power boundary, and forgets
-    /// the session's layout byte, which the next session reads again.
+    /// disposal stops its stream) and after a low-power boundary, and
+    /// forgets the session's layout byte, which the next session reads
+    /// again.
     pub(in super::super) fn retire_renderer(&self) {
         self.lighting.retire();
         self.lighting.layout.set(None);
+    }
+
+    /// Whether the owned renderer crossed a low-power boundary: the gate
+    /// reads set now, or a suspend or resume arrived since it was drawn. The
+    /// generation catches a boundary that came and went while requests held
+    /// the gate from every tick, so the renderer ends at the first tick that
+    /// finds the gate free, or at the next request, whichever comes first.
+    fn crossed_low_power(&self) -> bool {
+        let Some(boundary) = self
+            .lighting
+            .owner
+            .borrow()
+            .as_ref()
+            .map(|owner| owner.boundary)
+        else {
+            return false;
+        };
+        boundary != self.lighting_boundary() || self.lighting_low_power()
+    }
+
+    /// The low-power generation a renderer is drawn under: every accepted
+    /// suspend and resume advances it. `None` without a lifecycle reading,
+    /// in a composition that reads none or while it is unreadable, which
+    /// `lighting_low_power` reads as low power.
+    fn lighting_boundary(&self) -> Option<u64> {
+        #[cfg(any(
+            feature = "service-profile-triggers-v1",
+            feature = "service-keyboard-driver-mode-v1"
+        ))]
+        if let Some(read) = self.low_power.get() {
+            return read().map(|transition| transition.generation);
+        }
+        None
     }
 
     /// Whether the low-power gate reads set, unreadable or exhausted, in the
@@ -885,6 +957,19 @@ impl Runtime {
             return true;
         }
         false
+    }
+}
+
+#[cfg(test)]
+impl Runtime {
+    /// When the owned renderer's next keepalive frame is due.
+    pub(in super::super) fn keepalive_due_for_tests(&self) -> Option<Instant> {
+        self.lighting.owner.borrow().as_ref().map(|owner| owner.due)
+    }
+
+    /// Withholds the semantic admission from later lighting requests.
+    pub(in super::super) fn withhold_lighting_approval_for_tests(&self) {
+        self.lighting.withheld.set(true);
     }
 }
 

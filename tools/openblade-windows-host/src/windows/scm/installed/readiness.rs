@@ -443,7 +443,11 @@ impl Ports {
                 source.verify_origin()?;
                 source.process_power_source().await?;
                 // The renderer's keepalive goes before the keyboard step, so a
-                // low-power boundary ends it before Normal mode is restored.
+                // tick that finds the operation gate free at a low-power
+                // boundary ends the renderer before Normal mode is restored.
+                // While a request holds the gate the tick sends nothing, and
+                // the renderer ends at the first tick or request after it
+                // (`Runtime::crossed_low_power`).
                 #[cfg(feature = "service-lighting-v1")]
                 {
                     let maintain = source.maintain_lighting(Instant::now());

@@ -183,8 +183,10 @@ resulting state." The lit state is never published as confirmed:
 The Service then owns the renderer. The origin tick, after the power check
 and before the keyboard Driver-mode step, sends one keepalive frame when it
 is due: every 5 s (`Pid02E0LightingTiming.IdleKeepaliveInterval`) on a grid
-that starts when the request that drew the renderer completes, so a late
-tick skips the instants it missed (managed `AdvanceFrameDeadline`). The
+that starts when the request that drew the renderer completes. The next
+instant is the first on that grid after the frame's job ended, so a late
+tick skips the instants it missed (managed `AdvanceFrameDeadline`, from the
+instant observed after the write). The
 frame goes at the first 500 ms tick at or after its instant that finds the
 operation gate free: it is late by up to one tick, plus the time a request
 holds the gate, and its own job then takes its time. A tick never reads or
@@ -197,9 +199,14 @@ A latched doubt always ends the renderer, so no keepalive draws over what an
 unconfirmed submission left, and the request after the read-only resolution
 draws anew. A request or keepalive dropped while its job may still run, such
 as a request whose client went away, latches the doubt too. The renderer
-also ends without a write when an Off may have changed the keyboard, at the
-low-power boundary (the gate set, unreadable or exhausted), and at Stop,
-where the mutation worker's stop cancels a frame still running. After the
+also ends without a write when an Off may have changed the keyboard, after a
+low-power boundary, and at Stop, where the mutation worker's stop cancels a
+frame still running. A renderer has crossed a low-power boundary when the
+gate reads set, unreadable or exhausted, or when the lifecycle's low-power
+generation has moved since the renderer was drawn, which catches a suspend
+and resume that both arrived while requests held the gate. It ends at the
+first tick that finds the gate free or at the next request, whichever comes
+first, so a same-color request after the resume draws anew. After a
 low-power boundary and Stop the session's layout byte is read again.
 
 Managed's lighting port enters Driver mode when it opens

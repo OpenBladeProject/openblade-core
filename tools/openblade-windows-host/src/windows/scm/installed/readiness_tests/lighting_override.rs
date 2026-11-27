@@ -104,14 +104,16 @@ async fn keepalive(rig: &Rig, at: Instant) {
 
 /// Runs `request` with one origin tick's keepalive step, due at `at`,
 /// arriving while the request's `held`th lighting setter is in flight (the
-/// tick loop and requests are separate local tasks). The setter is released
-/// once the tick returns.
+/// tick loop and requests are separate local tasks). The tick must return at
+/// once, starting no job behind the request's; the setter is released after
+/// it.
 async fn with_tick_during(
     rig: &Rig,
     held: usize,
     at: Instant,
     request: impl std::future::Future<Output = (i64, String)>,
 ) -> (i64, String) {
+    use std::task::Poll;
     let release = Arc::new(AtomicBool::new(false));
     rig.port.state.lock().unwrap().lighting_held = Some((held, release.clone()));
     let tick = async {
@@ -119,10 +121,16 @@ async fn with_tick_during(
             tokio::time::sleep(Duration::from_millis(5)).await;
         }
         let maintain = rig.source.lock().await.maintain_lighting(at);
-        if let Some(maintain) = maintain {
-            maintain.await.unwrap();
-        }
+        let returned = match maintain {
+            Some(mut maintain) => std::future::poll_fn(|cx| {
+                Poll::Ready(maintain.as_mut().poll(cx).map(|result| result.unwrap()))
+            })
+            .await
+            .is_ready(),
+            None => true,
+        };
         release.store(true, Ordering::Release);
+        assert!(returned, "the tick waited behind the request's job");
     };
     let (reply, ()) = tokio::join!(request, tick);
     rig.port.state.lock().unwrap().lighting_held = None;
@@ -200,38 +208,50 @@ async fn animated_effects_are_refused_until_slice_c_divergence() {
     rig.stop().await;
 }
 
+/// When the owned renderer's next keepalive frame is due.
+fn due(rig: &Rig) -> Instant {
+    rig.runtime
+        .keepalive_due_for_tests()
+        .expect("an owned renderer")
+}
+
 /// The owned renderer's keepalive frame goes every 5 s on the grid the
 /// drawing request's completion started: none before it is due, one when it
-/// is, and one for a late tick, which skips the instants it missed. The
-/// grid starts between `before` and `done`, and every tick names its own
-/// instant, so the test does not depend on how fast the host runs it.
+/// is, and one for a late tick, which skips the instants it missed. Every
+/// tick names its instant on that grid, so the test does not depend on how
+/// fast the host runs it.
 #[tokio::test]
 async fn the_keepalive_frame_goes_every_five_seconds() {
     let rig = Rig::new(MemoryFiles::default());
     lit(&rig, [0x40, 1, 0]);
     let before = Instant::now();
     assert_eq!(set(&rig, 1, Some(STATIC), 1).await.0, 1);
-    let done = Instant::now();
+    let first = due(&rig);
+    assert!(
+        first >= before + Duration::from_secs(5),
+        "the grid starts at the reply"
+    );
     assert_eq!(frames(&rig), 1);
-    let ms = Duration::from_millis;
-    keepalive(&rig, before + ms(4_900)).await;
+    let at = |ms: u64| first + Duration::from_millis(ms);
+    keepalive(&rig, first - Duration::from_millis(1)).await;
     assert_eq!(frames(&rig), 1, "not yet due");
-    keepalive(&rig, done + ms(5_000)).await;
+    keepalive(&rig, at(0)).await;
     assert_eq!(frames(&rig), 2);
-    keepalive(&rig, done + ms(5_000)).await;
-    assert_eq!(frames(&rig), 2, "the next is due at 10 s");
-    keepalive(&rig, before + ms(9_900)).await;
-    assert_eq!(frames(&rig), 2);
-    keepalive(&rig, done + ms(10_000)).await;
+    assert_eq!(due(&rig), at(5_000));
+    keepalive(&rig, at(0)).await;
+    keepalive(&rig, at(4_999)).await;
+    assert_eq!(frames(&rig), 2, "the next is due 5 s later");
+    keepalive(&rig, at(5_000)).await;
     assert_eq!(frames(&rig), 3);
     // A tick 7 s late sends one frame, not the two it missed, and the next
-    // is due on the same grid at 25 s.
-    keepalive(&rig, done + ms(22_000)).await;
-    keepalive(&rig, done + ms(22_000)).await;
+    // is due on the same grid.
+    keepalive(&rig, at(17_000)).await;
+    keepalive(&rig, at(17_000)).await;
     assert_eq!(frames(&rig), 4);
-    keepalive(&rig, before + ms(24_900)).await;
+    assert_eq!(due(&rig), at(20_000));
+    keepalive(&rig, at(19_999)).await;
     assert_eq!(frames(&rig), 4);
-    keepalive(&rig, done + ms(25_000)).await;
+    keepalive(&rig, at(20_000)).await;
     assert_eq!(frames(&rig), 5);
     // Each keepalive is a frame alone.
     assert_eq!(sent(&rig).len(), 5);
@@ -362,6 +382,116 @@ async fn a_dropped_request_ends_the_renderer_it_replaced() {
     );
     keepalive(&rig, Instant::now() + Duration::from_secs(6)).await;
     assert_eq!(frames(&rig), 2, "no renderer survives a latched doubt");
+    rig.stop().await;
+}
+
+/// A tick dropped while its keepalive frame is in flight latches the doubt:
+/// no renderer is left, the next request resolves read-only, and the one
+/// after draws anew.
+#[tokio::test]
+async fn a_dropped_keepalive_latches_the_doubt() {
+    let rig = Rig::new(MemoryFiles::default());
+    lit(&rig, [0x40, 1, 0]);
+    assert_eq!(set(&rig, 1, Some(STATIC), 1).await.0, 1);
+    let first = due(&rig);
+    // A hold no setter reaches keeps the job on the real clock, so the
+    // muted frame is still in flight when the tick is dropped.
+    let release = Arc::new(AtomicBool::new(false));
+    {
+        let mut state = rig.port.state.lock().unwrap();
+        state.matrix_mute = true;
+        state.lighting_held = Some((usize::MAX, release.clone()));
+    }
+    {
+        let mut tick = Box::pin(async {
+            let maintain = rig.source.lock().await.maintain_lighting(first).unwrap();
+            maintain.await
+        });
+        tokio::select! {
+            _ = &mut tick => panic!("the muted frame completed"),
+            _ = async {
+                while frames(&rig) < 2 {
+                    tokio::time::sleep(Duration::from_millis(1)).await;
+                }
+            } => {}
+        }
+    }
+    release.store(true, Ordering::Release);
+    rig.reader.drain_active().await.unwrap();
+    {
+        let mut state = rig.port.state.lock().unwrap();
+        state.matrix_mute = false;
+        state.lighting_held = None;
+    }
+    keepalive(&rig, first + Duration::from_secs(10)).await;
+    assert_eq!(frames(&rig), 2, "no renderer survives a dropped keepalive");
+    assert_eq!(set(&rig, 2, Some(STATIC), 1).await, (2, PENDING.into()));
+    assert_eq!(set(&rig, 3, Some(STATIC), 1).await.0, 1);
+    assert_eq!(frames(&rig), 3, "drawn anew");
+    rig.stop().await;
+}
+
+/// Keepalive frames pause while their fresh admission refuses them, a
+/// competing controller present or the owning console session inactive:
+/// each refused capture waits for the next instant, and the frames resume
+/// by themselves, with no handshake, when the admission returns.
+#[tokio::test]
+async fn the_keepalive_pauses_while_its_admission_refuses_it() {
+    let rig = Rig::new(MemoryFiles::default());
+    lit(&rig, [0x40, 1, 0]);
+    assert_eq!(set(&rig, 1, Some(STATIC), 1).await.0, 1);
+    let first = due(&rig);
+    let at = |ms: u64| first + Duration::from_millis(ms);
+    let reports = sent(&rig).len();
+    rig.custody.controller.store(true, Ordering::Release);
+    keepalive(&rig, at(0)).await;
+    keepalive(&rig, at(500)).await;
+    keepalive(&rig, at(5_000)).await;
+    assert_eq!(frames(&rig), 1, "no frame while a controller is present");
+    assert_eq!(due(&rig), at(10_000));
+    rig.custody.controller.store(false, Ordering::Release);
+    keepalive(&rig, at(5_500)).await;
+    assert_eq!(
+        frames(&rig),
+        1,
+        "a refused capture waits for the next instant"
+    );
+    keepalive(&rig, at(10_000)).await;
+    assert_eq!(frames(&rig), 2, "the frames resume when it leaves");
+    rig.custody.scoped_fresh.store(true, Ordering::Release);
+    rig.custody.current_console.store(false, Ordering::Release);
+    keepalive(&rig, at(15_000)).await;
+    assert_eq!(frames(&rig), 2, "no frame while the session is inactive");
+    assert_eq!(due(&rig), at(20_000));
+    rig.custody.current_console.store(true, Ordering::Release);
+    keepalive(&rig, at(20_000)).await;
+    rig.custody.scoped_fresh.store(false, Ordering::Release);
+    assert_eq!(frames(&rig), 3, "the frames resume with the session");
+    assert_eq!(
+        sent(&rig).len(),
+        reports,
+        "no handshake before a resumed frame"
+    );
+    rig.stop().await;
+}
+
+/// A request's target needs the semantic admission: without it a Static
+/// request stores its intent and replies as for a value the capability
+/// table lacks, with nothing sent.
+#[tokio::test]
+async fn a_request_without_the_semantic_admission_sends_nothing() {
+    let rig = Rig::new(MemoryFiles::default());
+    lit(&rig, [0x40, 1, 0]);
+    rig.runtime.withhold_lighting_approval_for_tests();
+    let (status, message) = set(&rig, 1, Some(STATIC), 1).await;
+    assert_eq!(status, 2);
+    assert_eq!(
+        message,
+        format!("{STORED}Lighting value is not supported by the verified capability table.")
+    );
+    assert!(sent(&rig).is_empty());
+    assert_eq!(frames(&rig), 0);
+    assert_eq!(saved(&rig), STATIC);
     rig.stop().await;
 }
 
@@ -970,6 +1100,69 @@ async fn low_power_retires_the_renderer_without_a_write() {
     rig.custody.scoped_fresh.store(false, Ordering::Release);
     keepalive(&rig, Instant::now() + Duration::from_secs(6)).await;
     assert_eq!(frames(&rig), 1, "nothing owns the matrix after the resume");
+    rig.stop().await;
+}
+
+/// A suspend and resume that both arrive while a request holds the
+/// operation gate, so no tick finds the gate free between them, still end
+/// the renderer: the first tick after sends nothing, and a same-color
+/// request draws anew instead of retaining it.
+#[cfg(feature = "service-profile-triggers-v1")]
+#[tokio::test]
+async fn a_low_power_boundary_while_the_gate_is_held_ends_the_renderer() {
+    use windows_sys::Win32::System::Services::SERVICE_CONTROL_POWEREVENT as POWER;
+    const SUSPEND: u32 = 4;
+    const RESUME: u32 = 18;
+    const BRIGHT: &str = r#"{"effect":1,"color":{"red":200,"green":10,"blue":5},"brightness":50,"parameters":{"kind":"static","color":{"red":200,"green":10,"blue":5}},"logoMode":null}"#;
+    let rig = Rig::new(MemoryFiles::default());
+    lit(&rig, [0x40, 1, 0]);
+    let custody = rig.custody.clone();
+    rig.runtime
+        .read_low_power(move || custody.lifecycle.low_power());
+    assert_eq!(set(&rig, 1, Some(STATIC), 1).await.0, 1);
+    let first = due(&rig);
+    {
+        let _held = rig.runtime.hold_mutation_gate();
+        rig.custody.scoped_fresh.store(true, Ordering::Release);
+        rig.custody.lifecycle.ingress(POWER, SUSPEND);
+        keepalive(&rig, first).await;
+        rig.custody.lifecycle.ingress(POWER, RESUME);
+        rig.custody.scoped_fresh.store(false, Ordering::Release);
+    }
+    keepalive(&rig, first).await;
+    assert_eq!(frames(&rig), 1, "no keepalive after the boundary");
+    assert_eq!(rig.runtime.keepalive_due_for_tests(), None);
+    // The same color at a new brightness would retain an owned renderer.
+    assert_eq!(set(&rig, 2, Some(BRIGHT), 1).await, (1, RENDERED.into()));
+    assert_eq!(frames(&rig), 2, "drawn anew after the boundary");
+    rig.stop().await;
+}
+
+/// The same boundary with no tick at all before the next request: the
+/// request ends the renderer itself and draws anew.
+#[cfg(feature = "service-profile-triggers-v1")]
+#[tokio::test]
+async fn a_request_after_a_low_power_boundary_draws_anew() {
+    use windows_sys::Win32::System::Services::SERVICE_CONTROL_POWEREVENT as POWER;
+    const SUSPEND: u32 = 4;
+    const RESUME: u32 = 18;
+    let rig = Rig::new(MemoryFiles::default());
+    lit(&rig, [0x40, 1, 0]);
+    let custody = rig.custody.clone();
+    rig.runtime
+        .read_low_power(move || custody.lifecycle.low_power());
+    assert_eq!(set(&rig, 1, Some(STATIC), 1).await.0, 1);
+    rig.custody.scoped_fresh.store(true, Ordering::Release);
+    rig.custody.lifecycle.ingress(POWER, SUSPEND);
+    rig.custody.lifecycle.ingress(POWER, RESUME);
+    rig.custody.scoped_fresh.store(false, Ordering::Release);
+    let reports = sent(&rig).len();
+    assert_eq!(set(&rig, 2, Some(STATIC), 1).await, (1, RENDERED.into()));
+    assert_eq!(frames(&rig), 2, "drawn anew, not retained");
+    assert!(
+        sent(&rig)[reports..].contains(&(0x86, false)),
+        "the layout byte is read again"
+    );
     rig.stop().await;
 }
 
