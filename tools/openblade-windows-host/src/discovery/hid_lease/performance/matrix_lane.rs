@@ -7,7 +7,8 @@
 //! the process's matrix I/O (`MATRIX_IO`, which the render jobs' lease takes
 //! too). The recall token (`epoch`) is checked once more immediately before
 //! the report is issued: `MatrixStream::retire` advances it, so a frame the
-//! runtime gave up on is never written late.
+//! runtime gave up on is never written late. A retire also cancels an open
+//! in progress (`MatrixIo::open`'s flag), and an open it recalled refuses.
 //!
 //! A report holds the matrix I/O from its issue until its terminal
 //! completion. One still outstanding at its frame's deadline is cancelled
@@ -26,15 +27,23 @@ use std::{
 
 /// How often a frame polls its own report for completion.
 const POLL: Duration = Duration::from_millis(1);
-/// How often the lane polls a report left outstanding past its deadline.
+/// How often the lane polls a report left outstanding past its deadline,
+/// for its first `SETTLE_BACKOFF`, and then at `SETTLE_POLL_SLOW`: a report
+/// that has not completed by then is unlikely to complete soon.
 const SETTLE_POLL: Duration = Duration::from_millis(10);
+const SETTLE_BACKOFF: Duration = Duration::from_secs(1);
+const SETTLE_POLL_SLOW: Duration = Duration::from_millis(100);
+/// The lane's request queue. The runtime awaits each open and frame, so at
+/// most one of them, a retire and a settle are queued at once; a full queue
+/// refuses the request.
+const QUEUE: usize = 8;
 
 /// The matrix collection's I/O for one lane: the Windows handle and its
 /// overlapped 03/0B report, or a test's fake.
 pub(crate) trait MatrixIo {
     /// Selects, opens and verifies the exact reviewed collection; `false`
-    /// opened nothing.
-    fn open(&mut self) -> bool;
+    /// opened nothing. Setting `cancelled` abandons it.
+    fn open(&mut self, cancelled: &AtomicBool) -> bool;
     fn is_open(&self) -> bool;
     /// Whether the open handle still describes the selected collection.
     fn describes(&self) -> bool;
@@ -51,6 +60,10 @@ pub(crate) trait MatrixIo {
     fn cancel(&mut self);
     /// Closes the collection. Never called with a report outstanding.
     fn close(&mut self);
+    /// The clock the lane's deadlines are compared on.
+    fn now(&self) -> Instant {
+        Instant::now()
+    }
 }
 
 /// One lane's state over its I/O.
@@ -60,6 +73,8 @@ pub(crate) struct Lane<I: MatrixIo> {
     matrix_io: &'static AtomicBool,
     /// The recall token `MatrixStream::retire` advances.
     epoch: Arc<AtomicU64>,
+    /// The flag `MatrixStream::retire` sets to cancel an open in progress.
+    cancel: Arc<AtomicBool>,
     /// Whether this lane holds `matrix_io` for its outstanding report.
     holds: bool,
     /// A retire waits for the outstanding report before the lease closes.
@@ -67,11 +82,17 @@ pub(crate) struct Lane<I: MatrixIo> {
 }
 
 impl<I: MatrixIo> Lane<I> {
-    pub(crate) fn new(io: I, matrix_io: &'static AtomicBool, epoch: Arc<AtomicU64>) -> Self {
+    pub(crate) fn new(
+        io: I,
+        matrix_io: &'static AtomicBool,
+        epoch: Arc<AtomicU64>,
+        cancel: Arc<AtomicBool>,
+    ) -> Self {
         Self {
             io,
             matrix_io,
             epoch,
+            cancel,
             holds: false,
             closing: false,
         }
@@ -113,13 +134,28 @@ impl<I: MatrixIo> Lane<I> {
         self.settle();
     }
 
-    /// Opens the collection, or confirms it is open, for the request at
-    /// `epoch`. A report still outstanding opens nothing.
+    /// Opens the collection, or confirms that the open one still describes
+    /// the selected collection, for the request at `epoch`. A report still
+    /// outstanding opens nothing; a handle that no longer describes it is
+    /// closed; an open recalled meanwhile refuses.
     fn open(&mut self, epoch: u64) -> Result<(), Unwritten> {
+        // Cleared before the token is read: `MatrixStream::retire` advances
+        // the token before it sets the flag, so a retire this check misses
+        // still cancels the open below.
+        self.cancel.store(false, Ordering::SeqCst);
         if !self.current(epoch) || !self.settle() {
             return Err(Unwritten::Unsent);
         }
-        if self.io.is_open() || self.io.open() {
+        if !self.io.is_open() && !self.io.open(&self.cancel) {
+            return Err(Unwritten::Unsent);
+        }
+        // Checked on every open, a reused one included.
+        if !self.io.describes() {
+            self.retire();
+            return Err(Unwritten::Unsent);
+        }
+        // Recalled while it opened: the retire that recalled it closes it.
+        if self.current(epoch) {
             Ok(())
         } else {
             Err(Unwritten::Unsent)
@@ -134,11 +170,7 @@ impl<I: MatrixIo> Lane<I> {
         epoch: u64,
     ) -> Result<(), Unwritten> {
         self.open(epoch)?;
-        if !self.io.describes() {
-            self.retire();
-            return Err(Unwritten::Unsent);
-        }
-        if Instant::now() >= deadline || !self.io.prepare(report) {
+        if self.io.now() >= deadline || !self.io.prepare(report) {
             return Err(Unwritten::Unsent);
         }
         if self
@@ -168,7 +200,7 @@ impl<I: MatrixIo> Lane<I> {
                     Err(Unwritten::InDoubt)
                 };
             }
-            if Instant::now() >= deadline {
+            if self.io.now() >= deadline {
                 // Still outstanding: it keeps the matrix I/O until it ends.
                 self.io.cancel();
                 return Err(Unwritten::InDoubt);
@@ -184,7 +216,7 @@ impl<I: MatrixIo> Lane<I> {
             if self.settle() {
                 return true;
             }
-            if Instant::now() >= deadline {
+            if self.io.now() >= deadline {
                 return false;
             }
             std::thread::sleep(POLL);
@@ -214,14 +246,23 @@ enum Request {
 /// outstanding, a poll between requests, so a late completion releases the
 /// matrix I/O with no further request.
 fn run<I: MatrixIo>(mut lane: Lane<I>, requests: &mpsc::Receiver<Request>) {
+    // Since when the lane has polled an outstanding report between requests.
+    let mut polling: Option<Instant> = None;
     loop {
         let request = if lane.io.outstanding() {
-            match requests.recv_timeout(SETTLE_POLL) {
+            let since = *polling.get_or_insert_with(|| lane.io.now());
+            let poll = if lane.io.now().saturating_duration_since(since) < SETTLE_BACKOFF {
+                SETTLE_POLL
+            } else {
+                SETTLE_POLL_SLOW
+            };
+            match requests.recv_timeout(poll) {
                 Ok(request) => Some(request),
                 Err(mpsc::RecvTimeoutError::Timeout) => None,
                 Err(mpsc::RecvTimeoutError::Disconnected) => break,
             }
         } else {
+            polling = None;
             match requests.recv() {
                 Ok(request) => Some(request),
                 Err(_) => break,
@@ -259,7 +300,8 @@ pub(crate) struct LaneStream<I: MatrixIo + 'static> {
     make: Make<I>,
     matrix_io: &'static AtomicBool,
     epoch: Arc<AtomicU64>,
-    requests: Mutex<Option<mpsc::Sender<Request>>>,
+    cancel: Arc<AtomicBool>,
+    requests: Mutex<Option<mpsc::SyncSender<Request>>>,
 }
 
 impl<I: MatrixIo + 'static> LaneStream<I> {
@@ -271,6 +313,7 @@ impl<I: MatrixIo + 'static> LaneStream<I> {
             make: Arc::new(make),
             matrix_io,
             epoch: Arc::new(AtomicU64::new(0)),
+            cancel: Arc::new(AtomicBool::new(false)),
             requests: Mutex::new(None),
         }
     }
@@ -286,11 +329,19 @@ impl<I: MatrixIo + 'static> LaneStream<I> {
             return false;
         };
         if requests.is_none() && start {
-            let (sender, receiver) = mpsc::channel();
-            let (make, matrix_io, epoch) = (self.make.clone(), self.matrix_io, self.epoch.clone());
+            let (sender, receiver) = mpsc::sync_channel(QUEUE);
+            let lane = (
+                self.make.clone(),
+                self.matrix_io,
+                self.epoch.clone(),
+                self.cancel.clone(),
+            );
             let started = std::thread::Builder::new()
                 .name("openblade-matrix-stream".into())
-                .spawn(move || run(Lane::new(make(), matrix_io, epoch), &receiver));
+                .spawn(move || {
+                    let (make, matrix_io, epoch, cancel) = lane;
+                    run(Lane::new(make(), matrix_io, epoch, cancel), &receiver);
+                });
             if started.is_err() {
                 return false;
             }
@@ -298,7 +349,7 @@ impl<I: MatrixIo + 'static> LaneStream<I> {
         }
         requests
             .as_ref()
-            .is_some_and(|sender| sender.send(request).is_ok())
+            .is_some_and(|sender| sender.try_send(request).is_ok())
     }
 }
 
@@ -346,7 +397,11 @@ impl<I: MatrixIo + 'static> MatrixStream for LaneStream<I> {
     }
 
     fn retire(&self) {
+        // The token first, then the flag (`Lane::open`).
         self.epoch.fetch_add(1, Ordering::SeqCst);
+        self.cancel.store(true, Ordering::SeqCst);
+        // A queue too full for the retire still recalled every frame; the
+        // lease closes when the lane ends.
         let _ = self.send(Request::Retire, false);
     }
 
@@ -356,11 +411,12 @@ impl<I: MatrixIo + 'static> MatrixStream for LaneStream<I> {
             deadline: deadline.into_std(),
             reply,
         };
-        // A lane never started has nothing outstanding.
-        let started = self
-            .requests
-            .lock()
-            .is_ok_and(|requests| requests.is_some());
+        // A lane never started has nothing outstanding; one whose state is
+        // unreadable is not known to be settled.
+        let started = match self.requests.lock() {
+            Ok(requests) => requests.is_some(),
+            Err(_) => return Box::pin(std::future::ready(false)),
+        };
         let sent = started && self.send(request, false);
         Box::pin(async move { !started || sent && result.await.unwrap_or(false) })
     }

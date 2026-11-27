@@ -267,8 +267,9 @@ pub(crate) trait MatrixStream {
     /// `Unsent` when nothing reached the driver; any submission that did
     /// not complete in time is `InDoubt`.
     fn frame(&self, report: MatrixReport, deadline: Instant) -> Pending<Result<(), Unwritten>>;
-    /// Recalls every frame not yet submitted and closes the collection once
-    /// no report is outstanding; the next frame opens and verifies it again.
+    /// Recalls every frame not yet submitted, cancels an open in progress
+    /// and closes the collection once no report is outstanding; the next
+    /// request opens and verifies it again.
     fn retire(&self);
     /// Waits until no report is outstanding, or `deadline`: `false` when one
     /// still may be.

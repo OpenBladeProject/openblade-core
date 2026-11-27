@@ -21,6 +21,18 @@ struct Device {
     /// Advances this token while the report is prepared, as a retire racing
     /// the frame does.
     recall: Option<Arc<AtomicU64>>,
+    /// Advances this token while the collection opens.
+    recall_on_open: Option<Arc<AtomicU64>>,
+    /// An open waits, after setting `opening`, until this is released or the
+    /// lane cancels it, as a slow selection would.
+    open_gate: Option<Arc<AtomicBool>>,
+    opening: bool,
+    /// Whether an open saw the lane's cancel flag.
+    open_cancelled: bool,
+    /// The issue moves the lane's clock past every deadline.
+    expire_on_issue: bool,
+    /// How far the lane's clock is ahead of the real one.
+    clock: Duration,
 }
 
 #[derive(Clone, Default)]
@@ -39,10 +51,23 @@ impl Fake {
 }
 
 impl MatrixIo for Fake {
-    fn open(&mut self) -> bool {
+    fn open(&mut self, cancelled: &AtomicBool) -> bool {
+        if let Some(gate) = self.read(|d| d.open_gate.clone()) {
+            self.with(|d| d.opening = true);
+            while !gate.load(Ordering::Acquire) {
+                if cancelled.load(Ordering::SeqCst) {
+                    self.with(|d| d.open_cancelled = true);
+                    return false;
+                }
+                std::thread::sleep(Duration::from_millis(1));
+            }
+        }
         let mut d = self.0.lock().unwrap();
         d.opens += 1;
         d.open = !d.refuse_open;
+        if let Some(recall) = &d.recall_on_open {
+            recall.fetch_add(1, Ordering::SeqCst);
+        }
         d.open
     }
     fn is_open(&self) -> bool {
@@ -65,6 +90,9 @@ impl MatrixIo for Fake {
         d.issued
             .push([7; openblade_protocol::lighting::matrix::FEATURE_REPORT_LENGTH]);
         d.outstanding = true;
+        if d.expire_on_issue {
+            d.clock += Duration::from_secs(3600);
+        }
         true
     }
     fn poll(&mut self) -> Option<bool> {
@@ -89,6 +117,9 @@ impl MatrixIo for Fake {
             d.closes += 1;
         });
     }
+    fn now(&self) -> Instant {
+        Instant::now() + self.read(|d| d.clock)
+    }
 }
 
 const REPORT: MatrixReport = [0; openblade_protocol::lighting::matrix::FEATURE_REPORT_LENGTH];
@@ -98,7 +129,11 @@ fn flag() -> &'static AtomicBool {
 }
 fn lane(fake: &Fake, matrix_io: &'static AtomicBool) -> (Lane<Fake>, Arc<AtomicU64>) {
     let epoch = Arc::new(AtomicU64::new(0));
-    (Lane::new(fake.clone(), matrix_io, epoch.clone()), epoch)
+    let cancel = Arc::new(AtomicBool::new(false));
+    (
+        Lane::new(fake.clone(), matrix_io, epoch.clone(), cancel),
+        epoch,
+    )
 }
 fn soon() -> Instant {
     Instant::now() + Duration::from_secs(30)
@@ -220,12 +255,17 @@ fn an_outstanding_report_keeps_the_matrix_io_until_it_completes() {
     let fake = Fake::default();
     let matrix_io = flag();
     let (mut lane, _) = lane(&fake, matrix_io);
-    let deadline = Instant::now() + Duration::from_millis(20);
+    // The lane's clock passes the deadline at the issue.
+    fake.with(|d| d.expire_on_issue = true);
     assert!(matches!(
-        lane.frame(&REPORT, deadline, 0),
+        lane.frame(&REPORT, soon(), 0),
         Err(Unwritten::InDoubt)
     ));
     assert_eq!(fake.read(|d| d.cancels), 1);
+    fake.with(|d| {
+        d.expire_on_issue = false;
+        d.clock = Duration::ZERO;
+    });
     assert!(matrix_io.load(Ordering::Acquire));
     assert!(matches!(
         lane.frame(&REPORT, soon(), 0),
@@ -245,7 +285,8 @@ fn an_outstanding_report_keeps_the_matrix_io_until_it_completes() {
 /// The lane's thread polls an outstanding report between requests: its late
 /// completion releases the matrix I/O with no further request, and a retire
 /// sent meanwhile closes the lease once it completes. Settle answers in
-/// doubt until then.
+/// doubt until then. The lane's clock passes the frame's deadline at the
+/// issue, so the report is outstanding at its deadline on any host.
 #[test]
 fn the_thread_releases_a_late_completion_without_a_request() {
     let runtime = tokio::runtime::Builder::new_current_thread()
@@ -253,6 +294,7 @@ fn the_thread_releases_a_late_completion_without_a_request() {
         .build()
         .unwrap();
     let fake = Fake::default();
+    fake.with(|d| d.expire_on_issue = true);
     let matrix_io = flag();
     let made = fake.clone();
     let stream = LaneStream::new(move || made.clone(), matrix_io);
@@ -261,12 +303,15 @@ fn the_thread_releases_a_late_completion_without_a_request() {
         assert!(stream.settle(within(1)).await, "never started: settled");
         assert!(stream.open().await.is_ok());
         assert!(matches!(
-            stream.frame(REPORT, within(20)).await,
+            stream.frame(REPORT, within(30_000)).await,
             Err(Unwritten::InDoubt)
         ));
+        assert_eq!(fake.read(|d| d.cancels), 1);
         assert!(matrix_io.load(Ordering::Acquire));
         stream.retire();
-        assert!(!stream.settle(within(30)).await);
+        // Past every deadline on the lane's clock: answered at once.
+        assert!(!stream.settle(within(30_000)).await);
+        fake.with(|d| d.clock = Duration::ZERO);
         fake.complete(true);
         let until = Instant::now() + Duration::from_secs(30);
         while matrix_io.load(Ordering::Acquire) && Instant::now() < until {
@@ -282,4 +327,80 @@ fn the_thread_releases_a_late_completion_without_a_request() {
         assert!(stream.open().await.is_ok());
         assert_eq!(fake.read(|d| d.opens), 2);
     });
+}
+
+/// A retire while the collection opens cancels that open, and the frame
+/// queued behind it was recalled: nothing is issued, even when the slow
+/// selection would have succeeded.
+#[test]
+fn a_retire_cancels_an_open_in_progress_and_recalls_the_frame_behind_it() {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .build()
+        .unwrap();
+    let fake = Fake::default();
+    let gate = Arc::new(AtomicBool::new(false));
+    fake.with(|d| d.open_gate = Some(gate.clone()));
+    let made = fake.clone();
+    let stream = LaneStream::new(move || made.clone(), flag());
+    runtime.block_on(async {
+        let opening = stream.open();
+        let frame = stream.frame(
+            REPORT,
+            tokio::time::Instant::now() + Duration::from_secs(30),
+        );
+        let until = Instant::now() + Duration::from_secs(30);
+        while !fake.read(|d| d.opening) && Instant::now() < until {
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        stream.retire();
+        assert!(matches!(opening.await, Err(Unwritten::Unsent)));
+        assert!(fake.read(|d| d.open_cancelled), "the open was cancelled");
+        gate.store(true, Ordering::Release);
+        assert!(matches!(frame.await, Err(Unwritten::Unsent)));
+        assert_eq!(issued(&fake), 0);
+        assert_eq!(fake.read(|d| d.opens), 0, "nothing was opened");
+    });
+}
+
+/// An open recalled while the collection opened refuses, so a request the
+/// runtime gave up on does not report the collection open.
+#[test]
+fn an_open_recalled_while_opening_refuses() {
+    let fake = Fake::default();
+    let (mut lane, epoch) = lane(&fake, flag());
+    fake.with(|d| d.recall_on_open = Some(epoch.clone()));
+    assert!(matches!(lane.open(0), Err(Unwritten::Unsent)));
+    assert_eq!(fake.read(|d| d.opens), 1);
+}
+
+/// An open lease is confirmed only while its handle still describes the
+/// selected collection; a stale one is closed and the open refuses.
+#[test]
+fn a_stale_open_lease_refuses_the_open_and_closes() {
+    let fake = Fake::default();
+    let (mut lane, _) = lane(&fake, flag());
+    assert!(lane.open(0).is_ok());
+    assert!(lane.open(0).is_ok(), "confirmed");
+    fake.with(|d| d.foreign = true);
+    assert!(matches!(lane.open(0), Err(Unwritten::Unsent)));
+    assert_eq!(fake.read(|d| (d.open, d.opens, d.closes)), (false, 1, 1));
+}
+
+/// A stream whose request state is unreadable is not known to be settled.
+#[test]
+fn a_poisoned_stream_does_not_report_settled() {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .build()
+        .unwrap();
+    let fake = Fake::default();
+    let made = fake.clone();
+    let stream = LaneStream::new(move || made.clone(), flag());
+    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _requests = stream.requests.lock().unwrap();
+        panic!("poisons the request state");
+    }));
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(1);
+    assert!(!runtime.block_on(stream.settle(deadline)));
 }

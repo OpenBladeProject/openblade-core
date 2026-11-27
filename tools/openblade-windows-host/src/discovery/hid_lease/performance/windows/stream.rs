@@ -30,16 +30,15 @@ struct WindowsMatrix {
 }
 
 impl MatrixIo for WindowsMatrix {
-    fn open(&mut self) -> bool {
-        let cancelled = AtomicBool::new(false);
-        let Ok(identity) = select_matrix(&WindowsMetadata, &cancelled) else {
+    fn open(&mut self, cancelled: &AtomicBool) -> bool {
+        let Ok(identity) = select_matrix(&WindowsMetadata, cancelled) else {
             return false;
         };
         let Ok(handle) = MetadataHandle::open(identity.path(), GENERIC_READ | GENERIC_WRITE) else {
             return false;
         };
         if identity
-            .verify(&WindowsMetadata, &handle, &cancelled)
+            .verify(&WindowsMetadata, &handle, cancelled)
             .is_err()
         {
             return false;
