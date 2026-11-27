@@ -481,16 +481,18 @@ impl<'a> ReportChannel<'a> {
     }
 
     /// One encoded request over the installed Service pipe; the reply payload.
+    /// `before_write` runs once the peer has verified, immediately before the
+    /// first byte is written: it refuses the write or returns the reply budget,
+    /// so time spent on verification never overruns the caller's budget.
     #[cfg(feature = "agent-session-power-relay-v1")]
-    pub(super) async fn exchange(&mut self, payload: &[u8]) -> io::Result<Vec<u8>> {
-        // A power transition reconciles nothing; the relay's own budget bounds
-        // the whole exchange well inside one frame.
-        self.exchange_on(
-            payload,
-            crate::service_frame::FRAME_TIMEOUT,
-            connect_installed,
-            |pipe| server_identity(pipe.as_raw_handle()),
-        )
+    pub(super) async fn exchange(
+        &mut self,
+        payload: &[u8],
+        before_write: impl FnOnce() -> io::Result<Duration>,
+    ) -> io::Result<Vec<u8>> {
+        self.exchange_on(payload, before_write, connect_installed, |pipe| {
+            server_identity(pipe.as_raw_handle())
+        })
         .await
     }
 
@@ -530,7 +532,7 @@ impl<'a> ReportChannel<'a> {
 
         let payload = encode(request)?;
         let reply = self
-            .exchange_on(&payload, REPORT_REPLY_BUDGET, connect, peer)
+            .exchange_on(&payload, || Ok(REPORT_REPLY_BUDGET), connect, peer)
             .await?;
         // Any refusal, including a typed Blocked or Failed result, leaves the
         // report pending exactly as managed: only Stored and Applied acknowledge.
@@ -539,13 +541,15 @@ impl<'a> ReportChannel<'a> {
             .map(|(outcome, _message)| outcome)
     }
 
-    /// Send one already encoded request and return the reply payload, read
-    /// within `reply_budget`, once the peer has verified again. Only a failed
-    /// verification, here or after the reply, drops the held generation.
+    /// Send one already encoded request and return the reply payload, once the
+    /// peer has verified again. `before_write` runs after that verification,
+    /// immediately before the write: its refusal sends nothing, and its budget
+    /// bounds the reply read. Only a failed verification, here or after the
+    /// reply, drops the held generation.
     async fn exchange_on<S: AsyncRead + AsyncWrite + Unpin>(
         &mut self,
         payload: &[u8],
-        reply_budget: Duration,
+        before_write: impl FnOnce() -> io::Result<Duration>,
         connect: impl AsyncFnOnce() -> io::Result<S>,
         peer: impl Fn(&S) -> io::Result<(u32, u32)>,
     ) -> io::Result<Vec<u8>> {
@@ -560,6 +564,7 @@ impl<'a> ReportChannel<'a> {
         };
         verify_peer(generation.as_ref(), pid, &stream, &peer)?;
         let exchanged = async {
+            let reply_budget = before_write()?;
             write_payload(&mut stream, payload).await?;
             timeout_at(Instant::now() + reply_budget, read_payload(&mut stream)).await?
         }

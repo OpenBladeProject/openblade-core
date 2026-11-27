@@ -25,20 +25,31 @@ async fn exchange_once(
     peer: impl Fn(&DuplexStream) -> io::Result<(u32, u32)>,
     reply: &[u8],
 ) -> (io::Result<Vec<u8>>, Option<Vec<u8>>) {
+    exchange_gated(channel, || Ok(Duration::from_secs(2)), peer, Some(reply)).await
+}
+
+/// As `exchange_once`, with the pre-write hook; a server without a `reply`
+/// never answers.
+async fn exchange_gated(
+    channel: &mut ReportChannel<'_>,
+    before_write: impl FnOnce() -> io::Result<Duration>,
+    peer: impl Fn(&DuplexStream) -> io::Result<(u32, u32)>,
+    reply: Option<&[u8]>,
+) -> (io::Result<Vec<u8>>, Option<Vec<u8>>) {
     let (client, mut server) = duplex(16_384);
-    let exchange = channel.exchange_on(
-        b"{\"request\":1}",
-        Duration::from_secs(2),
-        async || Ok(client),
-        peer,
-    );
+    let exchange = channel.exchange_on(b"{\"request\":1}", before_write, async || Ok(client), peer);
+    // The server is held until the exchange ends, so an unanswered request
+    // waits rather than reading end of stream.
     let serving = async move {
-        let read = read_payload(&mut server).await.ok()?;
-        let frame = [(reply.len() as i32).to_le_bytes().as_slice(), reply].concat();
-        server.write_all(&frame).await.unwrap();
-        Some(read)
+        let read = read_payload(&mut server).await.ok();
+        if let (Some(_), Some(reply)) = (&read, reply) {
+            let frame = [(reply.len() as i32).to_le_bytes().as_slice(), reply].concat();
+            server.write_all(&frame).await.unwrap();
+        }
+        (read, server)
     };
-    tokio::join!(exchange, serving)
+    let (exchanged, (read, _server)) = tokio::join!(exchange, serving);
+    (exchanged, read)
 }
 
 #[tokio::test(start_paused = true)]
@@ -82,4 +93,54 @@ async fn priming_without_an_authority_fails() {
         channel.prime().unwrap_err().kind(),
         io::ErrorKind::Unsupported
     );
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_hook_refuses_the_write_after_verification_and_keeps_the_generation() {
+    let authority = Counting {
+        inner: Authority::live(),
+        acquired: Cell::new(0),
+    };
+    let mut channel = ReportChannel::new(Some(&authority));
+    channel.prime().unwrap();
+    let verified = Cell::new(false);
+    let (reply, read) = exchange_gated(
+        &mut channel,
+        || {
+            // The hook runs once the peer has verified.
+            assert!(verified.get());
+            Err(io::ErrorKind::TimedOut.into())
+        },
+        |_| {
+            verified.set(true);
+            Ok((PID, 0))
+        },
+        Some(b"{}"),
+    )
+    .await;
+    assert_eq!(reply.unwrap_err().kind(), io::ErrorKind::TimedOut);
+    assert!(read.is_none());
+    // A refusal says nothing about the Service identity.
+    exchange_once(&mut channel, |_| Ok((PID, 0)), b"{}")
+        .await
+        .0
+        .unwrap();
+    assert_eq!(authority.acquired.get(), 1);
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_hook_budget_bounds_the_reply() {
+    let authority = Authority::live();
+    let mut channel = ReportChannel::new(Some(&authority));
+    let started = tokio::time::Instant::now();
+    let (reply, read) = exchange_gated(
+        &mut channel,
+        || Ok(Duration::from_millis(300)),
+        |_| Ok((PID, 0)),
+        None,
+    )
+    .await;
+    assert_eq!(reply.unwrap_err().kind(), io::ErrorKind::TimedOut);
+    assert_eq!(read.unwrap(), b"{\"request\":1}");
+    assert_eq!(started.elapsed(), Duration::from_millis(300));
 }

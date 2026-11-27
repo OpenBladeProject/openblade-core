@@ -157,7 +157,8 @@ fn a_waiting_suspend_callback_returns_when_its_report_ends() {
     assert_eq!(relay.next(), Next::Disposed);
 }
 
-/// The transport against a scripted sink. `calls` records each send.
+/// The transport against a scripted sink. `calls` records each write: a send
+/// whose gate admitted it.
 struct Rig {
     relay: Relay,
     clock: Arc<AtomicI64>,
@@ -184,9 +185,10 @@ impl Rig {
     ) -> io::Result<()> {
         serve(
             &self.relay,
-            async |transition| {
-                self.calls.borrow_mut().push(transition);
-                reply(transition).await
+            async |gate: Gate<'_>| {
+                gate.admit()?;
+                self.calls.borrow_mut().push(gate.transition);
+                reply(gate.transition).await
             },
             stop,
             verify,
@@ -288,13 +290,19 @@ async fn a_newer_transition_abandons_the_report_in_flight_and_only_the_latest_fo
 }
 
 #[tokio::test(start_paused = true)]
-async fn a_report_is_abandoned_when_its_budget_runs_out() {
+async fn a_report_in_flight_is_abandoned_at_its_budget_before_any_stop() {
     let rig = Rig::new();
     let (stop_tx, mut stop) = watch::channel(false);
     let driver = async {
         rig.relay.notify(RESUME_AUTOMATIC).unwrap();
-        tokio::time::sleep(BUDGET).await;
         settle().await;
+        // The send hangs; nothing ends it until the budget does.
+        tokio::time::sleep(BUDGET - Duration::from_millis(1)).await;
+        settle().await;
+        assert!(rig.notices.borrow().is_empty());
+        tokio::time::sleep(Duration::from_millis(1)).await;
+        settle().await;
+        assert_eq!(*rig.notices.borrow(), [abandoned(1, false)]);
         stop_tx.send(true).unwrap();
     };
     let (result, ()) = tokio::join!(
@@ -311,6 +319,99 @@ async fn a_report_is_abandoned_when_its_budget_runs_out() {
     result.unwrap();
     assert_eq!(rig.calls.borrow().len(), 1);
     assert_eq!(*rig.notices.borrow(), [abandoned(1, false)]);
+}
+
+#[tokio::test(start_paused = true)]
+async fn an_expired_suspend_cancels_its_report_in_flight_at_once() {
+    let rig = Rig::new();
+    let (stop_tx, mut stop) = watch::channel(false);
+    let driver = async {
+        let suspend = rig.relay.notify(SUSPEND).unwrap();
+        settle().await;
+        let started = tokio::time::Instant::now();
+        // The suspend callback's own wait ran out, so it expires the report
+        // that is still in flight.
+        assert!(!rig.relay.expire(suspend));
+        settle().await;
+        assert_eq!(*rig.notices.borrow(), [abandoned(1, true)]);
+        assert!(started.elapsed() < BUDGET);
+        stop_tx.send(true).unwrap();
+    };
+    let (result, ()) = tokio::join!(
+        rig.serve(
+            async |_| {
+                pending::<()>().await;
+                Ok(None)
+            },
+            &mut stop,
+            || Ok(())
+        ),
+        driver
+    );
+    result.unwrap();
+    assert_eq!(*rig.notices.borrow(), [abandoned(1, true)]);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_report_whose_budget_runs_out_during_verification_is_never_written() {
+    let rig = Rig::new();
+    let (stop_tx, mut stop) = watch::channel(false);
+    let driver = async {
+        rig.relay.notify(RESUME_AUTOMATIC).unwrap();
+        settle().await;
+        // Abandoned before any stop, without a write.
+        assert_eq!(*rig.notices.borrow(), [abandoned(1, false)]);
+        stop_tx.send(true).unwrap();
+    };
+    let (result, ()) = tokio::join!(
+        rig.serve(
+            async |_| Ok(Some(1)),
+            &mut stop,
+            || {
+                // Verifying the installed origin outlasts the whole budget.
+                rig.clock.store(STARTED + 1500, SeqCst);
+                Ok(())
+            }
+        ),
+        driver
+    );
+    result.unwrap();
+    assert!(rig.calls.borrow().is_empty());
+    assert_eq!(*rig.notices.borrow(), [abandoned(1, false)]);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_report_superseded_while_the_channel_admits_is_never_written() {
+    let rig = Rig::new();
+    let (stop_tx, mut stop) = watch::channel(false);
+    rig.relay.notify(RESUME_AUTOMATIC).unwrap();
+    let driver = async {
+        settle().await;
+        stop_tx.send(true).unwrap();
+    };
+    let (result, ()) = tokio::join!(
+        serve(
+            &rig.relay,
+            async |gate: Gate<'_>| {
+                // A suspend arrives while the channel verifies the Service,
+                // before the write; the repeat for its own report is ignored.
+                rig.relay.notify(SUSPEND);
+                gate.admit()?;
+                rig.calls.borrow_mut().push(gate.transition);
+                Ok(Some(1))
+            },
+            &mut stop,
+            || Ok(()),
+            |notice| rig.notices.borrow_mut().push(notice),
+        ),
+        driver
+    );
+    result.unwrap();
+    assert_eq!(*rig.calls.borrow(), [transition(2, true)]);
+    assert_eq!(
+        *rig.notices.borrow(),
+        [abandoned(1, false), answered(2, true, Some(1))]
+    );
 }
 
 #[tokio::test(start_paused = true)]
@@ -392,14 +493,18 @@ async fn an_origin_failure_ends_the_role_before_any_send() {
     let rig = Rig::new();
     let (_stop_tx, mut stop) = watch::channel(false);
     rig.relay.notify(SUSPEND).unwrap();
-    let error = rig
-        .serve(
+    // Bounded, so a role that kept serving fails here instead of hanging.
+    let error = tokio::time::timeout(
+        Duration::from_secs(60),
+        rig.serve(
             async |_| Ok(Some(1)),
             &mut stop,
             || Err(io::ErrorKind::PermissionDenied.into()),
-        )
-        .await
-        .unwrap_err();
+        ),
+    )
+    .await
+    .expect("the origin failure must end the role")
+    .unwrap_err();
     assert_eq!(error.kind(), io::ErrorKind::PermissionDenied);
     assert!(rig.calls.borrow().is_empty());
     assert_eq!(rig.relay.next(), Next::Disposed);

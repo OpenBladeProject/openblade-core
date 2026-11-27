@@ -322,6 +322,44 @@ impl Relay {
     }
 }
 
+/// A report's admission to its write. The transport checks it after the
+/// Service generation and pipe peer have verified, immediately before the
+/// first byte is written, because that verification can itself spend the
+/// budget or outlast a newer transition.
+#[derive(Clone, Copy)]
+struct Gate<'a> {
+    relay: &'a Relay,
+    transition: Transition,
+}
+
+impl Gate<'_> {
+    /// The rest of the budget, which bounds the reply, or an `Abandoned`
+    /// error when the report was superseded, disposed or is out of budget.
+    fn admit(self) -> io::Result<Duration> {
+        let remaining = self.relay.remaining(self.transition);
+        if self.relay.canceled(self.transition) || remaining.is_zero() {
+            return Err(io::Error::new(io::ErrorKind::TimedOut, Abandoned));
+        }
+        Ok(remaining)
+    }
+}
+
+/// The gate refused the write; the report ends as abandoned, not failed.
+#[derive(Debug)]
+struct Abandoned;
+
+impl std::fmt::Display for Abandoned {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("session power transition report abandoned before its write")
+    }
+}
+
+impl std::error::Error for Abandoned {}
+
+fn is_abandoned(error: &io::Error) -> bool {
+    error.get_ref().is_some_and(|inner| inner.is::<Abandoned>())
+}
+
 /// The installed role. Its transport runs on its own thread and runtime, as
 /// the application reporter's does, because the Service generation it holds
 /// blocks to acquire and verify.
@@ -363,15 +401,15 @@ async fn transport(
     let started = relay.started;
     let result = serve(
         &relay,
-        async |transition| {
+        async |gate: Gate<'_>| {
             let request = wire::Request {
                 request_id: random_guid()?,
                 instance,
                 started,
-                transition,
+                transition: gate.transition,
             };
             let payload = request.encode()?;
-            let reply = channel.exchange(&payload).await?;
+            let reply = channel.exchange(&payload, || gate.admit()).await?;
             wire::decode_reply(&reply, &request.request_id_text())
         },
         &mut stop,
@@ -387,11 +425,14 @@ async fn transport(
 }
 
 /// The transport: reports each active transition until stop. `verify` runs
-/// before each send; its failure ends the role. Stop drops a report in flight,
-/// which closes its connection. The relay is disposed on every exit.
-async fn serve(
-    relay: &Relay,
-    mut send: impl AsyncFnMut(Transition) -> io::Result<Option<u8>>,
+/// before each send; its failure ends the role. `send` admits its write
+/// through the gate it is given; a refusal ends the report as abandoned. Stop
+/// drops a report in flight, which closes its connection. A report ends in
+/// the relay before its notice is recorded, so a waiting suspend callback is
+/// never held by diagnostics. The relay is disposed on every exit.
+async fn serve<'r>(
+    relay: &'r Relay,
+    mut send: impl AsyncFnMut(Gate<'r>) -> io::Result<Option<u8>>,
     stop: &mut watch::Receiver<bool>,
     verify: impl Fn() -> io::Result<()>,
     mut report: impl FnMut(Notice),
@@ -414,8 +455,8 @@ async fn serve(
                 }
             }
             Next::Skip(transition) => {
-                report(abandoned(transition));
                 relay.finish(transition);
+                report(abandoned(transition));
                 continue;
             }
             Next::Send(transition, remaining) => (transition, remaining),
@@ -427,8 +468,9 @@ async fn serve(
             biased;
             () = stopped(stop) => None,
             () = relay.until(|| relay.canceled(transition)) => Some(abandoned(transition)),
-            sent = timeout(remaining, send(transition)) => Some(match sent {
+            sent = timeout(remaining, send(Gate { relay, transition })) => Some(match sent {
                 Err(_elapsed) => abandoned(transition),
+                Ok(Err(error)) if is_abandoned(&error) => abandoned(transition),
                 Ok(Ok(status)) => Notice::Answered {
                     sequence: transition.sequence,
                     suspending: transition.suspending,
@@ -445,8 +487,8 @@ async fn serve(
             report(abandoned(transition));
             break Ok(());
         };
-        report(notice);
         relay.finish(transition);
+        report(notice);
     };
     relay.dispose();
     result
