@@ -7,7 +7,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
-- Media keys, the function row and SnapTap no longer stop working until a restart after OpenBlade is force-closed, for example from Task Manager, on laptops that use the Razer driver for these keys. OpenBlade clears the key hooks it left behind and resumes on its next start. A force-close before this update still needs one restart. ([#PR](https://github.com/OpenBladeProject/openblade-core/pull/PR))
+- Media keys, the function row and SnapTap no longer stop working until a restart after OpenBlade is force-closed, for example from Task Manager, on laptops that use the Razer driver for these keys. OpenBlade clears the key hooks it left behind and resumes on its next start. A force-close before this update still needs one restart. ([#1019](https://github.com/OpenBladeProject/openblade-core/pull/1019))
 
 ## [0.77.1] - 2026-11-26
 
