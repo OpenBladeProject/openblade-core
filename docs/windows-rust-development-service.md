@@ -1386,18 +1386,29 @@ interim divergences and the differences from managed.
 
 Two features serve the lifecycle requests other processes send the Service.
 Each implies `service-thermal-mutation-v1`, whose operation gate the shutdown
-waits on, and adds no capability marker.
+waits on. `build.rs` appends each one's own capability marker to the native
+artifact record, as it does for the other Service features.
 
 A Service built with `service-lifecycle-shutdown-v1` serves the Tray's
 `shutdownOpenBlade`, as managed's `RequestShutdown` does
-(`ControlRequestHandler.cs:474-490`, `ServiceShutdownSignal.cs`). LocalSystem
-or an enabled, not deny-only member of BUILTIN\Administrators is admitted,
-whatever its logon kind or session. Every other caller gets "This operation
-requires an administrator.", and so does a caller whose token cannot be
-read. The request first waits, with no timeout, for the operation in
-flight. A client that leaves while it waits cancels it, and nothing stops. An
-admitted request is answered "OpenBlade is shutting down." (status 0). 500 ms
-after that reply, the Service asks for its own STOP through SCM's STOP path
+(`ControlRequestHandler.cs:474-490`, `ServiceShutdownSignal.cs`). LocalSystem,
+read from the token's user, is admitted, and so is a token that
+`CheckTokenMembership` finds in BUILTIN\Administrators, as managed's
+`WindowsPrincipal.IsInRole` does: a deny-only group or a restricted token is
+not a member. Both are read whatever the caller's logon kind or session.
+Every other caller gets "This operation requires an administrator.", and so
+does a token whose membership cannot be read. Caller evidence that cannot be
+read with the request, or at either refresh before admission, closes the
+connection with no reply and no stop.
+
+The request first waits, with no timeout, for the operation in flight. A
+client that leaves while it waits cancels it, and nothing stops. Once the
+operation gate is free, the pipe's state is read again before admission, as
+managed checks the cancellation again after taking its gate
+(`ControlRequestHandler.cs:174,185`). A pipe read retries every 20 ms, so a
+client that left inside that window is cancelled then. An admitted request is
+answered "OpenBlade is shutting down." (status 0). 500 ms after that reply,
+the Service asks for its own STOP through SCM's STOP path
 (`scm_host::deliver_stop`): the ingress revokes the origin, then the armed
 stop is sent, and the existing drain runs its owned cleanup. The shutdown
 adds no cleanup of its own. Only the first admitted request stops the
@@ -1406,23 +1417,33 @@ uncertain write stays fenced and recorded for recovery; the drain handles it
 as it would at any STOP.
 
 A Service built with `service-session-power-relay-v1` answers the Session
-Agent's `reportSessionPowerTransition`. It applies managed's checks in
-managed's order (`ServiceSessionPowerTransitionCoordinator.cs:58-129`):
+Agent's `reportSessionPowerTransition`. The codec first refuses a nil
+instance, a start or sequence below one and a stamp before the start, as
+managed's `IpcMessageCodec` does, and closes that connection. The relay then
+applies managed's checks in managed's order
+(`ServiceSessionPowerTransitionCoordinator.cs:58-129`):
 
 - the caller must be the active local interactive session ("Session
   automation reports require the active local interactive Windows
   session.");
-- a report 1500 ms old or older on the Service's QPC clock is "unauthorized,
-  invalid, or expired";
+- a report 1500 ms old or older on the Service's QPC clock, aged as of its
+  receipt, or stamped after its receipt, is "unauthorized, invalid, or
+  expired";
 - a report from an older Agent instance, or a repeated or earlier sequence
   from the same instance, is stale;
-- a report older than the newest accepted transition is refused as newer.
+- a report older than the newest accepted transition is refused as newer, and
+  so is a suspend at that transition's stamp while it is clear.
+
+A report that fails more than one check gets the first one's answer.
 
 The relay answers and never applies a report. SCM's notices alone drive the
-low-power gate and hold a suspend until its cleanup has run, so a report can
-neither open nor end a boundary. The relay reads the gate without taking any
-lock the SCM callback takes (`Lifecycle::gate_view`). The Agent instance and
-sequence it last accepted are kept in its own record.
+low-power gate, so a report can neither open nor end a boundary. A suspend
+notice is held until its cleanup has run only in a build with
+`service-keyboard-driver-mode-v1`, whose low-power owner arms that hold
+(`Lifecycle::arm_suspend_hold`); the relay arms none. The relay reads the
+gate without taking any lock the SCM callback takes (`Lifecycle::gate_view`),
+and a poisoned lifecycle reads as no gate. The Agent instance and sequence it
+last accepted are kept in its own record.
 
 Native differs from managed in these ways:
 
@@ -1438,15 +1459,17 @@ Native differs from managed in these ways:
   completed.") or one of its superseded or failed replies. The relay queues no
   work, so it gives none of those.
 - The newest accepted transition is the newer of the gate's last SCM notice
-  and the relay's last accepted report. Managed's gate holds both, so the
-  refusal is the same.
+  and the relay's last accepted report. At an equal stamp it is clear if
+  either is: managed's one gate accepts a clear that arrives second and
+  refuses a suspend that arrives second at a clear's stamp, in either order.
+  The refusal is therefore managed's.
 - A lifecycle whose notice epoch is exhausted reads no gate, and the report
   gets the failure "Session power notification handling is unavailable."
 
 Both package readers refuse both features by name, so no packaged image
 carries them. `tests/data/session-lifecycle-vectors.json` holds managed's
-replies: 14 frames recorded through `ControlRequestHandler` and 19 relay cases
-through the coordinator, by
+replies: 15 frames recorded through `ControlRequestHandler`, 25 relay cases
+through the coordinator and 7 report bodies through `IpcMessageCodec`, by
 `ServiceSessionPowerTransitionCoordinatorTests.NativeLifecycleVectors`. The
 Rust tests replay them and assert each deviation by its literal text. Both
 operations are source-reviewed and have not been run on a laptop.
