@@ -581,6 +581,9 @@ struct Custody {
     live: AtomicBool,
     origin_for_fan: StdMutex<Option<Arc<crate::origin_lifetime::Lifetime>>>,
     authority_for_fan: AtomicU8,
+    // Every full custody authorization (`ReadCustody::authorize`), which
+    // runs the loaded-origin, package and SCM verification in `ReadLease`.
+    full_authorizations: AtomicUsize,
     fresh_refuse: AtomicBool,
     // A competing controller present at the next write captures: the factory
     // refuses them with the typed `competing_controller` error, as
@@ -645,6 +648,7 @@ impl Custody {
             live: AtomicBool::new(true),
             origin_for_fan: StdMutex::new(None),
             authority_for_fan: AtomicU8::new(0),
+            full_authorizations: AtomicUsize::new(0),
             fresh_refuse: AtomicBool::new(false),
             controller: AtomicBool::new(false),
             fatal_health: AtomicBool::new(false),
@@ -786,6 +790,7 @@ impl ReadCustody for Custody {
         self.live.load(Ordering::Acquire)
     }
     fn authorize(&self) -> Option<ReadAdmission> {
+        self.full_authorizations.fetch_add(1, Ordering::AcqRel);
         if self
             .read_refuse_at
             .try_update(Ordering::AcqRel, Ordering::Acquire, |n| n.checked_sub(1))
@@ -806,6 +811,23 @@ impl ReadCustody for Custody {
             );
         }
         self.live.load(Ordering::Acquire).then_some(ReadAdmission {
+            lifecycle: self.lifecycle.active()?,
+            generation: [self.generation.load(Ordering::Acquire); 32],
+        })
+    }
+    // As `ReadLease::authorize_frame`: the latched authority and the
+    // origin's lifetime, with no origin verification.
+    #[cfg(feature = "service-lighting-v1")]
+    fn authorize_frame(&self) -> Option<ReadAdmission> {
+        if let Some(origin) = &*self.origin_for_fan.lock().unwrap() {
+            if self.authority_for_fan.load(Ordering::Acquire) != 0 {
+                return None;
+            }
+            origin.verify().ok()?;
+        } else if !self.live.load(Ordering::Acquire) {
+            return None;
+        }
+        Some(ReadAdmission {
             lifecycle: self.lifecycle.active()?,
             generation: [self.generation.load(Ordering::Acquire); 32],
         })
@@ -927,14 +949,16 @@ impl Fresh for Custody {
         }
         ReadCustody::authorize(self)
     }
-    // `authorize` without the controller inventory, which the stream takes
-    // from the origin tick (`WindowsGuard::authorize_frame`).
+    // As `WindowsGuard::authorize_frame`: `fresh_refuse` stands for a
+    // refused session or power supplier, and the custody takes its frame
+    // admission, not the full one; the controller inventory and the origin
+    // verification come from the origin tick.
     #[cfg(feature = "service-lighting-v1")]
     fn authorize_frame(&self) -> Option<ReadAdmission> {
         if self.fresh_refuse.load(Ordering::Acquire) || self.fatal_health.load(Ordering::Acquire) {
             return None;
         }
-        ReadCustody::authorize(self)
+        ReadCustody::authorize_frame(self)
     }
     // `authorize` without the lifecycle epoch: `fresh_refuse` stands for
     // every refused Windows supplier, a competing controller included, and

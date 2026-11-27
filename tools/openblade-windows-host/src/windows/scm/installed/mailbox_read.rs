@@ -113,6 +113,17 @@ pub(super) trait ReadCustody: Send + Sync {
     fn authorize_owned_stop(&self) -> Option<ReadAdmission> {
         None
     }
+    /// One animated stream frame's custody admission
+    /// (`WindowsGuard::authorize_frame`): this custody's own state, the loaded
+    /// origin's lifetime and the active lifecycle epoch. The origin, package
+    /// and SCM verification, the original mapping and the journal custody
+    /// are `authorize`'s, which the origin tick runs for the stream's clean
+    /// reading no more than 1 s before the frame. `None`, the default,
+    /// admits no frame.
+    #[cfg(feature = "service-lighting-v1")]
+    fn authorize_frame(&self) -> Option<ReadAdmission> {
+        None
+    }
     /// The owned cleanup admission of `scope`: the owned-Stop one, and the
     /// low-power one only where a custody admits it itself.
     #[cfg(feature = "service-thermal-mutation-v1")]
@@ -245,6 +256,13 @@ impl ReadCustody for GuardedReadCustody {
     fn authorize(&self) -> Option<ReadAdmission> {
         self.verify_integrity().ok()?;
         self.original.authorize()
+    }
+    // A frame takes only the retained failure; the tick verifies the
+    // integrity (`Runtime::confirm_stream_clean`).
+    #[cfg(feature = "service-lighting-v1")]
+    fn authorize_frame(&self) -> Option<ReadAdmission> {
+        super::thermal_mutation::verify_retained_failure(&self.fatal).ok()?;
+        self.original.authorize_frame()
     }
     // A gate read admits nothing; the job it sizes authorizes itself.
     #[cfg(feature = "service-live-readings-v1")]
@@ -759,6 +777,19 @@ impl ReadLease {
             },
         )
     }
+    // `authorize` without its origin and package verification: the state a
+    // revocation or a lost trust latched, and the origin's lifetime.
+    #[cfg(feature = "service-lighting-v1")]
+    fn authorize_frame(&self) -> Option<ReadAdmission> {
+        if self.state.load(Ordering::Acquire) != 0 {
+            return None;
+        }
+        self.origin.verify_lifetime().ok()?;
+        Some(ReadAdmission {
+            lifecycle: self.origin.lifecycle.active()?,
+            ..self.proof
+        })
+    }
     // `authorize` without the lifecycle epoch.
     #[cfg(feature = "service-profile-triggers-v1")]
     fn authorize_storage(&self) -> bool {
@@ -1027,6 +1058,10 @@ impl ReadCustody for ReadLease {
     }
     fn authorize(&self) -> Option<ReadAdmission> {
         ReadLease::authorize(self)
+    }
+    #[cfg(feature = "service-lighting-v1")]
+    fn authorize_frame(&self) -> Option<ReadAdmission> {
+        ReadLease::authorize_frame(self)
     }
     #[cfg(feature = "service-profile-triggers-v1")]
     fn authorize_storage(&self) -> bool {
@@ -2917,5 +2952,67 @@ mod tests {
         assert_eq!(custody.releases.load(Ordering::Acquire), 1);
         source.confirm_drained().unwrap();
         assert!(publisher.borrow().active.metadata_only());
+    }
+
+    /// A stream frame's custody admission runs none of the origin tick's
+    /// verification: neither the original's integrity check nor its full
+    /// authorization, whose loaded-origin, package and SCM checks run once
+    /// per tick. A retained failure still refuses it.
+    #[cfg(feature = "service-lighting-v1")]
+    #[test]
+    fn a_frame_admission_skips_the_origin_verification_a_tick_runs() {
+        #[derive(Default)]
+        struct Counting {
+            integrity: AtomicUsize,
+            full: AtomicUsize,
+            frames: AtomicUsize,
+        }
+        const PROOF: ReadAdmission = ReadAdmission {
+            lifecycle: 1,
+            generation: [7; 32],
+        };
+        impl ReadCustody for Counting {
+            fn authorize(&self) -> Option<ReadAdmission> {
+                self.full.fetch_add(1, Ordering::AcqRel);
+                Some(PROOF)
+            }
+            fn authorize_frame(&self) -> Option<ReadAdmission> {
+                self.frames.fetch_add(1, Ordering::AcqRel);
+                Some(PROOF)
+            }
+            fn verify_integrity(&self) -> io::Result<()> {
+                self.integrity.fetch_add(1, Ordering::AcqRel);
+                Ok(())
+            }
+            fn revoke(&self) {}
+            fn retire(&self) -> io::Result<()> {
+                Ok(())
+            }
+            fn confirm_drained(&self) -> io::Result<()> {
+                Ok(())
+            }
+        }
+        let original = Arc::new(Counting::default());
+        let fatal = Arc::new(Mutex::new(None));
+        let guarded = GuardedReadCustody {
+            original: original.clone(),
+            fatal: fatal.clone(),
+        };
+        let counts = || {
+            (
+                original.integrity.load(Ordering::Acquire),
+                original.full.load(Ordering::Acquire),
+                original.frames.load(Ordering::Acquire),
+            )
+        };
+        for _ in 0..3 {
+            assert_eq!(guarded.authorize_frame(), Some(PROOF));
+        }
+        assert_eq!(counts(), (0, 0, 3), "no verification per frame");
+        assert_eq!(guarded.authorize(), Some(PROOF));
+        assert_eq!(counts(), (1, 1, 3), "one per tick");
+        *fatal.lock().unwrap() = Some("retained");
+        assert_eq!(guarded.authorize_frame(), None);
+        assert_eq!(counts(), (1, 1, 3));
     }
 }

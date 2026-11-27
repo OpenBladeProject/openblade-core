@@ -115,6 +115,14 @@ impl Origin {
     pub(crate) fn verify_owned_stop(&self) -> io::Result<()> {
         self.verify_mode(true)
     }
+    /// The loaded origin's lifetime alone, without the package, process and
+    /// SCM verification of `verify`: whether its trust is still live, which a
+    /// revocation, a failed verification and Stop end at once. A stream frame
+    /// takes it between two origin ticks, whose `verify` covers the rest.
+    #[cfg(feature = "service-lighting-v1")]
+    pub(crate) fn verify_lifetime(&self) -> io::Result<()> {
+        self.lifetime.verify()
+    }
     fn verify_mode(&self, stop: bool) -> io::Result<()> {
         let check = || {
             if stop {

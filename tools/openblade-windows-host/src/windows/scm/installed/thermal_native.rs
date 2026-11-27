@@ -364,13 +364,18 @@ impl WindowsGuard {
     /// frame repeats between two origin ticks. The pinned lifecycle epoch,
     /// before and after the others, which every suspend, resume, session
     /// change and power notice advances; the same console session, unlocked
-    /// (WTS); a known AC line status; and the exact mailbox custody and
-    /// generation. Loaded-origin and package verification, the SCM state,
-    /// the primary SID and logon and the competing-controller inventory come
-    /// from the origin tick's clean reading, a full `capture` no older than
-    /// 1 s: deliberately, since a per-frame pass would run the SCM query and
-    /// the controller inventory at frame rate, so a change to any of them is
-    /// seen at the next tick.
+    /// (WTS); a known AC line status (`GetSystemPowerStatus`); and the
+    /// custody's frame admission (`ReadCustody::authorize_frame`): its state,
+    /// its retained failure and the loaded origin's lifetime, which a
+    /// revocation or a lost trust ends at once.
+    ///
+    /// Deliberately not per frame, but from the origin tick's clean reading,
+    /// a full `capture` no older than 1 s: the loaded-origin process, package
+    /// (ACL and `current.bin`) and SCM verification, the original mapping
+    /// (`managed-handoff.bin`), the journal custody, the primary SID and
+    /// logon, and the competing-controller inventory. A per-frame pass would
+    /// run those file, SCM and inventory queries at frame rate; a change to
+    /// any of them is seen at the next tick.
     #[cfg(feature = "service-lighting-v1")]
     pub(super) fn authorize_frame(&self) -> Option<ReadAdmission> {
         let identity = &self.identity;
@@ -384,7 +389,7 @@ impl WindowsGuard {
         if !admitted {
             return None;
         }
-        identity.custody.authorize()
+        identity.custody.authorize_frame()
     }
     /// `authorize_for` with the reason for a refusal.
     fn admit_for(&self, stop: bool) -> Result<ReadAdmission, Denial> {
