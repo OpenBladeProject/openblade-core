@@ -1,5 +1,5 @@
-using OpenBlade.Deployment;
 using System.Runtime.Versioning;
+using OpenBlade.Deployment;
 
 namespace OpenBlade.Deployment.Tests;
 

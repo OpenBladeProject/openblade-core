@@ -1,6 +1,6 @@
 using System.ComponentModel;
-using OpenBlade.WriterFence.Scratch;
 using OpenBlade.Service;
+using OpenBlade.WriterFence.Scratch;
 
 namespace OpenBlade.Service.Tests;
 
