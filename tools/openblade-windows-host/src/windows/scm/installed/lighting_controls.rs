@@ -21,6 +21,7 @@
 //!
 //! A step whose setter may have been submitted unconfirmed latches the
 //! lighting doubt, as every lighting job does.
+use super::stream::ticks;
 use super::*;
 use crate::{
     discovery::performance::StepTarget,
@@ -75,13 +76,11 @@ pub(super) fn desired_lighting(
 }
 
 /// Managed `ResolveVisibleLightingBaseline`: the remembered lit effect, the
-/// power profile's when it is lit, or Static in the default color at 6%. An
-/// unclassified adapter has no confirmed lit lighting to fall back on here.
-fn visible_baseline(
-    storage: &Storage,
-    application: &Foreground,
-    power: i32,
-) -> io::Result<LightingSettings> {
+/// base power profile's when it is lit (managed
+/// `Automation.Profiles.ForPowerSource`, without the application layer), or
+/// Static in the default color at 6%. An unclassified adapter has no
+/// confirmed lit lighting to fall back on here.
+fn visible_baseline(storage: &Storage, power: i32) -> io::Result<LightingSettings> {
     let lit = |lighting: &LightingSettings| {
         lighting.effect != LightingEffect::OFF && lighting.brightness > 0
     };
@@ -92,7 +91,7 @@ fn visible_baseline(
         None
     } else {
         storage
-            .profile_layer(application)?
+            .profile_layer(&Foreground::default())?
             .at(power)?
             .and_then(|resolution| resolution.profile.lighting.clone())
     };
@@ -227,23 +226,19 @@ impl Runtime {
         }
         let application = self.foreground(&sid, caller.session);
         let claim = self.lighting.claim();
-        let permit = Arc::new(LightingPermit {
+        let permit = LightingPermit::new(
+            self,
             fresh,
-            storage: storage.clone(),
-            value: None,
-            #[cfg(feature = "service-hyperboost-v1")]
-            hyperboost: self.hyperboost.get().cloned(),
-            job: LightingJob::step(StepTarget {
+            storage.clone(),
+            LightingJob::step(StepTarget {
                 increase,
                 cached: self.lighting.raw.get(),
             }),
-            admission: Mutex::new(None),
-            fatal: self.fatal.clone(),
-            step: Some(StepState {
+            Intent::Step(StepState {
                 application: application.clone(),
                 desired: Mutex::new(None),
             }),
-        });
+        );
         let result = reader.mutate(permit.clone(), deadline).await;
         verify_retained_failure(&self.fatal)?;
         if let Err(error) = result
@@ -264,7 +259,7 @@ impl Runtime {
                 return done(Outcome::blocked(refusal));
             }
         };
-        let desired = permit.step.as_ref().and_then(StepState::desired);
+        let desired = permit.step().and_then(StepState::desired);
         let lighting = match desired {
             Some(Some(lighting)) => lighting,
             // The store could not resolve it, or nothing is saved.
@@ -277,7 +272,7 @@ impl Runtime {
                     message: MINIMUM.into(),
                 });
             }
-            let baseline = match visible_baseline(&storage, &application, power) {
+            let baseline = match visible_baseline(&storage, power) {
                 Ok(baseline) => baseline,
                 Err(error) if is_fatal_admission(&error) => return Err(error),
                 Err(error) => return done(unavailable(&error)),
@@ -375,6 +370,7 @@ impl Runtime {
         caller: Caller,
         sid: &str,
         rate: RefreshRate,
+        deadline: Instant,
     ) -> io::Result<Lit> {
         let _serial = self.gate.lock().await;
         verify_retained_failure(&self.fatal)?;
@@ -400,6 +396,30 @@ impl Runtime {
             Err(_) => return refused(RATE_UNAVAILABLE),
         }
         if fresh.authorize().is_none() {
+            return refused(RATE_UNAVAILABLE);
+        }
+        // Managed refuses the change on an unclassified adapter that fresh
+        // evidence does not admit for lighting (ServiceControlRuntime.cs
+        // 4770-4777): the change classifies power as a lighting job does,
+        // and stores nothing there (`Intent::Admit`).
+        let permit = LightingPermit::new(
+            self,
+            fresh,
+            storage.clone(),
+            LightingJob::store(),
+            Intent::Admit,
+        );
+        let result = reader.mutate(permit.clone(), deadline).await;
+        verify_retained_failure(&self.fatal)?;
+        if let Err(error) = result
+            && is_fatal_admission(&error)
+        {
+            return Err(error);
+        }
+        if !matches!(
+            permit.admission.lock().ok().and_then(|mut a| a.take()),
+            Some(Admission::Stored(_))
+        ) {
             return refused(RATE_UNAVAILABLE);
         }
         let saved = match storage.save_lighting_preferences(|preferences| {

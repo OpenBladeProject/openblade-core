@@ -48,6 +48,8 @@ pub(crate) use lighting_effects::{
 #[cfg(feature = "service-lighting-v1")]
 mod lighting_layout;
 #[cfg(feature = "service-lighting-v1")]
+mod matrix_lane;
+#[cfg(feature = "service-lighting-v1")]
 #[allow(unused_imports)] // Shared with the standalone discovery binary.
 pub(crate) use lighting::{
     BRIGHTNESS_STEP, LightingConfirmation, LightingJob, LightingOutcome, LightingReading,
@@ -258,17 +260,24 @@ pub(crate) enum Unwritten {
 /// job's handshake or frame.
 #[cfg(feature = "service-lighting-v1")]
 pub(crate) trait MatrixStream {
+    /// Opens and verifies the collection, or confirms it is open; `Unsent`
+    /// when it cannot be. Opening writes nothing.
+    fn open(&self) -> Pending<Result<(), Unwritten>>;
     /// Submits `report` and waits for its completion until `deadline`.
     /// `Unsent` when nothing reached the driver; any submission that did
     /// not complete in time is `InDoubt`.
-    fn frame(
-        &self,
-        report: MatrixReport,
-        deadline: tokio::time::Instant,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), Unwritten>>>>;
-    /// Closes the collection; the next frame opens and verifies it again.
+    fn frame(&self, report: MatrixReport, deadline: Instant) -> Pending<Result<(), Unwritten>>;
+    /// Recalls every frame not yet submitted and closes the collection once
+    /// no report is outstanding; the next frame opens and verifies it again.
     fn retire(&self);
+    /// Waits until no report is outstanding, or `deadline`: `false` when one
+    /// still may be.
+    fn settle(&self, deadline: Instant) -> Pending<bool>;
 }
+
+/// A `MatrixStream` reply, which the runtime awaits under its own bound.
+#[cfg(feature = "service-lighting-v1")]
+pub(crate) type Pending<T> = std::pin::Pin<Box<dyn std::future::Future<Output = T>>>;
 
 /// Managed `IsExactMatrixInterface`: the consumer collection whose feature
 /// report carries the 375-byte matrix buffer.

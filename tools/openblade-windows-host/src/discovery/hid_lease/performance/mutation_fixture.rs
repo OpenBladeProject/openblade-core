@@ -187,12 +187,22 @@ pub(crate) struct State {
     /// No submitted matrix report completes.
     #[cfg(feature = "service-lighting-v1")]
     pub(crate) matrix_mute: bool,
-    /// A stream frame waits, submitted, until this is released (real time).
+    /// A stream frame waits, submitted, until this is released; only the
+    /// runtime's own bound ends it otherwise.
     #[cfg(feature = "service-lighting-v1")]
     pub(crate) stream_held: Option<Arc<std::sync::atomic::AtomicBool>>,
     /// How many times the stream retired its collection.
     #[cfg(feature = "service-lighting-v1")]
     pub(crate) stream_retired: usize,
+    /// The stream's collection does not open.
+    #[cfg(feature = "service-lighting-v1")]
+    pub(crate) stream_unopened: bool,
+    /// How many times the stream opened or confirmed its collection.
+    #[cfg(feature = "service-lighting-v1")]
+    pub(crate) stream_opens: usize,
+    /// How many times the stream was asked to settle.
+    #[cfg(feature = "service-lighting-v1")]
+    pub(crate) stream_settles: usize,
 }
 /// When the test sent the request a job serves, on the test's clock. They sit
 /// beside the state, not in it: the state is locked for as long as a test hook
@@ -955,7 +965,8 @@ mod pool_tests;
 /// The fixture's animated stream (`MatrixStream`): each frame is one more
 /// matrix report in `State::matrix_frames`, with the same refusal, driver
 /// rejection and completion failure as a job's report, and `stream_held`
-/// keeps it in flight.
+/// keeps it in flight. Its frames do not end at their deadline: the runtime
+/// bounds every wait on the stream itself.
 #[cfg(feature = "service-lighting-v1")]
 struct FixtureStream(Fixture);
 #[cfg(feature = "service-lighting-v1")]
@@ -966,11 +977,17 @@ impl Fixture {
 }
 #[cfg(feature = "service-lighting-v1")]
 impl MatrixStream for FixtureStream {
-    fn frame(
-        &self,
-        report: MatrixReport,
-        deadline: tokio::time::Instant,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), Unwritten>>>> {
+    fn open(&self) -> Pending<Result<(), Unwritten>> {
+        let mut s = self.0.state.lock().unwrap();
+        s.stream_opens += 1;
+        let opened = if s.stream_unopened {
+            Err(Unwritten::Unsent)
+        } else {
+            Ok(())
+        };
+        Box::pin(std::future::ready(opened))
+    }
+    fn frame(&self, report: MatrixReport, _: Instant) -> Pending<Result<(), Unwritten>> {
         let state = self.0.state.clone();
         Box::pin(async move {
             let held = {
@@ -990,11 +1007,7 @@ impl MatrixStream for FixtureStream {
             };
             if let Some(release) = held {
                 while !release.load(Ordering::Acquire) {
-                    if Instant::now() >= deadline {
-                        return Err(Unwritten::InDoubt);
-                    }
-                    std::thread::sleep(std::time::Duration::from_millis(1));
-                    tokio::task::yield_now().await;
+                    tokio::time::sleep(std::time::Duration::from_millis(1)).await;
                 }
             }
             if state.lock().unwrap().matrix_mute {
@@ -1005,5 +1018,9 @@ impl MatrixStream for FixtureStream {
     }
     fn retire(&self) {
         self.0.state.lock().unwrap().stream_retired += 1;
+    }
+    fn settle(&self, _: Instant) -> Pending<bool> {
+        self.0.state.lock().unwrap().stream_settles += 1;
+        Box::pin(std::future::ready(true))
     }
 }

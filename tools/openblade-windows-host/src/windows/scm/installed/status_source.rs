@@ -1240,7 +1240,7 @@ impl StatusSource for GuardedStatus {
                             )
                             .ok_or_else(|| io::Error::from(io::ErrorKind::InvalidData))?;
                             runtime
-                                .set_lighting_refresh_rate(&mailbox, caller, &sid, rate)
+                                .set_lighting_refresh_rate(&mailbox, caller, &sid, rate, deadline)
                                 .await?
                         }
                         _ => return Err(io::ErrorKind::InvalidData.into()),
@@ -1535,9 +1535,15 @@ impl StatusSource for GuardedStatus {
             if let Some(runtime) = &self.mutation {
                 // The owned renderer ends first, without a write, as managed's
                 // port disposal stops its stream; a keepalive job still running
-                // is cancelled by the mutation worker's stop below.
+                // is cancelled by the mutation worker's stop below. The stream
+                // recalls every frame not yet submitted and is awaited, within
+                // the drain, until none is outstanding
+                // (`Runtime::settle_lighting_stream`).
                 #[cfg(feature = "service-lighting-v1")]
-                runtime.retire_renderer();
+                {
+                    runtime.retire_renderer();
+                    runtime.settle_lighting_stream(deadline).await;
+                }
                 // Managed shutdown order: the keyboard Driver-mode release,
                 // then the fan handback. The keyboard's outcome is a diagnostic
                 // (`Runtime::driver_mode_release`): only fatal admission

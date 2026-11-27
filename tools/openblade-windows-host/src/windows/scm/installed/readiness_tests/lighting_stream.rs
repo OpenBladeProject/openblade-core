@@ -8,6 +8,7 @@ use crate::discovery::performance::{
     Animation, Effect, FailingRandom, MatrixReport, Random, RefreshRate, Rgb, ScriptedRandom,
     SystemRandom, stream_report,
 };
+use crate::installed::readiness::thermal_mutation::StreamNext::{At, Wake};
 use openblade_protocol::lighting::matrix::MatrixFrame;
 
 const RENDERED: &str =
@@ -114,10 +115,12 @@ async fn an_animated_effect_streams_managed_frames_at_managed_deadlines() {
     );
     // Not yet due: nothing is sent, and the deadline is returned.
     let early = next - Duration::from_millis(1);
-    assert_eq!(rig.runtime.stream_frame(early).await.unwrap(), Some(next));
+    assert_eq!(rig.runtime.stream_frame(early).await.unwrap(), At(next));
     assert_eq!(frames(&rig).len(), 1);
     // Due: the frame at that instant's elapsed time.
-    let after = rig.runtime.stream_frame(next).await.unwrap().unwrap();
+    let At(after) = rig.runtime.stream_frame(next).await.unwrap() else {
+        panic!("the stream continues");
+    };
     let frames_now = frames(&rig);
     assert_eq!(frames_now.len(), 2);
     assert_eq!(
@@ -216,10 +219,12 @@ async fn a_clean_reading_older_than_a_second_writes_no_frame() {
     rig.runtime.stream_frame(next).await.unwrap();
     assert_eq!(frames(&rig).len(), 2, "within 1 s of the request's reading");
     rig.custody.controller.store(false, Ordering::Release);
-    // More than 1 s after the request's reading: nothing is sent.
+    // More than 1 s after the request's reading: nothing is sent, and the
+    // stream waits for the tick that confirms a reading, its cadence kept.
     let stale = before.max(at) + Duration::from_millis(1_100);
-    let later = rig.runtime.stream_frame(stale).await.unwrap().unwrap();
+    assert_eq!(rig.runtime.stream_frame(stale).await.unwrap(), Wake);
     assert_eq!(frames(&rig).len(), 2, "a stale reading writes nothing");
+    let (later, _, _) = due(&rig);
     assert!(later > stale);
     // A tick at `stale` confirms a clean reading; the next frame goes, and
     // one 1 s after it still does.
@@ -262,7 +267,7 @@ async fn a_competing_controller_retires_the_stream_without_a_write() {
             .stream_frame(Instant::now() + Duration::from_secs(1))
             .await
             .unwrap(),
-        None
+        Wake
     );
     assert_eq!((frames(&rig).len(), sent(&rig).len()), (1, reports));
     assert!(!rig.runtime.lighting_latched_for_tests());
@@ -279,7 +284,7 @@ async fn an_uncertain_frame_latches_and_a_refused_one_stops_the_stream() {
     assert_eq!(set(&rig, 1, SPECTRUM).await.0, 1);
     rig.port.state.lock().unwrap().matrix_refuse = Some(2);
     let (next, _, _) = due(&rig);
-    assert_eq!(rig.runtime.stream_frame(next).await.unwrap(), None);
+    assert_eq!(rig.runtime.stream_frame(next).await.unwrap(), Wake);
     assert_eq!(frames(&rig).len(), 1, "refused before submission");
     assert_eq!(rig.runtime.stream_due_for_tests(), None);
     assert!(!rig.runtime.lighting_latched_for_tests());
@@ -287,7 +292,7 @@ async fn an_uncertain_frame_latches_and_a_refused_one_stops_the_stream() {
     assert_eq!(frames(&rig).len(), 2, "drawn anew");
     rig.port.state.lock().unwrap().matrix_fail = Some(3);
     let (next, _, _) = due(&rig);
-    assert_eq!(rig.runtime.stream_frame(next).await.unwrap(), None);
+    assert_eq!(rig.runtime.stream_frame(next).await.unwrap(), Wake);
     assert_eq!(frames(&rig).len(), 3);
     assert!(rig.runtime.lighting_latched_for_tests());
     assert_eq!(retired(&rig), 2);
@@ -317,7 +322,7 @@ async fn a_held_gate_skips_the_frame_one_interval_later_divergence() {
         let _held = rig.runtime.hold_lighting_gate_for_tests();
         assert_eq!(
             rig.runtime.stream_frame(next).await.unwrap(),
-            Some(next + interval)
+            At(next + interval)
         );
     }
     assert_eq!(frames(&rig).len(), 1);
@@ -372,8 +377,13 @@ async fn an_animated_request_refused_mid_sequence_leaves_no_stale_stream() {
 }
 
 /// A suspend during an animated effect ends the stream at its next frame
-/// without a write, and nothing is drawn after the resume.
-#[cfg(feature = "service-profile-triggers-v1")]
+/// without a write, and nothing is drawn after the resume: the trigger
+/// composition's low-power gate, or the Driver-mode composition's own
+/// reading of it (`Runtime::driver_mode_low_power`).
+#[cfg(any(
+    feature = "service-profile-triggers-v1",
+    feature = "service-keyboard-driver-mode-v1"
+))]
 #[tokio::test]
 async fn a_low_power_boundary_retires_the_stream_without_a_write() {
     use windows_sys::Win32::System::Services::SERVICE_CONTROL_POWEREVENT as POWER;
@@ -389,17 +399,202 @@ async fn a_low_power_boundary_retires_the_stream_without_a_write() {
     let (next, _, _) = due(&rig);
     rig.custody.scoped_fresh.store(true, Ordering::Release);
     rig.custody.lifecycle.ingress(POWER, SUSPEND);
-    assert_eq!(rig.runtime.stream_frame(next).await.unwrap(), None);
+    assert_eq!(rig.runtime.stream_frame(next).await.unwrap(), Wake);
     assert_eq!((frames(&rig).len(), sent(&rig).len()), (1, reports));
     assert_eq!(retired(&rig), 1);
     rig.custody.lifecycle.ingress(POWER, RESUME);
     rig.custody.scoped_fresh.store(false, Ordering::Release);
-    assert_eq!(rig.runtime.stream_frame(next).await.unwrap(), None);
+    assert_eq!(rig.runtime.stream_frame(next).await.unwrap(), Wake);
     assert_eq!(
         frames(&rig).len(),
         1,
         "nothing owns the matrix after resume"
     );
+    rig.stop().await;
+}
+
+/// Polls `future` once: whether it is still pending.
+fn pending<F: std::future::Future>(future: std::pin::Pin<&mut F>) -> bool {
+    future
+        .poll(&mut std::task::Context::from_waker(std::task::Waker::noop()))
+        .is_pending()
+}
+
+/// Review medium 1: an origin tick that lands while a stream frame is in
+/// flight waits for that frame instead of skipping its clean reading, so
+/// in-flight frames at every tick never age the reading past 1 s. Before
+/// the fix two such ticks in a row froze the animation for about 0.5 s.
+#[tokio::test]
+async fn ticks_during_in_flight_frames_keep_the_clean_reading_and_the_stream_running() {
+    let rig = Rig::new(MemoryFiles::default());
+    lit(&rig, [0x40, 1, 0]);
+    assert_eq!(set(&rig, 1, SPECTRUM).await.0, 1);
+    rig.runtime
+        .set_frame_budget_for_tests(Duration::from_secs(60));
+    let release = Arc::new(AtomicBool::new(false));
+    let (_, _, started) = due(&rig);
+    // Four ticks 500 ms apart, each landing on a frame in flight: without
+    // their readings the frame 2 s on would find none younger than 1 s.
+    for n in 1..=4u32 {
+        let at = started + Duration::from_millis(500) * n;
+        release.store(false, Ordering::Release);
+        rig.port.state.lock().unwrap().stream_held = Some(release.clone());
+        let (next, _, _) = due(&rig);
+        let mut frame = std::pin::pin!(rig.runtime.stream_frame(next.max(at)));
+        assert!(pending(frame.as_mut()), "{n}: the frame is in flight");
+        let mut ticked = std::pin::pin!(tick(&rig, at));
+        assert!(
+            pending(ticked.as_mut()),
+            "{n}: the tick waits for the frame"
+        );
+        release.store(true, Ordering::Release);
+        assert!(matches!(frame.await.unwrap(), At(_)));
+        ticked.await;
+        assert_eq!(rig.runtime.stream_clean_for_tests(), Some(at), "{n}");
+    }
+    rig.port.state.lock().unwrap().stream_held = None;
+    let written = frames(&rig).len();
+    let (next, _, _) = due(&rig);
+    let last = started + Duration::from_millis(2_400);
+    rig.runtime.stream_frame(next.max(last)).await.unwrap();
+    assert_eq!(frames(&rig).len(), written + 1, "no freeze");
+    // A request holding the gate is still skipped, not waited for.
+    let held = rig.runtime.hold_lighting_gate_for_tests();
+    tick(&rig, last).await;
+    drop(held);
+    assert_eq!(
+        rig.runtime.stream_clean_for_tests(),
+        Some(started + Duration::from_secs(2))
+    );
+    rig.stop().await;
+}
+
+/// Review medium 3: a frame that outlasts its budget is in doubt. The doubt
+/// latches, the renderer ends, the stream's frames are recalled, and the
+/// operation gate is free again; nothing is sent later.
+#[tokio::test]
+async fn a_frame_outlasting_its_budget_latches_recalls_and_frees_the_gate() {
+    let rig = Rig::new(MemoryFiles::default());
+    lit(&rig, [0x40, 1, 0]);
+    assert_eq!(set(&rig, 1, SPECTRUM).await.0, 1);
+    rig.runtime
+        .set_frame_budget_for_tests(Duration::from_millis(20));
+    let release = Arc::new(AtomicBool::new(false));
+    rig.port.state.lock().unwrap().stream_held = Some(release);
+    let (next, _, _) = due(&rig);
+    assert_eq!(rig.runtime.stream_frame(next).await.unwrap(), Wake);
+    assert!(rig.runtime.lighting_latched_for_tests());
+    assert_eq!(rig.runtime.stream_due_for_tests(), None);
+    assert_eq!(retired(&rig), 1, "its frames are recalled");
+    drop(rig.runtime.hold_lighting_gate_for_tests());
+    assert_eq!(frames(&rig).len(), 2);
+    rig.stop().await;
+}
+
+/// Review medium 4: each frame takes the clean reading's frame admission
+/// (`Fresh::authorize_frame`), so a refusal after the request writes no
+/// frame even within the reading's second.
+#[tokio::test]
+async fn a_refused_frame_admission_writes_no_frame_within_the_second() {
+    let rig = Rig::new(MemoryFiles::default());
+    lit(&rig, [0x40, 1, 0]);
+    assert_eq!(set(&rig, 1, SPECTRUM).await.0, 1);
+    rig.custody.fresh_refuse.store(true, Ordering::Release);
+    let (next, _, _) = due(&rig);
+    assert_eq!(rig.runtime.stream_frame(next).await.unwrap(), Wake);
+    assert_eq!(frames(&rig).len(), 1);
+    rig.custody.fresh_refuse.store(false, Ordering::Release);
+    let (next, _, _) = due(&rig);
+    rig.runtime.stream_frame(next).await.unwrap();
+    assert_eq!(frames(&rig).len(), 2, "the same reading admits again");
+    rig.stop().await;
+}
+
+/// Review medium 4: a Windows power-kind change after the clean reading
+/// writes no frame until a tick confirms a reading at the new generation.
+#[tokio::test]
+async fn a_power_generation_change_writes_no_frame_until_a_new_reading() {
+    let rig = Rig::new(MemoryFiles::default());
+    lit(&rig, [0x40, 1, 0]);
+    assert_eq!(set(&rig, 1, SPECTRUM).await.0, 1);
+    let flipped = !Fresh::on_battery(rig.custody.as_ref()).unwrap();
+    rig.port.state.lock().unwrap().windows_on_battery = Some(Some(flipped));
+    let (next, _, _) = due(&rig);
+    assert_eq!(rig.runtime.stream_frame(next).await.unwrap(), Wake);
+    assert_eq!(frames(&rig).len(), 1);
+    tick(&rig, next).await;
+    let (next, _, _) = due(&rig);
+    rig.runtime.stream_frame(next).await.unwrap();
+    assert_eq!(frames(&rig).len(), 2, "a reading at the new generation");
+    rig.stop().await;
+}
+
+/// Review low 7: the stream's collection opens inside the request. One that
+/// does not open stores the intent and refuses the request before any
+/// setter; an animated renderer replacing another keeps it open, and a
+/// request that leaves no animated renderer closes it.
+#[tokio::test]
+async fn the_stream_collection_opens_inside_the_request_and_stays_open_across_effects() {
+    const STATIC: &str = r#"{"effect":1,"color":{"red":200,"green":10,"blue":5},"brightness":10,"parameters":{"kind":"static","color":{"red":200,"green":10,"blue":5}},"logoMode":null}"#;
+    let rig = Rig::new(MemoryFiles::default());
+    lit(&rig, [0x40, 1, 0]);
+    rig.port.state.lock().unwrap().stream_unopened = true;
+    let (status, message) = set(&rig, 1, SPECTRUM).await;
+    assert_eq!(
+        (status, message.as_str()),
+        (
+            3,
+            "Lighting override intent was stored. Hardware result: Lighting write was not applied: The keyboard matrix collection is unavailable; no lighting setter was submitted."
+        )
+    );
+    assert!(sent(&rig).iter().all(|s| !s.1), "no setter");
+    assert!(frames(&rig).is_empty());
+    assert_eq!(rig.runtime.stream_due_for_tests(), None);
+    assert!(!rig.runtime.lighting_latched_for_tests());
+    assert_eq!(retired(&rig), 1, "the unopened request closes it");
+    rig.port.state.lock().unwrap().stream_unopened = false;
+    assert_eq!(set(&rig, 2, SPECTRUM).await, (1, RENDERED.into()));
+    assert_eq!(set(&rig, 3, WAVE).await, (1, RENDERED.into()));
+    assert_eq!(due(&rig).1, Effect::Wave { rightward: true });
+    assert_eq!(retired(&rig), 1, "kept open across the effects");
+    assert_eq!(set(&rig, 4, STATIC).await, (1, RENDERED.into()));
+    assert_eq!(retired(&rig), 2, "no animated renderer is left");
+    rig.stop().await;
+}
+
+/// Stop recalls the stream's frames and waits for it to settle before the
+/// keyboard release and the fan handback.
+#[tokio::test]
+async fn stop_recalls_and_settles_the_stream() {
+    let rig = Rig::new(MemoryFiles::default());
+    lit(&rig, [0x40, 1, 0]);
+    assert_eq!(set(&rig, 1, SPECTRUM).await.0, 1);
+    let state = rig.port.state.clone();
+    rig.stop().await;
+    let s = state.lock().unwrap();
+    assert_eq!((s.stream_retired, s.stream_settles), (2, 1));
+}
+
+/// Without a low-power reading (no trigger or Driver-mode composition), a
+/// suspend advances the lifecycle epoch the stream's admission pinned, so
+/// no frame goes after it.
+#[cfg(not(any(
+    feature = "service-profile-triggers-v1",
+    feature = "service-keyboard-driver-mode-v1"
+)))]
+#[tokio::test]
+async fn a_suspend_refuses_every_frame_through_the_pinned_epoch() {
+    use windows_sys::Win32::System::Services::SERVICE_CONTROL_POWEREVENT as POWER;
+    const SUSPEND: u32 = 4;
+    let rig = Rig::new(MemoryFiles::default());
+    lit(&rig, [0x40, 1, 0]);
+    rig.custody.scoped_fresh.store(true, Ordering::Release);
+    assert_eq!(set(&rig, 1, SPECTRUM).await.0, 1);
+    let (next, _, _) = due(&rig);
+    rig.custody.lifecycle.ingress(POWER, SUSPEND);
+    assert_eq!(rig.runtime.stream_frame(next).await.unwrap(), Wake);
+    assert_eq!(frames(&rig).len(), 1);
+    rig.custody.scoped_fresh.store(false, Ordering::Release);
     rig.stop().await;
 }
 
@@ -584,6 +779,9 @@ mod controls {
         lit(&rig, [0x40, 1, 0]);
         assert_eq!(set(&rig, 1, SPECTRUM).await.0, 1);
         assert_eq!(rig.runtime.lighting_rate_for_tests(), RefreshRate::ThirtyHz);
+        // No frame here ends at its budget: the test releases it.
+        rig.runtime
+            .set_frame_budget_for_tests(Duration::from_secs(60));
         let release = Arc::new(AtomicBool::new(false));
         rig.port.state.lock().unwrap().stream_held = Some(release.clone());
         let (next, _, started) = due(&rig);
@@ -604,14 +802,19 @@ mod controls {
             assert!(!replied.get(), "the change waited for the frame");
             release.store(true, Ordering::Release);
         };
+        let before = Instant::now();
         let (written, change, ()) = tokio::join!(frame, change, watch);
-        assert!(written.unwrap().is_some(), "the frame completed");
+        let after = Instant::now();
+        assert!(matches!(written.unwrap(), At(_)), "the frame completed");
         assert_eq!(change, (1, "Keyboard lighting is running at 60 Hz.".into()));
         assert!(!rig.runtime.lighting_latched_for_tests());
         assert_eq!(rig.runtime.lighting_rate_for_tests(), RefreshRate::SixtyHz);
         let (retimed, _, same) = due(&rig);
         assert_eq!(same, started, "the effect's phase is kept");
-        assert!(retimed > next);
+        // Retimed from the phase at the change, one 60 Hz delay on.
+        let sixty =
+            Duration::from_nanos(u64::try_from(RefreshRate::SixtyHz.interval()).unwrap() * 100);
+        assert!(retimed > before && retimed <= after + sixty);
         rig.port.state.lock().unwrap().stream_held = None;
         // The saved preference survives as managed's, and unchanged is Applied.
         assert_eq!(
@@ -646,5 +849,80 @@ mod controls {
         assert_eq!(value["brightness"], 6);
         assert_eq!(due(&rig).1, Effect::Spectrum);
         rig.stop().await;
+    }
+
+    /// Review low 9: a step that wakes the keyboard from Off draws managed's
+    /// visible baseline from the base power profile
+    /// (`Automation.Profiles.ForPowerSource`), not from the active
+    /// application's layer, whose rule here turns lighting Off.
+    #[tokio::test]
+    async fn a_wake_from_off_draws_the_base_power_profile_not_the_application_layer() {
+        const OFF: &str = r#"{"effect":0,"color":{"red":0,"green":0,"blue":0},"brightness":0,"parameters":{"kind":"off"},"logoMode":null}"#;
+        let files = MemoryFiles::default();
+        files.profiles(1);
+        let mut document = files.document("profiles.json");
+        for power in ["pluggedIn", "battery", "usbC"] {
+            document["profiles"][power]["lighting"] = json!("@@BASE@@");
+            document["profiles"]["applicationProfiles"][0]["overrides"][power]["lighting"] =
+                json!("@@APPLICATION@@");
+        }
+        // Lighting parameters keep managed's member order, `kind` first.
+        let text = serde_json::to_string(&document)
+            .unwrap()
+            .replace(r#""@@BASE@@""#, STATIC)
+            .replace(r#""@@APPLICATION@@""#, OFF);
+        files
+            .bytes
+            .lock()
+            .unwrap()
+            .insert("profiles.json".into(), text.into_bytes());
+        files.commit_configuration();
+        let rig = Rig::new(files);
+        lit(&rig, [0, 1, 0]);
+        let report = rig.request(json!({"operation":"reportApplicationContext","version":91,"requestId":"bbbbbbbb-bbbb-cccc-dddd-000000000001","instanceId":"cccccccc-bbbb-cccc-dddd-000000000003","sequence":1,"executablePath":r"C:\Games\Game.exe"})).await;
+        // Recorded (0), or also applied where profile triggers run (1).
+        assert!(
+            matches!(report["result"]["status"].as_i64(), Some(0 | 1)),
+            "{report}"
+        );
+        assert_eq!(step(&rig, 2, true, 1).await, (1, RENDERED.into()));
+        let value = override_member(&rig).await["value"].clone();
+        assert_eq!(value["effect"], 1);
+        assert_eq!(value["brightness"], 6);
+        assert_eq!(value["color"], json!({"red":200,"green":10,"blue":5}));
+        rig.stop().await;
+    }
+
+    /// Managed refuses a refresh change on an unclassified adapter that
+    /// fresh evidence does not admit for lighting
+    /// (ServiceControlRuntime.cs 4770-4777); one it admits changes the rate.
+    #[tokio::test]
+    async fn a_refresh_change_on_an_unclassified_adapter_needs_its_lighting_admission() {
+        const UNAVAILABLE: &str =
+            "The lighting refresh rate cannot change while laptop controls are unavailable.";
+        for (case, hyperboost, applies) in [("admitted", false, true), ("HyperBoost", true, false)]
+        {
+            let rig = Rig::new(MemoryFiles::default());
+            {
+                let mut s = rig.port.state.lock().unwrap();
+                s.power_status = 3;
+                if hyperboost {
+                    (s.selectors, s.fans) = ([7; 2], [0; 2]);
+                }
+            }
+            let reply = rate(&rig, 1, 1).await;
+            if applies {
+                assert_eq!(
+                    reply,
+                    (1, "Keyboard lighting is running at 60 Hz.".into()),
+                    "{case}"
+                );
+                assert_eq!(rig.runtime.lighting_rate_for_tests(), RefreshRate::SixtyHz);
+            } else {
+                assert_eq!(reply, (2, UNAVAILABLE.into()), "{case}");
+                assert_eq!(rig.runtime.lighting_rate_for_tests(), RefreshRate::ThirtyHz);
+            }
+            rig.stop().await;
+        }
     }
 }

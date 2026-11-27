@@ -133,17 +133,6 @@ impl Identity {
     /// lifecycle check, run before and after the suppliers: a write compares
     /// its pinned epoch, and storage admits any lifecycle state.
     fn admits(&self, stop: bool, epoch: impl Fn() -> bool) -> Result<(), Denial> {
-        self.admits_with(stop, epoch, true)
-    }
-    /// `admits`, with the competing-controller inventory only when
-    /// `controllers` asks for it: an animated stream frame takes the origin
-    /// tick's fresh reading instead (`WindowsGuard::authorize_frame`).
-    fn admits_with(
-        &self,
-        stop: bool,
-        epoch: impl Fn() -> bool,
-        controllers: bool,
-    ) -> Result<(), Denial> {
         let verify = || {
             if stop {
                 self.origin.verify_owned_stop()
@@ -179,11 +168,7 @@ impl Identity {
         {
             return Err(Denial::Admission);
         }
-        if controllers {
-            power_and_controllers(&self.controllers)?;
-        } else {
-            power_known()?;
-        }
+        power_and_controllers(&self.controllers)?;
         // Mutable callback fencing cannot revive an earlier operation. A new
         // request captures a fresh epoch and rechecks every Windows supplier.
         verify().map_err(|_| Denial::Admission)?;
@@ -375,22 +360,30 @@ impl WindowsGuard {
     fn authorize_for(&self, stop: bool) -> Option<ReadAdmission> {
         self.admit_for(stop).ok()
     }
-    /// One animated stream frame: every check of `authorize` but the
-    /// competing-controller inventory, which the origin tick reads fresh for
-    /// the stream (`Runtime::stream_frame`).
+    /// One animated stream frame (`Runtime::stream_frame`): the checks a
+    /// frame repeats between two origin ticks. The pinned lifecycle epoch,
+    /// before and after the others, which every suspend, resume, session
+    /// change and power notice advances; the same console session, unlocked
+    /// (WTS); a known AC line status; and the exact mailbox custody and
+    /// generation. Loaded-origin and package verification, the SCM state,
+    /// the primary SID and logon and the competing-controller inventory come
+    /// from the origin tick's clean reading, a full `capture` no older than
+    /// 1 s: deliberately, since a per-frame pass would run the SCM query and
+    /// the controller inventory at frame rate, so a change to any of them is
+    /// seen at the next tick.
     #[cfg(feature = "service-lighting-v1")]
     pub(super) fn authorize_frame(&self) -> Option<ReadAdmission> {
         let identity = &self.identity;
-        identity
-            .admits_with(
-                false,
-                || {
-                    identity.origin.lifecycle.epoch_for(WriteScope::Ordinary)
-                        == Some(self.lifecycle)
-                },
-                false,
-            )
-            .ok()?;
+        let epoch =
+            || identity.origin.lifecycle.epoch_for(WriteScope::Ordinary) == Some(self.lifecycle);
+        let admitted = epoch()
+            && crate::console_session::observe() == Some(identity.session)
+            && session_unlocked(identity.session)
+            && power_known().is_ok()
+            && epoch();
+        if !admitted {
+            return None;
+        }
         identity.custody.authorize()
     }
     /// `authorize_for` with the reason for a refusal.

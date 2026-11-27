@@ -5,8 +5,9 @@
 //! A Static renderer's keepalive runs on the origin tick
 //! (`Runtime::maintain_lighting`); an animated renderer's frames run on the
 //! stream task (`Runtime::run_lighting_stream`), with its clean controller
-//! reading from the origin tick. `stepKeyboardBrightness` and
-//! `setLightingRefreshRate` are in `lighting_controls.rs`.
+//! reading from the origin tick, in `lighting_stream.rs`.
+//! `stepKeyboardBrightness` and `setLightingRefreshRate` are in
+//! `lighting_controls.rs`.
 //!
 //! The order is managed `ExecuteScopedMutationAsync`'s (ServiceControlRuntime.cs
 //! 14868-15060) for the Lighting subsystem:
@@ -83,7 +84,6 @@ use crate::{
         LightingTarget, MatrixState, MatrixStream, ObservedPerformance, Random, ReadAdmission,
         RefreshRate, RenderTarget, Renderer, Rgb, SystemRandom, Unwritten, lighting_approved,
         mutation::{Permit, Settlement},
-        stream_report,
     },
     service_status::LightingOverride,
 };
@@ -173,8 +173,8 @@ const KEEPALIVE_BUDGET: Duration = Duration::from_secs(2);
 /// What lighting this process holds between requests (`Runtime::lighting`).
 /// Requests and the keepalive change it only under the operation gate. Stop
 /// ends the renderer without it (`Runtime::retire_renderer`): the Service is
-/// stopping, and the mutation worker's stop cancels a keepalive still
-/// running.
+/// stopping, the mutation worker's stop cancels a keepalive still running,
+/// and the stream is settled (`Runtime::settle_lighting_stream`).
 #[derive(Default)]
 pub(super) struct Session {
     /// A lighting setter or matrix report may have been submitted
@@ -192,18 +192,28 @@ pub(super) struct Session {
     /// composition without one, refuses every animated effect as one the
     /// capability table does not admit.
     stream: OnceCell<Rc<dyn MatrixStream>>,
+    /// An animated request opened the stream's collection, which stays open
+    /// while an animated renderer is owned (`close_stream`).
+    stream_open: Cell<bool>,
+    /// The deadline of the stream frame holding the operation gate
+    /// (`Runtime::stream_frame`), which the origin tick waits for.
+    stream_hold: Cell<Option<Instant>>,
     /// The refresh rate the animated cadence follows (managed
     /// `LightingRefreshRate`), as the saved preferences last read it.
     rate: Cell<RefreshRate>,
     /// The raw brightness the last step set (managed
-    /// `lastKnownBrightnessRaw`). Any other lighting job clears it, so the
-    /// next step reads 03/83 again.
+    /// `lastKnownBrightnessRaw`). Every `setLightingOverride` request and a
+    /// step that set no value clear it, so the next step reads 03/83 again;
+    /// keepalive and stream frames keep it.
     raw: Cell<Option<u8>>,
     /// Wakes the stream loop for a new animated renderer or cadence.
     wake: tokio::sync::Notify,
     /// A test's palette selector in place of `SystemRandom`.
     #[cfg(test)]
     random: RefCell<Option<RandomSource>>,
+    /// A test's bound on one stream frame in place of `FRAME_BUDGET`.
+    #[cfg(test)]
+    frame_budget: Cell<Option<Duration>>,
     /// A test withholds the semantic admission from this session's
     /// requests (`approved`).
     #[cfg(test)]
@@ -223,53 +233,11 @@ struct Owner {
     stream: Option<Stream>,
 }
 
-/// Managed `RunStreamAsync`'s state for one animated renderer.
-struct Stream {
-    animation: Animation,
-    /// When the effect started (managed `effectStartedTimestamp`).
-    started: Instant,
-    /// The next frame's deadline, in ticks since `started`.
-    next: i64,
-    /// The latest admission that confirmed a clean controller reading: the
-    /// request that started the stream, then each origin tick's capture.
-    clean: Option<Clean>,
-}
-
-/// One clean reading: when it was taken, its admission and the Windows
-/// power generation then.
-struct Clean {
-    at: Instant,
-    fresh: Arc<dyn Fresh>,
-    generation: Option<u64>,
-}
-
-impl Clean {
-    fn new(fresh: Arc<dyn Fresh>, at: Instant) -> Self {
-        let generation = fresh.power_generation();
-        Self {
-            at,
-            fresh,
-            generation,
-        }
-    }
-}
-
-/// How old the latest clean controller reading may be when a stream frame
-/// is written: two origin ticks. An older one writes nothing until the next
-/// tick confirms a fresh one (`Runtime::stream_frame`).
-pub(in super::super) const CLEAN_READING_AGE: Duration = Duration::from_secs(1);
-/// The bound on one stream frame, from its render to its completion.
-const FRAME_BUDGET: Duration = Duration::from_millis(500);
-
-/// The ticks from `started` to `now`.
-fn ticks(started: Instant, now: Instant) -> i64 {
-    i64::try_from(now.saturating_duration_since(started).as_nanos() / 100).unwrap_or(i64::MAX)
-}
-
-/// The instant `ticks` after `started`.
-fn at_ticks(started: Instant, ticks: i64) -> Instant {
-    started + Duration::from_nanos(u64::try_from(ticks).unwrap_or(0).saturating_mul(100))
-}
+#[path = "lighting_stream.rs"]
+mod stream;
+#[cfg(test)]
+pub(in super::super) use stream::Next;
+use stream::{Clean, Stream};
 
 impl Session {
     /// The semantic admission a request's target needs
@@ -287,16 +255,11 @@ impl Session {
     }
 
     /// Ends the renderer without a write: no further keepalive or stream
-    /// frame is sent, the stream's collection closes, and the next lit
-    /// request starts a new renderer.
+    /// frame is sent, the stream's frames are recalled and its collection
+    /// closes, and the next lit request starts a new renderer.
     fn retire(&self) {
-        let animated = self
-            .owner
-            .replace(None)
-            .is_some_and(|owner| owner.stream.is_some());
-        if animated && let Some(stream) = self.stream.get() {
-            stream.retire();
-        }
+        self.owner.replace(None);
+        self.close_stream();
     }
 
     /// The palette selector a new animation draws from.
@@ -342,9 +305,11 @@ impl Session {
 
     /// The renderer a render job left (`LightingJob::matrix`): a new one
     /// owned by this request from now, the same one kept for this request's
-    /// user, or none. An animated renderer's stream starts from its first
-    /// frame, with this request's fresh admission as its first clean
-    /// reading, and continues a retained one's phase.
+    /// user, or none. An animated renderer's stream starts from its
+    /// handshake, as managed's effect clock does, with this request's fresh
+    /// admission as its first clean reading, and continues a retained one's
+    /// phase. One animated renderer replacing another keeps the stream's
+    /// collection open.
     fn render(
         &self,
         job: &LightingJob,
@@ -362,7 +327,10 @@ impl Session {
                 let stream = renderer.effect.animated().then(|| {
                     job.take_animation().map(|animation| Stream {
                         animation,
-                        started: now,
+                        // The handshake precedes this call; a job clock ahead of
+                        // the runtime's (a paused test runtime) cannot start the
+                        // effect in the future.
+                        started: job.effect_started().map_or(now, |at| at.min(now)),
                         next: renderer.effect.next_delay(0, self.rate.get()),
                         clean: Some(Clean::new(fresh.clone(), now)),
                     })
@@ -374,7 +342,11 @@ impl Session {
                     return;
                 };
                 let animated = stream.is_some();
-                self.retire();
+                if animated {
+                    self.owner.replace(None);
+                } else {
+                    self.retire();
+                }
                 self.owner.replace(Some(Owner {
                     renderer,
                     sid: sid.into(),
@@ -472,25 +444,78 @@ enum Admission {
     Refused(Outcome),
 }
 
+/// What a lighting job's permit does once the job has classified power
+/// (`LightingPermit::store`).
+enum Intent {
+    /// A job that never asks for a store: a keepalive or a resolution. A
+    /// store it asks for is refused.
+    Nothing,
+    /// Stores this override, or clears it.
+    Save(Option<LightingOverride>),
+    /// A brightness step's power admission, which stores nothing and
+    /// resolves the desired lighting at the job's class instead.
+    #[cfg(feature = "service-profiles-v1")]
+    Step(controls::StepState),
+    /// A refresh-rate change's power admission, which stores nothing.
+    #[cfg(feature = "service-profiles-v1")]
+    Admit,
+}
+
 /// One lighting job's permit: its request's fresh admission before every
 /// exchange, and the power admission and store the job asks for once it has
 /// classified power. It keeps no journal row.
 struct LightingPermit {
     fresh: Arc<dyn Fresh>,
     storage: Arc<Storage>,
-    value: Option<LightingOverride>,
+    intent: Intent,
     #[cfg(feature = "service-hyperboost-v1")]
     hyperboost: Option<super::Probes>,
     job: LightingJob,
     admission: Mutex<Option<Admission>>,
     fatal: Arc<Mutex<Option<&'static str>>>,
-    /// A brightness step's power admission, which stores nothing and
-    /// resolves the desired lighting at the job's class instead
-    /// (`controls::StepState`).
-    #[cfg(feature = "service-profiles-v1")]
-    step: Option<controls::StepState>,
 }
 impl LightingPermit {
+    /// `job`'s permit under `fresh`. A job that classifies power admits an
+    /// unclassified adapter with the runtime's HyperBoost evidence
+    /// (`admits_unclassified`); a keepalive and a resolution classify none.
+    fn new(
+        runtime: &Runtime,
+        fresh: Arc<dyn Fresh>,
+        storage: Arc<Storage>,
+        job: LightingJob,
+        intent: Intent,
+    ) -> Arc<Self> {
+        #[cfg(feature = "service-hyperboost-v1")]
+        let hyperboost = match intent {
+            Intent::Nothing => None,
+            _ => runtime.hyperboost.get().cloned(),
+        };
+        Arc::new(Self {
+            fresh,
+            storage,
+            intent,
+            #[cfg(feature = "service-hyperboost-v1")]
+            hyperboost,
+            job,
+            admission: Mutex::new(None),
+            fatal: runtime.fatal.clone(),
+        })
+    }
+    /// The override a `Save` stores; `None` for a clear or another intent.
+    fn value(&self) -> Option<&LightingOverride> {
+        match &self.intent {
+            Intent::Save(value) => value.as_ref(),
+            _ => None,
+        }
+    }
+    /// A brightness step's state.
+    #[cfg(feature = "service-profiles-v1")]
+    fn step(&self) -> Option<&controls::StepState> {
+        match &self.intent {
+            Intent::Step(step) => Some(step),
+            _ => None,
+        }
+    }
     /// Managed `CanAdmitUnclassifiedExternalControl(Lighting)`
     /// (UnclassifiedExternalPower.cs 60-77) from native's own fresh evidence,
     /// plus one stricter clause. Fresh external presence was required by the
@@ -541,15 +566,22 @@ impl LightingPermit {
             remember_failure(&self.fatal, &error);
             return Admission::Refused(Outcome::blocked(ADMISSION));
         }
-        #[cfg(feature = "service-profiles-v1")]
-        if let Some(step) = &self.step {
-            let desired = controls::desired_lighting(&self.storage, &step.application, power).ok();
-            if let Ok(mut slot) = step.desired.lock() {
-                *slot = desired;
+        let value = match &self.intent {
+            Intent::Nothing => return Admission::Refused(Outcome::blocked(ADMISSION)),
+            Intent::Save(value) => value.as_ref(),
+            #[cfg(feature = "service-profiles-v1")]
+            Intent::Step(step) => {
+                let desired =
+                    controls::desired_lighting(&self.storage, &step.application, power).ok();
+                if let Ok(mut slot) = step.desired.lock() {
+                    *slot = desired;
+                }
+                return Admission::Stored(power);
             }
-            return Admission::Stored(power);
-        }
-        match self.storage.save_lighting(self.value.as_ref(), power) {
+            #[cfg(feature = "service-profiles-v1")]
+            Intent::Admit => return Admission::Stored(power),
+        };
+        match self.storage.save_lighting(value, power) {
             Ok(()) => Admission::Stored(power),
             Err(error) => {
                 remember_failure(&self.fatal, &error);
@@ -571,7 +603,7 @@ impl LightingPermit {
                 return Lit::refused(Outcome::blocked(refusal));
             }
         };
-        if self.value.is_none() {
+        if self.value().is_none() {
             // A clear is a store-only job, which wrote nothing.
             return stored_clear(power);
         }
@@ -606,7 +638,7 @@ impl Permit for LightingPermit {
         let stored = matches!(admission, Admission::Stored(_));
         // A step reads and writes no lighting unless the desired lighting is lit.
         #[cfg(feature = "service-profiles-v1")]
-        let stored = stored && self.step.as_ref().is_none_or(controls::StepState::lit);
+        let stored = stored && self.step().is_none_or(controls::StepState::lit);
         match self.admission.lock() {
             Ok(mut slot) => *slot = Some(admission),
             Err(_) => return false,
@@ -1002,9 +1034,20 @@ impl Runtime {
                 request = None;
             }
         }
+        // The stream's collection opens, or is confirmed open, before
+        // anything is sent: an animated request whose collection does not
+        // open is stored and refused, so no stream ends after an Applied
+        // reply.
+        let mut unopened = false;
+        if animation.is_some()
+            && let Some(port) = lighting.stream.get().cloned()
+        {
+            unopened = !self.open_stream(&port, deadline).await;
+        }
         lighting.raw.set(None);
         let job = match request {
             Some(Request::Off(target)) => LightingJob::write(target),
+            Some(Request::Lit { .. }) if unopened => LightingJob::unopened(),
             Some(Request::Lit {
                 brightness,
                 logo,
@@ -1027,18 +1070,7 @@ impl Runtime {
         // A write job holds the session until its outcome is read, so a
         // request dropped meanwhile latches the doubt.
         let claim = request.is_some().then(|| lighting.claim());
-        let permit = Arc::new(LightingPermit {
-            fresh,
-            storage,
-            value,
-            #[cfg(feature = "service-hyperboost-v1")]
-            hyperboost: self.hyperboost.get().cloned(),
-            job,
-            admission: Mutex::new(None),
-            fatal: self.fatal.clone(),
-            #[cfg(feature = "service-profiles-v1")]
-            step: None,
-        });
+        let permit = LightingPermit::new(self, fresh, storage, job, Intent::Save(value));
         let result = reader.mutate(permit.clone(), deadline).await;
         verify_retained_failure(&self.fatal)?;
         if let Err(error) = result
@@ -1052,7 +1084,7 @@ impl Runtime {
         // desired lighting at the job's power class. A clear applies nothing.
         #[cfg(feature = "service-profiles-v1")]
         if lit.outcome.status == APPLIED
-            && let Some(value) = permit.value.as_ref()
+            && let Some(value) = permit.value()
         {
             controls::remember_lighting(&permit.storage, &value.settings);
         }
@@ -1070,6 +1102,11 @@ impl Runtime {
         if let Some(claim) = claim {
             claim.settle(permit.job.outcome().in_doubt());
         }
+        // A request that leaves no animated renderer closes the collection
+        // it opened.
+        if !lighting.animated() {
+            lighting.close_stream();
+        }
         Ok(lit)
     }
 
@@ -1086,18 +1123,13 @@ impl Runtime {
         fresh: Arc<dyn Fresh>,
         deadline: Instant,
     ) -> io::Result<Lit> {
-        let permit = Arc::new(LightingPermit {
-            storage,
+        let permit = LightingPermit::new(
+            self,
             fresh,
-            value: None,
-            #[cfg(feature = "service-hyperboost-v1")]
-            hyperboost: None,
-            job: LightingJob::resolution(),
-            admission: Mutex::new(None),
-            fatal: self.fatal.clone(),
-            #[cfg(feature = "service-profiles-v1")]
-            step: None,
-        });
+            storage,
+            LightingJob::resolution(),
+            Intent::Nothing,
+        );
         let result = reader.mutate(permit.clone(), deadline).await;
         verify_retained_failure(&self.fatal)?;
         if let Err(error) = result
@@ -1136,14 +1168,27 @@ impl Runtime {
     /// after the write. A renderer that crossed a low-power boundary ends
     /// without a write (`crossed_low_power`). Only fatal admission evidence
     /// is an error.
+    ///
+    /// The step skips a gate a request holds, and waits for one a stream
+    /// frame holds until that frame's deadline: the stream's own frames never
+    /// cost it the clean reading they need (`confirm_stream_clean`).
     pub(in super::super) async fn maintain_lighting(
         &self,
         mailbox: &MailboxSource,
         now: Instant,
     ) -> io::Result<()> {
         let started = Instant::now();
-        let Ok(_serial) = self.gate.try_lock() else {
-            return Ok(());
+        let _serial = match self.gate.try_lock() {
+            Ok(serial) => serial,
+            Err(_) => {
+                let Some(frame) = self.lighting.stream_hold.get() else {
+                    return Ok(());
+                };
+                match tokio::time::timeout_at(frame, self.gate.lock()).await {
+                    Ok(serial) => serial,
+                    Err(_) => return Ok(()),
+                }
+            }
         };
         if self.crossed_low_power() {
             self.retire_renderer();
@@ -1186,18 +1231,13 @@ impl Runtime {
         };
         fresh.verify_health()?;
         let claim = lighting.claim();
-        let permit = Arc::new(LightingPermit {
+        let permit = LightingPermit::new(
+            self,
             fresh,
             storage,
-            value: None,
-            #[cfg(feature = "service-hyperboost-v1")]
-            hyperboost: None,
-            job: LightingJob::keepalive(renderer),
-            admission: Mutex::new(None),
-            fatal: self.fatal.clone(),
-            #[cfg(feature = "service-profiles-v1")]
-            step: None,
-        });
+            LightingJob::keepalive(renderer),
+            Intent::Nothing,
+        );
         let result = reader
             .mutate(permit.clone(), Instant::now() + KEEPALIVE_BUDGET)
             .await;
@@ -1213,177 +1253,6 @@ impl Runtime {
             lighting.defer(advance(due, observed()));
         }
         Ok(())
-    }
-
-    /// The origin tick's step for an animated renderer: one full capture and
-    /// write authorization of the owning request's admission, the
-    /// competing-controller inventory included, whose success is the
-    /// stream's clean reading at `now`
-    /// (`CLEAN_READING_AGE`). A competing controller retires the renderer
-    /// without a write, as managed's controller refresh relinquishes
-    /// lighting; any other refusal leaves no clean reading, so the stream
-    /// writes nothing until a later tick confirms one. Only fatal admission
-    /// evidence is an error.
-    fn confirm_stream_clean(
-        &self,
-        reader: &super::super::mailbox_read::ReadSource,
-        sid: &str,
-        session: u32,
-        now: Instant,
-    ) -> io::Result<()> {
-        verify_retained_failure(&self.fatal)?;
-        reader.custody().verify_integrity()?;
-        let clean = match self.capture(sid, session, reader.custody()) {
-            Ok((_, fresh)) => {
-                fresh.verify_health()?;
-                // The complete write admission, the controller inventory
-                // included, is what makes the reading clean.
-                fresh.authorize().is_some().then(|| Clean::new(fresh, now))
-            }
-            Err(error) if is_fatal_admission(&error) => return Err(error),
-            Err(error) if super::is_competing_controller(&error) => {
-                self.lighting.retire();
-                return Ok(());
-            }
-            Err(_) => None,
-        };
-        if let Some(stream) = self
-            .lighting
-            .owner
-            .borrow_mut()
-            .as_mut()
-            .and_then(|owner| owner.stream.as_mut())
-        {
-            stream.clean = clean;
-        }
-        Ok(())
-    }
-
-    /// One frame of the animated renderer at `now`, from the stream loop
-    /// (`run_lighting_stream`), and when the next is due; `None` when no
-    /// animated renderer is owned. Managed `RunStreamAsync`: the frame is the
-    /// animation at the time elapsed since the effect started, and the next
-    /// deadline advances from the instant observed after the write
-    /// (`Effect::advance`). Each frame, before anything is sent:
-    ///
-    /// - takes the operation gate without waiting: while a request or the
-    ///   origin tick holds it, the frame is skipped and retried one interval
-    ///   later, a visible pause;
-    /// - ends the renderer without a write at a low-power boundary
-    ///   (`crossed_low_power`), and sends nothing while the doubt is
-    ///   latched;
-    /// - needs a clean controller reading no older than `CLEAN_READING_AGE`
-    ///   from the origin tick, and otherwise writes nothing;
-    /// - takes that reading's admission for a frame (`Fresh::authorize_frame`:
-    ///   every check of a write's but the controller inventory) at the same
-    ///   Windows power generation.
-    ///
-    /// A frame refused before submission ends the renderer and the stream;
-    /// one that may have been submitted without completing also latches the
-    /// doubt. Only fatal admission evidence is an
-    /// error.
-    pub(in super::super) async fn stream_frame(&self, now: Instant) -> io::Result<Option<Instant>> {
-        let started = Instant::now();
-        let lighting = &self.lighting;
-        let interval =
-            Duration::from_nanos(u64::try_from(lighting.rate.get().interval()).unwrap_or(0) * 100);
-        let Ok(_serial) = self.gate.try_lock() else {
-            return Ok(lighting
-                .owner
-                .borrow()
-                .as_ref()
-                .filter(|owner| owner.stream.is_some())
-                .map(|_| now + interval));
-        };
-        verify_retained_failure(&self.fatal)?;
-        if self.crossed_low_power() {
-            self.retire_renderer();
-            return Ok(None);
-        }
-        let Some(port) = lighting.stream.get().cloned() else {
-            return Ok(None);
-        };
-        if lighting.latched() {
-            return Ok(None);
-        }
-        let rate = lighting.rate.get();
-        let observed = |stream: &Stream| ticks(stream.started, now + started.elapsed());
-        // Render under the borrow; the frame is written after it ends.
-        let report = {
-            let mut guard = lighting.owner.borrow_mut();
-            let Some(owner) = guard.as_mut() else {
-                return Ok(None);
-            };
-            let layout = owner.renderer.layout;
-            let effect = owner.renderer.effect;
-            let Some(stream) = owner.stream.as_mut() else {
-                return Ok(None);
-            };
-            let due = at_ticks(stream.started, stream.next);
-            if now < due {
-                return Ok(Some(due));
-            }
-            let admitted = stream.clean.as_ref().is_some_and(|clean| {
-                now.saturating_duration_since(clean.at) <= CLEAN_READING_AGE
-                    && clean.fresh.authorize_frame().is_some()
-                    && clean.fresh.power_generation() == clean.generation
-            });
-            if !admitted {
-                stream.next = effect.advance(stream.next, observed(stream), rate);
-                return Ok(Some(at_ticks(stream.started, stream.next)));
-            }
-            let elapsed = ticks(stream.started, now);
-            match stream_report(&mut stream.animation, layout, elapsed) {
-                Some(report) => report,
-                // The effect drew nothing (a failed random source): nothing
-                // was sent, and nothing more will be drawn.
-                None => {
-                    drop(guard);
-                    lighting.retire();
-                    return Ok(None);
-                }
-            }
-        };
-        let claim = lighting.claim();
-        let written = port.frame(report, Instant::now() + FRAME_BUDGET).await;
-        verify_retained_failure(&self.fatal)?;
-        claim.settle(matches!(written, Err(Unwritten::InDoubt)));
-        if written.is_err() {
-            // A frame refused before submission ends the stream as one that
-            // may have been submitted does (which `settle` latched): the
-            // next request draws anew.
-            lighting.retire();
-            return Ok(None);
-        }
-        let mut owner = lighting.owner.borrow_mut();
-        let Some(stream) = owner.as_mut().and_then(|owner| {
-            owner
-                .stream
-                .as_mut()
-                .map(|stream| (owner.renderer.effect, stream))
-        }) else {
-            return Ok(None);
-        };
-        let (effect, stream) = stream;
-        stream.next = effect.advance(stream.next, observed(stream), rate);
-        Ok(Some(at_ticks(stream.started, stream.next)))
-    }
-
-    /// The stream loop: one frame at each deadline `stream_frame` returns,
-    /// and otherwise waits for a new animated renderer or cadence. It ends
-    /// only with fatal admission evidence.
-    pub(in super::super) async fn run_lighting_stream(&self) -> io::Result<()> {
-        loop {
-            match self.stream_frame(Instant::now()).await? {
-                Some(at) => {
-                    tokio::select! {
-                        () = tokio::time::sleep_until(at) => {}
-                        () = self.lighting.wake.notified() => {}
-                    }
-                }
-                None => self.lighting.wake.notified().await,
-            }
-        }
     }
 
     /// Ends the owned renderer without a write, at Stop (managed's port
@@ -1444,14 +1313,6 @@ impl Runtime {
     }
 }
 
-impl Runtime {
-    /// Composes the animated matrix stream (`Session::stream`); it may be
-    /// set once.
-    pub(in super::super) fn compose_matrix_stream(&self, stream: Rc<dyn MatrixStream>) {
-        assert!(self.lighting.stream.set(stream).is_ok());
-    }
-}
-
 #[cfg(test)]
 impl Runtime {
     /// Draws every later animation's palette from `random` (`Session::random`).
@@ -1460,19 +1321,6 @@ impl Runtime {
         random: impl Fn() -> Box<dyn Random> + 'static,
     ) {
         self.lighting.random.replace(Some(Box::new(random)));
-    }
-
-    /// The animated stream's next deadline, the effect it draws and when the
-    /// effect started.
-    pub(in super::super) fn stream_due_for_tests(&self) -> Option<(Instant, Effect, Instant)> {
-        let owner = self.lighting.owner.borrow();
-        let owner = owner.as_ref()?;
-        let stream = owner.stream.as_ref()?;
-        Some((
-            at_ticks(stream.started, stream.next),
-            owner.renderer.effect,
-            stream.started,
-        ))
     }
 
     /// Holds the operation gate, as a request or the origin tick in flight

@@ -152,6 +152,8 @@ mod keyboard;
 #[cfg(feature = "service-lighting-v1")]
 #[path = "lighting_mutation.rs"]
 mod lighting;
+#[cfg(all(test, feature = "service-lighting-v1"))]
+pub(super) use lighting::Next as StreamNext;
 #[cfg(feature = "service-lighting-v1")]
 pub(super) use lighting::{LightingRequest, logo_wire};
 #[cfg(all(feature = "service-lighting-v1", feature = "service-profiles-v1"))]
@@ -219,12 +221,22 @@ pub(super) trait Fresh: Send + Sync {
     }
     fn authorize(&self) -> Option<ReadAdmission>;
     /// One animated stream frame's admission (`Runtime::stream_frame`):
-    /// every check of `authorize` but the competing-controller inventory,
-    /// whose fresh reading the origin tick confirms instead. `None`, the
-    /// default, admits no frame.
+    /// the checks a frame repeats between two origin ticks
+    /// (`WindowsGuard::authorize_frame`). The rest of `authorize` comes from
+    /// the tick's clean reading. `None`, the default, admits no frame.
     #[cfg(feature = "service-lighting-v1")]
     fn authorize_frame(&self) -> Option<ReadAdmission> {
         None
+    }
+    /// Whether the capture that built this admission confirmed a complete
+    /// write admission, the competing-controller inventory included: the
+    /// origin tick's clean reading for the stream
+    /// (`Runtime::confirm_stream_clean`). A `WindowsGuard` exists only when
+    /// its capture did, so it takes no second supplier pass; the default
+    /// asks `authorize` again.
+    #[cfg(feature = "service-lighting-v1")]
+    fn admitted_at_capture(&self) -> bool {
+        self.authorize().is_some()
     }
     /// Whether storing request intent is admitted now: every check of
     /// `authorize` except the lifecycle epoch, so the low-power gate does not
@@ -316,6 +328,12 @@ impl Fresh for WindowsGuard {
     #[cfg(feature = "service-lighting-v1")]
     fn authorize_frame(&self) -> Option<ReadAdmission> {
         self.authorize_frame()
+    }
+    // `WindowsGuard::capture` refuses to build a guard its own full
+    // admission refused.
+    #[cfg(feature = "service-lighting-v1")]
+    fn admitted_at_capture(&self) -> bool {
+        true
     }
     fn capture_settle(
         &self,

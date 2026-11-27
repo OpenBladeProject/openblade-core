@@ -247,7 +247,10 @@ impl<P: Port> Reader<P, ReadAdmission> {
             if let Some(report) = first {
                 job.record(Self::interrupted(steps));
                 match attempt.handshake(authorize, admission, limit, run).await? {
-                    Some(()) => steps.handshake = true,
+                    Some(()) => {
+                        steps.handshake = true;
+                        job.set_started(Instant::now());
+                    }
                     None => break 'forward Some(DEVICE_MODE_UNSUPPORTED),
                 }
                 job.record(LightingOutcome::Interrupted);

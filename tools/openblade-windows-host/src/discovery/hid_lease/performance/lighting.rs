@@ -210,6 +210,9 @@ enum Work {
     /// and writes no lighting: a clear, or a value the capability table does
     /// not admit.
     Store,
+    /// `Store`, for an animated request whose stream collection did not
+    /// open: it is stored, and the job ends `Unavailable`.
+    Unopened,
     /// Classifies power, stores, then writes the target the baseline does not
     /// match.
     Write(LightingTarget),
@@ -257,6 +260,9 @@ struct State {
     /// The layout byte a 00/86 query read.
     layout: Option<u8>,
     matrix: MatrixState,
+    /// When a new renderer's handshake completed: managed starts an
+    /// animated effect's clock there.
+    started: Option<Instant>,
 }
 
 /// Which confirmed member a setter changes; the matrix has no confirmed
@@ -282,6 +288,7 @@ impl LightingJob {
                 sent: 0,
                 layout: None,
                 matrix: MatrixState::Kept,
+                started: None,
             }),
         }
     }
@@ -298,6 +305,12 @@ impl LightingJob {
     /// store, and no lighting report.
     pub(crate) fn store() -> Self {
         Self::with(Work::Store, false)
+    }
+
+    /// An animated request whose stream collection did not open: power and
+    /// the store, then `Unavailable` with no lighting report.
+    pub(crate) fn unopened() -> Self {
+        Self::with(Work::Unopened, false)
     }
 
     /// A lit request: power, the store, then the renderer recipe (`render`).
@@ -364,9 +377,12 @@ impl LightingJob {
     pub(crate) fn target(&self) -> Option<LightingTarget> {
         match self.work {
             Work::Write(target) => Some(target),
-            Work::Resolve | Work::Store | Work::Render(_) | Work::Keepalive(_) | Work::Step(_) => {
-                None
-            }
+            Work::Resolve
+            | Work::Store
+            | Work::Unopened
+            | Work::Render(_)
+            | Work::Keepalive(_)
+            | Work::Step(_) => None,
         }
     }
 
@@ -389,6 +405,17 @@ impl LightingJob {
     /// The layout byte the job read, which the session keeps.
     pub(crate) fn layout(&self) -> Option<u8> {
         self.state.lock().ok().and_then(|state| state.layout)
+    }
+
+    /// When the new renderer's handshake completed, the effect's start.
+    pub(crate) fn effect_started(&self) -> Option<Instant> {
+        self.state.lock().ok().and_then(|state| state.started)
+    }
+
+    fn set_started(&self, at: Instant) {
+        if let Ok(mut state) = self.state.lock() {
+            state.started = Some(at);
+        }
     }
 
     fn set_matrix(&self, matrix: MatrixState) {
@@ -513,7 +540,7 @@ impl Work {
             Self::Keepalive(_) => 0,
             // The baseline query and the setter.
             Self::Step(_) => 2,
-            Self::Resolve | Self::Store | Self::Write(_) => IDS,
+            Self::Resolve | Self::Store | Self::Unopened | Self::Write(_) => IDS,
         }
     }
 }
@@ -597,7 +624,7 @@ impl<P: Port> Reader<P, ReadAdmission> {
         }
         let power_ids = match job.work {
             Work::Resolve | Work::Keepalive(_) => None,
-            Work::Store | Work::Write(_) | Work::Render(_) | Work::Step(_) => {
+            Work::Store | Work::Unopened | Work::Write(_) | Work::Render(_) | Work::Step(_) => {
                 Some(self.reserve_pair()?)
             }
         };
@@ -628,8 +655,12 @@ impl<P: Port> Reader<P, ReadAdmission> {
                 job.record(LightingOutcome::NotAdmitted);
                 return Some(());
             }
-            if matches!(job.work, Work::Store) {
-                job.record(LightingOutcome::Stored);
+            match job.work {
+                Work::Store => job.record(LightingOutcome::Stored),
+                Work::Unopened => job.record(LightingOutcome::Unavailable),
+                _ => {}
+            }
+            if matches!(job.work, Work::Store | Work::Unopened) {
                 return Some(());
             }
         }
