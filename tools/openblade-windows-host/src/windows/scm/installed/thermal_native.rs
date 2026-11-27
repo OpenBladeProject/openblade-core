@@ -360,14 +360,10 @@ impl WindowsGuard {
     fn authorize_for(&self, stop: bool) -> Option<ReadAdmission> {
         self.admit_for(stop).ok()
     }
-    /// One animated stream frame (`Runtime::stream_frame`): the checks a
-    /// frame repeats between two origin ticks. The pinned lifecycle epoch,
-    /// before and after the others, which every suspend, resume, session
-    /// change and power notice advances; the same console session, unlocked
-    /// (WTS); a known AC line status (`GetSystemPowerStatus`); and the
-    /// custody's frame admission (`ReadCustody::authorize_frame`): its state,
-    /// its retained failure and the loaded origin's lifetime, which a
-    /// revocation or a lost trust ends at once.
+    /// One animated stream frame (`Runtime::stream_frame`): `admit_frame`
+    /// over the pinned lifecycle epoch, the same console session, unlocked
+    /// (WTS), a known AC line status (`GetSystemPowerStatus`) and the
+    /// custody's frame admission.
     ///
     /// Deliberately not per frame, but from the origin tick's clean reading,
     /// a full `capture` no older than 1 s: the loaded-origin process, package
@@ -379,17 +375,15 @@ impl WindowsGuard {
     #[cfg(feature = "service-lighting-v1")]
     pub(super) fn authorize_frame(&self) -> Option<ReadAdmission> {
         let identity = &self.identity;
-        let epoch =
-            || identity.origin.lifecycle.epoch_for(WriteScope::Ordinary) == Some(self.lifecycle);
-        let admitted = epoch()
-            && crate::console_session::observe() == Some(identity.session)
-            && session_unlocked(identity.session)
-            && power_known().is_ok()
-            && epoch();
-        if !admitted {
-            return None;
-        }
-        identity.custody.authorize_frame()
+        admit_frame(
+            || identity.origin.lifecycle.epoch_for(WriteScope::Ordinary) == Some(self.lifecycle),
+            || {
+                crate::console_session::observe() == Some(identity.session)
+                    && session_unlocked(identity.session)
+            },
+            || power_known().is_ok(),
+            identity.custody.as_ref(),
+        )
     }
     /// `authorize_for` with the reason for a refusal.
     fn admit_for(&self, stop: bool) -> Result<ReadAdmission, Denial> {
@@ -546,6 +540,28 @@ pub(super) fn admit_cleanup(
         return Err(Denial::Admission);
     }
     custody().ok_or(Denial::Admission)
+}
+/// A stream frame's admission over its suppliers, in order
+/// (`WindowsGuard::authorize_frame`): the pinned lifecycle epoch, which every
+/// suspend, resume, session change and power notice advances; the console
+/// session; a known AC line status; the epoch again; and last the custody's
+/// frame admission (`ReadCustody::authorize_frame`): its state, its retained
+/// failure and the loaded origin's lifetime, which a revocation, a lost
+/// trust or Stop ends at once. The full custody authorization, with the
+/// origin, package and SCM verification, is the origin tick's. Each refusal
+/// stops the checks after it. The test model runs the same function over
+/// its own suppliers.
+#[cfg(feature = "service-lighting-v1")]
+pub(super) fn admit_frame(
+    epoch: impl Fn() -> bool,
+    session: impl FnOnce() -> bool,
+    power: impl FnOnce() -> bool,
+    custody: &dyn ReadCustody,
+) -> Option<ReadAdmission> {
+    if !(epoch() && session() && power() && epoch()) {
+        return None;
+    }
+    custody.authorize_frame()
 }
 /// Storage-only admission captured by `WindowsGuard::capture_storage`: an
 /// identity with no lifecycle epoch. It exposes the storage admission and the

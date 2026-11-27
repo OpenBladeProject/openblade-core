@@ -503,6 +503,28 @@ pub(super) fn authorize_original(
         }
     }
 }
+/// `ReadLease`'s stream-frame admission (`ReadCustody::authorize_frame`):
+/// `authorize_original` without the origin commitment and the original
+/// mapping, which the origin tick's full authorization reads. The state a
+/// revocation or a lost trust latched, the loaded origin's lifetime, which a
+/// revocation, a lost trust and Stop end at once, and the active lifecycle
+/// epoch. It latches nothing: a refusal here is seen by the next tick.
+#[cfg(feature = "service-lighting-v1")]
+pub(super) fn authorize_original_frame(
+    state: &AtomicU8,
+    lifetime: &crate::origin_lifetime::Lifetime,
+    lifecycle: Option<u64>,
+    proof: ReadAdmission,
+) -> Option<ReadAdmission> {
+    if state.load(Ordering::Acquire) != 0 {
+        return None;
+    }
+    lifetime.verify().ok()?;
+    Some(ReadAdmission {
+        lifecycle: lifecycle?,
+        ..proof
+    })
+}
 /// `ReadLease`'s low-power cleanup admission: `authorize_original` at the
 /// suspend generation's lifecycle fence (`Lifecycle::fence_for`) instead of
 /// the ordinary epoch, with the same live origin trust, original custody and
@@ -777,18 +799,15 @@ impl ReadLease {
             },
         )
     }
-    // `authorize` without its origin and package verification: the state a
-    // revocation or a lost trust latched, and the origin's lifetime.
+    // `authorize` without its origin and package verification.
     #[cfg(feature = "service-lighting-v1")]
     fn authorize_frame(&self) -> Option<ReadAdmission> {
-        if self.state.load(Ordering::Acquire) != 0 {
-            return None;
-        }
-        self.origin.verify_lifetime().ok()?;
-        Some(ReadAdmission {
-            lifecycle: self.origin.lifecycle.active()?,
-            ..self.proof
-        })
+        authorize_original_frame(
+            &self.state,
+            self.origin.lifetime(),
+            self.origin.lifecycle.active(),
+            self.proof,
+        )
     }
     // `authorize` without the lifecycle epoch.
     #[cfg(feature = "service-profile-triggers-v1")]
@@ -3014,5 +3033,46 @@ mod tests {
         *fatal.lock().unwrap() = Some("retained");
         assert_eq!(guarded.authorize_frame(), None);
         assert_eq!(counts(), (1, 1, 3));
+    }
+
+    /// `ReadLease`'s frame admission ends with the loaded origin's lifetime,
+    /// whether Stop or a lost trust ends it, refuses once a revocation
+    /// latched the custody, and refuses in low power.
+    #[cfg(feature = "service-lighting-v1")]
+    #[test]
+    fn a_frame_admission_ends_with_the_origin_lifetime() {
+        use crate::origin_lifetime::Lifetime;
+        const PROOF: ReadAdmission = ReadAdmission {
+            lifecycle: 0,
+            generation: [7; 32],
+        };
+        let admitted = ReadAdmission {
+            lifecycle: 4,
+            ..PROOF
+        };
+        let live = AtomicU8::new(0);
+        let lifetime = Lifetime::default();
+        assert_eq!(
+            authorize_original_frame(&live, &lifetime, Some(4), PROOF),
+            Some(admitted)
+        );
+        assert_eq!(
+            authorize_original_frame(&live, &lifetime, None, PROOF),
+            None
+        );
+        let latched = AtomicU8::new(1);
+        assert_eq!(
+            authorize_original_frame(&latched, &lifetime, Some(4), PROOF),
+            None
+        );
+        for end in [Lifetime::stop as fn(&Lifetime), Lifetime::lose_trust] {
+            let lifetime = Lifetime::default();
+            end(&lifetime);
+            assert_eq!(
+                authorize_original_frame(&live, &lifetime, Some(4), PROOF),
+                None
+            );
+        }
+        assert_eq!(live.load(Ordering::Acquire), 0, "nothing latched");
     }
 }

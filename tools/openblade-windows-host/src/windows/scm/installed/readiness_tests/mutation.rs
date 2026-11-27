@@ -815,22 +815,27 @@ impl ReadCustody for Custody {
             generation: [self.generation.load(Ordering::Acquire); 32],
         })
     }
-    // As `ReadLease::authorize_frame`: the latched authority and the
-    // origin's lifetime, with no origin verification.
+    // `ReadLease::authorize_frame` over the authority latch and the origin's
+    // lifetime, with no origin verification; without an origin, the live flag.
     #[cfg(feature = "service-lighting-v1")]
     fn authorize_frame(&self) -> Option<ReadAdmission> {
-        if let Some(origin) = &*self.origin_for_fan.lock().unwrap() {
-            if self.authority_for_fan.load(Ordering::Acquire) != 0 {
-                return None;
-            }
-            origin.verify().ok()?;
-        } else if !self.live.load(Ordering::Acquire) {
-            return None;
-        }
-        Some(ReadAdmission {
-            lifecycle: self.lifecycle.active()?,
+        let proof = ReadAdmission {
+            lifecycle: 0,
             generation: [self.generation.load(Ordering::Acquire); 32],
-        })
+        };
+        let lifecycle = self.lifecycle.active();
+        match &*self.origin_for_fan.lock().unwrap() {
+            Some(origin) => crate::installed::readiness::mailbox_read::authorize_original_frame(
+                &self.authority_for_fan,
+                origin,
+                lifecycle,
+                proof,
+            ),
+            None => self.live.load(Ordering::Acquire).then_some(ReadAdmission {
+                lifecycle: lifecycle?,
+                ..proof
+            }),
+        }
     }
     fn activate_mutation(
         &self,
@@ -949,16 +954,12 @@ impl Fresh for Custody {
         }
         ReadCustody::authorize(self)
     }
-    // As `WindowsGuard::authorize_frame`: `fresh_refuse` stands for a
-    // refused session or power supplier, and the custody takes its frame
-    // admission, not the full one; the controller inventory and the origin
-    // verification come from the origin tick.
+    // `WindowsGuard::authorize_frame` with no epoch pin (`PinnedFresh` adds
+    // it): the controller inventory and the origin verification come from
+    // the origin tick.
     #[cfg(feature = "service-lighting-v1")]
     fn authorize_frame(&self) -> Option<ReadAdmission> {
-        if self.fresh_refuse.load(Ordering::Acquire) || self.fatal_health.load(Ordering::Acquire) {
-            return None;
-        }
-        ReadCustody::authorize_frame(self)
+        self.admit_frame(|| true)
     }
     // `authorize` without the lifecycle epoch: `fresh_refuse` stands for
     // every refused Windows supplier, a competing controller included, and
@@ -1041,9 +1042,36 @@ impl PinnedFresh {
         self.custody.lifecycle.active() == Some(self.epoch)
     }
 }
+#[cfg(feature = "service-lighting-v1")]
+impl Custody {
+    /// `WindowsGuard::authorize_frame`'s shared admission
+    /// (`thermal_native::admit_frame`) at `epoch`: `fresh_refuse` stands for a
+    /// refused console session, `windows_on_battery` for the AC line status,
+    /// and `fatal_health` for the guard's retained failure.
+    fn admit_frame(&self, epoch: impl Fn() -> bool) -> Option<ReadAdmission> {
+        if self.fatal_health.load(Ordering::Acquire) {
+            return None;
+        }
+        crate::installed::readiness::thermal_native::admit_frame(
+            epoch,
+            || !self.fresh_refuse.load(Ordering::Acquire),
+            || Fresh::on_battery(self).is_some(),
+            self,
+        )
+    }
+}
 impl Fresh for PinnedFresh {
     fn on_battery(&self) -> Option<bool> {
         self.custody.on_battery()
+    }
+    // A pinned capture samples the power kind as `WindowsGuard` does; only
+    // its read admission pins the epoch.
+    fn power_generation(&self) -> Option<u64> {
+        Fresh::power_generation(self.custody.as_ref())
+    }
+    #[cfg(feature = "service-profile-triggers-v1")]
+    fn authorize_storage(&self) -> bool {
+        Fresh::authorize_storage(self.custody.as_ref())
     }
     fn authentication(&self) -> Option<(u32, i32)> {
         Fresh::authentication(self.custody.as_ref())
@@ -1061,8 +1089,7 @@ impl Fresh for PinnedFresh {
     }
     #[cfg(feature = "service-lighting-v1")]
     fn authorize_frame(&self) -> Option<ReadAdmission> {
-        self.current()
-            .then(|| Fresh::authorize_frame(self.custody.as_ref()))?
+        self.custody.admit_frame(|| self.current())
     }
     fn capture_settle(
         &self,
