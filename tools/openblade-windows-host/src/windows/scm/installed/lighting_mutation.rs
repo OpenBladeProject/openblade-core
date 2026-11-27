@@ -1,6 +1,8 @@
-//! Managed `SetLightingOverrideAsync` on exact RZ09-0581, slice L1: the
-//! keyboard Off and the logo modes through the reviewed brightness and logo
-//! commands (`LightingJob`), under the operation gate.
+//! Managed `SetLightingOverrideAsync` on exact RZ09-0581, slices L1 and L2:
+//! the keyboard Off and the logo modes through the reviewed brightness and
+//! logo commands, and the Static effect through the Service-owned matrix
+//! renderer (`LightingJob`), under the operation gate, with the renderer's
+//! keepalive on the origin tick (`Runtime::maintain_lighting`).
 //!
 //! The order is managed `ExecuteScopedMutationAsync`'s (ServiceControlRuntime.cs
 //! 14868-15060) for the Lighting subsystem:
@@ -34,11 +36,12 @@
 //!   it with no power class
 //!   (`a_low_power_temporary_override_needs_windows_battery_divergence`).
 //!
-//! Interim divergences that slice L2 removes, each named by a test:
+//! Interim divergences, each named by a test:
 //!
-//! - Capabilities admit the keyboard Off only, with every logo mode; a lit
+//! - Capabilities admit Off and Static, with every logo mode; an animated
 //!   effect is stored and then refused as managed refuses an effect its
-//!   capability table lacks (`lit_effects_are_refused_until_l2_interim_divergence`).
+//!   capability table lacks, until slice C
+//!   (`animated_effects_are_refused_until_slice_c_divergence`).
 //! - Clearing the override on a classified adapter stores the clear, applies
 //!   no profile lighting and replies Stored, `CLEARED_UNAPPLIED`: managed
 //!   applies the profile's lighting there (ControlCoordinator.cs
@@ -49,6 +52,9 @@
 //!   the low-power gate is set is not applied after standby. Its reply is
 //!   managed's committed message, Stored, instead of managed's promise to
 //!   apply it (`the_low_power_store_promises_no_resume_apply_interim_divergence`).
+//! - At the low-power boundary the renderer ends without a write; managed
+//!   turns the keyboard Off and restores it after the resume
+//!   (`low_power_retires_the_renderer_without_a_write`).
 //!
 //! Power is classified inside the job, under the gate and the job's own
 //! admission, from Windows and the admitted 07/8C reading
@@ -58,30 +64,34 @@
 //! for Lighting, from native's own fresh evidence, and the stricter
 //! HyperBoost observation (`admits_unclassified`).
 //!
-//! An uncertain submission latches this process: the next request runs a
-//! read-only resolution instead of any write and replies managed's pending
-//! refusal, and a complete read clears the latch. Nothing is replayed.
+//! An uncertain submission, or a request dropped while its job may still
+//! run, latches this process (`Claim`) and ends the renderer: the next
+//! request runs a read-only resolution instead of any write and replies
+//! managed's pending refusal, and a complete read clears the latch. Nothing
+//! is replayed.
 use super::{
     Caller, Fresh, Logon, MailboxSource, Outcome, Runtime, Storage, UNCLASSIFIED_BLOCKED,
     is_fatal_admission, remember_failure, verify_retained_failure,
 };
 use crate::{
     discovery::performance::{
-        LightingConfirmation, LightingJob, LightingOutcome, LightingTarget, ObservedPerformance,
-        ReadAdmission, lighting_approved,
+        LightingConfirmation, LightingJob, LightingOutcome, LightingTarget, MatrixState,
+        ObservedPerformance, ReadAdmission, RenderTarget, Renderer, Rgb, lighting_approved,
         mutation::{Permit, Settlement},
     },
     service_status::LightingOverride,
 };
 use openblade_domain::{
     automation::UNCLASSIFIED_EXTERNAL,
-    profile_set::{LightingEffect, LightingSettings},
+    profile_set::{LightingEffect, LightingParameters, LightingSettings},
     thermal_mutation::{Destination, Progress},
 };
-use openblade_protocol::lighting::LogoMode;
+use openblade_protocol::lighting::{LogoMode, percent_to_raw};
 use std::{
+    cell::{Cell, RefCell},
     io,
     sync::{Arc, Mutex, atomic::AtomicBool},
+    time::Duration,
 };
 use tokio::time::Instant;
 
@@ -94,7 +104,7 @@ const COMMITTED: &str = "Lighting override intent was stored.";
 #[cfg(feature = "service-profile-triggers-v1")]
 const CLEARED: &str = "Lighting override was cleared.";
 /// A clear on a classified adapter, which applies no profile lighting until
-/// slice L2.
+/// profile reconciliation runs lighting.
 const CLEARED_UNAPPLIED: &str =
     "Lighting override was cleared. The profile's lighting was not applied.";
 /// Managed's clear on an unclassified adapter (ServiceControlRuntime.cs 15012).
@@ -121,6 +131,11 @@ const ADMISSION: &str = "Current lighting write admission is unavailable.";
 const NOT_SUBMITTED: &str =
     "Current lighting write admission is unavailable; no lighting setter was submitted.";
 const UNPACED: &str = "The remaining request time cannot cover this recipe at the measured device pace; no lighting setter was submitted.";
+/// Managed `AppliedWithoutReadback("Lighting")`.
+const RENDERED: &str =
+    "Lighting command completed, but this laptop does not report the resulting state.";
+const MATRIX_UNAVAILABLE: &str =
+    "The keyboard matrix collection is unavailable; no lighting setter was submitted.";
 
 /// What a lighting request leaves for status: whether intent or a reading
 /// changed, and what the job leaves the confirmed lighting members.
@@ -137,6 +152,197 @@ impl Lit {
             confirmation: LightingConfirmation::default(),
         }
     }
+}
+
+/// Managed `Pid02E0LightingTiming.IdleKeepaliveInterval`: an owned Static
+/// renderer's frame cadence.
+pub(in super::super) const KEEPALIVE_INTERVAL: Duration = Duration::from_secs(5);
+/// The bound on one keepalive frame's job, well inside its interval.
+const KEEPALIVE_BUDGET: Duration = Duration::from_secs(2);
+
+/// What lighting this process holds between requests (`Runtime::lighting`).
+/// Requests and the keepalive change it only under the operation gate. Stop
+/// ends the renderer without it (`Runtime::retire_renderer`): the Service is
+/// stopping, and the mutation worker's stop cancels a keepalive still
+/// running.
+#[derive(Default)]
+pub(super) struct Session {
+    /// A lighting setter or matrix report may have been submitted
+    /// unconfirmed: the next request resolves it read-only. While it is set
+    /// nothing owns the renderer (`latch`), so no keepalive frame goes.
+    doubt: Cell<bool>,
+    /// The 00/86 layout byte this session read: managed reads it once per
+    /// port session, before the first lit write.
+    layout: Cell<Option<u8>>,
+    /// The Static renderer this process owns, which the origin tick keeps
+    /// alive (`Runtime::maintain_lighting`).
+    owner: RefCell<Option<Owner>>,
+    /// A test withholds the semantic admission from this session's
+    /// requests (`approved`).
+    #[cfg(test)]
+    withheld: Cell<bool>,
+}
+
+/// An owned renderer, the request whose admission its keepalive frames
+/// take, and when the next frame is due.
+struct Owner {
+    renderer: Renderer,
+    sid: String,
+    session: u32,
+    due: Instant,
+    /// The low-power generation it was drawn under (`Runtime::lighting_boundary`).
+    boundary: Option<u64>,
+}
+
+impl Session {
+    /// The semantic admission a request's target needs
+    /// (`lighting_approved`), which only a test can withhold.
+    fn approved(&self) -> bool {
+        #[cfg(test)]
+        if self.withheld.get() {
+            return false;
+        }
+        lighting_approved()
+    }
+
+    fn renderer(&self) -> Option<Renderer> {
+        self.owner.borrow().as_ref().map(|owner| owner.renderer)
+    }
+
+    /// Ends the renderer without a write: no further keepalive frame is
+    /// sent, and the next Static request starts a new one.
+    fn retire(&self) {
+        self.owner.replace(None);
+    }
+
+    fn latched(&self) -> bool {
+        self.doubt.get()
+    }
+
+    /// Latches the doubt and ends the renderer: nothing owns what an
+    /// unconfirmed submission left, so no keepalive draws over it, and the
+    /// request after the resolution draws anew.
+    fn latch(&self) {
+        self.doubt.set(true);
+        self.retire();
+    }
+
+    /// A complete read-only resolution clears the latch.
+    fn resolve(&self) {
+        self.doubt.set(false);
+    }
+
+    /// Holds the session for one job that may submit (`Claim`).
+    fn claim(&self) -> Claim<'_> {
+        Claim {
+            session: self,
+            settled: false,
+        }
+    }
+
+    /// The owned renderer's next keepalive instant.
+    fn defer(&self, due: Instant) {
+        if let Some(owner) = self.owner.borrow_mut().as_mut() {
+            owner.due = due;
+        }
+    }
+
+    /// The renderer a render job left (`LightingJob::matrix`): a new one
+    /// owned by this request from now, the same one kept for this request's
+    /// user, or none.
+    fn render(
+        &self,
+        job: &LightingJob,
+        sid: &str,
+        session: u32,
+        boundary: Option<u64>,
+        now: Instant,
+    ) {
+        if let Some(layout) = job.layout() {
+            self.layout.set(Some(layout));
+        }
+        match job.matrix() {
+            MatrixState::Owned(renderer) => {
+                self.owner.replace(Some(Owner {
+                    renderer,
+                    sid: sid.into(),
+                    session,
+                    due: now + KEEPALIVE_INTERVAL,
+                    boundary,
+                }));
+            }
+            MatrixState::Lost => self.retire(),
+            MatrixState::Kept => {
+                if job.outcome() == LightingOutcome::Rendered
+                    && let Some(owner) = self.owner.borrow_mut().as_mut()
+                {
+                    owner.sid = sid.into();
+                    owner.session = session;
+                }
+            }
+        }
+    }
+}
+
+/// One lighting job's hold on the session, from before it can submit until
+/// its outcome is read (`settle`). The job runs on the worker, so a request
+/// or tick dropped meanwhile leaves it running: a claim dropped unsettled
+/// latches the doubt, since nothing will confirm what the job left.
+#[must_use]
+struct Claim<'a> {
+    session: &'a Session,
+    settled: bool,
+}
+
+impl Claim<'_> {
+    /// The job's outcome was read: one that may have submitted unconfirmed
+    /// latches the doubt.
+    fn settle(mut self, in_doubt: bool) {
+        self.settled = true;
+        if in_doubt {
+            self.session.latch();
+        }
+    }
+}
+
+impl Drop for Claim<'_> {
+    fn drop(&mut self) {
+        if !self.settled {
+            self.session.latch();
+        }
+    }
+}
+
+/// Whether an Off job may have changed the keyboard the renderer drew, so
+/// the renderer ends as managed's Off retires it. Only a job that stopped
+/// before its first setter, or restored the baseline it confirmed, keeps it.
+fn retires_renderer(outcome: LightingOutcome) -> bool {
+    !matches!(
+        outcome,
+        LightingOutcome::Refused
+            | LightingOutcome::Pending
+            | LightingOutcome::Unclassified
+            | LightingOutcome::NotAdmitted
+            | LightingOutcome::Stored
+            | LightingOutcome::Unavailable
+            | LightingOutcome::Unread(_)
+            | LightingOutcome::Malformed
+            | LightingOutcome::Unpaced
+            | LightingOutcome::Mismatched {
+                restored: Some(true),
+                ..
+            }
+    )
+}
+
+/// The first keepalive instant on `due`'s 5 s grid after `now` (managed
+/// `AdvanceFrameDeadline`): a late frame skips the instants it missed.
+fn advance(due: Instant, now: Instant) -> Instant {
+    let mut next = due;
+    while next <= now {
+        next += KEEPALIVE_INTERVAL;
+    }
+    next
 }
 
 /// What the job's power admission and store decided (`store_lighting`).
@@ -219,25 +425,25 @@ impl LightingPermit {
             }
         }
     }
-    /// The reply, and whether a setter may be in doubt.
-    fn finish(&self) -> (Lit, bool) {
+    /// The reply.
+    fn finish(&self) -> Lit {
         let admission = self.admission.lock().ok().and_then(|mut a| a.take());
         let power = match admission {
             Some(Admission::Stored(power)) => power,
-            Some(Admission::Refused(outcome)) => return (Lit::refused(outcome), false),
+            Some(Admission::Refused(outcome)) => return Lit::refused(outcome),
             None => {
                 let refusal = match self.job.outcome() {
                     LightingOutcome::Unclassified => UNCLASSIFIED_BLOCKED,
                     _ => ADMISSION,
                 };
-                return (Lit::refused(Outcome::blocked(refusal)), false);
+                return Lit::refused(Outcome::blocked(refusal));
             }
         };
         if self.value.is_none() {
             // A clear is a store-only job, which wrote nothing.
-            return (stored_clear(power), false);
+            return stored_clear(power);
         }
-        let (outcome, in_doubt) = reply(&self.job);
+        let outcome = reply(&self.job);
         let outcome = if outcome.status == APPLIED {
             outcome
         } else {
@@ -246,12 +452,11 @@ impl LightingPermit {
                 message: format!("{COMMITTED} Hardware result: {}", outcome.message),
             }
         };
-        let lit = Lit {
+        Lit {
             outcome,
             publish: true,
             confirmation: self.job.confirmation(),
-        };
-        (lit, in_doubt)
+        }
     }
 }
 impl Permit for LightingPermit {
@@ -298,7 +503,7 @@ impl Permit for LightingPermit {
 
 /// A stored clear's reply. On an unclassified adapter it is managed's:
 /// profile application waits for adapter classification. On a classified
-/// one managed applies the profile's lighting, which slice L1 does not.
+/// one managed applies the profile's lighting, which native does not yet.
 fn stored_clear(power: i32) -> Lit {
     let message = if power == UNCLASSIFIED_EXTERNAL {
         CLEARED_UNCLASSIFIED
@@ -323,16 +528,30 @@ fn rejected(error: &io::Error) -> Outcome {
     }
 }
 
-/// The L1 target of `settings`, `None` when the verified capability table
-/// does not admit it: the keyboard Off (well-formedness makes it black at
-/// zero brightness) with an optional logo mode, under the pinned semantic
-/// admission (`lighting_approved`).
-fn target(settings: &LightingSettings) -> Option<LightingTarget> {
-    if !lighting_approved()
-        || settings.effect != LightingEffect::OFF
-        || settings.independent_controls.is_some()
-        || settings.controls_keyboard_effect
-    {
+/// What the verified capability table admits of a request: the keyboard
+/// Off, or the Static effect, which the matrix renderer draws.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Request {
+    /// The keyboard Off (well-formedness makes it black at zero brightness).
+    Off(LightingTarget),
+    /// The Static effect at this raw brightness, logo mode and color.
+    Static {
+        brightness: u8,
+        logo: Option<LogoMode>,
+        color: Rgb,
+    },
+}
+
+/// The request `settings` makes, `None` when the verified capability table
+/// does not admit it or the pinned semantic admission is not `approved`
+/// (`lighting_approved`). The managed table admits Off and Static with every
+/// logo mode; the animated effects wait for slice C. A Static request
+/// carries its color in its parameters (managed `CreateEffect`), which
+/// well-formedness makes the settings color; a legacy request without
+/// parameters is refused before any write, where managed refuses it inside
+/// its recipe.
+fn target(settings: &LightingSettings, approved: bool) -> Option<Request> {
+    if !approved || settings.independent_controls.is_some() || settings.controls_keyboard_effect {
         return None;
     }
     let logo = match settings.logo_mode.map(|mode| mode.0) {
@@ -342,10 +561,24 @@ fn target(settings: &LightingSettings) -> Option<LightingTarget> {
         Some(2) => Some(LogoMode::Off),
         Some(_) => return None,
     };
-    Some(LightingTarget {
-        brightness: 0,
-        logo,
-    })
+    match (settings.effect, &settings.parameters) {
+        (LightingEffect::OFF, _) => Some(Request::Off(LightingTarget {
+            brightness: 0,
+            logo,
+        })),
+        (LightingEffect::STATIC, Some(LightingParameters::Static { color })) => {
+            Some(Request::Static {
+                brightness: percent_to_raw(settings.brightness).filter(|&raw| raw != 0)?,
+                logo,
+                color: Rgb {
+                    red: color.red,
+                    green: color.green,
+                    blue: color.blue,
+                },
+            })
+        }
+        _ => None,
+    }
 }
 
 /// Managed `LogoLightingMode`'s wire value.
@@ -359,78 +592,64 @@ pub(in super::super) fn logo_wire(mode: LogoMode) -> i32 {
 
 /// Managed `ControlCoordinator.ApplyScopedAsync` and
 /// `ProductionLightingPort.SetLightingAsync` results for a job that stored
-/// its intent, as managed words them, and whether a setter may be in doubt.
-/// Managed's transport descriptions (`NativeFailureDescription.Describe`)
-/// carry diagnostic detail native cannot read, so native names the stop.
-/// A final read that could not confirm the write is managed's indeterminate
-/// write with confirmation unavailable, which managed holds as a pending
-/// confirmation; native latches it the same way.
-fn reply(job: &LightingJob) -> (Outcome, bool) {
+/// its intent, as managed words them. Whether a setter may be in doubt is
+/// the outcome's own (`LightingOutcome::in_doubt`). Managed's transport
+/// descriptions (`NativeFailureDescription.Describe`) carry diagnostic
+/// detail native cannot read, so native names the stop. A final read that
+/// could not confirm the write is managed's indeterminate write with
+/// confirmation unavailable, which managed holds as a pending confirmation;
+/// native latches it the same way.
+fn reply(job: &LightingJob) -> Outcome {
     let failed = |message: String| Outcome {
         status: FAILED,
         message,
     };
+    let applied = |message: &str| Outcome {
+        status: APPLIED,
+        message: message.into(),
+    };
     let indeterminate = |reason: &str| failed(format!("Lighting write is indeterminate: {reason}"));
     let not_applied = |reason: &str| failed(format!("Lighting write was not applied: {reason}"));
     match job.outcome() {
-        LightingOutcome::Observed => (
-            Outcome {
-                status: APPLIED,
-                message: ALREADY.into(),
-            },
-            false,
-        ),
+        LightingOutcome::Observed => applied(ALREADY),
         LightingOutcome::Written => {
             let confirmed = job
                 .target()
                 .zip(job.final_reading())
                 .is_some_and(|(target, reading)| target.matches(reading));
             if confirmed {
-                (
-                    Outcome {
-                        status: APPLIED,
-                        message: CONFIRMED.into(),
-                    },
-                    false,
-                )
+                applied(CONFIRMED)
             } else {
-                (failed(MISMATCH.into()), false)
+                failed(MISMATCH.into())
             }
         }
-        LightingOutcome::Unconfirmed(reason) => (indeterminate(reason), true),
+        LightingOutcome::Unconfirmed(reason) => indeterminate(reason),
         LightingOutcome::Mismatched {
             failure,
             restored: Some(true),
-        } => (indeterminate(failure), false),
-        LightingOutcome::Mismatched {
-            restored: Some(false),
-            ..
-        } => (indeterminate(ROLLBACK), false),
-        // A restore setter that may have been submitted unconfirmed.
-        LightingOutcome::Mismatched { restored: None, .. } => (indeterminate(ROLLBACK), true),
-        LightingOutcome::InDoubt(reason) => (indeterminate(reason), true),
-        LightingOutcome::Interrupted => (indeterminate(PARTIAL), false),
-        LightingOutcome::Unread(reason) => (
-            failed(format!(
-                "Lighting could not be read before writing: {reason}"
-            )),
-            false,
+        } => indeterminate(failure),
+        LightingOutcome::Mismatched { .. } => indeterminate(ROLLBACK),
+        LightingOutcome::InDoubt(reason) => indeterminate(reason),
+        LightingOutcome::Interrupted => indeterminate(PARTIAL),
+        LightingOutcome::Unread(reason) => failed(format!(
+            "Lighting could not be read before writing: {reason}"
+        )),
+        LightingOutcome::Malformed => failed(
+            "Lighting could not be read before writing: Logo lighting response was malformed or unsupported."
+                .into(),
         ),
-        LightingOutcome::Malformed => (
-            failed(
-                "Lighting could not be read before writing: Logo lighting response was malformed or unsupported."
-                    .into(),
-            ),
-            false,
-        ),
-        LightingOutcome::Unpaced => (not_applied(UNPACED), false),
+        LightingOutcome::Unpaced => not_applied(UNPACED),
+        // Managed `AppliedWithoutReadback`: the lit keyboard reports no
+        // state, so the setter readbacks are the completion evidence.
+        LightingOutcome::Rendered => applied(RENDERED),
+        LightingOutcome::Unavailable => not_applied(MATRIX_UNAVAILABLE),
         // A store-only job for a value outside the capability table; a
         // clear gets its own reply (`stored_clear`).
-        LightingOutcome::Stored => (Outcome::blocked(UNSUPPORTED), false),
+        LightingOutcome::Stored => Outcome::blocked(UNSUPPORTED),
         LightingOutcome::Refused
         | LightingOutcome::Pending
         | LightingOutcome::Unclassified
-        | LightingOutcome::NotAdmitted => (not_applied(NOT_SUBMITTED), false),
+        | LightingOutcome::NotAdmitted => not_applied(NOT_SUBMITTED),
     }
 }
 
@@ -478,7 +697,7 @@ impl Runtime {
         if self.in_low_power() {
             return store_deferred(&storage, fresh.as_ref(), value.as_ref());
         }
-        if self.lighting_doubt.get() {
+        if self.lighting.latched() {
             return self
                 .resolve_lighting_doubt(&reader, storage, fresh, deadline)
                 .await;
@@ -494,16 +713,34 @@ impl Runtime {
             Err(error) if is_fatal_admission(&error) => return Err(error),
             Err(error) => return Ok(Lit::refused(unavailable(&error))),
         }
-        let target = value.as_ref().and_then(|value| target(&value.settings));
-        let job = match target {
-            Some(target) => LightingJob::write(target),
+        let request = value
+            .as_ref()
+            .and_then(|value| target(&value.settings, self.lighting.approved()));
+        // A renderer drawn before a low-power boundary is not retained: the
+        // keyboard may have reset under it.
+        if self.crossed_low_power() {
+            self.retire_renderer();
+        }
+        let boundary = self.lighting_boundary();
+        let lighting = &self.lighting;
+        let job = match request {
+            Some(Request::Off(target)) => LightingJob::write(target),
+            Some(Request::Static {
+                brightness,
+                logo,
+                color,
+            }) => LightingJob::render(RenderTarget {
+                brightness,
+                logo,
+                color,
+                layout: lighting.layout.get(),
+                previous: lighting.renderer(),
+            }),
             None => LightingJob::store(),
         };
-        // Doubt holds from before a write job can submit until its outcome
-        // is read, so a request dropped meanwhile leaves the latch set.
-        if target.is_some() {
-            self.lighting_doubt.set(true);
-        }
+        // A write job holds the session until its outcome is read, so a
+        // request dropped meanwhile latches the doubt.
+        let claim = request.is_some().then(|| lighting.claim());
         let permit = Arc::new(LightingPermit {
             fresh,
             storage,
@@ -521,9 +758,16 @@ impl Runtime {
         {
             return Err(error);
         }
-        let (lit, in_doubt) = permit.finish();
-        if target.is_some() {
-            self.lighting_doubt.set(in_doubt);
+        let lit = permit.finish();
+        match request {
+            Some(Request::Off(_)) if retires_renderer(permit.job.outcome()) => lighting.retire(),
+            Some(Request::Static { .. }) => {
+                lighting.render(&permit.job, &sid, caller.session, boundary, Instant::now())
+            }
+            _ => {}
+        }
+        if let Some(claim) = claim {
+            claim.settle(permit.job.outcome().in_doubt());
         }
         Ok(lit)
     }
@@ -563,7 +807,7 @@ impl Runtime {
             LightingOutcome::Observed | LightingOutcome::Malformed
         );
         if read {
-            self.lighting_doubt.set(false);
+            self.lighting.resolve();
         }
         let confirmation = permit.job.confirmation();
         Ok(Lit {
@@ -571,6 +815,161 @@ impl Runtime {
             publish: confirmation != LightingConfirmation::default(),
             confirmation,
         })
+    }
+
+    /// The owned renderer's keepalive on the origin tick, after the power
+    /// check and before the keyboard Driver-mode step: one frame when it is
+    /// due at `now`, managed `RunStreamAsync`'s idle frame every 5 s. The
+    /// grid starts when the request that drew the renderer completed, and a
+    /// late frame skips the instants it missed (`advance`). A frame goes at
+    /// the first tick at or after its instant that finds the operation gate
+    /// free, so it is late by up to one 500 ms tick, plus any request
+    /// holding the gate; the frame's own job then takes its time. Each frame
+    /// takes the owning request's fresh write admission. A frame refused
+    /// before submission keeps the renderer and waits for the next instant;
+    /// one that may have been submitted unconfirmed latches the doubt, which
+    /// ends the renderer. The next instant follows the tick's instant plus
+    /// the frame's own time, as managed advances from the instant observed
+    /// after the write. A renderer that crossed a low-power boundary ends
+    /// without a write (`crossed_low_power`). Only fatal admission evidence
+    /// is an error.
+    pub(in super::super) async fn maintain_lighting(
+        &self,
+        mailbox: &MailboxSource,
+        now: Instant,
+    ) -> io::Result<()> {
+        let started = Instant::now();
+        let Ok(_serial) = self.gate.try_lock() else {
+            return Ok(());
+        };
+        if self.crossed_low_power() {
+            self.retire_renderer();
+            return Ok(());
+        }
+        let lighting = &self.lighting;
+        let Some((renderer, sid, session, due)) = lighting
+            .owner
+            .borrow()
+            .as_ref()
+            .map(|owner| (owner.renderer, owner.sid.clone(), owner.session, owner.due))
+        else {
+            return Ok(());
+        };
+        if now < due {
+            return Ok(());
+        }
+        let MailboxSource::Reader(reader) = mailbox else {
+            return Ok(());
+        };
+        verify_retained_failure(&self.fatal)?;
+        // The tick's instant on its own clock, after what this step took.
+        let observed = || now + started.elapsed();
+        reader.custody().verify_integrity()?;
+        let (storage, fresh) = match self.capture(&sid, session, reader.custody()) {
+            Ok(captured) => captured,
+            Err(error) if is_fatal_admission(&error) => return Err(error),
+            Err(_) => {
+                lighting.defer(advance(due, observed()));
+                return Ok(());
+            }
+        };
+        fresh.verify_health()?;
+        let claim = lighting.claim();
+        let permit = Arc::new(LightingPermit {
+            fresh,
+            storage,
+            value: None,
+            #[cfg(feature = "service-hyperboost-v1")]
+            hyperboost: None,
+            job: LightingJob::keepalive(renderer),
+            admission: Mutex::new(None),
+            fatal: self.fatal.clone(),
+        });
+        let result = reader
+            .mutate(permit.clone(), Instant::now() + KEEPALIVE_BUDGET)
+            .await;
+        verify_retained_failure(&self.fatal)?;
+        if let Err(error) = result
+            && is_fatal_admission(&error)
+        {
+            return Err(error);
+        }
+        let in_doubt = permit.job.outcome().in_doubt();
+        claim.settle(in_doubt);
+        if !in_doubt {
+            lighting.defer(advance(due, observed()));
+        }
+        Ok(())
+    }
+
+    /// Ends the owned renderer without a write, at Stop (managed's port
+    /// disposal stops its stream) and after a low-power boundary, and
+    /// forgets the session's layout byte, which the next session reads
+    /// again.
+    pub(in super::super) fn retire_renderer(&self) {
+        self.lighting.retire();
+        self.lighting.layout.set(None);
+    }
+
+    /// Whether the owned renderer crossed a low-power boundary: the gate
+    /// reads set now, or a suspend or resume arrived since it was drawn. The
+    /// generation catches a boundary that came and went while requests held
+    /// the gate from every tick, so the renderer ends at the first tick that
+    /// finds the gate free, or at the next request, whichever comes first.
+    fn crossed_low_power(&self) -> bool {
+        let Some(boundary) = self
+            .lighting
+            .owner
+            .borrow()
+            .as_ref()
+            .map(|owner| owner.boundary)
+        else {
+            return false;
+        };
+        boundary != self.lighting_boundary() || self.lighting_low_power()
+    }
+
+    /// The low-power generation a renderer is drawn under: every accepted
+    /// suspend and resume advances it. `None` without a lifecycle reading,
+    /// in a composition that reads none or while it is unreadable, which
+    /// `lighting_low_power` reads as low power.
+    fn lighting_boundary(&self) -> Option<u64> {
+        #[cfg(any(
+            feature = "service-profile-triggers-v1",
+            feature = "service-keyboard-driver-mode-v1"
+        ))]
+        if let Some(read) = self.low_power.get() {
+            return read().map(|transition| transition.generation);
+        }
+        None
+    }
+
+    /// Whether the low-power gate reads set, unreadable or exhausted, in the
+    /// compositions that read it. Without either, each frame's own write
+    /// admission is the only gate.
+    fn lighting_low_power(&self) -> bool {
+        #[cfg(feature = "service-profile-triggers-v1")]
+        if self.in_low_power() {
+            return true;
+        }
+        #[cfg(feature = "service-keyboard-driver-mode-v1")]
+        if self.driver_mode_low_power() {
+            return true;
+        }
+        false
+    }
+}
+
+#[cfg(test)]
+impl Runtime {
+    /// When the owned renderer's next keepalive frame is due.
+    pub(in super::super) fn keepalive_due_for_tests(&self) -> Option<Instant> {
+        self.lighting.owner.borrow().as_ref().map(|owner| owner.due)
+    }
+
+    /// Withholds the semantic admission from later lighting requests.
+    pub(in super::super) fn withhold_lighting_approval_for_tests(&self) {
+        self.lighting.withheld.set(true);
     }
 }
 
@@ -588,7 +987,7 @@ fn unavailable(error: &io::Error) -> Outcome {
 /// otherwise refused as `LOW_POWER_TEMPORARY`: stricter than managed, which
 /// stores it with no power class (ServiceControlRuntime.cs 14903-14918). A
 /// persistent override and a clear carry no power class. Nothing applies the
-/// stored intent after standby in slice L1, so the reply is managed's
+/// stored intent after standby yet, so the reply is managed's
 /// committed message, Stored, without managed's promise.
 #[cfg(feature = "service-profile-triggers-v1")]
 fn store_deferred(
@@ -633,6 +1032,7 @@ fn store_deferred(
 mod tests {
     use super::*;
     use crate::discovery::performance::LightingReading;
+    use openblade_domain::profile_set::RgbColor;
 
     fn off(logo: Option<i32>) -> LightingSettings {
         let mut settings = LightingSettings::off();
@@ -641,30 +1041,121 @@ mod tests {
     }
 
     #[test]
-    fn l1_admits_the_keyboard_off_with_every_logo_mode_only() {
+    fn the_table_admits_off_and_static_with_every_logo_mode_only() {
         assert_eq!(
-            target(&off(None)),
-            Some(LightingTarget {
+            target(&off(None), true),
+            Some(Request::Off(LightingTarget {
                 brightness: 0,
                 logo: None
-            })
+            }))
         );
+        let lit = |logo: Option<i32>| {
+            let color = RgbColor {
+                red: 0x47,
+                green: 0xe1,
+                blue: 0x0c,
+            };
+            let mut settings = LightingSettings::of(
+                LightingEffect::STATIC,
+                color,
+                77,
+                LightingParameters::Static { color },
+            );
+            settings.logo_mode = logo.map(openblade_domain::profile_set::LogoLightingMode);
+            settings
+        };
         for (wire, mode) in [
             (0, LogoMode::Static),
             (1, LogoMode::Breathing),
             (2, LogoMode::Off),
         ] {
-            assert_eq!(target(&off(Some(wire))).unwrap().logo, Some(mode));
+            let Some(Request::Off(off)) = target(&off(Some(wire)), true) else {
+                panic!("an Off request");
+            };
+            assert_eq!(off.logo, Some(mode));
+            assert_eq!(
+                target(&lit(Some(wire)), true),
+                Some(Request::Static {
+                    brightness: 0xc5,
+                    logo: Some(mode),
+                    color: Rgb {
+                        red: 0x47,
+                        green: 0xe1,
+                        blue: 0x0c
+                    },
+                })
+            );
             assert_eq!(logo_wire(mode), wire);
         }
-        let mut lit = off(None);
-        lit.effect = LightingEffect(1);
-        assert_eq!(target(&lit), None);
+        // A legacy Static request without parameters, and the animated
+        // effects, which wait for slice C.
+        let mut legacy = lit(None);
+        legacy.parameters = None;
+        assert_eq!(target(&legacy, true), None);
+        let spectrum = LightingSettings::of(
+            LightingEffect::SPECTRUM,
+            RgbColor::default(),
+            50,
+            LightingParameters::SpectrumCycling,
+        );
+        assert_eq!(target(&spectrum, true), None);
         let mut keyboard = off(None);
         keyboard.controls_keyboard_effect = true;
-        assert_eq!(target(&keyboard), None);
+        assert_eq!(target(&keyboard, true), None);
+        // Without the pinned semantic admission the table admits nothing.
+        assert_eq!(target(&off(None), false), None);
+        assert_eq!(target(&lit(Some(0)), false), None);
     }
 
+    /// An Off job ends the renderer once it may have changed what the
+    /// renderer drew; one that stopped before a setter, or restored its
+    /// confirmed baseline, keeps it.
+    #[test]
+    fn an_off_job_retires_the_renderer_once_it_may_have_written() {
+        for outcome in [
+            LightingOutcome::Observed,
+            LightingOutcome::Written,
+            LightingOutcome::Interrupted,
+            LightingOutcome::InDoubt("x"),
+            LightingOutcome::Unconfirmed("x"),
+            LightingOutcome::Mismatched {
+                failure: "x",
+                restored: Some(false),
+            },
+            LightingOutcome::Mismatched {
+                failure: "x",
+                restored: None,
+            },
+        ] {
+            assert!(retires_renderer(outcome), "{outcome:?}");
+        }
+        for outcome in [
+            LightingOutcome::Refused,
+            LightingOutcome::Pending,
+            LightingOutcome::Unread("x"),
+            LightingOutcome::Malformed,
+            LightingOutcome::Unpaced,
+            LightingOutcome::Mismatched {
+                failure: "x",
+                restored: Some(true),
+            },
+        ] {
+            assert!(!retires_renderer(outcome), "{outcome:?}");
+        }
+    }
+
+    /// A late keepalive skips the 5 s instants it missed, on its first
+    /// frame's grid (managed `AdvanceFrameDeadline`).
+    #[test]
+    fn the_keepalive_grid_skips_missed_instants() {
+        let due = Instant::now();
+        assert_eq!(advance(due, due - Duration::from_millis(1)), due);
+        assert_eq!(advance(due, due), due + KEEPALIVE_INTERVAL);
+        assert_eq!(
+            advance(due, due + Duration::from_millis(10_500)),
+            due + KEEPALIVE_INTERVAL * 3
+        );
+    }
     /// Every job outcome's managed reply, and which ones latch.
     #[test]
     fn each_outcome_replies_as_managed_and_only_doubt_latches() {
@@ -742,12 +1233,19 @@ mod tests {
             (LightingOutcome::Stored, 2, UNSUPPORTED.into(), false),
             (LightingOutcome::Refused, FAILED, not_submitted.into(), false),
             (LightingOutcome::Pending, FAILED, not_submitted.into(), false),
+            (LightingOutcome::Rendered, APPLIED, RENDERED.into(), false),
+            (
+                LightingOutcome::Unavailable,
+                FAILED,
+                "Lighting write was not applied: The keyboard matrix collection is unavailable; no lighting setter was submitted.".into(),
+                false,
+            ),
         ];
         for (outcome, status, message, doubt) in cases {
             let job = LightingJob::recorded(None, outcome, None);
-            let (reply, latched) = reply(&job);
+            let reply = reply(&job);
             assert_eq!(
-                (reply.status, reply.message.as_str(), latched),
+                (reply.status, reply.message.as_str(), outcome.in_doubt()),
                 (status, message.as_str(), doubt),
                 "{outcome:?}"
             );
@@ -764,7 +1262,7 @@ mod tests {
         };
         let written = |reading: LightingReading| {
             let job = LightingJob::recorded(Some(target), LightingOutcome::Written, Some(reading));
-            reply(&job).0.message
+            reply(&job).message
         };
         assert_eq!(
             written(LightingReading {

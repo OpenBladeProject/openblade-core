@@ -36,9 +36,12 @@ mod lighting;
 #[cfg(feature = "service-lighting-v1")]
 mod lighting_admission;
 #[cfg(feature = "service-lighting-v1")]
+mod lighting_layout;
+#[cfg(feature = "service-lighting-v1")]
 #[allow(unused_imports)] // Shared with the standalone discovery binary.
 pub(crate) use lighting::{
     LightingConfirmation, LightingJob, LightingOutcome, LightingReading, LightingTarget,
+    MatrixState, RenderTarget, Renderer, Rgb,
 };
 #[cfg(feature = "service-lighting-v1")]
 #[allow(unused_imports)] // Shared with the standalone discovery binary.
@@ -190,6 +193,80 @@ trait Port {
     fn poll(&mut self) -> Option<io::Result<(usize, Frame)>>;
     fn cancel(&mut self);
     fn poll_retirement(&mut self) -> io::Result<bool>;
+
+    /// Opens and verifies the exact matrix collection beside this port's
+    /// control collection (`select_matrix`). Its lease shares this port's
+    /// lifetime: `cancel` cancels its operation and `poll_retirement`
+    /// retires it too.
+    #[cfg(feature = "service-lighting-v1")]
+    fn open_matrix(&mut self, _limit: Limit<'_>) -> io::Result<()> {
+        Err(blocked("this port has no matrix collection"))
+    }
+    /// One 03/0B feature report, after revalidating the matrix identity. A
+    /// report the driver may have received is in doubt, whether its call
+    /// failed or it was accepted; an accepted one completes through
+    /// `poll_matrix`.
+    #[cfg(feature = "service-lighting-v1")]
+    fn submit_matrix(
+        &mut self,
+        _report: &MatrixReport,
+        _limit: Limit<'_>,
+    ) -> Result<(), Unwritten> {
+        Err(Unwritten::Unsent)
+    }
+    #[cfg(feature = "service-lighting-v1")]
+    fn poll_matrix(&mut self) -> Option<io::Result<()>> {
+        None
+    }
+}
+
+/// One encoded 03/0B feature report.
+#[cfg(feature = "service-lighting-v1")]
+type MatrixReport = [u8; openblade_protocol::lighting::matrix::FEATURE_REPORT_LENGTH];
+
+/// How one matrix write ended, when it did not complete.
+#[cfg(feature = "service-lighting-v1")]
+#[derive(Debug)]
+enum Unwritten {
+    /// Nothing reached the driver.
+    Unsent,
+    /// The report may have been submitted. Managed classifies every native
+    /// matrix I/O failure as indeterminate (`ProductionLightingPort`'s
+    /// writer), the driver's own refusal of the call included.
+    InDoubt,
+}
+
+/// Managed `IsExactMatrixInterface`: the consumer collection whose feature
+/// report carries the 375-byte matrix buffer.
+#[cfg(feature = "service-lighting-v1")]
+const MATRIX_ROLE: super::Role = super::Role {
+    usage: (0x000c, 0x0001),
+    feature_bytes: openblade_protocol::lighting::matrix::FEATURE_REPORT_LENGTH as u16,
+};
+
+/// Managed `ProductionLightingFactory`'s matrix selection: the one exact
+/// collection with the matrix role among `source`'s candidates, of this
+/// module's model and device.
+#[cfg(feature = "service-lighting-v1")]
+pub(super) fn select_matrix<S: super::LeaseSource>(
+    source: &S,
+    cancelled: &AtomicBool,
+) -> io::Result<super::RoleIdentity> {
+    let identity = super::RoleIdentity::select(source, MATRIX_ROLE, cancelled)?;
+    if !reviewed_matrix(&identity) {
+        return Err(blocked("unsupported keyboard matrix collection"));
+    }
+    Ok(identity)
+}
+
+/// The exact matrix identity: this module's model and device.
+#[cfg(feature = "service-lighting-v1")]
+pub(super) fn reviewed_matrix(identity: &super::RoleIdentity) -> bool {
+    let descriptor = identity.descriptor();
+    identity.model() == MODEL
+        && descriptor.device == DEVICE
+        && descriptor.usage == MATRIX_ROLE.usage
+        && descriptor.feature_bytes == MATRIX_ROLE.feature_bytes
 }
 
 fn reviewed_selection(selection: &Selection) -> bool {

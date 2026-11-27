@@ -154,6 +154,39 @@ pub(crate) struct State {
     /// the stored one.
     #[cfg(feature = "service-lighting-v1")]
     pub(crate) brightness_script: std::collections::VecDeque<u8>,
+    /// The 00/86 reply payload, whose first byte is the layout; zeros when
+    /// unset, the ANSI canvas layout.
+    #[cfg(feature = "service-lighting-v1")]
+    pub(crate) layout_reply: Option<[u8; 3]>,
+    /// The 03/0A acknowledgement payload in place of its echo.
+    #[cfg(feature = "service-lighting-v1")]
+    pub(crate) transition_ack: Option<[u8; 2]>,
+    /// Every matrix report submitted, with how many mailbox reports had been
+    /// sent before it.
+    #[cfg(feature = "service-lighting-v1")]
+    pub(crate) matrix_frames: Vec<(usize, MatrixReport)>,
+    /// When each matrix report was submitted, on the test clock.
+    #[cfg(feature = "service-lighting-v1")]
+    pub(crate) matrix_at: Vec<Instant>,
+    /// How many matrix collections were opened.
+    #[cfg(feature = "service-lighting-v1")]
+    pub(crate) matrix_opens: usize,
+    /// The matrix collection does not open.
+    #[cfg(feature = "service-lighting-v1")]
+    pub(crate) matrix_open_fails: bool,
+    /// That matrix report (1-based) is refused before submission.
+    #[cfg(feature = "service-lighting-v1")]
+    pub(crate) matrix_refuse: Option<usize>,
+    /// That matrix report (1-based) is submitted and its completion fails.
+    #[cfg(feature = "service-lighting-v1")]
+    pub(crate) matrix_fail: Option<usize>,
+    /// That matrix report (1-based) reaches the driver, which refuses the
+    /// call: it may have been received, and nothing completes.
+    #[cfg(feature = "service-lighting-v1")]
+    pub(crate) matrix_reject: Option<usize>,
+    /// No submitted matrix report completes.
+    #[cfg(feature = "service-lighting-v1")]
+    pub(crate) matrix_mute: bool,
 }
 /// When the test sent the request a job serves, on the test's clock. They sit
 /// beside the state, not in it: the state is locked for as long as a test hook
@@ -414,6 +447,8 @@ impl Fixture {
     fn port(&self) -> MemoryPort {
         MemoryPort {
             fixture: self.clone(),
+            #[cfg(feature = "service-lighting-v1")]
+            matrix: None,
             pending: None,
             reply: None,
             retired: false,
@@ -426,6 +461,8 @@ impl Fixture {
 }
 struct MemoryPort {
     fixture: Fixture,
+    #[cfg(feature = "service-lighting-v1")]
+    matrix: Option<Option<io::Result<()>>>,
     pending: Option<(usize, Frame)>,
     reply: Option<Frame>,
     retired: bool,
@@ -694,6 +731,27 @@ impl Port for MemoryPort {
                         ack
                     }
                     #[cfg(feature = "service-lighting-v1")]
+                    (0, 0x86) => {
+                        assert!(!mutation);
+                        assert_eq!(payload, [0, 0, 0]);
+                        s.lighting_sent.push((command, payload.to_vec(), mutation));
+                        s.layout_reply.unwrap_or_default().to_vec()
+                    }
+                    #[cfg(feature = "service-lighting-v1")]
+                    (3, 0x0a) => {
+                        assert!(mutation);
+                        assert_eq!(payload, [5, 0]);
+                        s.lighting_sent.push((command, payload.to_vec(), mutation));
+                        let number = s.lighting_sent.iter().filter(|sent| sent.2).count();
+                        if s.lighting_fail == Some(number) {
+                            return Err(io::ErrorKind::Other.into());
+                        }
+                        if s.lighting_timeout == Some(number) {
+                            self.reply_timeout = true;
+                        }
+                        s.transition_ack.unwrap_or([5, 0]).to_vec()
+                    }
+                    #[cfg(feature = "service-lighting-v1")]
                     (3, 0x83 | 0x80 | 0x82 | 0x03 | 0x00 | 0x02) => {
                         s.lighting_sent.push((command, payload.to_vec(), mutation));
                         let setter = matches!(command, 0x03 | 0x00 | 0x02);
@@ -804,13 +862,67 @@ impl Port for MemoryPort {
             return Ok(false);
         }
         self.pending = None;
+        #[cfg(feature = "service-lighting-v1")]
+        {
+            self.matrix = None;
+        }
         if !self.retired {
             self.fixture.state.lock().unwrap().retired += 1;
             self.retired = true;
         }
         Ok(true)
     }
+    #[cfg(feature = "service-lighting-v1")]
+    fn open_matrix(&mut self, limit: Limit<'_>) -> io::Result<()> {
+        limit.check()?;
+        assert!(!self.retired);
+        if self.matrix.is_some() {
+            return Ok(());
+        }
+        let mut s = self.fixture.state.lock().unwrap();
+        if s.matrix_open_fails {
+            return Err(blocked("fixture matrix collection does not open"));
+        }
+        s.matrix_opens += 1;
+        self.matrix = Some(None);
+        Ok(())
+    }
+    #[cfg(feature = "service-lighting-v1")]
+    fn submit_matrix(&mut self, report: &MatrixReport, limit: Limit<'_>) -> Result<(), Unwritten> {
+        limit.check().map_err(|_| Unwritten::Unsent)?;
+        assert!(!self.retired);
+        let slot = self.matrix.as_mut().expect("matrix opened before a report");
+        assert!(slot.is_none(), "one matrix report at a time");
+        let mut s = self.fixture.state.lock().unwrap();
+        let number = s.matrix_frames.len() + 1;
+        if s.matrix_refuse == Some(number) {
+            s.matrix_refuse = None;
+            return Err(Unwritten::Unsent);
+        }
+        let sent = s.sent.len();
+        s.matrix_frames.push((sent, *report));
+        s.matrix_at.push(Instant::now());
+        if s.matrix_reject == Some(number) {
+            return Err(Unwritten::InDoubt);
+        }
+        *slot = Some(if s.matrix_fail == Some(number) {
+            Err(io::ErrorKind::Other.into())
+        } else {
+            Ok(())
+        });
+        Ok(())
+    }
+    #[cfg(feature = "service-lighting-v1")]
+    fn poll_matrix(&mut self) -> Option<io::Result<()>> {
+        if self.fixture.state.lock().unwrap().matrix_mute {
+            return None;
+        }
+        self.matrix.as_mut()?.take()
+    }
 }
+#[cfg(feature = "service-lighting-v1")]
+#[path = "lighting_render_tests.rs"]
+mod lighting_render_tests;
 #[cfg(feature = "service-lighting-v1")]
 #[path = "lighting_tests.rs"]
 mod lighting_tests;

@@ -6,7 +6,9 @@
 //! Managed `ExecuteScopedMutationAsync`'s power gate and store, then
 //! `ControlCoordinator.ApplyLightingOutcomeAsync` over
 //! `ProductionLightingPort.SetLightingAsync`, for a request this composition
-//! admits; it carries none of the host-rendered matrix commands.
+//! admits. A lit effect runs the Static renderer recipe in `render`: the
+//! 00/86 layout query, the 00/84 and 03/0A:0500 handshake and 03/0B matrix
+//! frames on the keyboard's second HID collection.
 //!
 //! Every exchange is preceded by a fresh admission checkpoint. A setter whose
 //! acknowledgement or readback is not confirmed, and any incomplete exchange,
@@ -16,10 +18,13 @@
 //! confirmed baseline once.
 use super::*;
 use openblade_domain::automation::UNCLASSIFIED_EXTERNAL;
+pub(crate) use openblade_protocol::lighting::matrix::Rgb;
 use openblade_protocol::{
     RazerReport,
     lighting::{BrightnessQuery, LightingSet, LogoEffectQuery, LogoMode, LogoStateQuery},
 };
+
+mod render;
 use std::sync::Mutex;
 
 /// Managed `OwnedRendererOffObservation.OffConfirmationDelay`: the second
@@ -73,6 +78,42 @@ impl LightingTarget {
         reading.brightness == Some(self.brightness)
             && self.logo.is_none_or(|logo| reading.logo == Some(logo))
     }
+}
+
+/// A Static renderer the Service owns: the color every canvas key shows and
+/// the session's layout byte, which selects the physical map.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Renderer {
+    pub(crate) color: Rgb,
+    pub(crate) layout: u8,
+}
+
+/// What a render job sets: managed `SetLightingAsync` for the Static effect.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct RenderTarget {
+    pub(crate) brightness: u8,
+    pub(crate) logo: Option<LogoMode>,
+    pub(crate) color: Rgb,
+    /// The layout byte this session already read; managed reads 00/86 once
+    /// per port session.
+    pub(crate) layout: Option<u8>,
+    /// The renderer the Service owns now. A request for the same color and
+    /// layout retains it (managed `CanRetainRenderer`), and a failed request
+    /// restores it.
+    pub(crate) previous: Option<Renderer>,
+}
+
+/// What a job leaves the keyboard matrix (`LightingJob::matrix`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum MatrixState {
+    /// The job sent nothing that changes the matrix: the renderer the
+    /// Service owned, if any, still shows.
+    Kept,
+    /// The last matrix write, a frame of this renderer, completed.
+    Owned(Renderer),
+    /// The matrix may show something no owned renderer drew: a handshake or
+    /// frame was not confirmed, or a written Off retired the renderer.
+    Lost,
 }
 
 /// How far one job got (`LightingJob::outcome`). The owner reads it after the
@@ -129,6 +170,25 @@ pub(crate) enum LightingOutcome {
     /// Every setter was confirmed by its own readback and the final aggregate
     /// read confirmed every member the target sets (`final_reading`).
     Written,
+    /// The matrix collection did not open after the intent was stored, so no
+    /// lighting report was sent.
+    Unavailable,
+    /// A renderer's frame completed and every setter was confirmed by its own
+    /// readback. A lit keyboard has no firmware readback, so this is
+    /// setter-completion evidence, never a confirmed state.
+    Rendered,
+}
+
+impl LightingOutcome {
+    /// Whether a setter or matrix report may have been submitted without
+    /// confirmation, which latches the doubt for a request and a keepalive
+    /// alike.
+    pub(crate) fn in_doubt(self) -> bool {
+        matches!(
+            self,
+            Self::InDoubt(_) | Self::Unconfirmed(_) | Self::Mismatched { restored: None, .. }
+        )
+    }
 }
 
 /// What a job does (`LightingJob`).
@@ -144,6 +204,10 @@ enum Work {
     /// Classifies power, stores, then writes the target the baseline does not
     /// match.
     Write(LightingTarget),
+    /// Classifies power, stores, then starts or retains a Static renderer.
+    Render(RenderTarget),
+    /// One keepalive frame of the owned renderer, and nothing else.
+    Keepalive(Renderer),
 }
 
 /// One lighting job, carried by its permit (`mutation::Permit::lighting`).
@@ -163,13 +227,18 @@ struct State {
     confirmation: LightingConfirmation,
     /// Setters that reached their transfer (`sending`).
     sent: usize,
+    /// The layout byte a 00/86 query read.
+    layout: Option<u8>,
+    matrix: MatrixState,
 }
 
-/// Which confirmed member a setter changes.
+/// Which confirmed member a setter changes; the matrix has no confirmed
+/// member.
 #[derive(Clone, Copy)]
 enum Member {
     Brightness,
     Logo,
+    Matrix,
 }
 
 impl LightingJob {
@@ -183,6 +252,8 @@ impl LightingJob {
                 last: None,
                 confirmation: LightingConfirmation::default(),
                 sent: 0,
+                layout: None,
+                matrix: MatrixState::Kept,
             }),
         }
     }
@@ -199,6 +270,17 @@ impl LightingJob {
     /// store, and no lighting report.
     pub(crate) fn store() -> Self {
         Self::with(Work::Store, false)
+    }
+
+    /// A Static request: power, the store, then the renderer recipe
+    /// (`render`). Its lit brightness is never confirmed by a read.
+    pub(crate) fn render(target: RenderTarget) -> Self {
+        Self::with(Work::Render(target), false)
+    }
+
+    /// One keepalive frame of the owned `renderer` (`render`).
+    pub(crate) fn keepalive(renderer: Renderer) -> Self {
+        Self::with(Work::Keepalive(renderer), false)
     }
 
     /// A request that writes `target`: power, the store, then the recipe.
@@ -238,7 +320,40 @@ impl LightingJob {
     pub(crate) fn target(&self) -> Option<LightingTarget> {
         match self.work {
             Work::Write(target) => Some(target),
-            Work::Resolve | Work::Store => None,
+            Work::Resolve | Work::Store | Work::Render(_) | Work::Keepalive(_) => None,
+        }
+    }
+
+    /// What a render job sets; `None` for any other job.
+    pub(crate) fn render_target(&self) -> Option<RenderTarget> {
+        match self.work {
+            Work::Render(target) => Some(target),
+            _ => None,
+        }
+    }
+
+    /// What the job leaves the matrix. A poisoned record is the most
+    /// conservative one: a matrix write may not have been confirmed.
+    pub(crate) fn matrix(&self) -> MatrixState {
+        self.state
+            .lock()
+            .map_or(MatrixState::Lost, |state| state.matrix)
+    }
+
+    /// The layout byte the job read, which the session keeps.
+    pub(crate) fn layout(&self) -> Option<u8> {
+        self.state.lock().ok().and_then(|state| state.layout)
+    }
+
+    fn set_matrix(&self, matrix: MatrixState) {
+        if let Ok(mut state) = self.state.lock() {
+            state.matrix = matrix;
+        }
+    }
+
+    fn set_layout(&self, layout: u8) {
+        if let Ok(mut state) = self.state.lock() {
+            state.layout = Some(layout);
         }
     }
 
@@ -313,6 +428,15 @@ impl LightingJob {
         self.state.lock().map_or(true, |state| state.sent != before)
     }
 
+    /// A matrix report refused before submission: `sending` undone, with the
+    /// outcome recorded before it.
+    fn unsend(&self, outcome: LightingOutcome) {
+        if let Ok(mut state) = self.state.lock() {
+            state.sent -= 1;
+            state.outcome = outcome;
+        }
+    }
+
     /// A setter for `member` may now reach the firmware: the member is not
     /// confirmed until its readback, and the job's outcome says the setter
     /// is in doubt.
@@ -320,6 +444,7 @@ impl LightingJob {
         match member {
             Member::Brightness => self.confirm_brightness(None),
             Member::Logo => self.confirm_logo(None),
+            Member::Matrix => {}
         }
         self.record(in_doubt);
         if let Ok(mut state) = self.state.lock() {
@@ -328,16 +453,27 @@ impl LightingJob {
     }
 }
 
-/// Every lighting transaction ID a job may send, reserved before the first:
-/// the baseline (4, with a second zero sample), the brightness setter and its
-/// readback (2), the logo setters and readback (4), their restores (6) and
-/// the final read (4). The power read reserves its own.
+/// Every lighting transaction ID a write job may send, reserved before the
+/// first: the baseline (4, with a second zero sample), the brightness setter
+/// and its readback (2), the logo setters and readback (4), their restores
+/// (6) and the final read (4). The power read reserves its own.
 const IDS: usize = 20;
+
+impl Work {
+    /// The mailbox IDs a job reserves before its first exchange.
+    fn ids(self) -> usize {
+        match self {
+            Self::Render(_) => render::IDS,
+            Self::Keepalive(_) => 0,
+            Self::Resolve | Self::Store | Self::Write(_) => IDS,
+        }
+    }
+}
 
 /// One running job: its reserved IDs, handed out in order, and the job whose
 /// outcome it records.
 struct Run<'j> {
-    ids: [u8; IDS],
+    ids: Vec<u8>,
     next: usize,
     job: &'j LightingJob,
 }
@@ -407,13 +543,13 @@ impl<P: Port> Reader<P, ReadAdmission> {
     ) -> Option<()> {
         let mut authorize = || permit.authorize();
         let authorize: Authorize<'_, ReadAdmission> = &mut authorize;
-        let mut ids = [0; IDS];
-        for pair in ids.as_chunks_mut::<2>().0 {
-            pair.copy_from_slice(&self.reserve_pair()?);
+        let mut ids = Vec::with_capacity(job.work.ids());
+        while ids.len() < job.work.ids() {
+            ids.extend(self.reserve_pair()?);
         }
         let power_ids = match job.work {
-            Work::Resolve => None,
-            Work::Store | Work::Write(_) => Some(self.reserve_pair()?),
+            Work::Resolve | Work::Keepalive(_) => None,
+            Work::Store | Work::Write(_) | Work::Render(_) => Some(self.reserve_pair()?),
         };
         let run = &mut Run { ids, next: 0, job };
         let admission = self.admission;
@@ -425,6 +561,9 @@ impl<P: Port> Reader<P, ReadAdmission> {
             };
             attempt.checkpoint(authorize, admission, limit).ok()?;
             attempt.completed = true;
+        }
+        if let Work::Keepalive(renderer) = job.work {
+            return self.keepalive(authorize, job, renderer, limit).await;
         }
         // Managed resolves power and stores before it reads any lighting.
         if let Some([power_id, _]) = power_ids {
@@ -443,6 +582,9 @@ impl<P: Port> Reader<P, ReadAdmission> {
                 job.record(LightingOutcome::Stored);
                 return Some(());
             }
+        }
+        if let Work::Render(target) = job.work {
+            return self.render(authorize, run, target, limit).await;
         }
         let mut attempt = Attempt {
             reader: self,

@@ -425,12 +425,17 @@ struct CandidateHint {
     facts: pnp::Facts,
 }
 
-fn discover_hid(
-    source: &impl DiscoverySource,
-    model: Option<&Model<'_>>,
-    cancelled: &AtomicBool,
-) -> io::Result<(HidEvidence, Option<CandidateHint>)> {
-    let expected_id = model.and_then(Model::device_id);
+/// One bounded HID scan: every interface by its case-folded path, with its
+/// PnP facts, or none when unreadable or contradicted by a duplicate.
+struct Scan {
+    inventory: ScanState,
+    interface_count: usize,
+    unreadable_interfaces: usize,
+    duplicate_interfaces: usize,
+    interfaces: HashMap<String, (String, Option<pnp::Facts>)>,
+}
+
+fn scan(source: &impl DiscoverySource, cancelled: &AtomicBool) -> io::Result<Scan> {
     let mut interfaces = HashMap::new();
     let mut interface_count = 0;
     let mut unreadable_interfaces = 0;
@@ -474,6 +479,28 @@ fn discover_hid(
     } else {
         scan
     };
+    Ok(Scan {
+        inventory,
+        interface_count,
+        unreadable_interfaces,
+        duplicate_interfaces,
+        interfaces,
+    })
+}
+
+fn discover_hid(
+    source: &impl DiscoverySource,
+    model: Option<&Model<'_>>,
+    cancelled: &AtomicBool,
+) -> io::Result<(HidEvidence, Option<CandidateHint>)> {
+    let expected_id = model.and_then(Model::device_id);
+    let Scan {
+        inventory,
+        interface_count,
+        unreadable_interfaces,
+        duplicate_interfaces,
+        interfaces,
+    } = scan(source, cancelled)?;
     let mut hint = None;
     let counts = model.zip(expected_id).map(|(model, expected_id)| {
         let mut counts = CandidateCounts {
@@ -517,4 +544,42 @@ fn discover_hid(
         },
         hint,
     ))
+}
+
+/// Every HID interface of `model`'s exact device whose PnP usage hint is
+/// `usage`, sorted by path, from one complete scan. An incomplete scan, or
+/// an interface of the device without a usage hint, fails closed, as it
+/// leaves the control candidate `Incomplete`; the caller selects among the
+/// candidates by their opened metadata.
+#[cfg_attr(not(feature = "service-lighting-v1"), allow(dead_code))]
+fn discover_role(
+    source: &impl DiscoverySource,
+    model: &Model<'_>,
+    usage: (u16, u16),
+    cancelled: &AtomicBool,
+) -> io::Result<Vec<CandidateHint>> {
+    let expected_id = model
+        .device_id()
+        .ok_or_else(|| role_refused("no exact HID device ID"))?;
+    let scan = scan(source, cancelled)?;
+    if scan.inventory != ScanState::Complete {
+        return Err(role_refused("HID inventory is incomplete"));
+    }
+    let mut hints = Vec::new();
+    for (path, facts) in scan.interfaces.into_values() {
+        let Some(facts) = facts.filter(|facts| facts.device() == Some(expected_id)) else {
+            continue;
+        };
+        match facts.usage {
+            None => return Err(role_refused("an exact HID interface has no usage hint")),
+            Some(found) if found == usage => hints.push(CandidateHint { path, facts }),
+            Some(_) => {}
+        }
+    }
+    hints.sort_by_cached_key(|hint| hint.path.to_ascii_uppercase());
+    Ok(hints)
+}
+
+fn role_refused(message: &'static str) -> io::Error {
+    io::Error::new(io::ErrorKind::PermissionDenied, message)
 }

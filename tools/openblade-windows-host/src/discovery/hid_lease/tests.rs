@@ -116,9 +116,14 @@ impl ServiceLeaseSource for Rc<Fake> {
     }
 }
 fn fake() -> Rc<Fake> {
+    fake_host("Blade 16 - RZ09-0581")
+}
+
+/// The fake source on a Razer host with this product name.
+fn fake_host(product: &str) -> Rc<Fake> {
     let source = RegistrySource {
         manufacturer: RegistryText::Present("Razer".into()),
-        product_name: RegistryText::Present("Blade 16 - RZ09-0581".into()),
+        product_name: RegistryText::Present(product.into()),
     };
     Rc::new(Fake {
         host: RefCell::new(HostObservation {
@@ -497,4 +502,198 @@ fn epochs_from_another_owner_cannot_observe_or_invalidate_this_handle() {
     owner.revalidate(&epoch, &cancelled).unwrap();
     assert_eq!(owner.stop(), Retirement::Complete);
     assert_eq!(other_owner.stop(), Retirement::Complete);
+}
+
+const MATRIX_ROLE: Role = Role {
+    usage: (0x0c, 0x01),
+    feature_bytes: 375,
+};
+
+const MATRIX: Descriptor = Descriptor {
+    usage: (0x0c, 0x01),
+    feature_bytes: 375,
+    ..EXACT
+};
+
+/// The control collection and two consumer collections, the second the
+/// matrix by its opened metadata.
+fn matrix_fake() -> Rc<Fake> {
+    let fake = fake();
+    fake.rows.replace(vec![
+        row("opaque-original", 0x02e0, Some((1, 2))),
+        row("opaque-consumer-a", 0x02e0, Some((0x0c, 0x01))),
+        row("opaque-consumer-b", 0x02e0, Some((0x0c, 0x01))),
+        row("opaque-other-device", 0x02c6, Some((0x0c, 0x01))),
+    ]);
+    fake
+}
+
+fn consumer(feature_bytes: u16) -> io::Result<Descriptor> {
+    Ok(Descriptor {
+        feature_bytes,
+        ..MATRIX
+    })
+}
+
+#[test]
+fn the_one_consumer_collection_with_the_matrix_length_is_selected() {
+    let fake = matrix_fake();
+    fake.descriptors.replace([consumer(3), Ok(MATRIX)].into());
+    let cancelled = AtomicBool::new(false);
+    let identity = RoleIdentity::select(&fake, MATRIX_ROLE, &cancelled).unwrap();
+    assert_eq!(identity.path(), "opaque-consumer-b");
+    assert_eq!(identity.model(), "RZ09-0581");
+    assert_eq!(identity.descriptor(), MATRIX);
+    // Each candidate was described through its own handle, released at once.
+    assert_eq!(
+        *fake.opened.borrow(),
+        ["opaque-consumer-a", "opaque-consumer-b"]
+    );
+    assert_eq!(fake.drops.get(), 2);
+}
+
+#[test]
+fn no_exact_or_two_exact_matrix_collections_select_nothing() {
+    let cancelled = AtomicBool::new(false);
+    for descriptors in [
+        vec![consumer(3), consumer(91)],
+        vec![Ok(MATRIX), Ok(MATRIX)],
+        vec![
+            consumer(3),
+            Ok(Descriptor {
+                device: (0x1532, 0x02c6),
+                ..MATRIX
+            }),
+        ],
+        vec![
+            consumer(3),
+            Ok(Descriptor {
+                usage: (0x0c, 0x02),
+                ..MATRIX
+            }),
+        ],
+    ] {
+        let fake = matrix_fake();
+        fake.descriptors.replace(descriptors.into());
+        assert!(RoleIdentity::select(&fake, MATRIX_ROLE, &cancelled).is_err());
+        assert_eq!(fake.drops.get(), 2);
+    }
+}
+
+#[test]
+fn an_unhinted_or_unreadable_interface_selects_nothing_and_opens_nothing() {
+    let cancelled = AtomicBool::new(false);
+    for additional in [row("opaque-unresolved", 0x02e0, None), None] {
+        let fake = matrix_fake();
+        fake.rows.borrow_mut().push(additional);
+        assert!(RoleIdentity::select(&fake, MATRIX_ROLE, &cancelled).is_err());
+        assert!(fake.opened.borrow().is_empty());
+    }
+}
+
+#[test]
+fn a_candidate_that_cannot_be_described_refuses_the_selection() {
+    let cancelled = AtomicBool::new(false);
+    let fake = matrix_fake();
+    fake.open_fails.set(true);
+    assert!(RoleIdentity::select(&fake, MATRIX_ROLE, &cancelled).is_err());
+    let fake = matrix_fake();
+    fake.descriptors
+        .replace([Err(io::ErrorKind::NotFound.into()), Ok(MATRIX)].into());
+    assert!(RoleIdentity::select(&fake, MATRIX_ROLE, &cancelled).is_err());
+    assert_eq!(fake.drops.get(), 1);
+}
+
+#[test]
+fn a_changed_role_descriptor_or_candidate_set_fails_verification() {
+    let cancelled = AtomicBool::new(false);
+    let select = |fake: &Rc<Fake>| {
+        fake.descriptors.replace([consumer(3), Ok(MATRIX)].into());
+        RoleIdentity::select(fake, MATRIX_ROLE, &cancelled).unwrap()
+    };
+    let fake = matrix_fake();
+    let identity = select(&fake);
+    let handle = fake.open_metadata("opaque-consumer-b").unwrap();
+    fake.descriptors.replace([Ok(MATRIX)].into());
+    identity.verify(&fake, &handle, &cancelled).unwrap();
+    // Case-only path changes are the same candidate.
+    fake.rows.borrow_mut()[2] = row("OPAQUE-CONSUMER-B", 0x02e0, Some((0x0c, 0x01)));
+    fake.descriptors.replace([Ok(MATRIX)].into());
+    identity.verify(&fake, &handle, &cancelled).unwrap();
+
+    fake.descriptors.replace([consumer(374)].into());
+    assert!(identity.verify(&fake, &handle, &cancelled).is_err());
+
+    for change in [
+        |rows: &mut Rows| rows.push(row("opaque-consumer-c", 0x02e0, Some((0x0c, 0x01)))),
+        |rows: &mut Rows| drop(rows.remove(1)),
+        |rows: &mut Rows| rows[2] = row("opaque-replaced", 0x02e0, Some((0x0c, 0x01))),
+    ] {
+        let fake = matrix_fake();
+        let identity = select(&fake);
+        let handle = fake.open_metadata("opaque-consumer-b").unwrap();
+        change(&mut fake.rows.borrow_mut());
+        fake.descriptors.replace([Ok(MATRIX)].into());
+        assert!(identity.verify(&fake, &handle, &cancelled).is_err());
+    }
+
+    let fake = matrix_fake();
+    let identity = select(&fake);
+    let handle = fake.open_metadata("opaque-consumer-b").unwrap();
+    fake.removal_observed.set(true);
+    assert!(identity.verify(&fake, &handle, &cancelled).is_err());
+    fake.removal_observed.set(false);
+    cancelled.store(true, Ordering::Relaxed);
+    assert!(identity.verify(&fake, &handle, &cancelled).is_err());
+}
+
+/// The production matrix role and its reviewed identity select the exact
+/// RZ09-0581 matrix collection, and refuse another model's matrix
+/// collection that the generic role selection admits.
+#[cfg(feature = "service-lighting-v1")]
+#[test]
+fn the_reviewed_matrix_role_selects_the_exact_collection_only() {
+    let cancelled = AtomicBool::new(false);
+    let fake = matrix_fake();
+    fake.descriptors.replace([consumer(3), Ok(MATRIX)].into());
+    let identity = performance::select_matrix(&fake, &cancelled).unwrap();
+    assert_eq!(identity.path(), "opaque-consumer-b");
+    assert_eq!(identity.descriptor(), MATRIX);
+
+    let other = fake_host("Blade 16 - RZ09-0528");
+    other.rows.replace(vec![
+        row("opaque-original", 0x02c6, Some((1, 2))),
+        row("opaque-consumer", 0x02c6, Some((0x0c, 0x01))),
+    ]);
+    let descriptor = Descriptor {
+        device: (0x1532, 0x02c6),
+        ..MATRIX
+    };
+    other.descriptors.replace([Ok(descriptor)].into());
+    let generic = RoleIdentity::select(&other, MATRIX_ROLE, &cancelled).unwrap();
+    assert_eq!(generic.model(), "RZ09-0528");
+    other.descriptors.replace([Ok(descriptor)].into());
+    assert!(performance::select_matrix(&other, &cancelled).is_err());
+}
+
+/// The reviewed matrix identity needs this module's model and its device
+/// each. The selection binds the device to the host model's catalog entry,
+/// so no selection differs in one alone; each clause is shown on the exact
+/// identity with only that field changed.
+#[cfg(feature = "service-lighting-v1")]
+#[test]
+fn the_reviewed_matrix_identity_needs_the_model_and_the_device() {
+    let cancelled = AtomicBool::new(false);
+    let fake = matrix_fake();
+    let select = || {
+        fake.descriptors.replace([consumer(3), Ok(MATRIX)].into());
+        RoleIdentity::select(&fake, MATRIX_ROLE, &cancelled).unwrap()
+    };
+    assert!(performance::reviewed_matrix(&select()));
+    let mut model = select();
+    model.candidates.model = "RZ09-0528".into();
+    assert!(!performance::reviewed_matrix(&model), "another model");
+    let mut device = select();
+    device.descriptor.device = (0x1532, 0x02c6);
+    assert!(!performance::reviewed_matrix(&device), "another device");
 }

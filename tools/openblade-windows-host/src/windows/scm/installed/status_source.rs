@@ -782,6 +782,16 @@ impl StatusSource for GuardedStatus {
     fn low_power_wake(&self) -> Option<Arc<tokio::sync::Notify>> {
         self.origin.low_power_wake()
     }
+    #[cfg(feature = "service-lighting-v1")]
+    fn maintain_lighting(&mut self, now: Instant) -> Option<super::Reconciling> {
+        let runtime = self.mutation.clone()?;
+        let mailbox = self.mailbox.clone();
+        // A frame failure continues the loop; only fatal admission evidence
+        // stops the Service. A keepalive changes no published member.
+        Some(Box::pin(async move {
+            runtime.maintain_lighting(&mailbox, now).await
+        }))
+    }
     #[cfg(feature = "service-keyboard-driver-mode-v1")]
     fn maintain_driver_mode(&mut self) -> Option<super::Reconciling> {
         let runtime = self.mutation.clone()?;
@@ -1171,7 +1181,7 @@ impl StatusSource for GuardedStatus {
                     let status = publish_reconciled(&publisher, &mailbox, latest)?;
                     Ok((outcome, Some(status)))
                 }
-                // Managed `SetLightingOverrideAsync`, slice L1
+                // Managed `SetLightingOverrideAsync`, slices L1 and L2
                 // (`Runtime::set_lighting`). Its status projects the stored
                 // override and what the job left the confirmed lighting
                 // members. The request classifies power in its own job, so
@@ -1477,6 +1487,11 @@ impl StatusSource for GuardedStatus {
             let mut result = Ok(());
             #[cfg(feature = "service-thermal-mutation-v1")]
             if let Some(runtime) = &self.mutation {
+                // The owned renderer ends first, without a write, as managed's
+                // port disposal stops its stream; a keepalive job still running
+                // is cancelled by the mutation worker's stop below.
+                #[cfg(feature = "service-lighting-v1")]
+                runtime.retire_renderer();
                 // Managed shutdown order: the keyboard Driver-mode release,
                 // then the fan handback. The keyboard's outcome is a diagnostic
                 // (`Runtime::driver_mode_release`): only fatal admission

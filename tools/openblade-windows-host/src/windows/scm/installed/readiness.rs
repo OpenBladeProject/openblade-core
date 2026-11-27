@@ -191,11 +191,12 @@ type Observation = Pin<Box<dyn Future<Output = io::Result<Option<Snapshot>>> + '
 type Mutation = Pin<
     Box<dyn Future<Output = io::Result<(thermal_mutation::Outcome, Option<Snapshot>)>> + 'static>,
 >;
-/// One lifecycle reconciliation or keyboard Driver-mode step, awaited without
-/// the source lock.
+/// One lifecycle reconciliation, keyboard Driver-mode step or lighting
+/// keepalive, awaited without the source lock.
 #[cfg(any(
     feature = "service-profile-triggers-v1",
-    feature = "service-keyboard-driver-mode-v1"
+    feature = "service-keyboard-driver-mode-v1",
+    feature = "service-lighting-v1"
 ))]
 type Reconciling = Pin<Box<dyn Future<Output = io::Result<()>> + 'static>>;
 trait StatusSource {
@@ -208,6 +209,13 @@ trait StatusSource {
     // reconciliation never holds status or subscriptions behind its steps.
     #[cfg(feature = "service-profile-triggers-v1")]
     fn reconcile_lifecycle(&mut self) -> Option<Reconciling> {
+        None
+    }
+    // The origin tick's lighting keepalive at `now`, after the power check
+    // and before the keyboard Driver-mode step (`Runtime::maintain_lighting`),
+    // taken under the source lock and awaited after it is released.
+    #[cfg(feature = "service-lighting-v1")]
+    fn maintain_lighting(&mut self, _now: Instant) -> Option<Reconciling> {
         None
     }
     // The origin tick's 15 s keyboard Driver-mode step after the power
@@ -434,6 +442,20 @@ impl Ports {
                 let mut source = self.source.lock().await;
                 source.verify_origin()?;
                 source.process_power_source().await?;
+                // The renderer's keepalive goes before the keyboard step, so a
+                // tick that finds the operation gate free at a low-power
+                // boundary ends the renderer before Normal mode is restored.
+                // While a request holds the gate the tick sends nothing, and
+                // the renderer ends at the first tick or request after it
+                // (`Runtime::crossed_low_power`).
+                #[cfg(feature = "service-lighting-v1")]
+                {
+                    let maintain = source.maintain_lighting(Instant::now());
+                    drop(source);
+                    if let Some(maintain) = maintain {
+                        maintain.await?;
+                    }
+                }
                 // Managed step order: power-source classification, then the
                 // keyboard Driver-mode step. Its first eligible tick is the
                 // managed startup call; native runs no startup reconciliation
@@ -441,6 +463,8 @@ impl Ports {
                 // generation once and acquires nothing.
                 #[cfg(feature = "service-keyboard-driver-mode-v1")]
                 {
+                    #[cfg(feature = "service-lighting-v1")]
+                    let mut source = self.source.lock().await;
                     let maintain = source.maintain_driver_mode();
                     drop(source);
                     if let Some(maintain) = maintain {
@@ -454,7 +478,10 @@ impl Ports {
                 // runs.
                 #[cfg(feature = "service-profile-triggers-v1")]
                 {
-                    #[cfg(feature = "service-keyboard-driver-mode-v1")]
+                    #[cfg(any(
+                        feature = "service-keyboard-driver-mode-v1",
+                        feature = "service-lighting-v1"
+                    ))]
                     let mut source = self.source.lock().await;
                     let reconcile = source.reconcile_lifecycle();
                     drop(source);

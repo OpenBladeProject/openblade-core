@@ -476,10 +476,10 @@ pub(super) struct Runtime {
     // Managed's automatic Fan Stop eligibility (`fan_stop::Automation`).
     #[cfg(feature = "service-fan-stop-v1")]
     fan_stop: Rc<RefCell<fan_stop::Automation>>,
-    // A lighting setter may have been submitted unconfirmed: the next
-    // lighting request resolves it read-only (`lighting`).
+    // The lighting doubt latch, the session layout byte and the owned Static
+    // renderer (`lighting::Session`).
     #[cfg(feature = "service-lighting-v1")]
-    lighting_doubt: Rc<std::cell::Cell<bool>>,
+    lighting: Rc<lighting::Session>,
     // Display-brightness HID input and its held usage (`brightness`).
     #[cfg(feature = "service-brightness-hid-usage-v1")]
     brightness: Rc<brightness::Brightness>,
@@ -761,7 +761,7 @@ impl Runtime {
             #[cfg(feature = "service-fan-stop-v1")]
             fan_stop: Rc::default(),
             #[cfg(feature = "service-lighting-v1")]
-            lighting_doubt: Rc::default(),
+            lighting: Rc::default(),
             #[cfg(feature = "service-brightness-hid-usage-v1")]
             brightness: Rc::default(),
             application: Rc::default(),
@@ -1029,7 +1029,7 @@ impl Runtime {
             #[cfg(feature = "service-fan-stop-v1")]
             fan_stop: Rc::default(),
             #[cfg(feature = "service-lighting-v1")]
-            lighting_doubt: Rc::default(),
+            lighting: Rc::default(),
             #[cfg(feature = "service-brightness-hid-usage-v1")]
             brightness,
             application: Rc::default(),
