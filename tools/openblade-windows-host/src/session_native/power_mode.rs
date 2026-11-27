@@ -19,6 +19,7 @@
 //! the last one applied, on Agent exit, on a profile change and on an unknown
 //! status alike. An unknown status only forgets the observed target, so the
 //! next confirmed status applies its association again.
+use super::feature_lifetime::stopped;
 use std::{
     io,
     sync::{
@@ -340,17 +341,6 @@ pub(crate) fn publish_status(
         return Err(error);
     }
     Ok(())
-}
-
-async fn stopped(stop: &mut watch::Receiver<bool>) {
-    loop {
-        if *stop.borrow_and_update() {
-            return;
-        }
-        if stop.changed().await.is_err() {
-            return;
-        }
-    }
 }
 
 /// The installed role: the runner over the Windows user-configured power mode.

@@ -19,6 +19,7 @@
 //! the first report does not spend its budget re-reading the package. The
 //! managed callback also resets the special keys' function input; special
 //! keys are not part of this role.
+use super::feature_lifetime::stopped;
 use std::{
     io,
     sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError},
@@ -492,15 +493,4 @@ async fn serve<'r>(
     };
     relay.dispose();
     result
-}
-
-async fn stopped(stop: &mut watch::Receiver<bool>) {
-    loop {
-        if *stop.borrow_and_update() {
-            return;
-        }
-        if stop.changed().await.is_err() {
-            return;
-        }
-    }
 }

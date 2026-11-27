@@ -10,6 +10,7 @@
 //! fresh sequence and request id. Unlike managed, every exchange first proves
 //! the installed Service generation and pipe peer, because the request names
 //! the user's foreground executable.
+use super::feature_lifetime::stopped;
 use std::{future::Future, io, sync::Arc, thread};
 
 use openblade_application_reporter::{
@@ -100,17 +101,6 @@ async fn host<F: Future<Output = io::Result<()>>>(
 
 fn new_guid() -> io::Result<Guid> {
     random_guid().map(Guid)
-}
-
-async fn stopped(stop: &mut watch::Receiver<bool>) {
-    loop {
-        if *stop.borrow_and_update() {
-            return;
-        }
-        if stop.changed().await.is_err() {
-            return;
-        }
-    }
 }
 
 /// One reporter lifetime. The owner thread is joined before this returns, so
