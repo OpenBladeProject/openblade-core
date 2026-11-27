@@ -562,8 +562,8 @@ async fn the_stream_collection_opens_inside_the_request_and_stays_open_across_ef
     rig.stop().await;
 }
 
-/// Stop recalls the stream's frames and waits for it to settle before the
-/// keyboard release and the fan handback.
+/// Stop recalls the stream's frames, once, and waits for it to settle
+/// before the keyboard release and the fan handback.
 #[tokio::test]
 async fn stop_recalls_and_settles_the_stream() {
     let rig = Rig::new(MemoryFiles::default());
@@ -572,7 +572,192 @@ async fn stop_recalls_and_settles_the_stream() {
     let state = rig.port.state.clone();
     rig.stop().await;
     let s = state.lock().unwrap();
-    assert_eq!((s.stream_retired, s.stream_settles), (2, 1));
+    assert_eq!((s.stream_retired, s.stream_settles), (1, 1));
+}
+
+/// Waits, for at most 10 s, until `done` holds.
+async fn until(mut done: impl FnMut() -> bool) {
+    let end = Instant::now() + Duration::from_secs(10);
+    while !done() {
+        assert!(Instant::now() < end, "not reached within 10 s");
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+}
+
+/// Stop's stream settle takes only its own share of the drain. A stream
+/// that never confirms it latches the doubt, and the fan handback, with the
+/// keyboard release where Driver mode is composed, still runs within the
+/// drain.
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn an_unsettled_stream_at_stop_still_hands_the_fans_back_within_the_drain() {
+    let rig = fan_rig(0, 0);
+    rig.get().await;
+    let applied = rig.request(fan_request(143, Some(1), 3700)).await;
+    assert_eq!(applied["result"]["status"], 1, "{applied}");
+    #[cfg(feature = "service-keyboard-driver-mode-v1")]
+    {
+        let observed = rig
+            .request(json!({"operation":"observeState","version":91,"requestId":"dddddddd-bbbb-cccc-dddd-000000000071","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0}))
+            .await;
+        assert_eq!(observed["success"], true, "{observed}");
+        rig.held(
+            HeldClock::CatchUp,
+            Box::pin(async {
+                let maintain = rig.source.lock().await.maintain_driver_mode();
+                if let Some(maintain) = maintain {
+                    maintain.await.unwrap();
+                }
+            }),
+        )
+        .await;
+        assert_eq!(rig.port.state.lock().unwrap().device_mode, 3, "Driver mode");
+    }
+    rig.origin.stop();
+    rig.port.state.lock().unwrap().stream_unsettled = true;
+    let deadline = Instant::now() + Duration::from_secs(4);
+    let stopped = tokio::time::timeout(Duration::from_secs(10), async {
+        rig.source.lock().await.drain_by(deadline).await
+    })
+    .await
+    .expect("the settle takes only its share");
+    stopped.unwrap();
+    let state = rig.port.state.lock().unwrap();
+    assert_eq!(state.fans, [0, 0], "handed back to Automatic");
+    assert_eq!(state.stream_settles, 1);
+    #[cfg(feature = "service-keyboard-driver-mode-v1")]
+    assert_eq!(state.device_mode, 0, "the keyboard is released");
+    drop(state);
+    assert!(rig.runtime.lighting_latched_for_tests(), "in doubt");
+}
+
+/// A request's open has its own bound within the request. One that never
+/// answers is recalled, which cancels its selection, and the request stores
+/// its intent and replies that the matrix collection is unavailable, before
+/// any setter and well before the request's deadline.
+#[tokio::test]
+async fn a_hung_open_is_recalled_and_refuses_before_any_setter() {
+    let rig = Rig::new(MemoryFiles::default());
+    lit(&rig, [0x40, 1, 0]);
+    rig.port.state.lock().unwrap().stream_open_hang = true;
+    let begun = Instant::now();
+    let (status, message) = tokio::time::timeout(Duration::from_secs(10), set(&rig, 1, SPECTRUM))
+        .await
+        .expect("the open is bounded");
+    assert_eq!(
+        (status, message.as_str()),
+        (
+            3,
+            "Lighting override intent was stored. Hardware result: Lighting write was not applied: The keyboard matrix collection is unavailable; no lighting setter was submitted."
+        )
+    );
+    assert!(
+        begun.elapsed() < Duration::from_secs(5),
+        "{:?}",
+        begun.elapsed()
+    );
+    assert!(sent(&rig).iter().all(|s| !s.1), "no setter");
+    assert!(frames(&rig).is_empty());
+    assert_eq!(retired(&rig), 1, "recalled once");
+    assert!(!rig.runtime.lighting_latched_for_tests());
+    rig.stop().await;
+}
+
+/// The origin tick waits for a gate a stream frame holds only until that
+/// frame's deadline; past it, the tick ends without a reading.
+#[tokio::test]
+async fn the_tick_waits_for_a_frame_only_until_its_deadline() {
+    let rig = Rig::new(MemoryFiles::default());
+    lit(&rig, [0x40, 1, 0]);
+    assert_eq!(set(&rig, 1, SPECTRUM).await.0, 1);
+    let (_, _, started) = due(&rig);
+    let clean = rig.runtime.stream_clean_for_tests();
+    let held = rig.runtime.hold_lighting_gate_for_tests();
+    rig.runtime
+        .set_stream_hold_for_tests(Some(Instant::now() + Duration::from_millis(50)));
+    let at = started + Duration::from_millis(500);
+    let ticked = tokio::time::timeout(Duration::from_secs(10), tick(&rig, at)).await;
+    assert!(ticked.is_ok(), "the tick ended at the frame's deadline");
+    assert_eq!(rig.runtime.stream_clean_for_tests(), clean, "no reading");
+    rig.runtime.set_stream_hold_for_tests(None);
+    drop(held);
+    rig.stop().await;
+}
+
+/// The effect starts at the new renderer's handshake (managed
+/// `effectStartedTimestamp`), before its first frame, and not when the
+/// request finished. The jobs run on the real clock here, so their instants
+/// compare with the Service's.
+#[tokio::test]
+async fn the_effect_starts_at_the_handshake_before_its_first_frame() {
+    let rig = Rig::new(MemoryFiles::default());
+    lit(&rig, [0x40, 1, 0]);
+    rig.port.state.lock().unwrap().lighting_real_clock = true;
+    assert_eq!(set(&rig, 1, SPECTRUM).await.0, 1);
+    let (_, _, started) = due(&rig);
+    let first = rig.port.state.lock().unwrap().matrix_at[0];
+    assert!(
+        started <= first,
+        "started {:?} after the first frame",
+        started - first
+    );
+    rig.stop().await;
+}
+
+/// The stream loop itself: a frame refused for its admission leaves the
+/// loop waiting, without a timer, until the origin tick confirms a clean
+/// reading, whose notification resumes the frames.
+#[tokio::test]
+async fn the_stream_loop_waits_for_the_tick_after_a_refused_reading() {
+    let rig = Rig::new(MemoryFiles::default());
+    lit(&rig, [0x40, 1, 0]);
+    assert_eq!(set(&rig, 1, SPECTRUM).await.0, 1);
+    let runtime = rig.runtime.clone();
+    let stream = async {
+        let _ = runtime.run_lighting_stream().await;
+    };
+    let drive = async {
+        until(|| frames(&rig).len() >= 3).await;
+        rig.custody.fresh_refuse.store(true, Ordering::Release);
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        let stalled = frames(&rig).len();
+        rig.custody.fresh_refuse.store(false, Ordering::Release);
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert_eq!(frames(&rig).len(), stalled, "it waits for the tick");
+        tick(&rig, Instant::now()).await;
+        until(|| frames(&rig).len() > stalled).await;
+    };
+    tokio::select! {
+        () = stream => panic!("the stream loop ended"),
+        () = drive => {}
+    }
+    rig.stop().await;
+}
+
+/// Each frame takes the custody's frame admission only. The full custody
+/// authorization, whose loaded-origin, package and SCM verification the
+/// production `ReadLease` runs, is the origin tick's, once.
+#[tokio::test]
+async fn frames_run_no_custody_verification_and_a_tick_runs_one() {
+    let rig = Rig::new(MemoryFiles::default());
+    lit(&rig, [0x40, 1, 0]);
+    assert_eq!(set(&rig, 1, SPECTRUM).await.0, 1);
+    let verified = || rig.custody.full_authorizations.load(Ordering::Acquire);
+    let before = verified();
+    for _ in 0..3 {
+        let (next, _, _) = due(&rig);
+        assert!(matches!(
+            rig.runtime.stream_frame(next).await.unwrap(),
+            At(_)
+        ));
+    }
+    assert_eq!(frames(&rig).len(), 4);
+    assert_eq!(verified(), before, "none per frame");
+    let (next, _, _) = due(&rig);
+    tick(&rig, next).await;
+    assert_eq!(rig.runtime.stream_clean_for_tests(), Some(next));
+    assert_eq!(verified(), before + 1, "one per tick");
+    rig.stop().await;
 }
 
 /// Without a low-power reading (no trigger or Driver-mode composition), a

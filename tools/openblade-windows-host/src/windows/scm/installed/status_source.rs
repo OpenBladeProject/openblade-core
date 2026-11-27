@@ -1536,9 +1536,10 @@ impl StatusSource for GuardedStatus {
                 // The owned renderer ends first, without a write, as managed's
                 // port disposal stops its stream; a keepalive job still running
                 // is cancelled by the mutation worker's stop below. The stream
-                // recalls every frame not yet submitted and is awaited, within
-                // the drain, until none is outstanding
-                // (`Runtime::settle_lighting_stream`).
+                // recalls every frame not yet submitted and is awaited, for its
+                // own small share of the drain, until none is outstanding
+                // (`Runtime::settle_lighting_stream`); a settle it cannot
+                // confirm latches the doubt and every step below still runs.
                 #[cfg(feature = "service-lighting-v1")]
                 {
                     runtime.retire_renderer();

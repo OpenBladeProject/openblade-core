@@ -444,6 +444,13 @@ impl Port for NativePort {
         if self.matrix.is_some() {
             return Ok(());
         }
+        // A report the stream's lane left outstanding keeps `MATRIX_IO`
+        // until it completes. Every job opens its collection
+        // before anything is sent, so a job refuses here, before its
+        // setters, instead of failing after them.
+        if MATRIX_IO.load(std::sync::atomic::Ordering::Acquire) {
+            return Err(blocked("a keyboard matrix report is still outstanding"));
+        }
         limit.check()?;
         let identity = super::select_matrix(&WindowsMetadata, limit.cancelled)?;
         limit.check()?;

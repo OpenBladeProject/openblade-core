@@ -97,8 +97,12 @@ const DRAIN_TIMEOUT: Duration = Duration::from_secs(2);
 /// system-shutdown window, WaitToKillServiceTimeout, about 5 s: native
 /// accepts SERVICE_CONTROL_SHUTDOWN, not PRESHUTDOWN. A display-brightness
 /// usage still held at Stop is released first, within its own share
-/// (`thermal_mutation::BRIGHTNESS_SHUTDOWN_BUDGET`, 0.3 s), out of this bound:
-/// only then do the fans start with less than their 2 s, at least 1.7 s.
+/// (`thermal_mutation::BRIGHTNESS_SHUTDOWN_BUDGET`, 0.3 s), out of this bound,
+/// and so is the settle of an animated lighting stream
+/// (`lighting_stream::STREAM_SETTLE_BUDGET`, 0.3 s), whose unconfirmed end
+/// latches the doubt rather than spend more. Only then do the fans start with
+/// less than their 2 s: at least 1.7 s after one of those shares, 1.4 s after
+/// both.
 #[cfg(feature = "service-keyboard-driver-mode-v1")]
 const SOURCE_DRAIN_TIMEOUT: Duration =
     DRAIN_TIMEOUT.saturating_add(thermal_mutation::KEYBOARD_SHUTDOWN_BUDGET);
@@ -993,6 +997,9 @@ fn mutation_budget(request: &StatusRequest) -> Duration {
                 | StatusRequest::SetHyperBoost { .. }
                 | StatusRequest::SetLightingOverride { .. }
                 | StatusRequest::StepKeyboardBrightness { .. }
+                // It writes no hardware, but it waits for the gate, and its
+                // lighting admission reads the power source over HID.
+                | StatusRequest::SetLightingRefreshRate { .. }
         )
     {
         RECIPE_BUDGET

@@ -3,10 +3,13 @@
 //! (`Runtime::run_lighting_stream`), each under the origin tick's clean
 //! controller reading (`Runtime::confirm_stream_clean`), on the Service's
 //! matrix stream (`MatrixStream`). Every wait on that stream is bounded
-//! here: a frame by its budget, a request's open by the request's deadline
-//! and Stop's settle by the drain's. A frame that outlasts its budget is in
-//! doubt: the doubt latches, the renderer ends, its frames are recalled
-//! (`MatrixStream::retire`) and the operation gate is released.
+//! here: a frame by its budget (`FRAME_BUDGET`), a request's open by its own
+//! (`OPEN_BUDGET`) within the request's deadline, and Stop's settle by its
+//! share of the drain (`STREAM_SETTLE_BUDGET`). A frame that outlasts its
+//! budget is in doubt: the doubt latches, the renderer ends, its frames are
+//! recalled (`MatrixStream::retire`) and the operation gate is released. An
+//! open that outlasts its budget is recalled and cancelled the same way, and
+//! the request refuses before any setter.
 use super::super::{
     Fresh, Runtime, is_competing_controller, is_fatal_admission, verify_retained_failure,
 };
@@ -63,6 +66,18 @@ impl Clean {
 const CLEAN_READING_AGE: Duration = Duration::from_secs(1);
 /// The bound on one stream frame, from its render to its completion.
 const FRAME_BUDGET: Duration = Duration::from_millis(500);
+/// The bound on a request's open of the stream's collection, within the
+/// request's deadline: a selection that does not finish in time is cancelled
+/// and the request takes the unopened reply, leaving the rest of its budget to
+/// store the intent.
+const OPEN_BUDGET: Duration = Duration::from_secs(1);
+/// Stop's share of the source drain for the stream's settle, out of the
+/// time the display-brightness release, the keyboard release, the fan
+/// handback and the HyperBoost exit are paced to (`readiness::SOURCE_DRAIN_TIMEOUT`).
+/// It is at most one frame's budget, which already bounds a frame in flight;
+/// a settle not confirmed within it latches the doubt and the drain goes on.
+const STREAM_SETTLE_BUDGET: Duration = Duration::from_millis(300);
+const _: () = assert!(STREAM_SETTLE_BUDGET.as_nanos() <= FRAME_BUDGET.as_nanos());
 
 /// The ticks from `started` to `now`.
 pub(super) fn ticks(started: Instant, now: Instant) -> i64 {
@@ -134,13 +149,22 @@ pub(in super::super::super) enum Next {
 
 impl Runtime {
     /// Opens the stream's collection, or confirms it is open, for an
-    /// animated request by `deadline`: `false` when it is not, which
-    /// refuses the request before any setter. Opening writes nothing, and
-    /// the collection stays open while an animated renderer is owned.
+    /// animated request within `OPEN_BUDGET` of its `deadline`: `false` when
+    /// it is not, which refuses the request before any setter. An open that
+    /// outlasts its bound is recalled, which cancels its selection. Opening
+    /// writes nothing, and the collection stays open while an animated
+    /// renderer is owned.
     pub(super) async fn open_stream(&self, port: &Rc<dyn MatrixStream>, deadline: Instant) -> bool {
         // A late open still closes with the session's next retire.
         self.lighting.stream_open.set(true);
-        matches!(timeout_at(deadline, port.open()).await, Ok(Ok(())))
+        let bound = deadline.min(Instant::now() + OPEN_BUDGET);
+        match timeout_at(bound, port.open()).await {
+            Ok(opened) => opened.is_ok(),
+            Err(_) => {
+                self.lighting.close_stream();
+                false
+            }
+        }
     }
 
     /// The origin tick's step for an animated renderer: one capture of the
@@ -311,19 +335,21 @@ impl Runtime {
     }
 
     /// Stop's end of the stream, after the renderer ended
-    /// (`retire_renderer`): every frame not yet submitted is recalled, and
-    /// the drain waits, until `deadline`, for the stream to report that no
-    /// report is outstanding, so no frame is issued after the keyboard
-    /// release and the fan handback. A stream that cannot confirm it in
-    /// time latches the doubt; only the report already submitted may still
-    /// complete.
+    /// (`retire_renderer`, whose retire already recalled every frame not yet
+    /// submitted): the drain waits, for its `STREAM_SETTLE_BUDGET` share
+    /// before `deadline`, for the stream to report that no report is
+    /// outstanding, so no frame is issued after the keyboard release and the
+    /// fan handback. A stream that cannot confirm it in time latches the
+    /// doubt, and the drain goes on: only the report already submitted may
+    /// still complete.
     pub(in super::super::super) async fn settle_lighting_stream(&self, deadline: Instant) {
         let Some(port) = self.lighting.stream.get().cloned() else {
             return;
         };
-        self.lighting.stream_open.set(false);
-        port.retire();
-        if !matches!(timeout_at(deadline, port.settle(deadline)).await, Ok(true)) {
+        // A no-op after `retire_renderer`, unless a request opened it since.
+        self.lighting.close_stream();
+        let share = deadline.min(Instant::now() + STREAM_SETTLE_BUDGET);
+        if !matches!(timeout_at(share, port.settle(share)).await, Ok(true)) {
             self.lighting.latch();
         }
     }
@@ -362,5 +388,11 @@ impl Runtime {
     /// Bounds every later frame by `budget` instead of `FRAME_BUDGET`.
     pub(in super::super::super) fn set_frame_budget_for_tests(&self, budget: Duration) {
         self.lighting.frame_budget.set(Some(budget));
+    }
+
+    /// Marks the operation gate as held by a stream frame due by `deadline`
+    /// (`Hold`), as a frame in flight does.
+    pub(in super::super::super) fn set_stream_hold_for_tests(&self, deadline: Option<Instant>) {
+        self.lighting.stream_hold.set(deadline);
     }
 }

@@ -197,6 +197,17 @@ pub(crate) struct State {
     /// The stream's collection does not open.
     #[cfg(feature = "service-lighting-v1")]
     pub(crate) stream_unopened: bool,
+    /// The stream's open never answers: only the runtime's bound ends it.
+    #[cfg(feature = "service-lighting-v1")]
+    pub(crate) stream_open_hang: bool,
+    /// The stream's settle never answers, as a report that never completes
+    /// keeps it.
+    #[cfg(feature = "service-lighting-v1")]
+    pub(crate) stream_unsettled: bool,
+    /// Render jobs run on the real clock, so their handshake and frame
+    /// instants compare with the Service's.
+    #[cfg(feature = "service-lighting-v1")]
+    pub(crate) lighting_real_clock: bool,
     /// How many times the stream opened or confirmed its collection.
     #[cfg(feature = "service-lighting-v1")]
     pub(crate) stream_opens: usize,
@@ -378,6 +389,8 @@ impl Fixture {
                     let real = s.device_mode_latency.is_some();
                     #[cfg(not(feature = "service-keyboard-driver-mode-v1"))]
                     let real = false;
+                    #[cfg(feature = "service-lighting-v1")]
+                    let real = real || s.lighting_real_clock;
                     let paused = (latency || permit.is_none() || thermal)
                         && s.held_read.is_none()
                         && s.held_write.is_none()
@@ -980,6 +993,9 @@ impl MatrixStream for FixtureStream {
     fn open(&self) -> Pending<Result<(), Unwritten>> {
         let mut s = self.0.state.lock().unwrap();
         s.stream_opens += 1;
+        if s.stream_open_hang {
+            return Box::pin(std::future::pending());
+        }
         let opened = if s.stream_unopened {
             Err(Unwritten::Unsent)
         } else {
@@ -1020,7 +1036,11 @@ impl MatrixStream for FixtureStream {
         self.0.state.lock().unwrap().stream_retired += 1;
     }
     fn settle(&self, _: Instant) -> Pending<bool> {
-        self.0.state.lock().unwrap().stream_settles += 1;
+        let mut s = self.0.state.lock().unwrap();
+        s.stream_settles += 1;
+        if s.stream_unsettled {
+            return Box::pin(std::future::pending());
+        }
         Box::pin(std::future::ready(true))
     }
 }
