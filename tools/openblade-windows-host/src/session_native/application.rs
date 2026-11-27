@@ -91,28 +91,11 @@ async fn transport(
     .await
 }
 
-/// Run `work` on a thread with its own current-thread runtime and wait for it
-/// without blocking the caller. The thread is joined before this returns.
+/// Run `work` on the application transport's own thread and runtime.
 async fn host<F: Future<Output = io::Result<()>>>(
     work: impl FnOnce() -> F + Send + 'static,
 ) -> io::Result<()> {
-    let (done_tx, done) = oneshot::channel();
-    let thread = thread::Builder::new()
-        .name("OpenBlade application transport".into())
-        .spawn(move || {
-            let result = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .and_then(|runtime| runtime.block_on(work()));
-            let _ = done_tx.send(result);
-        })?;
-    let result = done
-        .await
-        .unwrap_or_else(|_| Err(io::Error::other("application transport panicked")));
-    thread
-        .join()
-        .map_err(|_| io::Error::other("application transport panicked"))?;
-    result
+    super::transport_thread::host("OpenBlade application transport", work).await
 }
 
 fn new_guid() -> io::Result<Guid> {

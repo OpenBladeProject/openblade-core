@@ -31,6 +31,7 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="..\..\tools\openblade-windows-host\tests\data\function-row-hook-vectors.json" Link="function-row-hook-vectors.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\tools\openblade-windows-host\tests\data\session-power-relay-vectors.json" Link="session-power-relay-vectors.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\Fixtures\Parity\SnapTap\windows-hook.txt" Link="Fixtures\SnapTapWindowsHook.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\tools\openblade-windows-host\src\session_battery\datetime-cases.tsv" Link="Fixtures\datetime-cases.tsv" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\tools\openblade-windows-host\src\session_battery\equal-start.xml" Link="Fixtures\equal-start.xml" CopyToOutputDirectory="PreserveNewest" />

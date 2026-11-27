@@ -60,6 +60,11 @@ agent-function-row-v1 = ["native-agent-entry-compile-check"]
 # Windows setting without a request, so packaging refuses an image that
 # carries it.
 agent-power-mode-automation-v1 = ["native-agent-entry-compile-check", "openblade-domain/profile-set"]
+# Session suspend/resume relay (managed SessionPowerTransitionRelay): each
+# transition is reported to the Service's reportSessionPowerTransition within
+# the managed 1.5 s callback budget. Packaging refuses an image that carries
+# it until the Service that serves the report is admitted beside it.
+agent-session-power-relay-v1 = ["native-agent-entry-compile-check", "windows-sys/Win32_System_Power"]
 native-agent-entry-compile-check = ["windows-sys/Win32_System_RemoteDesktop"]
 cpu-worker-fixture = []
 scratch-writer-fence = []

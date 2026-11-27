@@ -107,6 +107,7 @@ fn main() {
             "agent-power-mode-automation-v1",
             "session-power-mode-automation-v1",
         ),
+        ("agent-session-power-relay-v1", "session-power-relay-v1"),
     ]
     .into_iter()
     .filter_map(|(feature, marker)| has(feature).then_some(marker))
@@ -119,6 +120,7 @@ fn main() {
         || has("agent-gpu-v1")
         || has("agent-function-row-v1")
         || has("agent-power-mode-automation-v1")
+        || has("agent-session-power-relay-v1")
     {
         println!("cargo::rustc-cfg=openblade_agent_endpoint");
     }

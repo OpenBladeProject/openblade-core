@@ -236,6 +236,10 @@ pub(super) fn run(
             features.push(feature(|feature_stop| {
                 super::power_mode::run(origin.clone(), feature_stop, power_mode.clone())
             }));
+            #[cfg(feature = "agent-session-power-relay-v1")]
+            features.push(feature(|feature_stop| {
+                super::power_relay::run(origin.clone(), feature_stop)
+            }));
             run_all(canceled, watch, features).await
         }
     });

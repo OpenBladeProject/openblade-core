@@ -44,6 +44,9 @@ pub enum Event {
     /// Windows power-mode automation could not apply an association, as
     /// managed traces a failed `WindowsPowerModeAutomationResult`.
     WindowsPowerMode(PowerModeNotice),
+    /// One session power transition report ended, as the managed relay traces
+    /// each result.
+    SessionPowerRelay(SessionPowerRelayNotice),
 }
 
 /// The failed step of one Windows power-mode apply. Win32 codes only.
@@ -56,6 +59,32 @@ pub enum PowerModeNotice {
     NotRetained,
     /// The user-configured power mode functions could not be resolved.
     ApiUnavailable,
+}
+
+/// How one session power transition report ended. The sequence is the
+/// relay's own counter; nothing names the Service, a path or a timing.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum SessionPowerRelayNotice {
+    /// The Service answered with this `ControlOperationStatus`, or refused the
+    /// request (`None`).
+    Answered {
+        sequence: i64,
+        suspending: bool,
+        status: Option<u8>,
+    },
+    /// The callback budget ran out, or a newer transition superseded this one,
+    /// before or during its report.
+    Abandoned { sequence: i64, suspending: bool },
+    /// The exchange failed.
+    Failed {
+        sequence: i64,
+        suspending: bool,
+        kind: io::ErrorKind,
+    },
+    /// Windows refused the suspend/resume registration; the relay is off.
+    RegistrationFailed(u32),
+    /// Windows refused to unregister; the callback context is kept alive.
+    UnregistrationFailed(u32),
 }
 
 /// Fixed notices of the function-row role. None carries a key sequence, a

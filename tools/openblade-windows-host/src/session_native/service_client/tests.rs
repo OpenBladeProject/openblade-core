@@ -1,3 +1,5 @@
+#[cfg(feature = "agent-session-power-relay-v1")]
+mod exchange;
 mod observation;
 #[cfg(feature = "agent-application-reporter-v1")]
 mod report;

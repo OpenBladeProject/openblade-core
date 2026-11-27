@@ -424,7 +424,14 @@ async fn request_on<S: AsyncRead + AsyncWrite + Unpin>(
 /// Dropping a report future closes its connection; a canceled report is never
 /// replayed. Acquisition blocks its caller, so run the channel on a thread that
 /// may block, not on the Agent's shared runtime.
-#[cfg(feature = "agent-application-reporter-v1")]
+///
+/// The session power relay (managed `ReportSessionPowerTransitionAsync`)
+/// shares the exchange: it sends its own encoded request and decodes the reply
+/// itself, under its own callback budget.
+#[cfg(any(
+    feature = "agent-application-reporter-v1",
+    feature = "agent-session-power-relay-v1"
+))]
 pub(super) struct ReportChannel<'a> {
     authority: Option<&'a dyn InstalledServiceAuthority>,
     generation: Option<(Box<dyn InstalledServiceGeneration + 'a>, NonZeroU32)>,
@@ -434,7 +441,10 @@ pub(super) struct ReportChannel<'a> {
 /// limit. A wedged Service would hold the one in-flight report, and with it
 /// every renewal, forever, so the connect has its own two-second bound and
 /// the reply `REPORT_REPLY_BUDGET`.
-#[cfg(feature = "agent-application-reporter-v1")]
+#[cfg(any(
+    feature = "agent-application-reporter-v1",
+    feature = "agent-session-power-relay-v1"
+))]
 const REPORT_CONNECT_BUDGET: Duration = Duration::from_secs(2);
 /// A report may reconcile saved intent under the Service's
 /// `RECONCILE_BUDGET`, and the Service answers a reconciliation that has run
@@ -447,7 +457,10 @@ const REPORT_REPLY_BUDGET: Duration = Duration::from_secs(
         + crate::service_frame::FRAME_TIMEOUT.as_secs(),
 );
 
-#[cfg(feature = "agent-application-reporter-v1")]
+#[cfg(any(
+    feature = "agent-application-reporter-v1",
+    feature = "agent-session-power-relay-v1"
+))]
 impl<'a> ReportChannel<'a> {
     pub(super) fn new(authority: Option<&'a dyn InstalledServiceAuthority>) -> Self {
         Self {
@@ -456,6 +469,7 @@ impl<'a> ReportChannel<'a> {
         }
     }
 
+    #[cfg(feature = "agent-application-reporter-v1")]
     pub(super) async fn report(
         &mut self,
         request: &openblade_application_reporter::ReportApplicationContextRequest,
@@ -464,6 +478,28 @@ impl<'a> ReportChannel<'a> {
             server_identity(pipe.as_raw_handle())
         })
         .await
+    }
+
+    /// One encoded request over the installed Service pipe; the reply payload.
+    #[cfg(feature = "agent-session-power-relay-v1")]
+    pub(super) async fn exchange(&mut self, payload: &[u8]) -> io::Result<Vec<u8>> {
+        // A power transition reconciles nothing; the relay's own budget bounds
+        // the whole exchange well inside one frame.
+        self.exchange_on(
+            payload,
+            crate::service_frame::FRAME_TIMEOUT,
+            connect_installed,
+            |pipe| server_identity(pipe.as_raw_handle()),
+        )
+        .await
+    }
+
+    /// Establish the held generation now, so the first exchange need not
+    /// re-read and hash the installed package inside its own budget.
+    #[cfg(feature = "agent-session-power-relay-v1")]
+    pub(super) fn prime(&mut self) -> io::Result<()> {
+        let (generation, pid) = self.admit()?;
+        self.keep(generation, pid, Ok(()))
     }
 
     /// The held generation if it still verifies, else a freshly acquired one.
@@ -483,16 +519,38 @@ impl<'a> ReportChannel<'a> {
         Ok((generation, pid))
     }
 
+    #[cfg(feature = "agent-application-reporter-v1")]
     async fn report_on<S: AsyncRead + AsyncWrite + Unpin>(
         &mut self,
         request: &openblade_application_reporter::ReportApplicationContextRequest,
         connect: impl AsyncFnOnce() -> io::Result<S>,
         peer: impl Fn(&S) -> io::Result<(u32, u32)>,
     ) -> io::Result<openblade_application_reporter::ReportOutcome> {
-        use crate::service_frame::{read_payload, write_payload};
         use openblade_windows_host::reporter_pipe::{Response, encode, guid_text};
 
         let payload = encode(request)?;
+        let reply = self
+            .exchange_on(&payload, REPORT_REPLY_BUDGET, connect, peer)
+            .await?;
+        // Any refusal, including a typed Blocked or Failed result, leaves the
+        // report pending exactly as managed: only Stored and Applied acknowledge.
+        Response::decode(&reply, &guid_text(request.request_id))
+            .and_then(|response| response.report_outcome())
+            .map(|(outcome, _message)| outcome)
+    }
+
+    /// Send one already encoded request and return the reply payload, read
+    /// within `reply_budget`, once the peer has verified again. Only a failed
+    /// verification, here or after the reply, drops the held generation.
+    async fn exchange_on<S: AsyncRead + AsyncWrite + Unpin>(
+        &mut self,
+        payload: &[u8],
+        reply_budget: Duration,
+        connect: impl AsyncFnOnce() -> io::Result<S>,
+        peer: impl Fn(&S) -> io::Result<(u32, u32)>,
+    ) -> io::Result<Vec<u8>> {
+        use crate::service_frame::{read_payload, write_payload};
+
         let (generation, pid) = self.admit()?;
         let connected = timeout_at(Instant::now() + REPORT_CONNECT_BUDGET, connect()).await;
         let mut stream = match connected {
@@ -500,15 +558,10 @@ impl<'a> ReportChannel<'a> {
             Ok(Err(error)) => return self.keep(generation, pid, Err(error)),
             Err(elapsed) => return self.keep(generation, pid, Err(elapsed.into())),
         };
-        // A failed verification, here or after the reply, drops the generation.
         verify_peer(generation.as_ref(), pid, &stream, &peer)?;
         let exchanged = async {
-            write_payload(&mut stream, &payload).await?;
-            timeout_at(
-                Instant::now() + REPORT_REPLY_BUDGET,
-                read_payload(&mut stream),
-            )
-            .await?
+            write_payload(&mut stream, payload).await?;
+            timeout_at(Instant::now() + reply_budget, read_payload(&mut stream)).await?
         }
         .await;
         let reply = match exchanged {
@@ -516,12 +569,7 @@ impl<'a> ReportChannel<'a> {
             Err(error) => return self.keep(generation, pid, Err(error)),
         };
         verify_peer(generation.as_ref(), pid, &stream, &peer)?;
-        // Any refusal, including a typed Blocked or Failed result, leaves the
-        // report pending exactly as managed: only Stored and Applied acknowledge.
-        let outcome = Response::decode(&reply, &guid_text(request.request_id))
-            .and_then(|response| response.report_outcome())
-            .map(|(outcome, _message)| outcome);
-        self.keep(generation, pid, outcome)
+        self.keep(generation, pid, Ok(reply))
     }
 
     /// Hold the verified generation for the next report, whatever this result.

@@ -36,6 +36,10 @@ mod power_admission;
 #[cfg_attr(test, allow(dead_code))]
 // The production supplier is built only by the non-test installed monitor.
 mod power_mode;
+#[cfg(feature = "agent-session-power-relay-v1")]
+#[cfg_attr(test, allow(dead_code))]
+// The production registration is built only by the non-test installed monitor.
+mod power_relay;
 #[cfg_attr(test, allow(dead_code))]
 // Only the non-test installed entry registers a restart.
 mod restart;
@@ -43,6 +47,13 @@ mod restart;
 mod scm_peer;
 pub(crate) mod service_client;
 mod token;
+#[cfg(any(
+    feature = "agent-application-reporter-v1",
+    feature = "agent-session-power-relay-v1"
+))]
+#[cfg_attr(test, allow(dead_code))]
+// The relay hosts its transport only in the non-test installed monitor.
+mod transport_thread;
 #[cfg(any(openblade_display_write, feature = "agent-function-row-v1"))]
 #[cfg_attr(test, allow(dead_code))]
 // Only the non-test installed monitor resolves the user environment.
