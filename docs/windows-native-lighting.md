@@ -254,11 +254,14 @@ On Windows the stream writes through its own lease on the exact matrix
 collection, opened as a render job's is (`select_matrix`, the same access, a
 fresh identity verification), on a dedicated thread (`matrix_lane.rs`, with
 the Win32 calls behind `MatrixIo` in `windows/stream.rs`). An animated
-request opens that lease, or confirms it open, before anything is sent: one
-whose collection does not open is stored and replies that the matrix
-collection is unavailable, with no setter sent. The lease stays open while
-one animated renderer replaces another and closes when a request leaves
-none. Before each report the thread checks, in order, that the frame was not
+request opens that lease, or confirms that the open one still describes the
+selected collection, before anything is sent, waiting at most 1 s. One
+whose collection does not open in time, or whose open handle no longer
+describes it, is stored and replies that the matrix collection is
+unavailable, with no setter sent; an open that outlasts its 1 s is recalled,
+which cancels its collection selection. The lease stays open while one
+animated renderer replaces another and closes when a request leaves none.
+Before each report the thread checks, in order, that the frame was not
 recalled, that the handle still describes the selected collection, that the
 frame's deadline has not passed, and that it holds the process's matrix I/O
 flag (`MATRIX_IO`), which serializes every matrix report, the jobs' and the
@@ -266,8 +269,11 @@ stream's. It checks the recall token once more immediately before the
 SET_FEATURE. A report holds `MATRIX_IO` from its issue until its terminal
 completion: one still outstanding at its deadline is cancelled and in doubt,
 and the thread keeps polling it between requests, so its late completion
-releases `MATRIX_IO` and lets a retired lease close. A report that never
-completes keeps both. The Service remains the only HID owner.
+releases `MATRIX_IO` and lets a retired lease close. After its first second
+outstanding, the thread polls it every 100 ms instead of every 10 ms. A
+report that never completes keeps both, and every render job then refuses
+when it opens its collection, before any setter. The Service remains the
+only HID owner.
 
 The stream starts only from a request that passed its full fresh admission.
 Before each frame it:
@@ -285,29 +291,36 @@ Before each frame it:
 4. takes that reading's admission for a frame (`Fresh::authorize_frame`) at
    the same Windows power generation: the pinned lifecycle epoch, which
    every suspend, resume, session change and power notice advances; the
-   same console session, unlocked; a known AC line status; and the exact
-   mailbox custody and generation.
+   same console session, unlocked; a known AC line status; and the
+   custody's frame admission (`ReadCustody::authorize_frame`), which checks
+   the custody's latched state, its retained failure, the loaded origin's
+   lifetime, which a revocation, a lost trust or Stop ends at once, and the
+   active lifecycle epoch.
 
-Per frame, the loaded-origin and package verification, the SCM state, the
-primary SID and logon and the controller inventory are not repeated: they
-come from the tick's reading, no older than 1 s. This is deliberate, since a
-per-frame pass would run the SCM query and the inventory at frame rate; a
-change to any of them is seen at the next tick.
+Per frame, the loaded-origin process, package (ACL and `current.bin`) and
+SCM verification, the original mapping (`managed-handoff.bin`), the journal
+custody, the primary SID and logon and the controller inventory are not
+repeated: the tick's full capture runs them once, for a reading no older
+than 1 s. This is deliberate, since a per-frame pass would run those file,
+SCM and inventory queries at frame rate; a change to any of them is seen at
+the next tick.
 
 The origin tick waits, until the frame's deadline, for an operation gate a
 stream frame holds, so the stream's own frames never cost it the clean
 reading. It still skips a gate a request holds.
 
 Every wait on the stream is bounded: a frame by its 500 ms budget, the
-request's open by the request's deadline, and Stop's settle by the drain's.
+request's open by 1 s within the request's deadline, and Stop's settle by
+its own 300 ms share of the drain.
 A frame refused before submission ends the renderer and the stream. One that
 may have been submitted without completing, or that outlasted its budget,
 latches the doubt too, recalls the stream's frames and releases the gate, so
 the next request resolves read-only and replays nothing. Stop and a
 low-power boundary recall every frame not yet submitted; Stop then waits,
-within its drain, until no report is outstanding, before the keyboard
-release and the fan handback, and latches the doubt if that is not
-confirmed in time.
+for at most its 300 ms share, until no report is outstanding, before the
+display-brightness and keyboard releases and the fan handback. If that is
+not confirmed in time it latches the doubt and the rest of the drain still
+runs.
 
 ## Keyboard brightness steps and the refresh rate (slice L3)
 
