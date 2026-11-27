@@ -349,7 +349,7 @@ impl Rig {
         serve(
             &self.automation,
             async move |supply, mode, cancel| script.call(supply, mode, cancel).await,
-            async |cancel| delay(cancel, RETRY_DELAY).await,
+            retry_delay,
             &mut self.stop.subscribe(),
             verify,
             move |outcome| reports.borrow_mut().push(*outcome),
@@ -651,4 +651,12 @@ fn a_status_event_is_refused_when_the_origin_check_fails() {
         observe(&automation, 0, 1, Some(1)),
         Classification::ApplyScheduled
     );
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_role_retries_after_one_second() {
+    let cancel = Cancel::default();
+    let started = tokio::time::Instant::now();
+    assert!(retry_delay(&cancel).await);
+    assert_eq!(started.elapsed(), Duration::from_secs(1));
 }

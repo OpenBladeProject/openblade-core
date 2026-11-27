@@ -354,7 +354,7 @@ pub(super) async fn run(
     serve(
         &automation,
         async |supply, mode, cancel| blocking(&mut supplier, supply, mode, cancel).await,
-        async |cancel| delay(cancel, RETRY_DELAY).await,
+        retry_delay,
         &mut stop,
         || super::verify_origin(&origin),
         report,
@@ -381,6 +381,11 @@ async fn blocking<S: Supplier + Send + 'static>(
     .map_err(|_| io::Error::other("power-mode worker failed"))?;
     *supplier = Some(held);
     Ok(applied)
+}
+
+/// Managed `RetryDelay`: the delay before the one retry of a failed apply.
+async fn retry_delay(cancel: &Cancel) -> bool {
+    delay(cancel, RETRY_DELAY).await
 }
 
 /// The retry delay. False when the apply was canceled first.
