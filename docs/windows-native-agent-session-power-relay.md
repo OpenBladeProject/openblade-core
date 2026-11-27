@@ -83,22 +83,27 @@ or before zero, and a timestamp before the start, before writing any byte.
 - Because those checks can themselves take time, the exchange checks the
   report once more after the pipe peer verifies and immediately before the
   first byte is written. A report whose budget ran out, or that a newer
-  transition superseded, is abandoned there without a write, and the reply
-  wait is bounded by the budget that remains.
+  transition superseded, is abandoned there without a write. The write and
+  the reply wait then share one deadline, the end of the budget, and a
+  report still waiting at that deadline is abandoned, not failed.
 - A report ends in the relay before its result is recorded in the
-  diagnostics, where managed traces the result first. A waiting suspend
-  callback is released, and the pending transition starts, without waiting
-  for the diagnostics write. Each report still records exactly one result.
+  diagnostics, where managed traces the result first, and so does the report
+  that stop drops. A waiting suspend callback is released, and the pending
+  transition becomes active, without waiting for the diagnostics write. Each
+  report still records exactly one result.
 - The registration functions are resolved at run time from the System32
   powrprof.dll, through the loader shared with power-mode automation, rather
   than imported at load time. A Windows build without them fails the
   registration, and the role runs without the relay, as after any refused
-  registration.
-- After a successful unregistration the callback context is released only
-  once no callback is still inside it, waiting at most the callback budget
-  and half a second. A callback still running after that wait keeps the
-  context alive for the rest of the process and is recorded, as a failed
-  unregistration is.
+  registration. Once a registration succeeds, powrprof.dll stays loaded for
+  the rest of the process, because Windows calls back through it.
+- Windows holds a small slot as the callback context, allocated per
+  registration and never freed, so a callback reaches it however late it
+  runs. The slot holds the relay while registered; a callback clones the
+  relay out of it and works on its clone. A successful unregistration empties
+  the slot, so a later callback does nothing, and a callback still running
+  keeps its own clone alive. After a failed unregistration the relay stays in
+  the slot, as managed roots its callback.
 - The request id is generated when the report is sent rather than at the
   notification, so the callback does no fallible work. It is still fresh for
   every request and never reused.
