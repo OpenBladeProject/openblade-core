@@ -81,6 +81,11 @@ pub(super) fn run(
                 .await
                 .map_err(|_| io::Error::other("display recovery load failed"))?
         };
+        // Power-mode automation observes the same verified statuses, in order
+        // (managed ServicePowerModeAutomationLoop); a reconnect, a stale status
+        // or a lost Origin marks it unavailable and cancels its running apply.
+        #[cfg(feature = "agent-power-mode-automation-v1")]
+        let power_mode = super::power_mode::Automation::new();
         let canceled = async {
             let result = async {
                 loop {
@@ -113,6 +118,10 @@ pub(super) fn run(
                 })?;
                 #[cfg(feature = "agent-function-row-v1")]
                 super::function_row::publish_status(&function_row, &update, || {
+                    super::verify_origin(&origin)
+                })?;
+                #[cfg(feature = "agent-power-mode-automation-v1")]
+                super::power_mode::publish_status(&power_mode, &update, || {
                     super::verify_origin(&origin)
                 })?;
                 #[cfg(openblade_display_write)]
@@ -222,6 +231,10 @@ pub(super) fn run(
             #[cfg(feature = "agent-function-row-v1")]
             features.push(feature(|feature_stop| {
                 super::function_row::run(origin.clone(), feature_stop, function_row.clone())
+            }));
+            #[cfg(feature = "agent-power-mode-automation-v1")]
+            features.push(feature(|feature_stop| {
+                super::power_mode::run(origin.clone(), feature_stop, power_mode.clone())
             }));
             run_all(canceled, watch, features).await
         }

@@ -658,7 +658,9 @@ fn application_profile(json: &Json) -> Decoded<ApplicationProfile> {
     })
 }
 
-fn windows_power_modes(json: &Json) -> Decoded<WindowsPowerModes> {
+/// A managed `WindowsPowerModeAssociations`. Mode values are wire integers;
+/// the managed status codec also refuses an undefined mode, which callers check.
+pub fn windows_power_modes(json: &Json) -> Decoded<WindowsPowerModes> {
     // In `PerformancePreset` order; the first six are constructor parameters.
     const NAMES: [&str; 10] = [
         "silent",

@@ -41,6 +41,21 @@ pub enum Event {
     PipeAlreadyOwned(Option<i32>),
     StopEndpointAlreadyOwned(Option<i32>),
     FunctionRow(FunctionRowNotice),
+    /// Windows power-mode automation could not apply an association, as
+    /// managed traces a failed `WindowsPowerModeAutomationResult`.
+    WindowsPowerMode(PowerModeNotice),
+}
+
+/// The failed step of one Windows power-mode apply. Win32 codes only.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum PowerModeNotice {
+    ReadFailed(u32),
+    SetFailed(u32),
+    ConfirmFailed(u32),
+    /// Windows confirmed a different configured mode than the one set.
+    NotRetained,
+    /// The user-configured power mode functions could not be resolved.
+    ApiUnavailable,
 }
 
 /// Fixed notices of the function-row role. None carries a key sequence, a

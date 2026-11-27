@@ -32,6 +32,10 @@ mod gpu;
 mod installed_monitor;
 #[cfg(openblade_display_write)]
 mod power_admission;
+#[cfg(feature = "agent-power-mode-automation-v1")]
+#[cfg_attr(test, allow(dead_code))]
+// The production supplier is built only by the non-test installed monitor.
+mod power_mode;
 #[cfg_attr(test, allow(dead_code))]
 // Only the non-test installed entry registers a restart.
 mod restart;

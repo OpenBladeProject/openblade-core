@@ -125,7 +125,8 @@ impl SubscriptionInitial {
 
 #[cfg(any(
     feature = "agent-application-reporter-v1",
-    feature = "agent-function-row-v1"
+    feature = "agent-function-row-v1",
+    feature = "agent-power-mode-automation-v1"
 ))]
 impl SubscriptionInitial {
     pub(crate) fn snapshot(&self) -> &Snapshot {
