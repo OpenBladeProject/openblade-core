@@ -675,3 +675,25 @@ fn the_reviewed_matrix_role_selects_the_exact_collection_only() {
     other.descriptors.replace([Ok(descriptor)].into());
     assert!(performance::select_matrix(&other, &cancelled).is_err());
 }
+
+/// The reviewed matrix identity needs this module's model and its device
+/// each. The selection binds the device to the host model's catalog entry,
+/// so no selection differs in one alone; each clause is shown on the exact
+/// identity with only that field changed.
+#[cfg(feature = "service-lighting-v1")]
+#[test]
+fn the_reviewed_matrix_identity_needs_the_model_and_the_device() {
+    let cancelled = AtomicBool::new(false);
+    let fake = matrix_fake();
+    let select = || {
+        fake.descriptors.replace([consumer(3), Ok(MATRIX)].into());
+        RoleIdentity::select(&fake, MATRIX_ROLE, &cancelled).unwrap()
+    };
+    assert!(performance::reviewed_matrix(&select()));
+    let mut model = select();
+    model.candidates.model = "RZ09-0528".into();
+    assert!(!performance::reviewed_matrix(&model), "another model");
+    let mut device = select();
+    device.descriptor.device = (0x1532, 0x02c6);
+    assert!(!performance::reviewed_matrix(&device), "another device");
+}

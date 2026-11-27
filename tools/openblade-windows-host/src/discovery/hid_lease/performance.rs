@@ -261,7 +261,7 @@ pub(super) fn select_matrix<S: super::LeaseSource>(
 
 /// The exact matrix identity: this module's model and device.
 #[cfg(feature = "service-lighting-v1")]
-fn reviewed_matrix(identity: &super::RoleIdentity) -> bool {
+pub(super) fn reviewed_matrix(identity: &super::RoleIdentity) -> bool {
     let descriptor = identity.descriptor();
     identity.model() == MODEL
         && descriptor.device == DEVICE
