@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection.Metadata;
 using System.Reflection.PortableExecutable;
 using System.Runtime.Versioning;
@@ -48,17 +49,42 @@ internal sealed class WindowsManagedMailboxPackage : IDisposable
         catch { package.Dispose(); leases.Dispose(); enrollment.Dispose(); throw; }
     }
 
-    internal BuildIdentity AuthenticateInstalled(string directory, bool requireLoadedEntry)
+    internal BuildIdentity AuthenticateInstalled(string directory) =>
+        AuthenticateCore(WindowsNativeEpochFiles.OpenProtected(directory)).Identity;
+
+    // Also proves that the running Service loaded exactly that closure. It compares
+    // each loaded assembly's file origin, which only the framework-dependent Service
+    // image has; the annotation keeps the single-file Setup from reaching it.
+    [RequiresAssemblyFiles("Compares the running Service's loaded assemblies with their installed files.")]
+    internal BuildIdentity AuthenticateLoadedService(string directory)
     {
         var files = WindowsNativeEpochFiles.OpenProtected(directory);
-        return AuthenticateCore(files, requireLoadedEntry);
+        var (identity, closure, module) = AuthenticateCore(files);
+        if (module != System.Reflection.Assembly.GetEntryAssembly()!.ManifestModule.ModuleVersionId)
+        { throw new IOException("Loaded managed Service differs from the signed original assembly."); }
+        foreach (var loaded in AppDomain.CurrentDomain.GetAssemblies().Where(a => !a.IsDynamic))
+        {
+            string name = loaded.GetName().Name + ".dll";
+            var candidates = closure.Where(p => Path.GetFileName(p).Equals(name, StringComparison.OrdinalIgnoreCase)).ToArray();
+            if (candidates.Length == 0) { continue; }
+            // An assembly loaded from memory or a bundle has no file origin to match.
+            if (candidates.Length != 1 || loaded.Location.Length == 0 || !Path.GetFullPath(loaded.Location).Equals(
+                Path.GetFullPath(Path.Combine(files.Root, candidates[0])), StringComparison.OrdinalIgnoreCase))
+            { throw new IOException("A loaded managed dependency has a different resolved origin."); }
+            using var input = files.OpenFile(Path.Combine(files.Root, candidates[0]));
+            using var metadata = new PEReader(input);
+            var definition = metadata.GetMetadataReader();
+            if (definition.GetGuid(definition.GetModuleDefinition().Mvid) != loaded.ManifestModule.ModuleVersionId)
+            { throw new IOException("A loaded managed dependency differs from its authenticated closure."); }
+        }
+        return identity;
     }
 
 #if OPENBLADE_NATIVE_PACKAGE_TESTS
-    internal BuildIdentity AuthenticateFixture(WindowsNativeEpochFiles files) => AuthenticateCore(files, false);
+    internal BuildIdentity AuthenticateFixture(WindowsNativeEpochFiles files) => AuthenticateCore(files).Identity;
 #endif
 
-    private BuildIdentity AuthenticateCore(WindowsNativeEpochFiles files, bool requireLoadedEntry)
+    private (BuildIdentity Identity, IReadOnlyCollection<string> Closure, Guid Module) AuthenticateCore(WindowsNativeEpochFiles files)
     {
         string directory = files.Root;
         installed.Add(files);
@@ -123,26 +149,8 @@ internal sealed class WindowsManagedMailboxPackage : IDisposable
         using var pe = new PEReader(assembly, PEStreamOptions.LeaveOpen);
         var reader = pe.GetMetadataReader();
         Guid module = reader.GetGuid(reader.GetModuleDefinition().Mvid);
-        if (requireLoadedEntry && module != System.Reflection.Assembly.GetEntryAssembly()!.ManifestModule.ModuleVersionId)
-        { throw new IOException("Loaded managed Service differs from the signed original assembly."); }
-        if (requireLoadedEntry)
-        {
-            foreach (var loaded in AppDomain.CurrentDomain.GetAssemblies().Where(a => !a.IsDynamic))
-            {
-                string name = loaded.GetName().Name + ".dll";
-                var candidates = actual.Keys.Where(p => Path.GetFileName(p).Equals(name, StringComparison.OrdinalIgnoreCase)).ToArray();
-                if (candidates.Length == 0) { continue; }
-                if (candidates.Length != 1 || !Path.GetFullPath(loaded.Location).Equals(
-                    Path.GetFullPath(Path.Combine(directory, candidates[0])), StringComparison.OrdinalIgnoreCase))
-                { throw new IOException("A loaded managed dependency has a different resolved origin."); }
-                using var input = files.OpenFile(Path.Combine(directory, candidates[0]));
-                using var metadata = new PEReader(input);
-                var definition = metadata.GetMetadataReader();
-                if (definition.GetGuid(definition.GetModuleDefinition().Mvid) != loaded.ManifestModule.ModuleVersionId)
-                { throw new IOException("A loaded managed dependency differs from its authenticated closure."); }
-            }
-        }
-        return new(actual["OpenBlade.Service.exe"], Convert.ToHexStringLower(hash.GetHashAndReset()), module.ToString("N"));
+        return (new(actual["OpenBlade.Service.exe"], Convert.ToHexStringLower(hash.GetHashAndReset()), module.ToString("N")),
+            actual.Keys, module);
     }
 
     internal void ReleaseInstalledPins()

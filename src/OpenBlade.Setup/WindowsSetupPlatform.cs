@@ -299,7 +299,7 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
             authenticated = WindowsManagedMailboxPackage.OpenCached(files, binding.Package);
             if (authenticated.Installation != binding.Installation || authenticated.EnrollmentDigest != binding.Enrollment)
             { throw new IOException("Managed predecessor trust enrollment changed."); }
-            var identity = authenticated.AuthenticateInstalled(paths.InstallDirectory, requireLoadedEntry: false);
+            var identity = authenticated.AuthenticateInstalled(paths.InstallDirectory);
             if (identity.Executable != run.Executable || identity.Closure != run.Assembly || identity.Module != run.Module)
             { throw new IOException("Managed original build differs from its signed preserved package."); }
             using var installed = WindowsNativeEpochFiles.OpenProtected(paths.InstallDirectory);
