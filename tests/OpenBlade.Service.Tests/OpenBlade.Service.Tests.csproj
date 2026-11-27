@@ -37,6 +37,7 @@
     <None Include="../../tools/openblade-windows-host/tests/data/diagnostic-export-native.json" Link="diagnostic-export-native.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../tools/openblade-windows-host/tests/data/diagnostic-export-native-private.json" Link="diagnostic-export-native-private.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../tools/openblade-windows-host/tests/data/gpu-clock-offset-vectors.json" Link="gpu-clock-offset-vectors.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../tools/openblade-windows-host/tests/data/lighting-effect-vectors.json" Link="lighting-effect-vectors.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../tools/openblade-windows-host/tests/data/gpu-temperature-vectors.json" Link="gpu-temperature-vectors.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../tools/openblade-windows-host/tests/data/thermal-convergence-vectors.json" Link="thermal-convergence-vectors.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../tools/openblade-windows-host/tests/data/thermal-convergence-ledger-vectors.json" Link="thermal-convergence-ledger-vectors.json" CopyToOutputDirectory="PreserveNewest" />

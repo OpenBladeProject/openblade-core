@@ -36,6 +36,13 @@ mod lighting;
 #[cfg(feature = "service-lighting-v1")]
 mod lighting_admission;
 #[cfg(feature = "service-lighting-v1")]
+mod lighting_effects;
+#[cfg(feature = "service-lighting-v1")]
+#[allow(unused_imports)] // Shared with the standalone discovery binary.
+pub(crate) use lighting_effects::{
+    Animation, ColorMode, Effect, Random, RefreshRate, SystemRandom,
+};
+#[cfg(feature = "service-lighting-v1")]
 mod lighting_layout;
 #[cfg(feature = "service-lighting-v1")]
 #[allow(unused_imports)] // Shared with the standalone discovery binary.
