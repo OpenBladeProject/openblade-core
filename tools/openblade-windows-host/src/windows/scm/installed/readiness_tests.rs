@@ -1,6 +1,12 @@
 #[cfg(feature = "service-diagnostics-export-v1")]
 #[path = "readiness_tests/export.rs"]
 mod export;
+#[cfg(any(
+    feature = "service-lifecycle-shutdown-v1",
+    feature = "service-session-power-relay-v1"
+))]
+#[path = "readiness_tests/lifecycle_operations.rs"]
+mod lifecycle_operations;
 #[path = "readiness_tests/observation.rs"]
 mod observation;
 #[path = "readiness_tests/unserved.rs"]

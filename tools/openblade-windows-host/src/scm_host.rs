@@ -178,6 +178,30 @@ pub(crate) unsafe extern "system" fn control(
     )
 }
 
+/// The Service's own STOP: the control SCM delivers for `sc stop`, through
+/// the same bound ingress (`installed_notice` revokes for Stop) and the same
+/// handling (`Controls::request_stop`), so the existing retirement and
+/// owned cleanup run and nothing else does. Managed's complete shutdown
+/// stops the host the same way (`HostServiceShutdownSignal`,
+/// `IHostApplicationLifetime.StopApplication`). A STOP is never held.
+#[cfg(feature = "service-lifecycle-shutdown-v1")]
+#[cfg_attr(test, allow(dead_code))] // The installed source binds it.
+pub(crate) fn deliver_stop() {
+    deliver_stop_to(&INGRESS, &CONTROLS);
+}
+
+#[cfg(feature = "service-lifecycle-shutdown-v1")]
+fn deliver_stop_to(slot: &IngressSlot, controls: &Controls) {
+    deliver(
+        slot,
+        controls,
+        SERVICE_CONTROL_STOP,
+        0,
+        || None,
+        PendingHold::wait,
+    );
+}
+
 /// One SCM control on the dispatcher thread: forward it to the bound
 /// ingress, wait on the hold it returns, if any, then handle it.
 ///
@@ -817,6 +841,37 @@ mod suspend_hold_tests {
         assert_eq!(WAITER_STOPS.load(Ordering::Acquire), 2);
         assert!(controls.stop_requested(), "STOP is handled after no wait");
         drop(arm);
+    }
+
+    #[cfg(feature = "service-lifecycle-shutdown-v1")]
+    static OWN_STOPS: AtomicUsize = AtomicUsize::new(0);
+    #[cfg(feature = "service-lifecycle-shutdown-v1")]
+    fn own_stop_hook(code: u32, event: u32, setting: Option<PowerSetting>) -> Option<PendingHold> {
+        installed_notice(&WAITER_LIFECYCLE, code, event, setting, || {
+            OWN_STOPS.fetch_add(1, Ordering::AcqRel);
+        })
+    }
+
+    /// The Service's own STOP takes SCM's STOP path: the ingress revokes
+    /// first, then the armed stop is sent. Once sent, another sends nothing.
+    #[cfg(feature = "service-lifecycle-shutdown-v1")]
+    #[test]
+    fn the_own_stop_is_delivered_as_scm_delivers_stop() {
+        let slot: IngressSlot = Mutex::new(Some(own_stop_hook));
+        let controls = Controls::new();
+        let mut stop = controls.arm();
+        super::deliver_stop_to(&slot, &controls);
+        assert_eq!(OWN_STOPS.load(Ordering::Acquire), 1);
+        assert!(controls.stop_requested());
+        assert_eq!(stop.try_recv(), Ok(()));
+        super::deliver_stop_to(&slot, &controls);
+        assert_eq!(OWN_STOPS.load(Ordering::Acquire), 2);
+        // Without a bound ingress the stop is still handled.
+        let unbound: IngressSlot = Mutex::new(None);
+        let controls = Controls::new();
+        let mut stop = controls.arm();
+        super::deliver_stop_to(&unbound, &controls);
+        assert_eq!(stop.try_recv(), Ok(()));
     }
 
     static CROSS_LIFECYCLE: LazyLock<Lifecycle> = LazyLock::new(Lifecycle::default);

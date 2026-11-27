@@ -234,6 +234,24 @@ pub(crate) enum StatusRequest {
         request_id: String,
         usage: u16,
     },
+    /// Managed `ShutdownOpenBladeRequest`: the Tray's complete shutdown.
+    ShutdownOpenBlade {
+        version: i32,
+        request_id: String,
+    },
+    /// Managed `ReportSessionPowerTransitionRequest`: the Session Agent's
+    /// relay of a suspend or resume, its QPC stamps on the machine clock.
+    /// The codec requires a non-nil instance, a positive start and
+    /// sequence, and a stamp no earlier than the start.
+    ReportSessionPowerTransition {
+        version: i32,
+        request_id: String,
+        instance_id: String,
+        instance_started_qpc: i64,
+        sequence: i64,
+        timestamp_qpc: i64,
+        suspending: bool,
+    },
     ObserveState {
         include_live_readings: bool,
         #[serde(default = "all_live_readings")]
@@ -371,6 +389,8 @@ impl HyperBoostStatus {
 
 #[cfg(feature = "installed-service-candidate")]
 mod unserved;
+#[cfg(feature = "service-lifecycle-shutdown-v1")]
+pub(crate) use unserved::UNSUPPORTED;
 #[cfg(feature = "installed-service-candidate")]
 pub(crate) use unserved::UnservedRequest;
 
@@ -378,7 +398,7 @@ impl StatusRequest {
     /// The discriminator of every variant. `operation` maps each variant to
     /// its entry, so a new variant cannot be added without listing it here.
     #[cfg(feature = "installed-service-candidate")]
-    pub(crate) const OPERATIONS: [&'static str; 24] = [
+    pub(crate) const OPERATIONS: [&'static str; 26] = [
         "setBatteryPolicy",
         "setBatteryProtection",
         "setFullChargeOverride",
@@ -403,6 +423,8 @@ impl StatusRequest {
         "recoverHyperBoostRestore",
         "setLightingOverride",
         "setDisplayBrightnessHidUsage",
+        "shutdownOpenBlade",
+        "reportSessionPowerTransition",
     ];
 
     #[cfg(all(test, feature = "installed-service-candidate"))]
@@ -432,6 +454,8 @@ impl StatusRequest {
             Self::RecoverHyperBoostRestore { .. } => 21,
             Self::SetLightingOverride { .. } => 22,
             Self::SetDisplayBrightnessHidUsage { .. } => 23,
+            Self::ShutdownOpenBlade { .. } => 24,
+            Self::ReportSessionPowerTransition { .. } => 25,
         }]
     }
 
@@ -453,7 +477,9 @@ impl StatusRequest {
         const HYPERBOOST: bool = cfg!(feature = "service-hyperboost-v1");
         const LIGHTING: bool = cfg!(feature = "service-lighting-v1");
         const BRIGHTNESS: bool = cfg!(feature = "service-brightness-hid-usage-v1");
-        const COMPILED: [bool; 24] = [
+        const SHUTDOWN: bool = cfg!(feature = "service-lifecycle-shutdown-v1");
+        const RELAY: bool = cfg!(feature = "service-session-power-relay-v1");
+        const COMPILED: [bool; 26] = [
             BATTERY,
             BATTERY,
             BATTERY,
@@ -478,6 +504,8 @@ impl StatusRequest {
             HYPERBOOST,
             LIGHTING,
             BRIGHTNESS,
+            SHUTDOWN,
+            RELAY,
         ];
         Self::OPERATIONS
             .iter()
@@ -704,6 +732,15 @@ impl StatusRequest {
                 version,
                 request_id,
             }
+            | Self::ShutdownOpenBlade {
+                version,
+                request_id,
+            }
+            | Self::ReportSessionPowerTransition {
+                version,
+                request_id,
+                ..
+            }
             | Self::ObserveState {
                 version,
                 request_id,
@@ -832,6 +869,34 @@ impl StatusRequest {
             }
             if DisplayBrightnessHidUsage::from_wire(*usage).is_none() {
                 return Err(invalid("display-brightness HID usage is undefined"));
+            }
+        }
+        if matches!(self, Self::ShutdownOpenBlade { .. })
+            && !cfg!(feature = "service-lifecycle-shutdown-v1")
+        {
+            return Err(invalid("signed shutdown composition is unavailable"));
+        }
+        if let Self::ReportSessionPowerTransition {
+            instance_id,
+            instance_started_qpc,
+            sequence,
+            timestamp_qpc,
+            ..
+        } = self
+        {
+            if !cfg!(feature = "service-session-power-relay-v1") {
+                return Err(invalid(
+                    "signed session power relay composition is unavailable",
+                ));
+            }
+            // Managed `IpcMessageCodec`: a non-nil instance, a positive start
+            // and sequence, and a stamp no earlier than the start.
+            if !is_guid(instance_id)
+                || *instance_started_qpc <= 0
+                || *sequence <= 0
+                || timestamp_qpc < instance_started_qpc
+            {
+                return Err(invalid("invalid session power transition report"));
             }
         }
         // Managed `IpcMessageCodec`: `Enum.IsDefined(cycle.Source)`, and for a

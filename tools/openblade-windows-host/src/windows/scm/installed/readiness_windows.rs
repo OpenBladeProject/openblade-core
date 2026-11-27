@@ -434,6 +434,13 @@ impl Stream for NativeStream {
         Ok(crate::windows_token::Identity::read(&token)?.sid)
     }
 
+    #[cfg(feature = "service-lifecycle-shutdown-v1")]
+    fn administrator_after_read(&self) -> bool {
+        // The same request-read token the caller was classified from.
+        self.caller_after_read().is_ok()
+            && peer_token(self.pipe.as_raw_handle()).is_ok_and(|token| is_administrator(&token))
+    }
+
     fn server_pid(&self) -> io::Result<u32> {
         let Side::Client(session) = self.side else {
             return Err(denied("server PID requires the client handle"));
@@ -466,32 +473,31 @@ impl Stream for NativeStream {
     }
 }
 
+fn query_token(
+    token: &OwnedHandle,
+    class: windows_sys::Win32::Security::TOKEN_INFORMATION_CLASS,
+    buf: &mut [usize],
+) -> io::Result<usize> {
+    let mut returned = 0;
+    // SAFETY: the aligned buffer and size output are writable for the call.
+    check(unsafe {
+        GetTokenInformation(
+            token.as_raw_handle(),
+            class,
+            buf.as_mut_ptr().cast(),
+            size_of_val(buf) as u32,
+            &mut returned,
+        )
+    })?;
+    Ok(returned as usize)
+}
+
 /// A token's logon kind and session, as a request's caller is classified.
 /// The lifecycle tick's console user is classified the same way
 /// (`thermal_native::console_user`).
 pub(super) fn token_context(token: &OwnedHandle) -> io::Result<(Logon, u32)> {
-    use windows_sys::Win32::Security::TOKEN_INFORMATION_CLASS;
-    fn query(
-        token: &OwnedHandle,
-        class: TOKEN_INFORMATION_CLASS,
-        buf: &mut [usize],
-    ) -> io::Result<usize> {
-        let mut returned = 0;
-        // SAFETY: the aligned buffer and size output are writable for the call.
-        check(unsafe {
-            GetTokenInformation(
-                token.as_raw_handle(),
-                class,
-                buf.as_mut_ptr().cast(),
-                size_of_val(buf) as u32,
-                &mut returned,
-            )
-        })?;
-        Ok(returned as usize)
-    }
-
     let mut session = [0usize; 1];
-    if query(token, TokenSessionId, &mut session)? != size_of::<u32>() {
+    if query_token(token, TokenSessionId, &mut session)? != size_of::<u32>() {
         return Err(denied("unavailable installed caller session"));
     }
     let session = session[0] as u32;
@@ -500,7 +506,7 @@ pub(super) fn token_context(token: &OwnedHandle) -> io::Result<(Logon, u32)> {
     }
 
     let mut user = [0usize; 128 / size_of::<usize>()];
-    if query(token, TokenUser, &mut user)? < size_of::<TOKEN_USER>() {
+    if query_token(token, TokenUser, &mut user)? < size_of::<TOKEN_USER>() {
         return Err(denied("unavailable installed caller SID"));
     }
     // SAFETY: TokenUser initialized the header and its SID in this allocation.
@@ -512,6 +518,39 @@ pub(super) fn token_context(token: &OwnedHandle) -> io::Result<(Logon, u32)> {
         return Ok((Logon::System, session));
     }
 
+    let mut interactive = false;
+    let mut remote = false;
+    for_each_enabled_group(token, |sid| {
+        // SAFETY: the kernel populated each SID pointer in the live buffer.
+        unsafe {
+            interactive |= IsWellKnownSid(sid, WinInteractiveSid) != 0;
+            remote |= IsWellKnownSid(sid, WinRemoteLogonIdSid) != 0;
+        }
+    })?;
+    Ok((classify_logon(interactive, remote), session))
+}
+
+/// Whether the token holds BUILTIN\Administrators enabled and not deny-only,
+/// as managed `WindowsPrincipal.IsInRole(Administrator)` reads it. A filtered
+/// UAC token holds it deny-only and is not an administrator. A token whose
+/// groups cannot be read is not one either.
+#[cfg(feature = "service-lifecycle-shutdown-v1")]
+fn is_administrator(token: &OwnedHandle) -> bool {
+    use windows_sys::Win32::Security::WinBuiltinAdministratorsSid;
+    let mut administrator = false;
+    for_each_enabled_group(token, |sid| {
+        // SAFETY: the kernel populated each SID pointer in the live buffer.
+        administrator |= unsafe { IsWellKnownSid(sid, WinBuiltinAdministratorsSid) } != 0;
+    })
+    .is_ok()
+        && administrator
+}
+
+/// Visits the SID of every enabled group of the token (`enabled_group`).
+fn for_each_enabled_group(
+    token: &OwnedHandle,
+    mut visit: impl FnMut(windows_sys::Win32::Security::PSID),
+) -> io::Result<()> {
     let mut length = 0;
     // SAFETY: the standard size query has no output buffer.
     let result = unsafe {
@@ -532,7 +571,7 @@ pub(super) fn token_context(token: &OwnedHandle) -> io::Result<(Logon, u32)> {
         return Err(denied("unavailable installed caller token groups"));
     }
     let mut groups = vec![0usize; (length as usize).div_ceil(size_of::<usize>())];
-    let used = query(token, TokenGroups, &mut groups)?;
+    let used = query_token(token, TokenGroups, &mut groups)?;
     let start = offset_of!(TOKEN_GROUPS, Groups);
     if used < start {
         return Err(denied("invalid installed caller token groups"));
@@ -552,19 +591,12 @@ pub(super) fn token_context(token: &OwnedHandle) -> io::Result<(Logon, u32)> {
             count,
         )
     };
-    let mut interactive = false;
-    let mut remote = false;
     for group in entries {
-        if !enabled_group(group.Attributes) || group.Sid.is_null() {
-            continue;
-        }
-        // SAFETY: the kernel populated each SID pointer in the live buffer.
-        unsafe {
-            interactive |= IsWellKnownSid(group.Sid, WinInteractiveSid) != 0;
-            remote |= IsWellKnownSid(group.Sid, WinRemoteLogonIdSid) != 0;
+        if enabled_group(group.Attributes) && !group.Sid.is_null() {
+            visit(group.Sid);
         }
     }
-    Ok((classify_logon(interactive, remote), session))
+    Ok(())
 }
 
 fn enabled_group(attributes: u32) -> bool {

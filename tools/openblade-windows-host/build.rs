@@ -247,6 +247,18 @@ fn main() {
         } else {
             capabilities
         };
+        // Nor the lifecycle operations: the Tray's shutdown, which stops the
+        // Service, and the Session Agent's power relay.
+        let capabilities = if role == "service" && has("service-lifecycle-shutdown-v1") {
+            format!("{capabilities},service-lifecycle-shutdown-v1")
+        } else {
+            capabilities
+        };
+        let capabilities = if role == "service" && has("service-session-power-relay-v1") {
+            format!("{capabilities},service-session-power-relay-v1")
+        } else {
+            capabilities
+        };
         let record = format!(
             "OpenBlade.NativeArtifact.v2\n{id}\n{role}\n{target}\n{source}\n{}\n{}\n{profile}\n{capabilities}\n",
             features.join(","),

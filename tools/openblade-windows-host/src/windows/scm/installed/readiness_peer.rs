@@ -15,6 +15,13 @@ pub(crate) trait Stream: AsyncRead + AsyncWrite + Unpin {
     fn user_sid_after_read(&self) -> io::Result<String> {
         Err(io::ErrorKind::PermissionDenied.into())
     }
+    /// Whether the token of the request just read holds BUILTIN\Administrators
+    /// enabled and not deny-only (managed `ServiceClientContext.IsAdministrator`).
+    /// Evidence that cannot be read is no administrator.
+    #[cfg(feature = "service-lifecycle-shutdown-v1")]
+    fn administrator_after_read(&self) -> bool {
+        false
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]

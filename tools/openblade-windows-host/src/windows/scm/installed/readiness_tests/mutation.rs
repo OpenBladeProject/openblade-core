@@ -10,6 +10,12 @@ mod driver_mode_record_model;
 #[cfg(feature = "service-gpu-clock-tuning-v1")]
 #[path = "gpu_clock_tuning.rs"]
 mod gpu_clock_tuning;
+#[cfg(any(
+    feature = "service-lifecycle-shutdown-v1",
+    feature = "service-session-power-relay-v1"
+))]
+#[path = "lifecycle_ops.rs"]
+mod lifecycle_ops;
 #[cfg(feature = "service-lighting-v1")]
 #[path = "lighting_override.rs"]
 mod lighting_override;
@@ -1373,6 +1379,12 @@ struct Rig {
     reader: ReadSource,
     origin: Arc<crate::loaded_origin::lifetime::Lifetime>,
     fatal_capture: Arc<AtomicBool>,
+    #[cfg(any(
+        feature = "service-lifecycle-shutdown-v1",
+        feature = "service-session-power-relay-v1"
+    ))]
+    #[cfg_attr(not(feature = "service-lifecycle-shutdown-v1"), allow(dead_code))]
+    lifecycle: lifecycle_ops::LifecycleProbes,
     #[cfg(feature = "service-battery-policy-v1")]
     battery_clock: Rc<dyn Fn() -> Option<Instant>>,
 }
@@ -1591,6 +1603,16 @@ impl Rig {
         let observations = Arc::new(AtomicUsize::new(0));
         #[cfg(feature = "service-brightness-hid-usage-v1")]
         let observed = observations.clone();
+        #[cfg(any(
+            feature = "service-lifecycle-shutdown-v1",
+            feature = "service-session-power-relay-v1"
+        ))]
+        let (lifecycle, lifecycle_ports) = lifecycle_ops::LifecycleProbes::new();
+        #[cfg(not(any(
+            feature = "service-lifecycle-shutdown-v1",
+            feature = "service-session-power-relay-v1"
+        )))]
+        let lifecycle_ports = ();
         let source = injected_mutation_source(
             Arc::new(Origin(origin.clone(), custody.clone())),
             mailbox,
@@ -1605,6 +1627,7 @@ impl Rig {
                 })
             },
             observed_hyperboost,
+            lifecycle_ports,
         );
         Self {
             #[cfg(feature = "service-hyperboost-v1")]
@@ -1630,6 +1653,11 @@ impl Rig {
             reader,
             origin,
             fatal_capture,
+            #[cfg(any(
+                feature = "service-lifecycle-shutdown-v1",
+                feature = "service-session-power-relay-v1"
+            ))]
+            lifecycle,
             #[cfg(feature = "service-battery-policy-v1")]
             battery_clock,
         }

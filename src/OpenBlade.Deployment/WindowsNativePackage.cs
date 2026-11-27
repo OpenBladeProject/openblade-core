@@ -151,6 +151,13 @@ internal sealed record NativeArtifact(string Id, string Role, string Target, str
         // marker by name (docs/windows-rust-development-service.md).
         if (features.Contains("service-brightness-hid-usage-v1", StringComparer.Ordinal) || capabilities.Split(',').Contains("service-brightness-hid-usage-v1", StringComparer.Ordinal))
         { throw new InvalidDataException("Native display-brightness input is not admitted for packaging."); }
+        // The Tray's shutdown stops the Service, and the Session Agent's power relay answers suspend and
+        // resume reports. Neither has an attended validation. Admitting them is a separate packaging
+        // decision. Refuse each feature and its capability marker by name (docs/windows-rust-development-service.md).
+        if (features.Contains("service-lifecycle-shutdown-v1", StringComparer.Ordinal) || capabilities.Split(',').Contains("service-lifecycle-shutdown-v1", StringComparer.Ordinal))
+        { throw new InvalidDataException("The native shutdown operation is not admitted for packaging."); }
+        if (features.Contains("service-session-power-relay-v1", StringComparer.Ordinal) || capabilities.Split(',').Contains("service-session-power-relay-v1", StringComparer.Ordinal))
+        { throw new InvalidDataException("The native session power relay is not admitted for packaging."); }
         // The application-context reporter is not admitted for packaging either. Refuse its
         // feature and its capability marker by name until a packaging stage admits both.
         // That stage must also pair the reporter with a Service built with service-thermal-mutation-v1,

@@ -87,6 +87,13 @@ mod thermal_storage;
 #[cfg(feature = "service-thermal-mutation-v1")]
 #[path = "transaction_seed.rs"]
 mod transaction_seed;
+// The Tray's complete shutdown and the Session Agent's power relay.
+#[cfg(any(
+    feature = "service-lifecycle-shutdown-v1",
+    feature = "service-session-power-relay-v1"
+))]
+#[path = "session_lifecycle.rs"]
+mod session_lifecycle;
 
 const PROBE_TIMEOUT: Duration = Duration::from_secs(4);
 const DRAIN_TIMEOUT: Duration = Duration::from_secs(2);
@@ -230,6 +237,24 @@ trait StatusSource {
     // once instead of at its next interval.
     #[cfg(feature = "service-keyboard-driver-mode-v1")]
     fn low_power_wake(&self) -> Option<Arc<tokio::sync::Notify>> {
+        None
+    }
+    // The Service's own STOP for a complete shutdown, and a wait for the
+    // operations already admitted, taken under the source lock and awaited
+    // after it is released (`session_lifecycle::serve_shutdown`).
+    #[cfg(feature = "service-lifecycle-shutdown-v1")]
+    fn shutdown(
+        &self,
+    ) -> Option<(
+        Rc<session_lifecycle::ShutdownSignal>,
+        session_lifecycle::Quiesced,
+    )> {
+        None
+    }
+    // The owner of the Session Agent's relayed reports
+    // (`session_lifecycle::serve_report`).
+    #[cfg(feature = "service-session-power-relay-v1")]
+    fn session_power_relay(&self) -> Option<Rc<session_lifecycle::Relay>> {
         None
     }
     #[cfg(feature = "service-thermal-mutation-v1")]
@@ -618,6 +643,15 @@ async fn serve_connection(
             async { source.lock().await.refresh_publications().await.map(drop) },
         )
         .await
+    } else if matches!(request, StatusRequest::ShutdownOpenBlade { .. }) {
+        // Decoded only where the composition serves it (`validate`).
+        #[cfg(feature = "service-lifecycle-shutdown-v1")]
+        session_lifecycle::serve_shutdown(&mut *stream, &request, caller, &source).await?;
+        guard().map_err(ExchangeError::Runtime)
+    } else if matches!(request, StatusRequest::ReportSessionPowerTransition { .. }) {
+        #[cfg(feature = "service-session-power-relay-v1")]
+        session_lifecycle::serve_report(&mut *stream, &request, caller, &source).await?;
+        guard().map_err(ExchangeError::Runtime)
     } else if cfg!(feature = "service-thermal-mutation-v1")
         && matches!(
             request,
