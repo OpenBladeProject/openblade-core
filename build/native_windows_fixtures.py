@@ -270,6 +270,22 @@ def prepare_managed_dependency(repo, out, configuration, receipts):
                      'environment': {k: env.get(k) for k in ('CARGO_TARGET_DIR', 'RUSTFLAGS', 'CARGO_ENCODED_RUSTFLAGS', 'CARGO_PROFILE_DEV_PANIC', 'CARGO_PROFILE_RELEASE_PANIC')}}
 
 
+def require_dotnet_10(repo, out, receipts):
+    # The managed prerequisites target net10.0. They build with the SDK the host
+    # selects, exactly like the solution build, so a newer default SDK (hosted
+    # images ship one beside setup-dotnet's 10.x) is accepted. Their tests run
+    # only on the .NET 10 shared runtime, which must be installed.
+    sdk = checked_run(['dotnet', '--version'], repo, out, 'dotnet-version', receipts).strip()
+    major = re.match(r'(\d+)\.', sdk)
+    if not major or int(major.group(1)) < 10:
+        raise ValueError('The managed fixture runner requires a .NET 10 or newer SDK, not ' + sdk)
+    runtimes = checked_run(['dotnet', '--list-runtimes'], repo, out, 'dotnet-runtimes', receipts)
+    netcore = re.findall(r'^Microsoft\.NETCore\.App (10\.\d+\.\d+\S*) ', runtimes, re.M)
+    if not netcore:
+        raise ValueError('The managed fixture runner requires an installed .NET 10 runtime')
+    return {'sdk': sdk, 'netCoreRuntimes': netcore}
+
+
 def prepare(repo, out, mode):
     manifest = load_manifest(repo)
     receipts = []
@@ -303,9 +319,7 @@ def prepare(repo, out, mode):
         version = checked_run(['rustc', '--version'], repo, out, 'rust-version', receipts)
         if not version.startswith('rustc 1.99.1 '):
             raise ValueError('Installed Rust differs from reviewed pin')
-        dotnet_version = checked_run(['dotnet', '--version'], repo, out, 'dotnet-version', receipts)
-        if not dotnet_version.startswith('10.'):
-            raise ValueError('The managed fixture runner requires installed .NET 10')
+        receipt['dotnet'] = require_dotnet_10(repo, out, receipts)
         receipt['buildEnvironment'] = {k: os.environ.get(k) for k in ('CARGO_HOME', 'RUSTUP_HOME', 'CARGO_TARGET_DIR', 'RUSTFLAGS', 'CARGO_ENCODED_RUSTFLAGS', 'RUSTUP_TOOLCHAIN')}
         payload, receipt['managedDependency'] = prepare_managed_dependency(repo, out, os.environ['OPENBLADE_FIXTURE_CONFIGURATION'], receipts)
         # Empty package sources ensure restores use only the installed package cache.
