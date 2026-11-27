@@ -68,7 +68,10 @@ apply and forget the last target, so the next confirmed status applies again.
 The association list is decoded by the domain profile-set decoder
 (`openblade_domain::profile_set::decode::windows_power_modes`). The status
 decode refuses a status the managed codec would refuse for these members, and
-any per-profile legacy `windowsPowerMode` value other than null.
+any per-profile legacy `windowsPowerMode` value other than null. As in
+managed, an absent `unconfirmedWrites` list reads as empty and an explicit
+null is refused. The last list and its decoding are kept, so an unchanged
+list is compared rather than decoded again for every status.
 
 ## Deviations
 
@@ -77,9 +80,22 @@ any per-profile legacy `windowsPowerMode` value other than null.
   task, in order, so a status update never waits for Windows. A newer target
   still cancels the older apply before it reaches Windows; one already inside
   a Windows call finishes it and its result is not published.
+- Because of that runner, two statuses that arrive before the runner next
+  runs can end differently. Managed applies the first status's target inside
+  its own `Observe` and then the second's. Native may cancel the first apply
+  before it runs, so only the second target reaches Windows. When the second
+  status leaves Windows unchanged (a cleared association) or is unconfirmed,
+  Windows keeps the mode it had before both, where managed would have kept the
+  first target's mode. The vectors observe each status after the runner is
+  idle, so they do not exercise this.
+- Managed binds status members case-insensitively. The native status reader,
+  like every native status reader, reads only the camelCase names the Service
+  writes, so a differently cased `ObservationReason` or `UnconfirmedWrites`
+  reads as absent here.
 - The powrprof functions are resolved from the System32 copy at each apply,
-  so a Windows build without them fails the apply, as managed's lazy binding
-  does, without stopping the Agent from loading.
+  through the loader shared with the session power relay, so a Windows build
+  without them fails the apply, as managed's lazy binding does, without
+  stopping the Agent from loading.
 - Before each Windows call the runner proves the Agent's installed origin
   again; a failure ends the role. Stop cancels the running apply and waits for
   its Windows call, as managed `DisposeAsync` does.
@@ -90,7 +106,8 @@ any per-profile legacy `windowsPowerMode` value other than null.
 drives the real managed coordinator through 29 cases (first observations,
 unchanged and changed targets, association edits, unavailable and
 unconfirmed statuses, and retries with a status arriving during the delay)
-and records the results, Windows calls, delays and last result in
+and records the results, Windows calls, each retry delay in milliseconds and
+the last result in
 `tools/openblade-windows-host/tests/data/power-mode-automation-vectors.json`.
 Set `OPENBLADE_REGENERATE_NATIVE_POWER_MODE_VECTORS` to that directory to
 regenerate it; otherwise the test verifies the file. `power_mode/vectors.rs`

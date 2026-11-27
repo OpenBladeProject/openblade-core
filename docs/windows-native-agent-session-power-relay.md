@@ -80,6 +80,25 @@ or before zero, and a timestamp before the start, before writing any byte.
   report does not spend its budget re-reading the installed package. Before
   each send the transport also proves the Agent's installed origin; a failure
   ends the role.
+- Because those checks can themselves take time, the exchange checks the
+  report once more after the pipe peer verifies and immediately before the
+  first byte is written. A report whose budget ran out, or that a newer
+  transition superseded, is abandoned there without a write, and the reply
+  wait is bounded by the budget that remains.
+- A report ends in the relay before its result is recorded in the
+  diagnostics, where managed traces the result first. A waiting suspend
+  callback is released, and the pending transition starts, without waiting
+  for the diagnostics write. Each report still records exactly one result.
+- The registration functions are resolved at run time from the System32
+  powrprof.dll, through the loader shared with power-mode automation, rather
+  than imported at load time. A Windows build without them fails the
+  registration, and the role runs without the relay, as after any refused
+  registration.
+- After a successful unregistration the callback context is released only
+  once no callback is still inside it, waiting at most the callback budget
+  and half a second. A callback still running after that wait keeps the
+  context alive for the rest of the process and is recorded, as a failed
+  unregistration is.
 - The request id is generated when the report is sent rather than at the
   notification, so the callback does no fallible work. It is still fresh for
   every request and never reused.
