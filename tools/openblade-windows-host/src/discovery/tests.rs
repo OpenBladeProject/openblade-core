@@ -409,3 +409,137 @@ fn hardware_id_presence_needs_a_complete_readable_scan() {
         assert!(present(Vec::new(), scan).is_err(), "{scan:?}");
     }
 }
+
+fn probed_host() -> Synthetic {
+    let mut fixture = fixture(BLADE_0581);
+    fixture.rows = probe_inventory::RZ09_0581_HOST
+        .iter()
+        .map(|(label, ids)| row(label, ids))
+        .collect();
+    fixture
+}
+
+fn ids(ids: &[&str]) -> Vec<String> {
+    ids.iter().map(|id| (*id).into()).collect()
+}
+
+/// The probed RZ09-0581 host: its foreign devnodes and nested collections
+/// are readable, so the scan is complete and MI_02 is the one control hint.
+/// Its nine other exact collections, the nested ones among them, are
+/// counted with another usage.
+#[test]
+fn the_probed_rz09_0581_inventory_is_complete_with_one_control_candidate() {
+    let fixture = probed_host();
+    let result = snapshot(&fixture);
+    assert_eq!(result["hid"]["inventory"], "complete");
+    assert_eq!(result["hid"]["interfaceCount"], 39);
+    assert_eq!(result["hid"]["unreadableInterfaces"], 0);
+    assert_eq!(result["hid"]["candidates"], "singleUnresolved");
+    assert_eq!(result["hid"]["counts"]["matchingHints"], 1);
+    assert_eq!(result["hid"]["counts"]["wrongUsageHint"], 9);
+    assert_eq!(result["hid"]["counts"]["missingUsageHint"], 0);
+
+    let inventory = Inventory::load().unwrap();
+    let (_, model) = fixture.host.resolve(&inventory);
+    let (_, hint) = discover_hid(&fixture, model, &AtomicBool::new(false)).unwrap();
+    assert_eq!(hint.unwrap().path, "02e0-mi02");
+}
+
+/// A Razer interface whose identity is not fully parsed, added to the
+/// probed host, leaves the scan incomplete and selects nothing.
+#[test]
+fn an_unparsed_razer_interface_makes_the_probed_inventory_incomplete() {
+    for unparsed in [
+        // A third nesting level.
+        &[
+            r"HID\VID_1532&PID_02E0&MI_00&Col03&Col01&Col02",
+            "HID_DEVICE_UP:0001_U:0002",
+        ][..],
+        // A Razer alias without a product ID.
+        &[
+            r"HID\VEN_RAZR&DEV_0001&Col01",
+            r"HID\VID_1532&UP:0001_U:0002",
+        ],
+        // Razer named outside the parsed grammar.
+        &[
+            r"HID\{00001812-0000-1000-8000-00805f9b34fb}_Dev_VID&021532_PID&02e0&Col01",
+            r"HID\VID_046D&UP:0001_U:0002",
+        ],
+    ] {
+        let mut fixture = probed_host();
+        fixture.rows.push(row("unparsed", unparsed));
+        let result = snapshot(&fixture);
+        assert_eq!(result["hid"]["inventory"], "incomplete", "{unparsed:?}");
+        assert_eq!(result["hid"]["unreadableInterfaces"], 1, "{unparsed:?}");
+        assert_eq!(result["hid"]["candidates"], "incomplete", "{unparsed:?}");
+    }
+}
+
+/// Another vendor's alias or an ID family without a vendor is foreign; a
+/// Razer alias without a product ID, Razer named in any ID the grammar does
+/// not read, or a lone alias has no facts.
+#[test]
+fn foreign_devnodes_are_readable_only_when_their_ids_rule_out_razer() {
+    for (label, ids) in probe_inventory::RZ09_0581_HOST {
+        let facts = pnp::facts(&self::ids(ids)).unwrap_or_else(|| panic!("{label}"));
+        let expected = match label.split('-').next() {
+            Some("02e0") => Some((0x1532, 0x02e0)),
+            Some("0f43") => Some((0x1532, 0x0f43)),
+            _ => None,
+        };
+        assert_eq!(facts.device(), expected, "{label}");
+    }
+    for unread in [
+        &[r"HID\INTC816&Col01", r"HID\VID_1532&UP:0001_U:0006"][..],
+        &[r"HID\INTC816&Col01", r"USB\VID_1532&PID_02E0&MI_00"],
+        &[
+            r"HID\{00001812-0000-1000-8000-00805f9b34fb}_Dev_VID&021532_PID&b037&Col01",
+            r"HID\VID_046D&UP:0001_U:0002",
+        ],
+        &[r"HID\VID_8087&UP:000C_U:0001", "HID_DEVICE"],
+    ] {
+        assert_eq!(pnp::facts(&ids(unread)), None, "{unread:?}");
+    }
+}
+
+/// Nested collections parse to their full path, outermost first, up to the
+/// two levels HIDClass lists on RZ09-0581, in HIDClass field order only.
+#[test]
+fn nested_collections_parse_with_exact_bounded_grammar() {
+    let nested = pnp::facts(&ids(&[
+        r"HID\VID_1532&PID_02E0&REV_0200&MI_00&Col03&Col01",
+        r"HID\VID_1532&PID_02E0&MI_00&COL03&COL01",
+        "HID_DEVICE_UP:000C_U:0001",
+    ]))
+    .unwrap();
+    assert_eq!(nested.device(), Some((0x1532, 0x02e0)));
+    assert_eq!(nested.usage, Some((0x0c, 0x01)));
+    for distinct in [
+        r"HID\VID_1532&PID_02E0&MI_00&Col03",
+        r"HID\VID_1532&PID_02E0&MI_00&Col01&Col03",
+        r"HID\VID_1532&PID_02E0&MI_00&Col03&Col02",
+    ] {
+        let other = pnp::facts(&ids(&[distinct, "HID_DEVICE_UP:000C_U:0001"])).unwrap();
+        assert_ne!(other, nested, "{distinct}");
+    }
+    for malformed in [
+        r"HID\VID_1532&PID_02E0&MI_00&Col03&Col01&Col02",
+        r"HID\VID_1532&PID_02E0&Col03&MI_00",
+        r"HID\VID_1532&PID_02E0&MI_00&MI_01",
+        r"HID\VID_1532&PID_02E0&REV_0200&REV_0200",
+        r"HID\VID_1532&PID_02E0&Col03&REV_0200",
+        r"HID\VID_1532&PID_02E0&MI_00&Col3&Col01",
+        r"HID\VID_1532&PID_02E0&MI_00&Col03&",
+        r"HID\VID_1532&PID_02E0&MI_00&Col03&Col01X",
+    ] {
+        assert_eq!(pnp::facts(&ids(&[malformed])), None, "{malformed}");
+    }
+    // The revisioned and unrevisioned paths must agree.
+    assert_eq!(
+        pnp::facts(&ids(&[
+            r"HID\VID_1532&PID_02E0&REV_0200&MI_00&Col03&Col01",
+            r"HID\VID_1532&PID_02E0&MI_00&Col03&Col02",
+        ])),
+        None
+    );
+}

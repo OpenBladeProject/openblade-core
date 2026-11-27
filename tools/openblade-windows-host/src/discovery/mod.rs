@@ -15,6 +15,8 @@ pub(crate) use hid_lease::performance;
 pub(crate) use hid_lease::tests::service_fixture;
 mod pnp;
 #[cfg(test)]
+mod probe_inventory;
+#[cfg(test)]
 mod tests;
 #[cfg(all(
     windows,

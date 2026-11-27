@@ -675,3 +675,84 @@ fn the_reviewed_matrix_role_selects_the_exact_collection_only() {
     other.descriptors.replace([Ok(descriptor)].into());
     assert!(performance::select_matrix(&other, &cancelled).is_err());
 }
+
+/// The probed RZ09-0581 host's interfaces, by label.
+fn probed_host() -> Rc<Fake> {
+    let fake = fake();
+    fake.rows.replace(
+        crate::discovery::probe_inventory::RZ09_0581_HOST
+            .iter()
+            .map(|(label, ids)| {
+                Some(Interface {
+                    path: (*label).into(),
+                    hardware_ids: Some(ids.iter().map(|id| (*id).into()).collect()),
+                })
+            })
+            .collect(),
+    );
+    fake
+}
+
+/// On the probed host, the control lease opens MI_02 alone, and every exact
+/// collection with the matrix usage, the nested one included, is described.
+/// The nested one's feature report is not the matrix's, so it is not chosen.
+#[test]
+fn the_probed_host_selects_the_exact_control_and_matrix_collections() {
+    let cancelled = AtomicBool::new(false);
+    let fake = probed_host();
+    let mut owner = scripted_owner(&fake);
+    owner.acquire(&cancelled).unwrap();
+    assert_eq!(*fake.opened.borrow(), ["02e0-mi02"]);
+    assert_eq!(owner.stop(), Retirement::Complete);
+
+    let fake = probed_host();
+    fake.descriptors
+        .replace([consumer(3), consumer(91), Ok(MATRIX)].into());
+    let identity = RoleIdentity::select(&fake, MATRIX_ROLE, &cancelled).unwrap();
+    assert_eq!(identity.path(), "02e0-mi03");
+    assert_eq!(
+        *fake.opened.borrow(),
+        ["02e0-mi00-col03-col01", "02e0-mi01-col02", "02e0-mi03"]
+    );
+}
+
+/// A nested collection with the matrix descriptor is a candidate like any
+/// other: beside a second one, nothing is selected.
+#[test]
+fn a_nested_matrix_collection_counts_toward_matrix_uniqueness() {
+    let cancelled = AtomicBool::new(false);
+    let fake = probed_host();
+    fake.descriptors
+        .replace([Ok(MATRIX), consumer(91), Ok(MATRIX)].into());
+    assert!(RoleIdentity::select(&fake, MATRIX_ROLE, &cancelled).is_err());
+    assert_eq!(fake.opened.borrow().len(), 3);
+
+    let fake = probed_host();
+    fake.descriptors
+        .replace([Ok(MATRIX), consumer(91), consumer(3)].into());
+    let identity = RoleIdentity::select(&fake, MATRIX_ROLE, &cancelled).unwrap();
+    assert_eq!(identity.path(), "02e0-mi00-col03-col01");
+}
+
+/// A Razer interface whose identity is not fully parsed refuses both
+/// selections before anything is opened.
+#[test]
+fn an_unparsed_razer_interface_on_the_probed_host_opens_nothing() {
+    let cancelled = AtomicBool::new(false);
+    for ids in [
+        &[r"HID\VID_1532&PID_02E0&MI_00&Col03&Col01&Col02"][..],
+        &[
+            r"HID\VEN_RAZR&DEV_0001&Col01",
+            r"HID\VID_1532&UP:000C_U:0001",
+        ],
+    ] {
+        let fake = probed_host();
+        fake.rows.borrow_mut().push(Some(Interface {
+            path: "unparsed".into(),
+            hardware_ids: Some(ids.iter().map(|id| (*id).into()).collect()),
+        }));
+        assert!(scripted_owner(&fake).acquire(&cancelled).is_err());
+        assert!(RoleIdentity::select(&fake, MATRIX_ROLE, &cancelled).is_err());
+        assert!(fake.opened.borrow().is_empty());
+    }
+}

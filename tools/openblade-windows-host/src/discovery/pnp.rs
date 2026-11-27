@@ -1,3 +1,8 @@
+/// One devnode's hardware-ID facts. `collection` is the exact HID device and
+/// collection path the IDs name. It is `None` only for a devnode the IDs
+/// establish as foreign: another vendor's, or an ID family with no vendor and
+/// nothing naming Razer. An ID list that could name a Razer interface it does
+/// not fully parse has no facts, so the scan is incomplete.
 #[derive(Debug, PartialEq, Eq)]
 pub(super) struct Facts {
     collection: Option<Collection>,
@@ -14,11 +19,31 @@ impl Facts {
 struct Collection {
     device: (u16, u16),
     interface: Option<u16>,
-    collection: Option<u16>,
+    // Outermost first: `&COL03&COL01` is collection 1 nested in collection 3.
+    collections: Vec<u16>,
 }
+
+const RAZER_VENDOR: u16 = 0x1532;
+
+// HIDClass appends one `&COLnn` per nesting level. Two is the depth present
+// on RZ09-0581 (`MI_00&Col03&Col01`); a deeper path is not parsed.
+const MAX_COLLECTION_DEPTH: usize = 2;
+
+// The `HID\VID_` fields in HIDClass order. Only a nested collection repeats.
+const REVISION: u8 = 1;
+const INTERFACE: u8 = 2;
+const COLLECTION: u8 = 3;
 
 // Use devnode IDs independently of the opaque interface name. The revisioned
 // and unrevisioned aliases must agree on VID/PID, MI and collection.
+//
+// HIDClass builds `HID\VID_v&PID_p...` and the `HID\VID_v&UP:...` alias from
+// the device attributes that managed reads from each opened handle
+// (`HidD_GetAttributes`) before it counts an exact interface. A devnode whose
+// alias names another vendor therefore cannot be one managed would count,
+// and is foreign without a product ID. A Razer alias without a product ID,
+// or Razer named in any ID outside this grammar, could be the admitted
+// device, so it leaves the devnode without facts.
 pub(super) fn facts(ids: &[String]) -> Option<Facts> {
     let mut identity = None;
     let mut vendor_hint = None;
@@ -44,20 +69,23 @@ pub(super) fn facts(ids: &[String]) -> Option<Facts> {
 
             let product = hex(selector.strip_prefix("PID_")?, 4)?;
             let mut interface = None;
-            let mut collection = None;
+            let mut collections = Vec::new();
             let mut last_field = 0;
             for part in parts {
                 let field = if let Some(value) = part.strip_prefix("REV_") {
                     agree(&mut revision, hex(value, 4)?)?;
-                    1
+                    REVISION
                 } else if let Some(value) = part.strip_prefix("MI_") {
                     interface = Some(hex(value, 2)?);
-                    2
+                    INTERFACE
                 } else {
-                    collection = Some(hex(part.strip_prefix("COL")?, 2)?);
-                    3
+                    if collections.len() == MAX_COLLECTION_DEPTH {
+                        return None;
+                    }
+                    collections.push(hex(part.strip_prefix("COL")?, 2)?);
+                    COLLECTION
                 };
-                if field <= last_field {
+                if field < last_field || (field == last_field && field != COLLECTION) {
                     return None;
                 }
                 last_field = field;
@@ -67,9 +95,11 @@ pub(super) fn facts(ids: &[String]) -> Option<Facts> {
                 Collection {
                     device: (vendor, product),
                     interface,
-                    collection,
+                    collections,
                 },
             )?;
+        } else if names_razer_vendor(&id) {
+            return None;
         } else if let Some(id) = id.strip_prefix("HID_DEVICE_UP:") {
             agree(&mut usage, usage_pair(id)?)?;
         } else if id
@@ -81,12 +111,28 @@ pub(super) fn facts(ids: &[String]) -> Option<Facts> {
             other_device_id = true;
         }
     }
-    if identity.is_none() && (!other_device_id || vendor_hint.is_some()) {
+    if identity.is_none() && (!other_device_id || vendor_hint == Some(RAZER_VENDOR)) {
         return None;
     }
     Some(Facts {
         collection: identity,
         usage,
+    })
+}
+
+/// Whether an ID outside the `HID\VID_` grammar names the Razer vendor: as
+/// `VID_1532`, or as a Bluetooth `VID&ss1532` field with its two-digit
+/// vendor-ID source first.
+fn names_razer_vendor(id: &str) -> bool {
+    id.match_indices("VID").any(|(at, _)| {
+        let field = &id[at + 3..];
+        field
+            .strip_prefix('_')
+            .is_some_and(|vendor| vendor.starts_with("1532"))
+            || field
+                .strip_prefix('&')
+                .and_then(|vendor| vendor.get(2..))
+                .is_some_and(|vendor| vendor.starts_with("1532"))
     })
 }
 
