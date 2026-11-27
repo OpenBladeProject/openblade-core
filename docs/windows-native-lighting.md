@@ -33,10 +33,11 @@ enables. One fixed-length builder encodes each control report
 allowlist (`device_mode_guard_tests.rs`) records both, and the lighting guard
 (`lighting_guard_tests.rs`) pins their users and IDs.
 
-The matrix codec is managed `Pid02E0MatrixProtocol`: a 374-byte envelope of
-102 slots in 6 rows of 17, sent behind report ID 0, with the 16 canvas holes
-black. Static paints every canvas key one color and projects it onto the
-physical map the layout byte selects (managed `Pid02E0RegionalProjection`),
+The matrix codec is managed `Pid02E0MatrixReportCodec`: a 374-byte envelope
+of 102 slots in 6 rows of 17, sent behind report ID 0, with the 16 canvas
+holes black. Static paints every canvas key one color and projects it onto
+the physical map the layout byte selects (managed
+`Pid02E0RegionalFrameProjection`),
 from the exact MCU source maps in managed's embedded
 `Blade16KeyboardLightingLayout.json`. Native loads that file once, refuses it
 unless its SHA-256 (`18771140...2AE0FB`) and every source identity managed's
@@ -63,11 +64,14 @@ competing-controller, power, session and ownership admission
 (`Fresh::authorize`), through the Service's own HID lease. The Service stays
 the only HID owner. The matrix collection is opened in the same job: exactly
 one HID interface of the admitted device may report usage page 0x0C, usage 1
-and a 375-byte feature report (managed's opener), its descriptor is read
-again before each frame, and the handle is released with the job
-(`RoleIdentity`, `MatrixLease`). A frame is one `IOCTL_HID_SET_FEATURE` of
-the fixed report, so a short write cannot be expressed; a submitted write
-whose completion fails is in doubt.
+and a 375-byte feature report (managed's opener), of the exact model and
+device (`select_matrix`), its descriptor is read again before each frame,
+and the handle is released with the job (`RoleIdentity`, `MatrixLease`). A
+frame is one `IOCTL_HID_SET_FEATURE` of the fixed report, so a short write
+cannot be expressed. A frame refused before the call (the lease, identity or
+deadline) is unsent. Once the call is made the frame is in doubt, whether
+the driver refuses the call or its completion fails, as managed classifies
+every native matrix I/O failure as indeterminate.
 
 ## Request order
 
@@ -178,18 +182,25 @@ resulting state." The lit state is never published as confirmed:
 
 The Service then owns the renderer. The origin tick, after the power check
 and before the keyboard Driver-mode step, sends one keepalive frame when it
-is due: every 5 s on the grid the first frame started
-(`Pid02E0LightingTiming.IdleKeepaliveInterval`, managed
-`AdvanceFrameDeadline`), so a late tick skips the instants it missed. Each
-frame takes the owning request's fresh write admission. A frame refused
-before submission keeps the renderer for the next instant (managed's
-deferral); one that may have been submitted unconfirmed ends the renderer and
-latches the doubt. A request holding the gate defers the frame to the next
-tick. The renderer ends without a write when an Off may have changed the
-keyboard, when a doubt is latched, at the low-power boundary (the gate set,
-unreadable or exhausted), and at Stop, where the mutation worker's stop
-cancels a frame still running. The session's layout byte is read again
-afterwards.
+is due: every 5 s (`Pid02E0LightingTiming.IdleKeepaliveInterval`) on a grid
+that starts when the request that drew the renderer completes, so a late
+tick skips the instants it missed (managed `AdvanceFrameDeadline`). The
+frame goes at the first 500 ms tick at or after its instant that finds the
+operation gate free: it is late by up to one tick, plus the time a request
+holds the gate, and its own job then takes its time. A tick never reads or
+changes the renderer while a request holds the gate. Each frame takes the
+owning request's fresh write admission. A frame refused before submission
+keeps the renderer for the next instant; one that may have been submitted
+unconfirmed latches the doubt.
+
+A latched doubt always ends the renderer, so no keepalive draws over what an
+unconfirmed submission left, and the request after the read-only resolution
+draws anew. A request or keepalive dropped while its job may still run, such
+as a request whose client went away, latches the doubt too. The renderer
+also ends without a write when an Off may have changed the keyboard, at the
+low-power boundary (the gate set, unreadable or exhausted), and at Stop,
+where the mutation worker's stop cancels a frame still running. After the
+low-power boundary and Stop the session's layout byte is read again.
 
 Managed's lighting port enters Driver mode when it opens
 (`EnsureDriverModeAsync`, ProductionLightingFactory.cs 226-242). Native sends
@@ -267,7 +278,23 @@ Each is named by a test where one applies:
 - A device mode outside Normal and Driver is a known failure that restores
   the brightness and latches nothing; managed raises it as an indeterminate
   write after its rollback.
-- A keepalive frame is up to one 500 ms origin tick late.
+- The keepalive grid starts at the drawing request's completion, after its
+  logo setters, and a frame waits for the next origin tick that finds the
+  gate free; managed's stream starts its grid with the effect and wakes at
+  each instant.
+- Managed's stream defers a frame only when its recovery write gate refuses
+  it (ProductionLightingPort.cs 1669); any other failed frame faults the
+  stream (1695-1706), which ends the renderer. Native keeps the renderer
+  through every refusal before submission (a fresh admission, the matrix
+  identity or the pacing) and tries again at the next instant, with fresh
+  admission and identity checks each time.
+- Managed's stream runs under its Advisory controller policy, so it keeps
+  sending frames while a competing controller is present. Native's fresh
+  admission refuses each frame while one is present, and the frames resume
+  by themselves when it leaves.
+- Managed's stream has no session gating. Native's frames take the owning
+  request's session admission, so they pause while that console session is
+  locked or inactive, and resume when it is active again.
 
 ## Stricter than managed
 
@@ -325,6 +352,9 @@ transport, which no laptop has run:
   layout in use, the keyboard kept dark until the frame when waking, the
   keepalive cadence over several minutes, and Off afterwards.
 - Stop and a low-power boundary while the renderer owns the keyboard.
+- Lock and unlock the console while the renderer owns the keyboard: record
+  what the keyboard shows while the frames pause, and that they resume
+  after the unlock.
 
 Record the keyboard device mode (Normal or Driver) of each run. Managed
 writes these commands in Driver mode; a Service without
