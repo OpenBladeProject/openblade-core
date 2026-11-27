@@ -25,14 +25,20 @@ async fn exchange_once(
     peer: impl Fn(&DuplexStream) -> io::Result<(u32, u32)>,
     reply: &[u8],
 ) -> (io::Result<Vec<u8>>, Option<Vec<u8>>) {
-    exchange_gated(channel, || Ok(Duration::from_secs(2)), peer, Some(reply)).await
+    exchange_gated(
+        channel,
+        || Ok(tokio::time::Instant::now() + Duration::from_secs(2)),
+        peer,
+        Some(reply),
+    )
+    .await
 }
 
 /// As `exchange_once`, with the pre-write hook; a server without a `reply`
 /// never answers.
 async fn exchange_gated(
     channel: &mut ReportChannel<'_>,
-    before_write: impl FnOnce() -> io::Result<Duration>,
+    before_write: impl FnOnce() -> io::Result<tokio::time::Instant>,
     peer: impl Fn(&DuplexStream) -> io::Result<(u32, u32)>,
     reply: Option<&[u8]>,
 ) -> (io::Result<Vec<u8>>, Option<Vec<u8>>) {
@@ -129,18 +135,48 @@ async fn the_hook_refuses_the_write_after_verification_and_keeps_the_generation(
 }
 
 #[tokio::test(start_paused = true)]
-async fn the_hook_budget_bounds_the_reply() {
+async fn the_hook_deadline_bounds_the_reply() {
     let authority = Authority::live();
     let mut channel = ReportChannel::new(Some(&authority));
     let started = tokio::time::Instant::now();
     let (reply, read) = exchange_gated(
         &mut channel,
-        || Ok(Duration::from_millis(300)),
+        || Ok(tokio::time::Instant::now() + Duration::from_millis(300)),
         |_| Ok((PID, 0)),
         None,
     )
     .await;
-    assert_eq!(reply.unwrap_err().kind(), io::ErrorKind::TimedOut);
+    let error = reply.unwrap_err();
+    assert_eq!(error.kind(), io::ErrorKind::TimedOut);
+    assert!(exchange_deadline_passed(&error));
     assert_eq!(read.unwrap(), b"{\"request\":1}");
     assert_eq!(started.elapsed(), Duration::from_millis(300));
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_dropped_exchange_keeps_the_generation() {
+    let authority = Counting {
+        inner: Authority::live(),
+        acquired: Cell::new(0),
+    };
+    let mut channel = ReportChannel::new(Some(&authority));
+    channel.prime().unwrap();
+    // The Service never answers, and the exchange is dropped while it waits,
+    // as stop or a newer transition drops the report in flight.
+    let dropped = tokio::time::timeout(
+        Duration::from_millis(10),
+        exchange_gated(
+            &mut channel,
+            || Ok(tokio::time::Instant::now() + Duration::from_secs(60)),
+            |_| Ok((PID, 0)),
+            None,
+        ),
+    )
+    .await;
+    assert!(dropped.is_err());
+    exchange_once(&mut channel, |_| Ok((PID, 0)), b"{}")
+        .await
+        .0
+        .unwrap();
+    assert_eq!(authority.acquired.get(), 1);
 }

@@ -82,7 +82,7 @@ fn every_managed_notification_sequence_sends_the_same_requests() {
             // The sink answers at once: every started report ends here.
             loop {
                 match relay.next() {
-                    Next::Send(transition, _) => {
+                    Next::Send(transition) => {
                         assert_eq!(transition.timestamp, 100);
                         sent.push(json!({
                             "sequence": transition.sequence,

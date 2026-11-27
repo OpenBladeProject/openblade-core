@@ -9,7 +9,14 @@ use std::{
     thread,
 };
 
+use serde_json::Value;
+use tokio::io::{AsyncWriteExt, duplex};
+
 use super::*;
+use crate::{
+    service_frame::read_payload,
+    session_native::service_client::tests::{Authority, PID},
+};
 
 const STARTED: i64 = 100;
 const FREQUENCY: i64 = 1000;
@@ -48,7 +55,7 @@ fn only_suspend_and_resume_count_and_a_repeated_direction_is_ignored() {
 fn a_newer_transition_cancels_the_active_report_and_replaces_the_pending_one() {
     let relay = relay(&clock());
     let first = relay.notify(SUSPEND).unwrap();
-    assert_eq!(relay.next(), Next::Send(first, BUDGET));
+    assert_eq!(relay.next(), Next::Send(first));
     let second = relay.notify(RESUME_AUTOMATIC).unwrap();
     assert!(relay.canceled(first));
     let third = relay.notify(SUSPEND).unwrap();
@@ -57,7 +64,7 @@ fn a_newer_transition_cancels_the_active_report_and_replaces_the_pending_one() {
     assert!(!relay.lock().complete(first.sequence));
     relay.finish(first);
     assert!(relay.lock().complete(first.sequence));
-    assert_eq!(relay.next(), Next::Send(third, BUDGET));
+    assert_eq!(relay.next(), Next::Send(third));
     relay.finish(third);
     assert_eq!(relay.next(), Next::Idle);
 }
@@ -130,7 +137,7 @@ fn a_resume_callback_returns_without_waiting_for_its_report() {
     let relay = relay(&clock());
     assert_eq!(relay.on_notification(RESUME_AUTOMATIC), None);
     // Its report has not even started.
-    assert_eq!(relay.next(), Next::Send(transition(1, false), BUDGET));
+    assert_eq!(relay.next(), Next::Send(transition(1, false)));
 }
 
 #[test]
@@ -142,7 +149,7 @@ fn a_waiting_suspend_callback_returns_when_its_report_ends() {
         // A generous bound: the wait ends on completion, not on time.
         thread::spawn(move || relay.wait(suspend, Duration::from_secs(3600)))
     };
-    assert_eq!(relay.next(), Next::Send(suspend, BUDGET));
+    assert_eq!(relay.next(), Next::Send(suspend));
     relay.finish(suspend);
     assert!(waiter.join().unwrap());
     // Dispose releases a waiting callback too.
@@ -192,9 +199,25 @@ impl Rig {
             },
             stop,
             verify,
-            |notice| self.notices.borrow_mut().push(notice),
+            |notice| self.record(notice),
         )
         .await
+    }
+
+    /// Record a notice. Each report must already have ended in the relay, so
+    /// no waiting suspend callback is held across the diagnostics write.
+    fn record(&self, notice: Notice) {
+        let sequence = match notice {
+            Notice::Answered { sequence, .. }
+            | Notice::Abandoned { sequence, .. }
+            | Notice::Failed { sequence, .. } => sequence,
+            other => panic!("unexpected {other:?}"),
+        };
+        assert!(
+            self.relay.lock().complete(sequence),
+            "report {sequence} recorded before it ended in the relay"
+        );
+        self.notices.borrow_mut().push(notice);
     }
 }
 
@@ -402,7 +425,7 @@ async fn a_report_superseded_while_the_channel_admits_is_never_written() {
             },
             &mut stop,
             || Ok(()),
-            |notice| rig.notices.borrow_mut().push(notice),
+            |notice| rig.record(notice),
         ),
         driver
     );
@@ -601,4 +624,202 @@ fn a_reply_answers_with_its_status_or_a_refusal_and_nothing_else() {
             io::ErrorKind::InvalidData
         );
     }
+}
+
+/// The production report path: `exchange_report` over a real `ReportChannel`
+/// to a Service on a duplex stream. `during_peer` runs inside the channel's
+/// peer verification, after the transport's own checks and before the write.
+/// The Service records each request it reads and answers it, or stays silent
+/// until the exchange ends.
+struct Wired {
+    authority: Authority,
+    reads: RefCell<Vec<Value>>,
+}
+
+impl Wired {
+    fn new() -> Self {
+        Self {
+            authority: Authority::live(),
+            reads: RefCell::default(),
+        }
+    }
+
+    async fn serve(
+        &self,
+        rig: &Rig,
+        answer: bool,
+        during_peer: impl Fn(),
+        stop: &mut watch::Receiver<bool>,
+    ) -> io::Result<()> {
+        let mut channel = ReportChannel::new(Some(&self.authority));
+        let instance = Instance {
+            id: [0x22; 16],
+            started: STARTED,
+        };
+        serve(
+            &rig.relay,
+            async |gate| {
+                let (client, mut server) = duplex(16_384);
+                let exchange = exchange_report(
+                    &mut channel,
+                    instance,
+                    gate,
+                    async || Ok(client),
+                    |_| {
+                        during_peer();
+                        Ok((PID, 0))
+                    },
+                );
+                // The Service end is held until the exchange ends, so a silent
+                // Service is not read as end of stream.
+                let service = async move {
+                    if let Ok(request) = read_payload(&mut server).await {
+                        let request: Value = serde_json::from_slice(&request).unwrap();
+                        let id = request["requestId"].as_str().unwrap().to_owned();
+                        self.reads.borrow_mut().push(request);
+                        if answer {
+                            let reply = reply(|frame| frame["requestId"] = id.into());
+                            let frame =
+                                [(reply.len() as i32).to_le_bytes().as_slice(), &reply].concat();
+                            server.write_all(&frame).await.unwrap();
+                        }
+                    }
+                    server
+                };
+                let (reported, _server) = tokio::join!(exchange, service);
+                reported
+            },
+            stop,
+            || Ok(()),
+            |notice| rig.record(notice),
+        )
+        .await
+    }
+
+    fn sequences(&self) -> Vec<i64> {
+        self.reads
+            .borrow()
+            .iter()
+            .map(|request| request["sequence"].as_i64().unwrap())
+            .collect()
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_production_report_is_not_written_once_its_budget_ran_out_in_verification() {
+    let (rig, wired) = (Rig::new(), Wired::new());
+    let (stop_tx, mut stop) = watch::channel(false);
+    let driver = async {
+        rig.relay.notify(RESUME_AUTOMATIC).unwrap();
+        settle().await;
+        assert_eq!(*rig.notices.borrow(), [abandoned(1, false)]);
+        stop_tx.send(true).unwrap();
+    };
+    let (result, ()) = tokio::join!(
+        wired.serve(
+            &rig,
+            true,
+            // Verifying the pipe peer outlasts the whole budget.
+            || rig.clock.store(STARTED + 1500, SeqCst),
+            &mut stop
+        ),
+        driver
+    );
+    result.unwrap();
+    assert!(wired.reads.borrow().is_empty());
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_production_report_is_not_written_once_superseded_in_verification() {
+    let (rig, wired) = (Rig::new(), Wired::new());
+    let (stop_tx, mut stop) = watch::channel(false);
+    let driver = async {
+        rig.relay.notify(RESUME_AUTOMATIC).unwrap();
+        settle().await;
+        stop_tx.send(true).unwrap();
+    };
+    let (result, ()) = tokio::join!(
+        wired.serve(
+            &rig,
+            true,
+            // A suspend arrives while the pipe peer verifies; the repeat for
+            // its own report is ignored.
+            || {
+                rig.relay.notify(SUSPEND);
+            },
+            &mut stop
+        ),
+        driver
+    );
+    result.unwrap();
+    assert_eq!(wired.sequences(), [2]);
+    assert_eq!(
+        *rig.notices.borrow(),
+        [abandoned(1, false), answered(2, true, Some(1))]
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_silent_service_abandons_the_production_report_when_the_remaining_budget_ends() {
+    let (rig, wired) = (Rig::new(), Wired::new());
+    let (stop_tx, mut stop) = watch::channel(false);
+    let driver = async {
+        rig.relay.notify(RESUME_AUTOMATIC).unwrap();
+        settle().await;
+        assert_eq!(wired.sequences(), [1]);
+        // Verification spent 1000 ms, so 500 ms bound the write and reply.
+        tokio::time::sleep(Duration::from_millis(499)).await;
+        settle().await;
+        assert!(rig.notices.borrow().is_empty());
+        tokio::time::sleep(Duration::from_millis(1)).await;
+        settle().await;
+        assert_eq!(*rig.notices.borrow(), [abandoned(1, false)]);
+        stop_tx.send(true).unwrap();
+    };
+    let (result, ()) = tokio::join!(
+        wired.serve(
+            &rig,
+            false,
+            || {
+                rig.clock.fetch_max(STARTED + 1000, SeqCst);
+            },
+            &mut stop
+        ),
+        driver
+    );
+    result.unwrap();
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_production_report_is_answered_within_its_budget() {
+    let (rig, wired) = (Rig::new(), Wired::new());
+    let (stop_tx, mut stop) = watch::channel(false);
+    let driver = async {
+        rig.relay.notify(SUSPEND).unwrap();
+        settle().await;
+        stop_tx.send(true).unwrap();
+    };
+    let (result, ()) = tokio::join!(wired.serve(&rig, true, || (), &mut stop), driver);
+    result.unwrap();
+    let request = &wired.reads.borrow()[0];
+    assert_eq!(
+        (
+            request["sequence"].as_i64(),
+            request["suspending"].as_bool(),
+            request["instanceStartedQpc"].as_i64(),
+        ),
+        (Some(1), Some(true), Some(STARTED))
+    );
+    assert_eq!(*rig.notices.borrow(), [answered(1, true, Some(1))]);
+}
+
+#[test]
+fn a_transition_that_is_not_the_active_report_counts_as_canceled() {
+    let relay = relay(&clock());
+    let first = relay.notify(SUSPEND).unwrap();
+    assert!(!relay.canceled(first));
+    relay.finish(first);
+    // A finished report, and one never made active, must not go on.
+    assert!(relay.canceled(first));
+    assert!(relay.canceled(transition(7, false)));
 }

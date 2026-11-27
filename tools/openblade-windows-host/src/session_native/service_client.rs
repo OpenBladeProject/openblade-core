@@ -420,14 +420,14 @@ async fn request_on<S: AsyncRead + AsyncWrite + Unpin>(
 /// installed package, which is far too heavy for every five-second renewal. A
 /// report verifies the held generation, as `verify_peer` does for any stream,
 /// and acquires a new one only when it is retired or a verification fails. An
-/// I/O failure keeps it, since it says nothing about the Service identity.
-/// Dropping a report future closes its connection; a canceled report is never
-/// replayed. Acquisition blocks its caller, so run the channel on a thread that
+/// I/O failure keeps it, since it says nothing about the Service identity, and
+/// so does dropping a report future, which closes its connection; a canceled
+/// report is never replayed. Acquisition blocks its caller, so run the channel on a thread that
 /// may block, not on the Agent's shared runtime.
 ///
 /// The session power relay (managed `ReportSessionPowerTransitionAsync`)
 /// shares the exchange: it sends its own encoded request and decodes the reply
-/// itself, under its own callback budget.
+/// itself, under a deadline its callback budget sets just before the write.
 #[cfg(any(
     feature = "agent-application-reporter-v1",
     feature = "agent-session-power-relay-v1"
@@ -480,28 +480,13 @@ impl<'a> ReportChannel<'a> {
         .await
     }
 
-    /// One encoded request over the installed Service pipe; the reply payload.
-    /// `before_write` runs once the peer has verified, immediately before the
-    /// first byte is written: it refuses the write or returns the reply budget,
-    /// so time spent on verification never overruns the caller's budget.
-    #[cfg(feature = "agent-session-power-relay-v1")]
-    pub(super) async fn exchange(
-        &mut self,
-        payload: &[u8],
-        before_write: impl FnOnce() -> io::Result<Duration>,
-    ) -> io::Result<Vec<u8>> {
-        self.exchange_on(payload, before_write, connect_installed, |pipe| {
-            server_identity(pipe.as_raw_handle())
-        })
-        .await
-    }
-
     /// Establish the held generation now, so the first exchange need not
     /// re-read and hash the installed package inside its own budget.
     #[cfg(feature = "agent-session-power-relay-v1")]
     pub(super) fn prime(&mut self) -> io::Result<()> {
         let (generation, pid) = self.admit()?;
-        self.keep(generation, pid, Ok(()))
+        self.generation = Some((generation, pid));
+        Ok(())
     }
 
     /// The held generation if it still verifies, else a freshly acquired one.
@@ -532,7 +517,12 @@ impl<'a> ReportChannel<'a> {
 
         let payload = encode(request)?;
         let reply = self
-            .exchange_on(&payload, || Ok(REPORT_REPLY_BUDGET), connect, peer)
+            .exchange_on(
+                &payload,
+                || Ok(Instant::now() + REPORT_REPLY_BUDGET),
+                connect,
+                peer,
+            )
             .await?;
         // Any refusal, including a typed Blocked or Failed result, leaves the
         // report pending exactly as managed: only Stored and Applied acknowledge.
@@ -543,50 +533,110 @@ impl<'a> ReportChannel<'a> {
 
     /// Send one already encoded request and return the reply payload, once the
     /// peer has verified again. `before_write` runs after that verification,
-    /// immediately before the write: its refusal sends nothing, and its budget
-    /// bounds the reply read. Only a failed verification, here or after the
-    /// reply, drops the held generation.
-    async fn exchange_on<S: AsyncRead + AsyncWrite + Unpin>(
+    /// immediately before the write: its refusal sends nothing, and its
+    /// deadline bounds the write and the reply read together. Passing that
+    /// deadline fails with an error `exchange_deadline_passed` recognizes.
+    /// Only a failed verification, here or after the reply, drops the held
+    /// generation; any other end, including a dropped exchange, keeps it.
+    pub(super) async fn exchange_on<S: AsyncRead + AsyncWrite + Unpin>(
         &mut self,
         payload: &[u8],
-        before_write: impl FnOnce() -> io::Result<Duration>,
+        before_write: impl FnOnce() -> io::Result<Instant>,
         connect: impl AsyncFnOnce() -> io::Result<S>,
         peer: impl Fn(&S) -> io::Result<(u32, u32)>,
     ) -> io::Result<Vec<u8>> {
         use crate::service_frame::{read_payload, write_payload};
 
-        let (generation, pid) = self.admit()?;
-        let connected = timeout_at(Instant::now() + REPORT_CONNECT_BUDGET, connect()).await;
-        let mut stream = match connected {
-            Ok(Ok(stream)) => stream,
-            Ok(Err(error)) => return self.keep(generation, pid, Err(error)),
-            Err(elapsed) => return self.keep(generation, pid, Err(elapsed.into())),
+        let admitted = self.admit()?;
+        let mut held = Held {
+            slot: &mut self.generation,
+            admitted: Some(admitted),
         };
-        verify_peer(generation.as_ref(), pid, &stream, &peer)?;
-        let exchanged = async {
-            let reply_budget = before_write()?;
+        let mut stream = timeout_at(Instant::now() + REPORT_CONNECT_BUDGET, connect()).await??;
+        held.verify(&stream, &peer)?;
+        let deadline = before_write()?;
+        let reply = timeout_at(deadline, async {
             write_payload(&mut stream, payload).await?;
-            timeout_at(Instant::now() + reply_budget, read_payload(&mut stream)).await?
-        }
-        .await;
-        let reply = match exchanged {
-            Ok(reply) => reply,
-            Err(error) => return self.keep(generation, pid, Err(error)),
-        };
-        verify_peer(generation.as_ref(), pid, &stream, &peer)?;
-        self.keep(generation, pid, Ok(reply))
+            read_payload(&mut stream).await
+        })
+        .await
+        .map_err(|_elapsed| io::Error::new(io::ErrorKind::TimedOut, DeadlinePassed))??;
+        held.verify(&stream, &peer)?;
+        Ok(reply)
     }
+}
 
-    /// Hold the verified generation for the next report, whatever this result.
-    fn keep<T>(
+/// The generation one exchange admitted. It goes back to the channel when the
+/// exchange ends, however it ends, including when its future is dropped,
+/// unless a verification failed.
+#[cfg(any(
+    feature = "agent-application-reporter-v1",
+    feature = "agent-session-power-relay-v1"
+))]
+struct Held<'h, 'a> {
+    slot: &'h mut Option<(Box<dyn InstalledServiceGeneration + 'a>, NonZeroU32)>,
+    admitted: Option<(Box<dyn InstalledServiceGeneration + 'a>, NonZeroU32)>,
+}
+
+#[cfg(any(
+    feature = "agent-application-reporter-v1",
+    feature = "agent-session-power-relay-v1"
+))]
+impl Held<'_, '_> {
+    /// Verify the generation and pipe peer; a failure discards the generation.
+    fn verify<S>(
         &mut self,
-        generation: Box<dyn InstalledServiceGeneration + 'a>,
-        pid: NonZeroU32,
-        result: io::Result<T>,
-    ) -> io::Result<T> {
-        self.generation = Some((generation, pid));
-        result
+        stream: &S,
+        peer: &impl Fn(&S) -> io::Result<(u32, u32)>,
+    ) -> io::Result<()> {
+        let Some((generation, pid)) = &self.admitted else {
+            return Err(io::Error::other("report generation already discarded"));
+        };
+        let verified = verify_peer(generation.as_ref(), *pid, stream, peer);
+        if verified.is_err() {
+            self.admitted = None;
+        }
+        verified
     }
+}
+
+#[cfg(any(
+    feature = "agent-application-reporter-v1",
+    feature = "agent-session-power-relay-v1"
+))]
+impl Drop for Held<'_, '_> {
+    fn drop(&mut self) {
+        if let Some(admitted) = self.admitted.take() {
+            *self.slot = Some(admitted);
+        }
+    }
+}
+
+/// The exchange passed the deadline its `before_write` returned.
+#[derive(Debug)]
+struct DeadlinePassed;
+
+impl std::fmt::Display for DeadlinePassed {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("report exchange passed its deadline")
+    }
+}
+
+impl std::error::Error for DeadlinePassed {}
+
+/// Whether an exchange failed by passing its `before_write` deadline.
+#[cfg(feature = "agent-session-power-relay-v1")]
+pub(super) fn exchange_deadline_passed(error: &io::Error) -> bool {
+    error
+        .get_ref()
+        .is_some_and(|inner| inner.is::<DeadlinePassed>())
+}
+
+/// The installed Service pipe's server identity, the peer port of every
+/// production exchange.
+#[cfg(feature = "agent-session-power-relay-v1")]
+pub(super) fn installed_peer(pipe: &NamedPipeClient) -> io::Result<(u32, u32)> {
+    server_identity(pipe.as_raw_handle())
 }
 
 fn require_authority(
@@ -649,7 +699,7 @@ fn observe_before_deadline(snapshot: Snapshot, deadline: Instant) -> io::Result<
     })
 }
 
-async fn connect_installed() -> io::Result<NamedPipeClient> {
+pub(super) async fn connect_installed() -> io::Result<NamedPipeClient> {
     let path = production_path();
     loop {
         match ClientOptions::new()

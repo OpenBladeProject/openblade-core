@@ -30,11 +30,15 @@ use openblade_platform_windows::agent_diagnostics::{
     Event, SessionPowerRelayNotice as Notice, record,
 };
 use tokio::{
+    io::{AsyncRead, AsyncWrite},
     sync::{Notify, watch},
-    time::timeout,
+    time::{Instant, timeout},
 };
 
-use super::{scm_peer::WindowsInstalledServiceAuthority, service_client::ReportChannel};
+use super::{
+    scm_peer::WindowsInstalledServiceAuthority,
+    service_client::{self, ReportChannel},
+};
 use crate::service_status::random_guid;
 
 #[cfg(test)]
@@ -113,7 +117,7 @@ enum Next {
     Idle,
     /// Canceled or out of budget before its send, as managed checks.
     Skip(Transition),
-    Send(Transition, Duration),
+    Send(Transition),
 }
 
 /// The relay state shared by the Windows callback and the transport.
@@ -263,11 +267,10 @@ impl Relay {
         active.started = true;
         let (transition, canceled) = (active.transition, active.canceled);
         drop(state);
-        let remaining = self.remaining(transition);
-        if canceled || remaining.is_zero() {
+        if canceled || self.remaining(transition).is_zero() {
             Next::Skip(transition)
         } else {
-            Next::Send(transition, remaining)
+            Next::Send(transition)
         }
     }
 
@@ -282,12 +285,14 @@ impl Relay {
         self.changed();
     }
 
+    /// Whether the transition's report must not go on: canceled, disposed, or
+    /// no longer the active report.
     fn canceled(&self, transition: Transition) -> bool {
         let mut state = self.lock();
         state.disposed
             || state
                 .active(transition.sequence)
-                .is_some_and(|active| active.canceled)
+                .is_none_or(|active| active.canceled)
     }
 
     fn startable(&self) -> bool {
@@ -323,7 +328,7 @@ impl Relay {
     }
 }
 
-/// A report's admission to its write. The transport checks it after the
+/// A report's admission to its write. The exchange checks it after the
 /// Service generation and pipe peer have verified, immediately before the
 /// first byte is written, because that verification can itself spend the
 /// budget or outlast a newer transition.
@@ -334,14 +339,15 @@ struct Gate<'a> {
 }
 
 impl Gate<'_> {
-    /// The rest of the budget, which bounds the reply, or an `Abandoned`
-    /// error when the report was superseded, disposed or is out of budget.
-    fn admit(self) -> io::Result<Duration> {
+    /// The end of the budget, which bounds the write and the reply, or an
+    /// `Abandoned` error when the report was superseded, disposed or is out
+    /// of budget.
+    fn admit(self) -> io::Result<Instant> {
         let remaining = self.relay.remaining(self.transition);
         if self.relay.canceled(self.transition) || remaining.is_zero() {
             return Err(io::Error::new(io::ErrorKind::TimedOut, Abandoned));
         }
-        Ok(remaining)
+        Ok(Instant::now() + remaining)
     }
 }
 
@@ -357,8 +363,40 @@ impl std::fmt::Display for Abandoned {
 
 impl std::error::Error for Abandoned {}
 
+/// The report ran out of budget before its write or while it waited: a
+/// refused gate, or an exchange past the deadline the gate set.
 fn is_abandoned(error: &io::Error) -> bool {
     error.get_ref().is_some_and(|inner| inner.is::<Abandoned>())
+        || service_client::exchange_deadline_passed(error)
+}
+
+/// What every report of one relay instance names.
+#[derive(Clone, Copy)]
+struct Instance {
+    id: [u8; 16],
+    started: i64,
+}
+
+/// One report over `channel`: the gate's transition encoded as a request, its
+/// exchange gated on the report's budget, and the decoded reply.
+async fn exchange_report<S: AsyncRead + AsyncWrite + Unpin>(
+    channel: &mut ReportChannel<'_>,
+    instance: Instance,
+    gate: Gate<'_>,
+    connect: impl AsyncFnOnce() -> io::Result<S>,
+    peer: impl Fn(&S) -> io::Result<(u32, u32)>,
+) -> io::Result<Option<u8>> {
+    let request = wire::Request {
+        request_id: random_guid()?,
+        instance: instance.id,
+        started: instance.started,
+        transition: gate.transition,
+    };
+    let payload = request.encode()?;
+    let reply = channel
+        .exchange_on(&payload, || gate.admit(), connect, peer)
+        .await?;
+    wire::decode_reply(&reply, &request.request_id_text())
 }
 
 /// The installed role. Its transport runs on its own thread and runtime, as
@@ -382,7 +420,7 @@ async fn transport(
     let authority = WindowsInstalledServiceAuthority::from_agent(Arc::clone(&origin))
         .map_err(super::origin_error)?;
     let mut channel = ReportChannel::new(Some(&authority));
-    let instance = random_guid()?;
+    let id = random_guid()?;
     let relay = Arc::new(Relay::new(
         windows::counter()?,
         windows::frequency()?,
@@ -399,19 +437,21 @@ async fn transport(
     };
     // A Service that is not running yet is acquired again by the first report.
     let _ = channel.prime();
-    let started = relay.started;
+    let instance = Instance {
+        id,
+        started: relay.started,
+    };
     let result = serve(
         &relay,
-        async |gate: Gate<'_>| {
-            let request = wire::Request {
-                request_id: random_guid()?,
+        async |gate| {
+            exchange_report(
+                &mut channel,
                 instance,
-                started,
-                transition: gate.transition,
-            };
-            let payload = request.encode()?;
-            let reply = channel.exchange(&payload, || gate.admit()).await?;
-            wire::decode_reply(&reply, &request.request_id_text())
+                gate,
+                service_client::connect_installed,
+                service_client::installed_peer,
+            )
+            .await
         },
         &mut stop,
         || super::verify_origin(&origin),
@@ -427,10 +467,12 @@ async fn transport(
 
 /// The transport: reports each active transition until stop. `verify` runs
 /// before each send; its failure ends the role. `send` admits its write
-/// through the gate it is given; a refusal ends the report as abandoned. Stop
-/// drops a report in flight, which closes its connection. A report ends in
-/// the relay before its notice is recorded, so a waiting suspend callback is
-/// never held by diagnostics. The relay is disposed on every exit.
+/// through the gate it is given; a refusal, or an exchange past the deadline
+/// the gate set, ends the report as abandoned. Stop drops a report in flight,
+/// which closes its connection. Every report ends in the relay before its
+/// notice is recorded, so a waiting suspend callback is released, and the
+/// pending transition becomes active, without waiting for diagnostics. The
+/// relay is disposed on every exit.
 async fn serve<'r>(
     relay: &'r Relay,
     mut send: impl AsyncFnMut(Gate<'r>) -> io::Result<Option<u8>>,
@@ -443,7 +485,7 @@ async fn serve<'r>(
         suspending: transition.suspending,
     };
     let result = loop {
-        let (transition, remaining) = match relay.next() {
+        let transition = match relay.next() {
             Next::Disposed => {
                 stopped(stop).await;
                 break Ok(());
@@ -460,10 +502,17 @@ async fn serve<'r>(
                 report(abandoned(transition));
                 continue;
             }
-            Next::Send(transition, remaining) => (transition, remaining),
+            Next::Send(transition) => transition,
         };
         if let Err(error) = verify() {
             break Err(error);
+        }
+        // The check may itself have spent the budget; nothing runs past it.
+        let remaining = relay.remaining(transition);
+        if remaining.is_zero() {
+            relay.finish(transition);
+            report(abandoned(transition));
+            continue;
         }
         let ended = tokio::select! {
             biased;
@@ -485,6 +534,7 @@ async fn serve<'r>(
             }),
         };
         let Some(notice) = ended else {
+            relay.dispose();
             report(abandoned(transition));
             break Ok(());
         };
