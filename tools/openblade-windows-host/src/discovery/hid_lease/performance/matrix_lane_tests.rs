@@ -447,10 +447,15 @@ fn a_full_queue_refuses_a_frame_unsent_and_a_settle_unsettled() {
         assert!(matches!(refused, Err(Unwritten::Unsent)));
         assert!(!stream.settle(far()).await, "not known to be settled");
         stream.retire();
-        assert!(matches!(opening.await, Err(Unwritten::Unsent)));
-        for frame in queued {
-            assert!(matches!(frame.await, Err(Unwritten::Unsent)));
-        }
+        let recalled = async {
+            assert!(matches!(opening.await, Err(Unwritten::Unsent)));
+            for frame in queued {
+                assert!(matches!(frame.await, Err(Unwritten::Unsent)));
+            }
+        };
+        tokio::time::timeout(Duration::from_secs(10), recalled)
+            .await
+            .expect("the retire cancels the open and recalls the queue");
         assert_eq!(issued(&fake), 0);
     });
 }
