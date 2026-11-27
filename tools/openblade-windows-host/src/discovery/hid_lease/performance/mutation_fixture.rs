@@ -296,6 +296,9 @@ impl Fixture {
         permit: Option<Arc<dyn Permit>>,
     ) -> Worker<ReadAdmission> {
         let fixture = self.clone();
+        // The clock of the runtime that asks for jobs, the Service's, on
+        // which every job deadline is measured.
+        let service_clock = tokio::runtime::Handle::try_current().ok();
         Worker::new(
             move |job| {
                 fixture.count_thread();
@@ -357,6 +360,17 @@ impl Fixture {
                 // recipes otherwise keep the real clock: the tests age their
                 // results on the test's clock, which a paused job's waits would
                 // run ahead of.
+                //
+                // Either clock starts at the real instant, which a test clock
+                // a rig holds or the test paused has fallen behind. Any other
+                // job therefore takes what the Service's clock leaves of its
+                // deadline now, as production's real clock leaves it.
+                let left = service_clock.as_ref().map(|clock| {
+                    let _clock = clock.enter();
+                    job.limit()
+                        .deadline
+                        .saturating_duration_since(Instant::now())
+                });
                 tokio::runtime::Builder::new_current_thread()
                     .enable_time()
                     .start_paused(paused)
@@ -366,6 +380,8 @@ impl Fixture {
                         if paused && let Some(arrival) = arrival {
                             limit.deadline =
                                 Instant::now() + limit.deadline.saturating_duration_since(arrival);
+                        } else if let Some(left) = left {
+                            limit.deadline = Instant::now() + left;
                         }
                         let observed = if let Some(permit) = &permit {
                             reader.apply_preset(permit.as_ref(), limit).await
