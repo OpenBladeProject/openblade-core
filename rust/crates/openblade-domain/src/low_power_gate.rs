@@ -85,6 +85,26 @@ pub enum WriteScope {
     LowPowerCleanup { generation: u64 },
 }
 
+/// What `TryApply`'s stale clause reads: the latest accepted timestamp and
+/// whether the latch is set. A reader that must not take the lock the gate
+/// lives under can test a copy (`refuses`) instead of applying a signal.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct View {
+    pub latest: i64,
+    pub active: bool,
+}
+
+impl View {
+    /// Whether `TryApply` refuses a signal raised at `timestamp`
+    /// (`LowPowerGate.cs:84-90`): it is older than the latest accepted one,
+    /// or it is a same-timestamp suspend while the gate is clear, even one
+    /// that was already clear when that suspend was raised. A delayed
+    /// suspend cannot undo a newer resume or DisplayOn.
+    pub const fn refuses(self, suspend: bool, timestamp: i64) -> bool {
+        timestamp < self.latest || (timestamp == self.latest && suspend && !self.active)
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LowPowerGate {
     frequency: NonZeroU64,
@@ -154,12 +174,18 @@ impl LowPowerGate {
         }
     }
 
+    /// What the stale clause of `apply` reads now.
+    pub const fn view(&self) -> View {
+        View {
+            latest: self.latest,
+            active: self.is_active(),
+        }
+    }
+
     /// `TryApply`, or `None` for a stale signal, which changes nothing.
     pub fn apply(&mut self, signal: Signal, timestamp: i64) -> Option<Accepted> {
         let active = signal == Signal::Suspend;
-        // A same-timestamp suspend cannot undo a clear, even one that was
-        // already clear when that suspend was raised.
-        if timestamp < self.latest || (timestamp == self.latest && active && !self.is_active()) {
+        if self.view().refuses(active, timestamp) {
             return None;
         }
         let previous = self.state;
@@ -344,5 +370,33 @@ mod tests {
             (0, true)
         );
         assert!(!gate.is_active());
+    }
+
+    #[test]
+    fn the_view_refuses_exactly_what_apply_refuses() {
+        let mut gate = LowPowerGate::new(HZ);
+        applied(&mut gate, Signal::Suspend, 100);
+        applied(&mut gate, Signal::Resume, 300);
+        for signal in [Signal::Suspend, Signal::Resume, Signal::DisplayOn] {
+            for at in [-1, 0, 299, 300, 301] {
+                let view = gate.view();
+                let refused = view.refuses(signal == Signal::Suspend, at);
+                assert_eq!(
+                    refused,
+                    gate.clone().apply(signal, at).is_none(),
+                    "{signal:?} at {at}"
+                );
+            }
+        }
+        assert_eq!(
+            gate.view(),
+            View {
+                latest: 300,
+                active: false
+            }
+        );
+        // A set latch admits a same-timestamp suspend.
+        applied(&mut gate, Signal::Suspend, 400);
+        assert!(!gate.view().refuses(true, 400) && gate.view().refuses(false, 399));
     }
 }

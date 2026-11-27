@@ -509,6 +509,11 @@ pub(super) fn native_status_source(
             inner,
             power_epoch: None,
             mutation: Some(runtime),
+            #[cfg(any(
+                feature = "service-lifecycle-shutdown-v1",
+                feature = "service-session-power-relay-v1"
+            ))]
+            lifecycle: super::session_lifecycle::Ports::native(&origin),
             origin,
             mailbox,
         }
@@ -533,6 +538,11 @@ fn compose_guarded_status(
         power_epoch: None,
         #[cfg(feature = "service-thermal-mutation-v1")]
         mutation: None,
+        #[cfg(any(
+            feature = "service-lifecycle-shutdown-v1",
+            feature = "service-session-power-relay-v1"
+        ))]
+        lifecycle: Default::default(),
         #[cfg(feature = "service-mailbox-observation-v1")]
         mailbox,
     })
@@ -598,6 +608,12 @@ struct GuardedStatus {
     power_epoch: Option<u64>,
     #[cfg(feature = "service-mailbox-observation-v1")]
     mailbox: super::mailbox_read::MailboxSource,
+    /// The Tray's complete shutdown and the Session Agent's power relay.
+    #[cfg(any(
+        feature = "service-lifecycle-shutdown-v1",
+        feature = "service-session-power-relay-v1"
+    ))]
+    lifecycle: super::session_lifecycle::Ports,
 }
 impl GuardedStatus {
     /// Managed classifies the new power source when its power-change handler
@@ -727,6 +743,25 @@ fn publish_next(
     Ok(status)
 }
 impl StatusSource for GuardedStatus {
+    #[cfg(feature = "service-lifecycle-shutdown-v1")]
+    fn shutdown(
+        &self,
+    ) -> Option<(
+        std::rc::Rc<super::session_lifecycle::ShutdownSignal>,
+        super::session_lifecycle::Quiesced,
+    )> {
+        let signal = self.lifecycle.shutdown.clone()?;
+        // A composition without the runtime runs no operation to wait for.
+        let quiesced: super::session_lifecycle::Quiesced = match &self.mutation {
+            Some(runtime) => Box::pin(runtime.quiesced()),
+            None => Box::pin(async {}),
+        };
+        Some((signal, quiesced))
+    }
+    #[cfg(feature = "service-session-power-relay-v1")]
+    fn session_power_relay(&self) -> Option<std::rc::Rc<super::session_lifecycle::Relay>> {
+        self.lifecycle.relay.clone()
+    }
     #[cfg(all(
         feature = "service-diagnostics-export-v1",
         feature = "service-thermal-mutation-v1"
@@ -1765,6 +1800,24 @@ pub(super) type InjectedHyperBoost = super::thermal_mutation::Probes;
     not(feature = "service-hyperboost-v1")
 ))]
 pub(super) type InjectedHyperBoost = ();
+/// The lifecycle ports an injected source serves with, or none.
+#[cfg(all(
+    test,
+    any(
+        feature = "service-lifecycle-shutdown-v1",
+        feature = "service-session-power-relay-v1"
+    )
+))]
+pub(super) type InjectedLifecycle = super::session_lifecycle::Ports;
+#[cfg(all(
+    test,
+    feature = "service-thermal-mutation-v1",
+    not(any(
+        feature = "service-lifecycle-shutdown-v1",
+        feature = "service-session-power-relay-v1"
+    ))
+))]
+pub(super) type InjectedLifecycle = ();
 
 #[cfg(all(test, feature = "service-thermal-mutation-v1"))]
 pub(super) fn injected_mutation_source(
@@ -1776,6 +1829,14 @@ pub(super) fn injected_mutation_source(
     observer: Arc<dyn Fn() + Send + Sync>,
     #[cfg_attr(not(feature = "service-hyperboost-v1"), allow(unused_variables))]
     hyperboost: InjectedHyperBoost,
+    #[cfg_attr(
+        not(any(
+            feature = "service-lifecycle-shutdown-v1",
+            feature = "service-session-power-relay-v1"
+        )),
+        allow(unused_variables)
+    )]
+    lifecycle: InjectedLifecycle,
 ) -> Box<dyn StatusSource> {
     #[cfg_attr(not(feature = "service-brightness-hid-usage-v1"), allow(unused_mut))]
     let mut source = GuardedStatus {
@@ -1783,6 +1844,11 @@ pub(super) fn injected_mutation_source(
         mailbox,
         mutation: Some(runtime),
         power_epoch: None,
+        #[cfg(any(
+            feature = "service-lifecycle-shutdown-v1",
+            feature = "service-session-power-relay-v1"
+        ))]
+        lifecycle,
         inner: ObservedStatus::new(move |cancel| {
             observer();
             // The low bits select the metadata; `PRODUCTION_CONTROLLERS`

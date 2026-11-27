@@ -126,6 +126,20 @@ service-lighting-v1 = ["service-thermal-mutation-v1", "openblade-protocol/lighti
 # package trust are verified again. The IOCTL has no readback, so no packaged
 # composition implies it, and both package readers refuse it by name.
 service-brightness-hid-usage-v1 = ["service-thermal-mutation-v1", "driver-api-trust"]
+# The Tray's complete shutdown (`shutdownOpenBlade`): a local administrator or
+# SYSTEM, whatever its logon or session, waits for the runtime operation gate
+# and is answered Stored, and 500 ms later the Service stops through exactly
+# the SCM STOP path and its owned cleanup. It needs the thermal runtime's
+# gate. It stops the Service unattended, so no packaged composition implies
+# it, and both package readers refuse it by name.
+service-lifecycle-shutdown-v1 = ["service-thermal-mutation-v1"]
+# The Session Agent's power relay (`reportSessionPowerTransition`): managed's
+# admission, validation, age, stale-agent and newer-transition refusals, and
+# for an accepted report managed's literal unconfirmed reply. It never feeds
+# the low-power gate: SCM's own notices drive the boundary. Only the thermal
+# composition accepts power events. No packaged composition implies it, and
+# both package readers refuse it by name.
+service-session-power-relay-v1 = ["service-thermal-mutation-v1"]
 # The installed-driver package binding and WinVerifyTrust catalog checks
 # (`driver_trust`), shared by the driver-API backends that load or open an
 # installed driver's files. It reads only.

@@ -29,6 +29,7 @@
     <None Include="../../tools/openblade-windows-host/tests/data/profile-ordinal-ignore-case.json" Link="profile-ordinal-ignore-case.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../tools/openblade-windows-host/tests/data/profile-resolution-vectors.json" Link="profile-resolution-vectors.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../tools/openblade-windows-host/tests/data/low-power-gate-vectors.json" Link="low-power-gate-vectors.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../tools/openblade-windows-host/tests/data/session-lifecycle-vectors.json" Link="session-lifecycle-vectors.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../tools/openblade-windows-host/tests/data/keyboard-driver-mode-vectors.json" Link="keyboard-driver-mode-vectors.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../tools/openblade-windows-host/tests/data/live-reading-vectors.json" Link="live-reading-vectors.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../tools/openblade-windows-host/tests/data/live-reading-native-frames.json" Link="live-reading-native-frames.json" CopyToOutputDirectory="PreserveNewest" />

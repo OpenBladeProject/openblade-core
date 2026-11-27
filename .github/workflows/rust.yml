@@ -413,6 +413,12 @@ jobs:
           # failed release and the lane's warnings.
           $brightnessKeyboard = @('openblade-windows-service-candidate', 'service-brightness-hid-usage-v1,service-keyboard-driver-mode-v1')
           $brightnessExport = @('openblade-windows-service-candidate', 'service-brightness-hid-usage-v1,service-diagnostics-export-v1,service-keyboard-driver-mode-v1')
+          # The lifecycle operations, each alone and together: the shutdown
+          # and its own STOP through SCM's path, and the reply-only relay.
+          # The lanes without them pin managed's unsupported reply.
+          $shutdown = @('openblade-windows-service-candidate', 'service-lifecycle-shutdown-v1')
+          $relay = @('openblade-windows-service-candidate', 'service-session-power-relay-v1')
+          $lifecycle = @('openblade-windows-service-candidate', 'service-lifecycle-shutdown-v1,service-session-power-relay-v1')
           # One run per filter, so a filter that matches no test fails the step.
           foreach ($run in @(
               @('openblade-windows-service-candidate', 'service-temporary-charge-v1', 'service_status::object_tests'),
@@ -604,6 +610,22 @@ jobs:
               ($brightnessKeyboard + 'driver_mode'),
               ($brightnessExport + 'brightness'),
               ($brightnessExport + 'diagnostic_export'),
+              ($shutdown + 'lifecycle_operations'),
+              ($shutdown + 'lifecycle_ops'),
+              ($shutdown + 'the_own_stop'),
+              ($shutdown + 'native_package'),
+              ($shutdown + 'unserved'),
+              # The shutdown's admission seam and token membership read, with
+              # the managed access policy parity they extend.
+              ($shutdown + 'installed::readiness::windows::'),
+              ($relay + 'lifecycle_operations'),
+              ($relay + 'lifecycle_ops'),
+              ($relay + 'the_gate_view'),
+              ($relay + 'native_package'),
+              ($relay + 'unserved'),
+              ($lifecycle + 'lifecycle_operations'),
+              ($lifecycle + 'lifecycle_ops'),
+              ($lifecycle + 'unserved'),
               @('openblade-windows-service-candidate', 'service-mailbox-observation-v1', 'capability_tests'),
               @('openblade-windows-service-candidate', 'service-mailbox-observation-v1', 'readiness::tests::observation'),
               @('openblade-windows-service-candidate', 'service-mailbox-observation-v1', 'driver_mode_absent'),
@@ -694,6 +716,9 @@ jobs:
               @('openblade-windows-service-candidate', 'service-brightness-hid-usage-v1,service-profiles-v1'),
               @('openblade-windows-service-candidate', 'service-brightness-hid-usage-v1,service-keyboard-driver-mode-v1'),
               @('openblade-windows-service-candidate', 'service-brightness-hid-usage-v1,service-diagnostics-export-v1,service-keyboard-driver-mode-v1'),
+              @('openblade-windows-service-candidate', 'service-lifecycle-shutdown-v1'),
+              @('openblade-windows-service-candidate', 'service-session-power-relay-v1'),
+              @('openblade-windows-service-candidate', 'service-lifecycle-shutdown-v1,service-session-power-relay-v1'),
               @('openblade-windows-agent-candidate', 'agent-display-brightness-write-v1'),
               @('openblade-windows-agent-candidate', 'agent-display-profile-apply-v1'),
               @('openblade-windows-agent-candidate', 'agent-battery-report-v1'),

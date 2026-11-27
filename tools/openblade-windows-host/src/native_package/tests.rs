@@ -996,6 +996,37 @@ fn a_display_brightness_input_service_is_not_admitted_by_feature_or_marker() {
 }
 
 #[test]
+fn a_lifecycle_operation_service_is_not_admitted_by_feature_or_marker() {
+    // The features and marker build.rs gives the admitted temporary-charge
+    // composition built with each lifecycle operation. Neither the shutdown
+    // nor the power relay has an attended validation, so the reader refuses
+    // the image by name, and refuses the marker alone.
+    let features = "controller-admission-compile-check,firmware-performance-compile-check,hid-identity-compile-check,installed-service-candidate,lifecycle-evidence-compile-check,service-battery-policy-v1,service-fan-mutation-v2,service-hardware-compile-check,service-mailbox-observation-v1,service-temporary-charge-v1,service-thermal-mutation-v1,startup-custody-v1";
+    let admitted = "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1,service-fan-mutation-v2,service-battery-policy-v1,service-temporary-charge-v1";
+    assert!(capabilities(2, "service", features, admitted).is_ok());
+    for marker in [
+        "service-lifecycle-shutdown-v1",
+        "service-session-power-relay-v1",
+    ] {
+        let mut built: Vec<&str> = features.split(',').chain([marker]).collect();
+        built.sort_unstable();
+        let built = built.join(",");
+        let marked = format!("{admitted},{marker}");
+        for claimed in [marked.as_str(), admitted, "none"] {
+            for role in ["service", "agent"] {
+                assert!(capabilities(2, role, &built, claimed).is_err(), "{marker}");
+                assert!(capabilities(1, role, &built, claimed).is_err(), "{marker}");
+            }
+        }
+        // A forged marker without the feature is no better.
+        assert!(
+            capabilities(2, "service", features, &marked).is_err(),
+            "{marker}"
+        );
+    }
+}
+
+#[test]
 fn a_profile_trigger_service_is_not_admitted_by_feature_or_marker() {
     // The features and the capability build.rs gives a build with
     // service-profile-triggers-v1. Packaging has not admitted automatic

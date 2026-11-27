@@ -39,7 +39,14 @@ use windows_sys::Win32::{
 
 #[path = "readiness_peer.rs"]
 mod peer;
+#[cfg(feature = "service-lifecycle-shutdown-v1")]
+pub(crate) use peer::system_or_administrator;
 pub(crate) use peer::{Caller, ControlSession, Logon, Pending, Stream};
+#[cfg(feature = "service-lifecycle-shutdown-v1")]
+use windows_sys::Win32::Security::{
+    CheckTokenMembership, CreateWellKnownSid, SECURITY_MAX_SID_SIZE, WELL_KNOWN_SID_TYPE,
+    WinBuiltinAdministratorsSid,
+};
 
 #[cfg(all(test, feature = "installed-service-candidate"))]
 use super::{Endpoint, probe_id, windows_control_session};
@@ -434,6 +441,35 @@ impl Stream for NativeStream {
         Ok(crate::windows_token::Identity::read(&token)?.sid)
     }
 
+    #[cfg(feature = "service-lifecycle-shutdown-v1")]
+    fn system_or_administrator_after_read(&self) -> bool {
+        // Both answers impersonate the client again after its request was
+        // read: SYSTEM from its token's user, as the caller is classified,
+        // then the membership of a freshly opened token.
+        system_or_administrator(
+            self.caller_after_read()
+                .map(|caller| caller.logon == Logon::System),
+            || token_member(&peer_token(self.pipe.as_raw_handle())?, SHUTDOWN_ROLE),
+        )
+    }
+
+    #[cfg(feature = "service-lifecycle-shutdown-v1")]
+    fn peer_closed(&mut self) -> bool {
+        // PeekNamedPipe reads the pipe's state now, where a read may still be
+        // waiting out its retry. A state that cannot be read is closed.
+        // SAFETY: the pipe is borrowed and PeekNamedPipe receives no buffers.
+        unsafe {
+            PeekNamedPipe(
+                self.pipe.as_raw_handle(),
+                null_mut(),
+                0,
+                null_mut(),
+                null_mut(),
+                null_mut(),
+            ) == 0
+        }
+    }
+
     fn server_pid(&self) -> io::Result<u32> {
         let Side::Client(session) = self.side else {
             return Err(denied("server PID requires the client handle"));
@@ -565,6 +601,40 @@ pub(super) fn token_context(token: &OwnedHandle) -> io::Result<(Logon, u32)> {
         }
     }
     Ok((classify_logon(interactive, remote), session))
+}
+
+/// The group managed admits a shutdown from besides LocalSystem
+/// (`WindowsBuiltInRole.Administrator`).
+#[cfg(feature = "service-lifecycle-shutdown-v1")]
+const SHUTDOWN_ROLE: WELL_KNOWN_SID_TYPE = WinBuiltinAdministratorsSid;
+
+/// A well-known SID in an aligned buffer of `SECURITY_MAX_SID_SIZE` bytes.
+#[cfg(feature = "service-lifecycle-shutdown-v1")]
+type SidBuffer = [usize; (SECURITY_MAX_SID_SIZE as usize).div_ceil(size_of::<usize>())];
+
+#[cfg(feature = "service-lifecycle-shutdown-v1")]
+fn well_known_sid(kind: WELL_KNOWN_SID_TYPE) -> io::Result<SidBuffer> {
+    let mut sid = SidBuffer::default();
+    let mut size = size_of_val(&sid) as u32;
+    // SAFETY: the buffer is writable for `size` bytes, and no domain is given.
+    check(unsafe { CreateWellKnownSid(kind, null_mut(), sid.as_mut_ptr().cast(), &mut size) })?;
+    Ok(sid)
+}
+
+/// Whether the impersonation `token` is a member of the well-known group, as
+/// managed `WindowsPrincipal.IsInRole` asks `CheckTokenMembership`: an enabled
+/// group that is not deny-only, which a restricted token's restricting SIDs
+/// must also hold. A UAC-filtered token holds Administrators deny-only, so it
+/// is no member. A primary token is refused.
+#[cfg(feature = "service-lifecycle-shutdown-v1")]
+fn token_member(token: &OwnedHandle, group: WELL_KNOWN_SID_TYPE) -> io::Result<bool> {
+    let mut sid = well_known_sid(group)?;
+    let mut member = 0;
+    // SAFETY: the token is live, the SID initialized and the output writable.
+    check(unsafe {
+        CheckTokenMembership(token.as_raw_handle(), sid.as_mut_ptr().cast(), &mut member)
+    })?;
+    Ok(member != 0)
 }
 
 fn enabled_group(attributes: u32) -> bool {
@@ -749,5 +819,163 @@ mod tests {
         })
         .await
         .unwrap();
+    }
+
+    /// The shutdown's admission over real tokens: membership is
+    /// `CheckTokenMembership` of BUILTIN\Administrators, which a deny-only
+    /// group and a restricted token's restricting SIDs refuse, and every
+    /// token that cannot answer is no administrator.
+    #[cfg(feature = "service-lifecycle-shutdown-v1")]
+    mod shutdown_admission {
+        use windows_sys::Win32::{
+            Foundation::HANDLE,
+            Security::{
+                CreateRestrictedToken, DuplicateTokenEx, SecurityIdentification, TOKEN_DUPLICATE,
+                TOKEN_QUERY, TokenImpersonation, WinBuiltinUsersSid, WinWorldSid,
+            },
+            System::Threading::{GetCurrentProcess, OpenProcessToken},
+        };
+
+        use super::*;
+
+        fn owned(token: HANDLE) -> OwnedHandle {
+            // SAFETY: each caller passes a token the call just returned.
+            unsafe { OwnedHandle::from_raw_handle(token) }
+        }
+        /// This process's primary token.
+        fn primary() -> OwnedHandle {
+            let mut token = null_mut();
+            // SAFETY: the pseudo-handle needs no close and the output is writable.
+            check(unsafe {
+                OpenProcessToken(
+                    GetCurrentProcess(),
+                    TOKEN_QUERY | TOKEN_DUPLICATE,
+                    &mut token,
+                )
+            })
+            .unwrap();
+            owned(token)
+        }
+        /// An identification-level impersonation token of `token`, as a pipe
+        /// server opens its client's.
+        fn identification(token: &OwnedHandle) -> OwnedHandle {
+            let mut duplicate = null_mut();
+            // SAFETY: the token is live, no attributes are given and the output is writable.
+            check(unsafe {
+                DuplicateTokenEx(
+                    token.as_raw_handle(),
+                    TOKEN_QUERY,
+                    null(),
+                    SecurityIdentification,
+                    TokenImpersonation,
+                    &mut duplicate,
+                )
+            })
+            .unwrap();
+            owned(duplicate)
+        }
+        /// `token` with `disabled` made deny-only and `restricting` as its
+        /// restricting SIDs, as an impersonation token.
+        fn restricted(
+            token: &OwnedHandle,
+            disabled: &[WELL_KNOWN_SID_TYPE],
+            restricting: &[WELL_KNOWN_SID_TYPE],
+        ) -> OwnedHandle {
+            let entries = |kinds: &[WELL_KNOWN_SID_TYPE]| -> Vec<SidBuffer> {
+                kinds
+                    .iter()
+                    .map(|&kind| well_known_sid(kind).unwrap())
+                    .collect()
+            };
+            let (mut disabled, mut restricting) = (entries(disabled), entries(restricting));
+            let attributes = |sids: &mut [SidBuffer]| -> Vec<SID_AND_ATTRIBUTES> {
+                sids.iter_mut()
+                    .map(|sid| SID_AND_ATTRIBUTES {
+                        Sid: sid.as_mut_ptr().cast(),
+                        Attributes: 0,
+                    })
+                    .collect()
+            };
+            let (disabled, restricting) = (attributes(&mut disabled), attributes(&mut restricting));
+            let mut created = null_mut();
+            // SAFETY: every SID array entry points at a live buffer for the call.
+            check(unsafe {
+                CreateRestrictedToken(
+                    token.as_raw_handle(),
+                    0,
+                    disabled.len() as u32,
+                    disabled.as_ptr(),
+                    0,
+                    null(),
+                    restricting.len() as u32,
+                    restricting.as_ptr(),
+                    &mut created,
+                )
+            })
+            .unwrap();
+            identification(&owned(created))
+        }
+
+        #[test]
+        fn the_shutdown_role_is_builtin_administrators() {
+            assert_eq!(SHUTDOWN_ROLE, WinBuiltinAdministratorsSid);
+        }
+
+        #[test]
+        fn membership_is_check_token_membership_and_fails_closed() {
+            let own = primary();
+            let token = identification(&own);
+            assert_eq!(token_member(&token, WinWorldSid).ok(), Some(true));
+            assert_eq!(token_member(&token, WinBuiltinUsersSid).ok(), Some(true));
+            // A deny-only group is no membership, as a UAC-filtered token
+            // holds Administrators.
+            let filtered = restricted(
+                &own,
+                &[WinBuiltinUsersSid, WinBuiltinAdministratorsSid],
+                &[],
+            );
+            assert_eq!(
+                token_member(&filtered, WinBuiltinUsersSid).ok(),
+                Some(false)
+            );
+            assert_eq!(token_member(&filtered, SHUTDOWN_ROLE).ok(), Some(false));
+            // A restricting SID binds too, though Users stays in the groups.
+            let limited = restricted(&own, &[], &[WinWorldSid]);
+            assert_eq!(token_member(&limited, WinWorldSid).ok(), Some(true));
+            assert_eq!(token_member(&limited, WinBuiltinUsersSid).ok(), Some(false));
+            // A primary token cannot answer, so it is no administrator.
+            assert!(token_member(&own, WinWorldSid).is_err());
+            assert!(!system_or_administrator(Ok(false), || {
+                token_member(&own, SHUTDOWN_ROLE)
+            }));
+        }
+
+        /// A pipe client's admission is read from its own token, and only
+        /// after its request: before it, no evidence admits. The client is
+        /// this process, so its membership is this process's.
+        #[tokio::test]
+        async fn admission_reads_the_clients_token_after_its_request() {
+            timeout(Duration::from_secs(5), async {
+                let (open, _) = private_endpoint(|_| windows_control_session());
+                let mut endpoint = open().unwrap();
+                let (mut server, mut client) =
+                    tokio::try_join!(endpoint.accept(), endpoint.connect_probe()).unwrap();
+                assert!(!server.system_or_administrator_after_read());
+                assert!(!server.peer_closed());
+                client.write_all(b"probe").await.unwrap();
+                let mut request = [0; 5];
+                server.read_exact(&mut request).await.unwrap();
+                let expected =
+                    token_member(&identification(&primary()), WinBuiltinAdministratorsSid).unwrap();
+                assert_eq!(server.system_or_administrator_after_read(), expected);
+                assert!(!server.peer_closed());
+                drop(client);
+                assert!(server.peer_closed());
+                drop(server);
+                endpoint.retire().await.unwrap();
+            })
+            .await
+            .unwrap();
+        }
     }
 }

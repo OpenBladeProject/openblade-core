@@ -632,6 +632,11 @@ async fn guarded_sticky_read_loss_retains_current_metadata_and_expires_both_proj
         }),
         origin: origin.clone(),
         power_epoch: None,
+        #[cfg(any(
+            feature = "service-lifecycle-shutdown-v1",
+            feature = "service-session-power-relay-v1"
+        ))]
+        lifecycle: Default::default(),
         mailbox: MailboxSource::compose(origin, || Ok(reader.clone())).unwrap(),
     };
     source.snapshot(SYSTEM, Instant::now()).await.unwrap();

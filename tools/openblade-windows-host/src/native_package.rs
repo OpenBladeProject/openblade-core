@@ -850,6 +850,19 @@ fn capabilities(schema: u8, role: &str, features: &str, value: &str) -> io::Resu
     {
         return Err(deny());
     }
+    // The lifecycle operations: the Tray's shutdown stops the Service, and
+    // the Session Agent's power relay answers suspend and resume reports.
+    // Neither has an attended validation. Admitting them is a separate
+    // packaging decision. Refuse each feature and its marker by name
+    // (docs/windows-rust-development-service.md).
+    for lifecycle in [
+        "service-lifecycle-shutdown-v1",
+        "service-session-power-relay-v1",
+    ] {
+        if has(lifecycle) || value.split(',').any(|capability| capability == lifecycle) {
+            return Err(deny());
+        }
+    }
     // The application-context reporter is not admitted for packaging either:
     // refuse its feature and its capability marker by name, whatever else the
     // record claims, until a packaging stage admits both.

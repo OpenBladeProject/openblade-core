@@ -726,6 +726,15 @@ impl Outcome {
     }
 }
 impl Runtime {
+    /// Resolves once every operation already queued on the gate has ended,
+    /// as managed's complete shutdown waits for its user-request gate. The
+    /// gate is fair, so it waits behind them all and admits nothing: the
+    /// permit is released as soon as it is taken. It holds no other lock.
+    #[cfg(feature = "service-lifecycle-shutdown-v1")]
+    pub(super) fn quiesced(&self) -> impl std::future::Future<Output = ()> + 'static {
+        let gate = Rc::clone(&self.gate);
+        async move { drop(gate.lock().await) }
+    }
     /// The history this runtime records into, for the export port.
     #[cfg(feature = "service-diagnostics-export-v1")]
     pub(super) fn diagnostic_history(&self) -> Arc<crate::diagnostic_export::History> {

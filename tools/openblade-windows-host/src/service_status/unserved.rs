@@ -130,7 +130,7 @@ mod tests {
     }
 
     // One valid request per variant: each decodes wherever it is compiled.
-    fn variants() -> [StatusRequest; 24] {
+    fn variants() -> [StatusRequest; 26] {
         let id = || ID.to_owned();
         let version = PROTOCOL_VERSION;
         [
@@ -256,6 +256,19 @@ mod tests {
                 version,
                 request_id: id(),
                 usage: 0x6F,
+            },
+            StatusRequest::ShutdownOpenBlade {
+                version,
+                request_id: id(),
+            },
+            StatusRequest::ReportSessionPowerTransition {
+                version,
+                request_id: id(),
+                instance_id: id(),
+                instance_started_qpc: 1,
+                sequence: 1,
+                timestamp_qpc: 1,
+                suspending: true,
             },
         ]
     }
