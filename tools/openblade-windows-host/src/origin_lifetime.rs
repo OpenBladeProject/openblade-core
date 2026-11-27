@@ -1,13 +1,13 @@
 //! Sticky loaded-origin outcome shared by ingress and publication checks.
 use openblade_domain::{
-    low_power_gate::{LowPowerGate, Signal, Transition, WriteScope},
+    low_power_gate::{LowPowerGate, Signal, Transition, View, WriteScope},
     power_setting::{ConsoleDisplay, PowerSetting, power_event_signal},
 };
 use std::{
     io,
     sync::{
         Arc, Mutex,
-        atomic::{AtomicU8, Ordering},
+        atomic::{AtomicU8, AtomicU64, Ordering},
     },
 };
 const LIVE: u8 = 0;
@@ -89,14 +89,31 @@ mod tests {
 /// resume; fresh device/session/controller proof is still required.
 ///
 /// The fields are the state, the wake of each new suspend generation
-/// (`suspended`) and the hold of that generation's SCM callback
-/// (`arm_suspend_hold`).
+/// (`suspended`), the hold of that generation's SCM callback
+/// (`arm_suspend_hold`) and the gate's view published after each notice
+/// (`gate_view`).
 #[derive(Default)]
 pub(crate) struct Lifecycle(
     Mutex<LifecycleState>,
     Arc<tokio::sync::Notify>,
     Arc<SuspendHold>,
+    AtomicU64,
 );
+/// The published `gate_view` of an unreadable or exhausted lifecycle. Every
+/// packed view is below it: a latest stamp needs at most 62 bits.
+const UNKNOWN_VIEW: u64 = u64::MAX;
+/// Packs a gate view into one word, the latest stamp above the latch bit,
+/// so a reader never sees the stamp of one notice with another's latch. A
+/// stamp outside 0..2^62 (QPC counts up from boot, so none is) packs as
+/// unknown. The default word, 0, is the clear gate's initial view.
+fn pack_view(view: Option<View>) -> u64 {
+    match view {
+        Some(View { latest, active }) if (0..1 << 62).contains(&latest) => {
+            (latest as u64) << 1 | u64::from(active)
+        }
+        _ => UNKNOWN_VIEW,
+    }
+}
 mod suspend_hold;
 use suspend_hold::SuspendHold;
 pub(crate) use suspend_hold::{HoldArm, PendingHold};
@@ -187,7 +204,20 @@ impl Lifecycle {
     pub(crate) fn exhaust(&self) {
         if let Ok(mut state) = self.0.lock() {
             state.epoch = 0;
+            self.3.store(UNKNOWN_VIEW, Ordering::Release);
         }
+    }
+    /// The gate's view as the last notice left it, read without the lock the
+    /// SCM callback takes, or `None` when the lifecycle is exhausted. The
+    /// Session Agent's relay compares a report with it and never applies one
+    /// (`session_power_relay`), so SCM alone drives the boundary.
+    #[cfg_attr(not(feature = "service-session-power-relay-v1"), allow(dead_code))]
+    pub(crate) fn gate_view(&self) -> Option<View> {
+        let word = self.3.load(Ordering::Acquire);
+        (word != UNKNOWN_VIEW).then_some(View {
+            latest: (word >> 1) as i64,
+            active: word & 1 != 0,
+        })
     }
     fn apply(
         &self,
@@ -217,8 +247,13 @@ impl Lifecycle {
         // released, as managed raises TransitionChanged to its coordinator
         // (`ServiceSessionPowerTransitionCoordinator`), and is held from
         // the notice's stamp, the same QPC stamp the preparation ages.
-        let signal = signal(&mut state.display)?;
-        let accepted = state.gate.apply(signal, timestamp);
+        let accepted =
+            signal(&mut state.display).and_then(|signal| state.gate.apply(signal, timestamp));
+        // Published under the lock, so views are stored in notice order.
+        self.3.store(
+            pack_view((state.epoch != 0).then(|| state.gate.view())),
+            Ordering::Release,
+        );
         drop(state);
         let transition = accepted
             .filter(|accepted| accepted.changed && accepted.transition.suspending())?
@@ -617,6 +652,36 @@ mod lifecycle_tests {
         });
         assert!(lifecycle.0.is_poisoned());
         assert!(lifecycle.low_power_or_unknown());
+    }
+    #[test]
+    fn the_gate_view_follows_every_notice_and_fails_closed() {
+        let view = |latest, active| Some(View { latest, active });
+        let lifecycle = Lifecycle::default();
+        assert_eq!(lifecycle.gate_view(), view(0, false));
+        lifecycle.record(POWER, Some(Signal::Suspend), 100);
+        assert_eq!(lifecycle.gate_view(), view(100, true));
+        // A stale signal and a notice without one leave it as it was.
+        lifecycle.record(POWER, Some(Signal::Resume), 90);
+        lifecycle.record(
+            windows_sys::Win32::System::Services::SERVICE_CONTROL_SESSIONCHANGE,
+            None,
+            150,
+        );
+        assert_eq!(lifecycle.gate_view(), view(100, true));
+        lifecycle.record(POWER, Some(Signal::Resume), 300);
+        assert_eq!(lifecycle.gate_view(), view(300, false));
+        // The view is the gate's own, under the same lock.
+        assert_eq!(
+            lifecycle.gate_view(),
+            Some(lifecycle.0.lock().unwrap().gate.view())
+        );
+        // A stamp the word cannot hold, and exhaustion, read as unknown.
+        assert_eq!(pack_view(view(-1, false)), UNKNOWN_VIEW);
+        assert_eq!(pack_view(view(1 << 62, true)), UNKNOWN_VIEW);
+        assert_eq!(pack_view(view((1 << 62) - 1, true)), u64::MAX >> 1);
+        lifecycle.0.lock().unwrap().epoch = u64::MAX;
+        lifecycle.record(POWER, Some(Signal::Suspend), 400);
+        assert_eq!(lifecycle.gate_view(), None);
     }
     #[test]
     fn a_stale_suspend_cannot_set_the_gate_but_still_fences() {
