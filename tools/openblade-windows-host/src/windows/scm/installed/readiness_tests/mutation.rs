@@ -591,7 +591,8 @@ struct Custody {
     // off): a read admission lost between two checks of one step.
     read_refuse_at: AtomicUsize,
     // Blocks the thread in the nth owned-Stop fresh authorization once
-    // armed, as a slow Windows supplier would.
+    // armed, as a slow Windows supplier would: on the clock of the runtime
+    // that asks (`Custody::stall_owned_stop`).
     owned_stop_stall: StdMutex<Option<(usize, std::time::Duration)>>,
     activation_refusal: AtomicU8,
     lifecycle: crate::scm_host::Lifecycle,
@@ -1033,7 +1034,10 @@ impl Fresh for PinnedFresh {
 }
 impl Custody {
     /// Blocks in the armed owned-Stop or cleanup authorization, as a slow
-    /// Windows supplier would (`owned_stop_stall`).
+    /// Windows supplier would (`owned_stop_stall`). A job on paused time
+    /// (`Fixture::worker`) measures its own progress on that clock, so the
+    /// stall moves it by exactly its length; on a running clock it takes that
+    /// long in real time.
     fn stall_owned_stop(&self) {
         let stall = {
             let mut armed = self.owned_stop_stall.lock().unwrap();
@@ -1050,10 +1054,21 @@ impl Custody {
                 None => None,
             }
         };
-        if let Some(by) = stall {
-            std::thread::sleep(by);
+        match stall {
+            Some(by) if clock_is_paused() => advance_paused_clock(by),
+            Some(by) => std::thread::sleep(by),
+            None => {}
         }
     }
+}
+/// Moves the calling runtime's paused clock forward by `by` from synchronous
+/// code, as a call that blocks for that long would. `tokio::time::advance`
+/// moves the clock when first polled and then only yields, so one poll is
+/// the whole advance.
+fn advance_paused_clock(by: Duration) {
+    let mut advance = std::pin::pin!(tokio::time::advance(by));
+    let mut context = std::task::Context::from_waker(std::task::Waker::noop());
+    let _ = advance.as_mut().poll(&mut context);
 }
 /// Test model of `CleanupGuard`: the Service's cleanup admission, with no
 /// console session, SID or logon, at the lifecycle fence its scope pinned.
@@ -1699,11 +1714,12 @@ impl Rig {
     /// stall of real time. A request in that state can end only at its own
     /// bound on the real clock, which these tests exercise, so a held exchange
     /// does not hold the clock back for it. (A test hook that parks a thread is
-    /// seen while it runs: `Fixture::hooked`.)
+    /// seen while it runs: `Fixture::hooked`. A stalled owned-Stop
+    /// authorization costs the clock of the runtime it runs on:
+    /// `Custody::stall_owned_stop`.)
     fn parks(&self) -> Rc<dyn Fn() -> bool> {
         let state = self.port.state.clone();
         let stalled = self.files.stalled_replace.clone();
-        let custody = self.custody.clone();
         Rc::new(move || {
             let waiting = |release: &Arc<AtomicBool>| !release.load(Ordering::Acquire);
             // A job inside a test hook holds this lock (the fixture calls hooks under
@@ -1729,10 +1745,6 @@ impl Rig {
                     .as_ref()
                     .is_some_and(|(_, release)| waiting(release))
                 || stalled.try_lock().is_ok_and(|stall| stall.is_some())
-                || custody
-                    .owned_stop_stall
-                    .try_lock()
-                    .is_ok_and(|stall| stall.is_some())
         })
     }
     /// Runs one request exchange on a held test clock, and starts the budget of
