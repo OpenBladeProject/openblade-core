@@ -44,7 +44,10 @@ pub(super) fn snapshot(value: Value) -> Snapshot {
 }
 
 fn decoded(value: Value) -> Option<Observation> {
-    status::decode(snapshot(value).power_mode_automation())
+    status::decode(
+        snapshot(value).power_mode_automation(),
+        &mut status::Associations::default(),
+    )
 }
 
 fn observation(source: u8, performance: u8, mode: Option<Mode>) -> Option<Observation> {
@@ -106,6 +109,10 @@ fn an_unconfirmed_status_is_unavailable() {
         |s| {
             s.as_object_mut().unwrap().remove("observationReason");
         },
+        // Managed defaults an absent list to empty.
+        |s| {
+            s.as_object_mut().unwrap().remove("unconfirmedWrites");
+        },
     ] {
         let mut value = status_value(0, Some(1), Some(2));
         change(&mut value);
@@ -138,9 +145,8 @@ fn a_status_managed_would_refuse_is_unavailable() {
         |s| s["unconfirmedWrites"] = json!([2, 1]),
         |s| s["unconfirmedWrites"] = json!([1, 1]),
         |s| s["unconfirmedWrites"] = json!([4]),
-        |s| {
-            s.as_object_mut().unwrap().remove("unconfirmedWrites");
-        },
+        // Managed refuses an explicit null.
+        |s| s["unconfirmedWrites"] = Value::Null,
         |s| s["confirmedState"]["performance"] = json!(10),
     ];
     for change in refused {
@@ -160,6 +166,26 @@ fn a_status_managed_would_refuse_is_unavailable() {
         decoded(value),
         observation(0, 1, Some(Mode::BestPerformance))
     );
+}
+
+#[test]
+fn the_association_cache_follows_every_change_of_the_list() {
+    let mut associations = status::Associations::default();
+    let mut decode =
+        |value: Value| status::decode(snapshot(value).power_mode_automation(), &mut associations);
+    let balanced = observation(0, 1, Some(Mode::Balanced));
+    assert_eq!(decode(status_value(0, Some(1), Some(1))), balanced);
+    assert_eq!(decode(status_value(0, Some(1), Some(1))), balanced);
+    // An edited list, a refused one and the original again each decode anew.
+    assert_eq!(
+        decode(status_value(0, Some(1), Some(2))),
+        observation(0, 1, Some(Mode::BestPerformance))
+    );
+    let mut refused = status_value(0, Some(1), Some(1));
+    refused["profiles"]["windowsPowerModes"]["creator"] = json!(7);
+    assert_eq!(decode(refused.clone()), None);
+    assert_eq!(decode(refused), None);
+    assert_eq!(decode(status_value(0, Some(1), Some(1))), balanced);
 }
 
 fn observe(
@@ -468,10 +494,14 @@ async fn stop_during_the_delay_ends_without_a_retry() {
 async fn a_failed_origin_check_ends_the_role_before_windows_is_called() {
     let rig = Rig::new();
     observe(&rig.automation, 0, 1, Some(1));
-    let error = rig
-        .serve(|| Err(io::Error::from(io::ErrorKind::PermissionDenied)))
-        .await
-        .unwrap_err();
+    // Bounded, so a role that kept serving fails here instead of hanging.
+    let error = tokio::time::timeout(
+        Duration::from_secs(60),
+        rig.serve(|| Err(io::Error::from(io::ErrorKind::PermissionDenied))),
+    )
+    .await
+    .expect("the origin failure must end the role")
+    .unwrap_err();
     assert_eq!(error.kind(), io::ErrorKind::PermissionDenied);
     assert!(rig.calls().is_empty());
     assert!(rig.automation.lock().unwrap().retired);
@@ -558,6 +588,65 @@ fn published_statuses_follow_the_managed_loop() {
     .unwrap_err();
     assert_eq!(error.kind(), io::ErrorKind::PermissionDenied);
     assert!(automation.take().unwrap().is_none());
+    assert_eq!(
+        observe(&automation, 0, 1, Some(1)),
+        Classification::ApplyScheduled
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_origin_is_checked_again_before_the_retry() {
+    let rig = Rig::new();
+    rig.script.results.borrow_mut().extend([READ]);
+    observe(&rig.automation, 0, 1, Some(1));
+    let checks = std::cell::Cell::new(0);
+    let error = tokio::time::timeout(
+        Duration::from_secs(60),
+        rig.serve(|| {
+            checks.set(checks.get() + 1);
+            if checks.get() == 1 {
+                Ok(())
+            } else {
+                Err(io::Error::from(io::ErrorKind::PermissionDenied))
+            }
+        }),
+    )
+    .await
+    .expect("the origin failure must end the role")
+    .unwrap_err();
+    assert_eq!(error.kind(), io::ErrorKind::PermissionDenied);
+    // The failed first attempt ran; the retry did not.
+    assert_eq!(rig.calls(), [(Supply::Ac, Mode::Balanced)]);
+    assert_eq!(rig.automation.last_result(), None);
+    assert!(rig.automation.lock().unwrap().retired);
+}
+
+#[test]
+fn a_status_event_is_refused_when_the_origin_check_fails() {
+    use crate::session_native::service_client::{StatusUpdate, tests::fixture_initial};
+    let event = |value| {
+        let mut observation = fixture_initial().unwrap().1.into_observation();
+        observation.snapshot = snapshot(value);
+        StatusUpdate::Event(observation)
+    };
+    let automation = Automation::new();
+    publish_status(
+        &automation,
+        &event(status_value(0, Some(1), Some(1))),
+        || Ok(()),
+    )
+    .unwrap();
+    assert!(automation.take().unwrap().is_some());
+    // A new target behind a lost Origin is refused and schedules nothing.
+    let error = publish_status(
+        &automation,
+        &event(status_value(0, Some(2), Some(2))),
+        || Err(io::Error::from(io::ErrorKind::PermissionDenied)),
+    )
+    .unwrap_err();
+    assert_eq!(error.kind(), io::ErrorKind::PermissionDenied);
+    assert!(automation.take().unwrap().is_none());
+    // The refusal marked the automation unavailable.
     assert_eq!(
         observe(&automation, 0, 1, Some(1)),
         Classification::ApplyScheduled

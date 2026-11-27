@@ -22,8 +22,8 @@ public sealed class WindowsPowerModeAutomationNativeVectorTests
         + "status's confirmation members) or unavailable (the subscription reconnecting). Each Windows "
         + "call takes the next applies entry (default Succeeded); a failed call's retry delay runs its "
         + "during steps. After each step the coordinator is idle; expect records each step's result, "
-        + "each during step's result, every Windows call as its supply and mode, the retry delays, and "
-        + "the last published result.";
+        + "each during step's result, every Windows call as its supply and mode, each retry delay in milliseconds, "
+        + "and the last published result.";
 
     private const string Cases = """
         [
@@ -127,7 +127,7 @@ public sealed class WindowsPowerModeAutomationNativeVectorTests
         var results = new JsonArray();
         var during = new JsonArray();
         var calls = new JsonArray();
-        int delays = 0;
+        var delays = new JsonArray();
         JsonArray? pending = null;
         WindowsPowerModeAutomationCoordinator? coordinator = null;
         var controller = new VectorController((source, mode) =>
@@ -141,9 +141,9 @@ public sealed class WindowsPowerModeAutomationNativeVectorTests
         });
         await using (coordinator = new WindowsPowerModeAutomationCoordinator(
             controller,
-            delay: (_, token) =>
+            delay: (wait, token) =>
             {
-                delays++;
+                delays.Add((int)wait.TotalMilliseconds);
                 JsonArray? steps = pending;
                 pending = null;
                 foreach (JsonNode? step in steps ?? [])

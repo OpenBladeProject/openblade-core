@@ -22,7 +22,7 @@
 use std::{
     io,
     sync::{
-        Arc, Mutex, MutexGuard,
+        Arc, Mutex, MutexGuard, PoisonError,
         atomic::{AtomicBool, Ordering::SeqCst},
     },
     time::Duration,
@@ -199,6 +199,7 @@ impl State {
 pub(crate) struct Automation {
     state: Arc<Mutex<State>>,
     wake: Arc<Notify>,
+    associations: Arc<Mutex<status::Associations>>,
 }
 
 impl Automation {
@@ -214,7 +215,16 @@ impl Automation {
 
     /// Managed `Observe` over verified Service status.
     pub(crate) fn observe(&self, snapshot: &Snapshot) -> io::Result<Classification> {
-        self.observe_decoded(status::decode(snapshot.power_mode_automation()))
+        let observation = {
+            // The cache holds only a decoded value; a panic cannot leave it
+            // half written.
+            let mut associations = self
+                .associations
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner);
+            status::decode(snapshot.power_mode_automation(), &mut associations)
+        };
+        self.observe_decoded(observation)
     }
 
     fn observe_decoded(&self, observation: Option<Observation>) -> io::Result<Classification> {

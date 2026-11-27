@@ -55,7 +55,7 @@ async fn replay(case: &Map<String, Value>) -> Value {
     let calls = RefCell::new(Vec::new());
     let during = RefCell::new(Vec::new());
     let pending = RefCell::new(None::<Vec<Value>>);
-    let mut delays = 0;
+    let mut delays = Vec::new();
     let mut results = Vec::new();
     let (_stop, mut receiver) = watch::channel(false);
     for step in case["steps"].as_array().unwrap() {
@@ -79,7 +79,8 @@ async fn replay(case: &Map<String, Value>) -> Value {
             })
         };
         let mut delay = async |cancel: &Cancel| {
-            delays += 1;
+            // The runner's own retry delay, which `run` passes to `delay`.
+            delays.push(json!(u64::try_from(RETRY_DELAY.as_millis()).unwrap()));
             let steps = pending.borrow_mut().take().unwrap_or_default();
             for step in &steps {
                 during.borrow_mut().push(step_result(&automation, step));

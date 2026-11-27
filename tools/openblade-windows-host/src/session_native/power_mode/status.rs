@@ -13,8 +13,15 @@
 //! the status unconfirmed (`None`) the same way: an association list the
 //! profile-set codec refuses or that names an undefined mode, a legacy
 //! per-profile `windowsPowerMode` that is not cleared, a malformed or
-//! undefined observation reason or confirmed preset, and a missing, unsorted,
-//! duplicated or undefined unconfirmed-write list.
+//! undefined observation reason or confirmed preset, and a null, unsorted,
+//! duplicated or undefined unconfirmed-write list. Managed reads an absent
+//! unconfirmed-write list as empty (its default) and refuses only an explicit
+//! null, and so does this decoder.
+//!
+//! Managed binds status members case-insensitively. Like every native status
+//! reader, this one reads only the camelCase names the Service writes: a
+//! member spelled with other casing is not read, so an `ObservationReason` or
+//! `UnconfirmedWrites` reads as absent here where managed would bind it.
 use super::{Mode, Observation, Supply, Target};
 use crate::service_status::PowerModeFields;
 use openblade_domain::profile_set::{decode, json};
@@ -31,10 +38,13 @@ const SUBSYSTEMS: std::ops::RangeInclusive<i64> = 0..=3;
 /// The defined `PerformancePreset` values.
 const PRESETS: std::ops::RangeInclusive<i64> = 0..=9;
 
-pub(super) fn decode(fields: PowerModeFields<'_>) -> Option<Observation> {
+pub(super) fn decode(
+    fields: PowerModeFields<'_>,
+    associations: &mut Associations,
+) -> Option<Observation> {
     // Members managed would refuse make the whole status unreadable, whatever
     // the confirmation members say, so they are checked first.
-    let modes = associations(fields.windows_power_modes?)?;
+    let modes = associations.decode(fields.windows_power_modes?)?;
     if fields
         .legacy
         .iter()
@@ -46,17 +56,20 @@ pub(super) fn decode(fields: PowerModeFields<'_>) -> Option<Observation> {
         None => 0,
         Some(value) => value.as_i64().filter(|reason| (0..=3).contains(reason))?,
     };
-    // Managed requires the list, of defined subsystems, sorted and unique.
-    let unconfirmed = fields
-        .unconfirmed_writes?
-        .as_array()?
-        .iter()
-        .map(|subsystem| {
-            subsystem
-                .as_i64()
-                .filter(|value| SUBSYSTEMS.contains(value))
-        })
-        .collect::<Option<Vec<_>>>()?;
+    // Managed defaults an absent list to empty and requires a present one to
+    // be a list of defined subsystems, sorted and unique.
+    let unconfirmed = match fields.unconfirmed_writes {
+        None => Vec::new(),
+        Some(value) => value
+            .as_array()?
+            .iter()
+            .map(|subsystem| {
+                subsystem
+                    .as_i64()
+                    .filter(|value| SUBSYSTEMS.contains(value))
+            })
+            .collect::<Option<Vec<_>>>()?,
+    };
     if unconfirmed.windows(2).any(|pair| pair[0] >= pair[1]) {
         return None;
     }
@@ -85,6 +98,25 @@ pub(super) fn decode(fields: PowerModeFields<'_>) -> Option<Observation> {
         },
         source: u8::try_from(fields.active_power_source).ok()?,
     })
+}
+
+/// The last association list and its decoding. A status arrives at every
+/// change and the list rarely changes, so an unchanged list is compared, not
+/// serialized and parsed again.
+#[derive(Default)]
+pub(super) struct Associations(Option<(Value, Option<[Option<Mode>; 10]>)>);
+
+impl Associations {
+    fn decode(&mut self, value: &Value) -> Option<[Option<Mode>; 10]> {
+        if let Some((last, modes)) = &self.0
+            && last == value
+        {
+            return *modes;
+        }
+        let modes = associations(value);
+        self.0 = Some((value.clone(), modes));
+        modes
+    }
 }
 
 /// Managed `WindowsPowerModeAssociations` by `PerformancePreset`. The managed
