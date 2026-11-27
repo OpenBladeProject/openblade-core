@@ -85,6 +85,9 @@ pub enum SessionPowerRelayNotice {
     RegistrationFailed(u32),
     /// Windows refused to unregister; the callback context is kept alive.
     UnregistrationFailed(u32),
+    /// A callback was still running after unregistration and past its
+    /// budget; the callback context is kept alive.
+    CallbackRetained,
 }
 
 /// Fixed notices of the function-row role. None carries a key sequence, a

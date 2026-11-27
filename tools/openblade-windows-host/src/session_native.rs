@@ -40,6 +40,13 @@ mod power_mode;
 #[cfg_attr(test, allow(dead_code))]
 // The production registration is built only by the non-test installed monitor.
 mod power_relay;
+#[cfg(any(
+    feature = "agent-power-mode-automation-v1",
+    feature = "agent-session-power-relay-v1"
+))]
+#[cfg_attr(test, allow(dead_code))]
+// Only the production supplier and registration load it.
+mod powrprof;
 #[cfg_attr(test, allow(dead_code))]
 // Only the non-test installed entry registers a restart.
 mod restart;

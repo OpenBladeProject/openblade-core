@@ -1,36 +1,47 @@
 //! The production registration and clock (managed
-//! `WindowsSessionPowerNotificationRegistration` and `Stopwatch`). Tests never
-//! construct the registration.
+//! `WindowsSessionPowerNotificationRegistration` and `Stopwatch`). Tests drive
+//! the registration only through a fake `Notifications`.
 //!
-//! Windows holds the relay as the callback context from a successful
-//! registration until a successful unregistration. When unregistration fails,
-//! Windows may still call back, so the context is kept alive for the rest of
-//! the process, as managed roots its callback; the relay is already disposed,
-//! so such a callback returns at once.
+//! The registration functions come from the System32 powrprof.dll at run
+//! time, through the shared loader, rather than from a load-time import.
+//!
+//! Windows holds the callback context from a successful registration until a
+//! successful unregistration. A callback Windows woke before that may still be
+//! running: once the relay is disposed it returns at once, so the context is
+//! released only after every callback that entered it has left, waiting at
+//! most the callback budget and a margin. When unregistration fails, or a
+//! callback is still running after that wait, the context is kept alive for
+//! the rest of the process, as managed roots its callback. A callback Windows
+//! has dispatched but that has not yet entered the context is not counted;
+//! unregistration is expected to have waited for those.
 #![allow(unsafe_code)]
 use std::{
     ffi::c_void,
     io,
     panic::{AssertUnwindSafe, catch_unwind},
     ptr,
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering::SeqCst},
+    },
+    thread,
+    time::{Duration, Instant},
 };
 
 use openblade_platform_windows::agent_diagnostics::{
     Event, SessionPowerRelayNotice as Notice, record,
 };
 use windows_sys::Win32::{
+    Foundation::{ERROR_MOD_NOT_FOUND, ERROR_PROC_NOT_FOUND},
     System::{
         Performance::{QueryPerformanceCounter, QueryPerformanceFrequency},
-        Power::{
-            DEVICE_NOTIFY_SUBSCRIBE_PARAMETERS, HPOWERNOTIFY,
-            PowerRegisterSuspendResumeNotification, PowerUnregisterSuspendResumeNotification,
-        },
+        Power::DEVICE_NOTIFY_SUBSCRIBE_PARAMETERS,
     },
     UI::WindowsAndMessaging::DEVICE_NOTIFY_CALLBACK,
 };
 
-use super::Relay;
+use super::{BUDGET, Relay};
+use crate::session_native::powrprof::{Function, Library};
 
 /// The current QPC count.
 pub(super) fn counter() -> io::Result<i64> {
@@ -58,54 +69,145 @@ pub(super) fn now() -> i64 {
     counter().unwrap_or(0)
 }
 
-/// One `PowerRegisterSuspendResumeNotification` callback registration.
-pub(super) struct Registration {
-    handle: HPOWERNOTIFY,
-    context: *const Relay,
+/// The Windows callback signature.
+type Callback = unsafe extern "system" fn(*const c_void, u32, *const c_void) -> u32;
+
+/// Suspend and resume callback registration.
+pub(super) trait Notifications {
+    /// Register `callback` with `context`: the handle, or the Win32 error.
+    fn register(&self, callback: Callback, context: *mut c_void) -> Result<*mut c_void, u32>;
+    /// Unregister `handle`: zero, or the Win32 error.
+    fn unregister(&self, handle: *mut c_void) -> u32;
 }
 
-impl Registration {
-    /// Register `relay` for suspend and resume callbacks, or the Win32 error.
-    pub(super) fn register(relay: Arc<Relay>) -> Result<Self, u32> {
-        let context = Arc::into_raw(relay);
+type Register = unsafe extern "system" fn(u32, *mut c_void, *mut *mut c_void) -> u32;
+type Unregister = unsafe extern "system" fn(*mut c_void) -> u32;
+
+/// `PowerRegisterSuspendResumeNotification` and its unregistration, held
+/// with the library that exports them.
+pub(super) struct System {
+    register: Register,
+    unregister: Unregister,
+    _library: Library,
+}
+
+impl System {
+    /// Resolve both functions, or the Win32 error that names what is missing.
+    pub(super) fn load() -> Result<Self, u32> {
+        let library = Library::load().ok_or(ERROR_MOD_NOT_FOUND)?;
+        let (Some(register), Some(unregister)) = (
+            library.function(b"PowerRegisterSuspendResumeNotification\0"),
+            library.function(b"PowerUnregisterSuspendResumeNotification\0"),
+        ) else {
+            return Err(ERROR_PROC_NOT_FOUND);
+        };
+        // SAFETY: both exports have exactly these documented signatures, and
+        // the library that holds them is kept with them.
+        let (register, unregister) = unsafe {
+            (
+                std::mem::transmute::<Function, Register>(register),
+                std::mem::transmute::<Function, Unregister>(unregister),
+            )
+        };
+        Ok(Self {
+            register,
+            unregister,
+            _library: library,
+        })
+    }
+}
+
+impl Notifications for System {
+    fn register(&self, callback: Callback, context: *mut c_void) -> Result<*mut c_void, u32> {
         let recipient = DEVICE_NOTIFY_SUBSCRIBE_PARAMETERS {
             Callback: Some(callback),
-            Context: context.cast_mut().cast(),
+            Context: context,
         };
         let mut handle = ptr::null_mut();
         // SAFETY: `recipient` is valid for the call and `handle` is owned.
-        // `context` stays alive until unregistration succeeds.
         let code = unsafe {
-            PowerRegisterSuspendResumeNotification(
+            (self.register)(
                 DEVICE_NOTIFY_CALLBACK,
                 (&raw const recipient).cast_mut().cast(),
                 &mut handle,
             )
         };
-        if code != 0 {
-            // SAFETY: Windows refused the registration and holds no context.
-            drop(unsafe { Arc::from_raw(context) });
-            return Err(code);
-        }
-        Ok(Self {
-            handle: handle as HPOWERNOTIFY,
-            context,
-        })
+        if code == 0 { Ok(handle) } else { Err(code) }
+    }
+
+    fn unregister(&self, handle: *mut c_void) -> u32 {
+        // SAFETY: the handle came from a successful registration.
+        unsafe { (self.unregister)(handle) }
     }
 }
 
-impl Drop for Registration {
-    fn drop(&mut self) {
-        // SAFETY: the handle came from a successful registration and is
-        // unregistered only here.
-        let code = unsafe { PowerUnregisterSuspendResumeNotification(self.handle) };
-        if code == 0 {
-            // SAFETY: Windows no longer holds the context and calls back no
-            // more, so this releases the reference `register` gave it.
-            drop(unsafe { Arc::from_raw(self.context) });
-        } else {
-            record(Event::SessionPowerRelay(Notice::UnregistrationFailed(code)));
+/// What Windows holds: the relay, and how many callbacks are inside it.
+struct Context {
+    relay: Arc<Relay>,
+    in_flight: AtomicUsize,
+}
+
+/// A callback disposed relay returns at once; the margin covers its
+/// diagnostics write and scheduling.
+const DRAIN: Duration = BUDGET.saturating_add(Duration::from_millis(500));
+
+/// One callback registration, released on drop.
+pub(super) struct Registration<N: Notifications = System> {
+    notifications: N,
+    handle: *mut c_void,
+    context: *const Context,
+    drain: Duration,
+}
+
+impl Registration {
+    /// Register `relay` for suspend and resume callbacks, or the Win32 error.
+    pub(super) fn register(relay: Arc<Relay>) -> Result<Self, u32> {
+        Self::with(System::load()?, relay, DRAIN)
+    }
+}
+
+impl<N: Notifications> Registration<N> {
+    fn with(notifications: N, relay: Arc<Relay>, drain: Duration) -> Result<Self, u32> {
+        let context = Box::into_raw(Box::new(Context {
+            relay,
+            in_flight: AtomicUsize::new(0),
+        }));
+        match notifications.register(callback, context.cast()) {
+            Ok(handle) => Ok(Self {
+                notifications,
+                handle,
+                context,
+                drain,
+            }),
+            Err(code) => {
+                // SAFETY: Windows refused the registration and holds no context.
+                drop(unsafe { Box::from_raw(context) });
+                Err(code)
+            }
         }
+    }
+}
+
+impl<N: Notifications> Drop for Registration<N> {
+    fn drop(&mut self) {
+        let code = self.notifications.unregister(self.handle);
+        if code != 0 {
+            record(Event::SessionPowerRelay(Notice::UnregistrationFailed(code)));
+            return;
+        }
+        // SAFETY: the context stays alive until it is released below.
+        let in_flight = unsafe { &(*self.context).in_flight };
+        let deadline = Instant::now() + self.drain;
+        while in_flight.load(SeqCst) != 0 {
+            if Instant::now() >= deadline {
+                record(Event::SessionPowerRelay(Notice::CallbackRetained));
+                return;
+            }
+            thread::sleep(Duration::from_millis(1));
+        }
+        // SAFETY: Windows calls back no more and no callback is inside the
+        // context, so this releases the one `with` gave Windows.
+        drop(unsafe { Box::from_raw(self.context.cast_mut()) });
     }
 }
 
@@ -114,17 +216,22 @@ unsafe extern "system" fn callback(
     kind: u32,
     _setting: *const c_void,
 ) -> u32 {
+    // SAFETY: the context is the one `with` gave Windows, alive until
+    // unregistration succeeds and no callback is inside it.
+    let context = unsafe { &*context.cast::<Context>() };
+    context.in_flight.fetch_add(1, SeqCst);
     // Never unwind into Windows.
     let _ = catch_unwind(AssertUnwindSafe(|| {
-        // SAFETY: the context is the relay `register` leaked to Windows, alive
-        // until unregistration succeeds.
-        let relay = unsafe { &*context.cast::<Relay>() };
-        if let Some(expired) = relay.on_notification(kind) {
+        if let Some(expired) = context.relay.on_notification(kind) {
             record(Event::SessionPowerRelay(Notice::Abandoned {
                 sequence: expired.sequence,
                 suspending: expired.suspending,
             }));
         }
     }));
+    context.in_flight.fetch_sub(1, SeqCst);
     0
 }
+
+#[cfg(test)]
+mod tests;
