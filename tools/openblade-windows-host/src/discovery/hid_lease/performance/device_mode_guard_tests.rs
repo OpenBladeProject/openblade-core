@@ -33,6 +33,13 @@ const CONSTRUCTIONS: &[(&str, usize)] = &[
     // `lighting-setters`, the 03/03, 03/00 and 03/02 setters, through one
     // fixed-length builder.
     ("rust/crates/openblade-protocol/src/lighting.rs", 1),
+    // The reviewed 00/86 layout query and, behind `lighting-setters`, the
+    // 03/0A:0500 transition handshake setter. The 03/0B matrix frame is a
+    // feature report, not a mailbox report.
+    (
+        "rust/crates/openblade-protocol/src/lighting/matrix.rs",
+        2,
+    ),
     // The 00/87 MCU version query alone.
     ("rust/crates/openblade-protocol/src/mcu_version.rs", 1),
     // The definition of `encode_report`.

@@ -3,8 +3,8 @@
 //! 03/83 and 03/80/03/82 queries and the 03/03, 03/00 and 03/02 setters of
 //! the reviewed managed admission
 //! `Rz09_0581_02e0_3_01_LightingSemanticAdmission.json` (`brightness` and
-//! `logo`). This codec grants no I/O authority and carries none of the
-//! host-rendered matrix commands.
+//! `logo`). This codec grants no I/O authority; the host-rendered matrix, the 00/86
+//! layout query and the 03/0A handshake are in `matrix`.
 //!
 //! The queries are always built. The setters exist only with the
 //! `lighting-setters` feature, which only the host's `service-lighting-v1`
@@ -210,6 +210,8 @@ impl LightingSet {
         }
     }
 }
+
+pub mod matrix;
 
 #[cfg(test)]
 mod tests;
