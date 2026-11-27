@@ -102,7 +102,9 @@ impl<const N: usize> Operation<N> {
     }
 
     /// Starts one overlapped feature IOCTL on `raw`: a set from `buffer`, or
-    /// a get into it. An error means Win32 accepted nothing.
+    /// a get into it. An error from the operation's own storage sent nothing
+    /// (`new`); one from the IOCTL is the driver's refusal of a call that
+    /// reached it (`issue`).
     fn start(raw: RawHandle, sending: bool, buffer: [u8; N]) -> io::Result<Self> {
         let mut operation = Self::new(buffer)?;
         operation.issue(raw, sending)?;
