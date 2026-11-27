@@ -615,6 +615,9 @@ jobs:
               ($shutdown + 'the_own_stop'),
               ($shutdown + 'native_package'),
               ($shutdown + 'unserved'),
+              # The shutdown's admission seam and token membership read, with
+              # the managed access policy parity they extend.
+              ($shutdown + 'installed::readiness::windows::'),
               ($relay + 'lifecycle_operations'),
               ($relay + 'lifecycle_ops'),
               ($relay + 'the_gate_view'),
