@@ -591,28 +591,21 @@ async fn until(mut done: impl FnMut() -> bool) {
 #[cfg(feature = "service-fan-mutation-v2")]
 #[tokio::test]
 async fn an_unsettled_stream_at_stop_still_hands_the_fans_back_within_the_drain() {
-    let rig = fan_rig(0, 0);
-    rig.get().await;
-    let applied = rig.request(fan_request(143, Some(1), 3700)).await;
-    assert_eq!(applied["result"]["status"], 1, "{applied}");
+    // Fans owned, and the keyboard claimed where Driver mode is composed.
     #[cfg(feature = "service-keyboard-driver-mode-v1")]
-    {
-        let observed = rig
-            .request(json!({"operation":"observeState","version":91,"requestId":"dddddddd-bbbb-cccc-dddd-000000000071","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0}))
-            .await;
-        assert_eq!(observed["success"], true, "{observed}");
-        rig.held(
-            HeldClock::CatchUp,
-            Box::pin(async {
-                let maintain = rig.source.lock().await.maintain_driver_mode();
-                if let Some(maintain) = maintain {
-                    maintain.await.unwrap();
-                }
-            }),
-        )
-        .await;
+    let rig = {
+        let rig = super::driver_mode_owner::fan_owner_rig().await;
         assert_eq!(rig.port.state.lock().unwrap().device_mode, 3, "Driver mode");
-    }
+        rig
+    };
+    #[cfg(not(feature = "service-keyboard-driver-mode-v1"))]
+    let rig = {
+        let rig = fan_rig(0, 0);
+        rig.get().await;
+        let applied = rig.request(fan_request(143, Some(1), 3700)).await;
+        assert_eq!(applied["result"]["status"], 1, "{applied}");
+        rig
+    };
     rig.origin.stop();
     rig.port.state.lock().unwrap().stream_unsettled = true;
     let deadline = Instant::now() + Duration::from_secs(4);
