@@ -49,7 +49,8 @@ const UNREADABLE: &str = "The requested intent was rejected: This service cannot
 /// refuse the aggregate once stored.
 #[cfg(any(
     feature = "service-profile-triggers-v1",
-    feature = "service-fan-stop-v1"
+    feature = "service-fan-stop-v1",
+    feature = "service-lighting-v1"
 ))]
 const PREFERENCES_UNREADABLE: &str = "The requested intent was rejected: This service cannot read the configuration back once it is stored. The saved configuration is unchanged.";
 /// A migration at open that left the stored aggregate as it was. The next
@@ -707,6 +708,38 @@ impl Storage {
         }))
     }
 
+    /// The saved `LightingRefreshRate`, `None` where the preferences are not
+    /// admitted (managed's defaults: 30 Hz).
+    #[cfg(feature = "service-lighting-v1")]
+    pub(in super::super) fn lighting_refresh_rate(
+        &self,
+    ) -> io::Result<Option<crate::discovery::performance::RefreshRate>> {
+        Ok(self.admitted_preferences()?.and_then(|preferences| {
+            crate::discovery::performance::RefreshRate::from_wire(preferences.lighting_refresh_rate)
+        }))
+    }
+
+    /// Managed `preferences.LastKnownLighting`, `None` where the preferences
+    /// are not admitted.
+    #[cfg(feature = "service-lighting-v1")]
+    pub(in super::super) fn last_known_lighting(
+        &self,
+    ) -> io::Result<Option<openblade_domain::profile_set::LightingSettings>> {
+        Ok(self
+            .admitted_preferences()?
+            .and_then(|preferences| preferences.last_known_lighting))
+    }
+
+    /// A lighting preference request (`save_preferences`): the refresh rate
+    /// and `LastKnownLighting`.
+    #[cfg(feature = "service-lighting-v1")]
+    pub(in super::super) fn save_lighting_preferences(
+        &self,
+        edit: impl FnOnce(&mut Preferences) -> bool,
+    ) -> io::Result<PreferencesSave> {
+        self.save_preferences(edit)
+    }
+
     /// Managed `ConfigurationIsAdmitted`: the aggregate is committed and this
     /// service neither failed to replace it nor saw it change.
     #[cfg(feature = "service-fan-stop-v1")]
@@ -788,7 +821,8 @@ impl Storage {
     /// (`configuration_quarantined`).
     #[cfg(any(
         feature = "service-profile-triggers-v1",
-        feature = "service-fan-stop-v1"
+        feature = "service-fan-stop-v1",
+        feature = "service-lighting-v1"
     ))]
     fn save_preferences(
         &self,
@@ -873,7 +907,8 @@ pub(in super::super) enum PolicyChange {
 /// What a preference save (`Storage::save_preferences`) did.
 #[cfg(any(
     feature = "service-profile-triggers-v1",
-    feature = "service-fan-stop-v1"
+    feature = "service-fan-stop-v1",
+    feature = "service-lighting-v1"
 ))]
 #[derive(Debug, PartialEq)]
 pub(in super::super) enum PreferencesSave {

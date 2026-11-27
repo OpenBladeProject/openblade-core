@@ -77,7 +77,10 @@ impl std::error::Error for CompetingController {}
 pub(super) fn competing_controller() -> io::Error {
     io::Error::new(io::ErrorKind::PermissionDenied, CompetingController)
 }
-#[cfg(feature = "service-profile-triggers-v1")]
+#[cfg(any(
+    feature = "service-profile-triggers-v1",
+    feature = "service-lighting-v1"
+))]
 pub(super) fn is_competing_controller(error: &io::Error) -> bool {
     error
         .get_ref()
@@ -149,8 +152,14 @@ mod keyboard;
 #[cfg(feature = "service-lighting-v1")]
 #[path = "lighting_mutation.rs"]
 mod lighting;
+#[cfg(all(test, feature = "service-lighting-v1"))]
+pub(super) use lighting::Next as StreamNext;
+#[cfg(feature = "service-lighting-v1")]
+pub(super) use lighting::STREAM_SETTLE_BUDGET;
 #[cfg(feature = "service-lighting-v1")]
 pub(super) use lighting::{LightingRequest, logo_wire};
+#[cfg(all(feature = "service-lighting-v1", feature = "service-profiles-v1"))]
+pub(super) use lighting::{StepRequest, step_lifetime};
 #[cfg(feature = "service-keyboard-driver-mode-v1")]
 #[path = "low_power_cleanup.rs"]
 mod low_power;
@@ -213,6 +222,24 @@ pub(super) trait Fresh: Send + Sync {
         Ok(())
     }
     fn authorize(&self) -> Option<ReadAdmission>;
+    /// One animated stream frame's admission (`Runtime::stream_frame`):
+    /// the checks a frame repeats between two origin ticks
+    /// (`WindowsGuard::authorize_frame`). The rest of `authorize` comes from
+    /// the tick's clean reading. `None`, the default, admits no frame.
+    #[cfg(feature = "service-lighting-v1")]
+    fn authorize_frame(&self) -> Option<ReadAdmission> {
+        None
+    }
+    /// Whether the capture that built this admission confirmed a complete
+    /// write admission, the competing-controller inventory included: the
+    /// origin tick's clean reading for the stream
+    /// (`Runtime::confirm_stream_clean`). A `WindowsGuard` exists only when
+    /// its capture did, so it takes no second supplier pass; the default
+    /// asks `authorize` again.
+    #[cfg(feature = "service-lighting-v1")]
+    fn admitted_at_capture(&self) -> bool {
+        self.authorize().is_some()
+    }
     /// Whether storing request intent is admitted now: every check of
     /// `authorize` except the lifecycle epoch, so the low-power gate does not
     /// refuse it (`WindowsGuard::authorize_storage`). It admits no read or
@@ -300,6 +327,16 @@ type NoticeAge = Box<dyn Fn(i64) -> Option<std::time::Duration>>;
 type CleanupFactory =
     Box<dyn Fn(Arc<dyn ReadCustody>, CleanupScope) -> io::Result<Arc<dyn Cleanup>>>;
 impl Fresh for WindowsGuard {
+    #[cfg(feature = "service-lighting-v1")]
+    fn authorize_frame(&self) -> Option<ReadAdmission> {
+        self.authorize_frame()
+    }
+    // `WindowsGuard::capture` refuses to build a guard its own full
+    // admission refused.
+    #[cfg(feature = "service-lighting-v1")]
+    fn admitted_at_capture(&self) -> bool {
+        true
+    }
     fn capture_settle(
         &self,
         sid: &str,
@@ -909,6 +946,13 @@ impl Runtime {
     }
     #[cfg(not(test))]
     pub(super) fn native(origin: Arc<Origin>, mailbox: &MailboxSource) -> Self {
+        let runtime = Self::native_parts(origin, mailbox);
+        #[cfg(all(windows, feature = "service-lighting-v1"))]
+        runtime.compose_matrix_stream(crate::discovery::performance::native_matrix_stream());
+        runtime
+    }
+    #[cfg(not(test))]
+    fn native_parts(origin: Arc<Origin>, mailbox: &MailboxSource) -> Self {
         let stores = RefCell::new(None::<(String, Arc<Storage>)>);
         #[cfg(any(
             feature = "service-profile-triggers-v1",

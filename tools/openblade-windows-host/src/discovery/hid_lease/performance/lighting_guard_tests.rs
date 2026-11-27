@@ -37,19 +37,24 @@ const MATRIX_SETTER_USERS: &[&str] = &[
 /// The matrix codec's setters, named whole.
 const MATRIX_SETTERS: [&str; 2] = ["TransitionSet", "encode_feature_report"];
 
-/// The only non-test file that may build a lighting job, and so ask the
-/// recipe for a setter: the Service's `setLightingOverride` composition. The
-/// recipe's module defines the constructors.
-const JOB_USERS: &[&str] =
-    &["tools/openblade-windows-host/src/windows/scm/installed/lighting_mutation.rs"];
+/// The only non-test files that may build a lighting job, and so ask the
+/// recipe for a setter: the Service's `setLightingOverride` composition and
+/// its brightness step and refresh change. The recipe's module defines the
+/// constructors.
+const JOB_USERS: &[&str] = &[
+    "tools/openblade-windows-host/src/windows/scm/installed/lighting_controls.rs",
+    "tools/openblade-windows-host/src/windows/scm/installed/lighting_mutation.rs",
+];
 
 /// Every lighting job constructor that can reach a setter or a store.
-const JOB_CONSTRUCTORS: [&str; 5] = [
+const JOB_CONSTRUCTORS: [&str; 7] = [
     "LightingJob::write(",
     "LightingJob::store(",
+    "LightingJob::unopened(",
     "LightingJob::resolution(",
     "LightingJob::render(",
     "LightingJob::keepalive(",
+    "LightingJob::step(",
 ];
 
 fn root() -> PathBuf {
@@ -135,6 +140,7 @@ fn no_non_test_source_names_a_lighting_setter_or_builds_a_job_elsewhere() {
     assert_eq!(setter_users, SETTER_USERS);
     matrix_users.sort();
     assert_eq!(matrix_users, MATRIX_SETTER_USERS);
+    job_users.sort();
     assert_eq!(job_users, JOB_USERS);
 }
 

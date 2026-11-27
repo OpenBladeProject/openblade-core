@@ -1,10 +1,10 @@
-//! The Static renderer recipe, managed `ProductionLightingPort.SetLightingAsync`
-//! for a lit effect, and its keepalive frame (`StartStreamCore`'s idle
-//! frame):
+//! The renderer recipe, managed `ProductionLightingPort.SetLightingAsync`
+//! for a lit effect, the Static keepalive frame (`StartStreamCore`'s idle
+//! frame) and the animated stream's frame encoding (`stream_report`):
 //!
 //! 1. the baseline brightness, the logo when one is requested, and the 00/86
 //!    layout byte once per session;
-//! 2. a request for the owned renderer's color keeps it and writes only the
+//! 2. a request for the owned renderer's effect and color keeps it and writes only the
 //!    brightness and logo that differ (managed `CanRetainRenderer`);
 //! 3. otherwise the brightness first, unless the keyboard wakes from dark;
 //!    then the 00/84 read and the 03/0A:0500 handshake, the first frame, the
@@ -51,14 +51,47 @@ fn matrix_transaction() -> u8 {
     (NEXT.fetch_add(1, Ordering::Relaxed) % 255) as u8 + 1
 }
 
-/// The encoded first or keepalive frame of `renderer`: the uniform canvas,
-/// projected onto its layout's physical map. `None` when the reviewed source
-/// maps did not load, which also refuses admission.
+/// The encoded first or keepalive frame of a Static `renderer`: the uniform
+/// canvas, projected onto its layout's physical map. `None` when the
+/// reviewed source maps did not load, which also refuses admission, or for
+/// an animated renderer, whose frames only its animation draws.
 fn frame(renderer: Renderer) -> Option<MatrixReport> {
+    if renderer.effect.animated() {
+        return None;
+    }
+    encode(&MatrixFrame::uniform(renderer.color), renderer.layout)
+}
+
+fn encode(canvas: &MatrixFrame, layout: u8) -> Option<MatrixReport> {
     let maps = super::super::lighting_layout::source_maps()?;
-    let projection = RegionalProjection::new(&maps.layout(), renderer.layout);
-    let frame = projection.project(&MatrixFrame::uniform(renderer.color));
-    Some(encode_feature_report(matrix_transaction(), &frame))
+    let projection = RegionalProjection::new(&maps.layout(), layout);
+    Some(encode_feature_report(
+        matrix_transaction(),
+        &projection.project(canvas),
+    ))
+}
+
+/// One encoded frame of `animation` at `elapsed` ticks since its effect
+/// started, projected onto `layout`'s physical map: managed
+/// `RunStreamAsync`'s `RenderFrame` and `WriteMatrixCoreAsync`. `None` when
+/// the effect drew nothing (a failed random source) or the source maps did
+/// not load.
+pub(crate) fn stream_report(
+    animation: &mut Animation,
+    layout: u8,
+    elapsed: i64,
+) -> Option<MatrixReport> {
+    encode(&animation.render(elapsed)?, layout)
+}
+
+/// The first frame of a render job's `renderer`: its animation's at elapsed
+/// zero, or the Static canvas.
+fn first_frame(job: &LightingJob, renderer: Renderer) -> Option<MatrixReport> {
+    if !renderer.effect.animated() {
+        return frame(renderer);
+    }
+    let mut animation = job.animation.lock().ok()?;
+    stream_report(animation.as_mut()?, renderer.layout, 0)
 }
 
 impl<P: Port> Reader<P, ReadAdmission> {
@@ -145,6 +178,7 @@ impl<P: Port> Reader<P, ReadAdmission> {
         };
         job.observe(Some(baseline), None);
         let renderer = Renderer {
+            effect: target.effect,
             color: target.color,
             layout,
         };
@@ -152,6 +186,18 @@ impl<P: Port> Reader<P, ReadAdmission> {
         let retained = !waking && target.previous == Some(renderer);
         let writes_logo = target.logo.is_some_and(|logo| baseline.logo != Some(logo));
         let early_brightness = !waking && raw != target.brightness;
+        // The new renderer's first frame is drawn before anything is sent: an
+        // animation whose random source fails refuses the job here.
+        let first = if retained {
+            None
+        } else {
+            let Some(report) = first_frame(job, renderer) else {
+                job.record(LightingOutcome::Unavailable);
+                attempt.completed = true;
+                return Some(());
+            };
+            Some(report)
+        };
         // Every exchange forward, the frame charged as one, and every
         // restore, each at the measured pace.
         let logo = |mode| if writes_logo { logo_exchanges(mode) } else { 0 };
@@ -198,11 +244,13 @@ impl<P: Port> Reader<P, ReadAdmission> {
                     break 'forward Some(BRIGHTNESS_MISMATCH);
                 }
             }
-            if !retained {
-                let report = frame(renderer)?;
+            if let Some(report) = first {
                 job.record(Self::interrupted(steps));
                 match attempt.handshake(authorize, admission, limit, run).await? {
-                    Some(()) => steps.handshake = true,
+                    Some(()) => {
+                        steps.handshake = true;
+                        job.set_started(Instant::now());
+                    }
                     None => break 'forward Some(DEVICE_MODE_UNSUPPORTED),
                 }
                 job.record(LightingOutcome::Interrupted);
@@ -414,6 +462,13 @@ impl<P: Port> Attempt<'_, P, ReadAdmission> {
         }
         if steps.handshake {
             match target.previous {
+                // An animated renderer's phase cannot be drawn again here:
+                // the restore leaves no owned renderer (stricter than
+                // managed, which restarts the previous effect).
+                Some(previous) if previous.effect.animated() => {
+                    job.set_matrix(MatrixState::Lost);
+                    restored = false;
+                }
                 Some(previous) => {
                     let report = frame(previous)?;
                     job.record(unrestored);

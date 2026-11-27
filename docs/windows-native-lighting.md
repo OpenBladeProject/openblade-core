@@ -1,10 +1,11 @@
-# Native Service keyboard lighting (slices L1 and L2)
+# Native Service keyboard lighting (slices L1 to L3)
 
 A Service built with `service-lighting-v1` serves `setLightingOverride` on
 exact RZ09-0581 (`1532:02E0`). Slice L1 admits the keyboard Off with every
 logo mode. Slice L2 adds the keyboard matrix on its second HID collection and
 the Static effect, drawn by a Service-owned renderer with managed's 5 s
-keepalive. The animated effects wait for slice C. The feature is
+keepalive. Slice L3 adds the animated effects on a Service-owned frame
+stream, `stepKeyboardBrightness` and `setLightingRefreshRate`. The feature is
 source-reviewed against managed and the reviewed capture evidence, has
 software failure and recovery tests, and has not been run on a laptop. Both
 package readers refuse it by name, so no packaged image carries it.
@@ -61,7 +62,8 @@ stricter.
 
 Each exchange and each frame runs under fresh exact-device,
 competing-controller, power, session and ownership admission
-(`Fresh::authorize`), through the Service's own HID lease. The Service stays
+(`Fresh::authorize`), through the Service's own HID lease. Streamed
+frames take the narrower admission described under Streamed effects. The Service stays
 the only HID owner. The matrix collection is opened in the same job: exactly
 one HID interface of the admitted device may report usage page 0x0C, usage 1
 and a 375-byte feature report (managed's opener), of the exact model and
@@ -201,7 +203,7 @@ draws anew. A request or keepalive dropped while its job may still run, such
 as a request whose client went away, latches the doubt too. The renderer
 also ends without a write when an Off may have changed the keyboard, after a
 low-power boundary, and at Stop, where the mutation worker's stop cancels a
-frame still running. A renderer has crossed a low-power boundary when the
+keepalive job still running and the stream is settled (below). A renderer has crossed a low-power boundary when the
 gate reads set, unreadable or exhausted, or when the lifecycle's low-power
 generation has moved since the renderer was drawn, which catches a suspend
 and resume that both arrived while requests held the gate. It ends at the
@@ -218,6 +220,159 @@ composed, and the lighting contract admits no mode setter. The handshake's
 keyboard owner therefore renders in Normal mode, the mode of the bounded
 OpenBlade run managed's handshake comment records. That is source-backed
 inference; the attended validation below covers it.
+
+## Streamed effects (slice L3)
+
+Spectrum, Breathing (Single, Dual and Random), Wave, Wheel, Tidal,
+Starlight and Fire are admitted through managed `CreateEffect`'s mapping:
+Breathing Single needs its primary color and Dual both, Random needs none,
+Starlight's durations are 500, 1500 and 2000 ms, and Fire's parameters admit
+only Fire. Reactive, Ripple, AmbientAwareness, AudioMeter and Sequence are
+stored and refused as managed refuses an effect its capability table lacks
+(`deferred_effects_are_refused_by_the_table_divergence`). No capability
+record is published (`capabilities` stays null).
+
+The frame math is managed's effects, ported exactly
+(`performance/lighting_effects.rs`). `NativeLightingEffectVectorTests`
+records managed's frames, delays, cadences and deadlines into
+`tests/data/lighting-effect-vectors.json`, and the Rust tests replay every
+row with no deviation. A random palette comes from `BCryptGenRandom` behind
+an injected source; the tests script it.
+
+The request's own job draws the first frame at elapsed zero, as the Static
+recipe draws its frame, and the job renders it before anything is sent, so a
+failed random source refuses the job with nothing submitted. The Service
+then owns an animated renderer, and a dedicated stream task, beside the
+origin tick and the request mailbox, draws each later frame (managed
+`RunStreamAsync`): the animation at the time elapsed since the effect
+started, which is the new renderer's handshake as in managed, the first
+deadline one delay after the start, and each next deadline advanced from the
+instant observed after the write. A request for the owned effect and color
+keeps the renderer and its phase.
+
+On Windows the stream writes through its own lease on the exact matrix
+collection, opened as a render job's is (`select_matrix`, the same access, a
+fresh identity verification), on a dedicated thread (`matrix_lane.rs`, with
+the Win32 calls behind `MatrixIo` in `windows/stream.rs`). An animated
+request opens that lease, or confirms that the open one still describes the
+selected collection, before anything is sent, waiting at most 1 s. One
+whose collection does not open in time, or whose open handle no longer
+describes it, is stored and replies that the matrix collection is
+unavailable, with no setter sent; an open that outlasts its 1 s is recalled,
+which cancels its collection selection. The lease stays open while one
+animated renderer replaces another and closes when a request leaves none.
+A frame opens the lease again when the thread no longer holds one, as after
+a recalled open while the previous renderer kept streaming; such a lease
+closes the same way. The thread's request queue is bounded: while it is
+stuck in a slow open or a report, a request that does not fit is refused,
+an open or a frame unsent and a settle not known to be settled, and a
+recall that does not fit has still recalled every frame. Before each report the thread checks, in order, that the frame was not
+recalled, that the handle still describes the selected collection, that the
+frame's deadline has not passed, and that it holds the process's matrix I/O
+flag (`MATRIX_IO`), which serializes every matrix report, the jobs' and the
+stream's. It checks the recall token once more immediately before the
+SET_FEATURE. A report holds `MATRIX_IO` from its issue until its terminal
+completion: one still outstanding at its deadline is cancelled and in doubt,
+and the thread keeps polling it between requests, so its late completion
+releases `MATRIX_IO` and lets a retired lease close. After its first second
+outstanding, the thread polls it every 100 ms instead of every 10 ms. A
+report that never completes keeps both, and every render job then refuses
+when it opens its collection, before any setter. Since the thread sees a
+completion only at its next poll, a job can also refuse this way for up to
+100 ms after a long-outstanding report completed. The Service remains the
+only HID owner.
+
+The stream starts only from a request that passed its full fresh admission.
+Before each frame it:
+
+1. takes the operation gate without waiting, and otherwise tries again one
+   refresh interval later;
+2. ends the renderer without a write at a low-power boundary, as the
+   keepalive does;
+3. needs a clean reading no older than 1 s: the drawing request's admission,
+   then each origin tick's full capture, whose own admission pass, the
+   competing-controller inventory included, is the reading. A stale or
+   refused reading writes nothing, and the stream waits for the tick that
+   confirms a clean one; a competing controller in a tick's inventory
+   retires the renderer without a write;
+4. takes that reading's admission for a frame (`Fresh::authorize_frame`) at
+   the same Windows power generation: the pinned lifecycle epoch, which
+   every suspend, resume, session change and power notice advances; the
+   same console session, unlocked; a known AC line status; and the
+   custody's frame admission (`ReadCustody::authorize_frame`), which checks
+   the custody's latched state, its retained failure, the loaded origin's
+   lifetime, which a revocation, a lost trust or Stop ends at once, and the
+   active lifecycle epoch. The order is one function (`admit_frame`), and
+   the custody's part another (`authorize_original_frame`); the test
+   fixtures run both over their own suppliers.
+
+Per frame, the loaded-origin process, package (ACL and `current.bin`) and
+SCM verification, the original mapping (`managed-handoff.bin`), the journal
+custody, the primary SID and logon and the controller inventory are not
+repeated: the tick's full capture runs them once, for a reading no older
+than 1 s. This is deliberate, since a per-frame pass would run those file,
+SCM and inventory queries at frame rate; a change to any of them is seen at
+the next tick.
+
+The origin tick waits, until the frame's deadline, for an operation gate a
+stream frame holds, so the stream's own frames never cost it the clean
+reading. It still skips a gate a request holds.
+
+Every wait on the stream is bounded: a frame by its 500 ms budget, the
+request's open by 1 s within the request's deadline, and Stop's settle by
+its own 300 ms share of the drain.
+A frame refused before submission ends the renderer and the stream. One that
+may have been submitted without completing, or that outlasted its budget,
+latches the doubt too, recalls the stream's frames and releases the gate, so
+the next request resolves read-only and replays nothing. Stop and a
+low-power boundary recall every frame not yet submitted. Stop recalls them
+and closes the lease whatever the session recorded, then waits, for at
+most its 300 ms share, until no report is outstanding, before the
+display-brightness and keyboard releases and the fan handback. If that is
+not confirmed in time it latches the doubt and the rest of the drain still
+runs. The build checks that these shares and at least 1.4 s for the fans
+fit within the drain, with or without the keyboard's share.
+
+## Keyboard brightness steps and the refresh rate (slice L3)
+
+Both are served with `service-profiles-v1`, which holds the preferences and
+profiles they read.
+
+`stepKeyboardBrightness` is managed `StepKeyboardBrightnessAsync`. One job
+under the operation gate classifies power as a lighting request does, then
+resolves the desired lighting there: the override in effect, otherwise the
+profile's lighting with the active application's layer (the lighting member
+of managed `ResolveHardwareDesired`).
+
+- Desired Off: a decrease replies "Keyboard brightness is already at its
+  minimum." An increase writes managed `ResolveVisibleLightingBaseline` at
+  6% (`LastKnownLighting` when lit, else the base power profile's lit
+  lighting without the application layer, else Static `47E10C`), keeping
+  the logo, through `setLightingOverride`'s own
+  path, and replies as that request does.
+- Otherwise the job reads 03/83, or reuses the raw value the previous step
+  set, and steps it by 0x10, saturating. A changed value is sent with the
+  03/03 setter, confirmed by its acknowledgement with no readback. The
+  rounded percent is saved as the override with the request's lifetime and
+  as `LastKnownLighting`, and the reply is "Keyboard brightness changed to
+  {n}%." At zero the keyboard is Off with its logo and the renderer ends.
+- During a low-power transition: "Keyboard brightness input is deferred
+  during a low-power transition." A setter that may have been submitted
+  latches the doubt.
+
+`setLightingRefreshRate` saves managed's `LightingRefreshRate` preference
+(30 or 60 Hz) under the request's fresh admission. Like managed, it is
+refused on an unclassified adapter that fresh evidence does not admit for
+lighting: the change classifies power as a lighting request does and stores
+nothing there. It then retimes the stream from its current phase, as managed
+restarts its stream without resetting the effect's start. It replies "Keyboard lighting is running at {30 Hz|60 Hz}."
+A request that arrives while a frame is in flight waits for it on the
+operation gate. Undefined directions, lifetimes and rates are refused by the
+codec.
+
+Every applied lighting request saves its override as `LastKnownLighting`, as
+managed's `TryPersistRememberedLightingIntentAsync` does.
+`setExternalLightingOverridePolicy` stays unserved.
 
 ## Status
 
@@ -243,9 +398,6 @@ records (`FeatureRecord`) and the thermal convergence record use it.
 
 Each is named by a test where one applies:
 
-- The animated effects are stored and then refused as managed refuses an
-  effect its capability table lacks, until slice C
-  (`animated_effects_are_refused_until_slice_c_divergence`).
 - Clearing the override on a classified adapter stores the clear, applies no
   profile lighting and replies Stored, "Lighting override was cleared. The
   profile's lighting was not applied." Managed applies the profile's lighting
@@ -254,7 +406,8 @@ Each is named by a test where one applies:
 - Power-source transitions (`ApplyFullTransitionAsync`, ServiceControlRuntime.cs
   14948-14956) and profile reconciliation run no lighting step, and a
   restart writes no lighting
-  (`a_restart_keeps_the_saved_intent_and_writes_nothing`). So a request
+  (`a_restart_keeps_the_saved_intent_and_writes_nothing`), and a profile,
+  application or power change applies no lighting. So a request
   stored while the low-power gate is set is not applied after standby, and
   its reply is the committed message, Stored, instead of managed's "Lighting
   intent was stored and will be applied after standby."
@@ -291,17 +444,65 @@ Each is named by a test where one applies:
   each instant.
 - Managed's stream defers a frame only when its recovery write gate refuses
   it (ProductionLightingPort.cs 1669); any other failed frame faults the
-  stream (1695-1706), which ends the renderer. Native keeps the renderer
-  through every refusal before submission (a fresh admission, the matrix
+  stream (1695-1706), which ends the renderer. Native's Static keepalive
+  keeps the renderer through every refusal before submission (a fresh admission, the matrix
   identity or the pacing) and tries again at the next instant, with fresh
   admission and identity checks each time.
 - Managed's stream runs under its Advisory controller policy, so it keeps
   sending frames while a competing controller is present. Native's fresh
-  admission refuses each frame while one is present, and the frames resume
-  by themselves when it leaves.
+  admission refuses each Static keepalive frame while one is present, and
+  the frames resume by themselves when it leaves; an animated renderer
+  retires.
 - Managed's stream has no session gating. Native's frames take the owning
   request's session admission, so they pause while that console session is
   locked or inactive, and resume when it is active again.
+
+## Slice L3 differences from managed
+
+Each is named by a test where one applies:
+
+- Competing controllers are inventoried by the origin tick, not per frame:
+  a frame needs a clean reading no older than 1 s, so a controller that
+  appears between two ticks may see up to 1 s more of frames before the
+  renderer retires
+  (`a_clean_reading_older_than_a_second_writes_no_frame`).
+- A frame due while a request or the origin tick holds the operation gate
+  is skipped and tried one interval later, a visible pause
+  (`a_held_gate_skips_the_frame_one_interval_later_divergence`). The origin
+  tick waits for a frame instead
+  (`ticks_during_in_flight_frames_keep_the_clean_reading_and_the_stream_running`).
+- While an effect streams, the origin tick's other steps that take the
+  operation gate without waiting (thermal convergence, the keyboard
+  Driver-mode step and the lifecycle triggers) skip a tick whose gate a
+  frame holds and run at a later tick. Managed's stream runs outside its
+  gate.
+- Any frame refused before submission ends the stream; managed defers a
+  frame its recovery write gate refuses.
+- A failed request whose handshake may have replaced an animated renderer
+  does not redraw it: the renderer ends. Managed restarts the previous
+  stream.
+- A failed random source refuses the request with nothing sent; managed's
+  generator does not fail. A failed Tidal seed, drawn when the effect
+  starts, stores the request and replies that the capability table does not
+  admit the value; a failed palette draw for the first frame replies that
+  the matrix collection is unavailable.
+- The desired lighting omits managed's startup temporary from
+  `LastKnownLighting`, and on an unclassified adapter the visible baseline
+  does not fall back to the confirmed lighting.
+- Nothing saved to resolve replies "The saved lighting could not be
+  resolved; keyboard brightness was not changed."; managed always resolves
+  its default profiles.
+- A step reuses only the raw value the previous step set. Every
+  `setLightingOverride` request clears it, and so does a step that set no
+  value, so the next step reads 03/83 again; keepalive and stream frames
+  keep it.
+- A step from Off that fails replies with `setLightingOverride`'s committed
+  prefix.
+- Without the Service's read source, both operations reply with the custody
+  refusal instead of managed's stored texts.
+- The refresh preference save is the last step that can fail, so managed's
+  rollback replies have no native path.
+- Steps and refresh changes are served only with `service-profiles-v1`.
 
 ## Stricter than managed
 
@@ -365,6 +566,14 @@ transport, which no laptop has run:
 - Lock and unlock the console while the renderer owns the keyboard: record
   what the keyboard shows while the frames pause, and that they resume
   after the unlock.
+- Each streamed effect at 30 and 60 Hz: the stream thread's lease beside the
+  jobs', the per-frame descriptor check, Stop and a suspend while a frame is
+  in flight, the real frame cadence and any
+  visible pause while requests hold the gate, a refresh change mid-effect,
+  and a competing controller started and stopped while an effect runs
+  (the up-to-1 s inventory delay).
+- Keyboard brightness steps up and down from lit and from Off, with the
+  brightness keys' rate of repetition.
 
 Record the keyboard device mode (Normal or Driver) of each run. Managed
 writes these commands in Driver mode; a Service without
@@ -374,7 +583,9 @@ is composed, run the checks in both modes.
 
 ## Follow-ups
 
-- Slice C: the animated effects on the same renderer.
+- Reactive, Ripple, AmbientAwareness, AudioMeter, Sequence, the Session
+  Agent frame operations, lighting suppression, the restore loop, Dynamic
+  Lighting and `setExternalLightingOverridePolicy`.
 - Lighting in power-source transitions and profile reconciliation, the
   periodic lighting read, managed's low-power Off and resume restore, and the
   published renderer ownership.

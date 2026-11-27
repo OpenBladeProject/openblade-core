@@ -187,6 +187,42 @@ pub(crate) struct State {
     /// No submitted matrix report completes.
     #[cfg(feature = "service-lighting-v1")]
     pub(crate) matrix_mute: bool,
+    /// A stream frame waits, submitted, until this is released; only the
+    /// runtime's own bound ends it otherwise.
+    #[cfg(feature = "service-lighting-v1")]
+    pub(crate) stream_held: Option<Arc<std::sync::atomic::AtomicBool>>,
+    /// A stream frame waits, queued behind a busy lane and not yet issued,
+    /// until this is released; a retire meanwhile recalls it, as the lane's
+    /// recall token does.
+    #[cfg(feature = "service-lighting-v1")]
+    pub(crate) stream_queued: Option<Arc<std::sync::atomic::AtomicBool>>,
+    /// Whether the stream's collection is open: an open or an issued frame
+    /// opens it, as the lane does, and a retire closes it.
+    #[cfg(feature = "service-lighting-v1")]
+    pub(crate) stream_lease: bool,
+    /// How many times the stream retired its collection.
+    #[cfg(feature = "service-lighting-v1")]
+    pub(crate) stream_retired: usize,
+    /// The stream's collection does not open.
+    #[cfg(feature = "service-lighting-v1")]
+    pub(crate) stream_unopened: bool,
+    /// The stream's open never answers: only the runtime's bound ends it.
+    #[cfg(feature = "service-lighting-v1")]
+    pub(crate) stream_open_hang: bool,
+    /// The stream's settle never answers, as a report that never completes
+    /// keeps it.
+    #[cfg(feature = "service-lighting-v1")]
+    pub(crate) stream_unsettled: bool,
+    /// Render jobs run on the real clock, so their handshake and frame
+    /// instants compare with the Service's.
+    #[cfg(feature = "service-lighting-v1")]
+    pub(crate) lighting_real_clock: bool,
+    /// How many times the stream opened or confirmed its collection.
+    #[cfg(feature = "service-lighting-v1")]
+    pub(crate) stream_opens: usize,
+    /// How many times the stream was asked to settle.
+    #[cfg(feature = "service-lighting-v1")]
+    pub(crate) stream_settles: usize,
 }
 /// When the test sent the request a job serves, on the test's clock. They sit
 /// beside the state, not in it: the state is locked for as long as a test hook
@@ -362,6 +398,8 @@ impl Fixture {
                     let real = s.device_mode_latency.is_some();
                     #[cfg(not(feature = "service-keyboard-driver-mode-v1"))]
                     let real = false;
+                    #[cfg(feature = "service-lighting-v1")]
+                    let real = real || s.lighting_real_clock;
                     let paused = (latency || permit.is_none() || thermal)
                         && s.held_read.is_none()
                         && s.held_write.is_none()
@@ -946,3 +984,89 @@ mod lighting_tests;
 mod pace_tests;
 #[path = "mutation_pool_tests.rs"]
 mod pool_tests;
+/// The fixture's animated stream (`MatrixStream`): each frame is one more
+/// matrix report in `State::matrix_frames`, with the same refusal, driver
+/// rejection and completion failure as a job's report, `stream_held`
+/// keeps it in flight and `stream_queued` keeps it queued. Its frames do
+/// not end at their deadline: the runtime bounds every wait on the stream
+/// itself.
+#[cfg(feature = "service-lighting-v1")]
+struct FixtureStream(Fixture);
+#[cfg(feature = "service-lighting-v1")]
+impl Fixture {
+    pub(crate) fn stream(&self) -> std::rc::Rc<dyn MatrixStream> {
+        std::rc::Rc::new(FixtureStream(self.clone()))
+    }
+}
+#[cfg(feature = "service-lighting-v1")]
+impl MatrixStream for FixtureStream {
+    fn open(&self) -> Pending<Result<(), Unwritten>> {
+        let mut s = self.0.state.lock().unwrap();
+        s.stream_opens += 1;
+        if s.stream_open_hang {
+            return Box::pin(std::future::pending());
+        }
+        let opened = if s.stream_unopened {
+            Err(Unwritten::Unsent)
+        } else {
+            s.stream_lease = true;
+            Ok(())
+        };
+        Box::pin(std::future::ready(opened))
+    }
+    fn frame(&self, report: MatrixReport, _: Instant) -> Pending<Result<(), Unwritten>> {
+        let state = self.0.state.clone();
+        Box::pin(async move {
+            let (queued, retired) = {
+                let s = state.lock().unwrap();
+                (s.stream_queued.clone(), s.stream_retired)
+            };
+            if let Some(release) = queued {
+                while !release.load(Ordering::Acquire) {
+                    tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+                }
+                if state.lock().unwrap().stream_retired != retired {
+                    return Err(Unwritten::Unsent);
+                }
+            }
+            let held = {
+                let mut s = state.lock().unwrap();
+                let number = s.matrix_frames.len() + 1;
+                if s.matrix_refuse == Some(number) {
+                    s.matrix_refuse = None;
+                    return Err(Unwritten::Unsent);
+                }
+                let sent = s.sent.len();
+                s.stream_lease = true;
+                s.matrix_frames.push((sent, report));
+                s.matrix_at.push(Instant::now());
+                if s.matrix_reject == Some(number) || s.matrix_fail == Some(number) {
+                    return Err(Unwritten::InDoubt);
+                }
+                s.stream_held.clone()
+            };
+            if let Some(release) = held {
+                while !release.load(Ordering::Acquire) {
+                    tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+                }
+            }
+            if state.lock().unwrap().matrix_mute {
+                return Err(Unwritten::InDoubt);
+            }
+            Ok(())
+        })
+    }
+    fn retire(&self) {
+        let mut s = self.0.state.lock().unwrap();
+        s.stream_retired += 1;
+        s.stream_lease = false;
+    }
+    fn settle(&self, _: Instant) -> Pending<bool> {
+        let mut s = self.0.state.lock().unwrap();
+        s.stream_settles += 1;
+        if s.stream_unsettled {
+            return Box::pin(std::future::pending());
+        }
+        Box::pin(std::future::ready(true))
+    }
+}

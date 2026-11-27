@@ -130,7 +130,7 @@ mod tests {
     }
 
     // One valid request per variant: each decodes wherever it is compiled.
-    fn variants() -> [StatusRequest; 26] {
+    fn variants() -> [StatusRequest; 28] {
         let id = || ID.to_owned();
         let version = PROTOCOL_VERSION;
         [
@@ -269,6 +269,17 @@ mod tests {
                 sequence: 1,
                 timestamp_qpc: 1,
                 suspending: true,
+            },
+            StatusRequest::StepKeyboardBrightness {
+                version,
+                request_id: id(),
+                direction: 1,
+                lifetime: 0,
+            },
+            StatusRequest::SetLightingRefreshRate {
+                version,
+                request_id: id(),
+                refresh_rate: 1,
             },
         ]
     }

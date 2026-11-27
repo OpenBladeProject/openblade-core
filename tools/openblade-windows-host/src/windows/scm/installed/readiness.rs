@@ -104,13 +104,72 @@ const DRAIN_TIMEOUT: Duration = Duration::from_secs(2);
 /// system-shutdown window, WaitToKillServiceTimeout, about 5 s: native
 /// accepts SERVICE_CONTROL_SHUTDOWN, not PRESHUTDOWN. A display-brightness
 /// usage still held at Stop is released first, within its own share
-/// (`thermal_mutation::BRIGHTNESS_SHUTDOWN_BUDGET`, 0.3 s), out of this bound:
-/// only then do the fans start with less than their 2 s, at least 1.7 s.
+/// (`thermal_mutation::BRIGHTNESS_SHUTDOWN_BUDGET`, 0.3 s), out of this bound,
+/// and so is the settle of an animated lighting stream
+/// (`lighting_stream::STREAM_SETTLE_BUDGET`, 0.3 s), whose unconfirmed end
+/// latches the doubt rather than spend more. Only then do the fans start with
+/// less than their 2 s: at least 1.7 s after one of those shares, 1.4 s after
+/// both (`drain_plan`, checked when the crate builds).
 #[cfg(feature = "service-keyboard-driver-mode-v1")]
 const SOURCE_DRAIN_TIMEOUT: Duration =
     DRAIN_TIMEOUT.saturating_add(thermal_mutation::KEYBOARD_SHUTDOWN_BUDGET);
 #[cfg(not(feature = "service-keyboard-driver-mode-v1"))]
 const SOURCE_DRAIN_TIMEOUT: Duration = DRAIN_TIMEOUT;
+/// Stop's plan for the drain, in every composition: each step before the
+/// fan handback takes at most its share, and the fans keep at least
+/// `FAN_HANDBACK_MINIMUM`. A step's own budget is checked against its share
+/// where that step is composed, and the shares against both drain bounds
+/// here, so a larger share fails the build whatever the features.
+mod drain_plan {
+    use std::time::Duration;
+    pub(super) const STREAM_SETTLE: Duration = Duration::from_millis(300);
+    pub(super) const DISPLAY_BRIGHTNESS_RELEASE: Duration = Duration::from_millis(300);
+    pub(super) const KEYBOARD_RELEASE: Duration = Duration::from_millis(900);
+    pub(super) const FAN_HANDBACK_MINIMUM: Duration = Duration::from_millis(1400);
+    /// Whether `shares` fit within `bound`.
+    pub(super) const fn fits(shares: &[Duration], bound: Duration) -> bool {
+        let mut total = 0;
+        let mut index = 0;
+        while index < shares.len() {
+            total += shares[index].as_nanos();
+            index += 1;
+        }
+        total <= bound.as_nanos()
+    }
+}
+// The plain bound, and the Driver-mode bound with the keyboard's share.
+const _: () = assert!(drain_plan::fits(
+    &[
+        drain_plan::STREAM_SETTLE,
+        drain_plan::DISPLAY_BRIGHTNESS_RELEASE,
+        drain_plan::FAN_HANDBACK_MINIMUM,
+    ],
+    DRAIN_TIMEOUT,
+));
+const _: () = assert!(drain_plan::fits(
+    &[
+        drain_plan::STREAM_SETTLE,
+        drain_plan::DISPLAY_BRIGHTNESS_RELEASE,
+        drain_plan::KEYBOARD_RELEASE,
+        drain_plan::FAN_HANDBACK_MINIMUM,
+    ],
+    DRAIN_TIMEOUT.saturating_add(drain_plan::KEYBOARD_RELEASE),
+));
+#[cfg(feature = "service-lighting-v1")]
+const _: () = assert!(drain_plan::fits(
+    &[thermal_mutation::STREAM_SETTLE_BUDGET],
+    drain_plan::STREAM_SETTLE,
+));
+#[cfg(feature = "service-brightness-hid-usage-v1")]
+const _: () = assert!(drain_plan::fits(
+    &[thermal_mutation::BRIGHTNESS_SHUTDOWN_BUDGET],
+    drain_plan::DISPLAY_BRIGHTNESS_RELEASE,
+));
+#[cfg(feature = "service-keyboard-driver-mode-v1")]
+const _: () = assert!(drain_plan::fits(
+    &[thermal_mutation::KEYBOARD_SHUTDOWN_BUDGET],
+    drain_plan::KEYBOARD_RELEASE,
+));
 const MAX_SUBSCRIPTIONS: usize = 8;
 
 #[path = "subscription.rs"]
@@ -223,6 +282,13 @@ trait StatusSource {
     // taken under the source lock and awaited after it is released.
     #[cfg(feature = "service-lighting-v1")]
     fn maintain_lighting(&mut self, _now: Instant) -> Option<Reconciling> {
+        None
+    }
+    // The animated lighting stream loop (`Runtime::run_lighting_stream`),
+    // taken once when connections are served; it ends only with fatal
+    // admission evidence.
+    #[cfg(feature = "service-lighting-v1")]
+    fn lighting_stream(&mut self) -> Option<Reconciling> {
         None
     }
     // The origin tick's 15 s keyboard Driver-mode step after the power
@@ -439,6 +505,16 @@ impl Ports {
         tokio::pin!(refresh);
         let mut connections = JoinSet::new();
         let mut accept = self.endpoint.accept();
+        #[cfg(feature = "service-lighting-v1")]
+        let stream = self.source.lock().await.lighting_stream();
+        let lighting_stream = async move {
+            #[cfg(feature = "service-lighting-v1")]
+            if let Some(stream) = stream {
+                return stream.await;
+            }
+            std::future::pending::<io::Result<()>>().await
+        };
+        tokio::pin!(lighting_stream);
         // Keep lock acquisition in a polled future. Awaiting it inside the
         // selected tick branch would stop polling a refresh that owns the lock.
         let origin_check = async {
@@ -521,6 +597,7 @@ impl Ports {
             tokio::select! {
                 biased;
                 result = &mut origin_check => break (result, false),
+                result = &mut lighting_stream => break (result, false),
                 signal = &mut *shutdown => break (signal.map_err(|_| lost_shutdown()), true),
                 result = &mut refresh, if publications.is_some() => break (result, false),
                 joined = connections.join_next(), if !connections.is_empty() => match joined {
@@ -676,6 +753,8 @@ async fn serve_connection(
                 | StatusRequest::ResumeAutomaticFanStop { .. }
                 | StatusRequest::SetBatterySaverFanStop { .. }
                 | StatusRequest::SetLightingOverride { .. }
+                | StatusRequest::StepKeyboardBrightness { .. }
+                | StatusRequest::SetLightingRefreshRate { .. }
         )
     {
         #[cfg(feature = "service-thermal-mutation-v1")]
@@ -1007,6 +1086,10 @@ fn mutation_budget(request: &StatusRequest) -> Duration {
                 | StatusRequest::CyclePerformanceShortcut { .. }
                 | StatusRequest::SetHyperBoost { .. }
                 | StatusRequest::SetLightingOverride { .. }
+                | StatusRequest::StepKeyboardBrightness { .. }
+                // It writes no hardware, but it waits for the gate, and its
+                // lighting admission reads the power source over HID.
+                | StatusRequest::SetLightingRefreshRate { .. }
         )
     {
         RECIPE_BUDGET

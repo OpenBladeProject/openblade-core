@@ -257,6 +257,21 @@ pub(crate) enum StatusRequest {
         timestamp_qpc: i64,
         suspending: bool,
     },
+    /// Managed `StepKeyboardBrightnessRequest`: `KeyboardBrightnessDirection`
+    /// and `OverrideLifetime` wire values, defined once validated.
+    StepKeyboardBrightness {
+        version: i32,
+        request_id: String,
+        direction: i32,
+        lifetime: i32,
+    },
+    /// Managed `SetLightingRefreshRateRequest`: a `LightingRefreshRate` wire
+    /// value, defined once validated.
+    SetLightingRefreshRate {
+        version: i32,
+        request_id: String,
+        refresh_rate: i32,
+    },
     ObserveState {
         include_live_readings: bool,
         #[serde(default = "all_live_readings")]
@@ -403,7 +418,7 @@ impl StatusRequest {
     /// The discriminator of every variant. `operation` maps each variant to
     /// its entry, so a new variant cannot be added without listing it here.
     #[cfg(feature = "installed-service-candidate")]
-    pub(crate) const OPERATIONS: [&'static str; 26] = [
+    pub(crate) const OPERATIONS: [&'static str; 28] = [
         "setBatteryPolicy",
         "setBatteryProtection",
         "setFullChargeOverride",
@@ -430,6 +445,8 @@ impl StatusRequest {
         "setDisplayBrightnessHidUsage",
         "shutdownOpenBlade",
         "reportSessionPowerTransition",
+        "stepKeyboardBrightness",
+        "setLightingRefreshRate",
     ];
 
     #[cfg(all(test, feature = "installed-service-candidate"))]
@@ -461,6 +478,8 @@ impl StatusRequest {
             Self::SetDisplayBrightnessHidUsage { .. } => 23,
             Self::ShutdownOpenBlade { .. } => 24,
             Self::ReportSessionPowerTransition { .. } => 25,
+            Self::StepKeyboardBrightness { .. } => 26,
+            Self::SetLightingRefreshRate { .. } => 27,
         }]
     }
 
@@ -484,7 +503,7 @@ impl StatusRequest {
         const BRIGHTNESS: bool = cfg!(feature = "service-brightness-hid-usage-v1");
         const SHUTDOWN: bool = cfg!(feature = "service-lifecycle-shutdown-v1");
         const RELAY: bool = cfg!(feature = "service-session-power-relay-v1");
-        const COMPILED: [bool; 26] = [
+        const COMPILED: [bool; 28] = [
             BATTERY,
             BATTERY,
             BATTERY,
@@ -511,6 +530,8 @@ impl StatusRequest {
             BRIGHTNESS,
             SHUTDOWN,
             RELAY,
+            LIGHTING && PROFILES,
+            LIGHTING && PROFILES,
         ];
         Self::OPERATIONS
             .iter()
@@ -707,6 +728,16 @@ impl StatusRequest {
                 version,
                 request_id,
                 ..
+            }
+            | Self::StepKeyboardBrightness {
+                version,
+                request_id,
+                ..
+            }
+            | Self::SetLightingRefreshRate {
+                version,
+                request_id,
+                ..
             } => (*version, request_id),
             Self::ExportDiagnostics {
                 version,
@@ -864,6 +895,31 @@ impl StatusRequest {
             && !cfg!(feature = "service-lighting-v1")
         {
             return Err(invalid("signed lighting composition is unavailable"));
+        }
+        // Both need the saved preferences and profiles (`lighting_controls`).
+        if matches!(
+            self,
+            Self::StepKeyboardBrightness { .. } | Self::SetLightingRefreshRate { .. }
+        ) && !cfg!(all(
+            feature = "service-lighting-v1",
+            feature = "service-profiles-v1"
+        )) {
+            return Err(invalid("signed lighting composition is unavailable"));
+        }
+        // Managed `IpcMessageCodec`: `Enum.IsDefined` for each enum member.
+        if let Self::StepKeyboardBrightness {
+            direction,
+            lifetime,
+            ..
+        } = self
+            && (!matches!(direction, 0 | 1) || !matches!(lifetime, 0 | 1))
+        {
+            return Err(invalid("keyboard brightness step is undefined"));
+        }
+        if let Self::SetLightingRefreshRate { refresh_rate, .. } = self
+            && !matches!(refresh_rate, 0 | 1)
+        {
+            return Err(invalid("lighting refresh rate is undefined"));
         }
         // Managed `IpcMessageCodec`: `Enum.IsDefined(set.Usage)`.
         if let Self::SetDisplayBrightnessHidUsage { usage, .. } = self {

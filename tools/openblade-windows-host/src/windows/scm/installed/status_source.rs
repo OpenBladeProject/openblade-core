@@ -827,6 +827,11 @@ impl StatusSource for GuardedStatus {
             runtime.maintain_lighting(&mailbox, now).await
         }))
     }
+    #[cfg(feature = "service-lighting-v1")]
+    fn lighting_stream(&mut self) -> Option<super::Reconciling> {
+        let runtime = self.mutation.clone()?;
+        Some(Box::pin(async move { runtime.run_lighting_stream().await }))
+    }
     #[cfg(feature = "service-keyboard-driver-mode-v1")]
     fn maintain_driver_mode(&mut self) -> Option<super::Reconciling> {
         let runtime = self.mutation.clone()?;
@@ -1216,24 +1221,65 @@ impl StatusSource for GuardedStatus {
                     let status = publish_reconciled(&publisher, &mailbox, latest)?;
                     Ok((outcome, Some(status)))
                 }
-                // Managed `SetLightingOverrideAsync`, slices L1 and L2
-                // (`Runtime::set_lighting`). Its status projects the stored
+                // Managed `SetLightingOverrideAsync` (`Runtime::set_lighting`),
+                // `StepKeyboardBrightnessAsync` and `SetLightingRefreshRateAsync`
+                // (`lighting_controls`). Its status projects the stored
                 // override and what the job left the confirmed lighting
-                // members. The request classifies power in its own job, so
+                // members. Each request classifies power in its own job, so
                 // it reads no status taken before the gate.
                 #[cfg(feature = "service-lighting-v1")]
-                crate::service_status::StatusRequest::SetLightingOverride { value, .. } => {
-                    let lit = runtime
-                        .set_lighting(
-                            mailbox.clone(),
-                            super::thermal_mutation::LightingRequest {
-                                caller,
-                                sid,
-                                value: value.value().cloned(),
-                                deadline,
-                            },
-                        )
-                        .await?;
+                crate::service_status::StatusRequest::SetLightingOverride { .. }
+                | crate::service_status::StatusRequest::StepKeyboardBrightness { .. }
+                | crate::service_status::StatusRequest::SetLightingRefreshRate { .. } => {
+                    use crate::service_status::StatusRequest as Request;
+                    let lit = match request {
+                        Request::SetLightingOverride { value, .. } => {
+                            runtime
+                                .set_lighting(
+                                    mailbox.clone(),
+                                    super::thermal_mutation::LightingRequest {
+                                        caller,
+                                        sid,
+                                        value: value.value().cloned(),
+                                        deadline,
+                                    },
+                                )
+                                .await?
+                        }
+                        #[cfg(feature = "service-profiles-v1")]
+                        Request::StepKeyboardBrightness {
+                            direction,
+                            lifetime,
+                            ..
+                        } => {
+                            // Validated defined at decode (`StatusRequest::validate`).
+                            let lifetime = super::thermal_mutation::step_lifetime(lifetime)
+                                .ok_or_else(|| io::Error::from(io::ErrorKind::InvalidData))?;
+                            runtime
+                                .step_keyboard_brightness(
+                                    mailbox.clone(),
+                                    super::thermal_mutation::StepRequest {
+                                        caller,
+                                        sid,
+                                        increase: direction == 1,
+                                        lifetime,
+                                        deadline,
+                                    },
+                                )
+                                .await?
+                        }
+                        #[cfg(feature = "service-profiles-v1")]
+                        Request::SetLightingRefreshRate { refresh_rate, .. } => {
+                            let rate = crate::discovery::performance::RefreshRate::from_wire(
+                                refresh_rate,
+                            )
+                            .ok_or_else(|| io::Error::from(io::ErrorKind::InvalidData))?;
+                            runtime
+                                .set_lighting_refresh_rate(&mailbox, caller, &sid, rate, deadline)
+                                .await?
+                        }
+                        _ => return Err(io::ErrorKind::InvalidData.into()),
+                    };
                     if !lit.publish {
                         return Ok((lit.outcome, None));
                     }
@@ -1524,9 +1570,16 @@ impl StatusSource for GuardedStatus {
             if let Some(runtime) = &self.mutation {
                 // The owned renderer ends first, without a write, as managed's
                 // port disposal stops its stream; a keepalive job still running
-                // is cancelled by the mutation worker's stop below.
+                // is cancelled by the mutation worker's stop below. The stream
+                // recalls every frame not yet submitted and is awaited, for its
+                // own small share of the drain, until none is outstanding
+                // (`Runtime::settle_lighting_stream`); a settle it cannot
+                // confirm latches the doubt and every step below still runs.
                 #[cfg(feature = "service-lighting-v1")]
-                runtime.retire_renderer();
+                {
+                    runtime.retire_renderer();
+                    runtime.settle_lighting_stream(deadline).await;
+                }
                 // Managed shutdown order: the keyboard Driver-mode release,
                 // then the fan handback. The keyboard's outcome is a diagnostic
                 // (`Runtime::driver_mode_release`): only fatal admission

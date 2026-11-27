@@ -19,6 +19,9 @@ mod lifecycle_ops;
 #[cfg(feature = "service-lighting-v1")]
 #[path = "lighting_override.rs"]
 mod lighting_override;
+#[cfg(feature = "service-lighting-v1")]
+#[path = "lighting_stream.rs"]
+mod lighting_stream;
 #[cfg(feature = "service-performance-shortcut-v1")]
 #[path = "performance_shortcut.rs"]
 mod performance_shortcut;
@@ -584,6 +587,9 @@ struct Custody {
     live: AtomicBool,
     origin_for_fan: StdMutex<Option<Arc<crate::origin_lifetime::Lifetime>>>,
     authority_for_fan: AtomicU8,
+    // Every full custody authorization (`ReadCustody::authorize`), which
+    // runs the loaded-origin, package and SCM verification in `ReadLease`.
+    full_authorizations: AtomicUsize,
     fresh_refuse: AtomicBool,
     // A competing controller present at the next write captures: the factory
     // refuses them with the typed `competing_controller` error, as
@@ -648,6 +654,7 @@ impl Custody {
             live: AtomicBool::new(true),
             origin_for_fan: StdMutex::new(None),
             authority_for_fan: AtomicU8::new(0),
+            full_authorizations: AtomicUsize::new(0),
             fresh_refuse: AtomicBool::new(false),
             controller: AtomicBool::new(false),
             fatal_health: AtomicBool::new(false),
@@ -789,6 +796,7 @@ impl ReadCustody for Custody {
         self.live.load(Ordering::Acquire)
     }
     fn authorize(&self) -> Option<ReadAdmission> {
+        self.full_authorizations.fetch_add(1, Ordering::AcqRel);
         if self
             .read_refuse_at
             .try_update(Ordering::AcqRel, Ordering::Acquire, |n| n.checked_sub(1))
@@ -812,6 +820,28 @@ impl ReadCustody for Custody {
             lifecycle: self.lifecycle.active()?,
             generation: [self.generation.load(Ordering::Acquire); 32],
         })
+    }
+    // `ReadLease::authorize_frame` over the authority latch and the origin's
+    // lifetime, with no origin verification; without an origin, the live flag.
+    #[cfg(feature = "service-lighting-v1")]
+    fn authorize_frame(&self) -> Option<ReadAdmission> {
+        let proof = ReadAdmission {
+            lifecycle: 0,
+            generation: [self.generation.load(Ordering::Acquire); 32],
+        };
+        let lifecycle = self.lifecycle.active();
+        match &*self.origin_for_fan.lock().unwrap() {
+            Some(origin) => crate::installed::readiness::mailbox_read::authorize_original_frame(
+                &self.authority_for_fan,
+                origin,
+                lifecycle,
+                proof,
+            ),
+            None => self.live.load(Ordering::Acquire).then_some(ReadAdmission {
+                lifecycle: lifecycle?,
+                ..proof
+            }),
+        }
     }
     fn activate_mutation(
         &self,
@@ -930,6 +960,13 @@ impl Fresh for Custody {
         }
         ReadCustody::authorize(self)
     }
+    // `WindowsGuard::authorize_frame` with no epoch pin (`PinnedFresh` adds
+    // it): the controller inventory and the origin verification come from
+    // the origin tick.
+    #[cfg(feature = "service-lighting-v1")]
+    fn authorize_frame(&self) -> Option<ReadAdmission> {
+        self.admit_frame(|| true)
+    }
     // `authorize` without the lifecycle epoch: `fresh_refuse` stands for
     // every refused Windows supplier, a competing controller included, and
     // an unknown Windows AC line status refuses as `Identity::admits` does.
@@ -1011,9 +1048,36 @@ impl PinnedFresh {
         self.custody.lifecycle.active() == Some(self.epoch)
     }
 }
+#[cfg(feature = "service-lighting-v1")]
+impl Custody {
+    /// `WindowsGuard::authorize_frame`'s shared admission
+    /// (`thermal_native::admit_frame`) at `epoch`: `fresh_refuse` stands for a
+    /// refused console session, `windows_on_battery` for the AC line status,
+    /// and `fatal_health` for the guard's retained failure.
+    fn admit_frame(&self, epoch: impl Fn() -> bool) -> Option<ReadAdmission> {
+        if self.fatal_health.load(Ordering::Acquire) {
+            return None;
+        }
+        crate::installed::readiness::thermal_native::admit_frame(
+            epoch,
+            || !self.fresh_refuse.load(Ordering::Acquire),
+            || Fresh::on_battery(self).is_some(),
+            self,
+        )
+    }
+}
 impl Fresh for PinnedFresh {
     fn on_battery(&self) -> Option<bool> {
         self.custody.on_battery()
+    }
+    // A pinned capture samples the power kind as `WindowsGuard` does; only
+    // its read admission pins the epoch.
+    fn power_generation(&self) -> Option<u64> {
+        Fresh::power_generation(self.custody.as_ref())
+    }
+    #[cfg(feature = "service-profile-triggers-v1")]
+    fn authorize_storage(&self) -> bool {
+        Fresh::authorize_storage(self.custody.as_ref())
     }
     fn authentication(&self) -> Option<(u32, i32)> {
         Fresh::authentication(self.custody.as_ref())
@@ -1028,6 +1092,10 @@ impl Fresh for PinnedFresh {
     fn authorize_owned_stop(&self) -> Option<ReadAdmission> {
         self.current()
             .then(|| Fresh::authorize_owned_stop(self.custody.as_ref()))?
+    }
+    #[cfg(feature = "service-lighting-v1")]
+    fn authorize_frame(&self) -> Option<ReadAdmission> {
+        self.custody.admit_frame(|| self.current())
     }
     fn capture_settle(
         &self,
@@ -1613,6 +1681,8 @@ impl Rig {
             feature = "service-session-power-relay-v1"
         )))]
         let lifecycle_ports = ();
+        #[cfg(feature = "service-lighting-v1")]
+        runtime.compose_matrix_stream(port.stream());
         let source = injected_mutation_source(
             Arc::new(Origin(origin.clone(), custody.clone())),
             mailbox,
@@ -10073,7 +10143,10 @@ thread_local! {
 /// test sets in real time, calls it: its rigs' exchanges would otherwise hold
 /// the clock while their job threads work, and rigs that run side by side
 /// would hold it back from one another.
-#[cfg(feature = "service-profile-triggers-v1")]
+#[cfg(any(
+    feature = "service-profile-triggers-v1",
+    feature = "service-lighting-v1"
+))]
 fn keep_real_clock() {
     HELD_CLOCKS.with(|held| held.borrow_mut().real_clock = true);
 }

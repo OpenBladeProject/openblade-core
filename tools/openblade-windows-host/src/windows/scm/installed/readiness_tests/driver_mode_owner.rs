@@ -65,7 +65,7 @@ fn console(rig: &Rig, named: Rc<Cell<bool>>) {
     });
 }
 /// A rig whose fans OpenBlade owns and whose keyboard it then claimed.
-async fn fan_owner_rig() -> Rig {
+pub(super) async fn fan_owner_rig() -> Rig {
     let rig = fan_rig_with(0, 0, 2);
     rig.get().await;
     let outcome = rig.request(fan_request(101, Some(1), 3700)).await;

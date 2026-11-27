@@ -30,6 +30,15 @@ use windows_sys::Win32::{
 const IOCTL_HID_SET_FEATURE: u32 = 0x000B0191;
 const IOCTL_HID_GET_FEATURE: u32 = 0x000B0192;
 static OCCUPIED: AtomicBool = AtomicBool::new(false);
+// Matrix feature I/O in this process, one report at a time: held from a
+// report's issue until its terminal completion, by a render job's matrix
+// lease and by the animated stream's (`stream`).
+#[cfg(feature = "service-lighting-v1")]
+static MATRIX_IO: AtomicBool = AtomicBool::new(false);
+#[cfg(feature = "service-lighting-v1")]
+mod stream;
+#[cfg(feature = "service-lighting-v1")]
+pub(crate) use stream::native_matrix_stream;
 // Canceling Windows I/O or reopening the handle does not flush the firmware
 // reply mailbox, so one pool spans every lease in this process and frees an
 // ID only with proof that its reply is gone (see `transactions`).
@@ -435,6 +444,15 @@ impl Port for NativePort {
         if self.matrix.is_some() {
             return Ok(());
         }
+        // A report the stream's lane left outstanding keeps `MATRIX_IO`
+        // until the lane sees it complete, up to one slow poll later. Every
+        // job opens its collection before anything is sent, so a job refuses
+        // here, before its setters, instead of failing after them. Untested:
+        // `NativePort` needs a live control lease, and the fixture's port has
+        // no `MATRIX_IO`.
+        if MATRIX_IO.load(std::sync::atomic::Ordering::Acquire) {
+            return Err(blocked("a keyboard matrix report is still outstanding"));
+        }
         limit.check()?;
         let identity = super::select_matrix(&WindowsMetadata, limit.cancelled)?;
         limit.check()?;
@@ -466,11 +484,26 @@ impl Port for NativePort {
             .map_err(|_| Unwritten::Unsent)?;
         limit.check().map_err(|_| Unwritten::Unsent)?;
         let mut operation = Operation::new(*report).map_err(|_| Unwritten::Unsent)?;
+        if MATRIX_IO
+            .compare_exchange(
+                false,
+                true,
+                std::sync::atomic::Ordering::AcqRel,
+                std::sync::atomic::Ordering::Acquire,
+            )
+            .is_err()
+        {
+            return Err(Unwritten::Unsent);
+        }
         // Managed poisons its writer on any native matrix failure: a call
         // the driver refused may still have reached the keyboard.
-        operation
+        if operation
             .issue(matrix.handle.as_raw_handle(), true)
-            .map_err(|_| Unwritten::InDoubt)?;
+            .is_err()
+        {
+            MATRIX_IO.store(false, std::sync::atomic::Ordering::Release);
+            return Err(Unwritten::InDoubt);
+        }
         matrix.operation = Some(operation);
         Ok(())
     }
@@ -478,8 +511,9 @@ impl Port for NativePort {
     #[cfg(feature = "service-lighting-v1")]
     fn poll_matrix(&mut self) -> Option<io::Result<()>> {
         let matrix = self.matrix.as_mut()?;
-        Operation::complete(matrix.handle.as_raw_handle(), &mut matrix.operation)
-            .map(|result| result.map(|_| ()))
+        let completion = Operation::complete(matrix.handle.as_raw_handle(), &mut matrix.operation)?;
+        MATRIX_IO.store(false, std::sync::atomic::Ordering::Release);
+        Some(completion.map(|_| ()))
     }
 }
 

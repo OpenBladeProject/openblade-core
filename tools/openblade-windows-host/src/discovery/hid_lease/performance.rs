@@ -36,12 +36,24 @@ mod lighting;
 #[cfg(feature = "service-lighting-v1")]
 mod lighting_admission;
 #[cfg(feature = "service-lighting-v1")]
+mod lighting_effects;
+#[cfg(all(test, feature = "service-lighting-v1"))]
+#[allow(unused_imports)] // Used by the installed readiness tests only.
+pub(crate) use lighting_effects::tests::{Failing as FailingRandom, Scripted as ScriptedRandom};
+#[cfg(feature = "service-lighting-v1")]
+#[allow(unused_imports)] // Shared with the standalone discovery binary.
+pub(crate) use lighting_effects::{
+    Animation, ColorMode, Effect, Random, RefreshRate, SystemRandom,
+};
+#[cfg(feature = "service-lighting-v1")]
 mod lighting_layout;
+#[cfg(feature = "service-lighting-v1")]
+mod matrix_lane;
 #[cfg(feature = "service-lighting-v1")]
 #[allow(unused_imports)] // Shared with the standalone discovery binary.
 pub(crate) use lighting::{
-    LightingConfirmation, LightingJob, LightingOutcome, LightingReading, LightingTarget,
-    MatrixState, RenderTarget, Renderer, Rgb,
+    BRIGHTNESS_STEP, LightingConfirmation, LightingJob, LightingOutcome, LightingReading,
+    LightingTarget, MatrixState, RenderTarget, Renderer, Rgb, StepTarget, stream_report,
 };
 #[cfg(feature = "service-lighting-v1")]
 #[allow(unused_imports)] // Shared with the standalone discovery binary.
@@ -80,6 +92,9 @@ pub(crate) mod mutation;
 mod temporary_charge;
 #[cfg(any(test, feature = "firmware-performance-compile-check"))]
 mod worker;
+#[cfg(all(windows, feature = "service-lighting-v1"))]
+#[allow(unused_imports)] // Composed by the installed runtime only.
+pub(crate) use windows::native_matrix_stream;
 #[cfg(all(windows, feature = "service-hardware-compile-check"))]
 #[allow(unused_imports)] // Shared with the standalone discovery binary.
 pub(crate) use windows::{native_read_worker, native_worker};
@@ -222,12 +237,12 @@ trait Port {
 
 /// One encoded 03/0B feature report.
 #[cfg(feature = "service-lighting-v1")]
-type MatrixReport = [u8; openblade_protocol::lighting::matrix::FEATURE_REPORT_LENGTH];
+pub(crate) type MatrixReport = [u8; openblade_protocol::lighting::matrix::FEATURE_REPORT_LENGTH];
 
 /// How one matrix write ended, when it did not complete.
 #[cfg(feature = "service-lighting-v1")]
 #[derive(Debug)]
-enum Unwritten {
+pub(crate) enum Unwritten {
     /// Nothing reached the driver.
     Unsent,
     /// The report may have been submitted. Managed classifies every native
@@ -235,6 +250,35 @@ enum Unwritten {
     /// writer), the driver's own refusal of the call included.
     InDoubt,
 }
+
+/// The Service's animated matrix stream (`Runtime::stream_frame`): one
+/// encoded frame at a time on the exact reviewed matrix collection, outside
+/// the control mailbox, as managed's `RunStreamAsync` writes outside its
+/// command queue. The Service stays the only owner of the collection:
+/// matrix feature I/O in this process is serialized by one lock that the
+/// render jobs' matrix lease takes too, so a stream frame never overlaps a
+/// job's handshake or frame.
+#[cfg(feature = "service-lighting-v1")]
+pub(crate) trait MatrixStream {
+    /// Opens and verifies the collection, or confirms it is open; `Unsent`
+    /// when it cannot be. Opening writes nothing.
+    fn open(&self) -> Pending<Result<(), Unwritten>>;
+    /// Submits `report` and waits for its completion until `deadline`.
+    /// `Unsent` when nothing reached the driver; any submission that did
+    /// not complete in time is `InDoubt`.
+    fn frame(&self, report: MatrixReport, deadline: Instant) -> Pending<Result<(), Unwritten>>;
+    /// Recalls every frame not yet submitted, cancels an open in progress
+    /// and closes the collection once no report is outstanding; the next
+    /// request opens and verifies it again.
+    fn retire(&self);
+    /// Waits until no report is outstanding, or `deadline`: `false` when one
+    /// still may be.
+    fn settle(&self, deadline: Instant) -> Pending<bool>;
+}
+
+/// A `MatrixStream` reply, which the runtime awaits under its own bound.
+#[cfg(feature = "service-lighting-v1")]
+pub(crate) type Pending<T> = std::pin::Pin<Box<dyn std::future::Future<Output = T>>>;
 
 /// Managed `IsExactMatrixInterface`: the consumer collection whose feature
 /// report carries the 375-byte matrix buffer.

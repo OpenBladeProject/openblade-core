@@ -28,7 +28,11 @@ const HANDSHAKE: &str = "03/0A:0500";
 const FRAME: &str = "MATRIX";
 
 fn renderer(color: Rgb) -> Renderer {
-    Renderer { color, layout: 0 }
+    Renderer {
+        effect: Effect::Static,
+        color,
+        layout: 0,
+    }
 }
 
 /// A Static request for `color` at raw 0xC5 with no logo, no layout read
@@ -37,6 +41,7 @@ fn target(color: Rgb) -> RenderTarget {
     RenderTarget {
         brightness: 0xc5,
         logo: None,
+        effect: Effect::Static,
         color,
         layout: None,
         previous: None,
@@ -44,7 +49,7 @@ fn target(color: Rgb) -> RenderTarget {
 }
 
 fn render(target: RenderTarget) -> Lit {
-    Lit::with(LightingJob::render(target))
+    Lit::with(LightingJob::render(target, None))
 }
 
 /// Every mailbox report sent, as `CC/II:payload`, with `MATRIX` where each
@@ -132,6 +137,7 @@ async fn waking_from_dark_raises_the_brightness_after_the_frame() {
     assert_eq!(
         permit.job.matrix(),
         MatrixState::Owned(Renderer {
+            effect: Effect::Static,
             color: GREEN,
             layout: 8
         })
