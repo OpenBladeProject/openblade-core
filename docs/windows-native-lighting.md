@@ -261,7 +261,12 @@ describes it, is stored and replies that the matrix collection is
 unavailable, with no setter sent; an open that outlasts its 1 s is recalled,
 which cancels its collection selection. The lease stays open while one
 animated renderer replaces another and closes when a request leaves none.
-Before each report the thread checks, in order, that the frame was not
+A frame opens the lease again when the thread no longer holds one, as after
+a recalled open while the previous renderer kept streaming; such a lease
+closes the same way. The thread's request queue is bounded: while it is
+stuck in a slow open or a report, a request that does not fit is refused,
+an open or a frame unsent and a settle not known to be settled, and a
+recall that does not fit has still recalled every frame. Before each report the thread checks, in order, that the frame was not
 recalled, that the handle still describes the selected collection, that the
 frame's deadline has not passed, and that it holds the process's matrix I/O
 flag (`MATRIX_IO`), which serializes every matrix report, the jobs' and the
@@ -272,7 +277,9 @@ and the thread keeps polling it between requests, so its late completion
 releases `MATRIX_IO` and lets a retired lease close. After its first second
 outstanding, the thread polls it every 100 ms instead of every 10 ms. A
 report that never completes keeps both, and every render job then refuses
-when it opens its collection, before any setter. The Service remains the
+when it opens its collection, before any setter. Since the thread sees a
+completion only at its next poll, a job can also refuse this way for up to
+100 ms after a long-outstanding report completed. The Service remains the
 only HID owner.
 
 The stream starts only from a request that passed its full fresh admission.
@@ -295,7 +302,9 @@ Before each frame it:
    custody's frame admission (`ReadCustody::authorize_frame`), which checks
    the custody's latched state, its retained failure, the loaded origin's
    lifetime, which a revocation, a lost trust or Stop ends at once, and the
-   active lifecycle epoch.
+   active lifecycle epoch. The order is one function (`admit_frame`), and
+   the custody's part another (`authorize_original_frame`); the test
+   fixtures run both over their own suppliers.
 
 Per frame, the loaded-origin process, package (ACL and `current.bin`) and
 SCM verification, the original mapping (`managed-handoff.bin`), the journal
@@ -316,11 +325,13 @@ A frame refused before submission ends the renderer and the stream. One that
 may have been submitted without completing, or that outlasted its budget,
 latches the doubt too, recalls the stream's frames and releases the gate, so
 the next request resolves read-only and replays nothing. Stop and a
-low-power boundary recall every frame not yet submitted; Stop then waits,
-for at most its 300 ms share, until no report is outstanding, before the
+low-power boundary recall every frame not yet submitted. Stop recalls them
+and closes the lease whatever the session recorded, then waits, for at
+most its 300 ms share, until no report is outstanding, before the
 display-brightness and keyboard releases and the fan handback. If that is
 not confirmed in time it latches the doubt and the rest of the drain still
-runs.
+runs. The build checks that these shares and at least 1.4 s for the fans
+fit within the drain, with or without the keyboard's share.
 
 ## Keyboard brightness steps and the refresh rate (slice L3)
 
