@@ -991,6 +991,31 @@ public sealed class WindowsNativeEpochTests
         Assert.Equal(message, forged.Message);
     }
 
+    [Theory]
+    [InlineData("agent-power-mode-automation-v1", "session-power-mode-automation-v1", "Power-mode automation is not admitted for packaging.")]
+    [InlineData("agent-session-power-relay-v1", "session-power-relay-v1", "The session power relay is not admitted for packaging.")]
+    public void UnadmittedAgentRoleIsRefusedByFeatureAndMarker(string feature, string marker, string message)
+    {
+        string source = new('a', 40);
+        // The feature and the marker build.rs gives a build with that feature.
+        string features = $"{feature},native-agent-entry-compile-check";
+        // Refused by name, whatever the record claims: the marker, the feature name,
+        // neither, or the marker beside an admitted contract.
+        foreach (string capabilities in new[] { marker, feature, "none", $"agent-battery-report-v1,{marker}" })
+        {
+            var refused = Assert.Throws<InvalidDataException>(() => NativeArtifact.Inspect(
+                [.. Image("agent", schema: 2, features: features, capabilities: capabilities)], "agent", source));
+            Assert.Equal(message, refused.Message);
+            refused = Assert.Throws<InvalidDataException>(() => NativeArtifact.Inspect(
+                [.. Image("agent", schema: 2, features: $"agent-battery-report-v1,{feature},native-agent-entry-compile-check", capabilities: capabilities)], "agent", source));
+            Assert.Equal(message, refused.Message);
+        }
+        // A forged marker without the feature is no better.
+        var forged = Assert.Throws<InvalidDataException>(() => NativeArtifact.Inspect(
+            [.. Image("agent", schema: 2, features: "native-agent-entry-compile-check", capabilities: marker)], "agent", source));
+        Assert.Equal(message, forged.Message);
+    }
+
     [Fact]
     public void ExplicitThermalMutationRoleRequiresSignedCapabilityAndMailboxCustody()
     {

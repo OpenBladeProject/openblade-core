@@ -889,6 +889,30 @@ fn capabilities(schema: u8, role: &str, features: &str, value: &str) -> io::Resu
     {
         return Err(deny());
     }
+    // Power-mode automation changes the user's Windows power mode without a
+    // request, so it is refused by feature and marker until a stage admits
+    // it; see docs/windows-native-agent-power-mode-automation.md.
+    const POWER_MODE: &str = "agent-power-mode-automation-v1";
+    const POWER_MODE_MARKER: &str = "session-power-mode-automation-v1";
+    if has(POWER_MODE)
+        || value
+            .split(',')
+            .any(|capability| capability == POWER_MODE || capability == POWER_MODE_MARKER)
+    {
+        return Err(deny());
+    }
+    // The session power relay reports to a Service operation no native
+    // Service serves yet, so it is refused by feature and marker until a
+    // stage pairs both; see docs/windows-native-agent-session-power-relay.md.
+    const POWER_RELAY: &str = "agent-session-power-relay-v1";
+    const POWER_RELAY_MARKER: &str = "session-power-relay-v1";
+    if has(POWER_RELAY)
+        || value
+            .split(',')
+            .any(|capability| capability == POWER_RELAY || capability == POWER_RELAY_MARKER)
+    {
+        return Err(deny());
+    }
     if (agent_write || agent_hdr || agent_refresh || agent_color) && !agent_display {
         return Err(deny());
     }

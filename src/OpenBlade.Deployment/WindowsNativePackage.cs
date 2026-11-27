@@ -165,6 +165,16 @@ internal sealed record NativeArtifact(string Id, string Role, string Target, str
         // name until a stage admits it (docs/windows-native-agent-display-automation.md).
         if (features.Contains("agent-display-automation-v1", StringComparer.Ordinal) || capabilities.Split(',').Any(capability => capability is "agent-display-automation-v1" or "session-display-automation-v1"))
         { throw new InvalidDataException("Display automation is not admitted for packaging."); }
+        // Power-mode automation changes the user's Windows power mode without a request. Refuse its
+        // feature and its capability marker by name until a stage admits it
+        // (docs/windows-native-agent-power-mode-automation.md).
+        if (features.Contains("agent-power-mode-automation-v1", StringComparer.Ordinal) || capabilities.Split(',').Any(capability => capability is "agent-power-mode-automation-v1" or "session-power-mode-automation-v1"))
+        { throw new InvalidDataException("Power-mode automation is not admitted for packaging."); }
+        // The session power relay reports to a Service operation no native Service serves yet. Refuse its
+        // feature and its capability marker by name until a stage pairs both
+        // (docs/windows-native-agent-session-power-relay.md).
+        if (features.Contains("agent-session-power-relay-v1", StringComparer.Ordinal) || capabilities.Split(',').Any(capability => capability is "agent-session-power-relay-v1" or "session-power-relay-v1"))
+        { throw new InvalidDataException("The session power relay is not admitted for packaging."); }
         if (agentWrite && !agentDisplay) { throw new InvalidDataException("Brightness write requires the display query contract."); }
         if (agentHdr && !agentDisplay) { throw new InvalidDataException("HDR write requires the display query contract."); }
         if (agentRefresh && !agentDisplay) { throw new InvalidDataException("Refresh-rate write requires the display query contract."); }
