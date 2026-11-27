@@ -1,13 +1,15 @@
-//! The registration's context lifetime against a fake `Notifications`. No
+//! The registration's callback slot against a fake `Notifications`. No
 //! Windows function is called.
-use std::sync::{
-    Mutex, PoisonError,
-    atomic::AtomicI64,
-    mpsc::{Receiver, Sender, channel},
+use std::{
+    sync::{
+        atomic::{AtomicI64, Ordering::SeqCst},
+        mpsc::{Receiver, Sender, channel},
+    },
+    thread,
 };
 
 use super::*;
-use crate::session_native::power_relay::SUSPEND;
+use crate::session_native::power_relay::{RESUME_AUTOMATIC, SUSPEND};
 
 /// Records the registered callback; answers with `registered` and
 /// `unregistered`.
@@ -52,6 +54,10 @@ impl Notifications for Fake {
     }
 }
 
+fn idle_relay() -> Arc<Relay> {
+    Arc::new(Relay::new(1, 1000, Box::new(|| 1)).unwrap())
+}
+
 /// A relay whose second QPC read, inside a suspend callback, says it has
 /// entered and then blocks until released.
 fn held_relay() -> (Arc<Relay>, Receiver<()>, Sender<()>) {
@@ -78,58 +84,48 @@ fn held_relay() -> (Arc<Relay>, Receiver<()>, Sender<()>) {
 }
 
 #[test]
-fn a_callback_in_flight_keeps_the_context_until_it_leaves() {
+fn a_callback_after_unregistration_finds_no_relay_and_does_nothing() {
+    let relay = idle_relay();
+    let fake = Fake::new(Ok(()), 0);
+    let registration = Registration::with(fake.clone(), Arc::clone(&relay)).unwrap();
+    drop(registration);
+    assert_eq!(Arc::strong_count(&relay), 1);
+    // A late callback reaches the kept slot, finds it empty, and the relay,
+    // which was not disposed, records no transition.
+    assert_eq!(fake.call(RESUME_AUTOMATIC).join().unwrap(), 0);
+    assert_eq!(relay.lock().sequence, 0);
+}
+
+#[test]
+fn a_callback_running_across_unregistration_keeps_its_own_relay() {
     let (relay, entered, release) = held_relay();
     let fake = Fake::new(Ok(()), 0);
-    let registration =
-        Registration::with(fake.clone(), Arc::clone(&relay), Duration::from_secs(60)).unwrap();
+    let registration = Registration::with(fake.clone(), Arc::clone(&relay)).unwrap();
     let windows = fake.call(SUSPEND);
     entered.recv().unwrap();
     // As the transport does: dispose, then unregister, while the callback is
-    // still inside the context.
-    relay.dispose();
-    let releaser = thread::spawn(move || {
-        thread::sleep(Duration::from_millis(100));
-        release.send(()).unwrap();
-    });
-    let started = Instant::now();
-    drop(registration);
-    assert!(started.elapsed() >= Duration::from_millis(100));
-    assert_eq!(windows.join().unwrap(), 0);
-    releaser.join().unwrap();
-    // The context, and its relay reference, were released.
-    assert_eq!(Arc::strong_count(&relay), 1);
-}
-
-#[test]
-fn a_callback_still_running_past_the_drain_leaves_the_context_alive() {
-    let (relay, entered, release) = held_relay();
-    let fake = Fake::new(Ok(()), 0);
-    let registration =
-        Registration::with(fake.clone(), Arc::clone(&relay), Duration::from_millis(20)).unwrap();
-    let windows = fake.call(SUSPEND);
-    entered.recv().unwrap();
+    // still inside the relay. Drop does not wait for it.
     relay.dispose();
     drop(registration);
-    assert_eq!(Arc::strong_count(&relay), 2);
-    // The kept context stays valid for the callback that is still running.
+    assert_eq!(Arc::strong_count(&relay), 2, "the callback holds its clone");
     release.send(()).unwrap();
     assert_eq!(windows.join().unwrap(), 0);
-    assert_eq!(Arc::strong_count(&relay), 2);
+    assert_eq!(Arc::strong_count(&relay), 1);
 }
 
 #[test]
-fn an_idle_registration_releases_its_context_and_a_failed_one_keeps_it() {
-    let relay = Arc::new(Relay::new(1, 1000, Box::new(|| 1)).unwrap());
-    drop(Registration::with(Fake::new(Ok(()), 0), Arc::clone(&relay), Duration::ZERO).unwrap());
-    assert_eq!(Arc::strong_count(&relay), 1);
-    // A refused registration releases the context at once.
+fn a_refused_registration_releases_the_relay_and_a_failed_unregistration_keeps_it() {
+    let relay = idle_relay();
     assert_eq!(
-        Registration::with(Fake::new(Err(5), 0), Arc::clone(&relay), DRAIN).err(),
+        Registration::with(Fake::new(Err(5), 0), Arc::clone(&relay)).err(),
         Some(5)
     );
     assert_eq!(Arc::strong_count(&relay), 1);
-    // Windows may still call back after a failed unregistration.
-    drop(Registration::with(Fake::new(Ok(()), 5), Arc::clone(&relay), DRAIN).unwrap());
+    // Windows may still call back after a failed unregistration, and the
+    // callback still reaches the relay.
+    let fake = Fake::new(Ok(()), 5);
+    drop(Registration::with(fake.clone(), Arc::clone(&relay)).unwrap());
     assert_eq!(Arc::strong_count(&relay), 2);
+    assert_eq!(fake.call(RESUME_AUTOMATIC).join().unwrap(), 0);
+    assert_eq!(relay.lock().sequence, 1);
 }
