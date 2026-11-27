@@ -1787,10 +1787,33 @@ impl Rig {
         response
     }
     async fn stop(&self) {
+        self.drain().await.unwrap();
+        self.source.lock().await.confirm_drained().unwrap();
+    }
+    /// The source's drain (`StatusSource::drain`) on a test clock held as a
+    /// request's exchange is (`held`), so a loaded host that leaves the
+    /// cleanup's job threads or the status observer unscheduled does not
+    /// spend the drain's deadline, and the first cleanup recipe takes its
+    /// budget from the drain's start. A clock the test paused itself is
+    /// running again first (`resume_clock_for_stop`). The deadline itself is
+    /// unchanged: a job that waits past it on its own clock still expires.
+    async fn drain(&self) -> io::Result<()> {
         resume_clock_for_stop();
-        let mut source = self.source.lock().await;
-        source.drain().await.unwrap();
-        source.confirm_drained().unwrap();
+        self.held(HeldClock::CatchUp, async {
+            self.source.lock().await.drain().await
+        })
+        .await
+    }
+    /// One origin tick (`StatusSource::process_power_source`), run as a
+    /// request's exchange is (`held`): its jobs take their budget from the
+    /// tick's start and a loaded host spends none of it.
+    #[cfg(feature = "service-temporary-charge-v1")]
+    async fn process_power_source(&self) -> io::Result<()> {
+        self.held(
+            HeldClock::CatchUp,
+            Box::pin(async { self.source.lock().await.process_power_source().await }),
+        )
+        .await
     }
     /// Stops a rig whose case leaves HyperBoost on, in production order:
     /// SCM STOP revokes the origin before the drain. With the lifecycle
@@ -1800,12 +1823,10 @@ impl Rig {
     /// (`hyperboost_cleanup` covers the admitted exit).
     #[cfg(feature = "service-hyperboost-v1")]
     async fn stop_in_hyperboost(&self) {
-        resume_clock_for_stop();
         let writes = self.port.state.lock().unwrap().writes;
         self.origin.stop();
-        let mut source = self.source.lock().await;
-        let drained = source.drain().await;
-        source.confirm_drained().unwrap();
+        let drained = self.drain().await;
+        self.source.lock().await.confirm_drained().unwrap();
         if let Err(error) = drained {
             assert!(
                 cfg!(feature = "service-profile-triggers-v1")
@@ -7631,7 +7652,8 @@ async fn fan_settle_stop_result_needs_fresh_admission() {
         c.fresh_refuse.store(true, Ordering::Release);
     }));
     r.origin.stop();
-    assert!(r.source.lock().await.drain().await.is_err());
+    // Held, so the refusal is the fence's and not a loaded host's deadline.
+    assert!(r.drain().await.is_err());
     // The 51 row is durable; it is not replayed or rolled back.
     assert_eq!(*fan_rows(&r).last().unwrap(), closed);
     assert!(!r.storage.outstanding_fan());
@@ -10002,7 +10024,17 @@ impl HeldClocks {
     /// Service's own bound on the real clock. Unlike `hold_clock`, which also
     /// bounds the polls an idle Service gets, the test is never left waiting on
     /// a timer that no job moves.
+    ///
+    /// The clock and the Service share the test's thread, so a host that
+    /// deschedules that thread stops both, and the time it lost would come
+    /// back as one step past the Service's next poll and any deadline behind
+    /// it, before the Service has seen a job that finished meanwhile. A step
+    /// therefore bills at most `MAX_STEP`, one of the Service's thread polls,
+    /// and the rest of such a gap is the host's, not the Service's. A running
+    /// thread polls the clock far more often than that, so the clock still
+    /// keeps pace with the real one.
     async fn pace<T>(work: impl std::future::Future<Output = T>) -> T {
+        const MAX_STEP: Duration = Duration::from_millis(5);
         let finished = std::cell::Cell::new(false);
         let work = async {
             let out = work.await;
@@ -10031,7 +10063,7 @@ impl HeldClocks {
                         return None;
                     }
                     held.billed = Some(now);
-                    Some(now - billed)
+                    Some((now - billed).min(MAX_STEP))
                 });
                 if let Some(elapsed) = unbilled {
                     tokio::time::advance(elapsed).await;
@@ -10122,7 +10154,9 @@ impl Drop for Exchange<'_> {
 }
 /// Whether the test clock is paused. Tokio offers no query, and pausing a
 /// paused clock panics. A running clock moves within microseconds; a paused
-/// one stays put for as long as it is watched.
+/// one stays put for as long as it is watched. The last look comes after the
+/// whole watch, so a host that deschedules this thread through it has still
+/// let real time pass, which a running clock shows.
 fn clock_is_paused() -> bool {
     let mark = tokio::time::Instant::now();
     let watched = std::time::Instant::now();
@@ -10132,16 +10166,16 @@ fn clock_is_paused() -> bool {
         }
         std::hint::spin_loop();
     }
-    true
+    tokio::time::Instant::now() == mark
 }
-/// Runs the test clock again for a rig's Stop (`Rig::stop`,
-/// `Rig::stop_in_hyperboost`), as the Service's clock always runs. A test
-/// that paused the clock to age a result has it paused still, and the drain's
-/// bounds wait on OS threads: the status observer's retirement polls its
-/// thread until the drain deadline (`retire_observer`), and a paused clock
-/// skips to that deadline within microseconds of real time, before a loaded
-/// host need have scheduled the thread at all. A clock an exchange holds
-/// (`HeldClocks`) is that exchange's to let go.
+/// Runs the test clock again for a rig's Stop (`Rig::drain`), whose exchange
+/// then holds it. A test that paused the clock to age a result has it paused
+/// still, and the drain's bounds wait on OS threads: the status observer's
+/// retirement polls its thread until the drain deadline (`retire_observer`),
+/// and a clock paused outside an exchange skips to that deadline within
+/// microseconds of real time, before a loaded host need have scheduled the
+/// thread at all. A held clock does not move while that thread runs. A clock
+/// an exchange holds (`HeldClocks`) is that exchange's to let go.
 fn resume_clock_for_stop() {
     let held = HELD_CLOCKS.with(|held| held.borrow().paused.is_some());
     if !held && clock_is_paused() {
