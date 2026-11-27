@@ -10080,7 +10080,10 @@ thread_local! {
 /// test sets in real time, calls it: its rigs' exchanges would otherwise hold
 /// the clock while their job threads work, and rigs that run side by side
 /// would hold it back from one another.
-#[cfg(feature = "service-profile-triggers-v1")]
+#[cfg(any(
+    feature = "service-profile-triggers-v1",
+    feature = "service-lighting-v1"
+))]
 fn keep_real_clock() {
     HELD_CLOCKS.with(|held| held.borrow_mut().real_clock = true);
 }

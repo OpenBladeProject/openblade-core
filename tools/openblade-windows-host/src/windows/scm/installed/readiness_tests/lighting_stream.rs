@@ -685,17 +685,27 @@ async fn the_tick_waits_for_a_frame_only_until_its_deadline() {
 }
 
 /// The effect starts at the new renderer's handshake (managed
-/// `effectStartedTimestamp`), before its first frame, and not when the
-/// request finished. The jobs run on the real clock here, so their instants
-/// compare with the Service's.
+/// `effectStartedTimestamp`): after the handshake's exchange was sent and
+/// before the request's first frame, not when the request finished. The
+/// Service and the jobs both run on the real clock here, as in production,
+/// so their instants compare.
 #[tokio::test]
 async fn the_effect_starts_at_the_handshake_before_its_first_frame() {
+    keep_real_clock();
     let rig = Rig::new(MemoryFiles::default());
     lit(&rig, [0x40, 1, 0]);
     rig.port.state.lock().unwrap().lighting_real_clock = true;
     assert_eq!(set(&rig, 1, SPECTRUM).await.0, 1);
     let (_, _, started) = due(&rig);
-    let first = rig.port.state.lock().unwrap().matrix_at[0];
+    let (handshake, first) = {
+        let state = rig.port.state.lock().unwrap();
+        let (sent, _) = state.matrix_frames[0];
+        (state.sent_at[sent - 1], state.matrix_at[0])
+    };
+    assert!(
+        handshake <= started,
+        "started before the handshake was sent"
+    );
     assert!(
         started <= first,
         "started {:?} after the first frame",
