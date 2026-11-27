@@ -211,6 +211,17 @@ feature and the marker. See
 for the managed inventory, the omissions and deviations, and the parity
 vectors.
 
+The `agent-power-mode-automation-v1` build (marker
+`session-power-mode-automation-v1`) adds managed power-mode automation: each
+confirmed performance preset sets the user's Windows power mode for the
+current supply from the profile set's association, with one retry. The
+`agent-session-power-relay-v1` build (marker `session-power-relay-v1`)
+reports each session suspend and resume to the Service, as the managed relay
+does, within the managed 1.5 s budget. Both package readers refuse both
+features and both markers. See
+[Native Agent power-mode automation](../docs/windows-native-agent-power-mode-automation.md)
+and [Native Agent session power relay](../docs/windows-native-agent-session-power-relay.md).
+
 Current HDR output mode, complete snapshot parity, and native display behavior
 need separate evidence before replacement. Live refresh still needs authorized
 validation of the exact packet on the active console, fresh power/session and
