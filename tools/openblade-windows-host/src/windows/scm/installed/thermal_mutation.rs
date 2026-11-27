@@ -77,7 +77,10 @@ impl std::error::Error for CompetingController {}
 pub(super) fn competing_controller() -> io::Error {
     io::Error::new(io::ErrorKind::PermissionDenied, CompetingController)
 }
-#[cfg(feature = "service-profile-triggers-v1")]
+#[cfg(any(
+    feature = "service-profile-triggers-v1",
+    feature = "service-lighting-v1"
+))]
 pub(super) fn is_competing_controller(error: &io::Error) -> bool {
     error
         .get_ref()
@@ -151,6 +154,8 @@ mod keyboard;
 mod lighting;
 #[cfg(feature = "service-lighting-v1")]
 pub(super) use lighting::{LightingRequest, logo_wire};
+#[cfg(all(feature = "service-lighting-v1", feature = "service-profiles-v1"))]
+pub(super) use lighting::{StepRequest, step_lifetime};
 #[cfg(feature = "service-keyboard-driver-mode-v1")]
 #[path = "low_power_cleanup.rs"]
 mod low_power;
@@ -213,6 +218,14 @@ pub(super) trait Fresh: Send + Sync {
         Ok(())
     }
     fn authorize(&self) -> Option<ReadAdmission>;
+    /// One animated stream frame's admission (`Runtime::stream_frame`):
+    /// every check of `authorize` but the competing-controller inventory,
+    /// whose fresh reading the origin tick confirms instead. `None`, the
+    /// default, admits no frame.
+    #[cfg(feature = "service-lighting-v1")]
+    fn authorize_frame(&self) -> Option<ReadAdmission> {
+        None
+    }
     /// Whether storing request intent is admitted now: every check of
     /// `authorize` except the lifecycle epoch, so the low-power gate does not
     /// refuse it (`WindowsGuard::authorize_storage`). It admits no read or
@@ -300,6 +313,10 @@ type NoticeAge = Box<dyn Fn(i64) -> Option<std::time::Duration>>;
 type CleanupFactory =
     Box<dyn Fn(Arc<dyn ReadCustody>, CleanupScope) -> io::Result<Arc<dyn Cleanup>>>;
 impl Fresh for WindowsGuard {
+    #[cfg(feature = "service-lighting-v1")]
+    fn authorize_frame(&self) -> Option<ReadAdmission> {
+        self.authorize_frame()
+    }
     fn capture_settle(
         &self,
         sid: &str,
@@ -900,6 +917,13 @@ impl Runtime {
     }
     #[cfg(not(test))]
     pub(super) fn native(origin: Arc<Origin>, mailbox: &MailboxSource) -> Self {
+        let runtime = Self::native_parts(origin, mailbox);
+        #[cfg(all(windows, feature = "service-lighting-v1"))]
+        runtime.compose_matrix_stream(crate::discovery::performance::native_matrix_stream());
+        runtime
+    }
+    #[cfg(not(test))]
+    fn native_parts(origin: Arc<Origin>, mailbox: &MailboxSource) -> Self {
         let stores = RefCell::new(None::<(String, Arc<Storage>)>);
         #[cfg(any(
             feature = "service-profile-triggers-v1",

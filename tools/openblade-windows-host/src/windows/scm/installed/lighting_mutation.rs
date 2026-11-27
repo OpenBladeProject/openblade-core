@@ -1,8 +1,12 @@
-//! Managed `SetLightingOverrideAsync` on exact RZ09-0581, slices L1 and L2:
+//! Managed `SetLightingOverrideAsync` on exact RZ09-0581, slices L1 to L3:
 //! the keyboard Off and the logo modes through the reviewed brightness and
-//! logo commands, and the Static effect through the Service-owned matrix
-//! renderer (`LightingJob`), under the operation gate, with the renderer's
-//! keepalive on the origin tick (`Runtime::maintain_lighting`).
+//! logo commands, and the Static and streamed effects through the
+//! Service-owned matrix renderer (`LightingJob`), under the operation gate.
+//! A Static renderer's keepalive runs on the origin tick
+//! (`Runtime::maintain_lighting`); an animated renderer's frames run on the
+//! stream task (`Runtime::run_lighting_stream`), with its clean controller
+//! reading from the origin tick. `stepKeyboardBrightness` and
+//! `setLightingRefreshRate` are in `lighting_controls.rs`.
 //!
 //! The order is managed `ExecuteScopedMutationAsync`'s (ServiceControlRuntime.cs
 //! 14868-15060) for the Lighting subsystem:
@@ -38,10 +42,10 @@
 //!
 //! Interim divergences, each named by a test:
 //!
-//! - Capabilities admit Off and Static, with every logo mode; an animated
-//!   effect is stored and then refused as managed refuses an effect its
-//!   capability table lacks, until slice C
-//!   (`animated_effects_are_refused_until_slice_c_divergence`).
+//! - Capabilities admit Off, Static and the streamed effects, with every
+//!   logo mode; Reactive, Ripple and the host-input effects are stored and
+//!   then refused as managed refuses an effect its capability table lacks
+//!   (`deferred_effects_are_refused_by_the_table_divergence`).
 //! - Clearing the override on a classified adapter stores the clear, applies
 //!   no profile lighting and replies Stored, `CLEARED_UNAPPLIED`: managed
 //!   applies the profile's lighting there (ControlCoordinator.cs
@@ -75,21 +79,27 @@ use super::{
 };
 use crate::{
     discovery::performance::{
-        LightingConfirmation, LightingJob, LightingOutcome, LightingTarget, MatrixState,
-        ObservedPerformance, ReadAdmission, RenderTarget, Renderer, Rgb, lighting_approved,
+        Animation, ColorMode, Effect, LightingConfirmation, LightingJob, LightingOutcome,
+        LightingTarget, MatrixState, MatrixStream, ObservedPerformance, Random, ReadAdmission,
+        RefreshRate, RenderTarget, Renderer, Rgb, SystemRandom, Unwritten, lighting_approved,
         mutation::{Permit, Settlement},
+        stream_report,
     },
     service_status::LightingOverride,
 };
 use openblade_domain::{
     automation::UNCLASSIFIED_EXTERNAL,
-    profile_set::{LightingEffect, LightingParameters, LightingSettings},
+    profile_set::{
+        ColorMode as WireColorMode, Direction, LightingDuration, LightingEffect,
+        LightingParameters, LightingSettings, RgbColor,
+    },
     thermal_mutation::{Destination, Progress},
 };
 use openblade_protocol::lighting::{LogoMode, percent_to_raw};
 use std::{
-    cell::{Cell, RefCell},
+    cell::{Cell, OnceCell, RefCell},
     io,
+    rc::Rc,
     sync::{Arc, Mutex, atomic::AtomicBool},
     time::Duration,
 };
@@ -174,17 +184,34 @@ pub(super) struct Session {
     /// The 00/86 layout byte this session read: managed reads it once per
     /// port session, before the first lit write.
     layout: Cell<Option<u8>>,
-    /// The Static renderer this process owns, which the origin tick keeps
-    /// alive (`Runtime::maintain_lighting`).
+    /// The renderer this process owns: a Static one, which the origin tick
+    /// keeps alive (`Runtime::maintain_lighting`), or an animated one, which
+    /// the stream draws (`Runtime::stream_frame`).
     owner: RefCell<Option<Owner>>,
+    /// The animated matrix stream (`MatrixStream`). Unset, as in a
+    /// composition without one, refuses every animated effect as one the
+    /// capability table does not admit.
+    stream: OnceCell<Rc<dyn MatrixStream>>,
+    /// The refresh rate the animated cadence follows (managed
+    /// `LightingRefreshRate`), as the saved preferences last read it.
+    rate: Cell<RefreshRate>,
+    /// The raw brightness the last step set (managed
+    /// `lastKnownBrightnessRaw`). Any other lighting job clears it, so the
+    /// next step reads 03/83 again.
+    raw: Cell<Option<u8>>,
+    /// Wakes the stream loop for a new animated renderer or cadence.
+    wake: tokio::sync::Notify,
+    /// A test's palette selector in place of `SystemRandom`.
+    #[cfg(test)]
+    random: RefCell<Option<RandomSource>>,
     /// A test withholds the semantic admission from this session's
     /// requests (`approved`).
     #[cfg(test)]
     withheld: Cell<bool>,
 }
 
-/// An owned renderer, the request whose admission its keepalive frames
-/// take, and when the next frame is due.
+/// An owned renderer, the request whose admission its frames take, and
+/// when the next keepalive frame is due.
 struct Owner {
     renderer: Renderer,
     sid: String,
@@ -192,6 +219,56 @@ struct Owner {
     due: Instant,
     /// The low-power generation it was drawn under (`Runtime::lighting_boundary`).
     boundary: Option<u64>,
+    /// An animated renderer's stream; `None` for Static.
+    stream: Option<Stream>,
+}
+
+/// Managed `RunStreamAsync`'s state for one animated renderer.
+struct Stream {
+    animation: Animation,
+    /// When the effect started (managed `effectStartedTimestamp`).
+    started: Instant,
+    /// The next frame's deadline, in ticks since `started`.
+    next: i64,
+    /// The latest admission that confirmed a clean controller reading: the
+    /// request that started the stream, then each origin tick's capture.
+    clean: Option<Clean>,
+}
+
+/// One clean reading: when it was taken, its admission and the Windows
+/// power generation then.
+struct Clean {
+    at: Instant,
+    fresh: Arc<dyn Fresh>,
+    generation: Option<u64>,
+}
+
+impl Clean {
+    fn new(fresh: Arc<dyn Fresh>, at: Instant) -> Self {
+        let generation = fresh.power_generation();
+        Self {
+            at,
+            fresh,
+            generation,
+        }
+    }
+}
+
+/// How old the latest clean controller reading may be when a stream frame
+/// is written: two origin ticks. An older one writes nothing until the next
+/// tick confirms a fresh one (`Runtime::stream_frame`).
+pub(in super::super) const CLEAN_READING_AGE: Duration = Duration::from_secs(1);
+/// The bound on one stream frame, from its render to its completion.
+const FRAME_BUDGET: Duration = Duration::from_millis(500);
+
+/// The ticks from `started` to `now`.
+fn ticks(started: Instant, now: Instant) -> i64 {
+    i64::try_from(now.saturating_duration_since(started).as_nanos() / 100).unwrap_or(i64::MAX)
+}
+
+/// The instant `ticks` after `started`.
+fn at_ticks(started: Instant, ticks: i64) -> Instant {
+    started + Duration::from_nanos(u64::try_from(ticks).unwrap_or(0).saturating_mul(100))
 }
 
 impl Session {
@@ -209,10 +286,26 @@ impl Session {
         self.owner.borrow().as_ref().map(|owner| owner.renderer)
     }
 
-    /// Ends the renderer without a write: no further keepalive frame is
-    /// sent, and the next Static request starts a new one.
+    /// Ends the renderer without a write: no further keepalive or stream
+    /// frame is sent, the stream's collection closes, and the next lit
+    /// request starts a new renderer.
     fn retire(&self) {
-        self.owner.replace(None);
+        let animated = self
+            .owner
+            .replace(None)
+            .is_some_and(|owner| owner.stream.is_some());
+        if animated && let Some(stream) = self.stream.get() {
+            stream.retire();
+        }
+    }
+
+    /// The palette selector a new animation draws from.
+    fn random(&self) -> Box<dyn Random> {
+        #[cfg(test)]
+        if let Some(random) = self.random.borrow().as_ref() {
+            return random();
+        }
+        Box::new(SystemRandom)
     }
 
     fn latched(&self) -> bool {
@@ -249,27 +342,50 @@ impl Session {
 
     /// The renderer a render job left (`LightingJob::matrix`): a new one
     /// owned by this request from now, the same one kept for this request's
-    /// user, or none.
+    /// user, or none. An animated renderer's stream starts from its first
+    /// frame, with this request's fresh admission as its first clean
+    /// reading, and continues a retained one's phase.
     fn render(
         &self,
         job: &LightingJob,
-        sid: &str,
-        session: u32,
+        fresh: &Arc<dyn Fresh>,
+        caller: (&str, u32),
         boundary: Option<u64>,
         now: Instant,
     ) {
+        let (sid, session) = caller;
         if let Some(layout) = job.layout() {
             self.layout.set(Some(layout));
         }
         match job.matrix() {
             MatrixState::Owned(renderer) => {
+                let stream = renderer.effect.animated().then(|| {
+                    job.take_animation().map(|animation| Stream {
+                        animation,
+                        started: now,
+                        next: renderer.effect.next_delay(0, self.rate.get()),
+                        clean: Some(Clean::new(fresh.clone(), now)),
+                    })
+                });
+                // An animated renderer whose animation is gone has nothing
+                // to draw: nothing owns what its first frame left.
+                let Some(stream) = stream.map_or(Some(None), |stream| stream.map(Some)) else {
+                    self.retire();
+                    return;
+                };
+                let animated = stream.is_some();
+                self.retire();
                 self.owner.replace(Some(Owner {
                     renderer,
                     sid: sid.into(),
                     session,
                     due: now + KEEPALIVE_INTERVAL,
                     boundary,
+                    stream,
                 }));
+                if animated {
+                    self.wake.notify_one();
+                }
             }
             MatrixState::Lost => self.retire(),
             MatrixState::Kept => {
@@ -278,6 +394,9 @@ impl Session {
                 {
                     owner.sid = sid.into();
                     owner.session = session;
+                    if let Some(stream) = owner.stream.as_mut() {
+                        stream.clean = Some(Clean::new(fresh.clone(), now));
+                    }
                 }
             }
         }
@@ -365,6 +484,11 @@ struct LightingPermit {
     job: LightingJob,
     admission: Mutex<Option<Admission>>,
     fatal: Arc<Mutex<Option<&'static str>>>,
+    /// A brightness step's power admission, which stores nothing and
+    /// resolves the desired lighting at the job's class instead
+    /// (`controls::StepState`).
+    #[cfg(feature = "service-profiles-v1")]
+    step: Option<controls::StepState>,
 }
 impl LightingPermit {
     /// Managed `CanAdmitUnclassifiedExternalControl(Lighting)`
@@ -416,6 +540,14 @@ impl LightingPermit {
         if let Err(error) = observed {
             remember_failure(&self.fatal, &error);
             return Admission::Refused(Outcome::blocked(ADMISSION));
+        }
+        #[cfg(feature = "service-profiles-v1")]
+        if let Some(step) = &self.step {
+            let desired = controls::desired_lighting(&self.storage, &step.application, power).ok();
+            if let Ok(mut slot) = step.desired.lock() {
+                *slot = desired;
+            }
+            return Admission::Stored(power);
         }
         match self.storage.save_lighting(self.value.as_ref(), power) {
             Ok(()) => Admission::Stored(power),
@@ -472,6 +604,9 @@ impl Permit for LightingPermit {
     fn store_lighting(&self, power: i32, performance: Option<ObservedPerformance>) -> bool {
         let admission = self.store(power, performance);
         let stored = matches!(admission, Admission::Stored(_));
+        // A step reads and writes no lighting unless the desired lighting is lit.
+        #[cfg(feature = "service-profiles-v1")]
+        let stored = stored && self.step.as_ref().is_none_or(controls::StepState::lit);
         match self.admission.lock() {
             Ok(mut slot) => *slot = Some(admission),
             Err(_) => return false,
@@ -534,18 +669,140 @@ fn rejected(error: &io::Error) -> Outcome {
 enum Request {
     /// The keyboard Off (well-formedness makes it black at zero brightness).
     Off(LightingTarget),
-    /// The Static effect at this raw brightness, logo mode and color.
-    Static {
+    /// A lit effect at this raw brightness, logo mode and settings color.
+    Lit {
         brightness: u8,
         logo: Option<LogoMode>,
+        effect: Effect,
         color: Rgb,
     },
 }
 
+fn rgb(color: &RgbColor) -> Rgb {
+    Rgb {
+        red: color.red,
+        green: color.green,
+        blue: color.blue,
+    }
+}
+
+/// Managed `StarlightDuration`, in ticks.
+fn starlight(duration: LightingDuration) -> Option<i64> {
+    Some(match duration {
+        LightingDuration::SHORT => 5_000_000,
+        LightingDuration::MEDIUM => 15_000_000,
+        LightingDuration::LONG => 20_000_000,
+        _ => return None,
+    })
+}
+
+/// Managed `ProductionLightingPort.CreateEffect` for the effects this slice
+/// draws: the effect the parameters name, with each mode's required colors,
+/// and the legacy Spectrum and Breathing settings without parameters.
+/// Static without parameters stays refused before any write (slice L2).
+fn effect(settings: &LightingSettings) -> Option<Effect> {
+    use LightingParameters as P;
+    let mode = |mode: WireColorMode| match mode {
+        WireColorMode::SINGLE => Some(ColorMode::Single),
+        WireColorMode::DUAL => Some(ColorMode::Dual),
+        WireColorMode::RANDOM => Some(ColorMode::Random),
+        _ => None,
+    };
+    // Each mode's colors: Single needs the primary and Dual both; Random
+    // keeps neither (managed's `default`).
+    let colors = |mode: ColorMode, primary: &Option<RgbColor>, secondary: &Option<RgbColor>| {
+        let primary = primary.as_ref().map(rgb);
+        let secondary = secondary.as_ref().map(rgb);
+        match mode {
+            ColorMode::Single => Some((Some(primary?), None)),
+            ColorMode::Dual => Some((Some(primary?), Some(secondary?))),
+            ColorMode::Random => Some((None, None)),
+        }
+    };
+    Some(match (&settings.parameters, settings.effect) {
+        (Some(P::Static { .. }), _) => Effect::Static,
+        (Some(P::SpectrumCycling), _) | (None, LightingEffect::SPECTRUM) => Effect::Spectrum,
+        (
+            Some(P::Breathing {
+                color_mode,
+                primary_color,
+                secondary_color,
+            }),
+            _,
+        ) => {
+            let mode = mode(*color_mode)?;
+            let (primary, secondary) = colors(mode, primary_color, secondary_color)?;
+            Effect::Breathing {
+                mode,
+                primary,
+                secondary,
+            }
+        }
+        (None, LightingEffect::BREATHING) => Effect::Breathing {
+            mode: ColorMode::Single,
+            primary: Some(rgb(&settings.color)),
+            secondary: None,
+        },
+        (Some(P::Fire), LightingEffect::FIRE) => Effect::Fire,
+        (
+            Some(P::Tidal {
+                primary_color,
+                secondary_color,
+                random_colors,
+                direction,
+            }),
+            _,
+        ) => Effect::Tidal {
+            primary: rgb(primary_color),
+            secondary: rgb(secondary_color),
+            random: *random_colors,
+            rightward: rightward(*direction)?,
+        },
+        (
+            Some(P::Starlight {
+                color_mode,
+                primary_color,
+                secondary_color,
+                duration,
+            }),
+            _,
+        ) => {
+            let mode = mode(*color_mode)?;
+            let (primary, secondary) = colors(mode, primary_color, secondary_color)?;
+            Effect::Starlight {
+                mode,
+                primary,
+                secondary,
+                duration: starlight(*duration)?,
+            }
+        }
+        (Some(P::Wave { direction }), _) => Effect::Wave {
+            rightward: rightward(*direction)?,
+        },
+        // Managed `LightingRotationDirection`: Clockwise 0, Counterclockwise 1.
+        (Some(P::Wheel { direction }), _) => Effect::Wheel {
+            counterclockwise: rightward(*direction)?,
+        },
+        _ => return None,
+    })
+}
+
+/// The second of a two-valued direction: Rightward, or Counterclockwise.
+fn rightward(direction: Direction) -> Option<bool> {
+    match direction {
+        Direction::FIRST => Some(false),
+        Direction::SECOND => Some(true),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+type RandomSource = Box<dyn Fn() -> Box<dyn Random>>;
+
 /// The request `settings` makes, `None` when the verified capability table
 /// does not admit it or the pinned semantic admission is not `approved`
-/// (`lighting_approved`). The managed table admits Off and Static with every
-/// logo mode; the animated effects wait for slice C. A Static request
+/// (`lighting_approved`). The table admits Off, Static and the streamed effects
+/// with every logo mode (managed `CreateEffect`, `effect`). A Static request
 /// carries its color in its parameters (managed `CreateEffect`), which
 /// well-formedness makes the settings color; a legacy request without
 /// parameters is refused before any write, where managed refuses it inside
@@ -561,24 +818,24 @@ fn target(settings: &LightingSettings, approved: bool) -> Option<Request> {
         Some(2) => Some(LogoMode::Off),
         Some(_) => return None,
     };
-    match (settings.effect, &settings.parameters) {
-        (LightingEffect::OFF, _) => Some(Request::Off(LightingTarget {
+    if settings.effect == LightingEffect::OFF {
+        return Some(Request::Off(LightingTarget {
             brightness: 0,
             logo,
-        })),
-        (LightingEffect::STATIC, Some(LightingParameters::Static { color })) => {
-            Some(Request::Static {
-                brightness: percent_to_raw(settings.brightness).filter(|&raw| raw != 0)?,
-                logo,
-                color: Rgb {
-                    red: color.red,
-                    green: color.green,
-                    blue: color.blue,
-                },
-            })
-        }
-        _ => None,
+        }));
     }
+    let effect = effect(settings)?;
+    let color = match (effect, &settings.parameters) {
+        (Effect::Static, Some(LightingParameters::Static { color })) => rgb(color),
+        (Effect::Static, _) => return None,
+        _ => rgb(&settings.color),
+    };
+    Some(Request::Lit {
+        brightness: percent_to_raw(settings.brightness).filter(|&raw| raw != 0)?,
+        logo,
+        effect,
+        color,
+    })
 }
 
 /// Managed `LogoLightingMode`'s wire value.
@@ -642,6 +899,9 @@ fn reply(job: &LightingJob) -> Outcome {
         // Managed `AppliedWithoutReadback`: the lit keyboard reports no
         // state, so the setter readbacks are the completion evidence.
         LightingOutcome::Rendered => applied(RENDERED),
+        // The step composes its own reply from the raw it set (managed
+        // `StepKeyboardBrightnessAsync`); this is its setter completion.
+        LightingOutcome::Stepped => applied(RENDERED),
         LightingOutcome::Unavailable => not_applied(MATRIX_UNAVAILABLE),
         // A store-only job for a value outside the capability table; a
         // clear gets its own reply (`stored_clear`).
@@ -713,7 +973,7 @@ impl Runtime {
             Err(error) if is_fatal_admission(&error) => return Err(error),
             Err(error) => return Ok(Lit::refused(unavailable(&error))),
         }
-        let request = value
+        let mut request = value
             .as_ref()
             .and_then(|value| target(&value.settings, self.lighting.approved()));
         // A renderer drawn before a low-power boundary is not retained: the
@@ -723,21 +983,47 @@ impl Runtime {
         }
         let boundary = self.lighting_boundary();
         let lighting = &self.lighting;
+        #[cfg(feature = "service-profiles-v1")]
+        if let Some(rate) = storage.lighting_refresh_rate().ok().flatten() {
+            lighting.rate.set(rate);
+        }
+        // An animated effect draws its first frame from its own animation,
+        // and needs the stream to continue it; without either the request
+        // is one the capability table does not admit.
+        let mut animation = None;
+        if let Some(Request::Lit { effect, color, .. }) = request
+            && effect.animated()
+        {
+            animation = lighting
+                .stream
+                .get()
+                .and_then(|_| Animation::new(effect, color, lighting.random()));
+            if animation.is_none() {
+                request = None;
+            }
+        }
+        lighting.raw.set(None);
         let job = match request {
             Some(Request::Off(target)) => LightingJob::write(target),
-            Some(Request::Static {
+            Some(Request::Lit {
                 brightness,
                 logo,
+                effect,
                 color,
-            }) => LightingJob::render(RenderTarget {
-                brightness,
-                logo,
-                color,
-                layout: lighting.layout.get(),
-                previous: lighting.renderer(),
-            }),
+            }) => LightingJob::render(
+                RenderTarget {
+                    brightness,
+                    logo,
+                    effect,
+                    color,
+                    layout: lighting.layout.get(),
+                    previous: lighting.renderer(),
+                },
+                animation,
+            ),
             None => LightingJob::store(),
         };
+        let admitted = fresh.clone();
         // A write job holds the session until its outcome is read, so a
         // request dropped meanwhile latches the doubt.
         let claim = request.is_some().then(|| lighting.claim());
@@ -750,6 +1036,8 @@ impl Runtime {
             job,
             admission: Mutex::new(None),
             fatal: self.fatal.clone(),
+            #[cfg(feature = "service-profiles-v1")]
+            step: None,
         });
         let result = reader.mutate(permit.clone(), deadline).await;
         verify_retained_failure(&self.fatal)?;
@@ -759,11 +1047,24 @@ impl Runtime {
             return Err(error);
         }
         let lit = permit.finish();
+        // Managed `TryPersistRememberedLightingIntentAsync` after an applied
+        // or unchanged lighting intent: the override just stored is the
+        // desired lighting at the job's power class. A clear applies nothing.
+        #[cfg(feature = "service-profiles-v1")]
+        if lit.outcome.status == APPLIED
+            && let Some(value) = permit.value.as_ref()
+        {
+            controls::remember_lighting(&permit.storage, &value.settings);
+        }
         match request {
             Some(Request::Off(_)) if retires_renderer(permit.job.outcome()) => lighting.retire(),
-            Some(Request::Static { .. }) => {
-                lighting.render(&permit.job, &sid, caller.session, boundary, Instant::now())
-            }
+            Some(Request::Lit { .. }) => lighting.render(
+                &permit.job,
+                &admitted,
+                (&sid, caller.session),
+                boundary,
+                Instant::now(),
+            ),
             _ => {}
         }
         if let Some(claim) = claim {
@@ -794,6 +1095,8 @@ impl Runtime {
             job: LightingJob::resolution(),
             admission: Mutex::new(None),
             fatal: self.fatal.clone(),
+            #[cfg(feature = "service-profiles-v1")]
+            step: None,
         });
         let result = reader.mutate(permit.clone(), deadline).await;
         verify_retained_failure(&self.fatal)?;
@@ -847,20 +1150,28 @@ impl Runtime {
             return Ok(());
         }
         let lighting = &self.lighting;
-        let Some((renderer, sid, session, due)) = lighting
-            .owner
-            .borrow()
-            .as_ref()
-            .map(|owner| (owner.renderer, owner.sid.clone(), owner.session, owner.due))
+        let Some((renderer, sid, session, due, animated)) =
+            lighting.owner.borrow().as_ref().map(|owner| {
+                (
+                    owner.renderer,
+                    owner.sid.clone(),
+                    owner.session,
+                    owner.due,
+                    owner.stream.is_some(),
+                )
+            })
         else {
             return Ok(());
         };
-        if now < due {
-            return Ok(());
-        }
         let MailboxSource::Reader(reader) = mailbox else {
             return Ok(());
         };
+        if animated {
+            return self.confirm_stream_clean(reader, &sid, session, now);
+        }
+        if now < due {
+            return Ok(());
+        }
         verify_retained_failure(&self.fatal)?;
         // The tick's instant on its own clock, after what this step took.
         let observed = || now + started.elapsed();
@@ -884,6 +1195,8 @@ impl Runtime {
             job: LightingJob::keepalive(renderer),
             admission: Mutex::new(None),
             fatal: self.fatal.clone(),
+            #[cfg(feature = "service-profiles-v1")]
+            step: None,
         });
         let result = reader
             .mutate(permit.clone(), Instant::now() + KEEPALIVE_BUDGET)
@@ -900,6 +1213,177 @@ impl Runtime {
             lighting.defer(advance(due, observed()));
         }
         Ok(())
+    }
+
+    /// The origin tick's step for an animated renderer: one full capture and
+    /// write authorization of the owning request's admission, the
+    /// competing-controller inventory included, whose success is the
+    /// stream's clean reading at `now`
+    /// (`CLEAN_READING_AGE`). A competing controller retires the renderer
+    /// without a write, as managed's controller refresh relinquishes
+    /// lighting; any other refusal leaves no clean reading, so the stream
+    /// writes nothing until a later tick confirms one. Only fatal admission
+    /// evidence is an error.
+    fn confirm_stream_clean(
+        &self,
+        reader: &super::super::mailbox_read::ReadSource,
+        sid: &str,
+        session: u32,
+        now: Instant,
+    ) -> io::Result<()> {
+        verify_retained_failure(&self.fatal)?;
+        reader.custody().verify_integrity()?;
+        let clean = match self.capture(sid, session, reader.custody()) {
+            Ok((_, fresh)) => {
+                fresh.verify_health()?;
+                // The complete write admission, the controller inventory
+                // included, is what makes the reading clean.
+                fresh.authorize().is_some().then(|| Clean::new(fresh, now))
+            }
+            Err(error) if is_fatal_admission(&error) => return Err(error),
+            Err(error) if super::is_competing_controller(&error) => {
+                self.lighting.retire();
+                return Ok(());
+            }
+            Err(_) => None,
+        };
+        if let Some(stream) = self
+            .lighting
+            .owner
+            .borrow_mut()
+            .as_mut()
+            .and_then(|owner| owner.stream.as_mut())
+        {
+            stream.clean = clean;
+        }
+        Ok(())
+    }
+
+    /// One frame of the animated renderer at `now`, from the stream loop
+    /// (`run_lighting_stream`), and when the next is due; `None` when no
+    /// animated renderer is owned. Managed `RunStreamAsync`: the frame is the
+    /// animation at the time elapsed since the effect started, and the next
+    /// deadline advances from the instant observed after the write
+    /// (`Effect::advance`). Each frame, before anything is sent:
+    ///
+    /// - takes the operation gate without waiting: while a request or the
+    ///   origin tick holds it, the frame is skipped and retried one interval
+    ///   later, a visible pause;
+    /// - ends the renderer without a write at a low-power boundary
+    ///   (`crossed_low_power`), and sends nothing while the doubt is
+    ///   latched;
+    /// - needs a clean controller reading no older than `CLEAN_READING_AGE`
+    ///   from the origin tick, and otherwise writes nothing;
+    /// - takes that reading's admission for a frame (`Fresh::authorize_frame`:
+    ///   every check of a write's but the controller inventory) at the same
+    ///   Windows power generation.
+    ///
+    /// A frame refused before submission ends the renderer and the stream;
+    /// one that may have been submitted without completing also latches the
+    /// doubt. Only fatal admission evidence is an
+    /// error.
+    pub(in super::super) async fn stream_frame(&self, now: Instant) -> io::Result<Option<Instant>> {
+        let started = Instant::now();
+        let lighting = &self.lighting;
+        let interval =
+            Duration::from_nanos(u64::try_from(lighting.rate.get().interval()).unwrap_or(0) * 100);
+        let Ok(_serial) = self.gate.try_lock() else {
+            return Ok(lighting
+                .owner
+                .borrow()
+                .as_ref()
+                .filter(|owner| owner.stream.is_some())
+                .map(|_| now + interval));
+        };
+        verify_retained_failure(&self.fatal)?;
+        if self.crossed_low_power() {
+            self.retire_renderer();
+            return Ok(None);
+        }
+        let Some(port) = lighting.stream.get().cloned() else {
+            return Ok(None);
+        };
+        if lighting.latched() {
+            return Ok(None);
+        }
+        let rate = lighting.rate.get();
+        let observed = |stream: &Stream| ticks(stream.started, now + started.elapsed());
+        // Render under the borrow; the frame is written after it ends.
+        let report = {
+            let mut guard = lighting.owner.borrow_mut();
+            let Some(owner) = guard.as_mut() else {
+                return Ok(None);
+            };
+            let layout = owner.renderer.layout;
+            let effect = owner.renderer.effect;
+            let Some(stream) = owner.stream.as_mut() else {
+                return Ok(None);
+            };
+            let due = at_ticks(stream.started, stream.next);
+            if now < due {
+                return Ok(Some(due));
+            }
+            let admitted = stream.clean.as_ref().is_some_and(|clean| {
+                now.saturating_duration_since(clean.at) <= CLEAN_READING_AGE
+                    && clean.fresh.authorize_frame().is_some()
+                    && clean.fresh.power_generation() == clean.generation
+            });
+            if !admitted {
+                stream.next = effect.advance(stream.next, observed(stream), rate);
+                return Ok(Some(at_ticks(stream.started, stream.next)));
+            }
+            let elapsed = ticks(stream.started, now);
+            match stream_report(&mut stream.animation, layout, elapsed) {
+                Some(report) => report,
+                // The effect drew nothing (a failed random source): nothing
+                // was sent, and nothing more will be drawn.
+                None => {
+                    drop(guard);
+                    lighting.retire();
+                    return Ok(None);
+                }
+            }
+        };
+        let claim = lighting.claim();
+        let written = port.frame(report, Instant::now() + FRAME_BUDGET).await;
+        verify_retained_failure(&self.fatal)?;
+        claim.settle(matches!(written, Err(Unwritten::InDoubt)));
+        if written.is_err() {
+            // A frame refused before submission ends the stream as one that
+            // may have been submitted does (which `settle` latched): the
+            // next request draws anew.
+            lighting.retire();
+            return Ok(None);
+        }
+        let mut owner = lighting.owner.borrow_mut();
+        let Some(stream) = owner.as_mut().and_then(|owner| {
+            owner
+                .stream
+                .as_mut()
+                .map(|stream| (owner.renderer.effect, stream))
+        }) else {
+            return Ok(None);
+        };
+        let (effect, stream) = stream;
+        stream.next = effect.advance(stream.next, observed(stream), rate);
+        Ok(Some(at_ticks(stream.started, stream.next)))
+    }
+
+    /// The stream loop: one frame at each deadline `stream_frame` returns,
+    /// and otherwise waits for a new animated renderer or cadence. It ends
+    /// only with fatal admission evidence.
+    pub(in super::super) async fn run_lighting_stream(&self) -> io::Result<()> {
+        loop {
+            match self.stream_frame(Instant::now()).await? {
+                Some(at) => {
+                    tokio::select! {
+                        () = tokio::time::sleep_until(at) => {}
+                        () = self.lighting.wake.notified() => {}
+                    }
+                }
+                None => self.lighting.wake.notified().await,
+            }
+        }
     }
 
     /// Ends the owned renderer without a write, at Stop (managed's port
@@ -960,8 +1444,54 @@ impl Runtime {
     }
 }
 
+impl Runtime {
+    /// Composes the animated matrix stream (`Session::stream`); it may be
+    /// set once.
+    pub(in super::super) fn compose_matrix_stream(&self, stream: Rc<dyn MatrixStream>) {
+        assert!(self.lighting.stream.set(stream).is_ok());
+    }
+}
+
 #[cfg(test)]
 impl Runtime {
+    /// Draws every later animation's palette from `random` (`Session::random`).
+    pub(in super::super) fn script_lighting_random(
+        &self,
+        random: impl Fn() -> Box<dyn Random> + 'static,
+    ) {
+        self.lighting.random.replace(Some(Box::new(random)));
+    }
+
+    /// The animated stream's next deadline, the effect it draws and when the
+    /// effect started.
+    pub(in super::super) fn stream_due_for_tests(&self) -> Option<(Instant, Effect, Instant)> {
+        let owner = self.lighting.owner.borrow();
+        let owner = owner.as_ref()?;
+        let stream = owner.stream.as_ref()?;
+        Some((
+            at_ticks(stream.started, stream.next),
+            owner.renderer.effect,
+            stream.started,
+        ))
+    }
+
+    /// Holds the operation gate, as a request or the origin tick in flight
+    /// does.
+    pub(in super::super) fn hold_lighting_gate_for_tests(&self) -> tokio::sync::MutexGuard<'_, ()> {
+        self.gate.try_lock().unwrap()
+    }
+
+    /// Whether the lighting doubt is latched.
+    pub(in super::super) fn lighting_latched_for_tests(&self) -> bool {
+        self.lighting.latched()
+    }
+
+    /// The refresh rate the stream's cadence follows.
+    #[cfg(feature = "service-profiles-v1")]
+    pub(in super::super) fn lighting_rate_for_tests(&self) -> RefreshRate {
+        self.lighting.rate.get()
+    }
+
     /// When the owned renderer's next keepalive frame is due.
     pub(in super::super) fn keepalive_due_for_tests(&self) -> Option<Instant> {
         self.lighting.owner.borrow().as_ref().map(|owner| owner.due)
@@ -1028,6 +1558,12 @@ fn store_deferred(
     })
 }
 
+#[cfg(feature = "service-profiles-v1")]
+#[path = "lighting_controls.rs"]
+mod controls;
+#[cfg(feature = "service-profiles-v1")]
+pub(in super::super) use controls::{StepRequest, lifetime as step_lifetime};
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1041,7 +1577,7 @@ mod tests {
     }
 
     #[test]
-    fn the_table_admits_off_and_static_with_every_logo_mode_only() {
+    fn the_table_admits_off_static_and_the_streamed_effects_with_every_logo_mode() {
         assert_eq!(
             target(&off(None), true),
             Some(Request::Off(LightingTarget {
@@ -1075,9 +1611,10 @@ mod tests {
             assert_eq!(off.logo, Some(mode));
             assert_eq!(
                 target(&lit(Some(wire)), true),
-                Some(Request::Static {
+                Some(Request::Lit {
                     brightness: 0xc5,
                     logo: Some(mode),
+                    effect: Effect::Static,
                     color: Rgb {
                         red: 0x47,
                         green: 0xe1,
@@ -1087,18 +1624,168 @@ mod tests {
             );
             assert_eq!(logo_wire(mode), wire);
         }
-        // A legacy Static request without parameters, and the animated
-        // effects, which wait for slice C.
+        // A legacy Static request without parameters stays refused (L2).
         let mut legacy = lit(None);
         legacy.parameters = None;
         assert_eq!(target(&legacy, true), None);
-        let spectrum = LightingSettings::of(
-            LightingEffect::SPECTRUM,
-            RgbColor::default(),
-            50,
-            LightingParameters::SpectrumCycling,
+        // Managed `CreateEffect` for each streamed effect, and its refusals.
+        let red = RgbColor {
+            red: 200,
+            green: 1,
+            blue: 2,
+        };
+        let blue = RgbColor {
+            red: 3,
+            green: 4,
+            blue: 250,
+        };
+        let (r, b) = (rgb(&red), rgb(&blue));
+        let of = |effect, parameters| LightingSettings::of(effect, red, 50, parameters);
+        use LightingParameters as P;
+        let cases = [
+            (
+                of(LightingEffect::SPECTRUM, P::SpectrumCycling),
+                Some(Effect::Spectrum),
+            ),
+            (
+                of(
+                    LightingEffect::BREATHING,
+                    P::Breathing {
+                        color_mode: WireColorMode::DUAL,
+                        primary_color: Some(red),
+                        secondary_color: Some(blue),
+                    },
+                ),
+                Some(Effect::Breathing {
+                    mode: ColorMode::Dual,
+                    primary: Some(r),
+                    secondary: Some(b),
+                }),
+            ),
+            (
+                of(
+                    LightingEffect::BREATHING,
+                    P::Breathing {
+                        color_mode: WireColorMode::SINGLE,
+                        primary_color: None,
+                        secondary_color: None,
+                    },
+                ),
+                None,
+            ),
+            (
+                of(
+                    LightingEffect::BREATHING,
+                    P::Breathing {
+                        color_mode: WireColorMode::RANDOM,
+                        primary_color: Some(red),
+                        secondary_color: None,
+                    },
+                ),
+                Some(Effect::Breathing {
+                    mode: ColorMode::Random,
+                    primary: None,
+                    secondary: None,
+                }),
+            ),
+            (
+                of(
+                    LightingEffect::WAVE,
+                    P::Wave {
+                        direction: Direction::SECOND,
+                    },
+                ),
+                Some(Effect::Wave { rightward: true }),
+            ),
+            (
+                of(
+                    LightingEffect::WHEEL,
+                    P::Wheel {
+                        direction: Direction::FIRST,
+                    },
+                ),
+                Some(Effect::Wheel {
+                    counterclockwise: false,
+                }),
+            ),
+            (
+                of(
+                    LightingEffect::TIDAL,
+                    P::Tidal {
+                        primary_color: red,
+                        secondary_color: blue,
+                        random_colors: false,
+                        direction: Direction::FIRST,
+                    },
+                ),
+                Some(Effect::Tidal {
+                    primary: r,
+                    secondary: b,
+                    random: false,
+                    rightward: false,
+                }),
+            ),
+            (
+                of(
+                    LightingEffect::STARLIGHT,
+                    P::Starlight {
+                        color_mode: WireColorMode::SINGLE,
+                        primary_color: Some(blue),
+                        secondary_color: None,
+                        duration: LightingDuration::LONG,
+                    },
+                ),
+                Some(Effect::Starlight {
+                    mode: ColorMode::Single,
+                    primary: Some(b),
+                    secondary: None,
+                    duration: 20_000_000,
+                }),
+            ),
+            (of(LightingEffect::FIRE, P::Fire), Some(Effect::Fire)),
+            // Fire parameters under another effect, and the deferred effects.
+            (of(LightingEffect::STATIC, P::Fire), None),
+            (
+                of(
+                    LightingEffect::REACTIVE,
+                    P::Reactive {
+                        color: red,
+                        duration: LightingDuration::SHORT,
+                    },
+                ),
+                None,
+            ),
+            (of(LightingEffect::RIPPLE, P::Ripple { color: red }), None),
+        ];
+        for (settings, expected) in cases {
+            let request = target(&settings, true);
+            assert_eq!(
+                request,
+                expected.map(|effect| Request::Lit {
+                    brightness: 0x80,
+                    logo: None,
+                    effect,
+                    color: r,
+                }),
+                "{settings:?}"
+            );
+        }
+        // Managed's legacy Spectrum and Breathing without parameters.
+        let mut legacy = of(LightingEffect::BREATHING, P::SpectrumCycling);
+        legacy.parameters = None;
+        assert_eq!(
+            target(&legacy, true),
+            Some(Request::Lit {
+                brightness: 0x80,
+                logo: None,
+                effect: Effect::Breathing {
+                    mode: ColorMode::Single,
+                    primary: Some(r),
+                    secondary: None,
+                },
+                color: r,
+            })
         );
-        assert_eq!(target(&spectrum, true), None);
         let mut keyboard = off(None);
         keyboard.controls_keyboard_effect = true;
         assert_eq!(target(&keyboard, true), None);

@@ -218,6 +218,13 @@ trait StatusSource {
     fn maintain_lighting(&mut self, _now: Instant) -> Option<Reconciling> {
         None
     }
+    // The animated lighting stream loop (`Runtime::run_lighting_stream`),
+    // taken once when connections are served; it ends only with fatal
+    // admission evidence.
+    #[cfg(feature = "service-lighting-v1")]
+    fn lighting_stream(&mut self) -> Option<Reconciling> {
+        None
+    }
     // The origin tick's 15 s keyboard Driver-mode step after the power
     // check (`Runtime::maintain_driver_mode`), taken under the source lock and
     // awaited after it is released, as a reconciliation is.
@@ -414,6 +421,16 @@ impl Ports {
         tokio::pin!(refresh);
         let mut connections = JoinSet::new();
         let mut accept = self.endpoint.accept();
+        #[cfg(feature = "service-lighting-v1")]
+        let stream = self.source.lock().await.lighting_stream();
+        let lighting_stream = async move {
+            #[cfg(feature = "service-lighting-v1")]
+            if let Some(stream) = stream {
+                return stream.await;
+            }
+            std::future::pending::<io::Result<()>>().await
+        };
+        tokio::pin!(lighting_stream);
         // Keep lock acquisition in a polled future. Awaiting it inside the
         // selected tick branch would stop polling a refresh that owns the lock.
         let origin_check = async {
@@ -496,6 +513,7 @@ impl Ports {
             tokio::select! {
                 biased;
                 result = &mut origin_check => break (result, false),
+                result = &mut lighting_stream => break (result, false),
                 signal = &mut *shutdown => break (signal.map_err(|_| lost_shutdown()), true),
                 result = &mut refresh, if publications.is_some() => break (result, false),
                 joined = connections.join_next(), if !connections.is_empty() => match joined {
@@ -641,6 +659,8 @@ async fn serve_connection(
                 | StatusRequest::ResumeAutomaticFanStop { .. }
                 | StatusRequest::SetBatterySaverFanStop { .. }
                 | StatusRequest::SetLightingOverride { .. }
+                | StatusRequest::StepKeyboardBrightness { .. }
+                | StatusRequest::SetLightingRefreshRate { .. }
         )
     {
         #[cfg(feature = "service-thermal-mutation-v1")]
@@ -972,6 +992,7 @@ fn mutation_budget(request: &StatusRequest) -> Duration {
                 | StatusRequest::CyclePerformanceShortcut { .. }
                 | StatusRequest::SetHyperBoost { .. }
                 | StatusRequest::SetLightingOverride { .. }
+                | StatusRequest::StepKeyboardBrightness { .. }
         )
     {
         RECIPE_BUDGET

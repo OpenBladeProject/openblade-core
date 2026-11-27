@@ -13,6 +13,9 @@ mod gpu_clock_tuning;
 #[cfg(feature = "service-lighting-v1")]
 #[path = "lighting_override.rs"]
 mod lighting_override;
+#[cfg(feature = "service-lighting-v1")]
+#[path = "lighting_stream.rs"]
+mod lighting_stream;
 #[cfg(feature = "service-performance-shortcut-v1")]
 #[path = "performance_shortcut.rs"]
 mod performance_shortcut;
@@ -924,6 +927,15 @@ impl Fresh for Custody {
         }
         ReadCustody::authorize(self)
     }
+    // `authorize` without the controller inventory, which the stream takes
+    // from the origin tick (`WindowsGuard::authorize_frame`).
+    #[cfg(feature = "service-lighting-v1")]
+    fn authorize_frame(&self) -> Option<ReadAdmission> {
+        if self.fresh_refuse.load(Ordering::Acquire) || self.fatal_health.load(Ordering::Acquire) {
+            return None;
+        }
+        ReadCustody::authorize(self)
+    }
     // `authorize` without the lifecycle epoch: `fresh_refuse` stands for
     // every refused Windows supplier, a competing controller included, and
     // an unknown Windows AC line status refuses as `Identity::admits` does.
@@ -1022,6 +1034,11 @@ impl Fresh for PinnedFresh {
     fn authorize_owned_stop(&self) -> Option<ReadAdmission> {
         self.current()
             .then(|| Fresh::authorize_owned_stop(self.custody.as_ref()))?
+    }
+    #[cfg(feature = "service-lighting-v1")]
+    fn authorize_frame(&self) -> Option<ReadAdmission> {
+        self.current()
+            .then(|| Fresh::authorize_frame(self.custody.as_ref()))?
     }
     fn capture_settle(
         &self,
@@ -1591,6 +1608,8 @@ impl Rig {
         let observations = Arc::new(AtomicUsize::new(0));
         #[cfg(feature = "service-brightness-hid-usage-v1")]
         let observed = observations.clone();
+        #[cfg(feature = "service-lighting-v1")]
+        runtime.compose_matrix_stream(port.stream());
         let source = injected_mutation_source(
             Arc::new(Origin(origin.clone(), custody.clone())),
             mailbox,

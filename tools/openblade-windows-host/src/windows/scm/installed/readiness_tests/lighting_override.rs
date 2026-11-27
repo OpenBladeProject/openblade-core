@@ -76,7 +76,8 @@ fn saved(rig: &Rig) -> String {
 /// the setter readbacks are the completion evidence.
 const RENDERED: &str =
     "Lighting command completed, but this laptop does not report the resulting state.";
-const SPECTRUM: &str = r#"{"effect":2,"color":{"red":0,"green":0,"blue":0},"brightness":50,"parameters":{"kind":"spectrumCycling"},"logoMode":null}"#;
+/// An effect the native table defers (slice L3), so a request stores it only.
+const REACTIVE: &str = r#"{"effect":4,"color":{"red":1,"green":2,"blue":3},"brightness":50,"parameters":{"kind":"reactive","color":{"red":1,"green":2,"blue":3},"duration":0},"logoMode":null}"#;
 const STATIC_GREEN: &str = r#"{"effect":1,"color":{"red":71,"green":225,"blue":12},"brightness":10,"parameters":{"kind":"static","color":{"red":71,"green":225,"blue":12}},"logoMode":null}"#;
 
 /// The matrix frames submitted.
@@ -188,12 +189,13 @@ async fn static_is_rendered_and_replied_as_setter_completion() {
 }
 
 /// Managed stores the intent and refuses an effect its capability table
-/// lacks. Native admits Off and Static; the animated effects wait for slice
-/// C, so each gets that refusal, with nothing sent.
+/// lacks. Native admits Off, Static and the streamed effects (slice L3);
+/// Reactive, Ripple and the host-input effects are deferred, so each gets
+/// that refusal, with nothing sent.
 #[tokio::test]
-async fn animated_effects_are_refused_until_slice_c_divergence() {
+async fn deferred_effects_are_refused_by_the_table_divergence() {
     let rig = Rig::new(MemoryFiles::default());
-    let (status, message) = set(&rig, 1, Some(SPECTRUM), 1).await;
+    let (status, message) = set(&rig, 1, Some(REACTIVE), 1).await;
     assert_eq!(status, 2);
     assert_eq!(
         message,
@@ -201,7 +203,7 @@ async fn animated_effects_are_refused_until_slice_c_divergence() {
     );
     assert!(sent(&rig).is_empty());
     assert_eq!(frames(&rig), 0);
-    assert_eq!(saved(&rig), SPECTRUM);
+    assert_eq!(saved(&rig), REACTIVE);
     let status = rig.get().await;
     assert_eq!(status["status"]["lightingOverride"]["lifetime"], 1);
     assert_eq!(status["status"]["desiredState"]["lighting"]["source"], 4);
@@ -555,8 +557,8 @@ async fn a_clear_is_stored_and_says_what_waits() {
         ),
     ] {
         let rig = Rig::new(MemoryFiles::default());
-        assert_eq!(set(&rig, 1, Some(SPECTRUM), 1).await.0, 2);
-        assert_eq!(saved(&rig), SPECTRUM);
+        assert_eq!(set(&rig, 1, Some(REACTIVE), 1).await.0, 2);
+        assert_eq!(saved(&rig), REACTIVE);
         if unclassified {
             rig.port.state.lock().unwrap().power_status = 3;
         }

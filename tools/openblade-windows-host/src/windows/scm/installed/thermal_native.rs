@@ -133,6 +133,17 @@ impl Identity {
     /// lifecycle check, run before and after the suppliers: a write compares
     /// its pinned epoch, and storage admits any lifecycle state.
     fn admits(&self, stop: bool, epoch: impl Fn() -> bool) -> Result<(), Denial> {
+        self.admits_with(stop, epoch, true)
+    }
+    /// `admits`, with the competing-controller inventory only when
+    /// `controllers` asks for it: an animated stream frame takes the origin
+    /// tick's fresh reading instead (`WindowsGuard::authorize_frame`).
+    fn admits_with(
+        &self,
+        stop: bool,
+        epoch: impl Fn() -> bool,
+        controllers: bool,
+    ) -> Result<(), Denial> {
         let verify = || {
             if stop {
                 self.origin.verify_owned_stop()
@@ -168,7 +179,11 @@ impl Identity {
         {
             return Err(Denial::Admission);
         }
-        power_and_controllers(&self.controllers)?;
+        if controllers {
+            power_and_controllers(&self.controllers)?;
+        } else {
+            power_known()?;
+        }
         // Mutable callback fencing cannot revive an earlier operation. A new
         // request captures a fresh epoch and rechecks every Windows supplier.
         verify().map_err(|_| Denial::Admission)?;
@@ -207,18 +222,24 @@ fn power_and_controllers(
         openblade_platform_windows::controller_presence::admission::ReadOnlyAdmission,
     >,
 ) -> Result<(), Denial> {
-    let mut status = SYSTEM_POWER_STATUS::default();
-    // SAFETY: writable native output. This excludes an unknown coarse source only;
-    // typed 07/8C independently decides sufficient versus limited adapter.
-    if unsafe { GetSystemPowerStatus(&mut status) } == 0 || status.ACLineStatus > 1 {
-        return Err(Denial::Admission);
-    }
+    power_known()?;
     if !controllers
         .lock()
         .map_err(|_| Denial::Admission)?
         .confirms_fresh_absence()
     {
         return Err(Denial::CompetingController);
+    }
+    Ok(())
+}
+/// A known AC line status. This excludes an unknown coarse source only; typed
+/// 07/8C independently decides sufficient versus limited adapter.
+#[cfg_attr(test, allow(dead_code))] // Test composition injects its own Fresh; only the native factory builds the guard.
+fn power_known() -> Result<(), Denial> {
+    let mut status = SYSTEM_POWER_STATUS::default();
+    // SAFETY: writable native output.
+    if unsafe { GetSystemPowerStatus(&mut status) } == 0 || status.ACLineStatus > 1 {
+        return Err(Denial::Admission);
     }
     Ok(())
 }
@@ -353,6 +374,24 @@ impl WindowsGuard {
     }
     fn authorize_for(&self, stop: bool) -> Option<ReadAdmission> {
         self.admit_for(stop).ok()
+    }
+    /// One animated stream frame: every check of `authorize` but the
+    /// competing-controller inventory, which the origin tick reads fresh for
+    /// the stream (`Runtime::stream_frame`).
+    #[cfg(feature = "service-lighting-v1")]
+    pub(super) fn authorize_frame(&self) -> Option<ReadAdmission> {
+        let identity = &self.identity;
+        identity
+            .admits_with(
+                false,
+                || {
+                    identity.origin.lifecycle.epoch_for(WriteScope::Ordinary)
+                        == Some(self.lifecycle)
+                },
+                false,
+            )
+            .ok()?;
+        identity.custody.authorize()
     }
     /// `authorize_for` with the reason for a refusal.
     fn admit_for(&self, stop: bool) -> Result<ReadAdmission, Denial> {

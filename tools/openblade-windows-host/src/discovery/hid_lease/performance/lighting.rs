@@ -25,6 +25,7 @@ use openblade_protocol::{
 };
 
 mod render;
+pub(crate) use render::stream_report;
 use std::sync::Mutex;
 
 /// Managed `OwnedRendererOffObservation.OffConfirmationDelay`: the second
@@ -80,26 +81,30 @@ impl LightingTarget {
     }
 }
 
-/// A Static renderer the Service owns: the color every canvas key shows and
-/// the session's layout byte, which selects the physical map.
+/// A renderer the Service owns: the effect it draws, the settings color
+/// (every canvas key's for Static) and the session's layout byte, which
+/// selects the physical map. Managed `CanRetainRenderer` retains one only for
+/// an equal effect and color.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Renderer {
+    pub(crate) effect: Effect,
     pub(crate) color: Rgb,
     pub(crate) layout: u8,
 }
 
-/// What a render job sets: managed `SetLightingAsync` for the Static effect.
+/// What a render job sets: managed `SetLightingAsync` for a lit effect.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct RenderTarget {
     pub(crate) brightness: u8,
     pub(crate) logo: Option<LogoMode>,
+    pub(crate) effect: Effect,
     pub(crate) color: Rgb,
     /// The layout byte this session already read; managed reads 00/86 once
     /// per port session.
     pub(crate) layout: Option<u8>,
-    /// The renderer the Service owns now. A request for the same color and
-    /// layout retains it (managed `CanRetainRenderer`), and a failed request
-    /// restores it.
+    /// The renderer the Service owns now. A request for the same effect,
+    /// color and layout retains it (managed `CanRetainRenderer`), and a failed
+    /// request restores it when it is Static.
     pub(crate) previous: Option<Renderer>,
 }
 
@@ -177,6 +182,10 @@ pub(crate) enum LightingOutcome {
     /// readback. A lit keyboard has no firmware readback, so this is
     /// setter-completion evidence, never a confirmed state.
     Rendered,
+    /// A brightness step's 03/03 setter returned its exact acknowledgement
+    /// (managed `SetBrightnessFastCoreAsync`, which reads nothing back). The
+    /// raw value it set is the final reading's brightness, unconfirmed.
+    Stepped,
 }
 
 impl LightingOutcome {
@@ -204,10 +213,25 @@ enum Work {
     /// Classifies power, stores, then writes the target the baseline does not
     /// match.
     Write(LightingTarget),
-    /// Classifies power, stores, then starts or retains a Static renderer.
+    /// Classifies power, stores, then starts or retains a renderer.
     Render(RenderTarget),
     /// One keepalive frame of the owned renderer, and nothing else.
     Keepalive(Renderer),
+    /// Classifies power and admits it through the permit, which stores
+    /// nothing yet, then one brightness step (`Reader::step`).
+    Step(StepTarget),
+}
+
+/// Managed `KeyboardBrightnessRawStep`: one step's raw change.
+pub(crate) const BRIGHTNESS_STEP: u8 = 0x10;
+
+/// What a brightness step does: managed `ProductionLightingPort.StepBrightnessAsync`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct StepTarget {
+    pub(crate) increase: bool,
+    /// The raw brightness this session's last step set (managed
+    /// `lastKnownBrightnessRaw`); `None` reads 03/83 first.
+    pub(crate) cached: Option<u8>,
 }
 
 /// One lighting job, carried by its permit (`mutation::Permit::lighting`).
@@ -216,6 +240,9 @@ pub(crate) struct LightingJob {
     /// Managed `OwnedRendererOffObservation.RequiresOffConfirmation`: a zero
     /// brightness confirms Off only after a second zero sample, 750 ms later.
     off_confirmation: bool,
+    /// An animated render job's effect, which draws its first frame and,
+    /// once the job owns the matrix, the stream's (`take_animation`).
+    animation: Mutex<Option<Animation>>,
     state: Mutex<State>,
 }
 
@@ -246,6 +273,7 @@ impl LightingJob {
         Self {
             work,
             off_confirmation,
+            animation: Mutex::new(None),
             state: Mutex::new(State {
                 outcome: LightingOutcome::Pending,
                 baseline: None,
@@ -272,10 +300,26 @@ impl LightingJob {
         Self::with(Work::Store, false)
     }
 
-    /// A Static request: power, the store, then the renderer recipe
-    /// (`render`). Its lit brightness is never confirmed by a read.
-    pub(crate) fn render(target: RenderTarget) -> Self {
-        Self::with(Work::Render(target), false)
+    /// A lit request: power, the store, then the renderer recipe (`render`).
+    /// Its lit brightness is never confirmed by a read. An animated target
+    /// carries its `animation`, which draws the first frame at elapsed zero.
+    pub(crate) fn render(target: RenderTarget, animation: Option<Animation>) -> Self {
+        let job = Self::with(Work::Render(target), false);
+        if let Ok(mut slot) = job.animation.lock() {
+            *slot = animation;
+        }
+        job
+    }
+
+    /// A brightness step: power, its admission, then `Reader::step`.
+    pub(crate) fn step(target: StepTarget) -> Self {
+        Self::with(Work::Step(target), false)
+    }
+
+    /// The animation an animated render job drew its first frame with, for
+    /// the stream that continues it; `None` for any other job.
+    pub(crate) fn take_animation(&self) -> Option<Animation> {
+        self.animation.lock().ok().and_then(|mut slot| slot.take())
     }
 
     /// One keepalive frame of the owned `renderer` (`render`).
@@ -320,7 +364,9 @@ impl LightingJob {
     pub(crate) fn target(&self) -> Option<LightingTarget> {
         match self.work {
             Work::Write(target) => Some(target),
-            Work::Resolve | Work::Store | Work::Render(_) | Work::Keepalive(_) => None,
+            Work::Resolve | Work::Store | Work::Render(_) | Work::Keepalive(_) | Work::Step(_) => {
+                None
+            }
         }
     }
 
@@ -465,6 +511,8 @@ impl Work {
         match self {
             Self::Render(_) => render::IDS,
             Self::Keepalive(_) => 0,
+            // The baseline query and the setter.
+            Self::Step(_) => 2,
             Self::Resolve | Self::Store | Self::Write(_) => IDS,
         }
     }
@@ -549,7 +597,9 @@ impl<P: Port> Reader<P, ReadAdmission> {
         }
         let power_ids = match job.work {
             Work::Resolve | Work::Keepalive(_) => None,
-            Work::Store | Work::Write(_) | Work::Render(_) => Some(self.reserve_pair()?),
+            Work::Store | Work::Write(_) | Work::Render(_) | Work::Step(_) => {
+                Some(self.reserve_pair()?)
+            }
         };
         let run = &mut Run { ids, next: 0, job };
         let admission = self.admission;
@@ -585,6 +635,9 @@ impl<P: Port> Reader<P, ReadAdmission> {
         }
         if let Work::Render(target) = job.work {
             return self.render(authorize, run, target, limit).await;
+        }
+        if let Work::Step(target) = job.work {
+            return self.step(authorize, run, target, limit).await;
         }
         let mut attempt = Attempt {
             reader: self,
@@ -795,6 +848,74 @@ impl<P: Port> Reader<P, ReadAdmission> {
         }
         let performance = self.observe(authorize, limit).await?;
         Some((class, Some(performance)))
+    }
+}
+
+impl<P: Port> Reader<P, ReadAdmission> {
+    /// Managed `ProductionLightingPort.StepBrightnessAsync`, after the power
+    /// admission: the cached raw brightness or one 03/83 query, then, unless
+    /// the step leaves it unchanged, the 03/03 setter with its exact
+    /// acknowledgement and no readback (`SetBrightnessFastCoreAsync`). The
+    /// raw value set, or the unchanged baseline, is the final reading.
+    async fn step(
+        &mut self,
+        authorize: Authorize<'_, ReadAdmission>,
+        run: &mut Run<'_>,
+        target: StepTarget,
+        limit: Limit<'_>,
+    ) -> Option<()> {
+        let job = run.job;
+        let admission = self.admission;
+        let mut attempt = Attempt {
+            reader: self,
+            completed: false,
+        };
+        let raw = match target.cached {
+            Some(raw) => raw,
+            None => {
+                job.record(LightingOutcome::Unread(BRIGHTNESS_UNREAD));
+                attempt
+                    .brightness(authorize, admission, limit, run, false)
+                    .await?
+            }
+        };
+        let requested = if target.increase {
+            raw.saturating_add(BRIGHTNESS_STEP)
+        } else {
+            raw.saturating_sub(BRIGHTNESS_STEP)
+        };
+        let reading = |raw| LightingReading {
+            brightness: Some(raw),
+            logo: None,
+        };
+        if requested == raw {
+            job.observe(Some(reading(raw)), Some(reading(raw)));
+            job.record(LightingOutcome::Observed);
+            attempt.completed = true;
+            return Some(());
+        }
+        job.observe(Some(reading(raw)), None);
+        if !paced(&attempt.reader.exchanges, 1, Duration::ZERO, limit) {
+            job.record(LightingOutcome::Unpaced);
+            attempt.completed = true;
+            return Some(());
+        }
+        job.record(LightingOutcome::Refused);
+        let set = LightingSet::brightness(run.take(), requested);
+        let in_doubt = LightingOutcome::InDoubt(BRIGHTNESS_IN_DOUBT);
+        attempt
+            .submit(
+                authorize,
+                admission,
+                limit,
+                set,
+                (job, Member::Brightness, in_doubt),
+            )
+            .await?;
+        job.observe(None, Some(reading(requested)));
+        job.record(LightingOutcome::Stepped);
+        attempt.completed = true;
+        Some(())
     }
 }
 

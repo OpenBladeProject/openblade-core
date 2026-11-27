@@ -37,6 +37,9 @@ mod lighting;
 mod lighting_admission;
 #[cfg(feature = "service-lighting-v1")]
 mod lighting_effects;
+#[cfg(all(test, feature = "service-lighting-v1"))]
+#[allow(unused_imports)] // Used by the installed readiness tests only.
+pub(crate) use lighting_effects::tests::{Failing as FailingRandom, Scripted as ScriptedRandom};
 #[cfg(feature = "service-lighting-v1")]
 #[allow(unused_imports)] // Shared with the standalone discovery binary.
 pub(crate) use lighting_effects::{
@@ -47,8 +50,8 @@ mod lighting_layout;
 #[cfg(feature = "service-lighting-v1")]
 #[allow(unused_imports)] // Shared with the standalone discovery binary.
 pub(crate) use lighting::{
-    LightingConfirmation, LightingJob, LightingOutcome, LightingReading, LightingTarget,
-    MatrixState, RenderTarget, Renderer, Rgb,
+    BRIGHTNESS_STEP, LightingConfirmation, LightingJob, LightingOutcome, LightingReading,
+    LightingTarget, MatrixState, RenderTarget, Renderer, Rgb, StepTarget, stream_report,
 };
 #[cfg(feature = "service-lighting-v1")]
 #[allow(unused_imports)] // Shared with the standalone discovery binary.
@@ -87,6 +90,9 @@ pub(crate) mod mutation;
 mod temporary_charge;
 #[cfg(any(test, feature = "firmware-performance-compile-check"))]
 mod worker;
+#[cfg(all(windows, feature = "service-lighting-v1"))]
+#[allow(unused_imports)] // Composed by the installed runtime only.
+pub(crate) use windows::native_matrix_stream;
 #[cfg(all(windows, feature = "service-hardware-compile-check"))]
 #[allow(unused_imports)] // Shared with the standalone discovery binary.
 pub(crate) use windows::{native_read_worker, native_worker};
@@ -229,18 +235,39 @@ trait Port {
 
 /// One encoded 03/0B feature report.
 #[cfg(feature = "service-lighting-v1")]
-type MatrixReport = [u8; openblade_protocol::lighting::matrix::FEATURE_REPORT_LENGTH];
+pub(crate) type MatrixReport = [u8; openblade_protocol::lighting::matrix::FEATURE_REPORT_LENGTH];
 
 /// How one matrix write ended, when it did not complete.
 #[cfg(feature = "service-lighting-v1")]
 #[derive(Debug)]
-enum Unwritten {
+pub(crate) enum Unwritten {
     /// Nothing reached the driver.
     Unsent,
     /// The report may have been submitted. Managed classifies every native
     /// matrix I/O failure as indeterminate (`ProductionLightingPort`'s
     /// writer), the driver's own refusal of the call included.
     InDoubt,
+}
+
+/// The Service's animated matrix stream (`Runtime::stream_frame`): one
+/// encoded frame at a time on the exact reviewed matrix collection, outside
+/// the control mailbox, as managed's `RunStreamAsync` writes outside its
+/// command queue. The Service stays the only owner of the collection:
+/// matrix feature I/O in this process is serialized by one lock that the
+/// render jobs' matrix lease takes too, so a stream frame never overlaps a
+/// job's handshake or frame.
+#[cfg(feature = "service-lighting-v1")]
+pub(crate) trait MatrixStream {
+    /// Submits `report` and waits for its completion until `deadline`.
+    /// `Unsent` when nothing reached the driver; any submission that did
+    /// not complete in time is `InDoubt`.
+    fn frame(
+        &self,
+        report: MatrixReport,
+        deadline: tokio::time::Instant,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), Unwritten>>>>;
+    /// Closes the collection; the next frame opens and verifies it again.
+    fn retire(&self);
 }
 
 /// Managed `IsExactMatrixInterface`: the consumer collection whose feature

@@ -74,7 +74,7 @@ impl RefreshRate {
         }
     }
 
-    fn interval(self) -> i64 {
+    pub(crate) fn interval(self) -> i64 {
         match self {
             Self::ThirtyHz => ANIMATED_FRAME_INTERVAL,
             Self::SixtyHz => SIXTY_HZ_INTERVAL,
@@ -828,12 +828,10 @@ fn load_wave_wheel(bytes: &[u8]) -> Option<WaveWheel> {
             WAVE_WHEEL_FRAMES * SLOT_COUNT * 3,
         )?;
         let values: Vec<Rgb> = raw
-            .chunks_exact(3)
-            .map(|rgb| Rgb {
-                red: rgb[0],
-                green: rgb[1],
-                blue: rgb[2],
-            })
+            .as_chunks::<3>()
+            .0
+            .iter()
+            .map(|&[red, green, blue]| Rgb { red, green, blue })
             .collect();
         let masked = values
             .iter()
@@ -918,8 +916,10 @@ fn load_tidal(bytes: &[u8]) -> Option<Tidal> {
             TIDAL_FRAMES * SLOT_COUNT * 2,
         )?;
         let values: Vec<i16> = raw
-            .chunks_exact(2)
-            .map(|pair| i16::from_le_bytes([pair[0], pair[1]]))
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|&pair| i16::from_le_bytes(pair))
             .collect();
         let valid = values.iter().enumerate().all(|(index, &value)| {
             (-255..=255).contains(&value) && (!is_canvas_hole(index % SLOT_COUNT) || value == 0)

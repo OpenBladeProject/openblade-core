@@ -187,6 +187,12 @@ pub(crate) struct State {
     /// No submitted matrix report completes.
     #[cfg(feature = "service-lighting-v1")]
     pub(crate) matrix_mute: bool,
+    /// A stream frame waits, submitted, until this is released (real time).
+    #[cfg(feature = "service-lighting-v1")]
+    pub(crate) stream_held: Option<Arc<std::sync::atomic::AtomicBool>>,
+    /// How many times the stream retired its collection.
+    #[cfg(feature = "service-lighting-v1")]
+    pub(crate) stream_retired: usize,
 }
 /// When the test sent the request a job serves, on the test's clock. They sit
 /// beside the state, not in it: the state is locked for as long as a test hook
@@ -946,3 +952,58 @@ mod lighting_tests;
 mod pace_tests;
 #[path = "mutation_pool_tests.rs"]
 mod pool_tests;
+/// The fixture's animated stream (`MatrixStream`): each frame is one more
+/// matrix report in `State::matrix_frames`, with the same refusal, driver
+/// rejection and completion failure as a job's report, and `stream_held`
+/// keeps it in flight.
+#[cfg(feature = "service-lighting-v1")]
+struct FixtureStream(Fixture);
+#[cfg(feature = "service-lighting-v1")]
+impl Fixture {
+    pub(crate) fn stream(&self) -> std::rc::Rc<dyn MatrixStream> {
+        std::rc::Rc::new(FixtureStream(self.clone()))
+    }
+}
+#[cfg(feature = "service-lighting-v1")]
+impl MatrixStream for FixtureStream {
+    fn frame(
+        &self,
+        report: MatrixReport,
+        deadline: tokio::time::Instant,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), Unwritten>>>> {
+        let state = self.0.state.clone();
+        Box::pin(async move {
+            let held = {
+                let mut s = state.lock().unwrap();
+                let number = s.matrix_frames.len() + 1;
+                if s.matrix_refuse == Some(number) {
+                    s.matrix_refuse = None;
+                    return Err(Unwritten::Unsent);
+                }
+                let sent = s.sent.len();
+                s.matrix_frames.push((sent, report));
+                s.matrix_at.push(Instant::now());
+                if s.matrix_reject == Some(number) || s.matrix_fail == Some(number) {
+                    return Err(Unwritten::InDoubt);
+                }
+                s.stream_held.clone()
+            };
+            if let Some(release) = held {
+                while !release.load(Ordering::Acquire) {
+                    if Instant::now() >= deadline {
+                        return Err(Unwritten::InDoubt);
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(1));
+                    tokio::task::yield_now().await;
+                }
+            }
+            if state.lock().unwrap().matrix_mute {
+                return Err(Unwritten::InDoubt);
+            }
+            Ok(())
+        })
+    }
+    fn retire(&self) {
+        self.0.state.lock().unwrap().stream_retired += 1;
+    }
+}
