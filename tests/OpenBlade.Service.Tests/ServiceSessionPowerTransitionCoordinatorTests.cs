@@ -6,7 +6,7 @@ using OpenBlade.Service;
 
 namespace OpenBlade.Service.Tests;
 
-public sealed class ServiceSessionPowerTransitionCoordinatorTests
+public sealed partial class ServiceSessionPowerTransitionCoordinatorTests
 {
     private static readonly TimeSpan DeadlockGuard = TimeSpan.FromSeconds(5);
 
