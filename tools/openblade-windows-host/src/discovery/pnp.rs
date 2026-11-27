@@ -2,11 +2,16 @@
 //!
 //! HIDClass lists a transport device ID (`HID\VID_v&PID_p...` for USB, a
 //! Bluetooth service-UUID ID, or another family such as ACPI), the
-//! `HID\VID_v&UP:p_U:u` vendor usage alias and generic usage IDs. Only the
-//! alias is built from the device attributes that managed reads from each
-//! opened handle (`HidD_GetAttributes`) before it counts an exact interface;
-//! the transport ID's VID/PID is the transport's. Every product ID here is
-//! therefore a hint that the opened handle must confirm, never admission.
+//! `HID\VID_v&UP:p_U:u` vendor usage alias and generic usage IDs. On every
+//! host observed, the alias carries the vendor of the device attributes that
+//! managed reads from each opened handle (`HidD_GetAttributes`) before it
+//! counts an exact interface. That is observed HIDClass behaviour, not a
+//! documented contract. The transport ID's VID/PID is the transport's.
+//!
+//! A product ID here is therefore a hint. A devnode of the exact product is
+//! a candidate that its opened handle must confirm, never admission. A
+//! devnode whose transport ID names another product is excluded by that
+//! hint alone, without a handle confirming it, as before this grammar.
 
 /// One devnode's facts. `collection` is the device and collection path the
 /// transport ID names. It is `None` only for a devnode whose IDs establish
@@ -29,7 +34,8 @@ impl Facts {
 struct Collection {
     device: (u16, u16),
     interface: Option<u16>,
-    // The XInput `IG_nn` field HIDClass lists for game controllers.
+    // The XInput `IG_nn` field, which HIDClass copies from the parent
+    // XInput devnode's hardware ID.
     interface_group: Option<u16>,
     // Outermost first: `&COL03&COL01` is collection 1 nested in collection 3.
     collections: Vec<u16>,
@@ -72,10 +78,11 @@ enum Id {
 
 /// The facts of one devnode's `ids`, or none when they cannot rule out an
 /// interface of a `protected` vendor (the catalog's): an ID naming one that
-/// the grammar does not read, a protected vendor alias without a product,
-/// IDs that disagree, or no established vendor at all. A devnode with a
-/// parsed device ID or an unprotected vendor is readable; an unprotected
-/// vendor cannot be one managed counts, whatever its device ID's remainder.
+/// the grammar does not read, a vendor prefix that does not parse, a
+/// protected vendor alias without a product, IDs that disagree, or no
+/// established vendor at all. A devnode with a parsed device ID or an
+/// unprotected vendor is readable; an unprotected vendor cannot be one
+/// managed counts, whatever its device ID's remainder.
 /// Use devnode IDs independently of the opaque interface name. Every device
 /// ID, alias and usage ID must agree.
 pub(super) fn facts(ids: &[String], protected: &[u16]) -> Option<Facts> {
@@ -121,20 +128,26 @@ pub(super) fn facts(ids: &[String], protected: &[u16]) -> Option<Facts> {
 }
 
 /// One upper-case ID, or none when it could name a protected vendor's
-/// interface in a form this grammar does not read.
+/// interface in a form this grammar does not read or has a vendor prefix
+/// that does not parse.
 fn classify(id: &str, protected: &[u16]) -> Option<Id> {
     if let Some(usage) = id.strip_prefix("HID_DEVICE_UP:") {
         return usage_pair(usage).map(Id::Usage);
     }
-    if let Some((vendor, rest, form)) = vendor_id(id) {
-        if let Some(parsed) = form(vendor, rest) {
-            return Some(parsed);
+    match transport(id) {
+        Some(Transport::Device(vendor, rest, form)) => {
+            if let Some(parsed) = form(vendor, rest) {
+                return Some(parsed);
+            }
+            // The remainder is not read, so any protected vendor it names,
+            // the parsed one included, refuses.
+            return (!names_vendor(id, protected)).then_some(Id::OtherDevice {
+                vendor: Some(vendor),
+            });
         }
-        // The remainder is not read, so any protected vendor it names, the
-        // parsed one included, refuses.
-        return (!names_vendor(id, protected)).then_some(Id::OtherDevice {
-            vendor: Some(vendor),
-        });
+        Some(Transport::Alias(vendor, usage)) => return Some(Id::UsageAlias { vendor, usage }),
+        Some(Transport::Malformed) => return None,
+        None => {}
     }
     if names_vendor(id, protected) {
         return None;
@@ -153,34 +166,57 @@ fn classify(id: &str, protected: &[u16]) -> Option<Id> {
 
 type Form = fn(u16, &str) -> Option<Id>;
 
-/// The vendor of a USB or Bluetooth device ID, the text after it and the
-/// form that reads that text.
-fn vendor_id(id: &str) -> Option<(u16, &str, Form)> {
-    if let Some(rest) = id.strip_prefix(r"HID\VID_") {
-        return Some((hex(rest.get(..4)?, 4)?, &rest[4..], usb));
-    }
-    for (prefix, width) in [(LE_PREFIX, 2), (CLASSIC_PREFIX, 4)] {
-        if let Some(rest) = id.strip_prefix(prefix) {
-            if !matches!(hex(rest.get(..width)?, width)?, 1 | 2) {
-                return None;
-            }
-            let rest = &rest[width..];
-            return Some((hex(rest.get(..4)?, 4)?, &rest[4..], bluetooth));
-        }
-    }
-    None
+/// An ID with a USB or Bluetooth vendor prefix.
+enum Transport<'a> {
+    /// A device ID: its vendor, the text after it and the form that reads
+    /// that text.
+    Device(u16, &'a str, Form),
+    /// The vendor usage alias, read in full.
+    Alias(u16, (u16, u16)),
+    /// A vendor, vendor-ID source or alias usage that does not parse. The
+    /// ID establishes no vendor, so its row refuses.
+    Malformed,
 }
 
-/// `&UP:p_U:u`, or `&PID_p` and the `&` fields.
-fn usb(vendor: u16, rest: &str) -> Option<Id> {
-    let rest = rest.strip_prefix('&')?;
-    if let Some(usage) = rest.strip_prefix("UP:") {
-        return Some(Id::UsageAlias {
-            vendor,
-            usage: usage_pair(usage)?,
-        });
+/// How an ID with a vendor prefix reads, or none for another ID.
+fn transport(id: &str) -> Option<Transport<'_>> {
+    let parsed = if let Some(rest) = id.strip_prefix(r"HID\VID_") {
+        usb_vendor(rest)
+    } else if let Some(rest) = id.strip_prefix(LE_PREFIX) {
+        bluetooth_vendor(rest, 2)
+    } else {
+        bluetooth_vendor(id.strip_prefix(CLASSIC_PREFIX)?, 4)
+    };
+    Some(parsed.unwrap_or(Transport::Malformed))
+}
+
+/// `v`, then `&UP:p_U:u` or the rest of a device ID.
+fn usb_vendor(rest: &str) -> Option<Transport<'_>> {
+    let (vendor, rest) = vendor(rest)?;
+    Some(match rest.strip_prefix("&UP:") {
+        Some(usage) => Transport::Alias(vendor, usage_pair(usage)?),
+        None => Transport::Device(vendor, rest, usb),
+    })
+}
+
+/// A `width`-digit Bluetooth SIG (1) or USB-IF (2) vendor-ID source, then
+/// `v` and the rest of the device ID.
+fn bluetooth_vendor(rest: &str, width: usize) -> Option<Transport<'_>> {
+    if !matches!(hex(rest.get(..width)?, width)?, 1 | 2) {
+        return None;
     }
-    let mut fields = rest.split('&');
+    let (vendor, rest) = vendor(&rest[width..])?;
+    Some(Transport::Device(vendor, rest, bluetooth))
+}
+
+/// A four-digit vendor and the text after it.
+fn vendor(text: &str) -> Option<(u16, &str)> {
+    Some((hex(text.get(..4)?, 4)?, &text[4..]))
+}
+
+/// `&PID_p` and the `&` fields.
+fn usb(vendor: u16, rest: &str) -> Option<Id> {
+    let mut fields = rest.strip_prefix('&')?.split('&');
     let product = hex(fields.next()?.strip_prefix("PID_")?, 4)?;
     device((vendor, product), None, fields)
 }

@@ -450,16 +450,16 @@ fn facts(ids: &[&str]) -> Option<pnp::Facts> {
 const LE: &str = r"HID\{00001812-0000-1000-8000-00805f9b34fb}_Dev_VID&";
 const CLASSIC: &str = r"HID\{00001124-0000-1000-8000-00805f9b34fb}_VID&";
 
-/// The probed RZ09-0581 host (39 of its 46 interfaces): its foreign
-/// devnodes and nested collections are readable, so the scan is complete
-/// and MI_02 is the one control hint. Its nine other exact collections, the
-/// nested ones among them, are counted with another usage.
+/// The probed RZ09-0581 host, all 46 interfaces: its foreign devnodes,
+/// another Razer device and nested collections are readable, so the scan
+/// is complete and MI_02 is the one control hint. Its nine other exact
+/// collections, the nested ones among them, are counted with another usage.
 #[test]
 fn the_probed_rz09_0581_inventory_is_complete_with_one_control_candidate() {
     let fixture = probed_host();
     let result = snapshot(&fixture);
     assert_eq!(result["hid"]["inventory"], "complete");
-    assert_eq!(result["hid"]["interfaceCount"], 39);
+    assert_eq!(result["hid"]["interfaceCount"], 46);
     assert_eq!(result["hid"]["unreadableInterfaces"], 0);
     assert_eq!(result["hid"]["candidates"], "singleUnresolved");
     assert_eq!(result["hid"]["counts"]["matchingHints"], 1);
@@ -562,6 +562,12 @@ fn peripherals_beside_the_probed_host_keep_the_scan_complete() {
             owned(&le_sig_source),
             Some((0x1532, 0x0001)),
         ),
+        // Another vendor's device ID establishes that vendor by itself.
+        (
+            "foreign-unread-without-alias",
+            vec![r"HID\VID_046D&PID_C52B&XX_01", "HID_DEVICE"],
+            None,
+        ),
         (
             "acpi-family-foreign-alias",
             vec![
@@ -643,6 +649,7 @@ fn foreign_devnodes_are_readable_only_when_their_ids_rule_out_razer() {
             Some("02e0") => Some((0x1532, 0x02e0)),
             Some("0f43") => Some((0x1532, 0x0f43)),
             Some("ble") => Some((0x046d, 0xb037)),
+            Some("vhf") => Some((0x025d, 0x0721)),
             _ => None,
         };
         assert_eq!(parsed.device(), expected, "{label}");
@@ -685,10 +692,27 @@ fn foreign_devnodes_are_readable_only_when_their_ids_rule_out_razer() {
             classic_razer_foreign_alias.as_str(),
             r"HID\VID_046D&UP:0001_U:0002",
         ],
-        // An exact identity followed by an ID naming Razer outside it.
+        // Another vendor's unread device ID, contradicted by the alias.
+        &[
+            r"HID\VID_046D&PID_C52B&XX_01",
+            r"HID\VID_045E&UP:0001_U:0002",
+        ],
+        // A two-digit-source Razer token under another service UUID, with
+        // an alias that does not refuse the row by itself.
+        &[
+            r"HID\{0000fff0-0000-1000-8000-00805f9b34fb}_Dev_VID&021532_PID&0001",
+            r"HID\VID_046D&UP:0001_U:0002",
+        ],
+        // An exact identity followed by an ID naming Razer outside it, or
+        // by an unread ID of the same vendor.
         &[
             r"HID\VID_1532&PID_02E0&MI_02",
             r"HID\WEIRD_VID_1532&PID_02E0",
+            "HID_DEVICE_UP:0001_U:0002",
+        ],
+        &[
+            r"HID\VID_1532&PID_02E0&MI_02",
+            r"HID\VID_1532&PID_02E0&XX_01",
             "HID_DEVICE_UP:0001_U:0002",
         ],
         // A lone alias, without a device ID.
@@ -730,6 +754,11 @@ fn nested_collections_parse_with_exact_bounded_grammar() {
     let le_twice_revised = format!("{LE}021532_PID&0095_REV&0001&REV_0001");
     let le_three_levels = format!("{LE}021532_PID&0095&Col01&Col02&Col03");
     let le_short_product = format!("{LE}021532_PID&095");
+    // Text straight after a Bluetooth product or revision.
+    let le_after_product = format!("{LE}021532_PID&0095X");
+    let le_field_after_product = format!("{LE}021532_PID&02e0_FOO");
+    let le_after_revision = format!("{LE}021532_PID&02e0_REV&0001X");
+    let classic_field_after_product = format!("{CLASSIC}00021532_PID&02e0_FOO");
     for malformed in [
         r"HID\VID_1532&PID_02E0&MI_00&Col03&Col01&Col02",
         r"HID\VID_1532&PID_02E0&Col03&MI_00",
@@ -745,14 +774,99 @@ fn nested_collections_parse_with_exact_bounded_grammar() {
         &le_twice_revised,
         &le_three_levels,
         &le_short_product,
+        &le_after_product,
+        &le_field_after_product,
+        &le_after_revision,
+        &classic_field_after_product,
     ] {
         assert_eq!(facts(&[malformed]), None, "{malformed}");
     }
-    // The revisioned and unrevisioned paths must agree.
+    // The revisioned and unrevisioned paths must agree, and so must two
+    // revisions.
     assert_eq!(
         facts(&[
             r"HID\VID_1532&PID_02E0&REV_0200&MI_00&Col03&Col01",
             r"HID\VID_1532&PID_02E0&MI_00&Col03&Col02",
+        ]),
+        None
+    );
+    assert_eq!(
+        facts(&[
+            r"HID\VID_1532&PID_02E0&REV_0200&MI_02",
+            r"HID\VID_1532&PID_02E0&REV_0100&MI_02",
+        ]),
+        None
+    );
+}
+
+/// A vendor prefix whose vendor, vendor-ID source or alias usage does not
+/// parse, or a malformed usage ID, refuses the row for every vendor: the
+/// ID establishes nothing the row can be read by.
+#[test]
+fn malformed_vendor_prefixes_and_usage_ids_refuse_the_row() {
+    let le_unknown_source = format!("{LE}03046d_PID&0001");
+    let classic_short_vendor = format!("{CLASSIC}0002046_PID&0001");
+    for malformed in [
+        // A malformed alias of another vendor, alone or beside its device.
+        &[r"HID\VID_046D&UP:0001_U:00"][..],
+        &[r"HID\VID_046D&PID_C52B", r"HID\VID_046D&UP:0001_U:00"],
+        &[r"HID\VID_046D&PID_C52B", r"HID\VID_046D&UP:0001"],
+        // A vendor that is not four hex digits, beside an exact identity or
+        // another vendor's alias.
+        &[r"HID\VID_1532&PID_02E0&MI_02", r"HID\VID_ZZZZ&PID_02E0"],
+        &[r"HID\VID_ZZZZ&PID_0001", r"HID\VID_046D&UP:0001_U:0002"],
+        &[r"HID\VID_046", r"HID\VID_046D&UP:0001_U:0002"],
+        // An unknown or short Bluetooth vendor-ID field of another vendor.
+        &[le_unknown_source.as_str(), r"HID\VID_046D&UP:0001_U:0002"],
+        &[
+            classic_short_vendor.as_str(),
+            r"HID\VID_046D&UP:0001_U:0002",
+        ],
+        // A malformed usage ID beside an exact identity.
+        &[r"HID\VID_1532&PID_02E0&MI_02", "HID_DEVICE_UP:0001_U:02"],
+    ] {
+        assert_eq!(facts(malformed), None, "{malformed:?}");
+        let mut fixture = probed_host();
+        fixture.rows.push(row("malformed", malformed));
+        let result = snapshot(&fixture);
+        assert_eq!(result["hid"]["inventory"], "incomplete", "{malformed:?}");
+        assert_eq!(result["hid"]["candidates"], "incomplete", "{malformed:?}");
+    }
+}
+
+/// A virtual HID device lists a family ID, a USB-form device ID and an
+/// alias. The device ID gives the row its device, so one that names the
+/// exact device is a candidate the opened handle must confirm, and the IDs
+/// must agree.
+#[test]
+fn a_family_id_beside_a_device_id_reads_as_that_device() {
+    let vhf = probe_inventory::RZ09_0581_HOST
+        .iter()
+        .find(|(label, _)| *label == "vhf")
+        .unwrap()
+        .1;
+    let parsed = facts(vhf).unwrap();
+    assert_eq!(parsed.device(), Some((0x025d, 0x0721)));
+    assert_eq!(parsed.usage, Some((0x0c, 0x01)));
+
+    let exact = [
+        r"HID\HID_DEVICE_SYSTEM_VHF",
+        r"HID\VID_1532&PID_02E0",
+        r"HID\VID_1532&UP:0001_U:0002",
+        "HID_DEVICE_UP:0001_U:0002",
+    ];
+    assert_eq!(facts(&exact).unwrap().device(), Some((0x1532, 0x02e0)));
+    let mut fixture = probed_host();
+    fixture.rows.push(row("vhf-exact", &exact));
+    let result = snapshot(&fixture);
+    assert_eq!(result["hid"]["inventory"], "complete");
+    assert_eq!(result["hid"]["candidates"], "ambiguous");
+
+    assert_eq!(
+        facts(&[
+            r"HID\HID_DEVICE_SYSTEM_VHF",
+            r"HID\VID_025D&PID_0721",
+            r"HID\VID_1532&UP:000C_U:0001",
         ]),
         None
     );

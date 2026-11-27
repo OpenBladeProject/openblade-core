@@ -2,12 +2,12 @@
 //! host (Razer Blade 16, 1532:02E0). Hardware IDs carry no serial or instance
 //! path; each row's label stands in for its opaque interface name.
 //!
-//! The fixture holds 39 of the 46 interfaces the probe listed, so a complete
-//! scan here covers those 39 only. The 31 that the earlier parser could not
-//! read are verbatim. The exact device's eight other collections carry the
-//! probe's first ID and usage, with the companion IDs HIDClass derives from
-//! them. The other seven interfaces parsed under the earlier parser; the
-//! probe did not record their IDs, and they are not reconstructed.
+//! The fixture holds all 46 interfaces of that host, verbatim. The probe
+//! recorded 39 of them. The other seven, six collections of another Razer
+//! device (1532:0F43) and one virtual HID device, come from a later
+//! read-only `Get-PnpDevice` listing of the same host, which also matches
+//! the 39 recorded rows. The Bluetooth mouse was absent from that listing;
+//! it was present during the probe.
 
 /// Label and hardware IDs of each probed interface.
 #[rustfmt::skip]
@@ -21,6 +21,13 @@ pub(super) const RZ09_0581_HOST: &[(&str, &[&str])] = &[
     ("02e0-mi01-col05", &[r"HID\VID_1532&PID_02E0&REV_0200&MI_01&Col05", r"HID\VID_1532&PID_02E0&MI_01&Col05", r"HID\VID_1532&UP:0001_U:0000", "HID_DEVICE_UP:0001_U:0000", "HID_DEVICE"]),
     ("02e0-mi02", &[r"HID\VID_1532&PID_02E0&REV_0200&MI_02", r"HID\VID_1532&PID_02E0&MI_02", r"HID\VID_1532&UP:0001_U:0002", "HID_DEVICE_SYSTEM_MOUSE", "HID_DEVICE_UP:0001_U:0002", "HID_DEVICE"]),
     ("02e0-mi03", &[r"HID\VID_1532&PID_02E0&REV_0200&MI_03", r"HID\VID_1532&PID_02E0&MI_03", r"HID\VID_1532&UP:000C_U:0001", "HID_DEVICE_SYSTEM_CONSUMER", "HID_DEVICE_UP:000C_U:0001", "HID_DEVICE"]),
+    // Another Razer device's collections.
+    ("0f43-mi00", &[r"HID\VID_1532&PID_0F43&REV_0200&MI_00", r"HID\VID_1532&PID_0F43&MI_00", r"HID\VID_1532&UP:000C_U:0001", "HID_DEVICE_SYSTEM_CONSUMER", "HID_DEVICE_UP:000C_U:0001", "HID_DEVICE"]),
+    ("0f43-mi01-col01", &[r"HID\VID_1532&PID_0F43&REV_0200&MI_01&Col01", r"HID\VID_1532&PID_0F43&MI_01&Col01", r"HID\VID_1532&UP:000C_U:0001", "HID_DEVICE_SYSTEM_CONSUMER", "HID_DEVICE_UP:000C_U:0001", "HID_DEVICE"]),
+    ("0f43-mi01-col02", &[r"HID\VID_1532&PID_0F43&REV_0200&MI_01&Col02", r"HID\VID_1532&PID_0F43&MI_01&Col02", r"HID\VID_1532&UP:000C_U:0001", "HID_DEVICE_SYSTEM_CONSUMER", "HID_DEVICE_UP:000C_U:0001", "HID_DEVICE"]),
+    ("0f43-mi01-col03", &[r"HID\VID_1532&PID_0F43&REV_0200&MI_01&Col03", r"HID\VID_1532&PID_0F43&MI_01&Col03", r"HID\VID_1532&UP:0001_U:0080", "HID_DEVICE_SYSTEM_CONTROL", "HID_DEVICE_UP:0001_U:0080", "HID_DEVICE"]),
+    ("0f43-mi01-col04", &[r"HID\VID_1532&PID_0F43&REV_0200&MI_01&Col04", r"HID\VID_1532&PID_0F43&MI_01&Col04", r"HID\VID_1532&UP:0001_U:0000", "HID_DEVICE_UP:0001_U:0000", "HID_DEVICE"]),
+    ("0f43-mi01-col05", &[r"HID\VID_1532&PID_0F43&REV_0200&MI_01&Col05", r"HID\VID_1532&PID_0F43&MI_01&Col05", r"HID\VID_1532&UP:0001_U:0000", "HID_DEVICE_UP:0001_U:0000", "HID_DEVICE"]),
     // Nested collections, on the exact device and on another Razer device.
     ("02e0-mi00-col03-col01", &[r"HID\VID_1532&PID_02E0&MI_00&Col03&Col01", r"HID\VID_1532&UP:000C_U:0001", "HID_DEVICE_SYSTEM_CONSUMER", "HID_DEVICE_UP:000C_U:0001", "HID_DEVICE"]),
     ("02e0-mi00-col03-col02", &[r"HID\VID_1532&PID_02E0&MI_00&Col03&Col02", r"HID\VID_1532&UP:0001_U:0080", "HID_DEVICE_SYSTEM_CONTROL", "HID_DEVICE_UP:0001_U:0080", "HID_DEVICE"]),
@@ -54,4 +61,6 @@ pub(super) const RZ09_0581_HOST: &[(&str, &[&str])] = &[
     ("touchpad-col04", &[r"HID\VEN_PIXA&DEV_3854&Col04", r"HID\PIXA3854&Col04", r"HID\*PIXA3854&Col04", r"HID\VID_093A&UP:FF00_U:0001", "HID_DEVICE_UP:FF00_U:0001", "HID_DEVICE_UPR:FF00-FFFF", "HID_DEVICE"]),
     ("ble-mouse-col01", &[r"HID\{00001812-0000-1000-8000-00805f9b34fb}_Dev_VID&02046d_PID&b037_REV&0006&Col01", r"HID\{00001812-0000-1000-8000-00805f9b34fb}_Dev_VID&02046d_PID&b037&Col01", r"HID\{00001812-0000-1000-8000-00805f9b34fb}_LOCALMFG&0002&Col01", r"HID\VID_046D&UP:0001_U:0002", "HID_DEVICE_SYSTEM_MOUSE", "HID_DEVICE_UP:0001_U:0002", "HID_DEVICE"]),
     ("ble-mouse-col02", &[r"HID\{00001812-0000-1000-8000-00805f9b34fb}_Dev_VID&02046d_PID&b037_REV&0006&Col02", r"HID\{00001812-0000-1000-8000-00805f9b34fb}_Dev_VID&02046d_PID&b037&Col02", r"HID\{00001812-0000-1000-8000-00805f9b34fb}_LOCALMFG&0002&Col02", r"HID\VID_046D&UP:FF43_U:0202", "HID_DEVICE_UP:FF43_U:0202", "HID_DEVICE_UPR:FF00-FFFF", "HID_DEVICE"]),
+    // A virtual HID device: a family ID, a USB-form device ID and an alias.
+    ("vhf", &[r"HID\HID_DEVICE_SYSTEM_VHF", r"HID\VID_025D&PID_0721", r"HID\VID_025D&UP:000C_U:0001", "HID_DEVICE_SYSTEM_CONSUMER", "HID_DEVICE_UP:000C_U:0001", "HID_DEVICE"]),
 ];
