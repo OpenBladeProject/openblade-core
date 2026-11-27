@@ -176,24 +176,46 @@ fn source_reviewed_candidates_do_not_inherit_a_physical_usage_selector() {
     }
 }
 
+/// An alternate ID family is readable only with another vendor's alias: a
+/// family without one establishes no vendor and leaves the scan incomplete.
 #[test]
-fn alternate_hid_id_families_are_readable_and_vendor_aliases_require_consensus() {
+fn alternate_hid_id_families_need_a_foreign_alias_and_vendor_aliases_require_consensus() {
     let mut fixture = fixture(BLADE_0581);
     fixture.rows = vec![
         row("opaque-device-a", EXACT),
         row(
             "opaque-device-b",
-            &[r"HID\VEN_SYNA&DEV_1234&COL01", "HID_DEVICE_UP:000D_U:0005"],
+            &[
+                r"HID\VEN_SYNA&DEV_1234&COL01",
+                r"HID\VID_06CB&UP:000D_U:0005",
+                "HID_DEVICE_UP:000D_U:0005",
+            ],
         ),
         row(
             "opaque-device-c",
-            &[r"HID\CONVERTEDDEVICE&COL01", "HID_DEVICE_SYSTEM_KEYBOARD"],
+            &[
+                r"HID\CONVERTEDDEVICE&COL01",
+                r"HID\VID_045E&UP:0001_U:0006",
+                "HID_DEVICE_SYSTEM_KEYBOARD",
+            ],
         ),
     ];
     let result = snapshot(&fixture);
     assert_eq!(result["hid"]["inventory"], "complete");
     assert_eq!(result["hid"]["candidates"], "singleUnresolved");
     assert_eq!(result["hid"]["unreadableInterfaces"], 0);
+
+    let mut aliasless = fixture.rows.clone();
+    aliasless[1] = row(
+        "opaque-device-b",
+        &[r"HID\VEN_SYNA&DEV_1234&COL01", "HID_DEVICE_UP:000D_U:0005"],
+    );
+    let result = snapshot(&Synthetic {
+        rows: aliasless,
+        ..self::fixture(BLADE_0581)
+    });
+    assert_eq!(result["hid"]["inventory"], "incomplete");
+    assert_eq!(result["hid"]["unreadableInterfaces"], 1);
 
     for alias in [
         r"HID\VID_1111&UP:0001_U:0002",
@@ -419,14 +441,19 @@ fn probed_host() -> Synthetic {
     fixture
 }
 
-fn ids(ids: &[&str]) -> Vec<String> {
-    ids.iter().map(|id| (*id).into()).collect()
+/// The facts of one devnode, with the catalog's vendors protected.
+fn facts(ids: &[&str]) -> Option<pnp::Facts> {
+    let ids: Vec<String> = ids.iter().map(|id| (*id).into()).collect();
+    pnp::facts(&ids, &Inventory::load().unwrap().vendors())
 }
 
-/// The probed RZ09-0581 host: its foreign devnodes and nested collections
-/// are readable, so the scan is complete and MI_02 is the one control hint.
-/// Its nine other exact collections, the nested ones among them, are
-/// counted with another usage.
+const LE: &str = r"HID\{00001812-0000-1000-8000-00805f9b34fb}_Dev_VID&";
+const CLASSIC: &str = r"HID\{00001124-0000-1000-8000-00805f9b34fb}_VID&";
+
+/// The probed RZ09-0581 host (39 of its 46 interfaces): its foreign
+/// devnodes and nested collections are readable, so the scan is complete
+/// and MI_02 is the one control hint. Its nine other exact collections, the
+/// nested ones among them, are counted with another usage.
 #[test]
 fn the_probed_rz09_0581_inventory_is_complete_with_one_control_candidate() {
     let fixture = probed_host();
@@ -441,30 +468,159 @@ fn the_probed_rz09_0581_inventory_is_complete_with_one_control_candidate() {
 
     let inventory = Inventory::load().unwrap();
     let (_, model) = fixture.host.resolve(&inventory);
-    let (_, hint) = discover_hid(&fixture, model, &AtomicBool::new(false)).unwrap();
+    let (_, hint) = discover_hid(&fixture, &inventory, model, &AtomicBool::new(false)).unwrap();
     assert_eq!(hint.unwrap().path, "02e0-mi02");
 }
 
-/// A Razer interface whose identity is not fully parsed, added to the
-/// probed host, leaves the scan incomplete and selects nothing.
+/// Common peripherals read in full, beside the probed host: another
+/// vendor's device whatever its remainder, game controllers, Bluetooth LE
+/// and classic devices, and Razer peripherals with another product ID,
+/// which are wrong products rather than unreadable rows.
+#[test]
+fn peripherals_beside_the_probed_host_keep_the_scan_complete() {
+    let razer_le_mouse = [
+        format!("{LE}021532_PID&0095_REV&0001&Col01"),
+        format!("{LE}021532_PID&0095&Col01"),
+        r"HID\{00001812-0000-1000-8000-00805f9b34fb}_LOCALMFG&0002&Col01".into(),
+        r"HID\VID_1532&UP:0001_U:0002".into(),
+        "HID_DEVICE_SYSTEM_MOUSE".into(),
+        "HID_DEVICE_UP:0001_U:0002".into(),
+        "HID_DEVICE".into(),
+    ];
+    let razer_classic_mouse = [
+        format!("{CLASSIC}00021532_PID&007a&Col01"),
+        r"HID\VID_1532&UP:0001_U:0002".into(),
+        "HID_DEVICE_UP:0001_U:0002".into(),
+    ];
+    let classic_pad = [
+        format!("{CLASSIC}0002054c_PID&05c4&Col01"),
+        r"HID\VID_054C&UP:0001_U:0005".into(),
+        "HID_DEVICE_SYSTEM_GAME".into(),
+    ];
+    let xinput_classic = [
+        format!("{CLASSIC}0002045e_PID&02e0&IG_00"),
+        r"HID\VID_045E&UP:0001_U:0005".into(),
+    ];
+    let le_sig_source = [
+        format!("{LE}011532_PID&0001&Col01"),
+        r"HID\VID_1532&UP:0001_U:0002".into(),
+    ];
+    fn owned(ids: &[String]) -> Vec<&str> {
+        ids.iter().map(String::as_str).collect()
+    }
+    let rows = [
+        (
+            "xinput-usb-pad",
+            vec![
+                r"HID\VID_045E&PID_0B12&IG_00",
+                r"HID\VID_045E&UP:0001_U:0005",
+                "HID_DEVICE_SYSTEM_GAME",
+                "HID_DEVICE_UP:0001_U:0005",
+                "HID_DEVICE",
+            ],
+            Some((0x045e, 0x0b12)),
+        ),
+        (
+            "razer-xinput-pad",
+            vec![
+                r"HID\VID_1532&PID_0A14&IG_00",
+                r"HID\VID_1532&UP:0001_U:0005",
+                "HID_DEVICE_UP:0001_U:0005",
+            ],
+            Some((0x1532, 0x0a14)),
+        ),
+        (
+            "foreign-unknown-remainder",
+            vec![
+                r"HID\VID_046D&PID_C52B&REV_1210&MI_02&Col01&Col02&Col03",
+                r"HID\VID_046D&PID_C52B&XX_01",
+                r"HID\VID_046D&UP:0001_U:0002",
+                "HID_DEVICE",
+            ],
+            None,
+        ),
+        (
+            "razer-le-mouse",
+            owned(&razer_le_mouse),
+            Some((0x1532, 0x0095)),
+        ),
+        (
+            "razer-classic-mouse",
+            owned(&razer_classic_mouse),
+            Some((0x1532, 0x007a)),
+        ),
+        ("classic-pad", owned(&classic_pad), Some((0x054c, 0x05c4))),
+        (
+            "xinput-classic",
+            owned(&xinput_classic),
+            Some((0x045e, 0x02e0)),
+        ),
+        // Source 1 (Bluetooth SIG) still names the vendor value 1532, so
+        // its product is compared like any other.
+        (
+            "le-sig-source",
+            owned(&le_sig_source),
+            Some((0x1532, 0x0001)),
+        ),
+        (
+            "acpi-family-foreign-alias",
+            vec![
+                r"HID\VEN_RAZR&DEV_0001&Col01",
+                r"HID\VID_0000&UP:0001_U:0002",
+            ],
+            None,
+        ),
+    ];
+    for (label, ids, device) in rows {
+        let parsed = facts(&ids).unwrap_or_else(|| panic!("{label}"));
+        assert_eq!(parsed.device(), device, "{label}");
+        let mut fixture = probed_host();
+        fixture.rows.push(row(label, &ids));
+        let result = snapshot(&fixture);
+        assert_eq!(result["hid"]["inventory"], "complete", "{label}");
+        assert_eq!(result["hid"]["candidates"], "singleUnresolved", "{label}");
+    }
+}
+
+/// A Bluetooth ID of the exact device is its candidate, a hint the opened
+/// handle must confirm: beside the control collection it makes the
+/// candidates ambiguous, so nothing is selected without a handle.
+#[test]
+fn a_bluetooth_id_of_the_exact_device_is_a_candidate() {
+    for first in [
+        format!("{LE}021532_PID&02e0&Col01"),
+        format!("{CLASSIC}00021532_PID&02e0&Col01"),
+    ] {
+        let ids = [first.as_str(), "HID_DEVICE_UP:0001_U:0002"];
+        assert_eq!(facts(&ids).unwrap().device(), Some((0x1532, 0x02e0)));
+        let mut fixture = probed_host();
+        fixture.rows.push(row("bluetooth", &ids));
+        let result = snapshot(&fixture);
+        assert_eq!(result["hid"]["inventory"], "complete", "{first}");
+        assert_eq!(result["hid"]["candidates"], "ambiguous", "{first}");
+    }
+}
+
+/// A protected-vendor interface whose identity is not fully parsed, added
+/// to the probed host, leaves the scan incomplete and selects nothing.
 #[test]
 fn an_unparsed_razer_interface_makes_the_probed_inventory_incomplete() {
+    let le_unknown_field = format!("{LE}021532_PID&02e0&XX_01");
     for unparsed in [
         // A third nesting level.
         &[
             r"HID\VID_1532&PID_02E0&MI_00&Col03&Col01&Col02",
             "HID_DEVICE_UP:0001_U:0002",
         ][..],
+        // An unknown field.
+        &[r"HID\VID_1532&PID_0A14&XX_00", "HID_DEVICE_UP:0001_U:0002"],
         // A Razer alias without a product ID.
         &[
             r"HID\VEN_RAZR&DEV_0001&Col01",
             r"HID\VID_1532&UP:0001_U:0002",
         ],
-        // Razer named outside the parsed grammar.
-        &[
-            r"HID\{00001812-0000-1000-8000-00805f9b34fb}_Dev_VID&021532_PID&02e0&Col01",
-            r"HID\VID_046D&UP:0001_U:0002",
-        ],
+        // A Bluetooth Razer ID with a field the grammar does not read.
+        &[le_unknown_field.as_str(), r"HID\VID_1532&UP:0001_U:0002"],
     ] {
         let mut fixture = probed_host();
         fixture.rows.push(row("unparsed", unparsed));
@@ -475,30 +631,77 @@ fn an_unparsed_razer_interface_makes_the_probed_inventory_incomplete() {
     }
 }
 
-/// Another vendor's alias or an ID family without a vendor is foreign; a
-/// Razer alias without a product ID, Razer named in any ID the grammar does
-/// not read, or a lone alias has no facts.
+/// Every probed row is readable with its device; and a devnode without
+/// facts is one that names a protected vendor outside the grammar, has a
+/// protected alias without a product, disagrees, has no device ID, or
+/// establishes no vendor at all.
 #[test]
 fn foreign_devnodes_are_readable_only_when_their_ids_rule_out_razer() {
     for (label, ids) in probe_inventory::RZ09_0581_HOST {
-        let facts = pnp::facts(&self::ids(ids)).unwrap_or_else(|| panic!("{label}"));
+        let parsed = facts(ids).unwrap_or_else(|| panic!("{label}"));
         let expected = match label.split('-').next() {
             Some("02e0") => Some((0x1532, 0x02e0)),
             Some("0f43") => Some((0x1532, 0x0f43)),
+            Some("ble") => Some((0x046d, 0xb037)),
             _ => None,
         };
-        assert_eq!(facts.device(), expected, "{label}");
+        assert_eq!(parsed.device(), expected, "{label}");
     }
+    let classic_without_source = format!("{CLASSIC}1532_PID&02e0");
+    let le_razer_foreign_alias = format!("{LE}021532_PID&b037&Col01");
+    let classic_razer_foreign_alias = format!("{CLASSIC}00021532_PID&02e0&Col01");
+    let le_unknown_source = format!("{LE}031532_PID&0001");
+    let classic_unknown_source = format!("{CLASSIC}00031532_PID&0001");
     for unread in [
         &[r"HID\INTC816&Col01", r"HID\VID_1532&UP:0001_U:0006"][..],
         &[r"HID\INTC816&Col01", r"USB\VID_1532&PID_02E0&MI_00"],
         &[
-            r"HID\{00001812-0000-1000-8000-00805f9b34fb}_Dev_VID&021532_PID&b037&Col01",
+            r"HID\FOO_VID_15320001&Col01",
             r"HID\VID_046D&UP:0001_U:0002",
         ],
+        &[r"HID\WEIRD&VID&00021532", r"HID\VID_046D&UP:0001_U:0002"],
+        // Another vendor's device ID whose unread remainder names Razer.
+        &[
+            r"HID\VID_046D&PID_C52B&XX_VID_1532",
+            r"HID\VID_046D&UP:0001_U:0002",
+        ],
+        &[
+            classic_without_source.as_str(),
+            r"HID\VID_046D&UP:0001_U:0002",
+        ],
+        // A vendor-ID source other than Bluetooth SIG or USB-IF, even with
+        // an agreeing alias.
+        &[le_unknown_source.as_str(), r"HID\VID_1532&UP:0001_U:0002"],
+        &[
+            classic_unknown_source.as_str(),
+            r"HID\VID_1532&UP:0001_U:0002",
+        ],
+        // A protected vendor in a transport ID, contradicted by the alias.
+        &[
+            le_razer_foreign_alias.as_str(),
+            r"HID\VID_046D&UP:0001_U:0002",
+        ],
+        &[
+            classic_razer_foreign_alias.as_str(),
+            r"HID\VID_046D&UP:0001_U:0002",
+        ],
+        // An exact identity followed by an ID naming Razer outside it.
+        &[
+            r"HID\VID_1532&PID_02E0&MI_02",
+            r"HID\WEIRD_VID_1532&PID_02E0",
+            "HID_DEVICE_UP:0001_U:0002",
+        ],
+        // A lone alias, without a device ID.
         &[r"HID\VID_8087&UP:000C_U:0001", "HID_DEVICE"],
+        // A device ID family with no vendor alias.
+        &[
+            r"HID\RZCONTROL&Col01",
+            "HID_DEVICE_UP:0001_U:0002",
+            "HID_DEVICE",
+        ],
+        &[r"HID\VEN_SYNA&DEV_1234&COL01", "HID_DEVICE_UP:000D_U:0005"],
     ] {
-        assert_eq!(pnp::facts(&ids(unread)), None, "{unread:?}");
+        assert_eq!(facts(unread), None, "{unread:?}");
     }
 }
 
@@ -506,40 +709,51 @@ fn foreign_devnodes_are_readable_only_when_their_ids_rule_out_razer() {
 /// two levels HIDClass lists on RZ09-0581, in HIDClass field order only.
 #[test]
 fn nested_collections_parse_with_exact_bounded_grammar() {
-    let nested = pnp::facts(&ids(&[
+    let nested = facts(&[
         r"HID\VID_1532&PID_02E0&REV_0200&MI_00&Col03&Col01",
         r"HID\VID_1532&PID_02E0&MI_00&COL03&COL01",
         "HID_DEVICE_UP:000C_U:0001",
-    ]))
+    ])
     .unwrap();
     assert_eq!(nested.device(), Some((0x1532, 0x02e0)));
     assert_eq!(nested.usage, Some((0x0c, 0x01)));
     for distinct in [
         r"HID\VID_1532&PID_02E0&MI_00&Col03",
+        r"HID\VID_1532&PID_02E0&MI_00&Col01",
         r"HID\VID_1532&PID_02E0&MI_00&Col01&Col03",
         r"HID\VID_1532&PID_02E0&MI_00&Col03&Col02",
+        r"HID\VID_1532&PID_02E0&MI_00&IG_00&Col03&Col01",
     ] {
-        let other = pnp::facts(&ids(&[distinct, "HID_DEVICE_UP:000C_U:0001"])).unwrap();
+        let other = facts(&[distinct, "HID_DEVICE_UP:000C_U:0001"]).unwrap();
         assert_ne!(other, nested, "{distinct}");
     }
+    let le_twice_revised = format!("{LE}021532_PID&0095_REV&0001&REV_0001");
+    let le_three_levels = format!("{LE}021532_PID&0095&Col01&Col02&Col03");
+    let le_short_product = format!("{LE}021532_PID&095");
     for malformed in [
         r"HID\VID_1532&PID_02E0&MI_00&Col03&Col01&Col02",
         r"HID\VID_1532&PID_02E0&Col03&MI_00",
         r"HID\VID_1532&PID_02E0&MI_00&MI_01",
         r"HID\VID_1532&PID_02E0&REV_0200&REV_0200",
         r"HID\VID_1532&PID_02E0&Col03&REV_0200",
+        r"HID\VID_1532&PID_02E0&IG_00&MI_00",
+        r"HID\VID_1532&PID_02E0&IG_00&IG_01",
+        r"HID\VID_1532&PID_02E0&IG_0",
         r"HID\VID_1532&PID_02E0&MI_00&Col3&Col01",
         r"HID\VID_1532&PID_02E0&MI_00&Col03&",
         r"HID\VID_1532&PID_02E0&MI_00&Col03&Col01X",
+        &le_twice_revised,
+        &le_three_levels,
+        &le_short_product,
     ] {
-        assert_eq!(pnp::facts(&ids(&[malformed])), None, "{malformed}");
+        assert_eq!(facts(&[malformed]), None, "{malformed}");
     }
     // The revisioned and unrevisioned paths must agree.
     assert_eq!(
-        pnp::facts(&ids(&[
+        facts(&[
             r"HID\VID_1532&PID_02E0&REV_0200&MI_00&Col03&Col01",
             r"HID\VID_1532&PID_02E0&MI_00&Col03&Col02",
-        ])),
+        ]),
         None
     );
 }

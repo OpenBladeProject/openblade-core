@@ -327,8 +327,11 @@ fn only_the_fixture_identity_has_a_reader() {
             usage: Some(USAGE),
             hint: crate::discovery::CandidateHint {
                 path: "synthetic".into(),
-                facts: crate::discovery::pnp::facts(&[r"HID\VID_1532&PID_02E0&MI_00&COL01".into()])
-                    .unwrap(),
+                facts: crate::discovery::pnp::facts(
+                    &[r"HID\VID_1532&PID_02E0&MI_00&COL01".into()],
+                    &[0x1532],
+                )
+                .unwrap(),
             },
         };
         assert_eq!(

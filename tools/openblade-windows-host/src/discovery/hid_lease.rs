@@ -58,7 +58,7 @@ impl Selection {
         let device = model
             .device_id()
             .ok_or_else(|| blocked("no exact HID device ID"))?;
-        let (_, hint) = discover_hid(source, Some(model), cancelled)?;
+        let (_, hint) = discover_hid(source, &inventory, Some(model), cancelled)?;
         Ok(Self {
             model: model.model_number.to_owned(),
             device,
@@ -165,7 +165,7 @@ impl RoleCandidates {
         let device = model
             .device_id()
             .ok_or_else(|| blocked("no exact HID device ID"))?;
-        let hints = super::discover_role(source, model, role.usage, cancelled)?;
+        let hints = super::discover_role(source, &inventory, model, role.usage, cancelled)?;
         Ok(Self {
             model: model.model_number.to_owned(),
             device,

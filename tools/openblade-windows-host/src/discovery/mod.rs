@@ -74,6 +74,19 @@ impl Inventory<'_> {
         }
         Ok(inventory)
     }
+
+    /// The catalog's USB vendors, protected in every scan: an interface of
+    /// one is ruled out only by IDs the grammar reads in full.
+    fn vendors(&self) -> Vec<u16> {
+        let mut vendors: Vec<u16> = self
+            .models
+            .iter()
+            .filter_map(|model| Some(model.device_id()?.0))
+            .collect();
+        vendors.sort_unstable();
+        vendors.dedup();
+        vendors
+    }
 }
 
 impl Model<'_> {
@@ -328,7 +341,7 @@ fn discover(source: &impl DiscoverySource, cancelled: &AtomicBool) -> io::Result
     let host = source.read_host(cancelled)?;
     check_cancelled(cancelled)?;
     let (registry_match, model) = host.resolve(&inventory);
-    let (hid, _) = discover_hid(source, model, cancelled)?;
+    let (hid, _) = discover_hid(source, &inventory, model, cancelled)?;
     let snapshot = serde_json::to_string(&Snapshot {
         schema_version: 1,
         platform: host.platform,
@@ -401,7 +414,7 @@ mod status_metadata {
             });
         };
         // A SetupAPI/PnP hint does not open a device or verify a lease.
-        let hid = match discover_hid(&windows::WindowsMetadata, Some(model), cancel) {
+        let hid = match discover_hid(&windows::WindowsMetadata, &inventory, Some(model), cancel) {
             Ok((evidence, _)) => match evidence.candidates {
                 CandidateState::None => StatusHid::NoCandidate,
                 CandidateState::SingleUnresolved => StatusHid::Candidate,
@@ -437,7 +450,12 @@ struct Scan {
     interfaces: HashMap<String, (String, Option<pnp::Facts>)>,
 }
 
-fn scan(source: &impl DiscoverySource, cancelled: &AtomicBool) -> io::Result<Scan> {
+fn scan(
+    source: &impl DiscoverySource,
+    inventory: &Inventory<'_>,
+    cancelled: &AtomicBool,
+) -> io::Result<Scan> {
+    let protected = inventory.vendors();
     let mut interfaces = HashMap::new();
     let mut interface_count = 0;
     let mut unreadable_interfaces = 0;
@@ -455,7 +473,10 @@ fn scan(source: &impl DiscoverySource, cancelled: &AtomicBool) -> io::Result<Sca
             unreadable_interfaces += 1;
             return Ok(());
         };
-        let facts = interface.hardware_ids.as_deref().and_then(pnp::facts);
+        let facts = interface
+            .hardware_ids
+            .as_deref()
+            .and_then(|ids| pnp::facts(ids, &protected));
         if facts.is_none() {
             unreadable_interfaces += 1;
         }
@@ -492,6 +513,7 @@ fn scan(source: &impl DiscoverySource, cancelled: &AtomicBool) -> io::Result<Sca
 
 fn discover_hid(
     source: &impl DiscoverySource,
+    inventory: &Inventory<'_>,
     model: Option<&Model<'_>>,
     cancelled: &AtomicBool,
 ) -> io::Result<(HidEvidence, Option<CandidateHint>)> {
@@ -502,7 +524,7 @@ fn discover_hid(
         unreadable_interfaces,
         duplicate_interfaces,
         interfaces,
-    } = scan(source, cancelled)?;
+    } = scan(source, inventory, cancelled)?;
     let mut hint = None;
     let counts = model.zip(expected_id).map(|(model, expected_id)| {
         let mut counts = CandidateCounts {
@@ -556,6 +578,7 @@ fn discover_hid(
 #[cfg_attr(not(feature = "service-lighting-v1"), allow(dead_code))]
 fn discover_role(
     source: &impl DiscoverySource,
+    inventory: &Inventory<'_>,
     model: &Model<'_>,
     usage: (u16, u16),
     cancelled: &AtomicBool,
@@ -563,7 +586,7 @@ fn discover_role(
     let expected_id = model
         .device_id()
         .ok_or_else(|| role_refused("no exact HID device ID"))?;
-    let scan = scan(source, cancelled)?;
+    let scan = scan(source, inventory, cancelled)?;
     if scan.inventory != ScanState::Complete {
         return Err(role_refused("HID inventory is incomplete"));
     }

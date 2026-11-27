@@ -2,11 +2,12 @@
 //! host (Razer Blade 16, 1532:02E0). Hardware IDs carry no serial or instance
 //! path; each row's label stands in for its opaque interface name.
 //!
-//! The probe listed 46 interfaces. The 31 that the earlier parser could not
-//! read are here verbatim, and the exact device's eight other collections
-//! carry the probe's first ID and usage, with the companion IDs HIDClass
-//! derives from them. The seven remaining interfaces parsed before and their
-//! IDs were not recorded.
+//! The fixture holds 39 of the 46 interfaces the probe listed, so a complete
+//! scan here covers those 39 only. The 31 that the earlier parser could not
+//! read are verbatim. The exact device's eight other collections carry the
+//! probe's first ID and usage, with the companion IDs HIDClass derives from
+//! them. The other seven interfaces parsed under the earlier parser; the
+//! probe did not record their IDs, and they are not reconstructed.
 
 /// Label and hardware IDs of each probed interface.
 #[rustfmt::skip]

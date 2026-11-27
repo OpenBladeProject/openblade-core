@@ -280,7 +280,7 @@ async fn wrong_model_hid_role_or_report_geometry_cannot_submit() {
         usage: Some(USAGE),
         hint: CandidateHint {
             path: "synthetic".into(),
-            facts: pnp::facts(&[r"HID\VID_1532&PID_02E0&MI_00&COL01".into()]).unwrap(),
+            facts: pnp::facts(&[r"HID\VID_1532&PID_02E0&MI_00&COL01".into()], &[0x1532]).unwrap(),
         },
     };
     assert!(reviewed_selection(&selection));
