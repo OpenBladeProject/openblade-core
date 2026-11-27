@@ -167,7 +167,10 @@ public sealed partial class ServiceSessionPowerTransitionCoordinatorTests
         bool blockPrepare = false)
     {
         var time = new Clock();
-        var runtime = new Runtime { BlockPrepare = blockPrepare };
+        // A blocked prepare ignores its deadline token so only the reply's
+        // timeout ends the wait; otherwise the two real 1.5 s timers race
+        // and a loaded host records the processing-deadline message instead.
+        var runtime = new Runtime { BlockPrepare = blockPrepare, IgnorePrepareCancellation = blockPrepare };
         var shutdown = new RecordingShutdownSignal();
         ServiceSessionPowerTransitionCoordinator? coordinator = relay
             ? new ServiceSessionPowerTransitionCoordinator(runtime, new LowPowerGate(time))
