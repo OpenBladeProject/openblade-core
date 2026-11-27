@@ -68,13 +68,13 @@
       "host": "OpenBlade.SessionAgent",
       "mode": "--snap-tap-input",
       "phase": 6,
-      "source": "src/OpenBlade.SessionAgent/SnapTapInputHost.cs"
+      "source": "src/OpenBlade.SessionAgent/InputHelperCommandLine.cs"
     },
     {
       "host": "OpenBlade.SessionAgent",
       "mode": "--snap-tap-driver-worker",
       "phase": 6,
-      "source": "src/OpenBlade.SessionAgent/SnapTapDriverSupervisor.cs"
+      "source": "src/OpenBlade.SessionAgent/InputHelperCommandLine.cs"
     },
     {
       "host": "OpenBlade.SessionAgent",

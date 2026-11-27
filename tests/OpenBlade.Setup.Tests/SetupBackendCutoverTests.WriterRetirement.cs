@@ -5,9 +5,9 @@ using System.Security.Principal;
 using System.Text;
 using OpenBlade.Setup;
 using OpenBlade.WriterFence.Scratch;
-using FenceNative = OpenBlade.WriterFence.Scratch.Native;
 using static OpenBlade.Setup.Tests.ScratchWriterRetirementGate;
 using static OpenBlade.Setup.Tests.SetupPayloadTransactionTests;
+using FenceNative = OpenBlade.WriterFence.Scratch.Native;
 
 namespace OpenBlade.Setup.Tests;
 

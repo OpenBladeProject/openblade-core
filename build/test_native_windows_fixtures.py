@@ -147,6 +147,28 @@ class FixtureContracts(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'persisted input drift'):
                 f.compare_generated(root, root / 'out')
 
+    def test_dotnet_floor_accepts_newer_sdk_but_requires_net10_runtime(self):
+        runtimes = ('Microsoft.AspNetCore.App 10.0.9 [C:\\dotnet\\shared\\Microsoft.AspNetCore.App]\r\n'
+                    'Microsoft.NETCore.App 9.0.7 [C:\\dotnet\\shared\\Microsoft.NETCore.App]\r\n'
+                    'Microsoft.NETCore.App 10.0.15 [C:\\dotnet\\shared\\Microsoft.NETCore.App]\r\n'
+                    'Microsoft.NETCore.App 11.0.0 [C:\\dotnet\\shared\\Microsoft.NETCore.App]\r\n')
+        without_10 = runtimes.replace('NETCore.App 10.0.15', 'NETCore.App 9.0.3')
+
+        def run(outputs):
+            return lambda command, *args, **kwargs: outputs[command[1]]
+
+        for sdk in ('10.0.404\r\n', '11.0.100\r\n', '12.0.100-preview.1.26101.1\r\n'):
+            with self.subTest(sdk=sdk), patch.object(f, 'checked_run', side_effect=run(
+                    {'--version': sdk, '--list-runtimes': runtimes})):
+                self.assertEqual(f.require_dotnet_10(REPO, REPO, []),
+                                 {'sdk': sdk.strip(), 'netCoreRuntimes': ['10.0.15']})
+        for sdk, listed, message in (('9.0.300', runtimes, 'SDK'), ('preview', runtimes, 'SDK'),
+                                     ('11.0.100', without_10, 'runtime')):
+            with self.subTest(sdk=sdk), patch.object(f, 'checked_run', side_effect=run(
+                    {'--version': sdk, '--list-runtimes': listed})), \
+                    self.assertRaisesRegex(ValueError, message):
+                f.require_dotnet_10(REPO, REPO, [])
+
     @unittest.skipUnless(sys.platform == 'win32', 'Windows process-tree timeout contract')
     def test_owned_command_timeout_fails_and_keeps_log(self):
         with tempfile.TemporaryDirectory() as d:

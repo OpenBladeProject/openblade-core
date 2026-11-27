@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Runtime.Versioning;
 
@@ -155,6 +156,7 @@ internal sealed class WindowsManagedMailboxRun : IManagedMailboxRun
     private sealed class UnenrolledExclusion(IDisposable files, IDisposable exclusion) : IDisposable
     { public void Dispose() { try { exclusion.Dispose(); } finally { files.Dispose(); } } }
 
+    [RequiresAssemblyFiles("Authenticates the running Service's loaded assemblies against their installed files.")]
     internal static WindowsManagedMailboxRun? Start(WindowsManagedMailboxPackage? incoming, ManagedMailboxNativeCustody native)
     {
         string directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "OpenBlade");
@@ -168,7 +170,7 @@ internal sealed class WindowsManagedMailboxRun : IManagedMailboxRun
             exclusion = AcquireRunExclusion(files, native);
             if (incoming is not null)
             {
-                _ = incoming.AuthenticateInstalled(directory, requireLoadedEntry: true);
+                _ = incoming.AuthenticateLoadedService(directory);
                 incoming.Preserve(files);
             }
             string selection = Path.Combine(files.Root, "build-current.bin");
@@ -177,7 +179,7 @@ internal sealed class WindowsManagedMailboxRun : IManagedMailboxRun
             using var selected = files.OpenFile(selection);
             var f = NativeCanonical.ParseLines(WindowsNativeEpochFiles.ReadBounded(selected), "OpenBlade.ManagedMailboxBuildSelection.v1", 2);
             authenticated = WindowsManagedMailboxPackage.OpenCached(files, f[0]);
-            var identity = authenticated.AuthenticateInstalled(directory, requireLoadedEntry: true);
+            var identity = authenticated.AuthenticateLoadedService(directory);
             using var process = Process.GetCurrentProcess();
             var record = new ManagedMailboxRun(Guid.NewGuid().ToString("N"), process.Id.ToString(CultureInfo.InvariantCulture) + ":" + process.StartTime.ToUniversalTime().ToFileTimeUtc().ToString(CultureInfo.InvariantCulture), identity.Executable, identity.Closure, identity.Module);
             var binding = new ManagedMailboxBuildBinding(NativeCanonical.Digest(record.Encode()), authenticated.Installation,

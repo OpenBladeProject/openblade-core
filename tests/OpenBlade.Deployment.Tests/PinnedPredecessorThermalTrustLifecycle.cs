@@ -1,7 +1,7 @@
-using OpenBlade.Deployment;
 // Actual pinned 63401e4c full reader, SHA256(LF) fbd33b0a04810ae66be19306a4e2aac57cf612b03ca0d41c0a2ca92a1fbe38b8.
 // Only namespace/class name changed; selected tests call private-root owner admission.
 using System.Collections.Immutable;
+using OpenBlade.Deployment;
 
 namespace OpenBlade.Deployment.Tests;
 
