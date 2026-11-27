@@ -198,7 +198,8 @@ fn lighting_effect_vectors_frames_match_managed() {
             "{name}"
         );
     }
-    assert!(checked > 80, "{checked}");
+    // Every sample the managed generator recorded.
+    assert_eq!(checked, 91);
 }
 
 #[test]
@@ -214,7 +215,7 @@ fn lighting_effect_vectors_deadlines_match_managed() {
         assert_eq!(row["expect"], next, "{}", row["name"]);
         checked += 1;
     }
-    assert!(checked >= 8);
+    assert_eq!(checked, 8);
 }
 
 #[test]
