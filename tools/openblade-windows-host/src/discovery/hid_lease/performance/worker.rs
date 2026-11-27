@@ -261,13 +261,11 @@ impl<A: ObservationProof> Worker<A> {
         let thread = Builder::new()
             .name("openblade-firmware-observer".into())
             .spawn(move || {
-                #[cfg(test)]
                 let admitted = {
+                    #[cfg(test)]
                     let _clock = service_clock.as_ref().map(tokio::runtime::Handle::enter);
                     job.limit().check().is_ok()
                 };
-                #[cfg(not(test))]
-                let admitted = job.limit().check().is_ok();
                 let result = if admitted { run(job) } else { Ok(None) };
                 if result.is_ok()
                     && let Some(occupied) = occupied
