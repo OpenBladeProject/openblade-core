@@ -1,6 +1,7 @@
 //! `setLightingOverride` through the installed dispatcher on exact RZ09-0581,
-//! slice L1: managed's store and reply for every gate, the keyboard Off and
-//! logo writes with readback, and stop-on-ambiguity.
+//! slices L1 and L2: managed's store and reply for every gate, the keyboard
+//! Off and logo writes with readback, the Static renderer and its keepalive,
+//! and stop-on-ambiguity.
 use super::*;
 
 const OFF: &str = r#"{"effect":0,"color":{"red":0,"green":0,"blue":0},"brightness":0,"parameters":{"kind":"off"},"logoMode":2}"#;
@@ -71,34 +72,223 @@ fn saved(rig: &Rig) -> String {
     panic!("unterminated lighting member: {text}")
 }
 
-/// Managed stores the intent and refuses an effect its capability table
-/// lacks. Native admits the keyboard Off only until slice L2 adds the lit
-/// effects, so every lit effect gets that refusal, with nothing sent.
+/// Managed's reply to a lit effect: the keyboard reports no lit state, so
+/// the setter readbacks are the completion evidence.
+const RENDERED: &str =
+    "Lighting command completed, but this laptop does not report the resulting state.";
+const SPECTRUM: &str = r#"{"effect":2,"color":{"red":0,"green":0,"blue":0},"brightness":50,"parameters":{"kind":"spectrumCycling"},"logoMode":null}"#;
+const STATIC_GREEN: &str = r#"{"effect":1,"color":{"red":71,"green":225,"blue":12},"brightness":10,"parameters":{"kind":"static","color":{"red":71,"green":225,"blue":12}},"logoMode":null}"#;
+
+/// The matrix frames submitted.
+fn frames(rig: &Rig) -> usize {
+    rig.port.state.lock().unwrap().matrix_frames.len()
+}
+
+/// The keepalive step of one origin tick, run as a request's exchange is
+/// (`Rig::held`).
+async fn keepalive(rig: &Rig) {
+    rig.held(
+        HeldClock::Keep,
+        Box::pin(async {
+            let maintain = rig.source.lock().await.maintain_lighting();
+            match maintain {
+                Some(maintain) => maintain.await,
+                None => Ok(()),
+            }
+        }),
+    )
+    .await
+    .unwrap();
+}
+
+/// Moves the test clock on by `by` without waiting for it.
+async fn advance(by: Duration) {
+    tokio::time::pause();
+    tokio::time::advance(by).await;
+    tokio::time::resume();
+}
+
+/// Static is drawn by the Service's renderer in managed's order (the
+/// 00/86 layout once a session, the brightness, the 00/84 read and the
+/// 03/0A:0500 handshake, then the frame), stored first, and replied as
+/// managed's setter completion. The lit state is never published as
+/// confirmed.
 #[tokio::test]
-async fn lit_effects_are_refused_until_l2_interim_divergence() {
+async fn static_is_rendered_and_replied_as_setter_completion() {
     let rig = Rig::new(MemoryFiles::default());
+    lit(&rig, [0x40, 1, 0]);
     let (status, message) = set(&rig, 1, Some(STATIC), 1).await;
+    assert_eq!((status, message.as_str()), (1, RENDERED));
+    assert_eq!(saved(&rig), STATIC);
+    assert_eq!(frames(&rig), 1);
+    assert_eq!(
+        sent(&rig),
+        [
+            (0x83, false),
+            (0x86, false),
+            (0x03, true),
+            (0x83, false),
+            (0x0a, true)
+        ]
+    );
+    // 10% is raw 0x1A.
+    assert_eq!(rig.port.state.lock().unwrap().lighting[0], 0x1a);
+    let status = rig.get().await;
+    assert_eq!(status["status"]["confirmedState"]["lighting"], Value::Null);
+    assert_eq!(
+        status["status"]["lightingOverride"]["value"]["parameters"]["kind"],
+        "static"
+    );
+    // The same color retains the renderer and draws nothing; the session
+    // layout byte is not read again.
+    assert_eq!(set(&rig, 2, Some(STATIC), 1).await, (1, RENDERED.into()));
+    assert_eq!(frames(&rig), 1);
+    assert_eq!(sent(&rig).len(), 5 + 1);
+    // Another color draws a new frame after its own handshake.
+    assert_eq!(
+        set(&rig, 3, Some(STATIC_GREEN), 1).await,
+        (1, RENDERED.into())
+    );
+    assert_eq!(frames(&rig), 2);
+    assert_eq!(
+        sent(&rig)[6..],
+        [(0x83, false), (0x0a, true)],
+        "no second 00/86"
+    );
+    rig.stop().await;
+}
+
+/// Managed stores the intent and refuses an effect its capability table
+/// lacks. Native admits Off and Static; the animated effects wait for slice
+/// C, so each gets that refusal, with nothing sent.
+#[tokio::test]
+async fn animated_effects_are_refused_until_slice_c_divergence() {
+    let rig = Rig::new(MemoryFiles::default());
+    let (status, message) = set(&rig, 1, Some(SPECTRUM), 1).await;
     assert_eq!(status, 2);
     assert_eq!(
         message,
         format!("{STORED}Lighting value is not supported by the verified capability table.")
     );
     assert!(sent(&rig).is_empty());
-    assert_eq!(saved(&rig), STATIC);
+    assert_eq!(frames(&rig), 0);
+    assert_eq!(saved(&rig), SPECTRUM);
     let status = rig.get().await;
     assert_eq!(status["status"]["lightingOverride"]["lifetime"], 1);
-    assert_eq!(
-        status["status"]["lightingOverride"]["value"]["parameters"]["kind"],
-        "static"
-    );
     assert_eq!(status["status"]["desiredState"]["lighting"]["source"], 4);
     rig.stop().await;
+}
+
+/// The owned renderer's keepalive frame goes every 5 s on its first frame's
+/// grid, on the test clock: none before it is due, one when it is, and one
+/// for a late tick, which skips the instants it missed.
+#[tokio::test]
+async fn the_keepalive_frame_goes_every_five_seconds() {
+    let rig = Rig::new(MemoryFiles::default());
+    lit(&rig, [0x40, 1, 0]);
+    assert_eq!(set(&rig, 1, Some(STATIC), 1).await.0, 1);
+    assert_eq!(frames(&rig), 1);
+    advance(Duration::from_secs(4)).await;
+    keepalive(&rig).await;
+    assert_eq!(frames(&rig), 1, "not yet due");
+    advance(Duration::from_millis(1500)).await;
+    keepalive(&rig).await;
+    assert_eq!(frames(&rig), 2);
+    keepalive(&rig).await;
+    assert_eq!(frames(&rig), 2, "the next is due at 10 s");
+    advance(Duration::from_secs(3)).await;
+    keepalive(&rig).await;
+    assert_eq!(frames(&rig), 2);
+    advance(Duration::from_secs(2)).await;
+    keepalive(&rig).await;
+    assert_eq!(frames(&rig), 3);
+    // A tick 12 s late sends one frame, not the three it missed.
+    advance(Duration::from_secs(12)).await;
+    keepalive(&rig).await;
+    keepalive(&rig).await;
+    assert_eq!(frames(&rig), 4);
+    // Each keepalive is a frame alone.
+    assert_eq!(sent(&rig).len(), 5);
+    rig.stop().await;
+}
+
+/// A keepalive refused before submission keeps the renderer for the next
+/// instant (managed's deferral); one that failed after submission ends it
+/// in doubt, so the next request resolves read-only and then draws anew.
+#[tokio::test]
+async fn a_failed_keepalive_ends_the_renderer_in_doubt() {
+    let rig = Rig::new(MemoryFiles::default());
+    lit(&rig, [0x40, 1, 0]);
+    assert_eq!(set(&rig, 1, Some(STATIC), 1).await.0, 1);
+    rig.port.state.lock().unwrap().matrix_refuse = Some(2);
+    advance(Duration::from_millis(5500)).await;
+    keepalive(&rig).await;
+    assert_eq!(frames(&rig), 1, "refused before submission");
+    advance(Duration::from_secs(5)).await;
+    keepalive(&rig).await;
+    assert_eq!(frames(&rig), 2, "the renderer was kept");
+    rig.port.state.lock().unwrap().matrix_fail = Some(3);
+    advance(Duration::from_secs(5)).await;
+    keepalive(&rig).await;
+    assert_eq!(frames(&rig), 3);
+    advance(Duration::from_secs(5)).await;
+    keepalive(&rig).await;
+    assert_eq!(frames(&rig), 3, "nothing owns the matrix");
+    let before = setters(&rig);
+    assert_eq!(set(&rig, 2, Some(STATIC), 1).await, (2, PENDING.into()));
+    assert_eq!(setters(&rig), before, "the resolution writes nothing");
+    assert_eq!(set(&rig, 3, Some(STATIC), 1).await.0, 1);
+    assert_eq!(frames(&rig), 4, "a new renderer, not a retained one");
+    rig.stop().await;
+}
+
+/// Off ends the renderer as managed's does: no further keepalive.
+#[tokio::test]
+async fn off_retires_the_renderer() {
+    let rig = Rig::new(MemoryFiles::default());
+    lit(&rig, [0x40, 1, 0]);
+    assert_eq!(set(&rig, 1, Some(STATIC), 1).await.0, 1);
+    assert_eq!(set(&rig, 2, Some(OFF), 1).await.0, 1);
+    advance(Duration::from_secs(6)).await;
+    keepalive(&rig).await;
+    assert_eq!(frames(&rig), 1);
+    rig.stop().await;
+}
+
+/// A keepalive frame still running at Stop is cancelled by the worker's
+/// stop, in doubt, and nothing is replayed; the renderer ends without a
+/// write.
+#[tokio::test]
+async fn stop_cancels_a_running_keepalive() {
+    let rig = Rig::new(MemoryFiles::default());
+    lit(&rig, [0x40, 1, 0]);
+    assert_eq!(set(&rig, 1, Some(STATIC), 1).await.0, 1);
+    rig.port.state.lock().unwrap().matrix_mute = true;
+    advance(Duration::from_secs(6)).await;
+    let tick = async {
+        let maintain = rig.source.lock().await.maintain_lighting().unwrap();
+        maintain.await
+    };
+    let stop = async {
+        tokio::time::timeout(HANG_GUARD, async {
+            while frames(&rig) < 2 {
+                tokio::time::sleep(Duration::from_millis(1)).await;
+            }
+        })
+        .await
+        .unwrap();
+        rig.stop().await;
+    };
+    let (ticked, ()) = tokio::join!(tick, stop);
+    ticked.unwrap();
+    assert_eq!(frames(&rig), 2);
+    assert_eq!(sent(&rig).len(), 5, "nothing after the cancelled frame");
 }
 
 /// A clear is stored and its reply says what waits. On an unclassified
 /// adapter that lighting admits it is managed's: profile application waits
 /// for adapter classification. On a classified adapter managed applies the
-/// profile's lighting, which slice L1 does not, and the reply says so
+/// profile's lighting, which native does not yet, and the reply says so
 /// (interim divergence). Nothing is sent either way.
 #[tokio::test]
 async fn a_clear_is_stored_and_says_what_waits() {
@@ -113,8 +303,8 @@ async fn a_clear_is_stored_and_says_what_waits() {
         ),
     ] {
         let rig = Rig::new(MemoryFiles::default());
-        assert_eq!(set(&rig, 1, Some(STATIC), 1).await.0, 2);
-        assert_eq!(saved(&rig), STATIC);
+        assert_eq!(set(&rig, 1, Some(SPECTRUM), 1).await.0, 2);
+        assert_eq!(saved(&rig), SPECTRUM);
         if unclassified {
             rig.port.state.lock().unwrap().power_status = 3;
         }
@@ -280,7 +470,7 @@ async fn a_persistence_failure_is_rejected_intent_and_writes_nothing() {
 
 /// The saved override survives a restart in managed's bytes, and the store
 /// loads it as the persistent override; a restart writes no lighting
-/// (reconciliation is slice L2's).
+/// (an interim divergence: native runs no lighting reconciliation yet).
 #[tokio::test]
 async fn a_restart_keeps_the_saved_intent_and_writes_nothing() {
     let files = MemoryFiles::default();
@@ -532,7 +722,7 @@ async fn status_publishes_only_what_the_last_job_confirmed() {
 #[tokio::test]
 async fn status_writes_lighting_parameters_kind_first() {
     let rig = Rig::new(MemoryFiles::default());
-    assert_eq!(set(&rig, 1, Some(STATIC), 1).await.0, 2);
+    assert_eq!(set(&rig, 1, Some(STATIC), 1).await.0, 1);
     let request = br#"{"operation":"getStatus","version":91,"requestId":"bbbbbbbb-cccc-dddd-eeee-000000000098"}"#;
     let bytes = rig
         .request_bytes("getStatus", request.to_vec(), USER, SID)
@@ -585,7 +775,7 @@ async fn a_keyboard_delegated_to_dynamic_lighting_blocks_before_any_store() {
 
 /// Managed defers lighting while the low-power gate is set and applies it
 /// after standby; native stores it and says so, with no promise, since
-/// nothing applies a stored lighting intent until slice L2.
+/// nothing applies a stored lighting intent yet (interim divergence).
 #[cfg(feature = "service-profile-triggers-v1")]
 #[tokio::test]
 async fn the_low_power_store_promises_no_resume_apply_interim_divergence() {
@@ -610,6 +800,35 @@ async fn the_low_power_store_promises_no_resume_apply_interim_divergence() {
     rig.custody.scoped_fresh.store(false, Ordering::Release);
     assert_eq!(rig.get().await["success"], true);
     assert!(sent(&rig).is_empty(), "nothing applies it after standby");
+    rig.stop().await;
+}
+
+/// At the low-power boundary the origin tick ends the renderer without a
+/// write, before the keyboard step; after the resume no keepalive goes until
+/// a request draws a new renderer.
+#[cfg(feature = "service-profile-triggers-v1")]
+#[tokio::test]
+async fn low_power_retires_the_renderer_without_a_write() {
+    use windows_sys::Win32::System::Services::SERVICE_CONTROL_POWEREVENT as POWER;
+    const SUSPEND: u32 = 4;
+    const RESUME: u32 = 18;
+    let rig = Rig::new(MemoryFiles::default());
+    lit(&rig, [0x40, 1, 0]);
+    let custody = rig.custody.clone();
+    rig.runtime
+        .read_low_power(move || custody.lifecycle.low_power());
+    assert_eq!(set(&rig, 1, Some(STATIC), 1).await.0, 1);
+    let reports = sent(&rig).len();
+    rig.custody.scoped_fresh.store(true, Ordering::Release);
+    rig.custody.lifecycle.ingress(POWER, SUSPEND);
+    advance(Duration::from_secs(6)).await;
+    keepalive(&rig).await;
+    assert_eq!((frames(&rig), sent(&rig).len()), (1, reports));
+    rig.custody.lifecycle.ingress(POWER, RESUME);
+    rig.custody.scoped_fresh.store(false, Ordering::Release);
+    advance(Duration::from_secs(6)).await;
+    keepalive(&rig).await;
+    assert_eq!(frames(&rig), 1, "nothing owns the matrix after the resume");
     rig.stop().await;
 }
 

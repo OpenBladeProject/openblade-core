@@ -41,6 +41,7 @@ mod lighting_layout;
 #[allow(unused_imports)] // Shared with the standalone discovery binary.
 pub(crate) use lighting::{
     LightingConfirmation, LightingJob, LightingOutcome, LightingReading, LightingTarget,
+    MatrixState, RenderTarget, Renderer, Rgb,
 };
 #[cfg(feature = "service-lighting-v1")]
 #[allow(unused_imports)] // Shared with the standalone discovery binary.
@@ -192,6 +193,48 @@ trait Port {
     fn poll(&mut self) -> Option<io::Result<(usize, Frame)>>;
     fn cancel(&mut self);
     fn poll_retirement(&mut self) -> io::Result<bool>;
+
+    /// Opens and verifies the exact matrix collection beside this port's
+    /// control collection (`matrix_role`). Its lease shares this port's
+    /// lifetime: `cancel` cancels its operation and `poll_retirement`
+    /// retires it too.
+    #[cfg(feature = "service-lighting-v1")]
+    fn open_matrix(&mut self, _limit: Limit<'_>) -> io::Result<()> {
+        Err(blocked("this port has no matrix collection"))
+    }
+    /// One 03/0B feature report, after revalidating the matrix identity. An
+    /// error means nothing was submitted; a submitted report completes
+    /// through `poll_matrix`.
+    #[cfg(feature = "service-lighting-v1")]
+    fn submit_matrix(&mut self, _report: &MatrixReport, _limit: Limit<'_>) -> io::Result<()> {
+        Err(blocked("this port has no matrix collection"))
+    }
+    #[cfg(feature = "service-lighting-v1")]
+    fn poll_matrix(&mut self) -> Option<io::Result<()>> {
+        None
+    }
+}
+
+/// One encoded 03/0B feature report.
+#[cfg(feature = "service-lighting-v1")]
+type MatrixReport = [u8; openblade_protocol::lighting::matrix::FEATURE_REPORT_LENGTH];
+
+/// Managed `IsExactMatrixInterface`: the consumer collection whose feature
+/// report carries the 375-byte matrix buffer.
+#[cfg(feature = "service-lighting-v1")]
+const MATRIX_ROLE: super::Role = super::Role {
+    usage: (0x000c, 0x0001),
+    feature_bytes: openblade_protocol::lighting::matrix::FEATURE_REPORT_LENGTH as u16,
+};
+
+/// The exact matrix identity: this module's model and device.
+#[cfg(feature = "service-lighting-v1")]
+fn reviewed_matrix(identity: &super::RoleIdentity) -> bool {
+    let descriptor = identity.descriptor();
+    identity.model() == MODEL
+        && descriptor.device == DEVICE
+        && descriptor.usage == MATRIX_ROLE.usage
+        && descriptor.feature_bytes == MATRIX_ROLE.feature_bytes
 }
 
 fn reviewed_selection(selection: &Selection) -> bool {

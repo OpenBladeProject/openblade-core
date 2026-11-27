@@ -24,11 +24,13 @@ const SETTER_USERS: &[&str] = &[
 ];
 
 /// The only non-test files that may name the matrix frame encoder or the
-/// 03/0A handshake setter: their codec and the semantic admission, which
-/// encodes the known answer and the projection fingerprint and builds the
-/// handshake only to compare it with the oracle.
+/// 03/0A handshake setter: their codec, the Static renderer recipe
+/// (`Reader::render` and `Reader::keepalive`), and the semantic admission,
+/// which encodes the known answer and the projection fingerprint and builds
+/// the handshake only to compare it with the oracle.
 const MATRIX_SETTER_USERS: &[&str] = &[
     "rust/crates/openblade-protocol/src/lighting/matrix.rs",
+    "tools/openblade-windows-host/src/discovery/hid_lease/performance/lighting/render.rs",
     "tools/openblade-windows-host/src/discovery/hid_lease/performance/lighting_admission.rs",
 ];
 
@@ -42,10 +44,12 @@ const JOB_USERS: &[&str] =
     &["tools/openblade-windows-host/src/windows/scm/installed/lighting_mutation.rs"];
 
 /// Every lighting job constructor that can reach a setter or a store.
-const JOB_CONSTRUCTORS: [&str; 3] = [
+const JOB_CONSTRUCTORS: [&str; 5] = [
     "LightingJob::write(",
     "LightingJob::store(",
     "LightingJob::resolution(",
+    "LightingJob::render(",
+    "LightingJob::keepalive(",
 ];
 
 fn root() -> PathBuf {

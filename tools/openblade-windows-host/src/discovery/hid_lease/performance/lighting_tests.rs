@@ -10,16 +10,16 @@ use openblade_domain::thermal_mutation::{Destination, Progress};
 use openblade_protocol::lighting::LogoMode;
 use std::sync::atomic::AtomicUsize;
 
-const ADMITTED: ReadAdmission = ReadAdmission {
+pub(super) const ADMITTED: ReadAdmission = ReadAdmission {
     lifecycle: 1,
     generation: [9; 32],
 };
 
 /// A permit carrying one job whose admission refuses from the 1-based
 /// `refuse_from` authorization on.
-struct Lit {
-    job: LightingJob,
-    refuse_from: Option<usize>,
+pub(super) struct Lit {
+    pub(super) job: LightingJob,
+    pub(super) refuse_from: Option<usize>,
     calls: AtomicUsize,
 }
 impl Lit {
@@ -33,7 +33,7 @@ impl Lit {
     fn write(target: LightingTarget) -> Self {
         Self::with(LightingJob::write(target))
     }
-    fn with(job: LightingJob) -> Self {
+    pub(super) fn with(job: LightingJob) -> Self {
         Self {
             job,
             refuse_from: None,
@@ -85,13 +85,13 @@ fn off_with(logo: LogoMode) -> Option<LightingTarget> {
     })
 }
 
-fn keyboard(lighting: [u8; 3]) -> Fixture {
+pub(super) fn keyboard(lighting: [u8; 3]) -> Fixture {
     let fixture = Fixture::new();
     fixture.state.lock().unwrap().lighting = lighting;
     fixture
 }
 
-async fn run(fixture: &Fixture, permit: &Lit) {
+pub(super) async fn run(fixture: &Fixture, permit: &Lit) {
     run_within(fixture, permit, Duration::from_secs(6)).await;
 }
 
@@ -134,9 +134,9 @@ fn reading(brightness: u8, logo: LogoMode) -> Option<LightingReading> {
     })
 }
 
-const BRIGHTNESS: &str = "03/83:010500";
-const STATE: &str = "03/80:010400";
-const EFFECT: &str = "03/82:010400";
+pub(super) const BRIGHTNESS: &str = "03/83:010500";
+pub(super) const STATE: &str = "03/80:010400";
+pub(super) const EFFECT: &str = "03/82:010400";
 
 #[tokio::test]
 async fn off_writes_brightness_zero_reads_it_back_and_reads_the_aggregate() {

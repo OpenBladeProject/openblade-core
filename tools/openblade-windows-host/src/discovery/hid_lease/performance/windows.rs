@@ -12,7 +12,7 @@ use crate::discovery::{
 use std::{
     cell::UnsafeCell,
     io,
-    os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle},
+    os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle, RawHandle},
     ptr::{NonNull, null, null_mut},
     sync::atomic::AtomicBool,
 };
@@ -69,29 +69,153 @@ fn the_native_quarantine_reaches_the_process_pool() {
 pub(super) struct NativePort {
     lease: Option<Lease>,
     identity: Option<LeaseIdentity>,
+    /// The exact matrix collection (`Port::open_matrix`), retired with the
+    /// control lease.
+    #[cfg(feature = "service-lighting-v1")]
+    matrix: Option<MatrixLease>,
 }
 
 struct Lease {
-    operation: Option<Operation>,
+    operation: Option<Operation<{ super::FRAME_LENGTH }>>,
     handle: MetadataHandle,
 }
 
-struct Operation {
-    storage: NonNull<Storage>,
+#[cfg(feature = "service-lighting-v1")]
+struct MatrixLease {
+    operation: Option<Operation<{ openblade_protocol::lighting::matrix::FEATURE_REPORT_LENGTH }>>,
+    handle: MetadataHandle,
+    identity: super::super::RoleIdentity,
+}
+
+struct Operation<const N: usize> {
+    storage: NonNull<Storage<N>>,
     synchronous: bool,
     cancel_requested: bool,
     outstanding: bool,
 }
 
-impl Operation {
-    fn storage(&self) -> &Storage {
+impl<const N: usize> Operation<N> {
+    fn storage(&self) -> &Storage<N> {
         // SAFETY: this allocation is owned by the operation and kept through
         // terminal completion. Win32 can only access its UnsafeCell fields.
         unsafe { self.storage.as_ref() }
     }
+
+    /// Starts one overlapped feature IOCTL on `raw`: a set from `buffer`, or
+    /// a get into it. An error means Win32 accepted nothing.
+    fn start(raw: RawHandle, sending: bool, buffer: [u8; N]) -> io::Result<Self> {
+        // SAFETY: An unnamed, private, manual-reset event owned by this operation.
+        let event = unsafe { CreateEventW(null(), 1, 0, null()) };
+        if event.is_null() {
+            return Err(io::Error::last_os_error());
+        }
+        // SAFETY: Successful CreateEventW returned an owned handle.
+        let event = unsafe { OwnedHandle::from_raw_handle(event) };
+        let mut operation = Self {
+            storage: NonNull::new(Box::into_raw(Box::new(Storage {
+                buffer: UnsafeCell::new(buffer),
+                overlapped: UnsafeCell::new(OVERLAPPED {
+                    hEvent: event.as_raw_handle(),
+                    ..OVERLAPPED::default()
+                }),
+                event,
+            })))
+            .expect("Box has a nonnull allocation"),
+            synchronous: false,
+            cancel_requested: false,
+            outstanding: false,
+        };
+        let storage = operation.storage();
+        let length = N as u32;
+        let frame = storage.buffer.get().cast();
+        // SAFETY: The caller's retained lease owns the handle. The stable
+        // allocation owns buffer, event and OVERLAPPED until terminal completion.
+        let result = unsafe {
+            if sending {
+                DeviceIoControl(
+                    raw,
+                    IOCTL_HID_SET_FEATURE,
+                    frame,
+                    length,
+                    null_mut(),
+                    0,
+                    null_mut(),
+                    storage.overlapped.get(),
+                )
+            } else {
+                DeviceIoControl(
+                    raw,
+                    IOCTL_HID_GET_FEATURE,
+                    null(),
+                    0,
+                    frame,
+                    length,
+                    null_mut(),
+                    storage.overlapped.get(),
+                )
+            }
+        };
+        if result == 0 {
+            let error = io::Error::last_os_error();
+            if error.raw_os_error() != Some(ERROR_IO_PENDING as i32) {
+                return Err(error);
+            }
+        }
+        operation.synchronous = result != 0;
+        operation.outstanding = true;
+        Ok(operation)
+    }
+
+    /// The terminal result of `slot`'s operation on `raw`, taking it, or
+    /// `None` while it is still pending.
+    fn complete(raw: RawHandle, slot: &mut Option<Self>) -> Option<io::Result<(usize, [u8; N])>> {
+        let operation = slot.as_ref()?;
+        // SAFETY: The operation owns this event throughout the nonblocking wait.
+        if !operation.synchronous
+            && unsafe { WaitForSingleObject(operation.storage().event.as_raw_handle(), 0) }
+                != WAIT_OBJECT_0
+        {
+            return None;
+        }
+        let mut bytes = 0;
+        // SAFETY: All operation storage and the original handle are still live.
+        let ok = unsafe {
+            GetOverlappedResult(raw, operation.storage().overlapped.get(), &mut bytes, 0)
+        };
+        let error = if ok == 0 {
+            let error = io::Error::last_os_error();
+            if error.raw_os_error() == Some(ERROR_IO_INCOMPLETE as i32) {
+                return None;
+            }
+            Some(error)
+        } else {
+            None
+        };
+        let mut operation = slot.take().expect("operation was polled");
+        operation.outstanding = false;
+        Some(match error {
+            Some(error) => Err(error),
+            // SAFETY: Terminal completion returned the buffer to this owner.
+            None => Ok((bytes as usize, unsafe { *operation.storage().buffer.get() })),
+        })
+    }
+
+    /// Requests cancellation of `slot`'s operation on `raw`, once.
+    fn cancel(raw: RawHandle, slot: &mut Option<Self>) {
+        let Some(operation) = slot.as_mut() else {
+            return;
+        };
+        if operation.cancel_requested {
+            return;
+        }
+        operation.cancel_requested = true;
+        // SAFETY: Targets the operation on its original handle. All storage
+        // remains owned even when cancellation races with completion or fails.
+        unsafe { CancelIoEx(raw, operation.storage().overlapped.get()) };
+    }
 }
 
-impl Drop for Operation {
+impl<const N: usize> Drop for Operation<N> {
     fn drop(&mut self) {
         if !self.outstanding {
             // SAFETY: The operation is the sole owner of this allocation.
@@ -101,8 +225,8 @@ impl Drop for Operation {
     }
 }
 
-struct Storage {
-    buffer: UnsafeCell<Frame>,
+struct Storage<const N: usize> {
+    buffer: UnsafeCell<[u8; N]>,
     overlapped: UnsafeCell<OVERLAPPED>,
     event: OwnedHandle,
 }
@@ -170,6 +294,8 @@ impl NativePort {
                 handle,
             }),
             identity: None,
+            #[cfg(feature = "service-lighting-v1")]
+            matrix: None,
         };
         Ok((port, selection))
     }
@@ -222,13 +348,6 @@ impl Port for NativePort {
         if lease.operation.is_some() {
             return Err(blocked("firmware HID operation still outstanding"));
         }
-        // SAFETY: An unnamed, private, manual-reset event owned by this operation.
-        let event = unsafe { CreateEventW(null(), 1, 0, null()) };
-        if event.is_null() {
-            return Err(io::Error::last_os_error());
-        }
-        // SAFETY: Successful CreateEventW returned an owned handle.
-        let event = unsafe { OwnedHandle::from_raw_handle(event) };
         let sending = !matches!(transfer, Transfer::ReceiveReply);
         let buffer = match transfer {
             Transfer::SendGetter(frame) => frame,
@@ -236,126 +355,45 @@ impl Port for NativePort {
             Transfer::SendMutation(frame) => frame,
             Transfer::ReceiveReply => [0; super::FRAME_LENGTH],
         };
-        let mut operation = Operation {
-            storage: NonNull::new(Box::into_raw(Box::new(Storage {
-                buffer: UnsafeCell::new(buffer),
-                overlapped: UnsafeCell::new(OVERLAPPED {
-                    hEvent: event.as_raw_handle(),
-                    ..OVERLAPPED::default()
-                }),
-                event,
-            })))
-            .expect("Box has a nonnull allocation"),
-            synchronous: false,
-            cancel_requested: false,
-            outstanding: false,
-        };
         limit.check()?;
-        let storage = operation.storage();
-        let length = super::FRAME_LENGTH as u32;
-        let frame = storage.buffer.get().cast();
-        let raw = lease.handle.as_raw_handle();
-        // SAFETY: The retained lease owns the handle. The stable allocation
-        // owns buffer, event and OVERLAPPED until terminal completion.
-        let result = unsafe {
-            if sending {
-                DeviceIoControl(
-                    raw,
-                    IOCTL_HID_SET_FEATURE,
-                    frame,
-                    length,
-                    null_mut(),
-                    0,
-                    null_mut(),
-                    storage.overlapped.get(),
-                )
-            } else {
-                DeviceIoControl(
-                    raw,
-                    IOCTL_HID_GET_FEATURE,
-                    null(),
-                    0,
-                    frame,
-                    length,
-                    null_mut(),
-                    storage.overlapped.get(),
-                )
-            }
-        };
-        if result == 0 {
-            let error = io::Error::last_os_error();
-            if error.raw_os_error() != Some(ERROR_IO_PENDING as i32) {
-                return Err(error);
-            }
-        }
-        operation.synchronous = result != 0;
-        operation.outstanding = true;
-        lease.operation = Some(operation);
+        lease.operation = Some(Operation::start(
+            lease.handle.as_raw_handle(),
+            sending,
+            buffer,
+        )?);
         Ok(())
     }
 
     fn poll(&mut self) -> Option<io::Result<(usize, Frame)>> {
         let lease = self.lease.as_mut()?;
-        let operation = lease.operation.as_ref()?;
-        // SAFETY: The operation owns this event throughout the nonblocking wait.
-        if !operation.synchronous
-            && unsafe { WaitForSingleObject(operation.storage().event.as_raw_handle(), 0) }
-                != WAIT_OBJECT_0
-        {
-            return None;
-        }
-
-        let mut bytes = 0;
-        // SAFETY: All operation storage and the original handle are still live.
-        let ok = unsafe {
-            GetOverlappedResult(
-                lease.handle.as_raw_handle(),
-                operation.storage().overlapped.get(),
-                &mut bytes,
-                0,
-            )
-        };
-        let error = if ok == 0 {
-            let error = io::Error::last_os_error();
-            if error.raw_os_error() == Some(ERROR_IO_INCOMPLETE as i32) {
-                return None;
-            }
-            Some(error)
-        } else {
-            None
-        };
-        let mut operation = lease.operation.take().expect("operation was polled");
-        operation.outstanding = false;
-        Some(match error {
-            Some(error) => Err(error),
-            // SAFETY: Terminal completion returned the buffer to this owner.
-            None => Ok((bytes as usize, unsafe { *operation.storage().buffer.get() })),
-        })
+        Operation::complete(lease.handle.as_raw_handle(), &mut lease.operation)
     }
 
     fn cancel(&mut self) {
-        let Some(lease) = self.lease.as_mut() else {
-            return;
-        };
-        let Some(operation) = lease.operation.as_mut() else {
-            return;
-        };
-        if operation.cancel_requested {
-            return;
+        if let Some(lease) = self.lease.as_mut() {
+            Operation::cancel(lease.handle.as_raw_handle(), &mut lease.operation);
         }
-        operation.cancel_requested = true;
-        // SAFETY: Targets the operation on its original handle. All storage
-        // remains owned even when cancellation races with completion or fails.
-        unsafe {
-            CancelIoEx(
-                lease.handle.as_raw_handle(),
-                operation.storage().overlapped.get(),
-            )
-        };
+        #[cfg(feature = "service-lighting-v1")]
+        if let Some(matrix) = self.matrix.as_mut() {
+            Operation::cancel(matrix.handle.as_raw_handle(), &mut matrix.operation);
+        }
     }
 
     fn poll_retirement(&mut self) -> io::Result<bool> {
         let _ = self.poll();
+        // The matrix lease retires first; the control lease, the port's
+        // proof of retirement, only once it has.
+        #[cfg(feature = "service-lighting-v1")]
+        {
+            let _ = self.poll_matrix();
+            if let Some(matrix) = &mut self.matrix {
+                if matrix.operation.is_some() {
+                    return Ok(false);
+                }
+                matrix.handle.retire()?;
+                drop(self.matrix.take());
+            }
+        }
         let Some(lease) = &mut self.lease else {
             return Ok(true);
         };
@@ -369,6 +407,67 @@ impl Port for NativePort {
         drop(self.lease.take());
         Ok(true)
     }
+
+    /// Managed `ProductionLightingFactory`'s matrix opener: exactly one
+    /// exact consumer collection, opened for writing, whose opened metadata
+    /// and fresh candidates match its selection. Only while the control
+    /// lease is live, so both retire together.
+    #[cfg(feature = "service-lighting-v1")]
+    fn open_matrix(&mut self, limit: Limit<'_>) -> io::Result<()> {
+        if self.lease.is_none() || self.identity.is_none() {
+            return Err(blocked("firmware HID lease retired"));
+        }
+        if self.matrix.is_some() {
+            return Ok(());
+        }
+        limit.check()?;
+        let identity = super::super::RoleIdentity::select(
+            &WindowsMetadata,
+            super::MATRIX_ROLE,
+            limit.cancelled,
+        )?;
+        if !super::reviewed_matrix(&identity) {
+            return Err(blocked("unsupported keyboard matrix collection"));
+        }
+        limit.check()?;
+        // Shared OS access is not proof of sole service ownership.
+        let handle = MetadataHandle::open(identity.path(), GENERIC_READ | GENERIC_WRITE)?;
+        identity.verify(&WindowsMetadata, &handle, limit.cancelled)?;
+        self.matrix = Some(MatrixLease {
+            operation: None,
+            handle,
+            identity,
+        });
+        Ok(())
+    }
+
+    #[cfg(feature = "service-lighting-v1")]
+    fn submit_matrix(&mut self, report: &super::MatrixReport, limit: Limit<'_>) -> io::Result<()> {
+        let matrix = self
+            .matrix
+            .as_mut()
+            .ok_or_else(|| blocked("keyboard matrix lease unavailable"))?;
+        if matrix.operation.is_some() {
+            return Err(blocked("keyboard matrix operation still outstanding"));
+        }
+        matrix
+            .identity
+            .verify(&WindowsMetadata, &matrix.handle, limit.cancelled)?;
+        limit.check()?;
+        matrix.operation = Some(Operation::start(
+            matrix.handle.as_raw_handle(),
+            true,
+            *report,
+        )?);
+        Ok(())
+    }
+
+    #[cfg(feature = "service-lighting-v1")]
+    fn poll_matrix(&mut self) -> Option<io::Result<()>> {
+        let matrix = self.matrix.as_mut()?;
+        Operation::complete(matrix.handle.as_raw_handle(), &mut matrix.operation)
+            .map(|result| result.map(|_| ()))
+    }
 }
 
 impl Drop for NativePort {
@@ -376,6 +475,8 @@ impl Drop for NativePort {
         // Only explicit retirement proves that Windows returned all resources.
         // On unregister error or unwind retain the handle and any operation.
         std::mem::forget(self.lease.take());
+        #[cfg(feature = "service-lighting-v1")]
+        std::mem::forget(self.matrix.take());
     }
 }
 
