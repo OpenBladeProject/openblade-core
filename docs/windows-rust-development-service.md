@@ -728,9 +728,12 @@ Windows suspends once the callback returns, so without the hold the release
 raced the suspend. This deviates from the managed Service, whose callback
 returns at once (`WindowsServiceLifecycleEventSource.cs:678-689`), and
 matches the managed Session Agent relay, which waits for the Service the
-same way (`SessionPowerTransitionRelay.cs:101-108`). The native Agent serves
-no `reportSessionPowerTransition`, so before the hold native held nothing on
-any suspend, and managed holds nothing on Fast Startup, where no Agent runs.
+same way (`SessionPowerTransitionRelay.cs:101-108`). The native Agent sends
+no `reportSessionPowerTransition`. A native Service built with
+`service-session-power-relay-v1` answers a managed Agent's report but never
+applies it ([lifecycle operations](#lifecycle-operations)). So before the hold
+native held nothing on any suspend, and managed holds nothing on Fast Startup,
+where no Agent runs.
 
 - Only `SERVICE_CONTROL_POWEREVENT` with PBT_APMSUSPEND that starts a new
   suspend generation waits, and only while the preparation has armed the
@@ -1378,6 +1381,75 @@ display-brightness input's. Both package readers refuse the feature and the mark
 and has not been run on a laptop. See
 [native keyboard lighting](windows-native-lighting.md) for the order, the
 interim divergences and the differences from managed.
+
+#### Lifecycle operations
+
+Two features serve the lifecycle requests other processes send the Service.
+Each implies `service-thermal-mutation-v1`, whose operation gate the shutdown
+waits on, and adds no capability marker.
+
+A Service built with `service-lifecycle-shutdown-v1` serves the Tray's
+`shutdownOpenBlade`, as managed's `RequestShutdown` does
+(`ControlRequestHandler.cs:474-490`, `ServiceShutdownSignal.cs`). LocalSystem
+or an enabled, not deny-only member of BUILTIN\Administrators is admitted,
+whatever its logon kind or session. Every other caller gets "This operation
+requires an administrator.", and so does a caller whose token cannot be
+read. The request first waits, with no timeout, for the operation in
+flight. A client that leaves while it waits cancels it, and nothing stops. An
+admitted request is answered "OpenBlade is shutting down." (status 0). 500 ms
+after that reply, the Service asks for its own STOP through SCM's STOP path
+(`scm_host::deliver_stop`): the ingress revokes the origin, then the armed
+stop is sent, and the existing drain runs its owned cleanup. The shutdown
+adds no cleanup of its own. Only the first admitted request stops the
+Service. A later one is answered the same way and changes nothing. An
+uncertain write stays fenced and recorded for recovery; the drain handles it
+as it would at any STOP.
+
+A Service built with `service-session-power-relay-v1` answers the Session
+Agent's `reportSessionPowerTransition`. It applies managed's checks in
+managed's order (`ServiceSessionPowerTransitionCoordinator.cs:58-129`):
+
+- the caller must be the active local interactive session ("Session
+  automation reports require the active local interactive Windows
+  session.");
+- a report 1500 ms old or older on the Service's QPC clock is "unauthorized,
+  invalid, or expired";
+- a report from an older Agent instance, or a repeated or earlier sequence
+  from the same instance, is stale;
+- a report older than the newest accepted transition is refused as newer.
+
+The relay answers and never applies a report. SCM's notices alone drive the
+low-power gate and hold a suspend until its cleanup has run, so a report can
+neither open nor end a boundary. The relay reads the gate without taking any
+lock the SCM callback takes (`Lifecycle::gate_view`). The Agent instance and
+sequence it last accepted are kept in its own record.
+
+Native differs from managed in these ways:
+
+- The shutdown waits on the thermal operation gate, not managed's
+  user-request gate. A request that holds no operation gate does not delay it.
+- Only the shutdown admits a caller whose logon is neither interactive nor
+  SYSTEM, such as an elevated service account. Every other operation still
+  closes that connection. The pipe's remote-client refusal still applies.
+- An accepted report is answered at once with managed's deadline reply, "The
+  notification was accepted; lifecycle completion was not confirmed before the
+  deadline." (status 0). Managed waits for the lifecycle work it queued and
+  answers Applied ("Synthetic Off confirmed.", "Resume notification processing
+  completed.") or one of its superseded or failed replies. The relay queues no
+  work, so it gives none of those.
+- The newest accepted transition is the newer of the gate's last SCM notice
+  and the relay's last accepted report. Managed's gate holds both, so the
+  refusal is the same.
+- A lifecycle whose notice epoch is exhausted reads no gate, and the report
+  gets the failure "Session power notification handling is unavailable."
+
+Both package readers refuse both features by name, so no packaged image
+carries them. `tests/data/session-lifecycle-vectors.json` holds managed's
+replies: 14 frames recorded through `ControlRequestHandler` and 19 relay cases
+through the coordinator, by
+`ServiceSessionPowerTransitionCoordinatorTests.NativeLifecycleVectors`. The
+Rust tests replay them and assert each deviation by its literal text. Both
+operations are source-reviewed and have not been run on a laptop.
 
 ### Phase 10n ownership binding
 
