@@ -327,6 +327,9 @@ Also stricter:
 - A legacy Static request without parameters is refused before any write;
   managed refuses it inside its recipe, after the brightness.
 - The validated oracle is checked at admission.
+- The matrix collection is chosen only from a complete HID scan: a row the
+  scan cannot read refuses the selection, where managed opens every interface
+  (`hid.inventory` in [Windows backend replay](windows-backend-replay.md)).
 - The saved-override loader refuses a document managed would migrate (an
   older schema, or lighting that managed's visibility normalization changes)
   and preserves its bytes for managed.
