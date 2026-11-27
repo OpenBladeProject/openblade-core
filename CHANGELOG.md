@@ -5,6 +5,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+## [0.77.1] - 2026-11-26
+
 ### Added
 
 - Install a newer OpenBlade release from Settings with **Install update**. OpenBlade downloads the installer, checks it against the published release, and opens the usual setup. ([#1013](https://github.com/OpenBladeProject/openblade-core/pull/1013))
@@ -29,6 +31,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- The cooling pad could get stuck at full speed on Blade 16 (2026, RZ09-0581) after briefly running at its maximum, because OpenBlade stopped controlling it when the fan sped slightly past 3200 RPM. OpenBlade now keeps controlling the pad and lowers the speed again. ([#1016](https://github.com/OpenBladeProject/openblade-core/pull/1016))
 - Links in the app and installer, including About, the changelog and the update check, now go straight to the project's current GitHub home instead of relying on a redirect from its former name. ([#1012](https://github.com/OpenBladeProject/openblade-core/pull/1012))
 - The notice shown while Synapse or other Razer software is running listed process names and didn't say what to do. It now names the app, says what it can change, and tells you to quit Synapse from its tray icon. ([#1011](https://github.com/OpenBladeProject/openblade-core/pull/1011))
 - Experimental Razer-driver SnapTap and function-row handling now hands A, D and the F keys back to Windows when a key it sends doesn't arrive, instead of leaving them untypeable. Turn the feature off and on to retry. ([#1008](https://github.com/OpenBladeProject/openblade-core/pull/1008))
@@ -1323,7 +1326,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Unrecognized external adapters are read-only. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 - Controls that aren't supported on your laptop are unavailable. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 
-[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.65.1-nightly.117...HEAD
+[Unreleased]: https://github.com/OpenBladeProject/openblade-core/compare/v0.77.1...HEAD
+[0.77.1]: https://github.com/OpenBladeProject/openblade-core/compare/v0.65.1-nightly.117...v0.77.1
 [0.65.1-nightly.117]: https://github.com/OSSBlade/openblade-core/compare/v0.64.2-nightly.116...v0.65.1-nightly.117
 [0.64.2-nightly.116]: https://github.com/OSSBlade/openblade-core/compare/v0.63.2-nightly.115...v0.64.2-nightly.116
 [0.63.2-nightly.115]: https://github.com/OSSBlade/openblade-core/compare/v0.61.1-nightly.114...v0.63.2-nightly.115
