@@ -127,6 +127,29 @@ impl Stream for TestStream {
         self.caller_after_read()?;
         Ok("S-1-5-21-111-222-333-1001".into())
     }
+    /// A scripted caller is SYSTEM by its logon, and never an administrator.
+    #[cfg(feature = "service-lifecycle-shutdown-v1")]
+    fn system_or_administrator_after_read(&self) -> bool {
+        windows::system_or_administrator(
+            self.caller_after_read()
+                .map(|caller| caller.logon == Logon::System),
+            || Ok(false),
+        )
+    }
+    /// One poll that registers no wake: an end of stream or an error is a
+    /// closed peer. A single-request connection keeps no later bytes, so a
+    /// byte it consumes is one the exchange would refuse anyway.
+    #[cfg(feature = "service-lifecycle-shutdown-v1")]
+    fn peer_closed(&mut self) -> bool {
+        let mut byte = [0];
+        let mut buf = ReadBuf::new(&mut byte);
+        let mut cx = Context::from_waker(std::task::Waker::noop());
+        match Pin::new(&mut self.pipe).poll_read(&mut cx, &mut buf) {
+            Poll::Ready(Ok(())) => buf.filled().is_empty(),
+            Poll::Ready(Err(_)) => true,
+            Poll::Pending => false,
+        }
+    }
     fn server_pid(&self) -> io::Result<u32> {
         let reads = self.pid_reads.get();
         self.pid_reads.set(reads + 1);

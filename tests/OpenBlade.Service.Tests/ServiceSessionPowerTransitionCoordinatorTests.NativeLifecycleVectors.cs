@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Security.Principal;
 using System.Text;
 using System.Text.Json;
@@ -11,8 +12,9 @@ namespace OpenBlade.Service.Tests;
 // (tools/openblade-windows-host/src/windows/scm/installed/session_lifecycle.rs)
 // are pinned against managed. Each frame row is the reply managed's handler
 // gives one framed request from one caller; each relay case replays one
-// coordinator over a 1 kHz QPC clock and records every report's result. The
-// Rust installed-Service tests read the same file and assert each documented
+// coordinator over a 1 kHz QPC clock and records every report's result; each
+// codec row is one report body managed's codec accepts or refuses. The Rust
+// installed-Service tests read the same file and assert each documented
 // deviation literally.
 public sealed partial class ServiceSessionPowerTransitionCoordinatorTests
 {
@@ -29,7 +31,8 @@ public sealed partial class ServiceSessionPowerTransitionCoordinatorTests
         + "advance moves the clock in milliseconds; scm applies a native notice to the gate at the "
         + "current time as the managed suppliers do (suspend is TryApply(true), resume is "
         + "TryApply(false, newResume: true), displayOn is TryApply(false)); report is one relayed "
-        + "report from the given user and session and records the result.";
+        + "report from the given user and session and records the result. A codec row holds a report "
+        + "request body and whether IpcMessageCodec.ReadRequestAsync accepts it.";
 
     private const string VectorSid = "S-1-5-21-111-222-333-1001";
     private const long Started = 1000;
@@ -43,6 +46,7 @@ public sealed partial class ServiceSessionPowerTransitionCoordinatorTests
             : Path.Combine(output, NativeLifecycleVectors);
         JsonArray frames = await NativeLifecycleFramesAsync();
         JsonArray relay = await NativeRelayCasesAsync();
+        JsonArray codec = await NativeReportCodecRowsAsync();
         if (!string.IsNullOrEmpty(output))
         {
             // One row per line keeps the shared file reviewable in a diff.
@@ -52,16 +56,73 @@ public sealed partial class ServiceSessionPowerTransitionCoordinatorTests
                 .AppendJoin(",\n", frames.Select(entry => entry!.ToJsonString()))
                 .Append("\n],\n\"relay\":[\n")
                 .AppendJoin(",\n", relay.Select(entry => entry!.ToJsonString()))
+                .Append("\n],\n\"codec\":[\n")
+                .AppendJoin(",\n", codec.Select(entry => entry!.ToJsonString()))
                 .Append("\n]\n}\n");
             File.WriteAllText(path, text.ToString(), new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
             return;
         }
 
         JsonObject recorded = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
-        Assert.Equal(new[] { "comment", "frames", "relay" }, recorded.Select(member => member.Key));
+        Assert.Equal(new[] { "comment", "frames", "relay", "codec" }, recorded.Select(member => member.Key));
         Assert.Equal(NativeLifecycleComment, recorded["comment"]!.GetValue<string>());
         Assert.True(JsonNode.DeepEquals(recorded["frames"], frames), recorded["frames"]!.ToJsonString());
         Assert.True(JsonNode.DeepEquals(recorded["relay"], relay), recorded["relay"]!.ToJsonString());
+        Assert.True(JsonNode.DeepEquals(recorded["codec"], codec), recorded["codec"]!.ToJsonString());
+    }
+
+    // Each report body differs from a valid one in a single member. A stamp
+    // at the start is valid, so the valid row pins that boundary.
+    private static async Task<JsonArray> NativeReportCodecRowsAsync()
+    {
+        var valid = new ReportSessionPowerTransitionRequest(OpenBladeIpc.ProtocolVersion, VectorId(1),
+            VectorId(501), Started, 1, Started, Suspending: true);
+        using var frame = new MemoryStream();
+        await IpcMessageCodec.WriteRequestAsync(frame, valid, default);
+        string body = Encoding.UTF8.GetString(frame.ToArray().AsSpan(4));
+        return
+        [
+            await CodecRowAsync("report/valid", body, null, null),
+            await CodecRowAsync("report/nil-instance", body, "instanceId", JsonValue.Create(Guid.Empty)),
+            await CodecRowAsync("report/zero-start", body, "instanceStartedQpc", JsonValue.Create(0L)),
+            await CodecRowAsync("report/negative-start", body, "instanceStartedQpc", JsonValue.Create(-1L)),
+            await CodecRowAsync("report/zero-sequence", body, "sequence", JsonValue.Create(0L)),
+            await CodecRowAsync("report/negative-sequence", body, "sequence", JsonValue.Create(-1L)),
+            await CodecRowAsync("report/stamp-before-start", body, "timestampQpc",
+                JsonValue.Create(Started - 1)),
+        ];
+    }
+
+    private static async Task<JsonObject> CodecRowAsync(string name, string body, string? member,
+        JsonNode? value)
+    {
+        JsonObject request = JsonNode.Parse(body)!.AsObject();
+        if (member is not null)
+        {
+            Assert.True(request.ContainsKey(member), member);
+            request[member] = value;
+        }
+
+        string patched = request.ToJsonString();
+        byte[] payload = Encoding.UTF8.GetBytes(patched);
+        using var frame = new MemoryStream();
+        byte[] prefix = new byte[sizeof(int)];
+        BinaryPrimitives.WriteInt32LittleEndian(prefix, payload.Length);
+        frame.Write(prefix);
+        frame.Write(payload);
+        frame.Position = 0;
+        bool accepted;
+        try
+        {
+            _ = await IpcMessageCodec.ReadRequestAsync(frame, default);
+            accepted = true;
+        }
+        catch (InvalidDataException)
+        {
+            accepted = false;
+        }
+
+        return new JsonObject { ["name"] = name, ["request"] = patched, ["accepted"] = accepted };
     }
 
     private static async Task<JsonArray> NativeLifecycleFramesAsync()
@@ -91,6 +152,8 @@ public sealed partial class ServiceSessionPowerTransitionCoordinatorTests
                 "interactive", 1, false),
             await FrameAsync("relay/accepted-unconfirmed", Report(14, now), "interactive", 1, false,
                 blockPrepare: true),
+            await FrameAsync("relay/inactive-expired", Report(15, now - SessionPowerTransition.MaximumAgeMilliseconds),
+                "interactive", 2, false),
         ];
     }
 
@@ -198,6 +261,21 @@ public sealed partial class ServiceSessionPowerTransitionCoordinatorTests
             await RelayCaseAsync("scm/newer-than-the-relay",
                 Report(1, 1, true), At(2), Scm("resume"), Report(1, 2, true, age: 1),
                 Report(1, 3, true)),
+            // A report that fails more than one check gets the first one's answer.
+            await RelayCaseAsync("order/expired-and-stale",
+                Report(1, 5, true), At(1), Report(1, 4, false, age: SessionPowerTransition.MaximumAgeMilliseconds)),
+            await RelayCaseAsync("order/stale-and-older",
+                Report(1, 5, true), At(5), Report(1, 4, false, age: 10)),
+            await RelayCaseAsync("order/expired-and-older",
+                Report(1, 1, true), At(SessionPowerTransition.MaximumAgeMilliseconds + 5),
+                Report(1, 2, false, age: SessionPowerTransition.MaximumAgeMilliseconds + 10)),
+            // One gate, at an equal stamp, in each arrival order.
+            await RelayCaseAsync("tie/scm-suspend-then-relay-clear",
+                Scm("suspend"), Report(1, 1, false), Report(1, 2, true)),
+            await RelayCaseAsync("tie/relay-clear-then-scm-suspend",
+                Report(1, 1, false), Scm("suspend"), Report(1, 2, true)),
+            await RelayCaseAsync("tie/relay-suspend-then-scm-resume",
+                Report(1, 1, true), Scm("resume"), Report(1, 2, true), Report(1, 3, false)),
         ];
     }
 

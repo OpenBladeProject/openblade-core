@@ -628,7 +628,8 @@ async fn serve_connection(
         }
     };
     // Receipt precedes waiting for an in-flight observer's source mutex. Its
-    // completion can satisfy this GET only when it is newer than this instant.
+    // completion can satisfy this GET only when it is newer than this instant,
+    // and a relayed report is aged as of it.
     let requested = Instant::now();
     let guard = source.lock().await.publication_guard();
     guard().map_err(ExchangeError::Runtime)?;
@@ -650,7 +651,7 @@ async fn serve_connection(
         guard().map_err(ExchangeError::Runtime)
     } else if matches!(request, StatusRequest::ReportSessionPowerTransition { .. }) {
         #[cfg(feature = "service-session-power-relay-v1")]
-        session_lifecycle::serve_report(&mut *stream, &request, caller, &source).await?;
+        session_lifecycle::serve_report(&mut *stream, &request, caller, &source, requested).await?;
         guard().map_err(ExchangeError::Runtime)
     } else if cfg!(feature = "service-thermal-mutation-v1")
         && matches!(

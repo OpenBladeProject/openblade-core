@@ -185,7 +185,6 @@ pub(crate) unsafe extern "system" fn control(
 /// stops the host the same way (`HostServiceShutdownSignal`,
 /// `IHostApplicationLifetime.StopApplication`). A STOP is never held.
 #[cfg(feature = "service-lifecycle-shutdown-v1")]
-#[cfg_attr(test, allow(dead_code))] // The installed source binds it.
 pub(crate) fn deliver_stop() {
     deliver_stop_to(&INGRESS, &CONTROLS);
 }

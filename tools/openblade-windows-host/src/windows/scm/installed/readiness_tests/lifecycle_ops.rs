@@ -6,9 +6,9 @@
 use super::*;
 use crate::installed::readiness::session_lifecycle::Ports;
 #[cfg(feature = "service-session-power-relay-v1")]
-use crate::installed::readiness::session_lifecycle::{ACCEPTED, Relay};
+use crate::installed::readiness::session_lifecycle::relay::{ACCEPTED, Relay};
 #[cfg(feature = "service-lifecycle-shutdown-v1")]
-use crate::installed::readiness::session_lifecycle::{SHUTTING_DOWN, ShutdownSignal};
+use crate::installed::readiness::session_lifecycle::shutdown::{SHUTTING_DOWN, ShutdownSignal};
 
 /// The relay's QPC clock: 1 kHz, its reports stamped now.
 #[cfg(feature = "service-session-power-relay-v1")]
@@ -18,24 +18,33 @@ const NOW: i64 = 10_000;
 pub(super) struct LifecycleProbes {
     #[cfg(feature = "service-lifecycle-shutdown-v1")]
     stops: Arc<AtomicUsize>,
+    #[cfg(feature = "service-lifecycle-shutdown-v1")]
+    signal: Rc<ShutdownSignal>,
 }
 
 impl LifecycleProbes {
     pub(super) fn new() -> (Self, Ports) {
         #[cfg(feature = "service-lifecycle-shutdown-v1")]
         let stops = Arc::new(AtomicUsize::new(0));
+        // No delay: the managed delay has its own test.
         #[cfg(feature = "service-lifecycle-shutdown-v1")]
-        let counted = stops.clone();
-        let ports = Ports {
-            // No delay: the managed delay has its own test.
-            #[cfg(feature = "service-lifecycle-shutdown-v1")]
-            shutdown: Some(Rc::new(ShutdownSignal::new(
+        let signal = {
+            let counted = stops.clone();
+            Rc::new(ShutdownSignal::new(
                 std::time::Duration::ZERO,
                 Arc::new(move || {
                     counted.fetch_add(1, Ordering::AcqRel);
                 }),
-            ))),
-            // A clear gate SCM never moved, and a clock that stands still.
+            ))
+        };
+        #[cfg(feature = "service-session-power-relay-v1")]
+        let built = tokio::time::Instant::now();
+        let ports = Ports {
+            #[cfg(feature = "service-lifecycle-shutdown-v1")]
+            shutdown: Some(signal.clone()),
+            // A clear gate SCM never moved, and a clock at NOW when the Rig
+            // is built that runs on with the runtime's, as QPC runs on with
+            // the receipt a report is aged from.
             #[cfg(feature = "service-session-power-relay-v1")]
             relay: Some(Rc::new(Relay::new(
                 || {
@@ -44,9 +53,9 @@ impl LifecycleProbes {
                         active: false,
                     })
                 },
-                |timestamp| {
+                move |timestamp| {
                     let elapsed = u64::try_from(NOW.checked_sub(timestamp)?).ok()?;
-                    Some(std::time::Duration::from_millis(elapsed))
+                    Some(std::time::Duration::from_millis(elapsed) + built.elapsed())
                 },
             ))),
         };
@@ -54,6 +63,8 @@ impl LifecycleProbes {
             Self {
                 #[cfg(feature = "service-lifecycle-shutdown-v1")]
                 stops,
+                #[cfg(feature = "service-lifecycle-shutdown-v1")]
+                signal,
             },
             ports,
         )
@@ -70,9 +81,10 @@ impl Rig {
         )
         .await
     }
-    /// The stops once `expected` have run on their own task after the reply.
-    async fn stops(&self, expected: usize) -> usize {
-        super::super::lifecycle_operations::stops_reaching(&self.lifecycle.stops, expected).await
+    /// The stops once a requested one has run on its own task.
+    async fn stops(&self) -> usize {
+        self.lifecycle.signal.settled().await;
+        self.lifecycle.stops.load(Ordering::Acquire)
     }
 }
 
@@ -116,7 +128,7 @@ async fn installed_shutdown_waits_for_the_mutation_in_flight() {
         _ = &mut set => panic!("held mutation completed"),
         () = tokio::time::sleep(std::time::Duration::from_millis(50)) => {}
     }
-    assert_eq!(rig.stops(0).await, 0);
+    assert_eq!(rig.stops().await, 0);
     release.store(true, Ordering::Release);
     let (set, shutdown) = tokio::join!(set, shutdown);
     assert_eq!(set["result"]["status"], 1, "{set}");
@@ -124,7 +136,7 @@ async fn installed_shutdown_waits_for_the_mutation_in_flight() {
         shutdown["result"],
         json!({"status": 0, "message": SHUTTING_DOWN})
     );
-    assert_eq!(rig.stops(1).await, 1);
+    assert_eq!(rig.stops().await, 1);
     assert_eq!(rig.port.state.lock().unwrap().writes, 2);
     rig.stop().await;
 }
@@ -141,10 +153,10 @@ async fn installed_shutdown_after_an_uncertain_write_leaves_it_to_the_stop_clean
     assert_eq!(rig.get().await["status"]["writesBlocked"], true);
     let shutdown = rig.shutdown(1).await;
     assert_eq!(shutdown["result"]["message"], SHUTTING_DOWN);
-    assert_eq!(rig.stops(1).await, 1);
+    assert_eq!(rig.stops().await, 1);
     // Repeated, it stops nothing more.
     assert_eq!(rig.shutdown(2).await["result"]["status"], 0);
-    assert_eq!(rig.stops(1).await, 1);
+    assert_eq!(rig.stops().await, 1);
     rig.stop().await;
     assert_eq!(rig.port.state.lock().unwrap().writes, 1);
     assert!(

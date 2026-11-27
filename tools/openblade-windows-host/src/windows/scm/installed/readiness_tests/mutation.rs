@@ -2388,6 +2388,14 @@ impl Stream for SidStream {
         self.inner.caller_after_read()?;
         Ok(self.sid.clone())
     }
+    #[cfg(feature = "service-lifecycle-shutdown-v1")]
+    fn system_or_administrator_after_read(&self) -> bool {
+        self.inner.system_or_administrator_after_read()
+    }
+    #[cfg(feature = "service-lifecycle-shutdown-v1")]
+    fn peer_closed(&mut self) -> bool {
+        self.inner.peer_closed()
+    }
 }
 #[tokio::test]
 async fn installed_private_projection_is_bound_to_sid_for_get_observe_and_subscription() {

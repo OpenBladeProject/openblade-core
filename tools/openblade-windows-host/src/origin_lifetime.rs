@@ -88,17 +88,16 @@ mod tests {
 /// the epoch. Unknown events fence old operations but never establish
 /// resume; fresh device/session/controller proof is still required.
 ///
-/// The fields are the state, the wake of each new suspend generation
-/// (`suspended`), the hold of that generation's SCM callback
-/// (`arm_suspend_hold`) and the gate's view published after each notice
-/// (`gate_view`).
 #[derive(Default)]
-pub(crate) struct Lifecycle(
-    Mutex<LifecycleState>,
-    Arc<tokio::sync::Notify>,
-    Arc<SuspendHold>,
-    AtomicU64,
-);
+pub(crate) struct Lifecycle {
+    state: Mutex<LifecycleState>,
+    /// The wake of each new suspend generation (`suspended`).
+    suspended: Arc<tokio::sync::Notify>,
+    /// The hold of that generation's SCM callback (`arm_suspend_hold`).
+    hold: Arc<SuspendHold>,
+    /// The gate's view, published after each notice (`gate_view`).
+    view: AtomicU64,
+}
 /// The published `gate_view` of an unreadable or exhausted lifecycle. Every
 /// packed view is below it: a latest stamp needs at most 62 bits.
 const UNKNOWN_VIEW: u64 = u64::MAX;
@@ -149,7 +148,7 @@ impl Default for LifecycleState {
 }
 impl Lifecycle {
     pub(crate) fn verify_health(&self) -> io::Result<()> {
-        self.0
+        self.state
             .lock()
             .map(|_| ())
             .map_err(|_| io::Error::other("lifecycle state lock poisoned"))
@@ -196,24 +195,28 @@ impl Lifecycle {
         allow(dead_code)
     )]
     pub(crate) fn arm_suspend_hold(&self, cap: std::time::Duration) -> Option<HoldArm> {
-        self.2.arm(cap)
+        self.hold.arm(cap)
     }
     /// Exhausts the epoch, as `u64::MAX` fencing notices would: the gate then
     /// reads unknown (`low_power() == None`) and nothing is admitted again.
     #[cfg(all(test, feature = "service-profile-triggers-v1"))]
     pub(crate) fn exhaust(&self) {
-        if let Ok(mut state) = self.0.lock() {
+        if let Ok(mut state) = self.state.lock() {
             state.epoch = 0;
-            self.3.store(UNKNOWN_VIEW, Ordering::Release);
+            self.view.store(UNKNOWN_VIEW, Ordering::Release);
         }
     }
     /// The gate's view as the last notice left it, read without the lock the
-    /// SCM callback takes, or `None` when the lifecycle is exhausted. The
-    /// Session Agent's relay compares a report with it and never applies one
-    /// (`session_power_relay`), so SCM alone drives the boundary.
+    /// SCM callback takes, or `None` when the lifecycle is exhausted or its
+    /// lock poisoned, as every other read of it fails closed. The Session
+    /// Agent's relay compares a report with it and never applies one
+    /// (`session_lifecycle::Relay`), so SCM alone drives the boundary.
     #[cfg_attr(not(feature = "service-session-power-relay-v1"), allow(dead_code))]
     pub(crate) fn gate_view(&self) -> Option<View> {
-        let word = self.3.load(Ordering::Acquire);
+        if self.state.is_poisoned() {
+            return None;
+        }
+        let word = self.view.load(Ordering::Acquire);
         (word != UNKNOWN_VIEW).then_some(View {
             latest: (word >> 1) as i64,
             active: word & 1 != 0,
@@ -235,7 +238,7 @@ impl Lifecycle {
         ) {
             return None;
         }
-        let mut state = self.0.lock().ok()?;
+        let mut state = self.state.lock().ok()?;
         if state.epoch == 0 {
             return None;
         } // Exhaustion is sticky; never revive epoch one.
@@ -250,7 +253,7 @@ impl Lifecycle {
         let accepted =
             signal(&mut state.display).and_then(|signal| state.gate.apply(signal, timestamp));
         // Published under the lock, so views are stored in notice order.
-        self.3.store(
+        self.view.store(
             pack_view((state.epoch != 0).then(|| state.gate.view())),
             Ordering::Release,
         );
@@ -260,8 +263,8 @@ impl Lifecycle {
             .transition;
         // One stored permit: a suspend while the waiter is busy is seen at
         // its next wait, never lost.
-        self.1.notify_one();
-        self.2
+        self.suspended.notify_one();
+        self.hold
             .accept(transition.generation, self.age(transition.timestamp))
     }
     /// Notified once for each new suspend generation (`apply`). Its waiter
@@ -269,7 +272,7 @@ impl Lifecycle {
     /// notification admits nothing.
     #[cfg_attr(not(feature = "service-keyboard-driver-mode-v1"), allow(dead_code))]
     pub(crate) fn suspended(&self) -> Arc<tokio::sync::Notify> {
-        self.1.clone()
+        self.suspended.clone()
     }
     /// How long ago the QPC `timestamp` of a gate transition was, read on the
     /// same clock every notice stamps with. `None` for a timestamp in the
@@ -288,7 +291,7 @@ impl Lifecycle {
     /// later notice fenced it or the gate set (managed
     /// `ScopedThermalWriteBlockReason`'s low-power clause).
     pub(crate) fn epoch_for(&self, write: WriteScope) -> Option<u64> {
-        let state = self.0.lock().ok()?;
+        let state = self.state.lock().ok()?;
         (state.epoch != 0 && state.gate.admits(write)).then_some(state.epoch)
     }
     /// What an owned cleanup of this scope pins now, or `None` while the
@@ -301,7 +304,7 @@ impl Lifecycle {
     /// every epoch, so it never equals an ordinary admission.
     #[cfg_attr(not(feature = "service-keyboard-driver-mode-v1"), allow(dead_code))]
     pub(crate) fn fence_for(&self, write: WriteScope) -> Option<u64> {
-        let state = self.0.lock().ok()?;
+        let state = self.state.lock().ok()?;
         if state.epoch == 0 || !state.gate.admits(write) {
             return None;
         }
@@ -324,7 +327,7 @@ impl Lifecycle {
         allow(dead_code)
     )] // Request triggers read it; Stage 4b timers and D1 cleanup will.
     pub(crate) fn low_power(&self) -> Option<Transition> {
-        let state = self.0.lock().ok()?;
+        let state = self.state.lock().ok()?;
         (state.epoch != 0).then(|| state.gate.transition())
     }
     /// The gate's generation, which advances at each suspend and each resume
@@ -351,7 +354,7 @@ impl Lifecycle {
     /// power notices that keep the kind never advance it.
     #[cfg_attr(not(feature = "service-thermal-mutation-v1"), allow(dead_code))]
     pub(crate) fn observe_power_kind(&self, kind: Option<u8>) -> Option<u64> {
-        let mut state = self.0.lock().ok()?;
+        let mut state = self.state.lock().ok()?;
         if let Some(kind) = kind {
             if state.power_kind.is_some_and(|prior| prior != kind) {
                 state.power_generation = state.power_generation.saturating_add(1);
@@ -483,7 +486,7 @@ mod lifecycle_tests {
         assert_eq!(lifecycle.active(), None);
         lifecycle.ingress(SERVICE_CONTROL_POWEREVENT, 18);
         assert!(lifecycle.active().is_some());
-        lifecycle.0.lock().unwrap().epoch = u64::MAX;
+        lifecycle.state.lock().unwrap().epoch = u64::MAX;
         lifecycle.ingress(SERVICE_CONTROL_POWEREVENT, 10);
         assert_eq!(lifecycle.active(), None);
         lifecycle.ingress(SERVICE_CONTROL_POWEREVENT, 18);
@@ -577,7 +580,7 @@ mod lifecycle_tests {
         assert_eq!(lifecycle.resume_generation(), Some(2));
         assert!(lifecycle.active().is_some());
         let exhausted = Lifecycle::default();
-        exhausted.0.lock().unwrap().epoch = 0;
+        exhausted.state.lock().unwrap().epoch = 0;
         assert_eq!(exhausted.resume_generation(), None);
     }
     #[test]
@@ -643,15 +646,16 @@ mod lifecycle_tests {
         lifecycle.record(POWER, Some(Signal::Resume), 2);
         assert!(!lifecycle.low_power_or_unknown());
         // Exhausted, then unreadable: both read as low power.
-        lifecycle.0.lock().unwrap().epoch = 0;
+        lifecycle.state.lock().unwrap().epoch = 0;
         assert!(lifecycle.low_power_or_unknown());
         let lifecycle = Lifecycle::default();
         let _ = std::panic::catch_unwind(|| {
-            let _guard = lifecycle.0.lock().unwrap();
+            let _guard = lifecycle.state.lock().unwrap();
             panic!("poison the lifecycle lock");
         });
-        assert!(lifecycle.0.is_poisoned());
+        assert!(lifecycle.state.is_poisoned());
         assert!(lifecycle.low_power_or_unknown());
+        assert_eq!(lifecycle.gate_view(), None);
     }
     #[test]
     fn the_gate_view_follows_every_notice_and_fails_closed() {
@@ -673,13 +677,13 @@ mod lifecycle_tests {
         // The view is the gate's own, under the same lock.
         assert_eq!(
             lifecycle.gate_view(),
-            Some(lifecycle.0.lock().unwrap().gate.view())
+            Some(lifecycle.state.lock().unwrap().gate.view())
         );
         // A stamp the word cannot hold, and exhaustion, read as unknown.
         assert_eq!(pack_view(view(-1, false)), UNKNOWN_VIEW);
         assert_eq!(pack_view(view(1 << 62, true)), UNKNOWN_VIEW);
         assert_eq!(pack_view(view((1 << 62) - 1, true)), u64::MAX >> 1);
-        lifecycle.0.lock().unwrap().epoch = u64::MAX;
+        lifecycle.state.lock().unwrap().epoch = u64::MAX;
         lifecycle.record(POWER, Some(Signal::Suspend), 400);
         assert_eq!(lifecycle.gate_view(), None);
     }
@@ -723,7 +727,12 @@ mod lifecycle_tests {
         let request = lifecycle.active().unwrap();
         // Per-write authorization compares the pinned epoch with the gate's
         // admission, so the gate alone refuses even an unfenced epoch.
-        lifecycle.0.lock().unwrap().gate.apply(Signal::Suspend, 1);
+        lifecycle
+            .state
+            .lock()
+            .unwrap()
+            .gate
+            .apply(Signal::Suspend, 1);
         assert_eq!(lifecycle.epoch_for(WriteScope::Ordinary), None);
         assert_eq!(lifecycle.active(), None);
         let cleanup = WriteScope::LowPowerCleanup {
@@ -742,7 +751,7 @@ mod lifecycle_tests {
         lifecycle.record(POWER, Some(Signal::Suspend), 3);
         assert_eq!(lifecycle.epoch_for(cleanup), None);
         // Exhaustion closes every scope and the timer view.
-        lifecycle.0.lock().unwrap().epoch = 0;
+        lifecycle.state.lock().unwrap().epoch = 0;
         let current = WriteScope::LowPowerCleanup { generation: 3 };
         assert_eq!(lifecycle.epoch_for(current), None);
         assert_eq!(lifecycle.low_power(), None);
@@ -774,7 +783,7 @@ mod lifecycle_tests {
         lifecycle.notice(POWER, SETTING, display(1));
         assert_eq!(gate(&lifecycle), (0, false));
         assert_eq!(lifecycle.active(), Some(on + 1));
-        assert_eq!(lifecycle.0.lock().unwrap().display.state(), Some(1));
+        assert_eq!(lifecycle.state.lock().unwrap().display.state(), Some(1));
     }
     #[test]
     fn only_a_power_setting_read_skips_the_fence() {
@@ -821,10 +830,10 @@ mod lifecycle_tests {
         let lifecycle = Lifecycle::default();
         lifecycle.notice(POWER, 4, None);
         lifecycle.notice(POWER, SETTING, display(0));
-        lifecycle.0.lock().unwrap().epoch = u64::MAX;
+        lifecycle.state.lock().unwrap().epoch = u64::MAX;
         // A power-setting read does not fence, so it cannot exhaust the epoch.
         lifecycle.notice(POWER, SETTING, display(0));
-        assert_eq!(lifecycle.0.lock().unwrap().epoch, u64::MAX);
+        assert_eq!(lifecycle.state.lock().unwrap().epoch, u64::MAX);
         lifecycle.notice(POWER, 10, None);
         lifecycle.notice(POWER, SETTING, display(1));
         assert_eq!(lifecycle.low_power(), None);
@@ -953,7 +962,7 @@ mod lifecycle_tests {
         assert_eq!(generation(&lifecycle), 9);
         lifecycle.ingress(POWER, 18);
         assert_eq!(held(&lifecycle, POWER, 4, None), Some(11));
-        lifecycle.0.lock().unwrap().epoch = 0;
+        lifecycle.state.lock().unwrap().epoch = 0;
         lifecycle.ingress(POWER, 18);
         assert_eq!(held(&lifecycle, POWER, 4, None), None, "exhausted");
         // Disarmed, a new generation is not held.
