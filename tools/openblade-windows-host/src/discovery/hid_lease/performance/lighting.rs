@@ -179,6 +179,18 @@ pub(crate) enum LightingOutcome {
     Rendered,
 }
 
+impl LightingOutcome {
+    /// Whether a setter or matrix report may have been submitted without
+    /// confirmation, which latches the doubt for a request and a keepalive
+    /// alike.
+    pub(crate) fn in_doubt(self) -> bool {
+        matches!(
+            self,
+            Self::InDoubt(_) | Self::Unconfirmed(_) | Self::Mismatched { restored: None, .. }
+        )
+    }
+}
+
 /// What a job does (`LightingJob`).
 #[derive(Clone, Copy, Debug)]
 enum Work {

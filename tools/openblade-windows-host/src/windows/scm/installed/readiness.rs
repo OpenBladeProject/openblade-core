@@ -211,11 +211,11 @@ trait StatusSource {
     fn reconcile_lifecycle(&mut self) -> Option<Reconciling> {
         None
     }
-    // The origin tick's lighting keepalive after the power check and before
-    // the keyboard Driver-mode step (`Runtime::maintain_lighting`), taken
-    // under the source lock and awaited after it is released.
+    // The origin tick's lighting keepalive at `now`, after the power check
+    // and before the keyboard Driver-mode step (`Runtime::maintain_lighting`),
+    // taken under the source lock and awaited after it is released.
     #[cfg(feature = "service-lighting-v1")]
-    fn maintain_lighting(&mut self) -> Option<Reconciling> {
+    fn maintain_lighting(&mut self, _now: Instant) -> Option<Reconciling> {
         None
     }
     // The origin tick's 15 s keyboard Driver-mode step after the power
@@ -446,7 +446,7 @@ impl Ports {
                 // low-power boundary ends it before Normal mode is restored.
                 #[cfg(feature = "service-lighting-v1")]
                 {
-                    let maintain = source.maintain_lighting();
+                    let maintain = source.maintain_lighting(Instant::now());
                     drop(source);
                     if let Some(maintain) = maintain {
                         maintain.await?;

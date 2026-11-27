@@ -783,13 +783,13 @@ impl StatusSource for GuardedStatus {
         self.origin.low_power_wake()
     }
     #[cfg(feature = "service-lighting-v1")]
-    fn maintain_lighting(&mut self) -> Option<super::Reconciling> {
+    fn maintain_lighting(&mut self, now: Instant) -> Option<super::Reconciling> {
         let runtime = self.mutation.clone()?;
         let mailbox = self.mailbox.clone();
         // A frame failure continues the loop; only fatal admission evidence
         // stops the Service. A keepalive changes no published member.
         Some(Box::pin(async move {
-            runtime.maintain_lighting(&mailbox).await
+            runtime.maintain_lighting(&mailbox, now).await
         }))
     }
     #[cfg(feature = "service-keyboard-driver-mode-v1")]

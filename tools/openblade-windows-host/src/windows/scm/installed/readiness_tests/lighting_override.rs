@@ -84,13 +84,14 @@ fn frames(rig: &Rig) -> usize {
     rig.port.state.lock().unwrap().matrix_frames.len()
 }
 
-/// The keepalive step of one origin tick, run as a request's exchange is
-/// (`Rig::held`).
-async fn keepalive(rig: &Rig) {
+/// The keepalive step of one origin tick at `at`, run as a request's
+/// exchange is (`Rig::held`). Each test names its tick instants on the test
+/// clock, so real time passing between steps moves no keepalive.
+async fn keepalive(rig: &Rig, at: Instant) {
     rig.held(
         HeldClock::Keep,
         Box::pin(async {
-            let maintain = rig.source.lock().await.maintain_lighting();
+            let maintain = rig.source.lock().await.maintain_lighting(at);
             match maintain {
                 Some(maintain) => maintain.await,
                 None => Ok(()),
@@ -101,11 +102,31 @@ async fn keepalive(rig: &Rig) {
     .unwrap();
 }
 
-/// Moves the test clock on by `by` without waiting for it.
-async fn advance(by: Duration) {
-    tokio::time::pause();
-    tokio::time::advance(by).await;
-    tokio::time::resume();
+/// Runs `request` with one origin tick's keepalive step, due at `at`,
+/// arriving while the request's `held`th lighting setter is in flight (the
+/// tick loop and requests are separate local tasks). The setter is released
+/// once the tick returns.
+async fn with_tick_during(
+    rig: &Rig,
+    held: usize,
+    at: Instant,
+    request: impl std::future::Future<Output = (i64, String)>,
+) -> (i64, String) {
+    let release = Arc::new(AtomicBool::new(false));
+    rig.port.state.lock().unwrap().lighting_held = Some((held, release.clone()));
+    let tick = async {
+        while setters(rig) < held {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        let maintain = rig.source.lock().await.maintain_lighting(at);
+        if let Some(maintain) = maintain {
+            maintain.await.unwrap();
+        }
+        release.store(true, Ordering::Release);
+    };
+    let (reply, ()) = tokio::join!(request, tick);
+    rig.port.state.lock().unwrap().lighting_held = None;
+    reply
 }
 
 /// Static is drawn by the Service's renderer in managed's order (the
@@ -179,66 +200,168 @@ async fn animated_effects_are_refused_until_slice_c_divergence() {
     rig.stop().await;
 }
 
-/// The owned renderer's keepalive frame goes every 5 s on its first frame's
-/// grid, on the test clock: none before it is due, one when it is, and one
-/// for a late tick, which skips the instants it missed.
+/// The owned renderer's keepalive frame goes every 5 s on the grid the
+/// drawing request's completion started: none before it is due, one when it
+/// is, and one for a late tick, which skips the instants it missed. The
+/// grid starts between `before` and `done`, and every tick names its own
+/// instant, so the test does not depend on how fast the host runs it.
 #[tokio::test]
 async fn the_keepalive_frame_goes_every_five_seconds() {
     let rig = Rig::new(MemoryFiles::default());
     lit(&rig, [0x40, 1, 0]);
+    let before = Instant::now();
     assert_eq!(set(&rig, 1, Some(STATIC), 1).await.0, 1);
+    let done = Instant::now();
     assert_eq!(frames(&rig), 1);
-    advance(Duration::from_secs(4)).await;
-    keepalive(&rig).await;
+    let ms = Duration::from_millis;
+    keepalive(&rig, before + ms(4_900)).await;
     assert_eq!(frames(&rig), 1, "not yet due");
-    advance(Duration::from_millis(1500)).await;
-    keepalive(&rig).await;
+    keepalive(&rig, done + ms(5_000)).await;
     assert_eq!(frames(&rig), 2);
-    keepalive(&rig).await;
+    keepalive(&rig, done + ms(5_000)).await;
     assert_eq!(frames(&rig), 2, "the next is due at 10 s");
-    advance(Duration::from_secs(3)).await;
-    keepalive(&rig).await;
+    keepalive(&rig, before + ms(9_900)).await;
     assert_eq!(frames(&rig), 2);
-    advance(Duration::from_secs(2)).await;
-    keepalive(&rig).await;
+    keepalive(&rig, done + ms(10_000)).await;
     assert_eq!(frames(&rig), 3);
-    // A tick 12 s late sends one frame, not the three it missed.
-    advance(Duration::from_secs(12)).await;
-    keepalive(&rig).await;
-    keepalive(&rig).await;
+    // A tick 7 s late sends one frame, not the two it missed, and the next
+    // is due on the same grid at 25 s.
+    keepalive(&rig, done + ms(22_000)).await;
+    keepalive(&rig, done + ms(22_000)).await;
     assert_eq!(frames(&rig), 4);
+    keepalive(&rig, before + ms(24_900)).await;
+    assert_eq!(frames(&rig), 4);
+    keepalive(&rig, done + ms(25_000)).await;
+    assert_eq!(frames(&rig), 5);
     // Each keepalive is a frame alone.
     assert_eq!(sent(&rig).len(), 5);
     rig.stop().await;
 }
 
 /// A keepalive refused before submission keeps the renderer for the next
-/// instant (managed's deferral); one that failed after submission ends it
-/// in doubt, so the next request resolves read-only and then draws anew.
+/// instant; one that failed after submission ends it in doubt, so the next
+/// request resolves read-only and then draws anew.
 #[tokio::test]
 async fn a_failed_keepalive_ends_the_renderer_in_doubt() {
     let rig = Rig::new(MemoryFiles::default());
     lit(&rig, [0x40, 1, 0]);
     assert_eq!(set(&rig, 1, Some(STATIC), 1).await.0, 1);
+    let done = Instant::now();
+    let at = |ms: u64| done + Duration::from_millis(ms);
     rig.port.state.lock().unwrap().matrix_refuse = Some(2);
-    advance(Duration::from_millis(5500)).await;
-    keepalive(&rig).await;
+    keepalive(&rig, at(5_500)).await;
     assert_eq!(frames(&rig), 1, "refused before submission");
-    advance(Duration::from_secs(5)).await;
-    keepalive(&rig).await;
+    keepalive(&rig, at(10_500)).await;
     assert_eq!(frames(&rig), 2, "the renderer was kept");
     rig.port.state.lock().unwrap().matrix_fail = Some(3);
-    advance(Duration::from_secs(5)).await;
-    keepalive(&rig).await;
+    keepalive(&rig, at(15_500)).await;
     assert_eq!(frames(&rig), 3);
-    advance(Duration::from_secs(5)).await;
-    keepalive(&rig).await;
+    keepalive(&rig, at(20_500)).await;
     assert_eq!(frames(&rig), 3, "nothing owns the matrix");
     let before = setters(&rig);
     assert_eq!(set(&rig, 2, Some(STATIC), 1).await, (2, PENDING.into()));
     assert_eq!(setters(&rig), before, "the resolution writes nothing");
     assert_eq!(set(&rig, 3, Some(STATIC), 1).await.0, 1);
     assert_eq!(frames(&rig), 4, "a new renderer, not a retained one");
+    rig.stop().await;
+}
+
+/// A request whose frame may have been submitted unconfirmed ends the
+/// renderer it replaced: after the resolution no keepalive draws the old
+/// color, and the old color is drawn anew rather than retained.
+#[tokio::test]
+async fn an_unconfirmed_frame_leaves_no_renderer() {
+    let rig = Rig::new(MemoryFiles::default());
+    lit(&rig, [0x40, 1, 0]);
+    assert_eq!(set(&rig, 1, Some(STATIC), 1).await.0, 1);
+    rig.port.state.lock().unwrap().matrix_fail = Some(2);
+    assert_eq!(set(&rig, 2, Some(STATIC_GREEN), 1).await.0, 3);
+    assert_eq!(set(&rig, 3, Some(STATIC), 1).await, (2, PENDING.into()));
+    keepalive(&rig, Instant::now() + Duration::from_secs(6)).await;
+    assert_eq!(frames(&rig), 2, "no renderer survives a latched doubt");
+    assert_eq!(set(&rig, 4, Some(STATIC), 1).await.0, 1);
+    assert_eq!(frames(&rig), 3, "the old color is drawn, not retained");
+    rig.stop().await;
+}
+
+/// A tick that arrives while a request holds the operation gate leaves the
+/// session to it. A retained Static at a new brightness replies Applied
+/// and keeps its keepalive.
+#[tokio::test]
+async fn a_tick_during_a_retaining_request_keeps_the_keepalive() {
+    const BRIGHT: &str = r#"{"effect":1,"color":{"red":200,"green":10,"blue":5},"brightness":50,"parameters":{"kind":"static","color":{"red":200,"green":10,"blue":5}},"logoMode":null}"#;
+    let rig = Rig::new(MemoryFiles::default());
+    lit(&rig, [0x40, 1, 0]);
+    assert_eq!(set(&rig, 1, Some(STATIC), 1).await.0, 1);
+    let late = Instant::now() + Duration::from_secs(6);
+    let held = setters(&rig) + 1;
+    let (status, message) = with_tick_during(&rig, held, late, set(&rig, 2, Some(BRIGHT), 1)).await;
+    assert_eq!((status, message.as_str()), (1, RENDERED));
+    assert_eq!(frames(&rig), 1, "retained: no new frame, and no tick frame");
+    keepalive(&rig, late).await;
+    assert_eq!(frames(&rig), 2, "the retained renderer keeps its keepalive");
+    rig.stop().await;
+}
+
+/// An Off whose brightness readback reports the lit value restores its
+/// baseline, so the keyboard stays lit and the renderer is kept; a tick
+/// during it leaves the keepalive running.
+#[tokio::test]
+async fn a_tick_during_an_off_that_restores_keeps_the_keepalive() {
+    let rig = Rig::new(MemoryFiles::default());
+    lit(&rig, [0x40, 1, 0]);
+    assert_eq!(set(&rig, 1, Some(STATIC), 1).await.0, 1);
+    let late = Instant::now() + Duration::from_secs(6);
+    let held = setters(&rig) + 1;
+    rig.port.state.lock().unwrap().lighting_ignore = vec![held];
+    let (status, _) = with_tick_during(&rig, held, late, set(&rig, 2, Some(OFF), 1)).await;
+    rig.port.state.lock().unwrap().lighting_ignore.clear();
+    assert_eq!(status, 3);
+    assert_eq!(rig.port.state.lock().unwrap().lighting[0], 0x1a);
+    keepalive(&rig, late).await;
+    assert_eq!(
+        frames(&rig),
+        2,
+        "the renderer of a lit keyboard keeps its keepalive"
+    );
+    rig.stop().await;
+}
+
+/// A request dropped after it drew a new frame latches the doubt and ends
+/// the renderer it replaced, so the old renderer's keepalive cannot draw
+/// over the newer frame, even when the resolution clears the latch before
+/// the next tick.
+#[tokio::test]
+async fn a_dropped_request_ends_the_renderer_it_replaced() {
+    const GREEN_BREATHING_LOGO: &str = r#"{"effect":1,"color":{"red":71,"green":225,"blue":12},"brightness":10,"parameters":{"kind":"static","color":{"red":71,"green":225,"blue":12}},"logoMode":1}"#;
+    let rig = Rig::new(MemoryFiles::default());
+    lit(&rig, [0x1a, 1, 0]);
+    assert_eq!(set(&rig, 1, Some(STATIC), 1).await.0, 1);
+    // The green request's handshake, then its first logo setter, held.
+    let held = setters(&rig) + 2;
+    let release = Arc::new(AtomicBool::new(false));
+    rig.port.state.lock().unwrap().lighting_held = Some((held, release.clone()));
+    let mut request = Box::pin(set(&rig, 2, Some(GREEN_BREATHING_LOGO), 1));
+    tokio::select! {
+        _ = &mut request => panic!("the held setter completed"),
+        _ = async {
+            while setters(&rig) < held {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        } => {}
+    }
+    assert_eq!(frames(&rig), 2, "the green frame was drawn");
+    drop(request);
+    release.store(true, Ordering::Release);
+    rig.reader.drain_active().await.unwrap();
+    rig.port.state.lock().unwrap().lighting_held = None;
+    // A quick retry, before any origin tick: the read-only resolution.
+    assert_eq!(
+        set(&rig, 3, Some(GREEN_BREATHING_LOGO), 1).await,
+        (2, PENDING.to_owned())
+    );
+    keepalive(&rig, Instant::now() + Duration::from_secs(6)).await;
+    assert_eq!(frames(&rig), 2, "no renderer survives a latched doubt");
     rig.stop().await;
 }
 
@@ -249,8 +372,7 @@ async fn off_retires_the_renderer() {
     lit(&rig, [0x40, 1, 0]);
     assert_eq!(set(&rig, 1, Some(STATIC), 1).await.0, 1);
     assert_eq!(set(&rig, 2, Some(OFF), 1).await.0, 1);
-    advance(Duration::from_secs(6)).await;
-    keepalive(&rig).await;
+    keepalive(&rig, Instant::now() + Duration::from_secs(6)).await;
     assert_eq!(frames(&rig), 1);
     rig.stop().await;
 }
@@ -264,9 +386,9 @@ async fn stop_cancels_a_running_keepalive() {
     lit(&rig, [0x40, 1, 0]);
     assert_eq!(set(&rig, 1, Some(STATIC), 1).await.0, 1);
     rig.port.state.lock().unwrap().matrix_mute = true;
-    advance(Duration::from_secs(6)).await;
+    let due = Instant::now() + Duration::from_secs(6);
     let tick = async {
-        let maintain = rig.source.lock().await.maintain_lighting().unwrap();
+        let maintain = rig.source.lock().await.maintain_lighting(due).unwrap();
         maintain.await
     };
     let stop = async {
@@ -426,6 +548,27 @@ async fn an_ambiguous_submission_latches_until_a_read_only_resolution() {
     assert_eq!((status, message.as_str()), (1, CONFIRMED));
     assert_eq!(setters(&rig), 2);
     assert_eq!(rig.port.state.lock().unwrap().lighting, [0, 0, 0]);
+    rig.stop().await;
+}
+
+/// A resolution that cannot read the keyboard leaves the latch set: the
+/// next request resolves again, and only a complete read lets one write.
+#[tokio::test]
+async fn an_unread_resolution_keeps_the_latch() {
+    let rig = Rig::new(MemoryFiles::default());
+    lit(&rig, [0xc5, 1, 0]);
+    rig.port.state.lock().unwrap().lighting_timeout = Some(1);
+    assert_eq!(set(&rig, 1, Some(OFF), 1).await.0, 3);
+    {
+        let mut s = rig.port.state.lock().unwrap();
+        let queries = s.lighting_sent.iter().filter(|sent| !sent.2).count();
+        s.lighting_query_timeout = Some(queries + 1);
+    }
+    assert_eq!(set(&rig, 2, Some(OFF), 1).await, (2, PENDING.into()));
+    rig.port.state.lock().unwrap().lighting_query_timeout = None;
+    assert_eq!(set(&rig, 3, Some(OFF), 1).await, (2, PENDING.into()));
+    assert_eq!(setters(&rig), 1, "neither resolution writes");
+    assert_eq!(set(&rig, 4, Some(OFF), 1).await, (1, CONFIRMED.into()));
     rig.stop().await;
 }
 
@@ -821,13 +964,11 @@ async fn low_power_retires_the_renderer_without_a_write() {
     let reports = sent(&rig).len();
     rig.custody.scoped_fresh.store(true, Ordering::Release);
     rig.custody.lifecycle.ingress(POWER, SUSPEND);
-    advance(Duration::from_secs(6)).await;
-    keepalive(&rig).await;
+    keepalive(&rig, Instant::now() + Duration::from_secs(6)).await;
     assert_eq!((frames(&rig), sent(&rig).len()), (1, reports));
     rig.custody.lifecycle.ingress(POWER, RESUME);
     rig.custody.scoped_fresh.store(false, Ordering::Release);
-    advance(Duration::from_secs(6)).await;
-    keepalive(&rig).await;
+    keepalive(&rig, Instant::now() + Duration::from_secs(6)).await;
     assert_eq!(frames(&rig), 1, "nothing owns the matrix after the resume");
     rig.stop().await;
 }
