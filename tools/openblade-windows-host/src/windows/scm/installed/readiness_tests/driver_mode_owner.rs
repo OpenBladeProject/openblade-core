@@ -197,11 +197,12 @@ fn refuse_after_first_query(rig: &Rig, nth: usize) {
         }
     }));
 }
+/// SCM STOP, then the drain on a held test clock (`Rig::drain`), so a loaded
+/// host spends none of the drain's deadline.
 async fn shutdown(rig: &Rig) -> io::Result<()> {
     rig.origin.stop();
-    let mut source = rig.source.lock().await;
-    let drained = source.drain().await;
-    source.confirm_drained().unwrap();
+    let drained = rig.drain().await;
+    rig.source.lock().await.confirm_drained().unwrap();
     drained
 }
 
