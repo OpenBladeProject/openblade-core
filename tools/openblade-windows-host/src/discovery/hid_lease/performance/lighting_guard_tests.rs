@@ -1,6 +1,7 @@
-//! The reviewed 03/03, 03/00 and 03/02 keyboard lighting setters exist only
-//! behind the protocol crate's `lighting-setters` feature, which only the
-//! host's `service-lighting-v1` composition enables. As the Driver-mode guard
+//! The reviewed 03/03, 03/00 and 03/02 keyboard lighting setters, the 03/0B
+//! matrix frame encoder and the 03/0A handshake setter exist only behind the
+//! protocol crate's `lighting-setters` feature, which only the host's
+//! `service-lighting-v1` composition enables. As the Driver-mode guard
 //! (`device_mode_guard_tests`) does for 00/04, this textual allowlist fails
 //! when non-test source names a setter outside its codec and the one lighting
 //! recipe, builds a lighting job outside its one owner, or changes the
@@ -21,6 +22,18 @@ const SETTER_USERS: &[&str] = &[
     "tools/openblade-windows-host/src/discovery/hid_lease/performance/lighting.rs",
     "tools/openblade-windows-host/src/discovery/hid_lease/performance/lighting_admission.rs",
 ];
+
+/// The only non-test files that may name the matrix frame encoder or the
+/// 03/0A handshake setter: their codec and the semantic admission, which
+/// encodes the known answer and the projection fingerprint and builds the
+/// handshake only to compare it with the oracle.
+const MATRIX_SETTER_USERS: &[&str] = &[
+    "rust/crates/openblade-protocol/src/lighting/matrix.rs",
+    "tools/openblade-windows-host/src/discovery/hid_lease/performance/lighting_admission.rs",
+];
+
+/// The matrix codec's setters, named whole.
+const MATRIX_SETTERS: [&str; 2] = ["TransitionSet", "encode_feature_report"];
 
 /// The only non-test file that may build a lighting job, and so ask the
 /// recipe for a setter: the Service's `setLightingOverride` composition. The
@@ -83,6 +96,7 @@ fn no_non_test_source_names_a_lighting_setter_or_builds_a_job_elsewhere() {
         }
     }
     let mut setter_users = Vec::new();
+    let mut matrix_users = Vec::new();
     let mut job_users = Vec::new();
     for file in &files {
         let text = fs::read_to_string(file).unwrap();
@@ -100,12 +114,23 @@ fn no_non_test_source_names_a_lighting_setter_or_builds_a_job_elsewhere() {
         if names(&text, "LightingSet") {
             setter_users.push(name.clone());
         }
+        for setter in MATRIX_SETTERS {
+            assert!(
+                !text.contains(&format!("{setter} as ")),
+                "{name} renames {setter}"
+            );
+        }
+        if MATRIX_SETTERS.iter().any(|setter| names(&text, setter)) {
+            matrix_users.push(name.clone());
+        }
         if JOB_CONSTRUCTORS.iter().any(|built| text.contains(built)) {
             job_users.push(name);
         }
     }
     setter_users.sort();
     assert_eq!(setter_users, SETTER_USERS);
+    matrix_users.sort();
+    assert_eq!(matrix_users, MATRIX_SETTER_USERS);
     assert_eq!(job_users, JOB_USERS);
 }
 
@@ -159,6 +184,45 @@ fn the_lighting_codec_builds_only_the_reviewed_commands_behind_its_feature() {
     assert!(codec.contains(&format!("{gate}impl LightingSet {{")));
     let tests = codec.split("#[cfg(test)]").skip(1).collect::<Vec<_>>();
     assert_eq!(tests, ["\nmod tests;\n"]);
+}
+
+/// The matrix codec builds the 00/86 query and the 03/0A:0500 setter from
+/// the reviewed IDs and encodes only the 03/0B frame, and the frame encoder
+/// and the setter exist only with `lighting-setters` or in its tests.
+#[test]
+fn the_matrix_codec_builds_only_the_reviewed_commands_behind_its_feature() {
+    let codec =
+        fs::read_to_string(root().join("rust/crates/openblade-protocol/src/lighting/matrix.rs"))
+            .unwrap();
+    for constant in [
+        "pub const MATRIX_CLASS: u8 = 0x03;",
+        "pub const MATRIX_COMMAND: u8 = 0x0B;",
+        "    const CLASS: u8 = 0x00;
+    const ID: u8 = 0x86;",
+        "    const CLASS: u8 = 0x03;
+    const ID: u8 = 0x0a;
+    const ARGUMENTS: [u8; 2] = [0x05, 0x00];",
+    ] {
+        assert_eq!(codec.matches(constant).count(), 1, "{constant}");
+    }
+    assert_eq!(codec.matches("RazerReport::create(").count(), 2);
+    assert!(codec.contains("RazerReport::create(transaction, Self::CLASS, Self::ID, &[0; 3])"));
+    assert!(
+        codec.contains("RazerReport::create(transaction, Self::CLASS, Self::ID, &Self::ARGUMENTS)")
+    );
+    let gate = "#[cfg(any(test, feature = \"lighting-setters\"))]
+";
+    assert_eq!(codec.matches(gate).count(), 3);
+    assert!(codec.contains(&format!("{gate}pub fn encode_feature_report(")));
+    assert!(codec.contains(&format!("{gate}pub struct TransitionSet {{")));
+    assert!(codec.contains(&format!("{gate}impl TransitionSet {{")));
+    let tests = codec.split("#[cfg(test)]").skip(1).collect::<Vec<_>>();
+    assert_eq!(
+        tests,
+        ["
+mod tests;
+"]
+    );
 }
 
 /// Only the host's lighting composition enables the setters.
