@@ -10000,8 +10000,11 @@ struct HeldClocks {
     next: u64,
     /// Set while this layer has the clock paused, with the moment it did.
     paused: Option<ClockMark>,
-    /// The real instant up to which the held clock has been billed.
+    /// The real instant up to which the held clock has been billed or set
+    /// aside for a busy job thread.
     billed: Option<std::time::Instant>,
+    /// Real time since `billed` passed while no job thread ran, not yet billed.
+    debt: Duration,
     /// The test exercises a bound on the real clock, so no exchange holds it.
     real_clock: bool,
 }
@@ -10012,6 +10015,7 @@ thread_local! {
             next: 0,
             paused: None,
             billed: None,
+            debt: Duration::ZERO,
             real_clock: false,
         })
     };
@@ -10042,11 +10046,11 @@ impl HeldClocks {
     /// back as one step past the Service's next poll and any deadline behind
     /// it, before the Service has seen a job that finished meanwhile. A step
     /// therefore bills at most `MAX_STEP`, one of the Service's thread polls,
-    /// and the rest of such a gap is the host's, not the Service's. A running
-    /// thread polls the clock far more often than that, so the clock still
-    /// keeps pace with the real one. A wait the test chose is not capped: it
-    /// ends at a bound on the real clock, which may race real-time slack the
-    /// test set.
+    /// and the Service runs between steps; the rest of the gap stays owed
+    /// (`debt`) and is billed by the steps that follow, so the clock does not
+    /// fall behind the real one and age what the exchange read. A wait the
+    /// test chose is billed in one step: it ends at a bound on the real
+    /// clock, which may race real-time slack the test set.
     async fn pace<T>(work: impl std::future::Future<Output = T>) -> T {
         const MAX_STEP: Duration = Duration::from_millis(5);
         let finished = std::cell::Cell::new(false);
@@ -10071,19 +10075,23 @@ impl HeldClocks {
                             .holders
                             .iter()
                             .any(|holder| holder.port.running_threads() > 0);
-                    let billed = held.billed.unwrap_or(now);
-                    if busy || now - billed < Duration::from_millis(1) {
-                        held.billed = Some(if busy { now } else { billed });
+                    let seen = held.billed.replace(now).unwrap_or(now);
+                    if busy {
                         return None;
                     }
-                    held.billed = Some(now);
+                    held.debt += now - seen;
                     // A wait the test chose ends at a bound the Service keeps on
                     // the real clock, so it bills all of it.
-                    Some(if waiting {
-                        now - billed
+                    let step = if waiting {
+                        held.debt
                     } else {
-                        (now - billed).min(MAX_STEP)
-                    })
+                        held.debt.min(MAX_STEP)
+                    };
+                    if step < Duration::from_millis(1) {
+                        return None;
+                    }
+                    held.debt -= step;
+                    Some(step)
                 });
                 if let Some(elapsed) = unbilled {
                     tokio::time::advance(elapsed).await;
@@ -10118,6 +10126,7 @@ impl<'a> Exchange<'a> {
                 }
                 held.paused = Some(ClockMark::now());
                 held.billed = Some(std::time::Instant::now());
+                held.debt = Duration::ZERO;
                 tokio::time::pause();
             }
             let id = held.next;
