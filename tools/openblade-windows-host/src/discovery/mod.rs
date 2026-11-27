@@ -443,7 +443,7 @@ struct CandidateHint {
 /// One bounded HID scan: every interface by its case-folded path, with its
 /// PnP facts, or none when unreadable or contradicted by a duplicate.
 struct Scan {
-    inventory: ScanState,
+    state: ScanState,
     interface_count: usize,
     unreadable_interfaces: usize,
     duplicate_interfaces: usize,
@@ -495,7 +495,7 @@ fn scan(
     })?;
     check_cancelled(cancelled)?;
 
-    let inventory = if scan == ScanState::Complete
+    let state = if scan == ScanState::Complete
         && (unreadable_interfaces != 0 || duplicate_interfaces != 0)
     {
         ScanState::Incomplete
@@ -503,7 +503,7 @@ fn scan(
         scan
     };
     Ok(Scan {
-        inventory,
+        state,
         interface_count,
         unreadable_interfaces,
         duplicate_interfaces,
@@ -519,7 +519,7 @@ fn discover_hid(
 ) -> io::Result<(HidEvidence, Option<CandidateHint>)> {
     let expected_id = model.and_then(Model::device_id);
     let Scan {
-        inventory,
+        state,
         interface_count,
         unreadable_interfaces,
         duplicate_interfaces,
@@ -550,7 +550,7 @@ fn discover_hid(
     let candidates = match &counts {
         None => CandidateState::NotEvaluated,
         Some(counts) if counts.matching_hints > 1 => CandidateState::Ambiguous,
-        Some(counts) if inventory != ScanState::Complete || counts.missing_usage_hint > 0 => {
+        Some(counts) if state != ScanState::Complete || counts.missing_usage_hint > 0 => {
             CandidateState::Incomplete
         }
         Some(counts) if counts.matching_hints == 1 => CandidateState::SingleUnresolved,
@@ -559,7 +559,7 @@ fn discover_hid(
     let hint = hint.filter(|_| candidates == CandidateState::SingleUnresolved);
     Ok((
         HidEvidence {
-            inventory,
+            inventory: state,
             interface_count,
             unreadable_interfaces,
             duplicate_interfaces,
@@ -587,7 +587,7 @@ fn discover_role(
         .device_id()
         .ok_or_else(|| role_refused("no exact HID device ID"))?;
     let scan = scan(source, inventory, cancelled)?;
-    if scan.inventory != ScanState::Complete {
+    if scan.state != ScanState::Complete {
         return Err(role_refused("HID inventory is incomplete"));
     }
     let mut hints = Vec::new();
