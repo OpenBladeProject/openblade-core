@@ -30,6 +30,8 @@ internal static class DriverOwnershipJournalReader
             var marker = JsonSerializer.Deserialize<SnapTapDriverSupervisor.OwnershipJournal>(bytes.AsSpan(0, count));
             if (marker is null || !SnapTapDriverSupervisor.IsValidOwnershipJournalScope(Path.GetFileName(path), marker.Features)
                 || !TryBoot(marker.BootIdentity, out _)
+                || marker.SupervisorProcessId is <= 0
+                || (marker.SupervisorProcessId is null) != (marker.CreatedAt is null)
                 || marker.BaselineHooks is null || marker.BaselineHooks.Length > RazerSnapTapDriverProtocol.MaximumHookEnumerationCount
                 || marker.BaselineHooks.Any(record => record is null || record.Length != RazerSnapTapDriverProtocol.HookRecordLength))
             {
