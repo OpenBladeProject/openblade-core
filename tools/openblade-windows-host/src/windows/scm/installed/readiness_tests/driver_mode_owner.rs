@@ -197,11 +197,12 @@ fn refuse_after_first_query(rig: &Rig, nth: usize) {
         }
     }));
 }
+/// SCM STOP, then the drain on a held test clock (`Rig::drain`), so a loaded
+/// host spends none of the drain's deadline.
 async fn shutdown(rig: &Rig) -> io::Result<()> {
     rig.origin.stop();
-    let mut source = rig.source.lock().await;
-    let drained = source.drain().await;
-    source.confirm_drained().unwrap();
+    let drained = rig.drain().await;
+    rig.source.lock().await.confirm_drained().unwrap();
     drained
 }
 
@@ -2460,16 +2461,21 @@ async fn slow_admissions_leave_the_release_job_only_the_rest_of_the_share() {
 /// checkpoint after the baseline reply leaves room for the two remaining
 /// exchanges at the baseline's length, but not for that checkpoint again,
 /// so no setter is sent.
+///
+/// The pace is the subject, so the job measures it on paused time: 100 ms
+/// exchanges (50 ms each way) and the 220 ms stall are exact on its clock,
+/// and the release's share runs on a held test clock, so a loaded host can
+/// neither end the job inside an exchange nor change what it measures.
 #[tokio::test]
 async fn the_release_pace_charges_the_trailing_checkpoint() {
     let (rig, _) = owner_rig(NORMAL).await;
     tick(&rig).await;
-    rig.port.state.lock().unwrap().device_mode_latency = Some(Duration::from_millis(100));
+    rig.port.state.lock().unwrap().latency = Some(Duration::from_millis(50));
     *rig.custody.owned_stop_stall.lock().unwrap() =
         Some((TRAILING_CHECKPOINT, Duration::from_millis(220)));
     assert_eq!(release(&rig).await, Some(Release::Exhausted));
     assert_eq!((sets(&rig), mode(&rig)), (1, DRIVER));
-    rig.port.state.lock().unwrap().device_mode_latency = None;
+    rig.port.state.lock().unwrap().latency = None;
     rig.stop().await;
 }
 

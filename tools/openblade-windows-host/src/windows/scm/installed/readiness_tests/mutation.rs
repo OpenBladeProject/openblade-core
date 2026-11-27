@@ -591,7 +591,8 @@ struct Custody {
     // off): a read admission lost between two checks of one step.
     read_refuse_at: AtomicUsize,
     // Blocks the thread in the nth owned-Stop fresh authorization once
-    // armed, as a slow Windows supplier would.
+    // armed, as a slow Windows supplier would: on the clock of the runtime
+    // that asks (`Custody::stall_owned_stop`).
     owned_stop_stall: StdMutex<Option<(usize, std::time::Duration)>>,
     activation_refusal: AtomicU8,
     lifecycle: crate::scm_host::Lifecycle,
@@ -1033,7 +1034,10 @@ impl Fresh for PinnedFresh {
 }
 impl Custody {
     /// Blocks in the armed owned-Stop or cleanup authorization, as a slow
-    /// Windows supplier would (`owned_stop_stall`).
+    /// Windows supplier would (`owned_stop_stall`). A job on paused time
+    /// (`Fixture::worker`) measures its own progress on that clock, so the
+    /// stall moves it by exactly its length; on a running clock it takes that
+    /// long in real time.
     fn stall_owned_stop(&self) {
         let stall = {
             let mut armed = self.owned_stop_stall.lock().unwrap();
@@ -1050,10 +1054,21 @@ impl Custody {
                 None => None,
             }
         };
-        if let Some(by) = stall {
-            std::thread::sleep(by);
+        match stall {
+            Some(by) if clock_is_paused() => advance_paused_clock(by),
+            Some(by) => std::thread::sleep(by),
+            None => {}
         }
     }
+}
+/// Moves the calling runtime's paused clock forward by `by` from synchronous
+/// code, as a call that blocks for that long would. `tokio::time::advance`
+/// moves the clock when first polled and then only yields, so one poll is
+/// the whole advance.
+fn advance_paused_clock(by: Duration) {
+    let mut advance = std::pin::pin!(tokio::time::advance(by));
+    let mut context = std::task::Context::from_waker(std::task::Waker::noop());
+    let _ = advance.as_mut().poll(&mut context);
 }
 /// Test model of `CleanupGuard`: the Service's cleanup admission, with no
 /// console session, SID or logon, at the lifecycle fence its scope pinned.
@@ -1699,11 +1714,12 @@ impl Rig {
     /// stall of real time. A request in that state can end only at its own
     /// bound on the real clock, which these tests exercise, so a held exchange
     /// does not hold the clock back for it. (A test hook that parks a thread is
-    /// seen while it runs: `Fixture::hooked`.)
+    /// seen while it runs: `Fixture::hooked`. A stalled owned-Stop
+    /// authorization costs the clock of the runtime it runs on:
+    /// `Custody::stall_owned_stop`.)
     fn parks(&self) -> Rc<dyn Fn() -> bool> {
         let state = self.port.state.clone();
         let stalled = self.files.stalled_replace.clone();
-        let custody = self.custody.clone();
         Rc::new(move || {
             let waiting = |release: &Arc<AtomicBool>| !release.load(Ordering::Acquire);
             // A job inside a test hook holds this lock (the fixture calls hooks under
@@ -1729,10 +1745,6 @@ impl Rig {
                     .as_ref()
                     .is_some_and(|(_, release)| waiting(release))
                 || stalled.try_lock().is_ok_and(|stall| stall.is_some())
-                || custody
-                    .owned_stop_stall
-                    .try_lock()
-                    .is_ok_and(|stall| stall.is_some())
         })
     }
     /// Runs one request exchange on a held test clock, and starts the budget of
@@ -1787,10 +1799,38 @@ impl Rig {
         response
     }
     async fn stop(&self) {
+        self.drain().await.unwrap();
+        self.source.lock().await.confirm_drained().unwrap();
+    }
+    /// The source's drain (`StatusSource::drain`) on a test clock held as a
+    /// request's exchange is (`held`), so a loaded host that leaves the
+    /// cleanup's job threads or the status observer unscheduled does not
+    /// spend the drain's deadline, and the first cleanup recipe takes its
+    /// budget from the drain's start. A clock the test paused itself is
+    /// running again first (`resume_clock_for_stop`). The deadline itself is
+    /// unchanged: a job that waits past it on its own clock still expires.
+    ///
+    /// `self.source.lock().await.drain()` is the same drain on whatever clock
+    /// the test runs: the running clock, or the one a `frozen` section holds.
+    /// A drain inside `frozen` stays direct (as the near-capacity cases end),
+    /// since `resume_clock_for_stop` would let that section's clock run.
+    async fn drain(&self) -> io::Result<()> {
         resume_clock_for_stop();
-        let mut source = self.source.lock().await;
-        source.drain().await.unwrap();
-        source.confirm_drained().unwrap();
+        self.held(HeldClock::CatchUp, async {
+            self.source.lock().await.drain().await
+        })
+        .await
+    }
+    /// One origin tick (`StatusSource::process_power_source`), run as a
+    /// request's exchange is (`held`): its jobs take their budget from the
+    /// tick's start and a loaded host spends none of it.
+    #[cfg(feature = "service-temporary-charge-v1")]
+    async fn process_power_source(&self) -> io::Result<()> {
+        self.held(
+            HeldClock::CatchUp,
+            Box::pin(async { self.source.lock().await.process_power_source().await }),
+        )
+        .await
     }
     /// Stops a rig whose case leaves HyperBoost on, in production order:
     /// SCM STOP revokes the origin before the drain. With the lifecycle
@@ -1800,12 +1840,10 @@ impl Rig {
     /// (`hyperboost_cleanup` covers the admitted exit).
     #[cfg(feature = "service-hyperboost-v1")]
     async fn stop_in_hyperboost(&self) {
-        resume_clock_for_stop();
         let writes = self.port.state.lock().unwrap().writes;
         self.origin.stop();
-        let mut source = self.source.lock().await;
-        let drained = source.drain().await;
-        source.confirm_drained().unwrap();
+        let drained = self.drain().await;
+        self.source.lock().await.confirm_drained().unwrap();
         if let Err(error) = drained {
             assert!(
                 cfg!(feature = "service-profile-triggers-v1")
@@ -7631,7 +7669,8 @@ async fn fan_settle_stop_result_needs_fresh_admission() {
         c.fresh_refuse.store(true, Ordering::Release);
     }));
     r.origin.stop();
-    assert!(r.source.lock().await.drain().await.is_err());
+    // Held, so the refusal is the fence's and not a loaded host's deadline.
+    assert!(r.drain().await.is_err());
     // The 51 row is durable; it is not replayed or rolled back.
     assert_eq!(*fan_rows(&r).last().unwrap(), closed);
     assert!(!r.storage.outstanding_fan());
@@ -9926,9 +9965,15 @@ async fn tfc_v1_unknown_source_recovers_to_battery_in_the_same_event_epoch() {
 /// spends it only through its own waits.
 #[cfg(feature = "service-temporary-charge-v1")]
 fn paused_rig(files: MemoryFiles) -> Rig {
-    let r = Rig::new(files);
-    r.port.state.lock().unwrap().latency = Some(Duration::ZERO);
-    r
+    Rig::new(files).with_paused_jobs()
+}
+#[cfg(feature = "service-temporary-charge-v1")]
+impl Rig {
+    /// This rig with its jobs on paused time (`paused_rig`).
+    fn with_paused_jobs(self) -> Self {
+        self.port.state.lock().unwrap().latency = Some(Duration::ZERO);
+        self
+    }
 }
 /// Runs `work` with the test clock paused, and never moves it while a job or
 /// status-observer thread runs, however slowly the host runs it. On the real
@@ -9966,8 +10011,12 @@ struct HeldClocks {
     next: u64,
     /// Set while this layer has the clock paused, with the moment it did.
     paused: Option<ClockMark>,
-    /// The real instant up to which the held clock has been billed.
+    /// The real instant up to which the held clock has been billed or set
+    /// aside for a busy job thread.
     billed: Option<std::time::Instant>,
+    /// Real time up to `billed` that passed while no job thread ran and the
+    /// clock has not been moved by yet.
+    debt: Duration,
     /// The test exercises a bound on the real clock, so no exchange holds it.
     real_clock: bool,
 }
@@ -9978,6 +10027,7 @@ thread_local! {
             next: 0,
             paused: None,
             billed: None,
+            debt: Duration::ZERO,
             real_clock: false,
         })
     };
@@ -10002,7 +10052,19 @@ impl HeldClocks {
     /// Service's own bound on the real clock. Unlike `hold_clock`, which also
     /// bounds the polls an idle Service gets, the test is never left waiting on
     /// a timer that no job moves.
+    ///
+    /// The clock and the Service share the test's thread, so a host that
+    /// deschedules that thread stops both, and the time it lost would come
+    /// back as one step past the Service's next poll and any deadline behind
+    /// it, before the Service has seen a job that finished meanwhile. A step
+    /// therefore bills at most `MAX_STEP`, one of the Service's thread polls,
+    /// and the Service runs between steps; the rest of the gap stays owed
+    /// (`debt`) and is billed by the steps that follow, so the clock does not
+    /// fall behind the real one and age what the exchange read. A wait the
+    /// test chose is billed in one step: it ends at a bound on the real
+    /// clock, which may race real-time slack the test set.
     async fn pace<T>(work: impl std::future::Future<Output = T>) -> T {
+        const MAX_STEP: Duration = Duration::from_millis(5);
         let finished = std::cell::Cell::new(false);
         let work = async {
             let out = work.await;
@@ -10010,8 +10072,14 @@ impl HeldClocks {
             out
         };
         let clock = async {
+            let started = std::time::Instant::now();
             while !finished.get() {
                 let now = std::time::Instant::now();
+                // A job thread that never ends holds the clock for good.
+                assert!(
+                    now - started < HANG_GUARD,
+                    "held exchange waited {HANG_GUARD:?} on a job thread that never finished"
+                );
                 let unbilled = HELD_CLOCKS.with(|held| {
                     let mut held = held.borrow_mut();
                     // A wait the test chose bills every holder's time as the real
@@ -10025,13 +10093,23 @@ impl HeldClocks {
                             .holders
                             .iter()
                             .any(|holder| holder.port.running_threads() > 0);
-                    let billed = held.billed.unwrap_or(now);
-                    if busy || now - billed < Duration::from_millis(1) {
-                        held.billed = Some(if busy { now } else { billed });
+                    let seen = held.billed.replace(now).unwrap_or(now);
+                    if busy {
                         return None;
                     }
-                    held.billed = Some(now);
-                    Some(now - billed)
+                    held.debt += now - seen;
+                    // A wait the test chose ends at a bound the Service keeps on
+                    // the real clock, so it bills all of it.
+                    let step = if waiting {
+                        held.debt
+                    } else {
+                        held.debt.min(MAX_STEP)
+                    };
+                    if step < Duration::from_millis(1) {
+                        return None;
+                    }
+                    held.debt -= step;
+                    Some(step)
                 });
                 if let Some(elapsed) = unbilled {
                     tokio::time::advance(elapsed).await;
@@ -10066,6 +10144,7 @@ impl<'a> Exchange<'a> {
                 }
                 held.paused = Some(ClockMark::now());
                 held.billed = Some(std::time::Instant::now());
+                held.debt = Duration::ZERO;
                 tokio::time::pause();
             }
             let id = held.next;
@@ -10122,7 +10201,9 @@ impl Drop for Exchange<'_> {
 }
 /// Whether the test clock is paused. Tokio offers no query, and pausing a
 /// paused clock panics. A running clock moves within microseconds; a paused
-/// one stays put for as long as it is watched.
+/// one stays put for as long as it is watched. The last look comes after the
+/// whole watch, so a host that deschedules this thread through it has still
+/// let real time pass, which a running clock shows.
 fn clock_is_paused() -> bool {
     let mark = tokio::time::Instant::now();
     let watched = std::time::Instant::now();
@@ -10132,16 +10213,16 @@ fn clock_is_paused() -> bool {
         }
         std::hint::spin_loop();
     }
-    true
+    tokio::time::Instant::now() == mark
 }
-/// Runs the test clock again for a rig's Stop (`Rig::stop`,
-/// `Rig::stop_in_hyperboost`), as the Service's clock always runs. A test
-/// that paused the clock to age a result has it paused still, and the drain's
-/// bounds wait on OS threads: the status observer's retirement polls its
-/// thread until the drain deadline (`retire_observer`), and a paused clock
-/// skips to that deadline within microseconds of real time, before a loaded
-/// host need have scheduled the thread at all. A clock an exchange holds
-/// (`HeldClocks`) is that exchange's to let go.
+/// Runs the test clock again for a rig's Stop (`Rig::drain`), whose exchange
+/// then holds it. A test that paused the clock to age a result has it paused
+/// still, and the drain's bounds wait on OS threads: the status observer's
+/// retirement polls its thread until the drain deadline (`retire_observer`),
+/// and a clock paused outside an exchange skips to that deadline within
+/// microseconds of real time, before a loaded host need have scheduled the
+/// thread at all. A held clock does not move while that thread runs. A clock
+/// an exchange holds (`HeldClocks`) is that exchange's to let go.
 fn resume_clock_for_stop() {
     let held = HELD_CLOCKS.with(|held| held.borrow().paused.is_some());
     if !held && clock_is_paused() {
@@ -10157,9 +10238,10 @@ impl ClockMark {
         Self(std::time::Instant::now(), tokio::time::Instant::now())
     }
     /// Moves the held test clock forward by the time it has lost since the
-    /// mark, while no job is running. A source cancellation measures its 4 s
-    /// deadline on a job clock that starts at the real instant; measured under
-    /// load, it was refused once the lag reached about 3.7 s.
+    /// mark, while no job is running, so later work that ages a result on the
+    /// test clock sees the real time that passed. Job deadlines do not need it:
+    /// a job takes what the Service clock leaves of its budget
+    /// (`Fixture::worker`).
     async fn catch_up(&self) {
         let held = tokio::time::Instant::now() - self.1;
         tokio::time::advance(self.0.elapsed().saturating_sub(held)).await;
@@ -10168,10 +10250,11 @@ impl ClockMark {
 /// Runs `case` on a runtime of its own and returns its result.
 ///
 /// A `frozen` section holds the test clock while real time passes, so the
-/// clock ends the section behind the real one by the time the section took. A
-/// job's own paused clock starts at the real instant, so a deadline taken from
-/// the test clock then comes up that much short for a later section on the
-/// same runtime. A fresh runtime starts both clocks together.
+/// clock ends the section behind the real one by the time the section took.
+/// Jobs take their budgets from the test clock (`Fixture::worker`), so the lag
+/// shortens no later deadline, but a later section on the same runtime would
+/// start from a clock the earlier one left behind. A fresh runtime starts both
+/// clocks together, so each probe measures as the final rig does.
 #[cfg(feature = "service-temporary-charge-v1")]
 fn isolated<F: std::future::Future>(case: impl FnOnce() -> F + Send) -> F::Output
 where
@@ -10306,8 +10389,8 @@ async fn tfc_v1_near_capacity_performance_refuses_before_spending_reserved_sourc
         .insert("thermal-mutation.journal".into(), journal);
     let r = paused_rig(files);
     r.get().await;
-    // One held section: each held section leaves the test clock behind the
-    // real one by the real time it took, which a later job's deadline feels.
+    // One frozen section for the enable and the requests that follow, so they
+    // all run on one held clock.
     frozen(&r.port, async {
         let mark = ClockMark::now();
         let response = r

@@ -251,16 +251,22 @@ impl<A: ObservationProof> Worker<A> {
             queries,
         };
         let run = self.run.clone();
+        // The deadline is on the Service runtime's clock, which in production
+        // is the real clock this thread reads. A test rig holds the Service's
+        // clock while job threads run, so a test thread reads that clock.
+        #[cfg(test)]
+        let service_clock = tokio::runtime::Handle::try_current().ok();
         // Use an owned OS thread, outside the Service runtime's blocking pool.
         // A native call may stall past both the request and shutdown deadlines.
         let thread = Builder::new()
             .name("openblade-firmware-observer".into())
             .spawn(move || {
-                let result = if job.limit().check().is_ok() {
-                    run(job)
-                } else {
-                    Ok(None)
+                let admitted = {
+                    #[cfg(test)]
+                    let _clock = service_clock.as_ref().map(tokio::runtime::Handle::enter);
+                    job.limit().check().is_ok()
                 };
+                let result = if admitted { run(job) } else { Ok(None) };
                 if result.is_ok()
                     && let Some(occupied) = occupied
                 {
