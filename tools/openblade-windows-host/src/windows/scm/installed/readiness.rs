@@ -102,12 +102,67 @@ const DRAIN_TIMEOUT: Duration = Duration::from_secs(2);
 /// (`lighting_stream::STREAM_SETTLE_BUDGET`, 0.3 s), whose unconfirmed end
 /// latches the doubt rather than spend more. Only then do the fans start with
 /// less than their 2 s: at least 1.7 s after one of those shares, 1.4 s after
-/// both.
+/// both (`drain_plan`, checked when the crate builds).
 #[cfg(feature = "service-keyboard-driver-mode-v1")]
 const SOURCE_DRAIN_TIMEOUT: Duration =
     DRAIN_TIMEOUT.saturating_add(thermal_mutation::KEYBOARD_SHUTDOWN_BUDGET);
 #[cfg(not(feature = "service-keyboard-driver-mode-v1"))]
 const SOURCE_DRAIN_TIMEOUT: Duration = DRAIN_TIMEOUT;
+/// Stop's plan for the drain, in every composition: each step before the
+/// fan handback takes at most its share, and the fans keep at least
+/// `FAN_HANDBACK_MINIMUM`. A step's own budget is checked against its share
+/// where that step is composed, and the shares against both drain bounds
+/// here, so a larger share fails the build whatever the features.
+mod drain_plan {
+    use std::time::Duration;
+    pub(super) const STREAM_SETTLE: Duration = Duration::from_millis(300);
+    pub(super) const DISPLAY_BRIGHTNESS_RELEASE: Duration = Duration::from_millis(300);
+    pub(super) const KEYBOARD_RELEASE: Duration = Duration::from_millis(900);
+    pub(super) const FAN_HANDBACK_MINIMUM: Duration = Duration::from_millis(1400);
+    /// Whether `shares` fit within `bound`.
+    pub(super) const fn fits(shares: &[Duration], bound: Duration) -> bool {
+        let mut total = 0;
+        let mut index = 0;
+        while index < shares.len() {
+            total += shares[index].as_nanos();
+            index += 1;
+        }
+        total <= bound.as_nanos()
+    }
+}
+// The plain bound, and the Driver-mode bound with the keyboard's share.
+const _: () = assert!(drain_plan::fits(
+    &[
+        drain_plan::STREAM_SETTLE,
+        drain_plan::DISPLAY_BRIGHTNESS_RELEASE,
+        drain_plan::FAN_HANDBACK_MINIMUM,
+    ],
+    DRAIN_TIMEOUT,
+));
+const _: () = assert!(drain_plan::fits(
+    &[
+        drain_plan::STREAM_SETTLE,
+        drain_plan::DISPLAY_BRIGHTNESS_RELEASE,
+        drain_plan::KEYBOARD_RELEASE,
+        drain_plan::FAN_HANDBACK_MINIMUM,
+    ],
+    DRAIN_TIMEOUT.saturating_add(drain_plan::KEYBOARD_RELEASE),
+));
+#[cfg(feature = "service-lighting-v1")]
+const _: () = assert!(drain_plan::fits(
+    &[thermal_mutation::STREAM_SETTLE_BUDGET],
+    drain_plan::STREAM_SETTLE,
+));
+#[cfg(feature = "service-brightness-hid-usage-v1")]
+const _: () = assert!(drain_plan::fits(
+    &[thermal_mutation::BRIGHTNESS_SHUTDOWN_BUDGET],
+    drain_plan::DISPLAY_BRIGHTNESS_RELEASE,
+));
+#[cfg(feature = "service-keyboard-driver-mode-v1")]
+const _: () = assert!(drain_plan::fits(
+    &[thermal_mutation::KEYBOARD_SHUTDOWN_BUDGET],
+    drain_plan::KEYBOARD_RELEASE,
+));
 const MAX_SUBSCRIPTIONS: usize = 8;
 
 #[path = "subscription.rs"]

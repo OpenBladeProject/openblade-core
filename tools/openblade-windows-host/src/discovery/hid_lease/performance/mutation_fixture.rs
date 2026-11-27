@@ -191,6 +191,15 @@ pub(crate) struct State {
     /// runtime's own bound ends it otherwise.
     #[cfg(feature = "service-lighting-v1")]
     pub(crate) stream_held: Option<Arc<std::sync::atomic::AtomicBool>>,
+    /// A stream frame waits, queued behind a busy lane and not yet issued,
+    /// until this is released; a retire meanwhile recalls it, as the lane's
+    /// recall token does.
+    #[cfg(feature = "service-lighting-v1")]
+    pub(crate) stream_queued: Option<Arc<std::sync::atomic::AtomicBool>>,
+    /// Whether the stream's collection is open: an open or an issued frame
+    /// opens it, as the lane does, and a retire closes it.
+    #[cfg(feature = "service-lighting-v1")]
+    pub(crate) stream_lease: bool,
     /// How many times the stream retired its collection.
     #[cfg(feature = "service-lighting-v1")]
     pub(crate) stream_retired: usize,
@@ -977,9 +986,10 @@ mod pace_tests;
 mod pool_tests;
 /// The fixture's animated stream (`MatrixStream`): each frame is one more
 /// matrix report in `State::matrix_frames`, with the same refusal, driver
-/// rejection and completion failure as a job's report, and `stream_held`
-/// keeps it in flight. Its frames do not end at their deadline: the runtime
-/// bounds every wait on the stream itself.
+/// rejection and completion failure as a job's report, `stream_held`
+/// keeps it in flight and `stream_queued` keeps it queued. Its frames do
+/// not end at their deadline: the runtime bounds every wait on the stream
+/// itself.
 #[cfg(feature = "service-lighting-v1")]
 struct FixtureStream(Fixture);
 #[cfg(feature = "service-lighting-v1")]
@@ -999,6 +1009,7 @@ impl MatrixStream for FixtureStream {
         let opened = if s.stream_unopened {
             Err(Unwritten::Unsent)
         } else {
+            s.stream_lease = true;
             Ok(())
         };
         Box::pin(std::future::ready(opened))
@@ -1006,6 +1017,18 @@ impl MatrixStream for FixtureStream {
     fn frame(&self, report: MatrixReport, _: Instant) -> Pending<Result<(), Unwritten>> {
         let state = self.0.state.clone();
         Box::pin(async move {
+            let (queued, retired) = {
+                let s = state.lock().unwrap();
+                (s.stream_queued.clone(), s.stream_retired)
+            };
+            if let Some(release) = queued {
+                while !release.load(Ordering::Acquire) {
+                    tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+                }
+                if state.lock().unwrap().stream_retired != retired {
+                    return Err(Unwritten::Unsent);
+                }
+            }
             let held = {
                 let mut s = state.lock().unwrap();
                 let number = s.matrix_frames.len() + 1;
@@ -1014,6 +1037,7 @@ impl MatrixStream for FixtureStream {
                     return Err(Unwritten::Unsent);
                 }
                 let sent = s.sent.len();
+                s.stream_lease = true;
                 s.matrix_frames.push((sent, report));
                 s.matrix_at.push(Instant::now());
                 if s.matrix_reject == Some(number) || s.matrix_fail == Some(number) {
@@ -1033,7 +1057,9 @@ impl MatrixStream for FixtureStream {
         })
     }
     fn retire(&self) {
-        self.0.state.lock().unwrap().stream_retired += 1;
+        let mut s = self.0.state.lock().unwrap();
+        s.stream_retired += 1;
+        s.stream_lease = false;
     }
     fn settle(&self, _: Instant) -> Pending<bool> {
         let mut s = self.0.state.lock().unwrap();

@@ -18,6 +18,7 @@ const PENDING: &str =
 const SPECTRUM: &str = r#"{"effect":2,"color":{"red":0,"green":0,"blue":0},"brightness":50,"parameters":{"kind":"spectrumCycling"},"logoMode":null}"#;
 const WAVE: &str = r#"{"effect":7,"color":{"red":0,"green":0,"blue":0},"brightness":50,"parameters":{"kind":"wave","direction":1},"logoMode":null}"#;
 const RANDOM_BREATHING: &str = r#"{"effect":3,"color":{"red":0,"green":0,"blue":0},"brightness":50,"parameters":{"kind":"breathing","colorMode":2,"primaryColor":null,"secondaryColor":null},"logoMode":null}"#;
+const STATIC: &str = r#"{"effect":1,"color":{"red":200,"green":10,"blue":5},"brightness":10,"parameters":{"kind":"static","color":{"red":200,"green":10,"blue":5}},"logoMode":null}"#;
 
 fn request(n: u8, settings: &str) -> Vec<u8> {
     format!(
@@ -61,6 +62,10 @@ fn decoded(report: &MatrixReport) -> MatrixFrame {
 }
 fn retired(rig: &Rig) -> usize {
     rig.port.state.lock().unwrap().stream_retired
+}
+/// Whether the stream's collection is open.
+fn lease(rig: &Rig) -> bool {
+    rig.port.state.lock().unwrap().stream_lease
 }
 /// The animated stream's next deadline, effect and start.
 fn due(rig: &Rig) -> (Instant, Effect, Instant) {
@@ -535,7 +540,6 @@ async fn a_power_generation_change_writes_no_frame_until_a_new_reading() {
 /// request that leaves no animated renderer closes it.
 #[tokio::test]
 async fn the_stream_collection_opens_inside_the_request_and_stays_open_across_effects() {
-    const STATIC: &str = r#"{"effect":1,"color":{"red":200,"green":10,"blue":5},"brightness":10,"parameters":{"kind":"static","color":{"red":200,"green":10,"blue":5}},"logoMode":null}"#;
     let rig = Rig::new(MemoryFiles::default());
     lit(&rig, [0x40, 1, 0]);
     rig.port.state.lock().unwrap().stream_unopened = true;
@@ -572,7 +576,10 @@ async fn stop_recalls_and_settles_the_stream() {
     let state = rig.port.state.clone();
     rig.stop().await;
     let s = state.lock().unwrap();
-    assert_eq!((s.stream_retired, s.stream_settles), (1, 1));
+    // The renderer's retire, then Stop's own, which never relies on the
+    // session's record of an open collection.
+    assert_eq!((s.stream_retired, s.stream_settles), (2, 1));
+    assert!(!s.stream_lease);
 }
 
 /// Waits, for at most 10 s, until `done` holds.
@@ -656,6 +663,72 @@ async fn a_hung_open_is_recalled_and_refuses_before_any_setter() {
     rig.stop().await;
 }
 
+/// Spectrum streaming on after a Wave request whose open outlasted its
+/// bound: the hung open was recalled, which closed the lease, the request
+/// kept the previous renderer, and Spectrum's next frame reopened the lease
+/// on the lane.
+async fn spectrum_after_a_hung_wave_open(rig: &Rig) {
+    lit(rig, [0x40, 1, 0]);
+    assert_eq!(set(rig, 1, SPECTRUM).await.0, 1);
+    rig.port.state.lock().unwrap().stream_open_hang = true;
+    let (status, _) = tokio::time::timeout(Duration::from_secs(10), set(rig, 2, WAVE))
+        .await
+        .expect("the open is bounded");
+    rig.port.state.lock().unwrap().stream_open_hang = false;
+    assert_eq!(status, 3);
+    assert_eq!(
+        due(rig).1,
+        Effect::Spectrum,
+        "the previous renderer is kept"
+    );
+    assert_eq!(
+        (retired(rig), lease(rig)),
+        (1, false),
+        "the open was recalled"
+    );
+    let (next, _, _) = due(rig);
+    tick(rig, next).await;
+    let (next, _, _) = due(rig);
+    assert!(matches!(
+        rig.runtime.stream_frame(next).await.unwrap(),
+        At(_)
+    ));
+    assert!(lease(rig), "the frame reopened the lease");
+}
+
+/// Review F1: a lease a frame reopened after a recalled open still closes
+/// with the next request that leaves no animated renderer.
+#[tokio::test]
+async fn a_static_request_after_a_hung_open_over_an_animation_closes_the_lease() {
+    let rig = Rig::new(MemoryFiles::default());
+    spectrum_after_a_hung_wave_open(&rig).await;
+    assert_eq!(set(&rig, 3, STATIC).await.0, 1);
+    assert!(rig.runtime.stream_due_for_tests().is_none());
+    assert_eq!((retired(&rig), lease(&rig)), (2, false));
+    rig.stop().await;
+}
+
+/// Review F1: Stop after the same sequence recalls a frame still queued on
+/// the lane, which is never issued, and closes the lease.
+#[tokio::test]
+async fn stop_after_a_hung_open_over_an_animation_recalls_a_queued_frame() {
+    let rig = Rig::new(MemoryFiles::default());
+    spectrum_after_a_hung_wave_open(&rig).await;
+    let (written, recalls) = (frames(&rig).len(), retired(&rig));
+    let release = Arc::new(AtomicBool::new(false));
+    rig.port.state.lock().unwrap().stream_queued = Some(release.clone());
+    let (next, _, _) = due(&rig);
+    let frame = rig.runtime.stream_frame(next);
+    let unqueue = async {
+        until(|| retired(&rig) > recalls).await;
+        release.store(true, Ordering::Release);
+    };
+    let (step, (), ()) = tokio::join!(frame, rig.stop(), unqueue);
+    assert_eq!(step.unwrap(), Wake);
+    assert_eq!(frames(&rig).len(), written, "the queued frame was recalled");
+    assert!(!lease(&rig));
+}
+
 /// The origin tick waits for a gate a stream frame holds only until that
 /// frame's deadline; past it, the tick ends without a reading.
 #[tokio::test]
@@ -709,26 +782,28 @@ async fn the_effect_starts_at_the_handshake_before_its_first_frame() {
 
 /// The stream loop itself: a frame refused for its admission leaves the
 /// loop waiting, without a timer, until the origin tick confirms a clean
-/// reading, whose notification resumes the frames.
+/// reading, whose notification resumes the frames. The test clock is paused
+/// after the request, so the reading stays within its second whatever the
+/// host's load: only the missing notification can stop the frames.
 #[tokio::test]
 async fn the_stream_loop_waits_for_the_tick_after_a_refused_reading() {
     let rig = Rig::new(MemoryFiles::default());
     lit(&rig, [0x40, 1, 0]);
     assert_eq!(set(&rig, 1, SPECTRUM).await.0, 1);
+    tokio::time::pause();
+    rig.custody.fresh_refuse.store(true, Ordering::Release);
     let runtime = rig.runtime.clone();
     let stream = async {
         let _ = runtime.run_lighting_stream().await;
     };
     let drive = async {
-        until(|| frames(&rig).len() >= 3).await;
-        rig.custody.fresh_refuse.store(true, Ordering::Release);
+        // The loop's next frame, due within this, is refused.
         tokio::time::sleep(Duration::from_millis(300)).await;
-        let stalled = frames(&rig).len();
         rig.custody.fresh_refuse.store(false, Ordering::Release);
         tokio::time::sleep(Duration::from_millis(300)).await;
-        assert_eq!(frames(&rig).len(), stalled, "it waits for the tick");
+        assert_eq!(frames(&rig).len(), 1, "it waits for the tick");
         tick(&rig, Instant::now()).await;
-        until(|| frames(&rig).len() > stalled).await;
+        until(|| frames(&rig).len() > 1).await;
     };
     tokio::select! {
         () = stream => panic!("the stream loop ended"),
@@ -763,6 +838,58 @@ async fn frames_run_no_custody_verification_and_a_tick_runs_one() {
     rig.stop().await;
 }
 
+/// Review F2: each frame checks the loaded origin's lifetime itself
+/// (`mailbox_read::authorize_original_frame`), so once Stop or a lost trust
+/// ends it, the next frame writes nothing though the tick's reading is
+/// still fresh.
+#[tokio::test]
+async fn a_frame_after_the_origin_lifetime_ends_writes_nothing_within_the_second() {
+    use crate::origin_lifetime::Lifetime;
+    for end in [Lifetime::stop as fn(&Lifetime), Lifetime::lose_trust] {
+        let rig = Rig::new(MemoryFiles::default());
+        lit(&rig, [0x40, 1, 0]);
+        assert_eq!(set(&rig, 1, SPECTRUM).await.0, 1);
+        let lifetime = Arc::new(Lifetime::default());
+        *rig.custody.origin_for_fan.lock().unwrap() = Some(lifetime.clone());
+        let (next, _, _) = due(&rig);
+        assert!(matches!(
+            rig.runtime.stream_frame(next).await.unwrap(),
+            At(_)
+        ));
+        end(&lifetime);
+        let (next, _, _) = due(&rig);
+        assert_eq!(rig.runtime.stream_frame(next).await.unwrap(), Wake);
+        assert_eq!(frames(&rig).len(), 2);
+        *rig.custody.origin_for_fan.lock().unwrap() = None;
+        rig.stop().await;
+    }
+}
+
+/// Review F2: a session notice after the reading advances the lifecycle
+/// epoch the frame admission pinned (`thermal_native::admit_frame`), so no
+/// frame goes out until a tick takes a reading at the new epoch.
+#[tokio::test]
+async fn a_session_notice_refuses_frames_through_the_pinned_epoch() {
+    use windows_sys::Win32::System::Services::SERVICE_CONTROL_SESSIONCHANGE as SESSION;
+    let rig = Rig::new(MemoryFiles::default());
+    lit(&rig, [0x40, 1, 0]);
+    rig.custody.pinned_fresh.store(true, Ordering::Release);
+    assert_eq!(set(&rig, 1, SPECTRUM).await.0, 1);
+    rig.custody.lifecycle.record(SESSION, None, 0);
+    let (next, _, _) = due(&rig);
+    assert_eq!(rig.runtime.stream_frame(next).await.unwrap(), Wake);
+    assert_eq!(frames(&rig).len(), 1);
+    tick(&rig, next).await;
+    let (next, _, _) = due(&rig);
+    assert!(matches!(
+        rig.runtime.stream_frame(next).await.unwrap(),
+        At(_)
+    ));
+    assert_eq!(frames(&rig).len(), 2, "a reading at the new epoch");
+    rig.custody.pinned_fresh.store(false, Ordering::Release);
+    rig.stop().await;
+}
+
 /// Without a low-power reading (no trigger or Driver-mode composition), a
 /// suspend advances the lifecycle epoch the stream's admission pinned, so
 /// no frame goes after it.
@@ -776,13 +903,13 @@ async fn a_suspend_refuses_every_frame_through_the_pinned_epoch() {
     const SUSPEND: u32 = 4;
     let rig = Rig::new(MemoryFiles::default());
     lit(&rig, [0x40, 1, 0]);
-    rig.custody.scoped_fresh.store(true, Ordering::Release);
+    rig.custody.pinned_fresh.store(true, Ordering::Release);
     assert_eq!(set(&rig, 1, SPECTRUM).await.0, 1);
     let (next, _, _) = due(&rig);
     rig.custody.lifecycle.ingress(POWER, SUSPEND);
     assert_eq!(rig.runtime.stream_frame(next).await.unwrap(), Wake);
     assert_eq!(frames(&rig).len(), 1);
-    rig.custody.scoped_fresh.store(false, Ordering::Release);
+    rig.custody.pinned_fresh.store(false, Ordering::Release);
     rig.stop().await;
 }
 
@@ -819,8 +946,6 @@ fn undefined_step_and_refresh_values_are_refused_by_the_codec() {
 #[cfg(feature = "service-profiles-v1")]
 mod controls {
     use super::*;
-
-    const STATIC: &str = r#"{"effect":1,"color":{"red":200,"green":10,"blue":5},"brightness":10,"parameters":{"kind":"static","color":{"red":200,"green":10,"blue":5}},"logoMode":null}"#;
 
     async fn step(rig: &Rig, n: u8, increase: bool, lifetime: u8) -> (i64, String) {
         let response = rig

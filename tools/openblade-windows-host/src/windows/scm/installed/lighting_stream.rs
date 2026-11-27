@@ -76,7 +76,7 @@ const OPEN_BUDGET: Duration = Duration::from_secs(1);
 /// handback and the HyperBoost exit are paced to (`readiness::SOURCE_DRAIN_TIMEOUT`).
 /// It is at most one frame's budget, which already bounds a frame in flight;
 /// a settle not confirmed within it latches the doubt and the drain goes on.
-const STREAM_SETTLE_BUDGET: Duration = Duration::from_millis(300);
+pub(in super::super::super) const STREAM_SETTLE_BUDGET: Duration = Duration::from_millis(300);
 const _: () = assert!(STREAM_SETTLE_BUDGET.as_nanos() <= FRAME_BUDGET.as_nanos());
 
 /// The ticks from `started` to `now`.
@@ -116,8 +116,8 @@ impl Session {
             .is_some_and(|owner| owner.stream.is_some())
     }
 
-    /// Recalls the stream's frames and closes its collection, when a
-    /// request opened it.
+    /// Recalls the stream's frames and closes its collection, when it may
+    /// be open (`stream_open`).
     pub(super) fn close_stream(&self) {
         if self.stream_open.replace(false)
             && let Some(stream) = self.stream.get()
@@ -294,6 +294,9 @@ impl Runtime {
         let deadline = Instant::now() + lighting.frame_budget();
         let _hold = Hold::new(&lighting.stream_hold, deadline);
         let claim = lighting.claim();
+        // The lane opens the collection for a frame when it is not, as after
+        // an open the request gave up on: the next retire must close it.
+        lighting.stream_open.set(true);
         let written = timeout_at(deadline, port.frame(report, deadline))
             .await
             .unwrap_or(Err(Unwritten::InDoubt));
@@ -335,8 +338,9 @@ impl Runtime {
     }
 
     /// Stop's end of the stream, after the renderer ended
-    /// (`retire_renderer`, whose retire already recalled every frame not yet
-    /// submitted): the drain waits, for its `STREAM_SETTLE_BUDGET` share
+    /// (`retire_renderer`): it recalls every frame not yet submitted and
+    /// closes the collection whatever the session recorded, since a retire
+    /// is idempotent, then waits, for its `STREAM_SETTLE_BUDGET` share
     /// before `deadline`, for the stream to report that no report is
     /// outstanding, so no frame is issued after the keyboard release and the
     /// fan handback. A stream that cannot confirm it in time latches the
@@ -346,8 +350,8 @@ impl Runtime {
         let Some(port) = self.lighting.stream.get().cloned() else {
             return;
         };
-        // A no-op after `retire_renderer`, unless a request opened it since.
-        self.lighting.close_stream();
+        self.lighting.stream_open.set(false);
+        port.retire();
         let share = deadline.min(Instant::now() + STREAM_SETTLE_BUDGET);
         if !matches!(timeout_at(share, port.settle(share)).await, Ok(true)) {
             self.lighting.latch();

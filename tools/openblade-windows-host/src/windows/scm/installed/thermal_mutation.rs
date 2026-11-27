@@ -155,6 +155,8 @@ mod lighting;
 #[cfg(all(test, feature = "service-lighting-v1"))]
 pub(super) use lighting::Next as StreamNext;
 #[cfg(feature = "service-lighting-v1")]
+pub(super) use lighting::STREAM_SETTLE_BUDGET;
+#[cfg(feature = "service-lighting-v1")]
 pub(super) use lighting::{LightingRequest, logo_wire};
 #[cfg(all(feature = "service-lighting-v1", feature = "service-profiles-v1"))]
 pub(super) use lighting::{StepRequest, step_lifetime};

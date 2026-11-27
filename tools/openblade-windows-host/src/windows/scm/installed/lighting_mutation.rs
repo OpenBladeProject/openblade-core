@@ -192,8 +192,10 @@ pub(super) struct Session {
     /// composition without one, refuses every animated effect as one the
     /// capability table does not admit.
     stream: OnceCell<Rc<dyn MatrixStream>>,
-    /// An animated request opened the stream's collection, which stays open
-    /// while an animated renderer is owned (`close_stream`).
+    /// The stream's collection may be open: an animated request opened it,
+    /// or a frame did, since the lane opens it for a frame when it is not
+    /// (`Runtime::stream_frame`). It stays open while an animated renderer
+    /// is owned, and `close_stream` closes it.
     stream_open: Cell<bool>,
     /// The deadline of the stream frame holding the operation gate
     /// (`Runtime::stream_frame`), which the origin tick waits for.
@@ -237,6 +239,7 @@ struct Owner {
 mod stream;
 #[cfg(test)]
 pub(in super::super) use stream::Next;
+pub(in super::super) use stream::STREAM_SETTLE_BUDGET;
 use stream::{Clean, Stream};
 
 impl Session {
