@@ -226,11 +226,15 @@ async fn tfc_release_outcome_cause_changes_publish_while_release_remains_paused(
 /// runs on a held test clock, as a pipe request does (`Rig::held`), so a
 /// loaded host spends none of the Service's own budgets either.
 async fn source_mutation(r: &Rig, request: Value) -> Value {
+    source_mutation_then(r, request, HeldClock::CatchUp).await
+}
+/// `source_mutation`, leaving the held clock as `after` says when it ends.
+async fn source_mutation_then(r: &Rig, request: Value, after: HeldClock) -> Value {
     let request =
         crate::service_status::StatusRequest::decode(&serde_json::to_vec(&request).unwrap())
             .unwrap();
     let mutation = r.held(
-        HeldClock::CatchUp,
+        after,
         Box::pin(async {
             let mutation = r.source.lock().await.mutate(
                 USER,
@@ -326,9 +330,14 @@ async fn prepared_race(quarantine_after_read_pause: bool) {
             prepared_rx.recv_timeout(HANG_GUARD).unwrap();
         }));
         r.port.state.lock().unwrap().temporary_raw = 0;
-        let mut policy = Box::pin(source_mutation(
+        // The job stamps its policy reading on the held clock, which stays put
+        // while the job runs. Levelling the clock as the exchange ends would
+        // age that reading by however long the host took, past the retention
+        // window the confirmed group below is read in, so it is kept.
+        let mut policy = Box::pin(source_mutation_then(
             &r,
             battery_request(923, "setBatteryPolicy", json!({"chargeLimitPercent":70})),
+            HeldClock::Keep,
         ));
         tokio::select! {_=&mut policy=>panic!("policy unexpectedly settled"),_=at_prepare.notified()=>{}}
         // The origin tick sees independent false before the worker can append.
