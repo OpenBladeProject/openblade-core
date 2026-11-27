@@ -900,10 +900,9 @@ enum Window {
 /// One Battery tick with `notice` at `position`, then quiet ticks (after a
 /// resume if it suspended). `None` once the tick has no such authorization.
 async fn window_row(notice: Notice, position: usize) -> Option<Window> {
-    let r = scoped_rig();
     // Every position runs a whole cancel, so its jobs run on paused time: a
-    // loaded host spends none of their budgets (`paused_rig`).
-    r.port.state.lock().unwrap().latency = Some(Duration::ZERO);
+    // loaded host spends none of their budgets.
+    let r = scoped_rig().with_paused_jobs();
     policy_and_enable(&r, 980).await;
     let before = writes(&r);
     let reservation = r.storage.temporary_capacity_for_tests();
@@ -1545,12 +1544,10 @@ fn near_capacity_rig(reservation: usize) -> Rig {
         "thermal-mutation.journal".into(),
         padded_history(crate::thermal_history::SEGMENT - reservation),
     );
-    let r = scoped_rig_with(files);
     // The padded journal makes each append cost real CPU, so a loaded host
     // can outrun a wall-clock budget. Jobs run on paused time instead, and
     // the callers hold the test clock with `frozen` (see its documentation).
-    r.port.state.lock().unwrap().latency = Some(Duration::ZERO);
-    r
+    scoped_rig_with(files).with_paused_jobs()
 }
 /// Enables the temporary charge on a near-capacity rig. The request waits on
 /// `HANG_GUARD` rather than the pipe's wall-clock budget (see

@@ -1809,6 +1809,11 @@ impl Rig {
     /// budget from the drain's start. A clock the test paused itself is
     /// running again first (`resume_clock_for_stop`). The deadline itself is
     /// unchanged: a job that waits past it on its own clock still expires.
+    ///
+    /// `self.source.lock().await.drain()` is the same drain on whatever clock
+    /// the test runs: the running clock, or the one a `frozen` section holds.
+    /// A drain inside `frozen` stays direct (as the near-capacity cases end),
+    /// since `resume_clock_for_stop` would let that section's clock run.
     async fn drain(&self) -> io::Result<()> {
         resume_clock_for_stop();
         self.held(HeldClock::CatchUp, async {
@@ -9960,9 +9965,15 @@ async fn tfc_v1_unknown_source_recovers_to_battery_in_the_same_event_epoch() {
 /// spends it only through its own waits.
 #[cfg(feature = "service-temporary-charge-v1")]
 fn paused_rig(files: MemoryFiles) -> Rig {
-    let r = Rig::new(files);
-    r.port.state.lock().unwrap().latency = Some(Duration::ZERO);
-    r
+    Rig::new(files).with_paused_jobs()
+}
+#[cfg(feature = "service-temporary-charge-v1")]
+impl Rig {
+    /// This rig with its jobs on paused time (`paused_rig`).
+    fn with_paused_jobs(self) -> Self {
+        self.port.state.lock().unwrap().latency = Some(Duration::ZERO);
+        self
+    }
 }
 /// Runs `work` with the test clock paused, and never moves it while a job or
 /// status-observer thread runs, however slowly the host runs it. On the real
@@ -10003,7 +10014,8 @@ struct HeldClocks {
     /// The real instant up to which the held clock has been billed or set
     /// aside for a busy job thread.
     billed: Option<std::time::Instant>,
-    /// Real time since `billed` passed while no job thread ran, not yet billed.
+    /// Real time up to `billed` that passed while no job thread ran and the
+    /// clock has not been moved by yet.
     debt: Duration,
     /// The test exercises a bound on the real clock, so no exchange holds it.
     real_clock: bool,
@@ -10060,8 +10072,14 @@ impl HeldClocks {
             out
         };
         let clock = async {
+            let started = std::time::Instant::now();
             while !finished.get() {
                 let now = std::time::Instant::now();
+                // A job thread that never ends holds the clock for good.
+                assert!(
+                    now - started < HANG_GUARD,
+                    "held exchange waited {HANG_GUARD:?} on a job thread that never finished"
+                );
                 let unbilled = HELD_CLOCKS.with(|held| {
                     let mut held = held.borrow_mut();
                     // A wait the test chose bills every holder's time as the real
@@ -10220,9 +10238,10 @@ impl ClockMark {
         Self(std::time::Instant::now(), tokio::time::Instant::now())
     }
     /// Moves the held test clock forward by the time it has lost since the
-    /// mark, while no job is running. A source cancellation measures its 4 s
-    /// deadline on a job clock that starts at the real instant; measured under
-    /// load, it was refused once the lag reached about 3.7 s.
+    /// mark, while no job is running, so later work that ages a result on the
+    /// test clock sees the real time that passed. Job deadlines do not need it:
+    /// a job takes what the Service clock leaves of its budget
+    /// (`Fixture::worker`).
     async fn catch_up(&self) {
         let held = tokio::time::Instant::now() - self.1;
         tokio::time::advance(self.0.elapsed().saturating_sub(held)).await;
@@ -10231,10 +10250,11 @@ impl ClockMark {
 /// Runs `case` on a runtime of its own and returns its result.
 ///
 /// A `frozen` section holds the test clock while real time passes, so the
-/// clock ends the section behind the real one by the time the section took. A
-/// job's own paused clock starts at the real instant, so a deadline taken from
-/// the test clock then comes up that much short for a later section on the
-/// same runtime. A fresh runtime starts both clocks together.
+/// clock ends the section behind the real one by the time the section took.
+/// Jobs take their budgets from the test clock (`Fixture::worker`), so the lag
+/// shortens no later deadline, but a later section on the same runtime would
+/// start from a clock the earlier one left behind. A fresh runtime starts both
+/// clocks together, so each probe measures as the final rig does.
 #[cfg(feature = "service-temporary-charge-v1")]
 fn isolated<F: std::future::Future>(case: impl FnOnce() -> F + Send) -> F::Output
 where
@@ -10369,8 +10389,8 @@ async fn tfc_v1_near_capacity_performance_refuses_before_spending_reserved_sourc
         .insert("thermal-mutation.journal".into(), journal);
     let r = paused_rig(files);
     r.get().await;
-    // One held section: each held section leaves the test clock behind the
-    // real one by the real time it took, which a later job's deadline feels.
+    // One frozen section for the enable and the requests that follow, so they
+    // all run on one held clock.
     frozen(&r.port, async {
         let mark = ClockMark::now();
         let response = r
