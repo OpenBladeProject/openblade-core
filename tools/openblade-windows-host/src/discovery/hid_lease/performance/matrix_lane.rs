@@ -33,9 +33,12 @@ const POLL: Duration = Duration::from_millis(1);
 const SETTLE_POLL: Duration = Duration::from_millis(10);
 const SETTLE_BACKOFF: Duration = Duration::from_secs(1);
 const SETTLE_POLL_SLOW: Duration = Duration::from_millis(100);
-/// The lane's request queue. The runtime awaits each open and frame, so at
-/// most one of them, a retire and a settle are queued at once; a full queue
-/// refuses the request.
+/// The lane's request queue. The runtime awaits each frame, but an open it
+/// gave up on stays queued, and so does each retire, so open and retire pairs
+/// accumulate while the lane is stuck in a slow open or a report. A full
+/// queue refuses: an open or a frame is unsent, a settle is not known to be
+/// settled, and a retire that does not fit has still recalled every frame
+/// (`LaneStream::retire`).
 const QUEUE: usize = 8;
 
 /// The matrix collection's I/O for one lane: the Windows handle and its

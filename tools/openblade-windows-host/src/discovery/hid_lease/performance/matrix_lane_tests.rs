@@ -141,6 +141,22 @@ fn soon() -> Instant {
 fn issued(fake: &Fake) -> usize {
     fake.read(|d| d.issued.len())
 }
+/// Releases a slow open's gate when dropped, so a failed test ends the
+/// lane's thread too.
+struct Gate(Arc<AtomicBool>);
+impl Drop for Gate {
+    fn drop(&mut self) {
+        self.0.store(true, Ordering::Release);
+    }
+}
+/// Waits, for at most 30 s, until the lane is inside a slow open.
+fn until_opening(fake: &Fake) {
+    let until = Instant::now() + Duration::from_secs(30);
+    while !fake.read(|d| d.opening) && Instant::now() < until {
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert!(fake.read(|d| d.opening), "the lane opens");
+}
 
 #[test]
 fn a_completed_frame_holds_the_matrix_io_only_while_outstanding() {
@@ -339,8 +355,8 @@ fn a_retire_cancels_an_open_in_progress_and_recalls_the_frame_behind_it() {
         .build()
         .unwrap();
     let fake = Fake::default();
-    let gate = Arc::new(AtomicBool::new(false));
-    fake.with(|d| d.open_gate = Some(gate.clone()));
+    let gate = Gate(Arc::new(AtomicBool::new(false)));
+    fake.with(|d| d.open_gate = Some(gate.0.clone()));
     let made = fake.clone();
     let stream = LaneStream::new(move || made.clone(), flag());
     runtime.block_on(async {
@@ -349,14 +365,14 @@ fn a_retire_cancels_an_open_in_progress_and_recalls_the_frame_behind_it() {
             REPORT,
             tokio::time::Instant::now() + Duration::from_secs(30),
         );
-        let until = Instant::now() + Duration::from_secs(30);
-        while !fake.read(|d| d.opening) && Instant::now() < until {
-            std::thread::sleep(Duration::from_millis(1));
-        }
+        until_opening(&fake);
         stream.retire();
-        assert!(matches!(opening.await, Err(Unwritten::Unsent)));
+        let opened = tokio::time::timeout(Duration::from_secs(10), opening)
+            .await
+            .expect("the retire cancels the open");
+        assert!(matches!(opened, Err(Unwritten::Unsent)));
         assert!(fake.read(|d| d.open_cancelled), "the open was cancelled");
-        gate.store(true, Ordering::Release);
+        gate.0.store(true, Ordering::Release);
         assert!(matches!(frame.await, Err(Unwritten::Unsent)));
         assert_eq!(issued(&fake), 0);
         assert_eq!(fake.read(|d| d.opens), 0, "nothing was opened");
@@ -403,4 +419,38 @@ fn a_poisoned_stream_does_not_report_settled() {
     }));
     let deadline = tokio::time::Instant::now() + Duration::from_secs(1);
     assert!(!runtime.block_on(stream.settle(deadline)));
+}
+
+/// A lane stuck in a slow open with its queue full refuses at once: a
+/// further frame is unsent and never issued, and a settle reports that the
+/// lane is not known to be settled. The retire that recalls the queued
+/// frames still recalls them although it does not fit either.
+#[test]
+fn a_full_queue_refuses_a_frame_unsent_and_a_settle_unsettled() {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .build()
+        .unwrap();
+    let fake = Fake::default();
+    let gate = Gate(Arc::new(AtomicBool::new(false)));
+    fake.with(|d| d.open_gate = Some(gate.0.clone()));
+    let made = fake.clone();
+    let stream = LaneStream::new(move || made.clone(), flag());
+    let far = || tokio::time::Instant::now() + Duration::from_secs(30);
+    runtime.block_on(async {
+        let opening = stream.open();
+        until_opening(&fake);
+        let queued: Vec<_> = (0..QUEUE).map(|_| stream.frame(REPORT, far())).collect();
+        let refused = tokio::time::timeout(Duration::from_secs(10), stream.frame(REPORT, far()))
+            .await
+            .expect("a full queue answers at once");
+        assert!(matches!(refused, Err(Unwritten::Unsent)));
+        assert!(!stream.settle(far()).await, "not known to be settled");
+        stream.retire();
+        assert!(matches!(opening.await, Err(Unwritten::Unsent)));
+        for frame in queued {
+            assert!(matches!(frame.await, Err(Unwritten::Unsent)));
+        }
+        assert_eq!(issued(&fake), 0);
+    });
 }

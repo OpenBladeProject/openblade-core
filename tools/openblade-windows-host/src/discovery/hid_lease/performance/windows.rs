@@ -445,9 +445,11 @@ impl Port for NativePort {
             return Ok(());
         }
         // A report the stream's lane left outstanding keeps `MATRIX_IO`
-        // until it completes. Every job opens its collection
-        // before anything is sent, so a job refuses here, before its
-        // setters, instead of failing after them.
+        // until the lane sees it complete, up to one slow poll later. Every
+        // job opens its collection before anything is sent, so a job refuses
+        // here, before its setters, instead of failing after them. Untested:
+        // `NativePort` needs a live control lease, and the fixture's port has
+        // no `MATRIX_IO`.
         if MATRIX_IO.load(std::sync::atomic::Ordering::Acquire) {
             return Err(blocked("a keyboard matrix report is still outstanding"));
         }
