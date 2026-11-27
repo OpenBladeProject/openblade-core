@@ -40,6 +40,10 @@ impl Lit {
             calls: AtomicUsize::new(0),
         }
     }
+    /// How many authorizations the job asked for.
+    pub(super) fn authorizations(&self) -> usize {
+        self.calls.load(Ordering::Acquire)
+    }
 }
 impl Permit for Lit {
     fn lighting(&self) -> Option<&LightingJob> {

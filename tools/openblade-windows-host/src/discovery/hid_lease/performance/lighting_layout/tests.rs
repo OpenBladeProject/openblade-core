@@ -25,11 +25,14 @@ fn the_pinned_fixture_loads_the_reviewed_maps() {
     assert!(verify(&fixture()).is_some());
 }
 
+/// Changed fixture bytes fail the pin, even ones that leave the document's
+/// meaning, and so every reviewed identity, unchanged.
 #[test]
 fn changed_fixture_bytes_fail_the_pin() {
+    let at = FIXTURE.iter().position(|&b| b == b'{').unwrap() + 1;
     let mut bytes = FIXTURE.to_vec();
-    let at = bytes.iter().position(|&b| b == b'7').unwrap();
-    bytes[at] = b'8';
+    bytes.insert(at, b' ');
+    assert!(verify(&serde_json::from_slice(&bytes).unwrap()).is_some());
     assert!(load(&bytes).is_none());
 }
 

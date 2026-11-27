@@ -104,6 +104,14 @@ impl<const N: usize> Operation<N> {
     /// Starts one overlapped feature IOCTL on `raw`: a set from `buffer`, or
     /// a get into it. An error means Win32 accepted nothing.
     fn start(raw: RawHandle, sending: bool, buffer: [u8; N]) -> io::Result<Self> {
+        let mut operation = Self::new(buffer)?;
+        operation.issue(raw, sending)?;
+        Ok(operation)
+    }
+
+    /// The operation's buffer, event and OVERLAPPED, before any IOCTL: an
+    /// error here sent nothing.
+    fn new(buffer: [u8; N]) -> io::Result<Self> {
         // SAFETY: An unnamed, private, manual-reset event owned by this operation.
         let event = unsafe { CreateEventW(null(), 1, 0, null()) };
         if event.is_null() {
@@ -111,7 +119,7 @@ impl<const N: usize> Operation<N> {
         }
         // SAFETY: Successful CreateEventW returned an owned handle.
         let event = unsafe { OwnedHandle::from_raw_handle(event) };
-        let mut operation = Self {
+        Ok(Self {
             storage: NonNull::new(Box::into_raw(Box::new(Storage {
                 buffer: UnsafeCell::new(buffer),
                 overlapped: UnsafeCell::new(OVERLAPPED {
@@ -124,8 +132,13 @@ impl<const N: usize> Operation<N> {
             synchronous: false,
             cancel_requested: false,
             outstanding: false,
-        };
-        let storage = operation.storage();
+        })
+    }
+
+    /// Issues the IOCTL on `raw`: a set from the buffer, or a get into it.
+    /// An error is the driver's refusal of the call, which reached it.
+    fn issue(&mut self, raw: RawHandle, sending: bool) -> io::Result<()> {
+        let storage = self.storage();
         let length = N as u32;
         let frame = storage.buffer.get().cast();
         // SAFETY: The caller's retained lease owns the handle. The stable
@@ -161,9 +174,9 @@ impl<const N: usize> Operation<N> {
                 return Err(error);
             }
         }
-        operation.synchronous = result != 0;
-        operation.outstanding = true;
-        Ok(operation)
+        self.synchronous = result != 0;
+        self.outstanding = true;
+        Ok(())
     }
 
     /// The terminal result of `slot`'s operation on `raw`, taking it, or
@@ -421,14 +434,7 @@ impl Port for NativePort {
             return Ok(());
         }
         limit.check()?;
-        let identity = super::super::RoleIdentity::select(
-            &WindowsMetadata,
-            super::MATRIX_ROLE,
-            limit.cancelled,
-        )?;
-        if !super::reviewed_matrix(&identity) {
-            return Err(blocked("unsupported keyboard matrix collection"));
-        }
+        let identity = super::select_matrix(&WindowsMetadata, limit.cancelled)?;
         limit.check()?;
         // Shared OS access is not proof of sole service ownership.
         let handle = MetadataHandle::open(identity.path(), GENERIC_READ | GENERIC_WRITE)?;
@@ -442,23 +448,28 @@ impl Port for NativePort {
     }
 
     #[cfg(feature = "service-lighting-v1")]
-    fn submit_matrix(&mut self, report: &super::MatrixReport, limit: Limit<'_>) -> io::Result<()> {
-        let matrix = self
-            .matrix
-            .as_mut()
-            .ok_or_else(|| blocked("keyboard matrix lease unavailable"))?;
+    fn submit_matrix(
+        &mut self,
+        report: &super::MatrixReport,
+        limit: Limit<'_>,
+    ) -> Result<(), super::Unwritten> {
+        use super::Unwritten;
+        let matrix = self.matrix.as_mut().ok_or(Unwritten::Unsent)?;
         if matrix.operation.is_some() {
-            return Err(blocked("keyboard matrix operation still outstanding"));
+            return Err(Unwritten::Unsent);
         }
         matrix
             .identity
-            .verify(&WindowsMetadata, &matrix.handle, limit.cancelled)?;
-        limit.check()?;
-        matrix.operation = Some(Operation::start(
-            matrix.handle.as_raw_handle(),
-            true,
-            *report,
-        )?);
+            .verify(&WindowsMetadata, &matrix.handle, limit.cancelled)
+            .map_err(|_| Unwritten::Unsent)?;
+        limit.check().map_err(|_| Unwritten::Unsent)?;
+        let mut operation = Operation::new(*report).map_err(|_| Unwritten::Unsent)?;
+        // Managed poisons its writer on any native matrix failure: a call
+        // the driver refused may still have reached the keyboard.
+        operation
+            .issue(matrix.handle.as_raw_handle(), true)
+            .map_err(|_| Unwritten::InDoubt)?;
+        matrix.operation = Some(operation);
         Ok(())
     }
 

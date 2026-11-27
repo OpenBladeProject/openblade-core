@@ -180,6 +180,10 @@ pub(crate) struct State {
     /// That matrix report (1-based) is submitted and its completion fails.
     #[cfg(feature = "service-lighting-v1")]
     pub(crate) matrix_fail: Option<usize>,
+    /// That matrix report (1-based) reaches the driver, which refuses the
+    /// call: it may have been received, and nothing completes.
+    #[cfg(feature = "service-lighting-v1")]
+    pub(crate) matrix_reject: Option<usize>,
     /// No submitted matrix report completes.
     #[cfg(feature = "service-lighting-v1")]
     pub(crate) matrix_mute: bool,
@@ -884,8 +888,8 @@ impl Port for MemoryPort {
         Ok(())
     }
     #[cfg(feature = "service-lighting-v1")]
-    fn submit_matrix(&mut self, report: &MatrixReport, limit: Limit<'_>) -> io::Result<()> {
-        limit.check()?;
+    fn submit_matrix(&mut self, report: &MatrixReport, limit: Limit<'_>) -> Result<(), Unwritten> {
+        limit.check().map_err(|_| Unwritten::Unsent)?;
         assert!(!self.retired);
         let slot = self.matrix.as_mut().expect("matrix opened before a report");
         assert!(slot.is_none(), "one matrix report at a time");
@@ -893,11 +897,14 @@ impl Port for MemoryPort {
         let number = s.matrix_frames.len() + 1;
         if s.matrix_refuse == Some(number) {
             s.matrix_refuse = None;
-            return Err(blocked("fixture matrix report refused"));
+            return Err(Unwritten::Unsent);
         }
         let sent = s.sent.len();
         s.matrix_frames.push((sent, *report));
         s.matrix_at.push(Instant::now());
+        if s.matrix_reject == Some(number) {
+            return Err(Unwritten::InDoubt);
+        }
         *slot = Some(if s.matrix_fail == Some(number) {
             Err(io::ErrorKind::Other.into())
         } else {

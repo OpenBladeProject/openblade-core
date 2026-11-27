@@ -61,18 +61,10 @@ fn frame(renderer: Renderer) -> Option<MatrixReport> {
     Some(encode_feature_report(matrix_transaction(), &frame))
 }
 
-/// How one matrix write ended, when it did not complete.
-enum Unwritten {
-    /// Nothing was submitted.
-    Unsent,
-    /// The report may have been submitted.
-    InDoubt,
-}
-
 impl<P: Port> Reader<P, ReadAdmission> {
     /// One keepalive frame of the owned `renderer`. A frame refused before
-    /// submission keeps the renderer (managed's deferral); one that may have
-    /// been submitted without completing loses it.
+    /// submission keeps the renderer; one that may have been submitted
+    /// without completing loses it.
     pub(super) async fn keepalive(
         &mut self,
         authorize: Authorize<'_, ReadAdmission>,
@@ -347,7 +339,8 @@ impl<P: Port> Attempt<'_, P, ReadAdmission> {
     }
 
     /// One matrix report after its own checkpoint. The job is in doubt from
-    /// the submission; a report refused before it is `Unsent`.
+    /// the submission, a call the driver refused included; a report refused
+    /// before it is `Unsent`.
     async fn frame(
         &mut self,
         authorize: Authorize<'_, ReadAdmission>,
@@ -360,11 +353,16 @@ impl<P: Port> Attempt<'_, P, ReadAdmission> {
             .map_err(|_| Unwritten::Unsent)?;
         let before = job.outcome();
         job.sending(Member::Matrix, LightingOutcome::InDoubt(FRAME_IN_DOUBT));
-        if self.reader.port.submit_matrix(report, limit).is_err() {
+        let submitted = self.reader.port.submit_matrix(report, limit);
+        if let Err(Unwritten::Unsent) = submitted {
             job.unsend(before);
             return Err(Unwritten::Unsent);
         }
+        // Whatever the previous renderer drew may be replaced from here.
         job.set_matrix(MatrixState::Lost);
+        if submitted.is_err() {
+            return Err(Unwritten::InDoubt);
+        }
         loop {
             if limit.check().is_err() {
                 return Err(Unwritten::InDoubt);

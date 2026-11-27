@@ -91,10 +91,13 @@ const KNOWN_ANSWER_COLOR: Rgb = Rgb {
 /// commands, read once per process.
 pub(crate) fn approved() -> bool {
     static APPROVED: OnceLock<bool> = OnceLock::new();
-    *APPROVED.get_or_init(|| {
-        lighting_layout::source_maps()
-            .is_some_and(|maps| admits(MANIFEST, &maps.layout()) && oracle_admits(ORACLE, MANIFEST))
-    })
+    *APPROVED.get_or_init(|| approves(MANIFEST, ORACLE))
+}
+
+/// Whether `manifest` and `oracle` both admit the reviewed source maps.
+fn approves(manifest: &[u8], oracle: &[u8]) -> bool {
+    lighting_layout::source_maps()
+        .is_some_and(|maps| admits(manifest, &maps.layout()) && oracle_admits(oracle, manifest))
 }
 
 fn sha256(bytes: &[u8]) -> String {

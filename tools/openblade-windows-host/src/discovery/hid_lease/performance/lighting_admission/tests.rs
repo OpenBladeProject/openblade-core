@@ -15,12 +15,22 @@ fn oracle() -> Value {
 /// A named edit of a parsed document.
 type Edit = (&'static str, Box<dyn Fn(&mut Value)>);
 
+/// `document` with one space after its opening brace: the same JSON in
+/// other bytes, which only the pin refuses.
+fn respaced(document: &[u8]) -> Vec<u8> {
+    let at = document.iter().position(|&b| b == b'{').unwrap() + 1;
+    let mut changed = document.to_vec();
+    changed.insert(at, b' ');
+    changed
+}
+
 /// The pinned manifest and oracle admit this codec, as managed's admit its
 /// own.
 #[test]
 fn the_pinned_documents_admit_the_native_commands() {
     assert!(admits(MANIFEST, &layout()));
     assert!(oracle_admits(ORACLE, MANIFEST));
+    assert!(approves(MANIFEST, ORACLE));
     assert!(approved());
 }
 
@@ -39,15 +49,16 @@ fn the_matrix_section_is_the_manifest_matrix() {
     assert_eq!(section, manifest()["matrix"]);
 }
 
-/// Any change to the manifest bytes fails the pin; a section that differs
-/// from the codec fails the comparison even under a matching pin.
+/// Any change to the manifest bytes fails the pin, even one that leaves its
+/// meaning unchanged; a section that differs from the codec fails the
+/// comparison even under a matching pin.
 #[test]
 fn a_changed_manifest_or_section_admits_nothing() {
     let layout = layout();
-    let mut changed = MANIFEST.to_vec();
-    let at = changed.iter().position(|&b| b == b'5').unwrap();
-    changed[at] = b'6';
+    let changed = respaced(MANIFEST);
+    assert!(matches(&serde_json::from_slice(&changed).unwrap(), &layout));
     assert!(!admits(&changed, &layout));
+    assert!(!approves(&changed, ORACLE));
     let manifest = manifest();
     for (section, member, value) in [
         ("device", "productId", json!(0x02c6)),
@@ -86,15 +97,19 @@ fn a_changed_manifest_or_section_admits_nothing() {
     assert!(matches(&manifest, &layout));
 }
 
-/// Changed oracle bytes fail the pin; each reviewed oracle member that
-/// differs refuses even under a matching pin.
+/// Changed oracle bytes fail the pin, even ones that leave its meaning
+/// unchanged, and approval needs the oracle as well as the manifest; each
+/// reviewed oracle member that differs refuses even under a matching pin.
 #[test]
 fn a_changed_oracle_admits_nothing() {
-    let mut changed = ORACLE.to_vec();
-    let at = changed.iter().position(|&b| b == b'5').unwrap();
-    changed[at] = b'6';
-    assert!(!oracle_admits(&changed, MANIFEST));
     let manifest = manifest();
+    let changed = respaced(ORACLE);
+    assert!(oracle_matches(
+        &serde_json::from_slice(&changed).unwrap(),
+        &manifest
+    ));
+    assert!(!oracle_admits(&changed, MANIFEST));
+    assert!(!approves(MANIFEST, &changed));
     let oracle = oracle();
     let edits: Vec<Edit> = vec![
         ("schema", Box::new(|root| root["schemaVersion"] = json!(2))),

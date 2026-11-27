@@ -385,7 +385,9 @@ async fn an_unavailable_matrix_collection_sends_nothing() {
 
 /// An admission refused at any checkpoint sends nothing after it: what was
 /// sent is a prefix of the recipe, and a refusal after the confirmed
-/// brightness setter leaves it confirmed, with nothing in doubt.
+/// brightness setter leaves it confirmed, with nothing in doubt. The frame
+/// has a checkpoint of its own: a refusal after the confirmed handshake
+/// leaves the frame unsent, a known failure the job restores from.
 #[tokio::test]
 async fn a_refused_admission_sends_no_further_report() {
     let full = [
@@ -397,6 +399,7 @@ async fn a_refused_admission_sends_no_further_report() {
         FRAME,
     ];
     let mut interrupted = false;
+    let mut frame_refused = false;
     for from in 1..=40 {
         let fixture = keyboard([0x40, 1, 0]);
         let mut permit = render(RenderTarget {
@@ -423,8 +426,18 @@ async fn a_refused_admission_sends_no_further_report() {
             assert_eq!(permit.job.matrix(), MatrixState::Kept, "{from}");
             interrupted = true;
         }
+        if log.len() == 5
+            && outcome
+                == (LightingOutcome::Mismatched {
+                    failure: "The keyboard matrix frame could not be sent.",
+                    restored: Some(false),
+                })
+        {
+            frame_refused = true;
+        }
     }
     assert!(interrupted);
+    assert!(frame_refused, "no refusal stopped the frame alone");
 }
 
 /// One keepalive frame of the owned renderer and nothing else; one refused
@@ -453,13 +466,84 @@ async fn a_keepalive_sends_one_frame_or_leaves_what_it_could_not() {
         assert_eq!(permit.job.matrix(), matrix, "{fault}");
         assert!(fixture.state.lock().unwrap().sent.is_empty(), "{fault}");
     }
-    // A refused admission sends nothing.
+    // An admission refused at any of the job's authorizations, the frame's
+    // own checkpoint included, sends nothing.
     let fixture = keyboard([0xc5, 1, 0]);
-    let mut permit = Lit::with(LightingJob::keepalive(renderer(GREEN)));
-    permit.refuse_from = Some(2);
+    let permit = Lit::with(LightingJob::keepalive(renderer(GREEN)));
     run(&fixture, &permit).await;
-    assert_eq!(permit.job.matrix(), MatrixState::Kept);
-    assert!(log(&fixture).is_empty());
+    let authorizations = permit.authorizations();
+    for from in 1..=authorizations {
+        let fixture = keyboard([0xc5, 1, 0]);
+        let mut permit = Lit::with(LightingJob::keepalive(renderer(GREEN)));
+        permit.refuse_from = Some(from);
+        run(&fixture, &permit).await;
+        assert_eq!(permit.job.matrix(), MatrixState::Kept, "{from}");
+        assert!(log(&fixture).is_empty(), "{from}");
+    }
+}
+
+/// A frame call the driver refuses may still have reached the keyboard, as
+/// managed classifies every native matrix failure: the job stops in doubt,
+/// and nothing restores or follows.
+#[tokio::test]
+async fn a_frame_the_driver_refused_is_in_doubt() {
+    let fixture = keyboard([0, 1, 0]);
+    fixture.state.lock().unwrap().matrix_reject = Some(1);
+    let permit = render(RenderTarget {
+        layout: Some(0),
+        previous: Some(renderer(RED)),
+        ..target(GREEN)
+    });
+    run(&fixture, &permit).await;
+    assert_eq!(
+        permit.job.outcome(),
+        LightingOutcome::InDoubt(
+            "A keyboard matrix frame may have been submitted and was not confirmed."
+        )
+    );
+    assert_eq!(permit.job.matrix(), MatrixState::Lost);
+    assert_eq!(log(&fixture), [BRIGHTNESS, MODE, HANDSHAKE, FRAME]);
+    let fixture = keyboard([0xc5, 1, 0]);
+    fixture.state.lock().unwrap().matrix_reject = Some(1);
+    let permit = Lit::with(LightingJob::keepalive(renderer(GREEN)));
+    run(&fixture, &permit).await;
+    assert_eq!(permit.job.matrix(), MatrixState::Lost);
+    assert!(permit.job.outcome().in_doubt());
+}
+
+/// A correlated 03/0A reply other than its exact echo leaves the handshake
+/// unconfirmed: the job stops in doubt before any frame.
+#[tokio::test]
+async fn a_handshake_reply_other_than_its_echo_stops_the_job_in_doubt() {
+    let fixture = keyboard([0, 1, 0]);
+    fixture.state.lock().unwrap().transition_ack = Some([5, 1]);
+    let permit = render(RenderTarget {
+        layout: Some(0),
+        ..target(GREEN)
+    });
+    run(&fixture, &permit).await;
+    assert_eq!(
+        permit.job.outcome(),
+        LightingOutcome::InDoubt(
+            "The lighting transition handshake may have been submitted and was not confirmed."
+        )
+    );
+    assert_eq!(log(&fixture), [BRIGHTNESS, MODE, HANDSHAKE]);
+}
+
+/// The 00/86 reply's first byte is the session's layout, which selects the
+/// physical map the frame is projected onto.
+#[tokio::test]
+async fn the_layout_reply_selects_the_projected_map() {
+    let fixture = keyboard([0x40, 1, 0]);
+    fixture.state.lock().unwrap().layout_reply = Some([8, 0, 0]);
+    let permit = render(target(GREEN));
+    run(&fixture, &permit).await;
+    assert_eq!(permit.job.outcome(), LightingOutcome::Rendered);
+    assert_eq!(permit.job.layout(), Some(8));
+    let maps = super::super::lighting_layout::source_maps().unwrap();
+    let iso = RegionalProjection::new(&maps.layout(), 8).project(&MatrixFrame::uniform(GREEN));
+    assert_eq!(frames(&fixture)[0].slots(), iso.slots());
 }
 
 /// The transaction IDs a renderer's frames carry cycle through 1 to 255.

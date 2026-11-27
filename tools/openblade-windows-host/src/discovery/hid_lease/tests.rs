@@ -116,9 +116,14 @@ impl ServiceLeaseSource for Rc<Fake> {
     }
 }
 fn fake() -> Rc<Fake> {
+    fake_host("Blade 16 - RZ09-0581")
+}
+
+/// The fake source on a Razer host with this product name.
+fn fake_host(product: &str) -> Rc<Fake> {
     let source = RegistrySource {
         manufacturer: RegistryText::Present("Razer".into()),
-        product_name: RegistryText::Present("Blade 16 - RZ09-0581".into()),
+        product_name: RegistryText::Present(product.into()),
     };
     Rc::new(Fake {
         host: RefCell::new(HostObservation {
@@ -640,4 +645,33 @@ fn a_changed_role_descriptor_or_candidate_set_fails_verification() {
     fake.removal_observed.set(false);
     cancelled.store(true, Ordering::Relaxed);
     assert!(identity.verify(&fake, &handle, &cancelled).is_err());
+}
+
+/// The production matrix role and its reviewed identity select the exact
+/// RZ09-0581 matrix collection, and refuse another model's matrix
+/// collection that the generic role selection admits.
+#[cfg(feature = "service-lighting-v1")]
+#[test]
+fn the_reviewed_matrix_role_selects_the_exact_collection_only() {
+    let cancelled = AtomicBool::new(false);
+    let fake = matrix_fake();
+    fake.descriptors.replace([consumer(3), Ok(MATRIX)].into());
+    let identity = performance::select_matrix(&fake, &cancelled).unwrap();
+    assert_eq!(identity.path(), "opaque-consumer-b");
+    assert_eq!(identity.descriptor(), MATRIX);
+
+    let other = fake_host("Blade 16 - RZ09-0528");
+    other.rows.replace(vec![
+        row("opaque-original", 0x02c6, Some((1, 2))),
+        row("opaque-consumer", 0x02c6, Some((0x0c, 0x01))),
+    ]);
+    let descriptor = Descriptor {
+        device: (0x1532, 0x02c6),
+        ..MATRIX
+    };
+    other.descriptors.replace([Ok(descriptor)].into());
+    let generic = RoleIdentity::select(&other, MATRIX_ROLE, &cancelled).unwrap();
+    assert_eq!(generic.model(), "RZ09-0528");
+    other.descriptors.replace([Ok(descriptor)].into());
+    assert!(performance::select_matrix(&other, &cancelled).is_err());
 }
