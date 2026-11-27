@@ -10,9 +10,10 @@ fn source_battery(r: &Rig) {
         10,
     );
 }
-/// One origin tick, as the serving loop's interval runs it.
+/// One origin tick, as the serving loop's interval runs it, on a held test
+/// clock (`Rig::process_power_source`).
 async fn origin_tick(r: &Rig) {
-    r.source.lock().await.process_power_source().await.unwrap();
+    r.process_power_source().await.unwrap();
 }
 fn get_request() -> Value {
     json!({"operation":"getStatus","version":91,"requestId":"bbbbbbbb-cccc-dddd-eeee-000000000901"})
@@ -221,23 +222,31 @@ async fn tfc_release_outcome_cause_changes_publish_while_release_remains_paused(
 /// One mutation on the served source, answered as the pipe's `result`.
 /// The pipe's budget is wall clock, and the padded journal costs about a
 /// second of debug-build CPU per request, which a loaded host can stretch past
-/// it. The worker, the origin loop and the outcome are unchanged.
+/// it. The worker, the origin loop and the outcome are unchanged. The request
+/// runs on a held test clock, as a pipe request does (`Rig::held`), so a
+/// loaded host spends none of the Service's own budgets either.
 async fn source_mutation(r: &Rig, request: Value) -> Value {
     let request =
         crate::service_status::StatusRequest::decode(&serde_json::to_vec(&request).unwrap())
             .unwrap();
-    let mutation = r.source.lock().await.mutate(
-        USER,
-        SID.into(),
-        request,
-        tokio::time::Instant::now() + HANG_GUARD,
+    let mutation = r.held(
+        HeldClock::CatchUp,
+        Box::pin(async {
+            let mutation = r.source.lock().await.mutate(
+                USER,
+                SID.into(),
+                request,
+                tokio::time::Instant::now() + HANG_GUARD,
+            );
+            mutation.await
+        }),
     );
     serde_json::to_value(mutation.await.unwrap().0).unwrap()
 }
 async fn prepared_race(quarantine_after_read_pause: bool) {
     // Measure the unchanged encoded operation sizes so the subsequent ordinary
     // reservation/roll exercises the actual segment boundary without a matrix.
-    let probe = Rig::new(MemoryFiles::default());
+    let probe = paused_rig(MemoryFiles::default());
     enable(&probe, 920).await;
     let quota = probe.storage.temporary_capacity_for_tests().0;
     probe.port.state.lock().unwrap().temporary_raw = 0;
@@ -264,7 +273,10 @@ async fn prepared_race(quarantine_after_read_pause: bool) {
         "thermal-mutation.journal".into(),
         padded_history(crate::thermal_history::SEGMENT - span - quota - 400),
     );
-    let r = Rig::new(files);
+    // The padded journal makes each append cost real CPU, and the policy job
+    // is parked in its hooks while the test works: on paused time neither
+    // spends its budget (`paused_rig`).
+    let r = paused_rig(files);
     let events: Events = Rc::default();
     let controls = Controls::new();
     // Every request goes straight to the source, so the pipe sender only
@@ -880,6 +892,9 @@ enum Window {
 /// resume if it suspended). `None` once the tick has no such authorization.
 async fn window_row(notice: Notice, position: usize) -> Option<Window> {
     let r = scoped_rig();
+    // Every position runs a whole cancel, so its jobs run on paused time: a
+    // loaded host spends none of their budgets (`paused_rig`).
+    r.port.state.lock().unwrap().latency = Some(Duration::ZERO);
     policy_and_enable(&r, 980).await;
     let before = writes(&r);
     let reservation = r.storage.temporary_capacity_for_tests();
@@ -1504,17 +1519,6 @@ async fn tfc_release_a_charge_read_off_by_a_fenced_attempt_is_not_restored() {
     assert!(unanswered > 0);
 }
 
-/// Starts the budget of the next job now. A job takes its arrival once, and a
-/// `frozen` section lags the real clock by the time it has held, so a tick that
-/// found none would measure its deadline from a clock that is behind.
-fn arrive(r: &Rig) {
-    r.port.arrive(Some(tokio::time::Instant::now()), None);
-}
-/// One origin tick that starts its own budget (see `arrive`).
-async fn arrived_tick(r: &Rig) {
-    arrive(r);
-    origin_tick(r).await;
-}
 /// The journal space an enable reserves for its cancellation.
 async fn near_capacity_reservation() -> usize {
     let probe = paused_rig(MemoryFiles::default());
@@ -1542,12 +1546,10 @@ fn near_capacity_rig(reservation: usize) -> Rig {
 /// Enables the temporary charge on a near-capacity rig. The request waits on
 /// `HANG_GUARD` rather than the pipe's wall-clock budget (see
 /// `source_mutation`), and its job runs on paused time, so a loaded host
-/// costs it neither. The test clock is not held, which keeps it level with the
-/// real one for the `frozen` section that follows.
+/// costs it neither. Its held clock is brought level with the real one as it
+/// ends, for the `frozen` section that follows.
 async fn enable_near_capacity(r: &Rig) {
     r.get().await;
-    // A request starts its job's budget at its arrival, as `request_as` does.
-    r.port.arrive(Some(tokio::time::Instant::now()), None);
     let response = source_mutation(
         r,
         battery_request(801, "setFullChargeOverride", json!(true)),
@@ -1587,7 +1589,6 @@ async fn near_capacity_fenced(r: &Rig, fence: Fence) -> bool {
     let before = writes(r);
     source_battery(r);
     let sent = requests(r);
-    arrive(r);
     match fence {
         Fence::At(position) => {
             assert!(notice_tick(r, SECOND_UNPLUG, position).await, "{fence:?}");
@@ -1626,7 +1627,7 @@ async fn near_capacity_fence_case(reservation: usize, fence: Fence, unsent: bool
         let before = writes(&r);
         assert_eq!(near_capacity_fenced(&r, fence).await, unsent);
         for _ in 0..3 {
-            arrived_tick(&r).await;
+            origin_tick(&r).await;
         }
         // Either retry fits the space its enable reserved, without a roll.
         assert!(!rolled(&r), "{fence:?}");
@@ -1685,7 +1686,7 @@ async fn near_capacity_restored_case(reservation: usize, fence: Fence, unsent: b
         r.port.state.lock().unwrap().actual = 15;
         r.metadata.store(0, Ordering::Release);
         r.custody.lifecycle.ingress(POWER, 10);
-        arrived_tick(&r).await;
+        origin_tick(&r).await;
         let journal = journal_len(&r);
         let response = r.set(2, value(1, 1)).await;
         assert_eq!(response["result"]["status"], 2, "{response}");
@@ -1694,7 +1695,7 @@ async fn near_capacity_restored_case(reservation: usize, fence: Fence, unsent: b
         let before = writes(&r);
         source_battery(&r);
         for _ in 0..2 {
-            arrived_tick(&r).await;
+            origin_tick(&r).await;
         }
         assert_eq!(writes(&r) - before, 1);
         assert!(!r.runtime.temporary_owned_for_tests());

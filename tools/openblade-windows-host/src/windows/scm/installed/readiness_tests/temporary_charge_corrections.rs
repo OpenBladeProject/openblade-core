@@ -327,7 +327,7 @@ mod cases {
     }
     #[tokio::test]
     async fn tfc_correction_settled_abandoned_quota_allows_roll_and_new_explicit_cancel() {
-        let probe = Rig::new(MemoryFiles::default());
+        let probe = paused_rig(MemoryFiles::default());
         enable(&probe, 857).await;
         let enable_len = probe
             .files
@@ -347,18 +347,20 @@ mod cases {
             .lock()
             .unwrap()
             .insert("thermal-mutation.journal".into(), padded_history(target));
-        let r = Rig::new(files);
+        // The padded journal makes each append cost real CPU, which paused time
+        // does not charge to a job (`paused_rig`).
+        let r = paused_rig(files);
         let a = enable(&r, 858).await;
         r.port.state.lock().unwrap().actual = 0;
         r.metadata.store(1, Ordering::Release);
         r.custody.fresh_refuse.store(true, Ordering::Release);
         power_event(&r);
-        r.source.lock().await.process_power_source().await.unwrap();
+        r.process_power_source().await.unwrap();
         assert_eq!(r.storage.temporary_capacity_for_tests(), (0, None));
         assert_eq!(r.port.state.lock().unwrap().writes, 1);
         r.custody.fresh_refuse.store(false, Ordering::Release);
         power_event(&r);
-        r.source.lock().await.process_power_source().await.unwrap();
+        r.process_power_source().await.unwrap();
         assert_eq!(
             r.port.state.lock().unwrap().writes,
             1,
