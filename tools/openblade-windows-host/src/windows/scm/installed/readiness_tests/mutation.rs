@@ -10044,7 +10044,9 @@ impl HeldClocks {
     /// therefore bills at most `MAX_STEP`, one of the Service's thread polls,
     /// and the rest of such a gap is the host's, not the Service's. A running
     /// thread polls the clock far more often than that, so the clock still
-    /// keeps pace with the real one.
+    /// keeps pace with the real one. A wait the test chose is not capped: it
+    /// ends at a bound on the real clock, which may race real-time slack the
+    /// test set.
     async fn pace<T>(work: impl std::future::Future<Output = T>) -> T {
         const MAX_STEP: Duration = Duration::from_millis(5);
         let finished = std::cell::Cell::new(false);
@@ -10075,7 +10077,13 @@ impl HeldClocks {
                         return None;
                     }
                     held.billed = Some(now);
-                    Some((now - billed).min(MAX_STEP))
+                    // A wait the test chose ends at a bound the Service keeps on
+                    // the real clock, so it bills all of it.
+                    Some(if waiting {
+                        now - billed
+                    } else {
+                        (now - billed).min(MAX_STEP)
+                    })
                 });
                 if let Some(elapsed) = unbilled {
                     tokio::time::advance(elapsed).await;
