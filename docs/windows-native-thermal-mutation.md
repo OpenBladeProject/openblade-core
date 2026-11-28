@@ -954,10 +954,10 @@ A package is still blocked by the following:
 - The Stop and suspend exits have not been timed on a laptop, so a package
   could leave HyperBoost running through a suspend or a Stop its window could
   not cover.
-- The status carries no writable HyperBoost capability: `capabilities` is
-  null, or the observation record beside an active HyperBoost. The managed
-  tray therefore offers neither the toggle nor the retry against a native
-  Service.
+- The status carries a writable HyperBoost only where the composition has
+  the probes: `service-hyperboost-v1` beside the lifecycle triggers (the
+  [capability record](windows-rust-development-service.md#capability-record)).
+  With a pad connected native still refuses the entry the record admits.
 - `validatePadlessHyperBoostLifecycle`, managed's developer validation
   request, is not served.
 - A result carries no `HyperBoostRestoredPerformance`.
@@ -1186,9 +1186,8 @@ Native differs from managed here in these ways:
   destination, so it sees a kind change only while one of those samples still
   shows it. Native does not track managed's separate last classified class per
   generation.
-- Native status carries no `externalPowerPresent` and no capability set:
-  `capabilities` is null except beside a confirmed active HyperBoost, which
-  carries the observation record (no control admitted). With no
+- Native status carries no `externalPowerPresent`. `capabilities` is the
+  [capability record](windows-rust-development-service.md#capability-record) of the compiled groups. With no
   override its desired provenance stays the profile default; managed reports
   the confirmed firmware state.
 - Managed also admits lighting and battery controls on unclassified power;
@@ -3250,8 +3249,8 @@ quarantines the store, and a restart reads only what is durable
 
 On exact RZ09-0581 host metadata the status publishes managed's
 `fanStopStatus` with reason `GuardianUnavailable` and the unavailable
-message, and the observation record carries `hasFanStopTrialEvidence` and
-`hasFanStopSourceEvidence`. `supportsFanStop` stays false. A composition
+message, and the capability record of an identified status carries
+`hasFanStopTrialEvidence` and `hasFanStopSourceEvidence`. `supportsFanStop` stays false. A composition
 without the feature keeps the no-evidence status and both flags false.
 
 `ServiceControlRuntimeTests.NativeFanStopVectors` records managed's replies
@@ -3283,8 +3282,8 @@ Deviations from managed:
   (`fan_stop_mutation.rs`). Only the reply message differs.
 
 - Evidence comes from the matched host metadata (`RZ09-0581`), not from a
-  device observation, and the observation record is published only beside
-  a confirmed active HyperBoost, as every native record is.
+  device observation, and the capability record carries it only once a
+  confirmed state identifies the model.
 - The caller's saved settings and automation state are projected only after
   that caller's own Fan Stop or thermal request has captured the store.
   Before then, and in another user's view, the status shows the managed
@@ -3463,11 +3462,10 @@ retirement alone is not firmware reconciliation. Inherited manual-fan ownership
 is reported, not adopted, and an interrupted journal rollover still refuses
 retirement.
 
-The read-parity gap for observed HyperBoost is closed in the status: a status
-whose confirmed state has an active HyperBoost carries the observation
-capability record, which the managed decoder requires there (see
-[live readings](windows-rust-development-service.md#live-readings-read-only)).
-Every other status keeps null capabilities. The record admits no control. An explicit Automatic fan
+The read-parity gap for observed HyperBoost is closed in the status: every
+confirmed state carries the identified [capability record](windows-rust-development-service.md#capability-record),
+whose HyperBoost access the managed decoder requires beside an active
+HyperBoost. An explicit Automatic fan
 request still stays refused while HyperBoost is observed; lifting that refusal
 is a separate change. Owned Stop, which publishes nothing, closes the owner with 51.
 Full native-read/managed-codec parity, including that combination, remains future
