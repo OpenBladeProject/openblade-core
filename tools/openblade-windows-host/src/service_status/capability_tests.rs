@@ -70,6 +70,12 @@ fn the_record_admits_what_this_composition_serves() {
         record["supportsTemporaryFullCharge"],
         cfg!(feature = "service-temporary-charge-v1")
     );
+    // GPU overclock has two blockers: the GPU-only `setGpuClockTuning`,
+    // checked here, and the confirmed offsets, which publication checks
+    // (`capability_record::serialize_confirmed_state`). Serving the request
+    // fails here so the record is reviewed with it.
+    assert!(!serves("setGpuClockTuning"));
+    assert!(record["gpuOverclock"].is_null());
     assert_eq!(
         record["hyperBoostAccess"] == 2,
         cfg!(all(
@@ -189,6 +195,22 @@ mod projections {
         found
     }
 
+    /// Publishing confirmed GPU offsets while the record keeps managed's
+    /// GPU overclock absent fails in development, whatever projection added
+    /// them.
+    #[cfg(debug_assertions)]
+    #[test]
+    #[should_panic(expected = "confirmedState.gpuClockOffsets is published")]
+    fn publishing_gpu_offsets_needs_the_gpu_overclock_record() {
+        let mut observed = read(ObservedPerformance::BalancedAutomatic, true);
+        observed
+            .confirmed_state
+            .as_mut()
+            .unwrap()
+            .insert("gpuClockOffsets".into(), json!({}));
+        let _ = crate::service_status::encode_status_event(&observed);
+    }
+
     /// The identified record is exact RZ09-0581 data and a confirmed state
     /// names no model, so the record is bound to its producers: the
     /// RZ09-0581 Reader and its battery evidence share its identity, and only
@@ -257,18 +279,6 @@ mod projections {
             assert_eq!(
                 capabilities(&base().retained_mailbox(&observed, 2)),
                 Some(&identified())
-            );
-            // Managed's GPU overclock needs the confirmed offsets the tray's
-            // editor reads and the GPU-only request; the record admits it
-            // only once native publishes both.
-            assert_eq!(
-                super::super::capability_record::Composition::COMPILED.gpu_clock_tuning,
-                observed
-                    .confirmed_state
-                    .as_ref()
-                    .unwrap()
-                    .contains_key("gpuClockOffsets")
-                    && StatusRequest::serves("setGpuClockTuning")
             );
             let gone = observed.unavailable_mailbox(3, " Gone.");
             assert_eq!(capabilities(&gone), Some(&unidentified()));

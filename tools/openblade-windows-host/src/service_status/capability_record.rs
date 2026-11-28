@@ -63,7 +63,8 @@ impl Composition {
         // `confirmedState.gpuClockOffsets`, which no native status carries,
         // and a GPU-only change while HyperBoost is active is sent as
         // `setGpuClockTuning`, which no composition serves. Until both are,
-        // publish managed's absent-backend `gpuOverclock` (null).
+        // publish managed's absent-backend `gpuOverclock` (null). Each blocker
+        // has a tripwire: `serialize_confirmed_state` and `capability_tests`.
         gpu_clock_tuning: false,
         fan_stop: cfg!(feature = "service-fan-stop-v1"),
     };
@@ -114,6 +115,26 @@ pub(crate) fn record(composition: Composition, identified: bool) -> FeatureRecor
         }
     }
     record
+}
+
+/// Serializes a published confirmed state. Managed's GPU overclock record
+/// needs the confirmed offsets the tray's editor reads, so a confirmed state
+/// that carries non-null `gpuClockOffsets` while this build keeps `gpuOverclock`
+/// absent fails in development: whichever projection starts publishing the
+/// offsets, the record is reviewed with it.
+pub(crate) fn serialize_confirmed_state<S: serde::Serializer>(
+    state: &Option<FeatureRecord>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    debug_assert!(
+        Composition::COMPILED.gpu_clock_tuning
+            || state
+                .as_ref()
+                .and_then(|state| state.get("gpuClockOffsets"))
+                .is_none_or(Value::is_null),
+        "confirmedState.gpuClockOffsets is published while the capability record keeps gpuOverclock absent"
+    );
+    serde::Serialize::serialize(state, serializer)
 }
 
 /// This build's record (`Composition::COMPILED`): built once for each

@@ -1128,8 +1128,10 @@ same record for the same state.
   lane serves, but its offset editor reads its ranges from
   `confirmedState.gpuClockOffsets`, which native does not publish, and a
   GPU-only change while HyperBoost is active is sent as `setGpuClockTuning`,
-  which no composition serves. `capability_tests` fails once native publishes
-  both, so the group is admitted with them.
+  which no composition serves. Each blocker has a tripwire: publishing
+  confirmed offsets fails a debug build while the record keeps `gpuOverclock`
+  absent (`capability_record::serialize_confirmed_state`), and
+  `capability_tests` fails once `setGpuClockTuning` is served.
 
 `ServiceControlRuntimeTests.NativeCapabilityRecordVectors` records the
 record managed produces for each group set through the v91 codec into
@@ -1147,10 +1149,19 @@ Known differences from managed:
   writable HyperBoost, and native's refusal tells the user to disconnect the
   pad.
 - Native plans manual fans on AC and USB-C only (power sources 0 and 2, and
-  unclassified external power). On battery, managed's `FanControlPowerPolicy`
-  admits Fixed and Maximum whatever the record says, so the tray offers them
-  for Balanced and Performance and native refuses the write. The contract has
-  no member for a per-source fan limit.
+  unclassified external power). On battery managed's
+  `PerformancePowerSourcePolicy` admits only BatterySaver and
+  BatteryBalanced, native's default desired preset there is BatterySaver,
+  and the record ranges neither, so the tray already refuses manual fans on
+  battery. The remaining case needs a desired Balanced or Performance preset
+  while on battery: managed's `FanControlPowerPolicy` would then admit Fixed
+  and Maximum, which native refuses. No path that produces one was found,
+  and the contract has no member for a per-source fan limit.
+- Under Silent, Custom or a battery preset the dashboard still lists Fixed
+  and Maximum, and choosing one reverts without a message
+  (`MainWindow.xaml.cs` restores the authoritative selection when the fan
+  command cannot run). This is latent while native publishes
+  `writesBlocked: true`.
 - The record follows the confirmed state, which native retains for 5 seconds
   after the last completed read (`RETENTION_WINDOW` in `mailbox_read.rs`); a
   status refresh does not renew it. After that the status returns to the
@@ -1195,7 +1206,7 @@ with managed's message, and the response frame has managed's 24 MiB bound.
 | --- | --- |
 | `versions.json` | The status `serviceVersion`, the RtlGetVersion text managed `Environment.OSVersion` prints, and the status `firmware` record (live-reading builds); `Unavailable` otherwise. No fresh firmware read runs. |
 | `device.json`, `capabilities.json` | The status `firmware.modelNumber` against the contract's model catalog, and the status capabilities, as managed's status-only runtime. |
-| `configuration.json` | The status members managed prints. The three `hyperBoostBase` modes come from the status `hyperBoostBaseModes`. The `capability.rz09-0581.*` keys and the fan speed ranges by preset are `Unavailable`: no native status carries them. |
+| `configuration.json` | The status members managed prints. The three `hyperBoostBase` modes come from the status `hyperBoostBaseModes`. The `capability.rz09-0581.*` keys are `Unavailable`: no native status carries them. The fan speed ranges by preset print managed's `Preset:minimum-maximum/step` entries in preset order (`Balanced:2000-5400/100, Performance:2000-5400/100` with fans), and `Unavailable` for an empty map. |
 | `command-results.json`, `service-history.json` | The bounded history below. |
 | `device-verification.json` | Managed's `NotObserved` record: native has no device verification cache. |
 | `firmware-queries.json` | `[]`: native keeps no firmware query cache. |
@@ -1205,10 +1216,9 @@ with managed's message, and the response frame has managed's 24 MiB bound.
 
 `capabilities.json` prints managed's typed summaries of `customPerformance`,
 `localDimming` and `gpuOverclock`. A status capability member that no native
-summary prints (`cpuPowerLimit`, `intelCpuPowerLimit`, `cpuVoltageOptimizer`,
-a non-empty `fanSpeedRangesByPerformancePreset` or
-`observedPowerSourceBehaviors`) fails the export instead of omitting it. No
-native composition publishes one today.
+summary prints (`cpuPowerLimit`, `intelCpuPowerLimit`, `cpuVoltageOptimizer`
+or a non-empty `observedPowerSourceBehaviors`) fails the export instead of
+omitting it. No native composition publishes one today.
 
 The history is managed `DiagnosticHistory`: 2048 entries, 4 Mi characters and
 4096 characters a line, each value redacted, put on one line and truncated

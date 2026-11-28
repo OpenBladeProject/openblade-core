@@ -1327,6 +1327,10 @@ pub(crate) struct Snapshot {
     external_changes: Vec<i32>,
     message: String,
     capabilities: Option<FeatureRecord>,
+    #[cfg_attr(
+        feature = "installed-service-candidate",
+        serde(serialize_with = "capability_record::serialize_confirmed_state")
+    )]
     confirmed_state: Option<FeatureRecord>,
     profiles: Profiles,
     desired_state: DesiredState,
