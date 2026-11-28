@@ -42,8 +42,16 @@ internal static class ServiceComposition
             readRecoveryBoot: new WindowsCpuBootSequenceReader().Read,
             recoveryWorkerIdle: () => CpuNativeWorkerCoordinator.ForSession(WindowsRz090528CpuQueryAdapter.GetInstalledNativeSession()).Status
                 is { WorkerOutstanding: false, Invalid: false }));
+        // Its own registration, so composition tests resolve the production store
+        // without constructing the runtime and its hardware backends. The store
+        // reads the handoff binding lazily, never at construction.
+        services.AddSingleton(CreateNativeHandbackStore);
         services.AddSingleton<IServiceControlRuntime>(provider =>
         {
+            // The runtime requires this registered store. Requesting it first lets
+            // a composition test observe that request and stop before the rest
+            // of this factory runs.
+            NativeHandbackStore nativeHandbackStore = provider.GetRequiredService<NativeHandbackStore>();
             ServiceControlRuntime? runtime = null;
             var guardian = new GuardianFanStopBackend(new WindowsFanStopGuardianClient(
                 machineDataDirectory, token => runtime!.ReadFanStopServiceAdmissionAsync(token),
@@ -71,12 +79,18 @@ internal static class ServiceComposition
                 fanStopBackend: guardian,
                 cpuTuningController: provider.GetRequiredService<CpuTuningController>(),
                 coolingPadDeviceProvider: new WindowsCoolingPadDeviceProvider(),
-                coolingPadStateDirectory: Path.Combine(machineDataDirectory, "cooling-pad"));
+                coolingPadStateDirectory: Path.Combine(machineDataDirectory, "cooling-pad"),
+                nativeHandbackStore: nativeHandbackStore);
             return runtime;
         });
         services.AddSingleton<ServiceSessionPowerTransitionCoordinator>();
         return services;
     }
+
+    // The store reads this start's native custody binding through the same
+    // handoff that owns startup admission.
+    internal static NativeHandbackStore CreateNativeHandbackStore(IServiceProvider provider) =>
+        new(() => provider.GetRequiredService<ServiceMailboxHandoff>().NativeHandbacks);
 
     internal static IServiceCollection AddDiagnostics(this IServiceCollection services)
     {
@@ -116,23 +130,29 @@ internal static class ServiceComposition
     {
         ArgumentNullException.ThrowIfNull(services);
 
+        services.AddSingleton<ServiceMailboxHandoff>();
         services.AddSingleton<FirmwareCompatibilityPolicy>();
         services.AddSingleton<IProductionBatteryPortFactory>(provider =>
             ExperimentalBladeFactory.CreateForCurrentHost(
-                () => provider.GetRequiredService<IPowerStateProvider>().CapturePowerSource()) ?? CreateProductionBatteryFactory(
+                () => provider.GetRequiredService<IPowerStateProvider>().CapturePowerSource(),
+                provider.GetRequiredService<ServiceMailboxHandoff>().Lifetime) ?? CreateProductionBatteryFactory(
                 PadlessHyperBoostLifecycleValidationBuildIdentity.ReadCurrent().Enabled,
                 () => BatteryValidationFactory.CreateWindowsProductionBatteryForPadlessHyperBoostLifecycleValidation(
-                    () => provider.GetRequiredService<IPowerStateProvider>().CapturePowerSource()),
+                    () => provider.GetRequiredService<IPowerStateProvider>().CapturePowerSource(),
+                    provider.GetRequiredService<ServiceMailboxHandoff>().Lifetime),
                 () => BatteryValidationFactory.CreateWindowsProductionBatteryForService(
                     provider.GetRequiredService<FirmwareCompatibilityPolicy>(),
-                    () => provider.GetRequiredService<IPowerStateProvider>().CapturePowerSource()),
+                    () => provider.GetRequiredService<IPowerStateProvider>().CapturePowerSource(),
+                    provider.GetRequiredService<ServiceMailboxHandoff>().Lifetime),
                 () => ProductionBatteryFactory.CreateWindowsReadOnly(
-                    provider.GetRequiredService<FirmwareCompatibilityPolicy>())));
+                    provider.GetRequiredService<FirmwareCompatibilityPolicy>(),
+                    provider.GetRequiredService<ServiceMailboxHandoff>().Lifetime)));
         services.AddSingleton<IProductionLightingPortFactory>(provider =>
             provider.GetRequiredService<IProductionBatteryPortFactory>() is ExperimentalBladeFactory experimental
                 ? experimental.CreateLightingFactory()
                 : CreateProductionLightingFactory(
-                    provider.GetRequiredService<FirmwareCompatibilityPolicy>()));
+                    provider.GetRequiredService<FirmwareCompatibilityPolicy>(),
+                    provider.GetRequiredService<ServiceMailboxHandoff>().Lifetime));
         services.AddSingleton(provider =>
             CreateProfileSetValidator(
                 provider.GetRequiredService<IProductionBatteryPortFactory>(),
@@ -141,7 +161,8 @@ internal static class ServiceComposition
             provider.GetRequiredService<IProductionBatteryPortFactory>() is ExperimentalBladeFactory
                 ? UnavailableExperimentalFanRpmFactory.Instance
                 : BatteryValidationFactory.CreateWindowsFanRpmForService(
-                    provider.GetRequiredService<FirmwareCompatibilityPolicy>()));
+                    provider.GetRequiredService<FirmwareCompatibilityPolicy>(),
+                    provider.GetRequiredService<ServiceMailboxHandoff>().Lifetime));
         services.AddSingleton<IGpuClockOffsetController>(provider =>
             CreateGpuClockOffsetController(
                 provider.GetRequiredService<IProductionBatteryPortFactory>(),
@@ -155,7 +176,8 @@ internal static class ServiceComposition
             return new WindowsVerifiedBladeDeviceProvider(
                 batteryFactory is ExperimentalBladeFactory experimental
                     ? experimental.Probe
-                    : () => BatteryValidationFactory.ProbeWindowsForService(compatibilityPolicy),
+                    : () => BatteryValidationFactory.ProbeWindowsForService(compatibilityPolicy,
+                        provider.GetRequiredService<ServiceMailboxHandoff>().Lifetime),
                 batteryFactory,
                 provider.GetRequiredService<IFanRpmQueryRunFactory>(),
                 provider.GetRequiredService<IProductionLightingPortFactory>(),
@@ -163,7 +185,8 @@ internal static class ServiceComposition
                 provider.GetService<ILogger<WindowsVerifiedBladeDeviceProvider>>(),
                 compatibilityPolicy: compatibilityPolicy,
                 gpuActivitySource: new WindowsGpuActivitySource(),
-                lowPowerGate: provider.GetRequiredService<LowPowerGate>());
+                lowPowerGate: provider.GetRequiredService<LowPowerGate>(),
+                mailboxLifetime: provider.GetRequiredService<ServiceMailboxHandoff>().Lifetime);
         });
         return services;
     }
@@ -248,14 +271,14 @@ internal static class ServiceComposition
             ProductionLightingFactory.CreateWindowsReadOnly);
 
     internal static IProductionLightingPortFactory CreateProductionLightingFactory(
-        FirmwareCompatibilityPolicy compatibilityPolicy)
+        FirmwareCompatibilityPolicy compatibilityPolicy, MailboxLifetime? lifetime = null)
     {
         ArgumentNullException.ThrowIfNull(compatibilityPolicy);
         return CreateProductionLightingFactory(
             () => BatteryValidationFactory.CreateWindowsProductionLightingForService(
-                compatibilityPolicy),
+                compatibilityPolicy, lifetime),
             () => ProductionLightingFactory.CreateWindowsReadOnly(
-                compatibilityPolicy));
+                compatibilityPolicy, lifetime));
     }
 
     internal static IProductionLightingPortFactory CreateProductionLightingFactory(

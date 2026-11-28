@@ -279,7 +279,7 @@ previous duration. Sleep-policy mutation remains unavailable because the entire
 original state cannot yet be independently saved and restored. This limitation
 does not apply to the independent VC enabled flag.
 
-Service IPC is 84, machine profile schema 27, override schema 10 and exported
+Service IPC is 85, machine profile schema 27, override schema 10 and exported
 profile schema 18. Old documents cannot introduce non-null zone-control intent;
 ordinary prior settings migrate without opting in to the new fields.
 

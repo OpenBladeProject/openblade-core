@@ -1,6 +1,9 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text.Json;
+#if OPENBLADE_SCRATCH_NATIVE_RECEIVER
+using System.Text.Json.Serialization;
+#endif
 
 namespace OpenBlade.Contracts;
 
@@ -24,7 +27,11 @@ public static class DiagnosticTrace
                     DetailsTruncated = failure.DetailsTruncated || sanitized.Length > 8192,
                 };
             }
+#if OPENBLADE_SCRATCH_NATIVE_RECEIVER
+            return JsonSerializer.Serialize(failure.LimitDetails(), DiagnosticFailureJsonContext.Default.DiagnosticFailure);
+#else
             return JsonSerializer.Serialize(failure.LimitDetails());
+#endif
         }
         finally
         {
@@ -37,7 +44,11 @@ public static class DiagnosticTrace
         int nativeError = Marshal.GetLastPInvokeError();
         try
         {
+#if OPENBLADE_SCRATCH_NATIVE_RECEIVER
+            Trace.TraceWarning("Diagnostic failure: {0}", JsonSerializer.Serialize(failure.LimitDetails(), DiagnosticFailureJsonContext.Default.DiagnosticFailure));
+#else
             Trace.TraceWarning("Diagnostic failure: {0}", JsonSerializer.Serialize(failure.LimitDetails()));
+#endif
         }
         catch
         {
@@ -66,3 +77,8 @@ public static class DiagnosticTrace
         }
     }
 }
+
+#if OPENBLADE_SCRATCH_NATIVE_RECEIVER
+[JsonSerializable(typeof(DiagnosticFailure))]
+internal partial class DiagnosticFailureJsonContext : JsonSerializerContext;
+#endif

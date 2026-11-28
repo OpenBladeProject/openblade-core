@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 10,
+  "overrides": {
+    "performance": 5,
+    "fans": null,
+    "lighting": null,
+    "customPerformance": {
+      "cpu": 1,
+      "gpu": 2,
+      "maximumFans": false,
+      "gpuClockOffsets": null
+    },
+    "fanControl": null,
+    "gpuClockTuning": null
+  }
+}

@@ -1,0 +1,309 @@
+[package]
+name = "openblade-windows-host"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.99.1"
+license = "GPL-3.0-or-later"
+publish = false
+default-run = "openblade-windows-host"
+
+# Development-only workspace, outside the product dependency graph.
+[workspace]
+
+[[bin]]
+name = "openblade-windows-discovery"
+path = "src/discover.rs"
+
+[features]
+agent-display-query-v1 = ["native-agent-entry-compile-check"]
+# Partial display mutation: manual setBrightness only. Query-only builds stay read-only.
+agent-display-brightness-write-v1 = ["agent-display-query-v1"]
+# Partial display mutation: manual setHdr only, through the separately
+# selected production SET_HDR_STATE writer. It does not imply brightness writes.
+agent-display-hdr-write-v1 = ["agent-display-query-v1", "openblade-platform-windows/display-hdr-write"]
+# Partial display mutation: manual setRefreshRate only, through the separately
+# selected production SetDisplayConfig writer. It implies no other display write.
+agent-display-refresh-write-v1 = ["agent-display-query-v1", "openblade-platform-windows/display-refresh-write"]
+# Partial display mutation: manual setColorProfile only, through the separately
+# selected production WCS writer. It implies no other display write.
+agent-display-color-write-v1 = ["agent-display-query-v1", "openblade-platform-windows/display-color-write"]
+# Manual applyProfile: managed composes refresh-rate, HDR, color-profile and
+# brightness writes, so the profile selects all four reviewed writers.
+agent-display-profile-apply-v1 = [
+    "agent-display-brightness-write-v1",
+    "agent-display-hdr-write-v1",
+    "agent-display-refresh-write-v1",
+    "agent-display-color-write-v1",
+]
+# Automatic display profile reconciliation (managed DisplayAutomationCoordinator
+# and ServiceDisplayAutomationLoop) on power-source and application-profile
+# changes in verified Service status. It writes only through the applyProfile
+# composition, so it implies it. Packaging refuses an image that carries it.
+agent-display-automation-v1 = ["agent-display-profile-apply-v1", "openblade-domain/profile-set"]
+agent-battery-report-v1 = ["native-agent-entry-compile-check"]
+# Current-user application-context reporter: the foreground watcher reports the
+# profile-matching executable to the Service as managed ApplicationProfileReporter
+# does. Packaging refuses an image that carries it until a stage admits it.
+agent-application-reporter-v1 = ["native-agent-entry-compile-check", "openblade-platform-windows/foreground-watcher"]
+# Session GPU v2 query, close and force close through the production
+# retained-handle backend (identity and integrity recheck on the held handle;
+# an unconfirmed force close is reported in that request only).
+agent-gpu-v1 = ["native-agent-entry-compile-check", "openblade-platform-windows/gpu-close"]
+# Current-user function-row Windows hook on exact RZ09-0581, driven by the
+# Service's confirmed keyboard Driver mode. It issues no Service command and
+# admits no action effect. Packaging refuses an image that carries it.
+agent-function-row-v1 = ["native-agent-entry-compile-check"]
+# Current-user Windows power-mode automation (managed
+# ServicePowerModeAutomationLoop with WindowsPowerModeAutomationCoordinator): a
+# confirmed performance preset applies its profiles.windowsPowerModes
+# association to the user's configured AC or DC power mode. It changes a
+# Windows setting without a request, so packaging refuses an image that
+# carries it.
+agent-power-mode-automation-v1 = ["native-agent-entry-compile-check", "openblade-domain/profile-set"]
+# Session suspend/resume relay (managed SessionPowerTransitionRelay): each
+# transition is reported to the Service's reportSessionPowerTransition within
+# the managed 1.5 s callback budget. Packaging refuses an image that carries
+# it until the Service that serves the report is admitted beside it.
+agent-session-power-relay-v1 = ["native-agent-entry-compile-check", "windows-sys/Win32_System_Power"]
+native-agent-entry-compile-check = ["windows-sys/Win32_System_RemoteDesktop"]
+cpu-worker-fixture = []
+scratch-writer-fence = []
+scratch-candidate-receipt = ["windows-sys/Win32_System_RemoteDesktop"]
+gpu-close-fixture = ["openblade-platform-windows/scripted-gpu-close"]
+vm-scm-fixture = []
+startup-custody-v1 = []
+service-metadata-only-v1 = ["installed-service-candidate"]
+# Maintain-desired-state thermal convergence: the managed ledger shared with
+# managed (thermal-convergence.json), its read-only reconciliation of a
+# reservation, and its convergence writes. No packaged composition implies
+# it, and both package readers refuse it by name.
+service-thermal-convergence-v1 = ["service-profile-triggers-v1", "openblade-domain/thermal-convergence"]
+# Automatic reconciliation of saved intent on reportApplicationContext,
+# updateProfiles and a session's first admitted report. No packaged
+# composition implies it, and both package readers refuse it by name.
+service-profile-triggers-v1 = ["service-profiles-v1"]
+# Paired GPU clock tuning on the explicit performance path of exact
+# RZ09-0581: managed ApplyPerformanceOutcomeAsync's NVML preflight, its
+# submission after the confirmed firmware write, the GPU-only setter, the
+# relinquish of unconfigured tuning, and the read-only resolution of an
+# uncertain submission, through the System32-only NVML loader. It writes
+# NVIDIA driver state, so no packaged composition implies it, and both package
+# readers refuse it by name until a WinVerifyTrust and catalog gate checks the
+# loaded module path.
+service-gpu-clock-tuning-v1 = ["service-profile-triggers-v1"]
+# Fan Stop requests served as managed serves them while its guardian is
+# unavailable: Stop and Resume are refused, Fan Stop settings and the
+# Battery Saver preference are stored in the configuration aggregate, and
+# no hardware is touched. No packaged composition implies it, and both
+# package readers refuse it by name.
+service-fan-stop-v1 = ["service-profiles-v1"]
+# updateProfiles: the typed managed ProfileSet, validated for exact RZ09-0581
+# and committed as the managed aggregate. Saving profiles applies no hardware.
+service-profiles-v1 = ["service-temporary-charge-v1", "openblade-domain/profile-set"]
+service-temporary-charge-v1 = ["service-battery-policy-v1"]
+# cyclePerformanceShortcut and setPerformanceShortcutPreview: managed
+# PerformanceShortcutSelection over the exact RZ09-0581 presets, staged as an
+# UntilPowerSourceChange override and applied through the performance writer,
+# and the Agent's preview, published without the operation gate. It needs the
+# fan writer for managed's fan-return deferral. No packaged composition
+# implies it, and both package readers refuse it by name.
+service-performance-shortcut-v1 = ["service-fan-mutation-v2"]
+service-battery-policy-v1 = ["service-fan-mutation-v2"]
+service-fan-mutation-v2 = ["service-thermal-mutation-v1"]
+# Leaving HyperBoost for a battery preset on exact RZ09-0581: managed's
+# restore pair (the Balanced bytes), an independent read that must confirm
+# Balanced with Automatic fans, then the battery pair, journaled as 0, 80-83,
+# 1-4, 5. Without it that request is refused as NoDirectPath. The restore pair
+# in HyperBoost on battery has no capture evidence, so no packaged composition
+# implies it, and both package readers refuse it by name.
+service-thermal-hyperboost-exit-v1 = ["service-thermal-mutation-v1", "openblade-domain/hyperboost-exit"]
+# Owned HyperBoost on exact RZ09-0581 (`setHyperBoost`): pad-less entry with
+# the enable pair from a confirmed admitted state, confirmed by an independent
+# read, and the exit to saved intent through the direct or restore recipe.
+# It reads managed's HyperBoost journal read-only and refuses while it is
+# pending (its schema check reads the pure domain convergence ledger). No
+# capture evidence covers a native entry, so no packaged
+# composition implies it, and both package readers refuse it by name.
+service-hyperboost-v1 = ["service-thermal-hyperboost-exit-v1", "openblade-domain/hyperboost", "openblade-domain/thermal-convergence"]
+# Keyboard lighting on exact RZ09-0581 (`setLightingOverride`), slice L1:
+# brightness and logo through the reviewed 03/83, 03/03, 03/80, 03/82,
+# 03/00 and 03/02 commands under managed's semantic admission, Off only.
+# No capture evidence covers a native write, so no packaged composition
+# implies it, and both package readers refuse it by name.
+service-lighting-v1 = ["service-thermal-mutation-v1", "openblade-protocol/lighting-setters"]
+# Display-brightness HID input on exact RZ09-0581 (`setDisplayBrightnessHidUsage`):
+# managed's held-usage state machine under the thermal operation gate, each
+# press admitted by a fresh Write capture, and RzCommon's type-10 input IOCTL
+# on the exact control interface after its stack, ancestry and installed
+# package trust are verified again. The IOCTL has no readback, so no packaged
+# composition implies it, and both package readers refuse it by name.
+service-brightness-hid-usage-v1 = ["service-thermal-mutation-v1", "driver-api-trust"]
+# The Tray's complete shutdown (`shutdownOpenBlade`): a local administrator or
+# SYSTEM, whatever its logon or session, waits for the runtime operation gate
+# and is answered Stored, and 500 ms later the Service stops through exactly
+# the SCM STOP path and its owned cleanup. It needs the thermal runtime's
+# gate. It stops the Service unattended, so no packaged composition implies
+# it, and both package readers refuse it by name.
+service-lifecycle-shutdown-v1 = ["service-thermal-mutation-v1"]
+# The Session Agent's power relay (`reportSessionPowerTransition`): managed's
+# admission, validation, age, stale-agent and newer-transition refusals, and
+# for an accepted report managed's literal unconfirmed reply. It never feeds
+# the low-power gate: SCM's own notices drive the boundary. Only the thermal
+# composition accepts power events. No packaged composition implies it, and
+# both package readers refuse it by name.
+service-session-power-relay-v1 = ["service-thermal-mutation-v1"]
+# The installed-driver package binding and WinVerifyTrust catalog checks
+# (`driver_trust`), shared by the driver-API backends that load or open an
+# installed driver's files. It reads only.
+driver-api-trust = [
+    "windows-sys/Win32_Security_WinTrust",
+    "windows-sys/Win32_Security_Cryptography_Catalog",
+    "windows-sys/Win32_Security_Cryptography_Sip",
+]
+# Thermal overrides are checked with the managed ProfileSetValidator thermal
+# rules before anything is stored, so this lane needs the domain profile set.
+service-thermal-mutation-v1 = ["service-mailbox-observation-v1", "controller-admission-compile-check", "openblade-domain/profile-set"]
+service-mailbox-observation-v1 = ["service-hardware-compile-check"]
+# Read-only RZ09-0581 keyboard Driver mode: the reviewed 00/84 query on the
+# installed mailbox read job and the managed `keyboardDriverModeActive` member.
+# It sends no setter. Packaging refuses an image that carries it.
+service-keyboard-driver-mode-read-v1 = ["service-mailbox-observation-v1"]
+# RZ09-0581 keyboard Driver-mode ownership: the 15 s acquire and maintain
+# step on the origin tick (00/84 read, claim, 00/04:0300 setter, exact
+# acknowledgement, independent 00/84 readback) under console-user write
+# admission, and the restore of Normal at a confirmed suspend and at shutdown,
+# followed at shutdown only by the owned fan handback to Automatic, under the
+# Service cleanup admission, which needs no console user. It implies the fan
+# feature for that handback and the fan guardian, not profile triggers. No packaged
+# composition implies it, and both package readers refuse it. Its durable
+# owner-custody record uses the domain driver-mode-history codec.
+service-keyboard-driver-mode-v1 = ["service-keyboard-driver-mode-read-v1", "service-fan-mutation-v2", "openblade-protocol/device-mode-setters", "openblade-domain/driver-mode-history"]
+# Read-only RZ09-0581 live readings: the capture-backed 0D/88 fan speed pair
+# on the installed mailbox read job, Windows battery power flow and battery
+# health, and the managed liveReadings and batteryHealth members. It also
+# publishes the managed firmware versions from Windows metadata reads on a
+# worker thread, and their MCU version from the capture-backed 00/87 query,
+# the read job's last, and the GPU temperature from NVIDIA's NVML on its own
+# worker thread, only for a D0 adapter: at each sample with a workload, and
+# without one once D0 has lasted 3 s, reusing a valid reading for 10 s. It
+# sends no setter and reads no CPU temperature. Packaging refuses an image
+# that carries it.
+service-live-readings-v1 = ["service-mailbox-observation-v1"]
+# Read-only exportDiagnostics: the managed diagnostic archive over the status
+# the Service already publishes and the bounded in-memory managed history,
+# with no firmware, device or storage read of its own. It composes with the
+# read-only mailbox observation, as the live-reading read does. Packaging
+# refuses an image that carries it.
+service-diagnostics-export-v1 = ["service-mailbox-observation-v1"]
+service-hardware-compile-check = ["installed-service-candidate", "firmware-performance-compile-check"]
+installed-service-candidate = [
+    "startup-custody-v1",
+    "lifecycle-evidence-compile-check",
+    "openblade-platform-windows/controller-process-compile-check",
+]
+hid-identity-compile-check = []
+firmware-performance-compile-check = ["hid-identity-compile-check"]
+controller-admission-compile-check = ["openblade-platform-windows/controller-process-compile-check"]
+lifecycle-evidence-compile-check = [
+    "windows-sys/Win32_System_Power",
+    "windows-sys/Win32_System_RemoteDesktop",
+    "windows-sys/Win32_System_SystemServices",
+]
+
+[[bin]]
+name = "openblade-cpu-worker-fixture"
+path = "tests/fixtures/cpu_worker.rs"
+required-features = ["cpu-worker-fixture"]
+test = false
+bench = false
+
+[[bin]]
+name = "openblade-rust-session-agent"
+path = "src/session_agent.rs"
+[[bin]]
+name = "openblade-windows-scm-vm"
+path = "src/vm_main.rs"
+required-features = ["vm-scm-fixture"]
+test = false
+
+[[bin]]
+name = "openblade-windows-service-candidate"
+path = "src/installed_main.rs"
+required-features = ["installed-service-candidate"]
+
+[[bin]]
+name = "openblade-windows-agent-candidate"
+path = "src/installed_agent_main.rs"
+required-features = ["native-agent-entry-compile-check"]
+
+[[bin]]
+name = "openblade-scratch-candidate-receipt"
+path = "tests/fixtures/candidate_receipt.rs"
+required-features = ["scratch-candidate-receipt"]
+test = false
+bench = false
+
+[dependencies]
+openblade-domain = { path = '../../rust/crates/openblade-domain', features = ['thermal-history'] }
+openblade-protocol = { path = '../../rust/crates/openblade-protocol' }
+serde = { version = "=1.0.228", features = ["derive"] }
+serde_json = { version = "=1.0.149", features = ["arbitrary_precision", "raw_value"] }
+sha2 = "=0.10.9"
+tokio = { version = "=1.54.1", features = ["io-util", "macros", "net", "rt", "sync", "time"] }
+
+[dev-dependencies]
+tokio = { version = "=1.54.1", features = ["test-util"] }
+openblade-application-reporter = { path = '../../rust/crates/openblade-application-reporter' }
+openblade-types = { path = '../../rust/crates/openblade-types' }
+
+# Test-only: the SCM payload read's guard-page probe allocates a PAGE_NOACCESS page.
+[target.'cfg(windows)'.dev-dependencies]
+windows-sys = { version = "=0.61.2", features = ["Win32_System_Memory"] }
+
+[target.'cfg(windows)'.dependencies]
+openblade-application-reporter = { path = '../../rust/crates/openblade-application-reporter' }
+openblade-platform-windows = { path = '../../rust/crates/openblade-platform-windows', features = ["scripted-display", "scripted-gpu", "foreground-watcher-replay"] }
+windows-sys = { version = "=0.61.2", features = [
+    "Wdk_Foundation",
+    "Wdk_System_Threading",
+    "Wdk_Storage_FileSystem",
+    "Wdk_System_SystemServices",
+    "Win32_Devices_DeviceAndDriverInstallation",
+    "Win32_Devices_HumanInterfaceDevice",
+    "Win32_Devices_Properties",
+    "Win32_Globalization",
+    "Win32_Networking_WindowsWebServices",
+    "Win32_Security_Authorization",
+    "Win32_Security_Cryptography",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Com",
+    "Win32_System_Console",
+    "Win32_System_IO",
+    "Win32_System_JobObjects",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Performance",
+    "Win32_System_Pipes",
+    "Win32_System_Recovery",
+    "Win32_System_Diagnostics_Debug",
+    "Win32_System_Kernel",
+    "Win32_System_Registry",
+    "Win32_System_SystemInformation",
+    "Win32_System_Services",
+    "Win32_System_Threading",
+    "Win32_System_Time",
+    "Win32_System_WindowsProgramming",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+
+[lints.rust]
+unsafe_code = "deny"
+unsafe_op_in_unsafe_fn = "deny"
+
+[[bin]]
+name = "openblade-scratch-rust-writer"
+path = "tests/fixtures/writer_fence.rs"
+required-features = ["scratch-writer-fence"]
+test = false
+bench = false

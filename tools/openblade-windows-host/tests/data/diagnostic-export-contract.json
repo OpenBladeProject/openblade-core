@@ -1,0 +1,603 @@
+{
+  "comment": "Recorded by NativeDiagnosticExportVectorTests from the managed definitions; regenerate with OPENBLADE_REGENERATE_NATIVE_DIAGNOSTIC_EXPORT_VECTORS set to this directory.",
+  "enums": {
+    "BladeSupportBasis": [
+      [
+        "NotEstablished",
+        0
+      ],
+      [
+        "SourceReviewed",
+        1
+      ],
+      [
+        "PhysicallyValidated",
+        2
+      ]
+    ],
+    "BreathingColorMode": [
+      [
+        "Single",
+        0
+      ],
+      [
+        "Dual",
+        1
+      ],
+      [
+        "Random",
+        2
+      ]
+    ],
+    "CustomPerformanceLevel": [
+      [
+        "Low",
+        0
+      ],
+      [
+        "Medium",
+        1
+      ],
+      [
+        "High",
+        2
+      ],
+      [
+        "Boost",
+        3
+      ]
+    ],
+    "DeviceFeatureAccess": [
+      [
+        "ObservedOnly",
+        0
+      ],
+      [
+        "ReadOnly",
+        1
+      ],
+      [
+        "ReadWrite",
+        2
+      ]
+    ],
+    "DeviceSubsystem": [
+      [
+        "Performance",
+        0
+      ],
+      [
+        "Fans",
+        1
+      ],
+      [
+        "Battery",
+        2
+      ],
+      [
+        "Lighting",
+        3
+      ]
+    ],
+    "FanMode": [
+      [
+        "Automatic",
+        0
+      ],
+      [
+        "Fixed",
+        1
+      ],
+      [
+        "ManualCurve",
+        2
+      ],
+      [
+        "Maximum",
+        3
+      ],
+      [
+        "Stop",
+        4
+      ]
+    ],
+    "FirmwareCompatibilityStatus": [
+      [
+        "Unknown",
+        0
+      ],
+      [
+        "Tested",
+        1
+      ],
+      [
+        "UntestedBlocked",
+        2
+      ],
+      [
+        "UntestedAllowed",
+        3
+      ],
+      [
+        "ModelScoped",
+        4
+      ]
+    ],
+    "FunctionKeyPrimaryMode": [
+      [
+        "FunctionKeys",
+        0
+      ],
+      [
+        "MultimediaKeys",
+        1
+      ]
+    ],
+    "HyperBoostEntryRestriction": [
+      [
+        "VendorSystemSku",
+        0
+      ]
+    ],
+    "LightingEffect": [
+      [
+        "Off",
+        0
+      ],
+      [
+        "Static",
+        1
+      ],
+      [
+        "Spectrum",
+        2
+      ],
+      [
+        "Breathing",
+        3
+      ],
+      [
+        "Reactive",
+        4
+      ],
+      [
+        "Tidal",
+        5
+      ],
+      [
+        "Starlight",
+        6
+      ],
+      [
+        "Wave",
+        7
+      ],
+      [
+        "Wheel",
+        8
+      ],
+      [
+        "Ripple",
+        9
+      ],
+      [
+        "AmbientAwareness",
+        10
+      ],
+      [
+        "AudioMeter",
+        11
+      ],
+      [
+        "Fire",
+        12
+      ],
+      [
+        "Sequence",
+        13
+      ]
+    ],
+    "LightingRefreshRate": [
+      [
+        "ThirtyHz",
+        0
+      ],
+      [
+        "SixtyHz",
+        1
+      ]
+    ],
+    "LightingRendererOwnershipState": [
+      [
+        "None",
+        0
+      ],
+      [
+        "Static",
+        1
+      ],
+      [
+        "Spectrum",
+        2
+      ],
+      [
+        "Breathing",
+        3
+      ],
+      [
+        "Reactive",
+        4
+      ],
+      [
+        "Tidal",
+        5
+      ],
+      [
+        "Starlight",
+        6
+      ],
+      [
+        "Wave",
+        7
+      ],
+      [
+        "Wheel",
+        8
+      ],
+      [
+        "Faulted",
+        9
+      ],
+      [
+        "Ripple",
+        10
+      ],
+      [
+        "AmbientAwareness",
+        11
+      ],
+      [
+        "AudioMeter",
+        12
+      ],
+      [
+        "Fire",
+        13
+      ],
+      [
+        "Sequence",
+        14
+      ]
+    ],
+    "OverrideLifetime": [
+      [
+        "UntilPowerSourceChange",
+        0
+      ],
+      [
+        "Persistent",
+        1
+      ]
+    ],
+    "PadlessHyperBoostEligibilityState": [
+      [
+        "Unknown",
+        0
+      ],
+      [
+        "CoolingPadAbsent",
+        1
+      ],
+      [
+        "CoolingPadPresent",
+        2
+      ]
+    ],
+    "PerformancePreset": [
+      [
+        "Silent",
+        0
+      ],
+      [
+        "Balanced",
+        1
+      ],
+      [
+        "Performance",
+        2
+      ],
+      [
+        "BatterySaver",
+        3
+      ],
+      [
+        "BatteryBalanced",
+        4
+      ],
+      [
+        "Custom",
+        5
+      ],
+      [
+        "Turbo",
+        6
+      ],
+      [
+        "MaximumPower",
+        7
+      ],
+      [
+        "Gaming",
+        8
+      ],
+      [
+        "Creator",
+        9
+      ]
+    ],
+    "PowerSource": [
+      [
+        "PluggedIn",
+        0
+      ],
+      [
+        "Battery",
+        1
+      ],
+      [
+        "UsbC",
+        2
+      ],
+      [
+        "ExternalUnknown",
+        3
+      ]
+    ],
+    "SettingValueSource": [
+      [
+        "ConfirmedFirmwareState",
+        0
+      ],
+      [
+        "PowerProfile",
+        1
+      ],
+      [
+        "ApplicationProfile",
+        2
+      ],
+      [
+        "TemporaryOverride",
+        3
+      ],
+      [
+        "PersistentOverride",
+        4
+      ]
+    ],
+    "SpecialKeySlotSet": [
+      [
+        "None",
+        0
+      ],
+      [
+        "M1",
+        1
+      ],
+      [
+        "M2",
+        2
+      ],
+      [
+        "M3",
+        4
+      ],
+      [
+        "M4",
+        8
+      ],
+      [
+        "M5",
+        16
+      ],
+      [
+        "All",
+        31
+      ]
+    ],
+    "WindowsDynamicLightingAdvisory": [
+      [
+        "Unknown",
+        0
+      ],
+      [
+        "Off",
+        1
+      ],
+      [
+        "MayControl",
+        2
+      ]
+    ]
+  },
+  "flags": [
+    "SpecialKeySlotSet"
+  ],
+  "models": [
+    {
+      "modelNumber": "RZ09-0581",
+      "usbVendorId": "1532",
+      "usbProductId": "02E0",
+      "supportBasis": "PhysicallyValidated",
+      "hyperBoostWithoutCoolingPadGates": {
+        "immediateNoLoad": true,
+        "sustainedNoLoad": true,
+        "reviewedLoad": true,
+        "adapterTransition": true,
+        "lowPowerLifecycle": true,
+        "crashRecovery": true
+      }
+    },
+    {
+      "modelNumber": "RZ09-0528",
+      "usbVendorId": "1532",
+      "usbProductId": "02C6",
+      "supportBasis": "PhysicallyValidated",
+      "hyperBoostWithoutCoolingPadGates": {
+        "immediateNoLoad": true,
+        "sustainedNoLoad": true,
+        "reviewedLoad": true,
+        "adapterTransition": true,
+        "lowPowerLifecycle": true,
+        "crashRecovery": true
+      }
+    },
+    {
+      "modelNumber": "RZ09-0484",
+      "usbVendorId": "1532",
+      "usbProductId": "02A0",
+      "supportBasis": "SourceReviewed",
+      "hyperBoostWithoutCoolingPadGates": null
+    },
+    {
+      "modelNumber": "RZ09-0483",
+      "usbVendorId": "1532",
+      "usbProductId": "029F",
+      "supportBasis": "SourceReviewed",
+      "hyperBoostWithoutCoolingPadGates": null
+    },
+    {
+      "modelNumber": "RZ09-0482",
+      "usbVendorId": "1532",
+      "usbProductId": "029D",
+      "supportBasis": "SourceReviewed",
+      "hyperBoostWithoutCoolingPadGates": null
+    },
+    {
+      "modelNumber": "RZ09-0530",
+      "usbVendorId": "1532",
+      "usbProductId": "02C5",
+      "supportBasis": "SourceReviewed",
+      "hyperBoostWithoutCoolingPadGates": null
+    },
+    {
+      "modelNumber": "RZ09-0328",
+      "usbVendorId": "1532",
+      "usbProductId": "0255",
+      "supportBasis": "SourceReviewed",
+      "hyperBoostWithoutCoolingPadGates": null
+    },
+    {
+      "modelNumber": "RZ09-0508",
+      "usbVendorId": "1532",
+      "usbProductId": "02B6",
+      "supportBasis": "SourceReviewed",
+      "hyperBoostWithoutCoolingPadGates": null
+    },
+    {
+      "modelNumber": "RZ09-0510",
+      "usbVendorId": "1532",
+      "usbProductId": "02B7",
+      "supportBasis": "SourceReviewed",
+      "hyperBoostWithoutCoolingPadGates": null
+    },
+    {
+      "modelNumber": "RZ09-0509",
+      "usbVendorId": "1532",
+      "usbProductId": "02B8",
+      "supportBasis": "SourceReviewed",
+      "hyperBoostWithoutCoolingPadGates": null
+    },
+    {
+      "modelNumber": "RZ09-0529",
+      "usbVendorId": "1532",
+      "usbProductId": "02C7",
+      "supportBasis": "SourceReviewed",
+      "hyperBoostWithoutCoolingPadGates": null
+    },
+    {
+      "modelNumber": "RZ09-0370",
+      "usbVendorId": "1532",
+      "usbProductId": "0270",
+      "supportBasis": "SourceReviewed",
+      "hyperBoostWithoutCoolingPadGates": null
+    },
+    {
+      "modelNumber": "RZ09-0427",
+      "usbVendorId": "1532",
+      "usbProductId": "028C",
+      "supportBasis": "SourceReviewed",
+      "hyperBoostWithoutCoolingPadGates": null
+    },
+    {
+      "modelNumber": "RZ09-0421",
+      "usbVendorId": "1532",
+      "usbProductId": "028A",
+      "supportBasis": "SourceReviewed",
+      "hyperBoostWithoutCoolingPadGates": null
+    },
+    {
+      "modelNumber": "RZ09-0423",
+      "usbVendorId": "1532",
+      "usbProductId": "028B",
+      "supportBasis": "SourceReviewed",
+      "hyperBoostWithoutCoolingPadGates": null
+    },
+    {
+      "modelNumber": "RZ09-0330",
+      "usbVendorId": "1532",
+      "usbProductId": "0253",
+      "supportBasis": "SourceReviewed",
+      "hyperBoostWithoutCoolingPadGates": null
+    },
+    {
+      "modelNumber": "RZ09-0351",
+      "usbVendorId": "1532",
+      "usbProductId": "0268",
+      "supportBasis": "SourceReviewed",
+      "hyperBoostWithoutCoolingPadGates": null
+    },
+    {
+      "modelNumber": "RZ09-0301",
+      "usbVendorId": "1532",
+      "usbProductId": "0245",
+      "supportBasis": "SourceReviewed",
+      "hyperBoostWithoutCoolingPadGates": null
+    },
+    {
+      "modelNumber": "RZ09-0300",
+      "usbVendorId": "1532",
+      "usbProductId": "0246",
+      "supportBasis": "SourceReviewed",
+      "hyperBoostWithoutCoolingPadGates": null
+    },
+    {
+      "modelNumber": "RZ09-0409",
+      "usbVendorId": "1532",
+      "usbProductId": "0276",
+      "supportBasis": "SourceReviewed",
+      "hyperBoostWithoutCoolingPadGates": null
+    },
+    {
+      "modelNumber": "RZ09-0287",
+      "usbVendorId": "1532",
+      "usbProductId": "0234",
+      "supportBasis": "SourceReviewed",
+      "hyperBoostWithoutCoolingPadGates": null
+    },
+    {
+      "modelNumber": "RZ09-0314",
+      "usbVendorId": "1532",
+      "usbProductId": "024C",
+      "supportBasis": "SourceReviewed",
+      "hyperBoostWithoutCoolingPadGates": null
+    }
+  ],
+  "history": {
+    "maximumEntries": 2048,
+    "maximumTotalCharacters": 4194304,
+    "maximumLineCharacters": 4096
+  },
+  "maximumArchiveBytes": 16777216,
+  "maximumResponseBytes": 25165824
+}

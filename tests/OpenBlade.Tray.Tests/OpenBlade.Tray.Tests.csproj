@@ -15,11 +15,17 @@
   </ItemGroup>
 
   <ItemGroup>
+    <EmbeddedResource Include="..\OpenBlade.Display.Tests\Fixtures\display-advanced-color.csv"
+                      LogicalName="display-advanced-color.csv" />
     <Using Include="Xunit" />
     <Using Include="OpenBlade.Testing.AsyncTest" Static="true" />
   </ItemGroup>
 
   <ItemGroup>
+    <EmbeddedResource Include="..\OpenBlade.Service.Tests\WindowsReplay\v1\configuration-aggregate.json"
+                      LogicalName="OpenBlade.WindowsReplay.ConfigurationAggregate" />
+    <EmbeddedResource Include="..\OpenBlade.Service.Tests\WindowsReplay\v1\configuration-profile.json"
+                      LogicalName="OpenBlade.WindowsReplay.ConfigurationProfile" />
     <None Update="Fixtures\DriverCatalogApplicability.json" CopyToOutputDirectory="PreserveNewest" />
     <None Update="Fixtures\ThxNativeComponentCatalog.json" CopyToOutputDirectory="PreserveNewest" />
     <None Update="Fixtures\ThxRznb11StackCatalog.json" CopyToOutputDirectory="PreserveNewest" />
@@ -30,8 +36,15 @@
 
   <ItemGroup>
     <Compile Include="..\OpenBlade.Testing\AsyncTest.cs" Link="AsyncTest.cs" />
+    <Compile Include="..\..\src\OpenBlade.Tray\SessionBatteryReportAdapter.cs"
+             Link="SessionBatteryReportAdapter.cs" />
+    <Compile Include="..\..\src\OpenBlade.Tray\SessionGpuAppAdapter.cs"
+             Link="SessionGpuAppAdapter.cs" />
+    <Compile Include="..\..\src\OpenBlade.Tray\SessionDisplaySettingsAdapter.cs"
+             Link="SessionDisplaySettingsAdapter.cs" />
     <Compile Include="..\OpenBlade.Testing\UnavailableServiceClient.cs"
              Link="UnavailableServiceClient.cs" />
+    <Compile Include="..\..\src\OpenBlade.Setup\MachineDataDirectorySecurity.cs" Link="MachineDataDirectorySecurity.cs" />
     <Compile Include="..\..\src\OpenBlade.Setup\SignInTaskScheduler.cs"
              Link="SignInTaskScheduler.cs" />
     <Compile Include="..\..\src\OpenBlade.Setup\StartupShortcutWriter.cs"
@@ -80,6 +93,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\OpenBlade.Platform\OpenBlade.Platform.csproj" />
     <ProjectReference Include="..\..\src\OpenBlade.Session\OpenBlade.Session.csproj" />
+    <ProjectReference Include="..\..\src\OpenBlade.Service\OpenBlade.Service.csproj" />
     <ProjectReference Include="..\..\src\OpenBlade.Tray.Core\OpenBlade.Tray.Core.csproj" />
   </ItemGroup>
 

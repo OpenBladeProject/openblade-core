@@ -873,6 +873,23 @@ public sealed partial class ProductionLightingPortTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
+    public async Task DriverModeCleanup_DoesNotReplayAmbiguousRelease(bool rz090528)
+    {
+        var session = new LightingSession(initialBrightness: 0xC5) { DeviceMode = RazerDeviceMode.Normal };
+        (IProductionLightingPort port, _) = CreateDriverModeCleanupPort(session, rz090528);
+        await port.MaintainDriverModeAsync(default);
+        session.DeviceModeQueryOverrides.Enqueue(RazerDeviceMode.Driver);
+        session.DeviceModeQueryOverrides.Enqueue(RazerDeviceMode.Driver);
+        await Assert.ThrowsAsync<BladeWriteException>(() => port.ReleaseDriverModeAsync(default));
+        int submissions = session.DeviceModeSetCalls;
+        await port.DisposeAsync();
+        Assert.Equal(submissions, session.DeviceModeSetCalls);
+        Assert.Equal(DriverModeRestoreOutcome.Indeterminate, port.DriverModeRestoreOutcome);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
     public async Task DriverModeCleanup_ReadbackMismatchRetainsOwnershipAndReportsIndeterminate(
         bool rz090528)
     {
@@ -2177,6 +2194,67 @@ public sealed partial class ProductionLightingPortTests
         await port.SetLightingAsync(requested, default);
 
         Assert.Null(await port.ReadStateAsync(default));
+    }
+
+
+    [Fact]
+    public async Task RustLightingOffParity_PortUsesOnlyKeyboardBrightnessAndIndependentGetters()
+    {
+        var session = new LightingSession(initialBrightness: 197);
+        var writer = new MatrixWriter();
+        await using var port = CreatePort(session, writer, admitted: true);
+
+        Assert.Null(await port.ReadStateAsync(default));
+        await port.SetLightingAsync(LightingSettingsFactory.Off(), default);
+        Assert.Equal(LightingSettingsFactory.Off(), await port.ReadStateAsync(default));
+
+        Assert.Equal(
+            ["03/83:010500", "03/83:010500", "03/03:010500", "03/83:010500", "03/83:010500"],
+            session.Commands.Select(command =>
+                $"{command.ClassId:X2}/{command.CommandId:X2}:{Convert.ToHexString(command.Arguments.Span)}"));
+        Assert.Equal(LightingRendererOwnershipState.None, port.OwnershipState);
+        Assert.Empty(writer.Reports);
+        Assert.True(session.LogoEnabled);
+        Assert.Equal(LogoLightingProtocol.StaticEffect, session.LogoEffect);
+    }
+
+    [Fact]
+    public async Task RustLightingOffParity_OwnedPortDrainsNativeFrameBeforeSetter()
+    {
+        var session = new LightingSession(initialBrightness: 197);
+        var writer = new MatrixWriter();
+        var time = new ManualTimeProvider();
+        await using var port = CreatePort(session, writer, admitted: true, timeProvider: time);
+        await port.SetLightingAsync(LightingSettingsFactory.SpectrumCycling(100), default);
+        int commandCount = session.Commands.Count;
+        int frameCount = writer.Reports.Count;
+
+        writer.BlockNextWrite();
+        time.Advance(Pid02E0LightingTiming.AnimatedFrameInterval);
+        await writer.WaitForWriteCountAsync(frameCount + 1, TestDeadlockGuard);
+        Task off = port.SetLightingAsync(LightingSettingsFactory.Off(), default);
+        try
+        {
+            Assert.False(off.IsCompleted);
+            Assert.Equal(commandCount, session.Commands.Count);
+            Assert.Equal(LightingRendererOwnershipState.Spectrum, port.OwnershipState);
+            Assert.False(writer.CancellationTokens[^1].CanBeCanceled);
+        }
+        finally
+        {
+            writer.ReleaseBlockedWrite();
+        }
+
+        await off.WaitAsync(TestDeadlockGuard);
+        Assert.Equal(LightingSettingsFactory.Off(), await port.ReadStateAsync(default));
+        Assert.Equal(
+            ["03/83:010500", "03/03:010500", "03/83:010500", "03/83:010500"],
+            session.Commands.Skip(commandCount).Select(command =>
+                $"{command.ClassId:X2}/{command.CommandId:X2}:{Convert.ToHexString(command.Arguments.Span)}"));
+        Assert.Equal(frameCount + 1, writer.Reports.Count);
+        Assert.Equal(LightingRendererOwnershipState.None, port.OwnershipState);
+        Assert.True(session.LogoEnabled);
+        Assert.Equal(LogoLightingProtocol.StaticEffect, session.LogoEffect);
     }
 
     [Fact]

@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Security.Principal;
 using OpenBlade.Contracts;
 
@@ -11,8 +12,12 @@ public sealed record UserConfigurationContext(
     ConfigurationLoadDisposition OverrideDisposition =
         ConfigurationLoadDisposition.Admitted,
     ConfigurationQuarantineReason OverrideQuarantineReason =
-        ConfigurationQuarantineReason.None)
+        ConfigurationQuarantineReason.None) : IAsyncDisposable
 {
+    internal UserConfigurationWriterScope? WriterScope { get; init; }
+
+    public ValueTask DisposeAsync() => WriterScope?.DisposeAsync() ?? ValueTask.CompletedTask;
+
     internal ThermalConvergenceStateStore? ThermalConvergenceStore { get; init; }
 
     internal ThermalConvergenceLoadResult? ThermalConvergence { get; init; }
@@ -41,11 +46,28 @@ public sealed class UserConfigurationRepository : IUserConfigurationRepository
     private readonly string machineDataDirectory;
     private readonly ProfileSetValidator validator;
     private readonly SemaphoreSlim migrationGate = new(1, 1);
+    private readonly Func<string, CancellationToken, IDisposable>? acquireVerifiedWriterLease;
+    private readonly Func<CancellationToken, Task>? beforeOverrideWrite;
+
+    internal bool UsesWriterLease => acquireVerifiedWriterLease is not null;
 
     public UserConfigurationRepository(
         string machineDataDirectory,
         ProfileSetValidator validator)
+        : this(machineDataDirectory, validator, acquireVerifiedWriterLease: null)
     {
+    }
+
+    // The injected verifier must pin this exact, already provisioned user root
+    // and its shared exclusive lock. Production composition does not supply it.
+    internal UserConfigurationRepository(
+        string machineDataDirectory,
+        ProfileSetValidator validator,
+        Func<string, CancellationToken, IDisposable>? acquireVerifiedWriterLease,
+        Func<CancellationToken, Task>? beforeOverrideWrite = null)
+    {
+        this.acquireVerifiedWriterLease = acquireVerifiedWriterLease;
+        this.beforeOverrideWrite = beforeOverrideWrite;
         this.machineDataDirectory = string.IsNullOrWhiteSpace(machineDataDirectory)
             ? throw new ArgumentException(
                 "A machine data directory is required.",
@@ -54,8 +76,16 @@ public sealed class UserConfigurationRepository : IUserConfigurationRepository
         this.validator = validator ?? throw new ArgumentNullException(nameof(validator));
     }
 
-    public async Task<UserConfigurationContext> LoadAsync(
+    public Task<UserConfigurationContext> LoadAsync(
         SecurityIdentifier userSid,
+        CancellationToken cancellationToken) =>
+        LoadAsync(userSid, existingScope: null, cancellationToken);
+
+    // An interrupted activation reloads and migrates under its existing handle.
+    // The runtime serializes the reload and retains ownership of that scope.
+    internal async Task<UserConfigurationContext> LoadAsync(
+        SecurityIdentifier userSid,
+        UserConfigurationWriterScope? existingScope,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(userSid);
@@ -65,53 +95,109 @@ public sealed class UserConfigurationRepository : IUserConfigurationRepository
         }
 
         string userDirectory = GetUserDirectory(userSid);
-        var store = new BatteryConfigurationStore(
-            Path.Combine(userDirectory, "profiles.json"),
-            Path.Combine(userDirectory, "battery-preferences.json"),
-            Path.Combine(userDirectory, "battery-configuration.commit.json"),
-            validator);
-        var overrides = new PersistentOverrideStore(
-            Path.Combine(userDirectory, "manual-overrides.json"));
-        var thermalConvergence = new ThermalConvergenceStateStore(
-            Path.Combine(userDirectory, "thermal-convergence.json"),
-            userSid);
-
+        string markerPath = Path.Combine(userDirectory, "battery-configuration.commit.json");
         await migrationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        UserConfigurationWriterScope? ownedScope = null;
         try
         {
-            Directory.CreateDirectory(userDirectory);
+            if (existingScope is not null)
+            {
+                existingScope.CheckRoot(markerPath);
+            }
+            else if (acquireVerifiedWriterLease is null)
+            {
+                Directory.CreateDirectory(userDirectory);
+            }
+            else
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                IDisposable lease;
+                try
+                {
+                    lease = acquireVerifiedWriterLease(userDirectory, cancellationToken)
+                        ?? throw new InvalidOperationException("The verified writer lease was not supplied.");
+                }
+                catch (Win32Exception exception)
+                {
+                    throw new IOException("Could not acquire the verified user configuration writer lease.", exception);
+                }
+                ownedScope = new UserConfigurationWriterScope(lease, markerPath);
+            }
+
+            UserConfigurationWriterScope? writerScope = existingScope ?? ownedScope;
+            if (writerScope is not null)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                BatteryConfigurationStore.CheckRecoveryRequired(markerPath);
+            }
+
+            var store = new BatteryConfigurationStore(
+                Path.Combine(userDirectory, "profiles.json"),
+                Path.Combine(userDirectory, "battery-preferences.json"),
+                markerPath,
+                validator,
+                postCommitBoundary: null,
+                transactionBoundary: null,
+                writerScope);
+            var overrides = new PersistentOverrideStore(
+                Path.Combine(userDirectory, "manual-overrides.json"),
+                beforeOverrideWrite,
+                writerScope);
+            var thermalConvergence = new ThermalConvergenceStateStore(
+                Path.Combine(userDirectory, "thermal-convergence.json"),
+                userSid,
+                writerScope);
+
             await MigrateLegacyOwnerAsync(
                 userSid,
                 store,
                 overrides,
                 cancellationToken).ConfigureAwait(false);
 
-            BatteryConfiguration configuration = await store
-                .LoadAsync(cancellationToken)
+            UserConfigurationContext context = await ReadContextAsync(
+                store, overrides, thermalConvergence, writerScope, cancellationToken)
                 .ConfigureAwait(false);
-            PersistentOverrideLoadResult loadedOverrides = await overrides
-                .LoadAsync(cancellationToken)
-                .ConfigureAwait(false);
-            ThermalConvergenceLoadResult loadedThermalConvergence =
-                await thermalConvergence
-                    .LoadAsync(cancellationToken)
-                    .ConfigureAwait(false);
-            return new UserConfigurationContext(
-                store,
-                overrides,
-                configuration,
-                loadedOverrides.Overrides,
-                loadedOverrides.Disposition,
-                loadedOverrides.QuarantineReason)
-            {
-                ThermalConvergenceStore = thermalConvergence,
-                ThermalConvergence = loadedThermalConvergence,
-            };
+            ownedScope = null; // The returned context owns a newly acquired scope.
+            return context;
         }
         finally
         {
-            migrationGate.Release();
+            try
+            {
+                if (ownedScope is not null)
+                {
+                    await ownedScope.DisposeAsync().ConfigureAwait(false);
+                }
+            }
+            finally
+            {
+                migrationGate.Release();
+            }
         }
+    }
+
+    private static async Task<UserConfigurationContext> ReadContextAsync(
+        BatteryConfigurationStore store,
+        PersistentOverrideStore overrides,
+        ThermalConvergenceStateStore thermalConvergence,
+        UserConfigurationWriterScope? writerScope,
+        CancellationToken cancellationToken)
+    {
+        BatteryConfiguration configuration = await store.LoadAsync(cancellationToken)
+            .ConfigureAwait(false);
+        PersistentOverrideLoadResult loadedOverrides = await overrides.LoadAsync(cancellationToken)
+            .ConfigureAwait(false);
+        ThermalConvergenceLoadResult loadedThermalConvergence =
+            await thermalConvergence.LoadAsync(cancellationToken).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+        return new UserConfigurationContext(
+            store, overrides, configuration, loadedOverrides.Overrides,
+            loadedOverrides.Disposition, loadedOverrides.QuarantineReason)
+        {
+            ThermalConvergenceStore = thermalConvergence,
+            ThermalConvergence = loadedThermalConvergence,
+            WriterScope = writerScope,
+        };
     }
 
     private string GetUserDirectory(SecurityIdentifier userSid)

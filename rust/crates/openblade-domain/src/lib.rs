@@ -4,6 +4,31 @@
 //! enum payloads and display values retain the host's validation order.
 #![no_std]
 
+#[cfg(any(
+    feature = "thermal-history",
+    feature = "profile-set",
+    feature = "driver-mode-history"
+))]
+extern crate std;
+
+#[cfg(feature = "thermal-history")]
+pub mod battery_history;
+#[cfg(feature = "driver-mode-history")]
+pub mod driver_mode_history;
+#[cfg(feature = "thermal-history")]
+pub mod fan_history;
+pub mod fan_recipe;
+#[cfg(feature = "thermal-history")]
+pub mod kind_first;
+#[cfg(feature = "profile-set")]
+pub mod profile_set;
+#[cfg(feature = "thermal-history")]
+pub mod temporary_charge_history;
+#[cfg(feature = "thermal-convergence")]
+pub mod thermal_convergence;
+pub mod thermal_mutation;
+pub mod thermal_observation;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct FanControlProjection {
     pub mode: i32,
@@ -130,4 +155,13 @@ pub fn apply_display<'a>(
     }
 }
 
+pub mod application_context;
 pub mod automation;
+pub mod function_row;
+pub mod low_power_gate;
+pub mod performance_shortcut;
+pub mod power_setting;
+pub mod recovery;
+
+#[cfg(feature = "thermal-history")]
+pub mod thermal_history;

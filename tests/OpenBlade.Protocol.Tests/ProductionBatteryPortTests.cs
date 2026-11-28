@@ -1,3 +1,4 @@
+using System.Text.Json;
 using OpenBlade.Contracts;
 using OpenBlade.Protocol;
 
@@ -1033,6 +1034,62 @@ public sealed partial class ProductionBatteryPortTests
             [$"0101{mode:X2}01", $"0102{mode:X2}01", $"0101{target:X2}", $"0102{target:X2}"],
             session.Commands.Where(command => command.CommandId is 0x02 or 0x01)
                 .Select(command => Convert.ToHexString(command.Arguments.Span)).ToArray());
+    }
+
+
+    [Fact]
+    public async Task RustFanParity_MatchesExactRz090581OrdinaryFanTransitionTrace()
+    {
+        using JsonDocument fixture = JsonDocument.Parse(File.ReadAllText(Path.Combine(
+            AppContext.BaseDirectory, "Parity", "rz09-0581-ordinary-fan-transitions.json")));
+        DeviceCommandCatalog catalog = CapturedFixtureFile.LoadCatalog(
+            ProductionFixtureSource.Read()!.Value,
+            TrustedFixtureHashRegistry.Production);
+        var identity = new HostIdentityReadResult(
+            new HostIdentityEvidence("Razer", "Blade 16 - RZ09-0581", "RZ09-05819EN4", "4.00"),
+            null,
+            HostFirmwareCompatibility.Tested);
+        bool direct = ProductionBatteryFactory.GetRz090581SupportsDirectManualFanTransitions(
+            identity, catalog, trustedExactFixture: true);
+        Assert.True(direct);
+
+        byte[] firstAutomatic = [0x01, 0x01, 0x02, 0x00];
+        byte[] secondAutomatic = [0x01, 0x02, 0x02, 0x00];
+        byte[] firstManual = [0x01, 0x01, 0x02, 0x01];
+        byte[] secondManual = [0x01, 0x02, 0x02, 0x01];
+        byte[] adapter = [0x11, 0x11];
+        var session = new ScriptedSession(
+            Success(firstAutomatic), Success(secondAutomatic),
+            Success(adapter), Success(firstManual),
+            Success(adapter), Success(secondManual),
+            Success(firstManual), Success(secondManual),
+            Success(adapter), Success([0x01, 0x01, 0x28]),
+            Success(adapter), Success([0x01, 0x02, 0x28]),
+            Success(firstManual), Success(secondManual),
+            Success(firstManual), Success(secondManual),
+            Success(adapter), Success(firstAutomatic),
+            Success(adapter), Success(secondAutomatic),
+            Success(firstAutomatic), Success(secondAutomatic));
+        await using var port = CreatePort(
+            session,
+            catalog,
+            ProductionBatteryFactory.GetRz090581ProductionBatteryReadEvidence(identity),
+            admittedAdapterPowerStates: ProductionBatteryFactory.GetRz090581AdmittedAdapterPowerStates(identity),
+            supportsDirectManualFanTransitions: direct);
+
+        await port.SetFanControlAsync(new(FanMode.Fixed, 4000, ManualFanCurve.Default), default);
+        AssertTrace("entry");
+
+        session.Commands.Clear();
+        await port.SetFanControlAsync(FanControlSettings.FromLegacy(FanMode.Automatic), default);
+        AssertTrace("handback");
+
+        void AssertTrace(string phase)
+        {
+            string[] expected = fixture.RootElement.GetProperty(phase).Deserialize<string[]>()!;
+            Assert.Equal(expected, session.Commands.Select(command =>
+                $"{command.ClassId:X2}{command.CommandId:X2}:{Convert.ToHexString(command.Arguments.Span)}"));
+        }
     }
 
     [Theory]
@@ -3242,6 +3299,29 @@ public sealed partial class ProductionBatteryPortTests
             supportsDirectManualFanTransitions: true, supportsBatterySaverFanStop: true);
         Assert.Equal(FanMode.Maximum, (await port.QueryPerformanceFanStateAsync(default)).Fans);
         Assert.Equal(2, session.Commands.Count);
+    }
+
+    [Fact]
+    public async Task NativePairedObservationParityUsesActualManagedReadPortWithNoWriteCapabilities()
+    {
+        using var fixture = System.Text.Json.JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory,
+            "Parity", "rz09-0581-thermal-pair-observation.json")));
+        foreach (var row in fixture.RootElement.GetProperty("cases").EnumerateArray())
+        {
+            byte mode = row.GetProperty("mode").GetByte();
+            byte fan = row.GetProperty("fan").GetByte();
+            var session = new ScriptedSession(Success([1, 1, mode, fan]), Success([1, 2, mode, fan]));
+            await using var port = CreatePort(session, DeviceCommandCatalog.Empty, supportsDirectManualFanTransitions: true);
+            var result = await port.QueryPerformanceFanStateAsync(default);
+            var preset = row.GetProperty("performance");
+            Assert.Equal(preset.ValueKind == System.Text.Json.JsonValueKind.Null ? null : (PerformancePreset?)preset.GetInt32(), result.Performance);
+            Assert.Equal((FanMode)row.GetProperty("fans").GetInt32(), result.Fans);
+            var hyperBoost = row.GetProperty("hyperBoostActive");
+            Assert.Equal(hyperBoost.ValueKind == System.Text.Json.JsonValueKind.Null ? null : (bool?)hyperBoost.GetBoolean(), result.HyperBoostActive);
+            Assert.Empty(port.Capabilities.PerformancePresets);
+            Assert.Empty(port.Capabilities.FanModes);
+            Assert.Equal(new byte[] { 0x82, 0x82 }, session.Commands.Select(command => command.CommandId));
+        }
     }
 
     private static ProductionBatteryPort CreatePort(

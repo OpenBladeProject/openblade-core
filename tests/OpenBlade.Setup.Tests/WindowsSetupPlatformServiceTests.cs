@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.IO.Pipes;
 using OpenBlade.Contracts;
 using OpenBlade.Setup;
 
@@ -8,6 +9,231 @@ namespace OpenBlade.Setup.Tests;
 [Collection(nameof(SetupDiagnosticTraceCollection))]
 public sealed class WindowsSetupPlatformServiceTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CandidateReadiness_BindsBothObservationsToTypedExchange(bool closeAfterResponse)
+    {
+        await using var fixture = new CandidateReadinessFixture();
+        Task verification = fixture.VerifyAsync();
+        Assert.Equal(fixture.Request, await fixture.ReadRequestAsync());
+        Assert.Equal(1, fixture.ServiceReads);
+        Assert.Equal(1, fixture.LaunchReads);
+
+        await fixture.SendResponseAsync();
+        if (closeAfterResponse)
+        {
+            fixture.Server.Close();
+        }
+        await verification;
+
+        Assert.Equal(1, fixture.Connections);
+        Assert.Equal(2, fixture.ServiceReads);
+        Assert.Equal(2, fixture.LaunchReads);
+        Assert.Empty(fixture.ServiceControl.Commands);
+    }
+
+    [Theory]
+    [InlineData("pipe peer")]
+    [InlineData("outgoing service PID")]
+    [InlineData("stopped service")]
+    [InlineData("service type")]
+    [InlineData("start type")]
+    [InlineData("service account")]
+    [InlineData("service command")]
+    [InlineData("process generation")]
+    [InlineData("image path")]
+    [InlineData("build digest")]
+    [InlineData("lost retained handle")]
+    public async Task CandidateReadiness_RejectsUnboundEvidenceBeforeWriting(string mismatch)
+    {
+        await using var fixture = new CandidateReadinessFixture(wrongPeer: mismatch == "pipe peer");
+        switch (mismatch)
+        {
+            case "outgoing service PID": fixture.Service = fixture.Service with { ProcessId = fixture.Launch.ProcessId + 1 }; break;
+            case "stopped service": fixture.Service = fixture.Service with { Running = false }; break;
+            case "service type": fixture.Service = fixture.Service with { ServiceType = 0x20 }; break;
+            case "start type": fixture.Service = fixture.Service with { StartType = 3 }; break;
+            case "service account": fixture.Service = fixture.Service with { Account = "LocalService" }; break;
+            case "service command": fixture.Service = fixture.Service with { CommandLine = fixture.Service.CommandLine + " --other" }; break;
+            case "process generation": fixture.ObservedLaunch = fixture.Launch with { CreationFileTimeUtc = 2 }; break;
+            case "image path": fixture.ObservedLaunch = fixture.Launch with { ExecutablePath = fixture.Launch.ExecutablePath + ".old" }; break;
+            case "build digest": fixture.ObservedLaunch = fixture.Launch with { ExecutableSha256 = new string('b', 64) }; break;
+            case "lost retained handle": fixture.ObservedLaunch = null; break;
+        }
+
+        Task verification = fixture.VerifyAsync();
+        await fixture.AcceptAsync();
+        await Assert.ThrowsAsync<IOException>(() => verification);
+
+        Assert.Equal(0, await fixture.Server.ReadAsync(new byte[1], fixture.Deadline.Token));
+        Assert.Equal(1, fixture.Connections);
+        Assert.Empty(fixture.ServiceControl.Commands);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CandidateReadiness_RejectsReplacementAfterAValidResponse(bool serviceChanged)
+    {
+        await using var fixture = new CandidateReadinessFixture();
+        Task verification = fixture.VerifyAsync();
+        Assert.Equal(fixture.Request, await fixture.ReadRequestAsync());
+
+        if (serviceChanged)
+        {
+            fixture.Service = fixture.Service with { ProcessId = fixture.Launch.ProcessId + 1 };
+        }
+        else
+        {
+            fixture.ObservedLaunch = fixture.Launch with { CreationFileTimeUtc = 2 };
+        }
+        await fixture.SendResponseAsync();
+
+        await Assert.ThrowsAsync<IOException>(() => verification);
+        Assert.Equal(1, fixture.Connections);
+        Assert.Equal(2, fixture.ServiceReads);
+        Assert.Empty(fixture.ServiceControl.Commands);
+    }
+
+    [Theory]
+    [InlineData("disconnect")]
+    [InlineData("request ID")]
+    [InlineData("protocol version")]
+    [InlineData("missing status")]
+    [InlineData("caller cancellation")]
+    public async Task CandidateReadiness_RequiresCompleteValidResponse(string failure)
+    {
+        await using var fixture = new CandidateReadinessFixture();
+        using var caller = CancellationTokenSource.CreateLinkedTokenSource(fixture.Deadline.Token);
+        Task verification = fixture.VerifyAsync(caller.Token);
+        Assert.Equal(fixture.Request, await fixture.ReadRequestAsync());
+
+        ServiceResponse response = SetupServiceHealthProbeTests.CreateStatusResponse(fixture.Request);
+        switch (failure)
+        {
+            case "disconnect":
+                fixture.Server.Close();
+                await Assert.ThrowsAnyAsync<IOException>(() => verification);
+                break;
+            case "request ID":
+                await fixture.SendResponseAsync(response with { RequestId = Guid.NewGuid() });
+                await Assert.ThrowsAsync<InvalidDataException>(() => verification);
+                break;
+            case "protocol version":
+                await IpcMessageCodec.WriteProtocol51ReadOnlyServerFrameAsync(fixture.Server, response, fixture.Deadline.Token);
+                await Assert.ThrowsAsync<IpcProtocolVersionMismatchException>(() => verification);
+                break;
+            case "missing status":
+                await fixture.SendResponseAsync(response with { Status = null, Success = false, Error = "Status unavailable." });
+                await Assert.ThrowsAsync<InvalidDataException>(() => verification);
+                break;
+            case "caller cancellation":
+                caller.Cancel();
+                await Assert.ThrowsAnyAsync<OperationCanceledException>(() => verification);
+                break;
+        }
+
+        Assert.Equal(1, fixture.Connections);
+        Assert.Equal(1, fixture.ServiceReads);
+        Assert.Empty(fixture.ServiceControl.Commands);
+    }
+
+    [Fact]
+    public async Task CandidateReadiness_BoundsAnUnansweredPipe()
+    {
+        await using var fixture = new CandidateReadinessFixture();
+        Task verification = fixture.VerifyAsync();
+        Assert.Equal(fixture.Request, await fixture.ReadRequestAsync());
+
+        await Assert.ThrowsAsync<TimeoutException>(() => verification);
+        Assert.Equal(1, fixture.Connections);
+        Assert.Equal(1, fixture.ServiceReads);
+        Assert.Empty(fixture.ServiceControl.Commands);
+    }
+
+    private sealed class CandidateReadinessFixture : ISetupRetainedCandidateLaunch, IAsyncDisposable
+    {
+        private readonly string pipeName = $"OpenBlade-candidate-test-{Guid.NewGuid():N}";
+        internal readonly CancellationTokenSource Deadline = new(TimeSpan.FromSeconds(20));
+        internal readonly NamedPipeServerStream Server;
+        internal readonly GetStatusRequest Request = new(OpenBladeIpc.ProtocolVersion, Guid.NewGuid());
+        internal readonly RecordingServiceControl ServiceControl = new();
+        internal readonly SetupCandidateLaunch Launch;
+        internal SetupCandidateLaunch? ObservedLaunch;
+        internal SetupCandidateServiceObservation Service;
+        internal int Connections, ServiceReads, LaunchReads;
+        private readonly Task accept;
+        private readonly WindowsSetupPlatform platform;
+
+        internal CandidateReadinessFixture(bool wrongPeer = false)
+        {
+            Server = new(pipeName, PipeDirection.InOut, 1, PipeTransmissionMode.Byte,
+                PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
+            accept = Server.WaitForConnectionAsync(Deadline.Token);
+            uint pid = (uint)Environment.ProcessId + (wrongPeer ? 1u : 0u);
+            string image = Path.Combine(Path.GetTempPath(), "phase9d-test", "OpenBlade.Service.exe");
+            Launch = new(pid, 1, image, new string('a', 64));
+            ObservedLaunch = Launch;
+            Service = new(pid, true, 0x10, 2, "LocalSystem", $"\"{image}\"");
+            platform = WindowsSetupPlatformTestFactory.Create(ServiceControl);
+        }
+
+        internal Task VerifyAsync(CancellationToken cancellationToken = default)
+            => platform.VerifyCandidateServiceHealthAsync(Launch, this, ReadServiceAsync,
+                new SetupServiceHealthProbe(ConnectAsync, () => Request),
+                cancellationToken == default ? Deadline.Token : cancellationToken);
+
+        private async ValueTask<Stream> ConnectAsync(CancellationToken token)
+        {
+            Connections++;
+            var client = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut,
+                PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
+            try
+            {
+                await client.ConnectAsync(token);
+                return client;
+            }
+            catch
+            {
+                await client.DisposeAsync();
+                throw;
+            }
+        }
+
+        private Task<SetupCandidateServiceObservation> ReadServiceAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ServiceReads++;
+            return Task.FromResult(Service);
+        }
+
+        public ValueTask<SetupCandidateLaunch?> ReadLiveAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            LaunchReads++;
+            return ValueTask.FromResult(ObservedLaunch);
+        }
+
+        internal Task AcceptAsync() => accept;
+
+        internal async Task<ServiceRequest> ReadRequestAsync()
+        {
+            await accept;
+            return await IpcMessageCodec.ReadRequestAsync(Server, Deadline.Token);
+        }
+
+        internal Task SendResponseAsync(ServiceResponse? response = null)
+            => IpcMessageCodec.WriteServerFrameAsync(Server,
+                response ?? SetupServiceHealthProbeTests.CreateStatusResponse(Request), Deadline.Token);
+
+        public async ValueTask DisposeAsync()
+        {
+            await Server.DisposeAsync();
+            Deadline.Dispose();
+        }
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

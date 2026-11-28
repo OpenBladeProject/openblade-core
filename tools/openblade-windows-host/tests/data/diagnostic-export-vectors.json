@@ -1,0 +1,613 @@
+{
+  "comment": "Native-authored inputs; expect is recorded by NativeDiagnosticExportVectorTests through the managed DiagnosticText, DiagnosticHistory, DiagnosticBundleExporter and ControlRequestHandler. Regenerate with OPENBLADE_REGENERATE_NATIVE_DIAGNOSTIC_EXPORT_VECTORS set to this directory.",
+  "redact": [
+    {
+      "name": "url credential",
+      "input": "fetch https://user:pa:ss@example.com/x and ftp://a@b and http://x:y/z@w",
+      "tokens": [],
+      "expect": "fetch https://[REDACTED]@example.com/x and ftp://a@b and http://x:y/z@w"
+    },
+    {
+      "name": "authorization header",
+      "input": "Authorization: Bearer abc.def, next AUTHORIZATION=\u0027Basic  zz;q\u0027 authorizationx: Bearer q",
+      "tokens": [],
+      "expect": "Authorization=[REDACTED], next AUTHORIZATION=[REDACTED] authorizationx: Bearer q"
+    },
+    {
+      "name": "credential members",
+      "input": "password=hunter2 token: \u0027abc def\u0027 apiKey=\u0022k 1\u0022 client_secret=x;y passwd:\u0022\u0022 pwd= 9",
+      "tokens": [],
+      "expect": "password=[REDACTED] token=[REDACTED] apiKey=[REDACTED] client_secret=[REDACTED];y passwd=[REDACTED] pwd=[REDACTED]"
+    },
+    {
+      "name": "credential prefixes",
+      "input": "accesstoken=1 id-token=2 refresh_token=3 mytoken=4 tokens=5 secret\u0027=6 api_key\t:\t7",
+      "tokens": [],
+      "expect": "accesstoken=[REDACTED] id-token=[REDACTED] refresh_token=[REDACTED] mytoken=4 tokens=5 secret=[REDACTED] api_key=[REDACTED]"
+    },
+    {
+      "name": "unterminated quote",
+      "input": "password=\u0022abc def and token=\u0027x",
+      "tokens": [],
+      "expect": "password=[REDACTED] def and token=[REDACTED]"
+    },
+    {
+      "name": "user paths",
+      "input": "C:\\Users\\Alice\\AppData d:\\users\\Bob /home/carol/x /Users/dave and C:\\Users\\",
+      "tokens": [],
+      "expect": "C:\\Users\\[USER]\\AppData d:\\users\\[USER] /home/[USER]/x /Users/[USER] and C:\\Users\\"
+    },
+    {
+      "name": "token boundaries",
+      "input": "DESKTOP-ABC desktop-abcd xDESKTOP-ABC (desktop-abc) DESKTOP-ABC_ DESKTOP-ABC9 -DESKTOP-ABC-",
+      "tokens": [
+        "DESKTOP-ABC"
+      ],
+      "expect": "[REDACTED] desktop-abcd xDESKTOP-ABC ([REDACTED]) DESKTOP-ABC_ DESKTOP-ABC9 -[REDACTED]-"
+    },
+    {
+      "name": "token order and duplicates",
+      "input": "abc ab AB ab_c a.b",
+      "tokens": [
+        "ab",
+        "AB",
+        "abc",
+        "a.b"
+      ],
+      "expect": "[REDACTED] [REDACTED] [REDACTED] ab_c [REDACTED]"
+    },
+    {
+      "name": "blank tokens",
+      "input": "kept text",
+      "tokens": [
+        "",
+        " ",
+        "\t"
+      ],
+      "expect": "kept text"
+    },
+    {
+      "name": "non-ascii boundary",
+      "input": "\u00FCber SYSTEM \u00DCSYSTEM SYSTEM\u00E9 syst\u00E8me",
+      "tokens": [
+        "system"
+      ],
+      "expect": "\u00FCber [REDACTED] \u00DCSYSTEM SYSTEM\u00E9 syst\u00E8me"
+    }
+  ],
+  "history": [
+    {
+      "name": "entry eviction and value truncation",
+      "limits": {
+        "entries": 2,
+        "characters": 1000,
+        "line": 20
+      },
+      "records": [
+        {
+          "at": "2026-11-23T10:00:00\u002B00:00",
+          "status": "Stored",
+          "summary": "first"
+        },
+        {
+          "at": "2026-11-23T10:00:01.5\u002B00:00",
+          "status": "Applied",
+          "summary": "a summary longer than twenty"
+        },
+        {
+          "at": "2026-11-23T10:00:02.1234567\u002B00:00",
+          "status": "Failed",
+          "summary": "third"
+        }
+      ],
+      "expect": {
+        "commandResults": "[\r\n  {\r\n    \u0022timestamp\u0022: \u00222026-11-23T10:00:01.5\\u002B00:00\u0022,\r\n    \u0022subsystem\u0022: \u0022Service\u0022,\r\n    \u0022action\u0022: \u0022Reconcile\u0022,\r\n    \u0022status\u0022: \u0022Applied\u0022,\r\n    \u0022detail\u0022: \u0022a summ...[truncated]\u0022,\r\n    \u0022transitionId\u0022: null\r\n  },\r\n  {\r\n    \u0022timestamp\u0022: \u00222026-11-23T10:00:02.1234567\\u002B00:00\u0022,\r\n    \u0022subsystem\u0022: \u0022Service\u0022,\r\n    \u0022action\u0022: \u0022Reconcile\u0022,\r\n    \u0022status\u0022: \u0022Failed\u0022,\r\n    \u0022detail\u0022: \u0022third\u0022,\r\n    \u0022transitionId\u0022: null\r\n  }\r\n]",
+        "serviceHistory": "{\r\n  \u0022evictedEntries\u0022: 1,\r\n  \u0022droppedEntries\u0022: 0,\r\n  \u0022truncatedValues\u0022: 1,\r\n  \u0022retainedEntries\u0022: 2,\r\n  \u0022retainedCharacters\u0022: 70\r\n}"
+      }
+    },
+    {
+      "name": "character eviction and drop",
+      "limits": {
+        "entries": 10,
+        "characters": 40,
+        "line": 4096
+      },
+      "records": [
+        {
+          "at": "2026-11-23T11:00:00\u002B00:00",
+          "status": "Blocked",
+          "summary": "0123456789"
+        },
+        {
+          "at": "2026-11-23T11:00:01\u002B00:00",
+          "status": "Blocked",
+          "summary": "abcdefghij"
+        },
+        {
+          "at": "2026-11-23T11:00:02\u002B00:00",
+          "status": "Blocked",
+          "summary": "this record is longer than forty characters"
+        },
+        {
+          "at": "2026-11-23T11:00:03\u002B00:00",
+          "status": "Stored",
+          "summary": ""
+        }
+      ],
+      "expect": {
+        "commandResults": "[\r\n  {\r\n    \u0022timestamp\u0022: \u00222026-11-23T11:00:03\\u002B00:00\u0022,\r\n    \u0022subsystem\u0022: \u0022Service\u0022,\r\n    \u0022action\u0022: \u0022Reconcile\u0022,\r\n    \u0022status\u0022: \u0022Stored\u0022,\r\n    \u0022detail\u0022: \u0022\u0022,\r\n    \u0022transitionId\u0022: null\r\n  }\r\n]",
+        "serviceHistory": "{\r\n  \u0022evictedEntries\u0022: 2,\r\n  \u0022droppedEntries\u0022: 1,\r\n  \u0022truncatedValues\u0022: 0,\r\n  \u0022retainedEntries\u0022: 1,\r\n  \u0022retainedCharacters\u0022: 22\r\n}"
+      }
+    },
+    {
+      "name": "line limit within the marker",
+      "limits": {
+        "entries": 4,
+        "characters": 1000,
+        "line": 5
+      },
+      "records": [
+        {
+          "at": "2026-11-23T12:00:00\u002B00:00",
+          "status": "Stored",
+          "summary": "abc"
+        }
+      ],
+      "expect": {
+        "commandResults": "[\r\n  {\r\n    \u0022timestamp\u0022: \u00222026-11-23T12:00:00\\u002B00:00\u0022,\r\n    \u0022subsystem\u0022: \u0022...[t\u0022,\r\n    \u0022action\u0022: \u0022...[t\u0022,\r\n    \u0022status\u0022: \u0022...[t\u0022,\r\n    \u0022detail\u0022: \u0022abc\u0022,\r\n    \u0022transitionId\u0022: null\r\n  }\r\n]",
+        "serviceHistory": "{\r\n  \u0022evictedEntries\u0022: 0,\r\n  \u0022droppedEntries\u0022: 0,\r\n  \u0022truncatedValues\u0022: 3,\r\n  \u0022retainedEntries\u0022: 1,\r\n  \u0022retainedCharacters\u0022: 18\r\n}"
+      }
+    },
+    {
+      "name": "flattened and redacted summary",
+      "limits": {
+        "entries": 4,
+        "characters": 4096,
+        "line": 4096
+      },
+      "records": [
+        {
+          "at": "2026-11-23T13:00:00.0000001\u002B00:00",
+          "status": "Applied",
+          "summary": "line1\r\nline2\rline3\npassword=x C:\\Users\\Alice\\ok \u0022quoted\u0022 \u003Ctag\u003E \u0026 \u00E9"
+        }
+      ],
+      "expect": {
+        "commandResults": "[\r\n  {\r\n    \u0022timestamp\u0022: \u00222026-11-23T13:00:00.0000001\\u002B00:00\u0022,\r\n    \u0022subsystem\u0022: \u0022Service\u0022,\r\n    \u0022action\u0022: \u0022Reconcile\u0022,\r\n    \u0022status\u0022: \u0022Applied\u0022,\r\n    \u0022detail\u0022: \u0022line1  line2 line3 password=[REDACTED] C:\\\\Users\\\\[USER]\\\\ok \\u0022quoted\\u0022 \\u003Ctag\\u003E \\u0026 \\u00E9\u0022,\r\n    \u0022transitionId\u0022: null\r\n  }\r\n]",
+        "serviceHistory": "{\r\n  \u0022evictedEntries\u0022: 0,\r\n  \u0022droppedEntries\u0022: 0,\r\n  \u0022truncatedValues\u0022: 0,\r\n  \u0022retainedEntries\u0022: 1,\r\n  \u0022retainedCharacters\u0022: 99\r\n}"
+      }
+    }
+  ],
+  "bundles": [
+    {
+      "name": "typed sections and escaping",
+      "input": {
+        "versions": {
+          "openBladeVersion": "1.2.3\u002Babc",
+          "windowsVersion": "Microsoft Windows NT 10.0.26300.0",
+          "biosVersion": "4.01",
+          "ecVersion": "Unavailable",
+          "mcuVersion": "1.9.0.0",
+          "vbiosVersion": "Unavailable",
+          "vbiosGpuName": "NVIDIA \u003CGPU\u003E \u0026 \u0022x\u0022",
+          "thunderboltFirmwareVersion": "Unavailable",
+          "touchpadFirmwareVersion": "Unavailable",
+          "thunderboltFirmwareAccess": "ReadOnly",
+          "touchpadFirmwareAccess": null
+        },
+        "device": {
+          "model": "RZ09-0581",
+          "vendorId": "1532",
+          "productId": "02E0"
+        },
+        "capabilities": {
+          "z.last": true,
+          "a.first": false,
+          "lighting.Wave": true
+        },
+        "configuration": {
+          "status.message": "Hello \u003Cworld\u003E \u0026 \u0022q\u0022 \u0027a\u0027 \u002B\u0060\\ /",
+          "power.source": "Battery",
+          "status.potentialControllers": ""
+        },
+        "commandResults": [
+          {
+            "timestamp": "2026-11-23T10:00:00\u002B00:00",
+            "subsystem": "Service",
+            "action": "Reconcile",
+            "status": "Stored",
+            "detail": "Profiles stored without automatic hardware application."
+          },
+          {
+            "timestamp": "2026-11-23T10:00:01.1200000\u002B00:00",
+            "subsystem": "Lighting",
+            "action": "Reconcile",
+            "status": "Failed",
+            "detail": null
+          }
+        ],
+        "logLines": [
+          "line one",
+          "\u00FCnicode \uD83D\uDE00 \u0001 tab\t quote\u0022 back\\ \u2028 \u007F"
+        ],
+        "tokens": [],
+        "evicted": 3,
+        "dropped": 1,
+        "truncated": 2,
+        "characters": 171
+      },
+      "expect": [
+        [
+          "versions.json",
+          "{\r\n  \u0022openBladeVersion\u0022: \u00221.2.3\\u002Babc\u0022,\r\n  \u0022windowsVersion\u0022: \u0022Microsoft Windows NT 10.0.26300.0\u0022,\r\n  \u0022biosVersion\u0022: \u00224.01\u0022,\r\n  \u0022ecVersion\u0022: \u0022Unavailable\u0022,\r\n  \u0022mcuVersion\u0022: \u00221.9.0.0\u0022,\r\n  \u0022vbiosVersion\u0022: \u0022Unavailable\u0022,\r\n  \u0022vbiosGpuName\u0022: \u0022NVIDIA \\u003CGPU\\u003E \\u0026 \\u0022x\\u0022\u0022,\r\n  \u0022thunderboltFirmwareVersion\u0022: \u0022Unavailable\u0022,\r\n  \u0022touchpadFirmwareVersion\u0022: \u0022Unavailable\u0022,\r\n  \u0022thunderboltFirmwareAccess\u0022: \u0022ReadOnly\u0022,\r\n  \u0022touchpadFirmwareAccess\u0022: null\r\n}"
+        ],
+        [
+          "device.json",
+          "{\r\n  \u0022model\u0022: \u0022RZ09-0581\u0022,\r\n  \u0022vendorId\u0022: \u00221532\u0022,\r\n  \u0022productId\u0022: \u002202E0\u0022,\r\n  \u0022serialNumber\u0022: null\r\n}"
+        ],
+        [
+          "device-verification.json",
+          "{\r\n  \u0022latestAttempt\u0022: null,\r\n  \u0022lastFailure\u0022: null,\r\n  \u0022evidenceSource\u0022: \u0022CachedServiceAdvisoryProbe\u0022\r\n}"
+        ],
+        [
+          "capabilities.json",
+          "{\r\n  \u0022a.first\u0022: false,\r\n  \u0022lighting.Wave\u0022: true,\r\n  \u0022z.last\u0022: true\r\n}"
+        ],
+        [
+          "configuration.json",
+          "{\r\n  \u0022power.source\u0022: \u0022Battery\u0022,\r\n  \u0022status.message\u0022: \u0022Hello \\u003Cworld\\u003E \\u0026 \\u0022q\\u0022 \\u0027a\\u0027 \\u002B\\u0060\\\\ /\u0022,\r\n  \u0022status.potentialControllers\u0022: \u0022\u0022\r\n}"
+        ],
+        [
+          "command-results.json",
+          "[\r\n  {\r\n    \u0022timestamp\u0022: \u00222026-11-23T10:00:00\\u002B00:00\u0022,\r\n    \u0022subsystem\u0022: \u0022Service\u0022,\r\n    \u0022action\u0022: \u0022Reconcile\u0022,\r\n    \u0022status\u0022: \u0022Stored\u0022,\r\n    \u0022detail\u0022: \u0022Profiles stored without automatic hardware application.\u0022,\r\n    \u0022transitionId\u0022: null\r\n  },\r\n  {\r\n    \u0022timestamp\u0022: \u00222026-11-23T10:00:01.12\\u002B00:00\u0022,\r\n    \u0022subsystem\u0022: \u0022Lighting\u0022,\r\n    \u0022action\u0022: \u0022Reconcile\u0022,\r\n    \u0022status\u0022: \u0022Failed\u0022,\r\n    \u0022detail\u0022: null,\r\n    \u0022transitionId\u0022: null\r\n  }\r\n]"
+        ],
+        [
+          "service-history.json",
+          "{\r\n  \u0022evictedEntries\u0022: 3,\r\n  \u0022droppedEntries\u0022: 1,\r\n  \u0022truncatedValues\u0022: 2,\r\n  \u0022retainedEntries\u0022: 4,\r\n  \u0022retainedCharacters\u0022: 171\r\n}"
+        ],
+        [
+          "firmware-queries.json",
+          "[]"
+        ],
+        [
+          "hyperboost-ownership.json",
+          "{\r\n  \u0022exists\u0022: false,\r\n  \u0022valid\u0022: true,\r\n  \u0022state\u0022: null,\r\n  \u0022baseMode\u0022: null,\r\n  \u0022requiresCoolingPad\u0022: null,\r\n  \u0022restoreIntent\u0022: null,\r\n  \u0022sha256\u0022: null,\r\n  \u0022restoreRetryDisposition\u0022: null,\r\n  \u0022restoreRetryTarget\u0022: null,\r\n  \u0022transitionId\u0022: null\r\n}"
+        ],
+        [
+          "logs.jsonl",
+          "{\u0022line\u0022:\u0022line one\u0022}\r\n{\u0022line\u0022:\u0022\\u00FCnicode \\uD83D\\uDE00 \\u0001 tab\\t quote\\u0022 back\\\\ \\u2028 \\u007F\u0022}\r\n"
+        ]
+      ]
+    },
+    {
+      "name": "token redaction of names and values",
+      "input": {
+        "versions": {
+          "openBladeVersion": "1.0.0",
+          "windowsVersion": "Windows for alice",
+          "biosVersion": "Alice",
+          "ecVersion": "Unavailable",
+          "mcuVersion": "Unavailable",
+          "vbiosVersion": "Unavailable",
+          "vbiosGpuName": "Unavailable",
+          "thunderboltFirmwareVersion": "Unavailable",
+          "touchpadFirmwareVersion": "Unavailable",
+          "thunderboltFirmwareAccess": null,
+          "touchpadFirmwareAccess": null
+        },
+        "device": {
+          "model": "RZ09-ALICE",
+          "vendorId": "Unavailable",
+          "productId": "Unavailable"
+        },
+        "capabilities": {
+          "alice.key": true
+        },
+        "configuration": {
+          "status.message": "Hello ALICE in C:\\Users\\alice\\x",
+          "line": "version"
+        },
+        "commandResults": [
+          {
+            "timestamp": "2026-11-23T10:00:00\u002B00:00",
+            "subsystem": "alice",
+            "action": "Version",
+            "status": "Stored",
+            "detail": "for Alice"
+          }
+        ],
+        "logLines": [
+          "line by alice"
+        ],
+        "tokens": [
+          "Version",
+          "alice",
+          "line",
+          "  "
+        ],
+        "evicted": 0,
+        "dropped": 0,
+        "truncated": 0,
+        "characters": 40
+      },
+      "expect": [
+        [
+          "versions.json",
+          "{\r\n  \u0022openBlade[REDACTED]\u0022: \u00221.0.0\u0022,\r\n  \u0022windows[REDACTED]\u0022: \u0022Windows for [REDACTED]\u0022,\r\n  \u0022bios[REDACTED]\u0022: \u0022[REDACTED]\u0022,\r\n  \u0022ec[REDACTED]\u0022: \u0022Unavailable\u0022,\r\n  \u0022mcu[REDACTED]\u0022: \u0022Unavailable\u0022,\r\n  \u0022vbios[REDACTED]\u0022: \u0022Unavailable\u0022,\r\n  \u0022vbiosGpuName\u0022: \u0022Unavailable\u0022,\r\n  \u0022thunderboltFirmware[REDACTED]\u0022: \u0022Unavailable\u0022,\r\n  \u0022touchpadFirmware[REDACTED]\u0022: \u0022Unavailable\u0022,\r\n  \u0022thunderboltFirmwareAccess\u0022: null,\r\n  \u0022touchpadFirmwareAccess\u0022: null\r\n}"
+        ],
+        [
+          "device.json",
+          "{\r\n  \u0022model\u0022: \u0022RZ09-[REDACTED]\u0022,\r\n  \u0022vendorId\u0022: \u0022Unavailable\u0022,\r\n  \u0022productId\u0022: \u0022Unavailable\u0022,\r\n  \u0022serialNumber\u0022: null\r\n}"
+        ],
+        [
+          "device-verification.json",
+          "{\r\n  \u0022latestAttempt\u0022: null,\r\n  \u0022lastFailure\u0022: null,\r\n  \u0022evidenceSource\u0022: \u0022CachedServiceAdvisoryProbe\u0022\r\n}"
+        ],
+        [
+          "capabilities.json",
+          "{\r\n  \u0022[REDACTED].key\u0022: true\r\n}"
+        ],
+        [
+          "configuration.json",
+          "{\r\n  \u0022[REDACTED]\u0022: \u0022[REDACTED]\u0022,\r\n  \u0022status.message\u0022: \u0022Hello [REDACTED] in C:\\\\Users\\\\[REDACTED]\\\\x\u0022\r\n}"
+        ],
+        [
+          "command-results.json",
+          "[\r\n  {\r\n    \u0022timestamp\u0022: \u00222026-11-23T10:00:00\\u002B00:00\u0022,\r\n    \u0022subsystem\u0022: \u0022[REDACTED]\u0022,\r\n    \u0022action\u0022: \u0022[REDACTED]\u0022,\r\n    \u0022status\u0022: \u0022Stored\u0022,\r\n    \u0022detail\u0022: \u0022for [REDACTED]\u0022,\r\n    \u0022transitionId\u0022: null\r\n  }\r\n]"
+        ],
+        [
+          "service-history.json",
+          "{\r\n  \u0022evictedEntries\u0022: 0,\r\n  \u0022droppedEntries\u0022: 0,\r\n  \u0022truncatedValues\u0022: 0,\r\n  \u0022retainedEntries\u0022: 2,\r\n  \u0022retainedCharacters\u0022: 40\r\n}"
+        ],
+        [
+          "firmware-queries.json",
+          "[]"
+        ],
+        [
+          "hyperboost-ownership.json",
+          "{\r\n  \u0022exists\u0022: false,\r\n  \u0022valid\u0022: true,\r\n  \u0022state\u0022: null,\r\n  \u0022baseMode\u0022: null,\r\n  \u0022requiresCoolingPad\u0022: null,\r\n  \u0022restoreIntent\u0022: null,\r\n  \u0022sha256\u0022: null,\r\n  \u0022restoreRetryDisposition\u0022: null,\r\n  \u0022restoreRetryTarget\u0022: null,\r\n  \u0022transitionId\u0022: null\r\n}"
+        ],
+        [
+          "logs.jsonl",
+          "{\u0022[REDACTED]\u0022:\u0022[REDACTED] by [REDACTED]\u0022}\r\n"
+        ]
+      ]
+    },
+    {
+      "name": "token inside the replacement",
+      "input": {
+        "versions": {
+          "openBladeVersion": "redacted",
+          "windowsVersion": "Windows",
+          "biosVersion": "Unavailable",
+          "ecVersion": "Unavailable",
+          "mcuVersion": "Unavailable",
+          "vbiosVersion": "Unavailable",
+          "vbiosGpuName": "Unavailable",
+          "thunderboltFirmwareVersion": "Unavailable",
+          "touchpadFirmwareVersion": "Unavailable",
+          "thunderboltFirmwareAccess": null,
+          "touchpadFirmwareAccess": null
+        },
+        "device": {
+          "model": "Unavailable",
+          "vendorId": "Unavailable",
+          "productId": "Unavailable"
+        },
+        "capabilities": {},
+        "configuration": {
+          "k": "REDACTED and dact"
+        },
+        "commandResults": [],
+        "logLines": [
+          "dact"
+        ],
+        "tokens": [
+          "DACT"
+        ],
+        "evicted": 0,
+        "dropped": 0,
+        "truncated": 0,
+        "characters": 4
+      },
+      "expect": [
+        [
+          "versions.json",
+          "{\r\n  \u0022openBladeVersion\u0022: \u0022reed\u0022,\r\n  \u0022windowsVersion\u0022: \u0022Windows\u0022,\r\n  \u0022biosVersion\u0022: \u0022Unavailable\u0022,\r\n  \u0022ecVersion\u0022: \u0022Unavailable\u0022,\r\n  \u0022mcuVersion\u0022: \u0022Unavailable\u0022,\r\n  \u0022vbiosVersion\u0022: \u0022Unavailable\u0022,\r\n  \u0022vbiosGpuName\u0022: \u0022Unavailable\u0022,\r\n  \u0022thunderboltFirmwareVersion\u0022: \u0022Unavailable\u0022,\r\n  \u0022touchpadFirmwareVersion\u0022: \u0022Unavailable\u0022,\r\n  \u0022thunderboltFirmwareAccess\u0022: null,\r\n  \u0022touchpadFirmwareAccess\u0022: null\r\n}"
+        ],
+        [
+          "device.json",
+          "{\r\n  \u0022model\u0022: \u0022Unavailable\u0022,\r\n  \u0022vendorId\u0022: \u0022Unavailable\u0022,\r\n  \u0022productId\u0022: \u0022Unavailable\u0022,\r\n  \u0022serialNumber\u0022: null\r\n}"
+        ],
+        [
+          "device-verification.json",
+          "{\r\n  \u0022latestAttempt\u0022: null,\r\n  \u0022lastFailure\u0022: null,\r\n  \u0022evidenceSource\u0022: \u0022CachedServiceAdvisoryProbe\u0022\r\n}"
+        ],
+        [
+          "capabilities.json",
+          "{}"
+        ],
+        [
+          "configuration.json",
+          "{\r\n  \u0022k\u0022: \u0022REED and \u0022\r\n}"
+        ],
+        [
+          "command-results.json",
+          "[]"
+        ],
+        [
+          "service-history.json",
+          "{\r\n  \u0022evictedEntries\u0022: 0,\r\n  \u0022droppedEntries\u0022: 0,\r\n  \u0022truncatedValues\u0022: 0,\r\n  \u0022retainedEntries\u0022: 1,\r\n  \u0022retainedCharacters\u0022: 4\r\n}"
+        ],
+        [
+          "firmware-queries.json",
+          "[]"
+        ],
+        [
+          "hyperboost-ownership.json",
+          "{\r\n  \u0022exists\u0022: false,\r\n  \u0022valid\u0022: true,\r\n  \u0022state\u0022: null,\r\n  \u0022baseMode\u0022: null,\r\n  \u0022requiresCoolingPad\u0022: null,\r\n  \u0022restoreIntent\u0022: null,\r\n  \u0022sha256\u0022: null,\r\n  \u0022restoreRetryDisposition\u0022: null,\r\n  \u0022restoreRetryTarget\u0022: null,\r\n  \u0022transitionId\u0022: null\r\n}"
+        ],
+        [
+          "logs.jsonl",
+          "{\u0022line\u0022:\u0022\u0022}\r\n"
+        ]
+      ]
+    },
+    {
+      "name": "empty sections",
+      "input": {
+        "versions": {
+          "openBladeVersion": "Unavailable",
+          "windowsVersion": "Windows",
+          "biosVersion": "Unavailable",
+          "ecVersion": "Unavailable",
+          "mcuVersion": "Unavailable",
+          "vbiosVersion": "Unavailable",
+          "vbiosGpuName": "Unavailable",
+          "thunderboltFirmwareVersion": "Unavailable",
+          "touchpadFirmwareVersion": "Unavailable",
+          "thunderboltFirmwareAccess": null,
+          "touchpadFirmwareAccess": null
+        },
+        "device": {
+          "model": "Unavailable",
+          "vendorId": "Unavailable",
+          "productId": "Unavailable"
+        },
+        "capabilities": {},
+        "configuration": {},
+        "commandResults": [],
+        "logLines": [],
+        "tokens": [],
+        "evicted": 0,
+        "dropped": 0,
+        "truncated": 0,
+        "characters": 0
+      },
+      "expect": [
+        [
+          "versions.json",
+          "{\r\n  \u0022openBladeVersion\u0022: \u0022Unavailable\u0022,\r\n  \u0022windowsVersion\u0022: \u0022Windows\u0022,\r\n  \u0022biosVersion\u0022: \u0022Unavailable\u0022,\r\n  \u0022ecVersion\u0022: \u0022Unavailable\u0022,\r\n  \u0022mcuVersion\u0022: \u0022Unavailable\u0022,\r\n  \u0022vbiosVersion\u0022: \u0022Unavailable\u0022,\r\n  \u0022vbiosGpuName\u0022: \u0022Unavailable\u0022,\r\n  \u0022thunderboltFirmwareVersion\u0022: \u0022Unavailable\u0022,\r\n  \u0022touchpadFirmwareVersion\u0022: \u0022Unavailable\u0022,\r\n  \u0022thunderboltFirmwareAccess\u0022: null,\r\n  \u0022touchpadFirmwareAccess\u0022: null\r\n}"
+        ],
+        [
+          "device.json",
+          "{\r\n  \u0022model\u0022: \u0022Unavailable\u0022,\r\n  \u0022vendorId\u0022: \u0022Unavailable\u0022,\r\n  \u0022productId\u0022: \u0022Unavailable\u0022,\r\n  \u0022serialNumber\u0022: null\r\n}"
+        ],
+        [
+          "device-verification.json",
+          "{\r\n  \u0022latestAttempt\u0022: null,\r\n  \u0022lastFailure\u0022: null,\r\n  \u0022evidenceSource\u0022: \u0022CachedServiceAdvisoryProbe\u0022\r\n}"
+        ],
+        [
+          "capabilities.json",
+          "{}"
+        ],
+        [
+          "configuration.json",
+          "{}"
+        ],
+        [
+          "command-results.json",
+          "[]"
+        ],
+        [
+          "service-history.json",
+          "{\r\n  \u0022evictedEntries\u0022: 0,\r\n  \u0022droppedEntries\u0022: 0,\r\n  \u0022truncatedValues\u0022: 0,\r\n  \u0022retainedEntries\u0022: 0,\r\n  \u0022retainedCharacters\u0022: 0\r\n}"
+        ],
+        [
+          "firmware-queries.json",
+          "[]"
+        ],
+        [
+          "hyperboost-ownership.json",
+          "{\r\n  \u0022exists\u0022: false,\r\n  \u0022valid\u0022: true,\r\n  \u0022state\u0022: null,\r\n  \u0022baseMode\u0022: null,\r\n  \u0022requiresCoolingPad\u0022: null,\r\n  \u0022restoreIntent\u0022: null,\r\n  \u0022sha256\u0022: null,\r\n  \u0022restoreRetryDisposition\u0022: null,\r\n  \u0022restoreRetryTarget\u0022: null,\r\n  \u0022transitionId\u0022: null\r\n}"
+        ],
+        [
+          "logs.jsonl",
+          ""
+        ]
+      ]
+    }
+  ],
+  "refusals": [
+    {
+      "name": "inactive console session",
+      "caller": "inactiveInteractive",
+      "failure": null,
+      "expect": {
+        "frame": "response",
+        "requestId": "8f3c2a71-5d4e-4b6a-9c1f-2e7d0a9b4c31",
+        "success": false,
+        "error": "Another Windows session currently controls OpenBlade hardware.",
+        "status": null,
+        "result": null,
+        "archive": null,
+        "errorCode": null,
+        "version": 91
+      }
+    },
+    {
+      "name": "remote interactive session",
+      "caller": "remoteInteractive",
+      "failure": null,
+      "expect": {
+        "frame": "response",
+        "requestId": "8f3c2a71-5d4e-4b6a-9c1f-2e7d0a9b4c31",
+        "success": false,
+        "error": "Another Windows session currently controls OpenBlade hardware.",
+        "status": null,
+        "result": null,
+        "archive": null,
+        "errorCode": null,
+        "version": 91
+      }
+    },
+    {
+      "name": "non-interactive caller",
+      "caller": "notInteractive",
+      "failure": null,
+      "expect": {
+        "frame": "response",
+        "requestId": "8f3c2a71-5d4e-4b6a-9c1f-2e7d0a9b4c31",
+        "success": false,
+        "error": "OpenBlade accepts control requests only from an interactive Windows session.",
+        "status": null,
+        "result": null,
+        "archive": null,
+        "errorCode": null,
+        "version": 91
+      }
+    },
+    {
+      "name": "archive over the bound",
+      "caller": "system",
+      "failure": "Diagnostic archive exceeds the 16 MiB limit.",
+      "expect": {
+        "frame": "response",
+        "requestId": "8f3c2a71-5d4e-4b6a-9c1f-2e7d0a9b4c31",
+        "success": false,
+        "error": "Diagnostic export failed: Diagnostic archive exceeds the 16 MiB limit.",
+        "status": null,
+        "result": null,
+        "archive": null,
+        "errorCode": null,
+        "version": 91
+      }
+    },
+    {
+      "name": "source failure",
+      "caller": "system",
+      "failure": "Diagnostic history is unavailable.",
+      "expect": {
+        "frame": "response",
+        "requestId": "8f3c2a71-5d4e-4b6a-9c1f-2e7d0a9b4c31",
+        "success": false,
+        "error": "Diagnostic export failed: Diagnostic history is unavailable.",
+        "status": null,
+        "result": null,
+        "archive": null,
+        "errorCode": null,
+        "version": 91
+      }
+    }
+  ]
+}

@@ -878,6 +878,10 @@ internal sealed partial class ProductionLightingSession
         }
     }
 
+    private Task ownerRetirement = Task.CompletedTask;
+    private IProductionLightingPort? retirementOwner;
+    internal Task OwnerRetirement => retirementOwner is null ? Task.CompletedTask : ownerRetirement;
+
     internal async Task DisposeLightingPortWithinDeadlineAsync()
     {
         IProductionLightingPort? currentLighting = lightingPort;
@@ -890,6 +894,12 @@ internal sealed partial class ProductionLightingSession
 
         try
         {
+            // Keep the actual single CloseAsync task separately from its bounded
+            // presentation waiter. It may still need admitted final cleanup.
+            // Keep the owner itself rooted on close failure, including after a
+            // faulted task has released its asynchronous state-machine fields.
+            retirementOwner = currentLighting;
+            ownerRetirement = Task.WhenAll(ownerRetirement, currentLighting.DisposeAsync().AsTask());
             bool drained = await currentLighting
                 .DisposeWithinCleanupDeadlineAsync()
                 .ConfigureAwait(false);
@@ -904,6 +914,7 @@ internal sealed partial class ProductionLightingSession
             logger?.LogError(
                 exception,
                 "The production lighting port failed during device-provider shutdown.");
+            ownerRetirement = Task.WhenAll(ownerRetirement, Task.FromException(exception));
         }
     }
 

@@ -11,22 +11,29 @@ internal readonly record struct NativeCallResult(bool Succeeded, int ErrorCode);
 internal sealed class NativeCompletionContext
 {
     private readonly Action<NativeIoCompletion> callback;
+    private readonly MailboxLifetime.Participation? lifetime;
     private int completed;
 
-    internal NativeCompletionContext(Action<NativeIoCompletion> callback)
+    internal NativeCompletionContext(Action<NativeIoCompletion> callback, MailboxLifetime.Participation? lifetime = null)
     {
         ArgumentNullException.ThrowIfNull(callback);
         this.callback = callback;
+        this.lifetime = lifetime;
     }
 
     internal void Complete(uint errorCode, uint bytesTransferred)
     {
         if (Interlocked.Exchange(ref completed, 1) == 0)
         {
-            callback(new NativeIoCompletion(
-                errorCode == 0,
-                unchecked((int)bytesTransferred),
-                unchecked((int)errorCode)));
+            using var participation = lifetime?.Child();
+            try
+            {
+                callback(new NativeIoCompletion(
+                    errorCode == 0,
+                    unchecked((int)bytesTransferred),
+                    unchecked((int)errorCode)));
+            }
+            catch (Exception error) { participation?.Fail(error); throw; }
         }
     }
 }
@@ -64,6 +71,14 @@ internal sealed partial class WindowsHidNative : IHidCandidateNative, IOverlappe
     private const uint Present = 0x00000002;
     private const uint DeviceInterface = 0x00000010;
     private readonly IWindowsHidKernel kernel;
+    private readonly MailboxLifetime? lifetime;
+    private readonly Func<string, HidOpenParameters, SafeFileHandle>? openForTests;
+
+    internal WindowsHidNative(MailboxLifetime? lifetime) : this(WindowsHidKernel.Instance) { this.lifetime = lifetime; }
+
+    internal WindowsHidNative(MailboxLifetime lifetime, Func<string, HidOpenParameters, SafeFileHandle> openForTests)
+        : this(lifetime)
+    { this.openForTests = openForTests; }
 
     internal WindowsHidNative()
         : this(WindowsHidKernel.Instance)
@@ -119,22 +134,28 @@ internal sealed partial class WindowsHidNative : IHidCandidateNative, IOverlappe
         IntPtr security = parameters.Inheritable
             ? (IntPtr)(&securityAttributes)
             : IntPtr.Zero;
-        SafeFileHandle fileHandle = CreateFile(
-            path,
-            parameters.DesiredAccess,
-            parameters.ShareMode,
-            security,
-            parameters.CreationDisposition,
-            parameters.FlagsAndAttributes,
-            IntPtr.Zero);
-        if (fileHandle.IsInvalid)
+        var participation = lifetime?.Reserve();
+        try
         {
-            int error = Marshal.GetLastWin32Error();
-            fileHandle.Dispose();
-            return new(null, error);
-        }
+            SafeFileHandle fileHandle = openForTests is not null ? openForTests(path, parameters) : CreateFile(
+                path,
+                parameters.DesiredAccess,
+                parameters.ShareMode,
+                security,
+                parameters.CreationDisposition,
+                parameters.FlagsAndAttributes,
+                IntPtr.Zero);
+            if (fileHandle.IsInvalid)
+            {
+                int error = Marshal.GetLastWin32Error();
+                fileHandle.Dispose();
+                participation?.Dispose();
+                return new(null, error);
+            }
 
-        return new(new OpenedCandidateHandle(fileHandle), null);
+            return new(new OpenedCandidateHandle(fileHandle) { Lifetime = participation }, null);
+        }
+        catch (Exception error) { participation?.Fail(error); participation?.Dispose(); throw; }
     }
 
     public HidHandleIdentity ReadIdentity(OpenedCandidateHandle handle)
@@ -183,12 +204,14 @@ internal sealed partial class WindowsHidNative : IHidCandidateNative, IOverlappe
         try
         {
             transferredFileHandle = handle.TransferOwnership();
-            OpenedHidHandle opened = new(transferredFileHandle, boundHandle);
+            OpenedHidHandle opened = new(transferredFileHandle, boundHandle) { Lifetime = handle.Lifetime };
             transferredFileHandle = null;
             return opened;
         }
-        catch
+        catch (Exception error)
         {
+            handle.Lifetime?.Fail(error);
+            handle.Lifetime?.Dispose();
             boundHandle.Dispose();
             transferredFileHandle?.Dispose();
             throw;
@@ -224,7 +247,7 @@ internal sealed partial class WindowsHidNative : IHidCandidateNative, IOverlappe
         bool attached = false;
         try
         {
-            var completionContext = new NativeCompletionContext(completionCallback);
+            var completionContext = new NativeCompletionContext(completionCallback, operation.Lifetime);
             overlapped = kernel.AllocateNativeOverlapped(
                 handle.BoundHandle,
                 completionContext,
@@ -244,6 +267,7 @@ internal sealed partial class WindowsHidNative : IHidCandidateNative, IOverlappe
                 }
                 catch (Exception cleanupException)
                 {
+                    operation.Lifetime?.Fail(cleanupException);
                     DiagnosticTrace.TraceException(nameof(WindowsHidNative), nameof(Submit), cleanupException,
                         "Native-overlapped cleanup failed after preparation failure.");
                 }

@@ -3,6 +3,15 @@
 
 #![no_std]
 
+pub mod battery;
+pub mod custom_performance;
+pub mod device_mode;
+pub mod fan;
+pub mod fan_rpm;
+pub mod lighting;
+pub mod mcu_version;
+pub mod thermal_preset;
+
 use openblade_types::{ProtocolValidationFailure, ReportEncodingError};
 
 pub const REPORT_LENGTH: usize = 90;
@@ -99,6 +108,29 @@ impl RazerReport {
         bytes[..usize::from(length)].copy_from_slice(&response[8..8 + usize::from(length)]);
         Ok(ReportPayload { bytes, length })
     }
+
+    /// A correlated terminal rejection of this request: checksum, transaction,
+    /// command class and command ID all match, the raw status is FAILED (3) or
+    /// NOT_SUPPORTED (5), and the single-report geometry is intact. Mirrors C#
+    /// `OrdinaryThermalPowerAdmission.IsCompletedAdapterRejection` and
+    /// `HasSingleReportGeometry`. New, busy and timeout statuses are not
+    /// completed. An error body is never payload evidence, so none is returned.
+    pub fn is_completed_rejection(&self, response: &[u8]) -> bool {
+        self.validate_response(response, None) == Err(ProtocolValidationFailure::Status)
+            && matches!(response[0], 3 | 5)
+            && has_single_report_geometry(response)
+    }
+}
+
+/// One whole report: reserved bytes 2-4 and the trailing byte are zero and the
+/// payload length fits it. C# `OrdinaryThermalPowerAdmission.HasSingleReportGeometry`,
+/// which managed requires of a rejection and of a success reply it maps to
+/// unclassified adapter power (`WindowsRazerHidSession`).
+pub fn has_single_report_geometry(response: &[u8]) -> bool {
+    response.len() == REPORT_LENGTH
+        && response[2..5] == [0, 0, 0]
+        && usize::from(response[5]) <= MAXIMUM_PAYLOAD_LENGTH
+        && response[89] == 0
 }
 
 /// Static encoding validates payload size before destination size, then publishes.

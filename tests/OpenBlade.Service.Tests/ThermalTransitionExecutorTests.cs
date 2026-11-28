@@ -3,7 +3,7 @@ using OpenBlade.Protocol;
 
 namespace OpenBlade.Service.Tests;
 
-public sealed class ThermalTransitionExecutorTests
+public sealed partial class ThermalTransitionExecutorTests
 {
     [Fact]
     public async Task ConfirmedFirstAttemptDoesNotConsumeRetryLease()

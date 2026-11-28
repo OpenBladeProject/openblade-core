@@ -24,6 +24,7 @@ internal static class WindowsSetupPlatformTestFactory
         string? setupExecutablePath = null,
         string? currentUserSid = null,
         ISignInTaskScheduler? signInTaskScheduler = null,
+        IPawnIoPrerequisite? pawnIoPrerequisite = null,
         ISetupGuardianQuiescenceGuard? guardianQuiescenceGuard = null) =>
         new(
             new WindowsSetupPlatformOptions(
@@ -44,6 +45,7 @@ internal static class WindowsSetupPlatformTestFactory
                 DynamicLightingIdentityRegistration: dynamicLightingIdentityRegistration,
                 ProgressReporter: progressReporter,
                 DotNetRuntimeAdmission: dotNetRuntimeAdmission ?? AcceptingDotNetRuntimeAdmission.Instance,
+                PawnIoPrerequisite: pawnIoPrerequisite,
                 SetupExecutablePath: setupExecutablePath,
                 CurrentUserSid: currentUserSid,
                 // Unit fixtures must not consult installed guardian records or
@@ -94,11 +96,16 @@ internal sealed class InMemorySignInTaskScheduler : ISignInTaskScheduler
 {
     private readonly Dictionary<string, SignInTaskState> states = [];
 
+    public Action<SignInTaskDefinition>? BeforeRegister { get; set; }
+
     public SignInTaskState GetState(string taskName) =>
         states.TryGetValue(taskName, out SignInTaskState state) ? state : SignInTaskState.Missing;
 
-    public void Register(SignInTaskDefinition definition) =>
+    public void Register(SignInTaskDefinition definition)
+    {
+        BeforeRegister?.Invoke(definition);
         states[definition.TaskName] = SignInTaskState.Enabled;
+    }
 
     public void Delete(string taskName) => states.Remove(taskName);
 }

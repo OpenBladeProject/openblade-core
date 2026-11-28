@@ -1,0 +1,595 @@
+# Native Service keyboard lighting (slices L1 to L3)
+
+A Service built with `service-lighting-v1` serves `setLightingOverride` on
+exact RZ09-0581 (`1532:02E0`). Slice L1 admits the keyboard Off with every
+logo mode. Slice L2 adds the keyboard matrix on its second HID collection and
+the Static effect, drawn by a Service-owned renderer with managed's 5 s
+keepalive. Slice L3 adds the animated effects on a Service-owned frame
+stream, `stepKeyboardBrightness` and `setLightingRefreshRate`. The feature is
+source-reviewed against managed and the reviewed capture evidence, has
+software failure and recovery tests, and has not been run on a laptop. Both
+package readers refuse it by name, so no packaged image carries it.
+
+## Commands and admission
+
+The job sends only commands the reviewed RZ09-0581 lighting evidence admits:
+
+| Command | Use | Source |
+|---|---|---|
+| 03/83 | keyboard brightness query | `Rz09_0581_02e0_3_01_LightingSemanticAdmission.json` `brightness.query` |
+| 03/03 | keyboard brightness set | `brightness.setPrefix` |
+| 03/80 | logo state query | `logo.queryState` |
+| 03/82 | logo effect query | `logo.queryEffect` |
+| 03/00 | logo state set | `logo.setStatePrefix` |
+| 03/02 | logo effect set | `logo.setEffectPrefix` |
+| 00/86 | keyboard layout query, once per session | `Blade16KeyboardLightingLayout.json` `selector.query`; oracle `transitionRequests[0]` |
+| 00/84 | device-mode query before the handshake | manifest `deviceMode.query`; oracle `transitionRequests[1]` |
+| 03/0A:0500 | lighting transition handshake, exact echo | oracle `transitionRequests[2]`, `transitionResponses[2]` |
+| 03/0B | matrix frame, a 375-byte feature report on the matrix collection | manifest `matrix` |
+
+The setters, the matrix frame encoder and the handshake exist only behind the
+protocol crate's `lighting-setters` feature, which only `service-lighting-v1`
+enables. One fixed-length builder encodes each control report
+(`openblade-protocol/src/lighting.rs`, `lighting/matrix.rs`); the encoder
+allowlist (`device_mode_guard_tests.rs`) records both, and the lighting guard
+(`lighting_guard_tests.rs`) pins their users and IDs.
+
+The matrix codec is managed `Pid02E0MatrixReportCodec`: a 374-byte envelope
+of 102 slots in 6 rows of 17, sent behind report ID 0, with the 16 canvas
+holes black. Static paints every canvas key one color and projects it onto
+the physical map the layout byte selects (managed
+`Pid02E0RegionalFrameProjection`),
+from the exact MCU source maps in managed's embedded
+`Blade16KeyboardLightingLayout.json`. Native loads that file once, refuses it
+unless its SHA-256 (`18771140...2AE0FB`) and every source identity managed's
+static constructor requires hold, and leaves the matrix inadmissible
+otherwise (`performance/lighting_layout.rs`). Matrix transaction IDs cycle
+through 1 to 255.
+
+Admission mirrors managed `ProductionLightingEvidenceSource.IsProductionLightingImplementationApproved`
+(`ProductionLightingFactory.cs:74`): the embedded semantic admission manifest
+must hash to managed's approved SHA-256 (`9F70CE88...DEED31`), and its device,
+control envelope, device-mode, brightness, logo and matrix sections, with Off
+and Static among the supported effects, must equal what the native codec
+builds (`performance/lighting_admission.rs`). The matrix section is rebuilt
+from the codec: its geometry, holes, layout pin, the regional projection
+fingerprint and the known-answer feature report (transaction 90, color
+`47E10C`, SHA-256 `7AFEE96E...76C98F`). The validated oracle must hash to its
+pin (`5177FA9F...`) and carry exactly its reviewed members, capture pins and
+protocol notation, built from the native codecs. Any difference refuses every
+lighting write. Managed checks the oracle only in its tests, so this check is
+stricter.
+
+Each exchange and each frame runs under fresh exact-device,
+competing-controller, power, session and ownership admission
+(`Fresh::authorize`), through the Service's own HID lease. Streamed
+frames take the narrower admission described under Streamed effects. The Service stays
+the only HID owner. The matrix collection is opened in the same job: exactly
+one HID interface of the admitted device may report usage page 0x0C, usage 1
+and a 375-byte feature report (managed's opener), of the exact model and
+device (`select_matrix`), its descriptor is read again before each frame,
+and the handle is released with the job (`RoleIdentity`, `MatrixLease`). A
+frame is one `IOCTL_HID_SET_FEATURE` of the fixed report, so a short write
+cannot be expressed. A frame refused before the call (the lease, identity or
+deadline) is unsent. Once the call is made the frame is in doubt, whether
+the driver refuses the call or its completion fails, as managed classifies
+every native matrix I/O failure as indeterminate.
+
+## Request order
+
+The order is managed `ExecuteScopedMutationAsync` (ServiceControlRuntime.cs
+14868-15060) for the Lighting subsystem:
+
+1. Low-power gate set (lifecycle triggers): the intent is stored and nothing
+   is read or written. The reply is Stored with the committed message (see
+   the interim divergences). A temporary override needs Windows battery, the
+   one class known without an adapter read; otherwise it is Blocked with its
+   own text naming the low-power state (see Stricter than managed).
+2. A possible earlier submission left unconfirmed: a read-only job runs, the
+   reply is managed's pending refusal (`PendingWriteBlockedResult`, 19255),
+   and a complete read clears the doubt. Nothing is replayed.
+3. Keyboard delegated to Windows Dynamic Lighting in the stored preferences
+   (`IsKeyboardLightingDelegated`): Blocked, managed's delegation text, before
+   anything is stored. Managed checks it in the apply, after the store, and
+   replies with the committed prefix (14965, 15054, 15213); see Stricter than
+   managed. Without a profile store there are no stored preferences, and
+   managed's defaults do not delegate.
+4. Power, inside the job under its own admission (`Reader::lighting_power`):
+   Windows battery is the battery class with no adapter read. On Windows AC
+   one fresh 07/8C reading, the query every thermal recipe reads, classifies
+   the adapter, and Windows must still report AC after it. A classified
+   adapter admits lighting. An unclassified one needs managed
+   `CanAdmitUnclassifiedExternalControl` for Lighting
+   (UnclassifiedExternalPower.cs 60-77), each clause from native's own fresh
+   evidence: fresh Windows AC presence; no unsettled journal step
+   (`Storage::pending`: the store's quarantine or an unsettled last row of the
+   one native journal, which holds the thermal, fan and battery rows; native
+   keeps no other battery or HyperBoost doubt, so it stands for managed's
+   pending indeterminate HyperBoost intents, and it is not managed's
+   `WritesBlocked` status flag); and, with owned HyperBoost, managed's journal
+   absent or Relinquished and no native ownership in the history. Native also
+   requires a fresh firmware observation that HyperBoost is not engaged, and
+   a failed one admits nothing; managed's Lighting arm has no such clause (see
+   Stricter than managed). Windows unknown, an adapter battery
+   reading Windows AC contradicts, or a refused clause is Blocked with
+   managed's unclassified-adapter text (14935-14943), before anything is
+   stored.
+5. The class becomes current, with its Windows power generation, as a
+   thermal step's store makes it, so a temporary override survives the next
+   thermal step on the same power. The intent is stored
+   (`SetLightingOverrideCoreAsync`, 14820) in `manual-overrides.json`
+   `overrides.lighting`, in managed's format and member order, normalized as
+   managed `SaveAsync` normalizes it. Only a persistent override is saved; a
+   temporary one clears the saved one and is held in memory for its power
+   class. A failed store is managed's rejected intent (`RecordRejectedIntent`,
+   20495). Only a quarantined override document refuses the store: no thermal
+   journal row or recovery rewrites the lighting member, so an unsettled
+   thermal step does not. A clear is stored and writes nothing: on an
+   unclassified adapter the reply is managed's Stored "Override cleared.
+   Power-profile application waits for adapter classification." (15012); on a
+   classified one see the interim divergences.
+6. Apply. Off: read the baseline, write the brightness, read it back, then
+   the logo effect (for a lit mode) and state, each read back, then managed's
+   aggregate read. Static: see the renderer below. A confirmed mismatch
+   restores the baseline. A setter or frame that may have been submitted
+   without confirmation, or a final read that cannot confirm a written member
+   (managed's indeterminate write with confirmation unavailable), stops the
+   request and latches the doubt in step 2. A reply other than Applied is
+   prefixed "{committed} Hardware result: ", as managed prefixes it.
+
+Native's fresh admission confirms competing-controller absence before the job
+(`capture_intent`) and at each of its checkpoints, the one before the 07/8C
+read included, so a controller blocks before anything is stored. Managed's
+refresh after power resolution
+(`RefreshControllerPresenceAndRelinquishLightingAsync`) only observes the
+controller and relinquishes lighting: it stores at 14965 and refuses the
+apply afterwards (see Stricter than managed).
+
+A zero brightness confirms Off only after a second zero sample 750 ms later
+(managed `OwnedRendererOffObservation`), at the baseline and at the final
+read, for every Off write: a keyboard lit again between the samples is
+written. The read-only resolution samples a zero twice too, and a single zero
+sample, such as a brightness setter's readback, confirms nothing, so status
+publishes the Off record only from a double-sampled read
+(`a_single_zero_brightness_sample_publishes_no_confirmed_off`).
+
+## The Static renderer
+
+A Static request runs managed `ProductionLightingPort.SetLightingAsync` for a
+lit effect (`performance/lighting/render.rs`):
+
+1. Open the matrix collection. One that does not open sends nothing and
+   replies "Lighting write was not applied: The keyboard matrix collection is
+   unavailable; no lighting setter was submitted."
+2. Read the baseline brightness, the logo when one is requested, and the
+   00/86 layout byte when this session has not read it.
+3. A request for the owned renderer's color, unless the keyboard wakes from
+   dark, keeps the renderer (managed `CanRetainRenderer`) and writes only the
+   brightness and logo that differ.
+4. Otherwise: the brightness first unless waking from dark; the 00/84 read,
+   which must report Normal or Driver mode, and the 03/0A:0500 handshake; the
+   first frame; the brightness when waking from dark, so the keyboard stays
+   dark until the frame is shown; then the logo. Every setter is read back.
+5. After a known failure (a readback of another value, a device mode outside
+   Normal and Driver, or a frame refused before submission) the job restores
+   the confirmed brightness, the previous renderer's handshake and frame when
+   this job's handshake may have replaced it, and the logo, each once, as
+   managed's rollback does. A restore that is itself in doubt stops there
+   (managed `RollbackIndeterminate`) and latches the doubt.
+
+A completed request replies Applied with managed's `AppliedWithoutReadback`
+text: "Lighting command completed, but this laptop does not report the
+resulting state." The lit state is never published as confirmed:
+`confirmedState.lighting` stays null for a lit brightness.
+
+The Service then owns the renderer. The origin tick, after the power check
+and before the keyboard Driver-mode step, sends one keepalive frame when it
+is due: every 5 s (`Pid02E0LightingTiming.IdleKeepaliveInterval`) on a grid
+that starts when the request that drew the renderer completes. The next
+instant is the first on that grid after the frame's job ended, so a late
+tick skips the instants it missed (managed `AdvanceFrameDeadline`, from the
+instant observed after the write). The
+frame goes at the first 500 ms tick at or after its instant that finds the
+operation gate free: it is late by up to one tick, plus the time a request
+holds the gate, and its own job then takes its time. A tick never reads or
+changes the renderer while a request holds the gate. Each frame takes the
+owning request's fresh write admission. A frame refused before submission
+keeps the renderer for the next instant; one that may have been submitted
+unconfirmed latches the doubt.
+
+A latched doubt always ends the renderer, so no keepalive draws over what an
+unconfirmed submission left, and the request after the read-only resolution
+draws anew. A request or keepalive dropped while its job may still run, such
+as a request whose client went away, latches the doubt too. The renderer
+also ends without a write when an Off may have changed the keyboard, after a
+low-power boundary, and at Stop, where the mutation worker's stop cancels a
+keepalive job still running and the stream is settled (below). A renderer has crossed a low-power boundary when the
+gate reads set, unreadable or exhausted, or when the lifecycle's low-power
+generation has moved since the renderer was drawn, which catches a suspend
+and resume that both arrived while requests held the gate. It ends at the
+first tick that finds the gate free or at the next request, whichever comes
+first, so a same-color request after the resume draws anew. After a
+low-power boundary and Stop the session's layout byte is read again.
+
+Managed's lighting port enters Driver mode when it opens
+(`EnsureDriverModeAsync`, ProductionLightingFactory.cs 226-242). Native sends
+no 00/04 for lighting: the mode setter belongs to the keyboard Driver-mode
+owner (`service-keyboard-driver-mode-v1`), which keeps Driver mode itself when
+composed, and the lighting contract admits no mode setter. The handshake's
+00/84 read admits Normal and Driver, as managed's does. A Service without the
+keyboard owner therefore renders in Normal mode, the mode of the bounded
+OpenBlade run managed's handshake comment records. That is source-backed
+inference; the attended validation below covers it.
+
+## Streamed effects (slice L3)
+
+Spectrum, Breathing (Single, Dual and Random), Wave, Wheel, Tidal,
+Starlight and Fire are admitted through managed `CreateEffect`'s mapping:
+Breathing Single needs its primary color and Dual both, Random needs none,
+Starlight's durations are 500, 1500 and 2000 ms, and Fire's parameters admit
+only Fire. Reactive, Ripple, AmbientAwareness, AudioMeter and Sequence are
+stored and refused as managed refuses an effect its capability table lacks
+(`deferred_effects_are_refused_by_the_table_divergence`). The
+[capability record](windows-rust-development-service.md#capability-record) lists exactly the nine admitted
+effects, the 6x17 layout and the logo modes, and keyboard brightness and
+refresh rates only when profiles serve their requests.
+
+The frame math is managed's effects, ported exactly
+(`performance/lighting_effects.rs`). `NativeLightingEffectVectorTests`
+records managed's frames, delays, cadences and deadlines into
+`tests/data/lighting-effect-vectors.json`, and the Rust tests replay every
+row with no deviation. A random palette comes from `BCryptGenRandom` behind
+an injected source; the tests script it.
+
+The request's own job draws the first frame at elapsed zero, as the Static
+recipe draws its frame, and the job renders it before anything is sent, so a
+failed random source refuses the job with nothing submitted. The Service
+then owns an animated renderer, and a dedicated stream task, beside the
+origin tick and the request mailbox, draws each later frame (managed
+`RunStreamAsync`): the animation at the time elapsed since the effect
+started, which is the new renderer's handshake as in managed, the first
+deadline one delay after the start, and each next deadline advanced from the
+instant observed after the write. A request for the owned effect and color
+keeps the renderer and its phase.
+
+On Windows the stream writes through its own lease on the exact matrix
+collection, opened as a render job's is (`select_matrix`, the same access, a
+fresh identity verification), on a dedicated thread (`matrix_lane.rs`, with
+the Win32 calls behind `MatrixIo` in `windows/stream.rs`). An animated
+request opens that lease, or confirms that the open one still describes the
+selected collection, before anything is sent, waiting at most 1 s. One
+whose collection does not open in time, or whose open handle no longer
+describes it, is stored and replies that the matrix collection is
+unavailable, with no setter sent; an open that outlasts its 1 s is recalled,
+which cancels its collection selection. The lease stays open while one
+animated renderer replaces another and closes when a request leaves none.
+A frame opens the lease again when the thread no longer holds one, as after
+a recalled open while the previous renderer kept streaming; such a lease
+closes the same way. The thread's request queue is bounded: while it is
+stuck in a slow open or a report, a request that does not fit is refused,
+an open or a frame unsent and a settle not known to be settled, and a
+recall that does not fit has still recalled every frame. Before each report the thread checks, in order, that the frame was not
+recalled, that the handle still describes the selected collection, that the
+frame's deadline has not passed, and that it holds the process's matrix I/O
+flag (`MATRIX_IO`), which serializes every matrix report, the jobs' and the
+stream's. It checks the recall token once more immediately before the
+SET_FEATURE. A report holds `MATRIX_IO` from its issue until its terminal
+completion: one still outstanding at its deadline is cancelled and in doubt,
+and the thread keeps polling it between requests, so its late completion
+releases `MATRIX_IO` and lets a retired lease close. After its first second
+outstanding, the thread polls it every 100 ms instead of every 10 ms. A
+report that never completes keeps both, and every render job then refuses
+when it opens its collection, before any setter. Since the thread sees a
+completion only at its next poll, a job can also refuse this way for up to
+100 ms after a long-outstanding report completed. The Service remains the
+only HID owner.
+
+The stream starts only from a request that passed its full fresh admission.
+Before each frame it:
+
+1. takes the operation gate without waiting, and otherwise tries again one
+   refresh interval later;
+2. ends the renderer without a write at a low-power boundary, as the
+   keepalive does;
+3. needs a clean reading no older than 1 s: the drawing request's admission,
+   then each origin tick's full capture, whose own admission pass, the
+   competing-controller inventory included, is the reading. A stale or
+   refused reading writes nothing, and the stream waits for the tick that
+   confirms a clean one; a competing controller in a tick's inventory
+   retires the renderer without a write;
+4. takes that reading's admission for a frame (`Fresh::authorize_frame`) at
+   the same Windows power generation: the pinned lifecycle epoch, which
+   every suspend, resume, session change and power notice advances; the
+   same console session, unlocked; a known AC line status; and the
+   custody's frame admission (`ReadCustody::authorize_frame`), which checks
+   the custody's latched state, its retained failure, the loaded origin's
+   lifetime, which a revocation, a lost trust or Stop ends at once, and the
+   active lifecycle epoch. The order is one function (`admit_frame`), and
+   the custody's part another (`authorize_original_frame`); the test
+   fixtures run both over their own suppliers.
+
+Per frame, the loaded-origin process, package (ACL and `current.bin`) and
+SCM verification, the original mapping (`managed-handoff.bin`), the journal
+custody, the primary SID and logon and the controller inventory are not
+repeated: the tick's full capture runs them once, for a reading no older
+than 1 s. This is deliberate, since a per-frame pass would run those file,
+SCM and inventory queries at frame rate; a change to any of them is seen at
+the next tick.
+
+The origin tick waits, until the frame's deadline, for an operation gate a
+stream frame holds, so the stream's own frames never cost it the clean
+reading. It still skips a gate a request holds.
+
+Every wait on the stream is bounded: a frame by its 500 ms budget, the
+request's open by 1 s within the request's deadline, and Stop's settle by
+its own 300 ms share of the drain.
+A frame refused before submission ends the renderer and the stream. One that
+may have been submitted without completing, or that outlasted its budget,
+latches the doubt too, recalls the stream's frames and releases the gate, so
+the next request resolves read-only and replays nothing. Stop and a
+low-power boundary recall every frame not yet submitted. Stop recalls them
+and closes the lease whatever the session recorded, then waits, for at
+most its 300 ms share, until no report is outstanding, before the
+display-brightness and keyboard releases and the fan handback. If that is
+not confirmed in time it latches the doubt and the rest of the drain still
+runs. The build checks that these shares and at least 1.4 s for the fans
+fit within the drain, with or without the keyboard's share.
+
+## Keyboard brightness steps and the refresh rate (slice L3)
+
+Both are served with `service-profiles-v1`, which holds the preferences and
+profiles they read.
+
+`stepKeyboardBrightness` is managed `StepKeyboardBrightnessAsync`. One job
+under the operation gate classifies power as a lighting request does, then
+resolves the desired lighting there: the override in effect, otherwise the
+profile's lighting with the active application's layer (the lighting member
+of managed `ResolveHardwareDesired`).
+
+- Desired Off: a decrease replies "Keyboard brightness is already at its
+  minimum." An increase writes managed `ResolveVisibleLightingBaseline` at
+  6% (`LastKnownLighting` when lit, else the base power profile's lit
+  lighting without the application layer, else Static `47E10C`), keeping
+  the logo, through `setLightingOverride`'s own
+  path, and replies as that request does.
+- Otherwise the job reads 03/83, or reuses the raw value the previous step
+  set, and steps it by 0x10, saturating. A changed value is sent with the
+  03/03 setter, confirmed by its acknowledgement with no readback. The
+  rounded percent is saved as the override with the request's lifetime and
+  as `LastKnownLighting`, and the reply is "Keyboard brightness changed to
+  {n}%." At zero the keyboard is Off with its logo and the renderer ends.
+- During a low-power transition: "Keyboard brightness input is deferred
+  during a low-power transition." A setter that may have been submitted
+  latches the doubt.
+
+`setLightingRefreshRate` saves managed's `LightingRefreshRate` preference
+(30 or 60 Hz) under the request's fresh admission. Like managed, it is
+refused on an unclassified adapter that fresh evidence does not admit for
+lighting: the change classifies power as a lighting request does and stores
+nothing there. It then retimes the stream from its current phase, as managed
+restarts its stream without resetting the effect's start. It replies "Keyboard lighting is running at {30 Hz|60 Hz}."
+A request that arrives while a frame is in flight waits for it on the
+operation gate. Undefined directions, lifetimes and rates are refused by the
+codec.
+
+Every applied lighting request saves its override as `LastKnownLighting`, as
+managed's `TryPersistRememberedLightingIntentAsync` does.
+`setExternalLightingOverridePolicy` stays unserved.
+
+## Status
+
+The status projects `lightingOverride` and `desiredState.lighting` (source 4
+for a persistent override, 3 for a temporary one) from the store, in every
+request's status, the thermal and fan requests' included
+(`Runtime::project_saved_members`). A request's fresh reading joins the
+confirmed state a thermal read established: `confirmedState.lighting` is the
+Off record for a zero brightness and null otherwise (managed
+`ReadStateCoreAsync`, ProductionLightingPort.cs 186), and
+`confirmedState.logoLighting` is the managed wire value. A member whose setter
+may have been submitted, or whose last read was outside the contract, is null
+until a read confirms it. The native status carries no `unconfirmedWrites`
+member, so the doubt is published only through those nulls and the pending
+refusal. A keepalive publishes nothing.
+
+Lighting records are written with `kind` first in every object
+(`openblade_domain::kind_first`): managed binds `LightingParameters` with a
+polymorphic `kind` discriminator and refuses it out of place. The status
+records (`FeatureRecord`) and the thermal convergence record use it.
+
+## Interim divergences
+
+Each is named by a test where one applies:
+
+- Clearing the override on a classified adapter stores the clear, applies no
+  profile lighting and replies Stored, "Lighting override was cleared. The
+  profile's lighting was not applied." Managed applies the profile's lighting
+  there (ControlCoordinator.cs `ApplyLightingOutcomeAsync`)
+  (`a_clear_is_stored_and_says_what_waits`).
+- Power-source transitions (`ApplyFullTransitionAsync`, ServiceControlRuntime.cs
+  14948-14956) and profile reconciliation run no lighting step, and a
+  restart writes no lighting
+  (`a_restart_keeps_the_saved_intent_and_writes_nothing`), and a profile,
+  application or power change applies no lighting. So a request
+  stored while the low-power gate is set is not applied after standby, and
+  its reply is the committed message, Stored, instead of managed's "Lighting
+  intent was stored and will be applied after standby."
+  (`the_low_power_store_promises_no_resume_apply_interim_divergence`).
+- At the low-power boundary the renderer ends without a write; managed turns
+  the keyboard Off (`TurnOffForLowPowerAsync`) and restores lighting after
+  the resume (`low_power_retires_the_renderer_without_a_write`).
+- The periodic thermal observation does not read lighting, so the next
+  thermal read publishes the lighting members as null until a lighting
+  request reads them again. Managed reads lighting in every observation
+  (`a_thermal_read_publishes_no_lighting_members_interim_divergence`).
+- The status carries no `lightingRendererOwnership`.
+- `setExternalLightingOverridePolicy` is not served and gets the generic
+  unsupported reply
+  (`every_absent_managed_operation_gets_the_typed_unsupported_reply`).
+
+## Other differences from managed
+
+- A Static request takes managed's setter-completion evidence from its own
+  setter readbacks and does not repeat managed's final aggregate read, whose
+  lit brightness confirms nothing.
+- Managed's retain test compares effect, color and parameters. Static's
+  parameters carry only its color, which well-formedness makes the settings
+  color, so native compares the color and the session layout.
+- A known failure before this job's handshake restores no frame: nothing
+  changed the matrix, so the previous renderer keeps drawing. Managed redraws
+  it.
+- A device mode outside Normal and Driver is a known failure that restores
+  the brightness and latches nothing; managed raises it as an indeterminate
+  write after its rollback.
+- The keepalive grid starts at the drawing request's completion, after its
+  logo setters, and a frame waits for the next origin tick that finds the
+  gate free; managed's stream starts its grid with the effect and wakes at
+  each instant.
+- Managed's stream defers a frame only when its recovery write gate refuses
+  it (ProductionLightingPort.cs 1669); any other failed frame faults the
+  stream (1695-1706), which ends the renderer. Native's Static keepalive
+  keeps the renderer through every refusal before submission (a fresh admission, the matrix
+  identity or the pacing) and tries again at the next instant, with fresh
+  admission and identity checks each time.
+- Managed's stream runs under its Advisory controller policy, so it keeps
+  sending frames while a competing controller is present. Native's fresh
+  admission refuses each Static keepalive frame while one is present, and
+  the frames resume by themselves when it leaves; an animated renderer
+  retires.
+- Managed's stream has no session gating. Native's frames take the owning
+  request's session admission, so they pause while that console session is
+  locked or inactive, and resume when it is active again.
+
+## Slice L3 differences from managed
+
+Each is named by a test where one applies:
+
+- Competing controllers are inventoried by the origin tick, not per frame:
+  a frame needs a clean reading no older than 1 s, so a controller that
+  appears between two ticks may see up to 1 s more of frames before the
+  renderer retires
+  (`a_clean_reading_older_than_a_second_writes_no_frame`).
+- A frame due while a request or the origin tick holds the operation gate
+  is skipped and tried one interval later, a visible pause
+  (`a_held_gate_skips_the_frame_one_interval_later_divergence`). The origin
+  tick waits for a frame instead
+  (`ticks_during_in_flight_frames_keep_the_clean_reading_and_the_stream_running`).
+- While an effect streams, the origin tick's other steps that take the
+  operation gate without waiting (thermal convergence, the keyboard
+  Driver-mode step and the lifecycle triggers) skip a tick whose gate a
+  frame holds and run at a later tick. Managed's stream runs outside its
+  gate.
+- Any frame refused before submission ends the stream; managed defers a
+  frame its recovery write gate refuses.
+- A failed request whose handshake may have replaced an animated renderer
+  does not redraw it: the renderer ends. Managed restarts the previous
+  stream.
+- A failed random source refuses the request with nothing sent; managed's
+  generator does not fail. A failed Tidal seed, drawn when the effect
+  starts, stores the request and replies that the capability table does not
+  admit the value; a failed palette draw for the first frame replies that
+  the matrix collection is unavailable.
+- The desired lighting omits managed's startup temporary from
+  `LastKnownLighting`, and on an unclassified adapter the visible baseline
+  does not fall back to the confirmed lighting.
+- Nothing saved to resolve replies "The saved lighting could not be
+  resolved; keyboard brightness was not changed."; managed always resolves
+  its default profiles.
+- A step reuses only the raw value the previous step set. Every
+  `setLightingOverride` request clears it, and so does a step that set no
+  value, so the next step reads 03/83 again; keepalive and stream frames
+  keep it.
+- A step from Off that fails replies with `setLightingOverride`'s committed
+  prefix.
+- Without the Service's read source, both operations reply with the custody
+  refusal instead of managed's stored texts.
+- The refresh preference save is the last step that can fail, so managed's
+  rollback replies have no native path.
+- Steps and refresh changes are served only with `service-profiles-v1`.
+
+## Stricter than managed
+
+Each of these is refused before anything is stored; managed stores it:
+
+- A keyboard delegated to Windows Dynamic Lighting. Managed stores the intent
+  and replies "Lighting override intent was stored. Hardware result: ..."
+  with its delegation text (ServiceControlRuntime.cs 14965, 15054, 15213)
+  (`a_keyboard_delegated_to_dynamic_lighting_blocks_before_any_store`).
+- A competing controller. Managed's refresh only observes the controller and
+  relinquishes lighting, so it stores and refuses the apply afterwards
+  (`refused_admission_stores_and_sends_nothing`).
+- An unclassified adapter while firmware reports HyperBoost engaged, or when
+  that fresh observation fails. Managed's Lighting arm has no
+  `HyperBoostActive` clause (UnclassifiedExternalPower.cs 60-77)
+  (`an_unclassified_adapter_admits_lighting_only_without_hyperboost_or_a_pending_step`).
+- A temporary override while the low-power gate is set, off Windows battery.
+  Managed stores it with no power class (14903-14918); native's refusal names
+  the low-power state
+  (`a_low_power_temporary_override_needs_windows_battery_divergence`).
+
+Also stricter:
+
+- Every Off write, and the read-only resolution, confirms a zero brightness
+  with the second sample; managed samples twice only while it owns a
+  renderer.
+- A setter, handshake or frame that may have been submitted without
+  confirmation stops the request in doubt with nothing replayed; managed
+  attempts its rollback (`an_unconfirmed_frame_stops_the_job_in_doubt`).
+- A legacy Static request without parameters is refused before any write;
+  managed refuses it inside its recipe, after the brightness.
+- The validated oracle is checked at admission.
+- The matrix collection is chosen only from a complete HID scan: a row the
+  scan cannot read refuses the selection, where managed opens every interface
+  (`hid.inventory` in [Windows backend replay](windows-backend-replay.md)).
+- The saved-override loader refuses a document managed would migrate (an
+  older schema, or lighting that managed's visibility normalization changes)
+  and preserves its bytes for managed.
+
+## Guards
+
+`lighting_guard_tests.rs` fails when non-test source names a lighting setter,
+the matrix frame encoder or the handshake outside its codec, the recipe and
+the semantic admission, builds a lighting job outside `lighting_mutation.rs`,
+changes the class, query or setter IDs the codecs build, or enables
+`lighting-setters` from another feature.
+
+## Validation still needed
+
+Attended validation on exact RZ09-0581, through the native FFI and HID
+transport, which no laptop has run:
+
+- Off from a lit keyboard with each logo mode, readback confirmation, a
+  deliberate restore after a mismatch, and restoration of the saved baseline
+  afterwards.
+- Static from a lit and from a dark keyboard: the matrix collection selected,
+  the layout byte read, the handshake, the first frame's colors on each
+  layout in use, the keyboard kept dark until the frame when waking, the
+  keepalive cadence over several minutes, and Off afterwards.
+- Stop and a low-power boundary while the renderer owns the keyboard.
+- Lock and unlock the console while the renderer owns the keyboard: record
+  what the keyboard shows while the frames pause, and that they resume
+  after the unlock.
+- Each streamed effect at 30 and 60 Hz: the stream thread's lease beside the
+  jobs', the per-frame descriptor check, Stop and a suspend while a frame is
+  in flight, the real frame cadence and any
+  visible pause while requests hold the gate, a refresh change mid-effect,
+  and a competing controller started and stopped while an effect runs
+  (the up-to-1 s inventory delay).
+- Keyboard brightness steps up and down from lit and from Off, with the
+  brightness keys' rate of repetition.
+
+Record the keyboard device mode (Normal or Driver) of each run. Managed
+writes these commands in Driver mode; a Service without
+`service-keyboard-driver-mode-v1` is expected to write them in Normal mode,
+which no physical run has observed for the setters. When the keyboard feature
+is composed, run the checks in both modes.
+
+## Follow-ups
+
+- Reactive, Ripple, AmbientAwareness, AudioMeter, Sequence, the Session
+  Agent frame operations, lighting suppression, the restore loop, Dynamic
+  Lighting and `setExternalLightingOverridePolicy`.
+- Lighting in power-source transitions and profile reconciliation, the
+  periodic lighting read, managed's low-power Off and resume restore, and the
+  published renderer ownership.
+- The native fixture-manifest corpus for lighting must land before lighting
+  joins a packaged tuple or makes the Tray path reachable.

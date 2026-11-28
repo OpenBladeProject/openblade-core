@@ -2,7 +2,7 @@ using OpenBlade.Setup;
 
 namespace OpenBlade.Setup.Tests;
 
-public sealed class SetupCommandRunnerTests
+public sealed partial class SetupCommandRunnerTests
 {
     [Theory]
     [InlineData(false)]
@@ -1099,6 +1099,23 @@ public sealed class SetupCommandRunnerTests
             < progress.Events.FindIndex(item => item.Code == SetupProgressCode.InstallService));
     }
 
+    [Fact]
+    public async Task ManagedIncomingTransactionAlsoPreservesNativePredecessorRecoveryFence()
+    {
+        var platform = new RecordingSetupPlatform
+        {
+            ServiceExists = true,
+            PredecessorKind = SetupServicePredecessorKind.Native,
+            PreparedTransition = SetupServiceTransition.NativeRetired,
+            Transaction = new RecordingPayloadTransaction(true),
+            FailurePoint = "tray-stop",
+        };
+        await Assert.ThrowsAsync<OpenBlade.Deployment.NativeRecoveryException>(() => new SetupCommandRunner(platform).RunAsync(["install"], CancellationToken.None));
+        Assert.DoesNotContain("service-restore", platform.Operations);
+        Assert.DoesNotContain("tray-startup-restore:Shortcut", platform.Operations);
+        Assert.DoesNotContain("service-install", platform.Operations);
+    }
+
     private static void AssertEndsWith(IReadOnlyList<string> actual, IReadOnlyList<string> expected)
     {
         Assert.True(actual.Count >= expected.Count);
@@ -1108,11 +1125,14 @@ public sealed class SetupCommandRunnerTests
     private sealed class RecordingSetupPlatform : ISetupPlatform
     {
         public bool PrerequisiteFails { get; init; }
+        public Exception? PrerequisiteFailure { get; init; }
+        public Exception? CaptureFailure { get; init; }
         public bool PrerequisiteRebootRequired { get; init; }
         public string[] OperationsAtPrerequisite { get; private set; } = [];
         public Task<bool> EnsureCpuTemperaturePrerequisiteAsync(string stagedPayloadDirectory, CancellationToken cancellationToken)
         {
             OperationsAtPrerequisite = Operations.ToArray();
+            if (PrerequisiteFailure is { } failure) { return Task.FromException<bool>(failure); }
             return PrerequisiteFails ? Task.FromException<bool>(new InvalidOperationException("PawnIO failed"))
                 : Task.FromResult(PrerequisiteRebootRequired);
         }
@@ -1120,6 +1140,11 @@ public sealed class SetupCommandRunnerTests
         public List<CancellationToken> CleanupTokens { get; } = [];
         public bool FailPayloadStage { get; init; }
         public bool ServiceExists { get; init; }
+        public SetupServicePredecessorKind? PredecessorKind { get; init; }
+        public SetupServiceTransition ServiceTransition { get; set; }
+        public SetupServiceTransition PreparedTransition { get; init; } = SetupServiceTransition.ManagedPrepared;
+        public Action? PrepareNativeTransition { get; init; }
+        public Action<string>? ObserveOperation { get; init; }
         public bool ServiceWasRunning { get; init; } = true;
         public SetupStartupRegistration TrayStartup { get; init; } = SetupStartupRegistration.Shortcut;
         public SetupStartupRegistration SessionAgentStartup { get; init; } = SetupStartupRegistration.Shortcut;
@@ -1138,6 +1163,7 @@ public sealed class SetupCommandRunnerTests
         public Exception? RecoveryRemovalFailure { get; init; }
         public CancellationTokenSource? Cancellation { get; init; }
         public Exception? UninstallerFailure { get; init; }
+        public ISetupPayloadTransaction? PayloadOverride { get; init; }
         public RecordingPayloadTransaction Transaction { get; init; } = new(hadExistingInstall: false);
         private bool lifecycleInitialized;
         private bool serviceRegistered;
@@ -1164,13 +1190,14 @@ public sealed class SetupCommandRunnerTests
             Transaction.Operations = Operations;
             return FailPayloadStage
                 ? Task.FromException<ISetupPayloadTransaction>(new InvalidOperationException("payload staging failed"))
-                : Task.FromResult<ISetupPayloadTransaction>(Transaction);
+                : Task.FromResult(PayloadOverride ?? Transaction);
         }
 
         public Task<SetupInstallLifecycleState> CaptureInstallLifecycleStateAsync(
             CancellationToken cancellationToken)
         {
             Operations.Add("lifecycle-capture");
+            if (CaptureFailure is { } failure) { return Task.FromException<SetupInstallLifecycleState>(failure); }
             if (FailurePoint == "lifecycle-capture")
             {
                 FailurePoint = null;
@@ -1200,7 +1227,7 @@ public sealed class SetupCommandRunnerTests
             BundleOwnershipIdentity? capturedOwnership =
                 OmitBundleOwnershipSnapshot ? null : bundleOwnership;
             return Task.FromResult(new SetupInstallLifecycleState(
-                new(serviceRegistered, serviceRunning),
+                new(serviceRegistered, serviceRunning) { Kind = PredecessorKind ?? (serviceRegistered ? SetupServicePredecessorKind.Managed : SetupServicePredecessorKind.Absent) },
                 new(
                     trayStartup,
                     sessionAgentStartup,
@@ -1221,6 +1248,8 @@ public sealed class SetupCommandRunnerTests
 
         public Task PrepareServiceForInstallAsync(CancellationToken cancellationToken)
         {
+            ServiceTransition = PreparedTransition;
+            PrepareNativeTransition?.Invoke();
             serviceRunning = false;
             if (Operations.Contains("payload-activate"))
             {
@@ -1266,6 +1295,8 @@ public sealed class SetupCommandRunnerTests
 
         public Task InstallServiceAsync(CancellationToken cancellationToken)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (PayloadOverride is SetupNativePackageTransaction native) { native.MarkNativeStartupPossible(); }
             serviceRegistered = true;
             serviceRunning = true;
             return AddAsync("service-install", cancellationToken);
@@ -1368,6 +1399,7 @@ public sealed class SetupCommandRunnerTests
         private Task AddAsync(string operation, CancellationToken token)
         {
             Operations.Add(operation);
+            ObserveOperation?.Invoke(operation);
             if (Operations.Contains("payload-activate")
                 && operation is "tray-startup-remove" or "agent-startup-remove" or "start-menu-remove"
                     or "uninstall-shortcut-remove" or "uninstall-registration-remove"

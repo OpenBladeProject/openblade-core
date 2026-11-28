@@ -125,10 +125,11 @@ internal static class WindowsBatteryReportParser
                 percent));
         }
 
-        parsed.Sort(static (left, right) => left.StartUtc.CompareTo(right.StartUtc));
         List<WindowsBatteryReportInterval> intervals = [];
         DateTimeOffset? previousEnd = null;
-        foreach (ParsedInterval item in parsed)
+        // Equal starts can result from clipping. Keep report order when choosing
+        // which entry owns the overlapping portion.
+        foreach (ParsedInterval item in parsed.OrderBy(static item => item.StartUtc))
         {
             DateTimeOffset start = item.StartUtc;
             if (previousEnd is { } end)

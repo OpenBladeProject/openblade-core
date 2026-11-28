@@ -30,9 +30,15 @@ public sealed class BatteryConfigurationStore
     private readonly Func<BatteryConfigurationCommitBoundary, CancellationToken, Task>?
         transactionBoundary;
     private readonly SemaphoreSlim gate;
+    private readonly UserConfigurationWriterScope? writerScope;
+    private readonly MachineConfigurationWriterBinding? machineWriter;
+    private byte[]? machineCommit;
     private bool preservationRequired;
 
-    private string RecoveryRequiredPath => markerPath + ".recovery-required";
+    private string RecoveryRequiredPath => GetRecoveryRequiredPath(markerPath);
+
+    private static string GetRecoveryRequiredPath(string markerPath) =>
+        markerPath + ".recovery-required";
 
     public BatteryConfigurationStore(
         string profilePath,
@@ -66,8 +72,10 @@ public sealed class BatteryConfigurationStore
         ProfileSetValidator? validator,
         Func<CancellationToken, Task>? postCommitBoundary,
         Func<BatteryConfigurationCommitBoundary, CancellationToken, Task>?
-            transactionBoundary)
+            transactionBoundary,
+        UserConfigurationWriterScope? writerScope = null)
     {
+        this.writerScope = writerScope;
         this.validator = validator ?? ProfileSetValidator.CreateUnverifiedSafeDefaults();
         string fullProfilePath = Path.GetFullPath(
             profilePath ?? throw new ArgumentNullException(nameof(profilePath)));
@@ -90,14 +98,81 @@ public sealed class BatteryConfigurationStore
         this.transactionBoundary = transactionBoundary;
     }
 
-    public async Task<BatteryConfiguration> LoadAsync(CancellationToken cancellationToken)
+    internal BatteryConfigurationStore(
+        MachineConfigurationWriterBinding machineWriter,
+        ProfileSetValidator? validator = null,
+        Func<BatteryConfigurationCommitBoundary, CancellationToken, Task>? transactionBoundary = null)
+        : this(machineWriter.ProfilePath, machineWriter.PreferencesPath, machineWriter.MarkerPath,
+            validator, postCommitBoundary: null, transactionBoundary)
     {
+        this.machineWriter = machineWriter;
+    }
+
+    public Task<BatteryConfiguration> LoadAsync(CancellationToken cancellationToken) =>
+        machineWriter is null
+            ? LoadWithAdmissionAsync(writerScope, machinePersistence: false, cancellationToken)
+            : LoadWithMachineWriterAsync(machineWriter, cancellationToken);
+
+    internal async Task<BatteryConfiguration> LoadForMachineBootstrapAsync(
+        MachineConfigurationWriterBinding binding,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (machineWriter is not null || !HasMachinePaths(binding))
+        {
+            throw new InvalidOperationException("Machine bootstrap requires the exact configuration paths under one machine root.");
+        }
+
+        return await LoadWithMachineWriterAsync(binding, cancellationToken).ConfigureAwait(false);
+    }
+
+    internal Task<BatteryConfiguration> LoadForMachineTransitionAsync(
+        MachineConfigurationWriterBinding binding,
+        MachineConfigurationWriterBinding? bootstrapWriter,
+        UserConfigurationWriterScope scope,
+        CancellationToken cancellationToken)
+    {
+        MachineConfigurationWriterBinding? configuredWriter = bootstrapWriter ?? machineWriter;
+        if (configuredWriter is null || !binding.Matches(configuredWriter)
+            || (bootstrapWriter is not null && machineWriter is not null) || !HasMachinePaths(binding))
+        {
+            throw new InvalidOperationException("Machine startup requires the same enrolled configuration writer.");
+        }
+
+        scope.CheckRoot(markerPath);
+        return LoadWithAdmissionAsync(scope, machinePersistence: true, cancellationToken);
+    }
+
+    private bool HasMachinePaths(MachineConfigurationWriterBinding binding) =>
+        writerScope is null
+        && string.Equals(profileStore.Path, binding.ProfilePath, StringComparison.Ordinal)
+        && string.Equals(preferencesPath, binding.PreferencesPath, StringComparison.Ordinal)
+        && string.Equals(markerPath, binding.MarkerPath, StringComparison.Ordinal);
+
+    private async Task<BatteryConfiguration> LoadWithMachineWriterAsync(
+        MachineConfigurationWriterBinding binding,
+        CancellationToken cancellationToken)
+    {
+        await using UserConfigurationWriterScope scope = binding.Acquire(cancellationToken);
+        return await LoadWithAdmissionAsync(scope, machinePersistence: true, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private async Task<BatteryConfiguration> LoadWithAdmissionAsync(
+        UserConfigurationWriterScope? scope,
+        bool machinePersistence,
+        CancellationToken cancellationToken)
+    {
+        using IDisposable? admission = scope is null
+            ? null
+            : await scope.EnterAsync(cancellationToken, checkAggregateRecovery: false).ConfigureAwait(false);
         await gate.WaitAsync(cancellationToken);
         try
         {
             BatteryConfigurationInspection inspection = await LoadCoreAsync(
                 materializeAdmittedState: true,
-                cancellationToken);
+                cancellationToken,
+                machinePersistence);
             preservationRequired = !inspection.Configuration.IsAuthoritative;
             return inspection.Configuration;
         }
@@ -128,6 +203,11 @@ public sealed class BatteryConfigurationStore
         ProfileSet profiles,
         CancellationToken cancellationToken)
     {
+        await using UserConfigurationWriterScope? machineScope = machineWriter?.Acquire(cancellationToken);
+        UserConfigurationWriterScope? scope = machineScope ?? writerScope;
+        using IDisposable? admission = scope is null
+            ? null
+            : await scope.EnterAsync(cancellationToken, checkAggregateRecovery: false).ConfigureAwait(false);
         profiles = ProfileStore.NormalizeLegacyBatteryProfile(
             profiles,
             out _,
@@ -137,6 +217,10 @@ public sealed class BatteryConfigurationStore
         try
         {
             ThrowIfPreservationRequired();
+            if (machineScope is not null)
+            {
+                CheckMachineTargets();
+            }
             AggregateSnapshot snapshot = await CaptureAggregateAsync(cancellationToken);
             if (snapshot.IsEmpty)
             {
@@ -144,12 +228,14 @@ public sealed class BatteryConfigurationStore
                     "The battery configuration aggregate is absent; profile-only save was rejected because preferences cannot be reconstructed safely.");
             }
             CommittedSnapshot committed = ReadCommittedSnapshotForSave(snapshot);
+            CheckMachineCommit(snapshot);
             await SaveConfigurationTransactionAsync(
                 profiles,
                 committed.Configuration.Preferences,
                 cancellationToken,
                 committed.ConfigurationMigrated ? null : committed.PreferenceJson,
-                snapshot);
+                snapshot,
+                machinePersistence: machineScope is not null);
         }
         finally
         {
@@ -162,6 +248,11 @@ public sealed class BatteryConfigurationStore
         BatteryAutomationPreferences preferences,
         CancellationToken cancellationToken)
     {
+        await using UserConfigurationWriterScope? machineScope = machineWriter?.Acquire(cancellationToken);
+        UserConfigurationWriterScope? scope = machineScope ?? writerScope;
+        using IDisposable? admission = scope is null
+            ? null
+            : await scope.EnterAsync(cancellationToken, checkAggregateRecovery: false).ConfigureAwait(false);
         profiles = ProfileStore.NormalizeLegacyBatteryProfile(
             profiles,
             out _,
@@ -172,16 +263,22 @@ public sealed class BatteryConfigurationStore
         try
         {
             ThrowIfPreservationRequired();
+            if (machineScope is not null)
+            {
+                CheckMachineTargets();
+            }
             AggregateSnapshot snapshot = await CaptureAggregateAsync(cancellationToken);
             if (!snapshot.IsEmpty)
             {
                 _ = ReadCommittedSnapshotForSave(snapshot);
             }
+            CheckMachineCommit(snapshot);
             await SaveConfigurationTransactionAsync(
                 profiles,
                 preferences,
                 cancellationToken,
-                priorSnapshot: snapshot);
+                priorSnapshot: snapshot,
+                machinePersistence: machineScope is not null);
         }
         finally
         {
@@ -191,11 +288,20 @@ public sealed class BatteryConfigurationStore
 
     private async Task<BatteryConfigurationInspection> LoadCoreAsync(
         bool materializeAdmittedState,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool machinePersistence = false)
     {
         // Refuse the load instead of substituting defaults: user activation must
         // retain its prior context while this transaction remains unresolved.
         ThrowIfRecoveryRequired();
+        if (machinePersistence)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            CheckMachineTargets();
+        }
+        // A verified commit is authoritative even if the bootstrap caller
+        // cancels after marker replacement. Finish its final read under the lease.
+        CancellationToken postCommitToken = machinePersistence ? CancellationToken.None : cancellationToken;
         AggregateSnapshot snapshot = await CaptureAggregateAsync(cancellationToken);
         if (ContainsFutureSchema(snapshot))
         {
@@ -214,12 +320,14 @@ public sealed class BatteryConfigurationStore
                     configuration.Profiles,
                     configuration.Preferences,
                     cancellationToken,
-                    priorSnapshot: snapshot);
-                await InvokePostCommitBoundaryAsync(cancellationToken);
+                    priorSnapshot: snapshot,
+                    machinePersistence: machinePersistence);
+                await InvokePostCommitBoundaryAsync(postCommitToken);
                 try
                 {
-                    configuration = ReadCommittedSnapshot(
-                        await CaptureAggregateAsync(cancellationToken)).Configuration;
+                    snapshot = await CaptureAggregateAsync(postCommitToken);
+                    configuration = ReadCommittedSnapshot(snapshot).Configuration;
+                    RememberMachineCommit(snapshot);
                 }
                 catch (ConfigurationAggregateException exception)
                 {
@@ -258,10 +366,12 @@ public sealed class BatteryConfigurationStore
                         configuration.Profiles,
                         configuration.Preferences,
                         cancellationToken,
-                        priorSnapshot: snapshot);
-                    await InvokePostCommitBoundaryAsync(cancellationToken);
-                    configuration = ReadCommittedSnapshot(
-                        await CaptureAggregateAsync(cancellationToken)).Configuration;
+                        priorSnapshot: snapshot,
+                        machinePersistence: machinePersistence);
+                    await InvokePostCommitBoundaryAsync(postCommitToken);
+                    snapshot = await CaptureAggregateAsync(postCommitToken);
+                    configuration = ReadCommittedSnapshot(snapshot).Configuration;
+                    RememberMachineCommit(snapshot);
                 }
                 return new BatteryConfigurationInspection(configuration, WasEmpty: false);
             }
@@ -299,10 +409,15 @@ public sealed class BatteryConfigurationStore
                     committed.Configuration.Profiles,
                     committed.Configuration.Preferences,
                     cancellationToken,
-                    priorSnapshot: snapshot);
-                await InvokePostCommitBoundaryAsync(cancellationToken);
-                AggregateSnapshot migrated = await CaptureAggregateAsync(cancellationToken);
-                committed = ReadCommittedSnapshot(migrated);
+                    priorSnapshot: snapshot,
+                    machinePersistence: machinePersistence);
+                await InvokePostCommitBoundaryAsync(postCommitToken);
+                snapshot = await CaptureAggregateAsync(postCommitToken);
+                committed = ReadCommittedSnapshot(snapshot);
+            }
+            if (materializeAdmittedState)
+            {
+                RememberMachineCommit(snapshot);
             }
             return new BatteryConfigurationInspection(
                 committed.Configuration,
@@ -320,6 +435,31 @@ public sealed class BatteryConfigurationStore
                 ConfigurationQuarantineReason.InvalidDocument,
                 recovered: true,
                 wasEmpty: false);
+        }
+    }
+
+    private void CheckMachineTargets()
+    {
+        MachineConfigurationWriterBinding.CheckTarget(profileStore.Path);
+        MachineConfigurationWriterBinding.CheckTarget(preferencesPath);
+        MachineConfigurationWriterBinding.CheckTarget(markerPath);
+    }
+
+    private void RememberMachineCommit(AggregateSnapshot snapshot)
+    {
+        if (machineWriter is not null)
+        {
+            machineCommit = snapshot.Marker.Contents;
+        }
+    }
+
+    private void CheckMachineCommit(AggregateSnapshot snapshot)
+    {
+        // A verified marker binds both documents by hash.
+        if (machineWriter is not null &&
+            (machineCommit is null || !snapshot.Marker.Contents.AsSpan().SequenceEqual(machineCommit)))
+        {
+            throw new IOException("Machine configuration changed since it was loaded; reload it before saving.");
         }
     }
 
@@ -550,7 +690,8 @@ public sealed class BatteryConfigurationStore
         BatteryAutomationPreferences preferences,
         CancellationToken cancellationToken,
         byte[]? committedPreferenceJson = null,
-        AggregateSnapshot? priorSnapshot = null)
+        AggregateSnapshot? priorSnapshot = null,
+        bool machinePersistence = false)
     {
         preferences = preferences with { ProtectionEnabled = null, AllowExperimentalFeatures = true };
         byte[] profileJson = SerializeProfiles(profiles);
@@ -578,6 +719,9 @@ public sealed class BatteryConfigurationStore
             markerJson,
             transactionId);
         TransactionTarget[] targets = [profile, preference, marker];
+        // A leased machine transaction opens new sibling files only and
+        // tracks the names it owns.
+        HashSet<string>? createdArtifacts = machinePersistence ? new(StringComparer.Ordinal) : null;
         bool replacementPhaseStarted = false;
         bool rollbackFailed = false;
         bool recoveryRecordCreated = false;
@@ -591,13 +735,15 @@ public sealed class BatteryConfigurationStore
                 await WriteDurableFileAsync(
                     target.StagePath,
                     target.Intended,
-                    cancellationToken);
+                    cancellationToken,
+                    createdArtifacts);
                 if (target.Prior.Exists)
                 {
                     await WriteDurableFileAsync(
                         target.BackupPath,
                         target.Prior.Contents,
-                        cancellationToken);
+                        cancellationToken,
+                        createdArtifacts);
                 }
             }
 
@@ -612,7 +758,7 @@ public sealed class BatteryConfigurationStore
             recoveryRecordCreated = true;
             cancellationToken.ThrowIfCancellationRequested();
             replacementPhaseStarted = true;
-            ReplaceStaged(profile);
+            ReplaceStaged(profile, createdArtifacts);
             await AtBoundaryAsync(
                 BatteryConfigurationCommitBoundary.AfterProfileReplacement,
                 cancellationToken);
@@ -622,7 +768,7 @@ public sealed class BatteryConfigurationStore
                 BatteryConfigurationCommitBoundary.BeforePreferencesReplacement,
                 cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
-            ReplaceStaged(preference);
+            ReplaceStaged(preference, createdArtifacts);
             await AtBoundaryAsync(
                 BatteryConfigurationCommitBoundary.AfterPreferencesReplacement,
                 cancellationToken);
@@ -632,7 +778,7 @@ public sealed class BatteryConfigurationStore
                 BatteryConfigurationCommitBoundary.BeforeMarkerReplacement,
                 cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
-            ReplaceStaged(marker);
+            ReplaceStaged(marker, createdArtifacts);
 
             // Marker replacement is the commit point. From here onward caller
             // cancellation cannot turn an already committed intent into a reported
@@ -661,7 +807,7 @@ public sealed class BatteryConfigurationStore
             {
                 try
                 {
-                    await RestorePriorAggregateAsync(targets);
+                    await RestorePriorAggregateAsync(targets, createdArtifacts);
                 }
                 catch (Exception rollbackFailure)
                 {
@@ -679,7 +825,7 @@ public sealed class BatteryConfigurationStore
         {
             foreach (TransactionTarget target in targets)
             {
-                DeleteBestEffort(target.StagePath);
+                DeleteTransactionArtifact(target.StagePath, createdArtifacts);
             }
             if (!rollbackFailed)
             {
@@ -701,10 +847,15 @@ public sealed class BatteryConfigurationStore
                 }
                 foreach (TransactionTarget target in targets)
                 {
-                    DeleteBestEffort(target.BackupPath);
-                    DeleteBestEffort(target.RestorePath);
+                    DeleteTransactionArtifact(target.BackupPath, createdArtifacts);
+                    DeleteTransactionArtifact(target.RestorePath, createdArtifacts);
                 }
             }
+        }
+
+        if (machineWriter is not null)
+        {
+            machineCommit = markerJson;
         }
     }
 
@@ -780,7 +931,9 @@ public sealed class BatteryConfigurationStore
         }
     }
 
-    private async Task RestorePriorAggregateAsync(TransactionTarget[] targets)
+    private async Task RestorePriorAggregateAsync(
+        TransactionTarget[] targets,
+        HashSet<string>? createdArtifacts)
     {
         // Data files are restored first and the marker last, mirroring the forward
         // commit order so the old aggregate becomes authoritative only when complete.
@@ -800,8 +953,10 @@ public sealed class BatteryConfigurationStore
                 await WriteDurableFileAsync(
                     target.RestorePath,
                     backup,
-                    CancellationToken.None);
+                    CancellationToken.None,
+                    createdArtifacts);
                 File.Move(target.RestorePath, target.Prior.Path, overwrite: true);
+                createdArtifacts?.Remove(target.RestorePath);
             }
             else
             {
@@ -869,28 +1024,41 @@ public sealed class BatteryConfigurationStore
     private static async Task WriteDurableFileAsync(
         string path,
         ReadOnlyMemory<byte> contents,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        HashSet<string>? createdArtifacts)
     {
         string? directory = Path.GetDirectoryName(path);
-        if (!string.IsNullOrEmpty(directory))
+        if (createdArtifacts is null && !string.IsNullOrEmpty(directory))
         {
             Directory.CreateDirectory(directory);
         }
 
         await using var stream = new FileStream(
             path,
-            FileMode.Create,
+            createdArtifacts is null ? FileMode.Create : FileMode.CreateNew,
             FileAccess.Write,
             FileShare.None,
             bufferSize: 4096,
             FileOptions.Asynchronous | FileOptions.WriteThrough);
+        createdArtifacts?.Add(path);
         await stream.WriteAsync(contents, cancellationToken);
         await stream.FlushAsync(cancellationToken);
         stream.Flush(flushToDisk: true);
     }
 
-    private static void ReplaceStaged(TransactionTarget target) =>
+    private static void ReplaceStaged(TransactionTarget target, HashSet<string>? createdArtifacts)
+    {
         File.Move(target.StagePath, target.Prior.Path, overwrite: true);
+        createdArtifacts?.Remove(target.StagePath);
+    }
+
+    private static void DeleteTransactionArtifact(string path, HashSet<string>? createdArtifacts)
+    {
+        if (createdArtifacts is null || createdArtifacts.Remove(path))
+        {
+            DeleteBestEffort(path);
+        }
+    }
 
     private static void DeleteBestEffort(string path)
     {
@@ -954,7 +1122,21 @@ public sealed class BatteryConfigurationStore
     {
         try
         {
-            _ = File.GetAttributes(RecoveryRequiredPath);
+            CheckRecoveryRequired(markerPath);
+        }
+        catch (ConfigurationQuarantinedException)
+        {
+            preservationRequired = true;
+            throw;
+        }
+    }
+
+    internal static void CheckRecoveryRequired(string markerPath)
+    {
+        string recoveryRequiredPath = GetRecoveryRequiredPath(markerPath);
+        try
+        {
+            _ = File.GetAttributes(recoveryRequiredPath);
         }
         catch (FileNotFoundException)
         {
@@ -966,9 +1148,8 @@ public sealed class BatteryConfigurationStore
         }
         // Presence is sufficient, including empty/corrupt records and directories.
         // Do not read paths from this evidence or infer an automatic restoration.
-        preservationRequired = true;
         throw new ConfigurationQuarantinedException(
-            $"Configuration transaction recovery is required. Preserve '{RecoveryRequiredPath}' and the original transaction artifacts before changing configuration.",
+            $"Configuration transaction recovery is required. Preserve '{recoveryRequiredPath}' and the original transaction artifacts before changing configuration.",
             ConfigurationQuarantineReason.InvalidDocument);
     }
 

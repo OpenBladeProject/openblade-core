@@ -4,15 +4,38 @@
     <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
+    <None Include="../Fixtures/Parity/managed-mailbox-handoff-v2.json" Link="managed-mailbox-handoff-v2.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../Fixtures/Parity/native-handback-record-v1.json" Link="native-handback-record-v1.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../Fixtures/Parity/managed-mailbox-handoff-v1.json" Link="managed-mailbox-handoff-v1.json" CopyToOutputDirectory="PreserveNewest" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
     <PackageReference Include="coverlet.collector" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="../../tools/openblade-windows-host/tests/data/thermal-history-v1.json" Link="thermal-history-v1.json" CopyToOutputDirectory="PreserveNewest" />
     <Using Include="Xunit" />
+    <None Include="../../tools/openblade-windows-host/tests/data/temporary-charge-history-v1.json" Link="temporary-charge-history-v1.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../tools/openblade-windows-host/tests/data/battery-history-v1.json" Link="battery-history-v1.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../tools/openblade-windows-host/tests/data/driver-mode-record-v1.json" Link="driver-mode-record-v1.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../tools/openblade-windows-host/tests/data/fan-history-v2.json" Link="fan-history-v2.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../tools/openblade-windows-host/tests/data/fan-history-v3.json" Link="fan-history-v3.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../tools/openblade-windows-host/tests/data/fan-history-v3-limited-source.json" Link="fan-history-v3-limited-source.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../tools/openblade-windows-host/tests/data/fan-history-v3-unclassified-source.json" Link="fan-history-v3-unclassified-source.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../tools/openblade-windows-host/tests/data/fan-history-v3-destination-return.json" Link="fan-history-v3-destination-return.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../tools/openblade-windows-host/tests/data/fan-history-v3-foreign-selector-automatic.json" Link="fan-history-v3-foreign-selector-automatic.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../tools/openblade-windows-host/tests/data/fan-caller-scope-chains.json" Link="fan-caller-scope-chains.json" CopyToOutputDirectory="PreserveNewest" />
+    <InternalsVisibleTo Include="OpenBlade.Setup.Tests" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\src\OpenBlade.Deployment\OpenBlade.Deployment.csproj" />
+    <ProjectReference Include="../OpenBlade.Deployment.AlgorithmTests/OpenBlade.Deployment.AlgorithmTests.csproj" Condition="'$(OpenBladeNativePackageTests)' != 'true'" />
+    <ProjectReference Include="../../src/OpenBlade.Deployment/OpenBlade.Deployment.csproj" Condition="'$(OpenBladeNativePackageTests)' == 'true'" />
+    <None Include="../../tools/openblade-windows-host/tests/data/native-capabilities-v2.json" Link="native-capabilities-v2.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../tools/openblade-windows-host/tests/data/native-api-set-imports-v1.json" Link="native-api-set-imports-v1.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../tools/openblade-windows-host/tests/data/native-recovery-lifetime-v1.json" Link="native-recovery-lifetime-v1.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../tools/openblade-windows-host/tests/data/native-origin-corrections-v1.json" Link="native-origin-corrections-v1.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../tools/openblade-windows-host/tests/data/native-verification-v1.json" Link="native-verification-v1.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../tools/openblade-windows-host/tests/data/native-package-v1.json" Link="native-package-v1.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../tools/openblade-windows-host/tests/data/native-identity-bound-v1.json" Link="native-identity-bound-v1.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

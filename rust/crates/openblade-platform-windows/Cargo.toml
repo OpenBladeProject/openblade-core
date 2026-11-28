@@ -1,0 +1,65 @@
+[package]
+name = "openblade-platform-windows"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+controller-process-compile-check = ["windows-sys/Win32_System_Services"]
+scripted-display = []
+# Production manual HDR writer (SET_HDR_STATE). Never implied by scripted-display.
+display-hdr-write = []
+# Production manual refresh writer (SetDisplayConfig VALIDATE then APPLY).
+# Never implied by scripted-display.
+display-refresh-write = []
+# Production manual color-profile writer (WCS association, scope and default
+# transaction). Never implied by scripted-display.
+display-color-write = []
+scripted-gpu = []
+scripted-gpu-close = ["scripted-gpu"]
+# Production Session GPU close and force-close backend (retained-handle
+# identity recheck, WM_CLOSE, TerminateProcess). Never implied by scripted-gpu.
+gpu-close = ["windows-sys/Wdk_System_Threading", "windows-sys/Win32_System_Kernel"]
+
+foreground-watcher = ["windows-sys/Win32_UI_Accessibility"]
+foreground-watcher-replay = ["foreground-watcher"]
+
+[target.'cfg(windows)'.dependencies]
+openblade-application-reporter = { path = "../openblade-application-reporter" }
+openblade-domain.workspace = true
+windows-sys = { version = "=0.61.2", default-features = false, features = [
+    "Wdk_Foundation",
+    "Wdk_Storage_FileSystem",
+    "Win32_Security_Authorization",
+    "Win32_System_IO",
+    "Win32_System_JobObjects",
+    "Win32_UI_Shell",
+    "Win32_Devices_Display",
+    "Win32_Foundation",
+    "Win32_Globalization",
+    "Win32_Graphics_Gdi",
+    "Win32_Security",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Com",
+    "Win32_System_Diagnostics_ToolHelp",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Ole",
+    "Win32_System_Performance",
+    "Win32_System_Registry",
+    "Win32_System_RemoteDesktop",
+    "Win32_System_Rpc",
+    "Win32_System_StationsAndDesktops",
+    "Win32_System_SystemInformation",
+    "Win32_System_Threading",
+    "Win32_System_Variant",
+    "Win32_System_Wmi",
+    "Win32_UI_ColorSystem",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[lints.rust]
+unsafe_code = "deny"
+unsafe_op_in_unsafe_fn = "deny"

@@ -419,12 +419,30 @@ public static partial class BrokerEnrollmentCodec
     private static partial Regex LowerSha256Pattern();
 }
 
-public sealed class BrokerEnrollmentStore(BrokerPaths paths)
+public sealed class BrokerEnrollmentStore
 {
+    private readonly BrokerPaths paths;
+    private readonly Action requireReadyForEnrollmentChange;
+
+    public BrokerEnrollmentStore(BrokerPaths paths)
+        : this(paths, OpenBlade.Deployment.WindowsNativeTrustLifecycle.RequireReadyForEnrollmentChange)
+    {
+    }
+
+    // Tests supply the readiness gate: the production gate reads this host's
+    // protected native custody, which an unelevated test cannot open.
+    internal BrokerEnrollmentStore(BrokerPaths paths, Action requireReadyForEnrollmentChange)
+    {
+        this.paths = paths ?? throw new ArgumentNullException(nameof(paths));
+        this.requireReadyForEnrollmentChange = requireReadyForEnrollmentChange
+            ?? throw new ArgumentNullException(nameof(requireReadyForEnrollmentChange));
+    }
+
     public async Task CreateOnceAsync(
         BrokerEnrollment enrollment,
         CancellationToken cancellationToken = default)
     {
+        requireReadyForEnrollmentChange();
         byte[] bytes = BrokerEnrollmentCodec.SerializeCanonical(enrollment);
         paths.EnsureDirectory(paths.RootDirectory);
         await using FileStream stream = new(

@@ -165,7 +165,8 @@ internal sealed class WindowsRazerHidSession :
         this.featureReportSettleDelay = featureReportSettleDelay;
         this.featureReportId = featureReportId;
         this.queryDiagnostics = queryDiagnostics;
-        worker = RunAsync();
+        var lifetime = handle.Lifetime?.Child();
+        worker = lifetime is null ? RunAsync() : lifetime.RunAsync(RunAsync);
     }
 
     public RazerCommandSessionDisposition Disposition

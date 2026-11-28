@@ -71,6 +71,10 @@ public sealed class PersistentOverrideStore
     private readonly string path;
     private readonly Func<CancellationToken, Task>? beforeWrite;
     private readonly SemaphoreSlim gate;
+    private readonly UserConfigurationWriterScope? writerScope;
+    private readonly MachineConfigurationWriterBinding? machineWriter;
+    private bool machineBaselineLoaded;
+    private byte[]? machineBaseline;
     private bool preservationRequired;
 
     public PersistentOverrideStore(string path)
@@ -80,8 +84,10 @@ public sealed class PersistentOverrideStore
 
     internal PersistentOverrideStore(
         string path,
-        Func<CancellationToken, Task>? beforeWrite)
+        Func<CancellationToken, Task>? beforeWrite,
+        UserConfigurationWriterScope? writerScope = null)
     {
+        this.writerScope = writerScope;
         this.path = Path.GetFullPath(string.IsNullOrWhiteSpace(path)
             ? throw new ArgumentException("An override path is required.", nameof(path))
             : path);
@@ -93,12 +99,46 @@ public sealed class PersistentOverrideStore
                 LazyThreadSafetyMode.ExecutionAndPublication)).Value;
     }
 
-    public async Task<PersistentOverrideLoadResult> LoadAsync(
+    internal PersistentOverrideStore(
+        MachineConfigurationWriterBinding machineWriter,
+        Func<CancellationToken, Task>? beforeWrite = null)
+        : this(machineWriter.OverridePath, beforeWrite)
+    {
+        this.machineWriter = machineWriter;
+    }
+
+    internal MachineConfigurationWriterBinding? MachineWriter => machineWriter;
+
+    public async Task<PersistentOverrideLoadResult> LoadAsync(CancellationToken cancellationToken)
+    {
+        await using UserConfigurationWriterScope? machineScope = machineWriter?.Acquire(cancellationToken);
+        return await LoadWithAdmissionAsync(machineScope ?? writerScope, cancellationToken).ConfigureAwait(false);
+    }
+
+    internal Task<PersistentOverrideLoadResult> LoadForMachineTransitionAsync(
+        UserConfigurationWriterScope scope,
         CancellationToken cancellationToken)
     {
+        MachineConfigurationWriterBinding binding = machineWriter
+            ?? throw new InvalidOperationException("Machine startup requires an enrolled override writer.");
+        scope.CheckRoot(binding.MarkerPath);
+        return LoadWithAdmissionAsync(scope, cancellationToken);
+    }
+
+    private async Task<PersistentOverrideLoadResult> LoadWithAdmissionAsync(
+        UserConfigurationWriterScope? scope,
+        CancellationToken cancellationToken)
+    {
+        using IDisposable? admission = scope is null
+            ? null
+            : await scope.EnterAsync(cancellationToken).ConfigureAwait(false);
         await gate.WaitAsync(cancellationToken);
         try
         {
+            if (machineWriter is not null)
+            {
+                MachineConfigurationWriterBinding.CheckTarget(path);
+            }
             PersistentOverrideInspection inspection = await LoadCoreAsync(
                 persistMigration: true,
                 cancellationToken);
@@ -133,6 +173,11 @@ public sealed class PersistentOverrideStore
         PersistentOverrideState overrides,
         CancellationToken cancellationToken)
     {
+        await using UserConfigurationWriterScope? machineScope = machineWriter?.Acquire(cancellationToken);
+        UserConfigurationWriterScope? scope = machineScope ?? writerScope;
+        using IDisposable? admission = scope is null
+            ? null
+            : await scope.EnterAsync(cancellationToken).ConfigureAwait(false);
         overrides = NormalizeLegacyGpuClockTuning(
             NormalizeLegacyFanControl(NormalizeLegacyLighting(overrides)));
         Validate(overrides);
@@ -146,6 +191,10 @@ public sealed class PersistentOverrideStore
                     ConfigurationQuarantineReason.InvalidDocument);
             }
 
+            if (machineScope is not null)
+            {
+                MachineConfigurationWriterBinding.CheckTarget(path);
+            }
             byte[]? existing = await ReadIfPresentAsync(cancellationToken).ConfigureAwait(false);
             if (existing is not null)
             {
@@ -166,7 +215,14 @@ public sealed class PersistentOverrideStore
                 }
             }
 
-            await WriteCoreAsync(overrides, cancellationToken);
+            if (machineScope is not null && (!machineBaselineLoaded
+                || (existing is null) != (machineBaseline is null)
+                || !existing.AsSpan().SequenceEqual(machineBaseline)))
+            {
+                throw new IOException("Machine overrides changed since they were loaded; reload them before saving.");
+            }
+
+            RememberMachineBaseline(await WriteCoreAsync(overrides, cancellationToken).ConfigureAwait(false));
         }
         finally
         {
@@ -181,6 +237,10 @@ public sealed class PersistentOverrideStore
         byte[]? json = await ReadIfPresentAsync(cancellationToken).ConfigureAwait(false);
         if (json is null)
         {
+            if (persistMigration)
+            {
+                RememberMachineBaseline(null);
+            }
             return new PersistentOverrideInspection(
                 new PersistentOverrideLoadResult(
                     PersistentOverrideState.Empty,
@@ -193,7 +253,11 @@ public sealed class PersistentOverrideStore
             PersistentOverrideState overrides = Deserialize(json, out bool migrated);
             if (migrated && persistMigration)
             {
-                await WriteCoreAsync(overrides, cancellationToken).ConfigureAwait(false);
+                json = await WriteCoreAsync(overrides, cancellationToken).ConfigureAwait(false);
+            }
+            if (persistMigration)
+            {
+                RememberMachineBaseline(json);
             }
             return new PersistentOverrideInspection(
                 new PersistentOverrideLoadResult(overrides, Recovered: false),
@@ -425,7 +489,16 @@ public sealed class PersistentOverrideStore
         };
     }
 
-    private async Task WriteCoreAsync(
+    private void RememberMachineBaseline(byte[]? json)
+    {
+        if (machineWriter is not null)
+        {
+            machineBaseline = json;
+            machineBaselineLoaded = true;
+        }
+    }
+
+    private async Task<byte[]> WriteCoreAsync(
         PersistentOverrideState overrides,
         CancellationToken cancellationToken)
     {
@@ -438,7 +511,16 @@ public sealed class PersistentOverrideStore
         byte[] json = JsonSerializer.SerializeToUtf8Bytes(
             new PersistentOverrideDocument(CurrentSchemaVersion, overrides),
             SerializerOptions);
-        await AtomicFile.WriteAsync(path, json, cancellationToken);
+        await AtomicFile.WriteAsync(path, json, cancellationToken, exclusiveStaging: machineWriter is not null);
+        if (machineWriter is not null)
+        {
+            byte[]? committed = await ReadIfPresentAsync(CancellationToken.None).ConfigureAwait(false);
+            if (committed is null || !committed.AsSpan().SequenceEqual(json))
+            {
+                throw new IOException("The machine override replacement could not be verified.");
+            }
+        }
+        return json;
     }
 }
 

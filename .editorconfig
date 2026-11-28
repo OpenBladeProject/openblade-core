@@ -74,3 +74,11 @@ end_of_line = lf
 
 [tools/openblade-discovery/**]
 end_of_line = lf
+
+[tools/openblade-windows-host/**]
+end_of_line = lf
+
+# Actual managed ProfileStore serialization is preserved byte-for-byte.
+[tools/openblade-windows-host/tests/fixtures/app-fans-*.json]
+end_of_line = crlf
+insert_final_newline = false

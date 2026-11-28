@@ -45,6 +45,11 @@
   ],
   "testInputRules": [
     {
+      "patterns": ["build/Test-NativeWindowsFixtures.ps1", "build/NativeWindowsFixtures.ps1", "build/native_windows_fixtures.py", "build/NativeWindowsFixtureManifest.json", "tests/Build.Tests/NativeWindowsFixtures.Tests.ps1", "build/test_native_windows_fixtures.py", "tools/openblade-windows-host/src/windows/scm/installed/readiness_tests/mutation.rs", "tools/openblade-windows-host/src/windows/scm/installed/readiness_tests/temporary_charge_release.rs", "tools/openblade-windows-host/src/windows/scm/installed/battery_mutation.rs", "tools/openblade-windows-host/tests/fixtures/native-thermal-edge-fixtures.json", "tools/openblade-windows-host/tests/fixtures/native-thermal-edge/*"],
+      "testProjects": ["tests/OpenBlade.Contracts.Tests/OpenBlade.Contracts.Tests.csproj", "tests/OpenBlade.Service.Tests/OpenBlade.Service.Tests.csproj", "tests/OpenBlade.Deployment.Tests/OpenBlade.Deployment.Tests.csproj"],
+      "reason": "The Windows-only native fixture harness and emitters supply required fresh frame corpora, managed edge fixtures and protected own-SID history inputs."
+    },
+    {
       "patterns": ["rust/crates/openblade-status-cli/fixtures/request.json", "rust/crates/openblade-status-cli/fixtures/response.json"],
       "testProjects": ["tests/OpenBlade.Contracts.Tests/OpenBlade.Contracts.Tests.csproj"],
       "reason": "Contracts tests compare the independent Rust CLI request and response fixtures with the real read-only IPC contract."
@@ -164,6 +169,10 @@
   ],
   "contractRules": [
     {
+      "test": "tests/Build.Tests/NativeWindowsFixtures.Tests.ps1",
+      "patterns": ["build/Test-NativeWindowsFixtures.ps1", "build/NativeWindowsFixtures.ps1", "build/native_windows_fixtures.py", "build/NativeWindowsFixtureManifest.json", "tests/Build.Tests/NativeWindowsFixtures.Tests.ps1", "build/test_native_windows_fixtures.py", "tools/openblade-windows-host/src/windows/scm/installed/readiness_tests/mutation.rs", "tools/openblade-windows-host/src/windows/scm/installed/readiness_tests/temporary_charge_release.rs", "tools/openblade-windows-host/src/windows/scm/installed/battery_mutation.rs", "tools/openblade-windows-host/tests/fixtures/native-thermal-edge-fixtures.json", "tools/openblade-windows-host/tests/fixtures/native-thermal-edge/*"]
+    },
+    {
       "test": "tests/Build.Tests/NativePayload.Tests.ps1",
       "patterns": ["build/NativePayload.ps1", "build/Build-NativeDevelopment.ps1", "build/Prepare-NativeToolchain.ps1", "build/Publish.ps1", "rust/*", ".github/workflows/build.yml", ".github/workflows/ci.yml", ".github/workflows/pr-version.yml"]
     },
@@ -221,7 +230,7 @@
     },
     {
       "test": "tests/Build.Tests/CiBuildScope.Tests.ps1",
-      "patterns": ["build/CiBuildScope.ps1", "build/CiImpactManifest.json", ".github/workflows/ci.yml", ".github/workflows/build.yml", "tests/Build.Tests/LocalizationTranslatorWorkflow.Tests.ps1"]
+      "patterns": ["build/CiBuildScope.ps1", "build/CiImpactManifest.json", ".github/workflows/ci.yml", ".github/workflows/build.yml", "tests/Build.Tests/LocalizationTranslatorWorkflow.Tests.ps1", "build/Test-NativeWindowsFixtures.ps1", "build/NativeWindowsFixtures.ps1", "build/native_windows_fixtures.py", "build/NativeWindowsFixtureManifest.json", "tests/Build.Tests/NativeWindowsFixtures.Tests.ps1", "build/test_native_windows_fixtures.py", "tools/openblade-windows-host/src/windows/scm/installed/readiness_tests/mutation.rs", "tools/openblade-windows-host/src/windows/scm/installed/readiness_tests/temporary_charge_release.rs", "tools/openblade-windows-host/src/windows/scm/installed/battery_mutation.rs", "tools/openblade-windows-host/tests/fixtures/native-thermal-edge-fixtures.json", "tools/openblade-windows-host/tests/fixtures/native-thermal-edge/*"]
     },
     {
       "test": "tests/Build.Tests/CiLaneResults.Tests.ps1",
@@ -271,6 +280,10 @@
     {
       "test": "tests/Build.Tests/PublishPayloadValidation.Tests.ps1",
       "patterns": ["build/PublishPayloadValidation.ps1"]
+    },
+    {
+      "test": "tests/Build.Tests/WindowsReplayPublishInventory.Tests.ps1",
+      "patterns": ["build/Publish.ps1", "docs/windows-backend-replay-inventory.json"]
     },
     {
       "test": "tests/Build.Tests/PullRequestVersion.Tests.ps1",

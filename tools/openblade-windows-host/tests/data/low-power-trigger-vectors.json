@@ -1,0 +1,21 @@
+{
+"comment":"Recorded from managed by ServiceControlRuntimeTests.NativeLowPowerTriggerVectors; regenerate with OPENBLADE_REGENERATE_NATIVE_PROFILE_VECTORS. A lowPower row runs with the LowPowerGate entered. A report row whose expect has transition true ran ApplyFullTransitionAsync with the gate clear. setters counts the device setters the request submitted. startup is ApplyFullTransitionAsync itself, as the user\u0027s profile load runs it; writeBlock is ScopedThermalWriteBlockReason, which every thermal write of a transition checks. An explicit row is a persistent override at power, the pluggedIn rows first, then the battery rows after a source change with the gate clear.",
+"report":[
+{"sequence":1,"path":"C:\\Games\\Game.exe","lowPower":true,"expect":{"status":2,"message":"The active application profile was recorded. Lighting intent was stored and will be applied after standby.","setters":0}},
+{"sequence":2,"path":"C:\\Games\\Game.exe","lowPower":true,"expect":{"status":0,"message":"The active application profile lease was renewed.","setters":0}},
+{"sequence":3,"path":"C:\\Tools\\Other.exe","lowPower":true,"expect":{"status":2,"message":"The active application profile was recorded. Lighting intent was stored and will be applied after standby.","setters":0}},
+{"sequence":4,"path":null,"lowPower":true,"expect":{"status":0,"message":"No application profile is active.","setters":0}},
+{"sequence":5,"path":"C:\\Games\\Game.exe","lowPower":false,"expect":{"status":3,"transition":true,"setters":3}},
+{"sequence":6,"path":"C:\\Games\\Game.exe","lowPower":false,"expect":{"status":0,"message":"The active application profile lease was renewed.","setters":0}}
+],
+"save":{"status":0,"message":"Profiles were stored. Lighting intent was stored and will be applied after standby.","setters":0},
+"startup":{"status":2,"message":"Lighting intent was stored and will be applied after standby.","setters":0},
+"writeBlock":{"message":"The laptop entered a low-power transition before the thermal command was submitted."},
+"explicit":[
+{"power":"pluggedIn","operation":"setPerformanceOverride","value":0,"expect":{"status":2,"message":"Performance override intent was stored. Hardware result: The laptop entered a low-power transition before the performance command was submitted.","setters":0}},
+{"power":"pluggedIn","operation":"setFanOverride","value":3,"expect":{"status":2,"message":"Fan override intent was stored. Hardware result: The laptop entered a low-power transition before the thermal command was submitted.","setters":0}},
+{"power":"battery","operation":"setPerformanceOverride","value":3,"expect":{"status":2,"message":"Performance override intent was stored. Hardware result: The laptop entered a low-power transition before the performance command was submitted.","setters":0}},
+{"power":"battery","operation":"setFanOverride","value":3,"expect":{"status":2,"message":"Fan override intent was stored. Hardware result: The laptop entered a low-power transition before the thermal command was submitted.","setters":0}},
+{"power":"battery","operation":"setFanOverride","value":0,"expect":{"status":2,"message":"Fan override intent was stored. Hardware result: Fans could not return to Automatic with the saved BatterySaver performance intent. The laptop entered a low-power transition before the thermal command was submitted.","setters":0}}
+]
+}

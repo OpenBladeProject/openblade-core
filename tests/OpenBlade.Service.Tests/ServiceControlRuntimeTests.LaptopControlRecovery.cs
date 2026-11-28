@@ -1,3 +1,4 @@
+using System.Text.Json;
 using OpenBlade.Contracts;
 using OpenBlade.Protocol;
 using OpenBlade.Service;
@@ -6,6 +7,110 @@ namespace OpenBlade.Service.Tests;
 
 public sealed partial class ServiceControlRuntimeTests
 {
+    [Theory]
+    [MemberData(nameof(WindowsReplayData.Cases), "laptopRecovery", MemberType = typeof(WindowsReplayData))]
+    public async Task WindowsReplay_LaptopRecoverySettlesOnlyWithEvidence(string id)
+    {
+        using JsonDocument fixture = WindowsReplayData.Open();
+        JsonElement example = WindowsReplayData.Find(fixture, "laptopRecovery", id);
+        JsonElement input = example.GetProperty("input");
+        JsonElement expected = example.GetProperty("expected");
+        const string identity = "synthetic-device";
+        string path = Path.Combine(directory, "replay-pending.json");
+        var store = new LaptopControlPendingStore(path);
+        ApplyOneShotLaptopControl request = input.GetProperty("requested").GetString() == "Microphone"
+            ? new(OneShotLaptopControl.MicrophoneMuteIndicator, Enabled: true)
+            : FunctionKeysRequest;
+        FunctionKeyPrimaryMode? readback = input.GetProperty("readback").GetString() is { } mode
+            ? Enum.Parse<FunctionKeyPrimaryMode>(mode)
+            : null;
+        var device = new CountingBladeDevice { FunctionKeyPrimary = readback };
+        string? action = input.GetProperty("action").GetString();
+        if (action == "Restart")
+        {
+            // A different machine name is provenance only.
+            Assert.True(await store.TrySaveAsync(null, new(1, "prior-name", identity,
+                [new(request, true)]), CancellationToken.None));
+            var restarted = new LaptopControlExecutor(store);
+            await restarted.ReconcileAsync(device, input.GetProperty("identity").GetString(), CancellationToken.None);
+        }
+        else
+        {
+            var executor = new LaptopControlExecutor(store);
+            using var cancellation = new CancellationTokenSource();
+            int authorityChecks = 0;
+            bool WriteAllowed()
+            {
+                if (++authorityChecks == 2 && action == "CanceledBefore")
+                {
+                    LaptopControlPendingLoad pending = store.Load();
+                    Assert.True(pending.RequiresReconciliation);
+                    if (input.GetProperty("cleanupRevision").GetString() == "Replacement")
+                    {
+                        var replacement = pending.Document! with
+                        {
+                            Entries = [new(request with { FunctionKeyMode = FunctionKeyPrimaryMode.MultimediaKeys }, true)],
+                        };
+                        File.WriteAllBytes(path, JsonSerializer.SerializeToUtf8Bytes(replacement));
+                    }
+                    cancellation.Cancel();
+                    return false;
+                }
+                return true;
+            }
+
+            device.AfterOneShotSet = _ =>
+            {
+                Assert.True(store.Load().RequiresReconciliation);
+                device.FunctionKeyPrimary = readback;
+                if (action == "CanceledDuring")
+                {
+                    cancellation.Cancel();
+                }
+            };
+            device.OneShotFailure = action switch
+            {
+                "CanceledDuring" => new OperationCanceledException(cancellation.Token),
+                "Indeterminate" => new BladeWriteException(WriteSubmissionState.Indeterminate, "Possible submission."),
+                _ => null,
+            };
+            Task<LaptopControlApplyOutcome> apply = executor.ExecuteAsync(
+                device, identity, request, true, WriteAllowed, cancellation.Token);
+            if (action is "CanceledBefore" or "CanceledDuring")
+            {
+                await Assert.ThrowsAnyAsync<OperationCanceledException>(() => apply);
+            }
+            else
+            {
+                await apply;
+            }
+        }
+
+        LaptopControlPendingLoad load = store.Load();
+        Assert.Null(load.Failure);
+        switch (expected.GetProperty("journal").GetString())
+        {
+            case "Removed":
+                Assert.Empty(load.Document!.Entries);
+                break;
+            case "Pending":
+                Assert.Equal(new LaptopControlPendingEntry(request, true), Assert.Single(load.Document!.Entries));
+                break;
+            case "Replacement":
+                Assert.Equal(new LaptopControlPendingEntry(
+                    request with { FunctionKeyMode = FunctionKeyPrimaryMode.MultimediaKeys }, true),
+                    Assert.Single(load.Document!.Entries));
+                break;
+            case "Tombstone":
+                Assert.Equal(new LaptopControlPendingEntry(request, false), Assert.Single(load.Document!.Entries));
+                break;
+            default:
+                throw new InvalidDataException("Unknown journal expectation.");
+        }
+        Assert.Equal(expected.GetProperty("setters").GetInt32(), device.OneShotSetCalls);
+    }
+
+
     [Fact]
     public async Task LaptopRecovery_PendingBlocksOwnedReactiveInput()
     {

@@ -1,0 +1,43 @@
+{
+  "description" : "Known answers for the native handback on-disk format. Custody recomputes the history commitment at every start, so any change here blocks every handed-back machine; change it only with a new versioned header. fromJournal pins classification from native history; fromRecord pins the remaining slots, a battery policy whose protection and temporary flags differ, and a staged journal digest.",
+  "fromJournal" : {
+    "commitment" : "f9772180d42349fddd79b6eb755136f54a5783427bb7d3d10c7580b435211590",
+    "history" : "b9343a2343959ebf1e9576e13a69523e6763cce720e7e3df4a3891b97216b3ff",
+    "historyLines" : "OpenBlade.NativeHandback.v1\n22222222222222222222222222222222\naaaaaaaa-bbbb-cccc-dddd-000000000001,performance,2,S-1-5-21-111-222-333-1002,Balanced,-,-\nnone\naaaaaaaa-bbbb-cccc-dddd-000000000002,temporaryCharge,72,S-1-5-21-111-222-333-1002,-,-,80/True/True\nnone\nno-staged-journal\n",
+    "journal" : [
+      "{\"request\":\"aaaaaaaa-bbbb-cccc-dddd-000000000002\",\"owner\":\"7777777777777777777777777777777777777777777777777777777777777777\",\"user_sid\":\"S-1-5-21-111-222-333-1002\",\"caller_pid\":44,\"session\":7,\"requested\":null,\"destination\":0,\"intent\":\"5de3022dbe03d7f70c4822c8a73cd5baee10bf23128ae858a02d8f0eb46959e7\",\"progress\":0,\"tfc\":{\"contract\":\"service-temporary-charge-v1/rz09-0581-v1\",\"requested\":{\"operation\":\"setFullChargeOverride\",\"enabled\":true},\"configured\":{\"limit\":80,\"protection\":true,\"temporary\":false},\"desired\":{\"limit\":80,\"protection\":true,\"temporary\":true},\"source\":0,\"baseline\":0,\"target\":4,\"policy\":208,\"ids\":[100,101,102,103,104,105,106,107],\"cancel_ids\":[108,109,110,111,112,113,114,115],\"origin\":null,\"fan_owner\":null}}",
+      "{\"request\":\"aaaaaaaa-bbbb-cccc-dddd-000000000002\",\"owner\":\"7777777777777777777777777777777777777777777777777777777777777777\",\"user_sid\":\"S-1-5-21-111-222-333-1002\",\"caller_pid\":44,\"session\":7,\"requested\":null,\"destination\":0,\"intent\":\"5de3022dbe03d7f70c4822c8a73cd5baee10bf23128ae858a02d8f0eb46959e7\",\"progress\":70,\"tfc\":{\"contract\":\"service-temporary-charge-v1/rz09-0581-v1\",\"requested\":{\"operation\":\"setFullChargeOverride\",\"enabled\":true},\"configured\":{\"limit\":80,\"protection\":true,\"temporary\":false},\"desired\":{\"limit\":80,\"protection\":true,\"temporary\":true},\"source\":0,\"baseline\":0,\"target\":4,\"policy\":208,\"ids\":[100,101,102,103,104,105,106,107],\"cancel_ids\":[108,109,110,111,112,113,114,115],\"origin\":null,\"fan_owner\":null}}",
+      "{\"request\":\"aaaaaaaa-bbbb-cccc-dddd-000000000002\",\"owner\":\"7777777777777777777777777777777777777777777777777777777777777777\",\"user_sid\":\"S-1-5-21-111-222-333-1002\",\"caller_pid\":44,\"session\":7,\"requested\":null,\"destination\":0,\"intent\":\"5de3022dbe03d7f70c4822c8a73cd5baee10bf23128ae858a02d8f0eb46959e7\",\"progress\":71,\"tfc\":{\"contract\":\"service-temporary-charge-v1/rz09-0581-v1\",\"requested\":{\"operation\":\"setFullChargeOverride\",\"enabled\":true},\"configured\":{\"limit\":80,\"protection\":true,\"temporary\":false},\"desired\":{\"limit\":80,\"protection\":true,\"temporary\":true},\"source\":0,\"baseline\":0,\"target\":4,\"policy\":208,\"ids\":[100,101,102,103,104,105,106,107],\"cancel_ids\":[108,109,110,111,112,113,114,115],\"origin\":null,\"fan_owner\":null}}",
+      "{\"request\":\"aaaaaaaa-bbbb-cccc-dddd-000000000002\",\"owner\":\"7777777777777777777777777777777777777777777777777777777777777777\",\"user_sid\":\"S-1-5-21-111-222-333-1002\",\"caller_pid\":44,\"session\":7,\"requested\":null,\"destination\":0,\"intent\":\"5de3022dbe03d7f70c4822c8a73cd5baee10bf23128ae858a02d8f0eb46959e7\",\"progress\":72,\"tfc\":{\"contract\":\"service-temporary-charge-v1/rz09-0581-v1\",\"requested\":{\"operation\":\"setFullChargeOverride\",\"enabled\":true},\"configured\":{\"limit\":80,\"protection\":true,\"temporary\":false},\"desired\":{\"limit\":80,\"protection\":true,\"temporary\":true},\"source\":0,\"baseline\":0,\"target\":4,\"policy\":208,\"ids\":[100,101,102,103,104,105,106,107],\"cancel_ids\":[108,109,110,111,112,113,114,115],\"origin\":null,\"fan_owner\":null}}",
+      "{\"request\":\"aaaaaaaa-bbbb-cccc-dddd-000000000001\",\"owner\":\"7777777777777777777777777777777777777777777777777777777777777777\",\"user_sid\":\"S-1-5-21-111-222-333-1002\",\"caller_pid\":42,\"session\":7,\"requested\":null,\"destination\":1,\"intent\":\"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b\",\"progress\":0}",
+      "{\"request\":\"aaaaaaaa-bbbb-cccc-dddd-000000000001\",\"owner\":\"7777777777777777777777777777777777777777777777777777777777777777\",\"user_sid\":\"S-1-5-21-111-222-333-1002\",\"caller_pid\":42,\"session\":7,\"requested\":null,\"destination\":1,\"intent\":\"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b\",\"progress\":1}",
+      "{\"request\":\"aaaaaaaa-bbbb-cccc-dddd-000000000001\",\"owner\":\"7777777777777777777777777777777777777777777777777777777777777777\",\"user_sid\":\"S-1-5-21-111-222-333-1002\",\"caller_pid\":42,\"session\":7,\"requested\":null,\"destination\":1,\"intent\":\"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b\",\"progress\":2}"
+    ],
+    "ownerReference" : [
+      "11111111111111111111111111111111",
+      "22222222222222222222222222222222",
+      "3333333333333333333333333333333333333333333333333333333333333333-service",
+      "17:1",
+      "7777777777777777777777777777777777777777777777777777777777777777",
+      "8888888888888888888888888888888888888888888888888888888888888888"
+    ],
+    "pendingOverrides" : [
+      {
+        "sha256" : "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "userSid" : "S-1-5-21-111-222-333-1002"
+      }
+    ],
+    "record" : "{\"schema\":1,\"epoch\":\"22222222222222222222222222222222\",\"history\":\"b9343a2343959ebf1e9576e13a69523e6763cce720e7e3df4a3891b97216b3ff\",\"commitment\":\"f9772180d42349fddd79b6eb755136f54a5783427bb7d3d10c7580b435211590\",\"pending\":{\"request\":\"aaaaaaaa-bbbb-cccc-dddd-000000000001\",\"family\":\"performance\",\"progress\":2,\"userSid\":\"S-1-5-21-111-222-333-1002\",\"performance\":\"Balanced\",\"fanMode\":null,\"battery\":null},\"ownedFan\":null,\"liveTemporaryCharge\":{\"request\":\"aaaaaaaa-bbbb-cccc-dddd-000000000002\",\"family\":\"temporaryCharge\",\"progress\":72,\"userSid\":\"S-1-5-21-111-222-333-1002\",\"performance\":null,\"fanMode\":null,\"battery\":{\"limit\":80,\"protection\":true,\"temporary\":true}},\"abandonedPrepared\":null,\"stagedJournal\":null,\"pendingOverrides\":[{\"userSid\":\"S-1-5-21-111-222-333-1002\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}]}",
+    "recordLines" : "OpenBlade.NativeHandbackRecord.v1\nb9343a2343959ebf1e9576e13a69523e6763cce720e7e3df4a3891b97216b3ff\n1\nS-1-5-21-111-222-333-1002,aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
+    "recordSha256" : "2ded957a97804d140a3e62b5ffde76794938d3bd765d07908d5520963fedc090"
+  },
+  "fromRecord" : {
+    "history" : "6870577c61db2e11b635a18fd99f10c7221879569187428670deae6b706297bd",
+    "historyLines" : "OpenBlade.NativeHandback.v1\n44444444444444444444444444444444\naaaaaaaa-bbbb-cccc-dddd-000000000003,battery,60,S-1-5-21-111-222-333-1002,-,-,60/True/False\naaaaaaaa-bbbb-cccc-dddd-000000000004,fan,30,S-1-5-21-111-222-333-1003,-,Fixed,-\nnone\nnone\n5555555555555555555555555555555555555555555555555555555555555555\n",
+    "commitment" : "d7160aff34dbe9780fc304c7df2c3506408af28d4394b97f2188f3a76a82c521",
+    "recordLines" : "OpenBlade.NativeHandbackRecord.v1\n6870577c61db2e11b635a18fd99f10c7221879569187428670deae6b706297bd\n0\n",
+    "pendingOverrides" : [],
+    "record" : "{\"schema\":1,\"epoch\":\"44444444444444444444444444444444\",\"history\":\"6870577c61db2e11b635a18fd99f10c7221879569187428670deae6b706297bd\",\"commitment\":\"d7160aff34dbe9780fc304c7df2c3506408af28d4394b97f2188f3a76a82c521\",\"pending\":{\"request\":\"aaaaaaaa-bbbb-cccc-dddd-000000000003\",\"family\":\"battery\",\"progress\":60,\"userSid\":\"S-1-5-21-111-222-333-1002\",\"performance\":null,\"fanMode\":null,\"battery\":{\"limit\":60,\"protection\":true,\"temporary\":false}},\"ownedFan\":{\"request\":\"aaaaaaaa-bbbb-cccc-dddd-000000000004\",\"family\":\"fan\",\"progress\":30,\"userSid\":\"S-1-5-21-111-222-333-1003\",\"performance\":null,\"fanMode\":\"Fixed\",\"battery\":null},\"liveTemporaryCharge\":null,\"abandonedPrepared\":null,\"stagedJournal\":\"5555555555555555555555555555555555555555555555555555555555555555\",\"pendingOverrides\":[]}",
+    "recordSha256" : "9512677820c9889582af26bd8c5cd34745059994f382bc780e0c66507abc4ab0"
+  }
+}

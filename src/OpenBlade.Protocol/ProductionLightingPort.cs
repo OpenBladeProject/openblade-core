@@ -66,6 +66,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort, ILightin
     // across renderer replacement.
     private bool renderPlaybackMuted;
     private bool ownsDriverMode;
+    private bool driverModeReleaseUncertain;
     private bool closing;
     private bool disposed;
     private Task<LightingRendererOwnershipState>? closeTask;
@@ -928,10 +929,21 @@ internal sealed class ProductionLightingPort : IProductionLightingPort, ILightin
             }
             if (current == RazerDeviceMode.Driver)
             {
-                await SetDeviceModeCoreAsync(
-                    RazerDeviceMode.Normal,
-                    cancellationToken,
-                    stillSuspending).ConfigureAwait(false);
+                // Final disposal cannot replay a possible submission or failed
+                // readback. Only positively known non-submission permits cleanup.
+                driverModeReleaseUncertain = true;
+                try
+                {
+                    await SetDeviceModeCoreAsync(
+                        RazerDeviceMode.Normal,
+                        cancellationToken,
+                        stillSuspending).ConfigureAwait(false);
+                }
+                catch (BladeWriteException error) when (error.SubmissionState == WriteSubmissionState.KnownNotApplied)
+                {
+                    driverModeReleaseUncertain = false;
+                    throw;
+                }
             }
 
             RazerDeviceMode confirmed = await QueryDeviceModeCoreAsync(cancellationToken)
@@ -944,6 +956,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort, ILightin
             }
 
             ownsDriverMode = false;
+            driverModeReleaseUncertain = false;
             return false;
         }
         finally
@@ -1223,6 +1236,11 @@ internal sealed class ProductionLightingPort : IProductionLightingPort, ILightin
 
     private async Task TryRestoreOwnedDeviceModeCoreAsync()
     {
+        if (driverModeReleaseUncertain)
+        {
+            SetDriverModeRestoreOutcome(DriverModeRestoreOutcome.Indeterminate);
+            return;
+        }
         if (!ownsDriverMode)
         {
             SetDriverModeRestoreOutcome(DriverModeRestoreOutcome.NotOwned);

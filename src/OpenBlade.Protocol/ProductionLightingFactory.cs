@@ -58,14 +58,14 @@ public sealed class ProductionLightingFactory : IProductionLightingPortFactory
         => CreateWindowsCore(compatibilityPolicy: null);
 
     internal static IProductionLightingPortFactory CreateWindows(
-        FirmwareCompatibilityPolicy compatibilityPolicy)
+        FirmwareCompatibilityPolicy compatibilityPolicy, MailboxLifetime? lifetime = null)
     {
         ArgumentNullException.ThrowIfNull(compatibilityPolicy);
-        return CreateWindowsCore(compatibilityPolicy);
+        return CreateWindowsCore(compatibilityPolicy, lifetime);
     }
 
     private static IProductionLightingPortFactory CreateWindowsCore(
-        FirmwareCompatibilityPolicy? compatibilityPolicy)
+        FirmwareCompatibilityPolicy? compatibilityPolicy, MailboxLifetime? lifetime = null)
     {
         _ = Blade16KeyboardLightingLayout.CanvasHoleSlots;
         return CreateWindows(
@@ -73,7 +73,7 @@ public sealed class ProductionLightingFactory : IProductionLightingPortFactory
                 ProductionLightingEvidenceSource
                     .IsProductionLightingImplementationApproved(),
             ControllerExclusivityPolicy.Advisory,
-            compatibilityPolicy);
+            compatibilityPolicy, lifetime: lifetime);
     }
 
     public static IProductionLightingPortFactory CreateWindowsReadOnly() =>
@@ -83,13 +83,13 @@ public sealed class ProductionLightingFactory : IProductionLightingPortFactory
             compatibilityPolicy: null);
 
     internal static IProductionLightingPortFactory CreateWindowsReadOnly(
-        FirmwareCompatibilityPolicy compatibilityPolicy)
+        FirmwareCompatibilityPolicy compatibilityPolicy, MailboxLifetime? lifetime = null)
     {
         ArgumentNullException.ThrowIfNull(compatibilityPolicy);
         return CreateWindows(
             admitted: false,
             ControllerExclusivityPolicy.Advisory,
-            compatibilityPolicy);
+            compatibilityPolicy, lifetime: lifetime);
     }
 
     /// <summary>
@@ -249,9 +249,9 @@ public sealed class ProductionLightingFactory : IProductionLightingPortFactory
         bool admitted,
         ControllerExclusivityPolicy exclusivityPolicy,
         FirmwareCompatibilityPolicy? compatibilityPolicy,
-        IMatrixWriteTimingSink? timingSink = null)
+        IMatrixWriteTimingSink? timingSink = null, MailboxLifetime? lifetime = null)
     {
-        var native = new WindowsHidNative();
+        var native = new WindowsHidNative(lifetime);
         var registry = new WindowsRegistryValueSource();
         var processSource = new RunningProcessSource();
         var serviceSource = new WindowsServiceSource();

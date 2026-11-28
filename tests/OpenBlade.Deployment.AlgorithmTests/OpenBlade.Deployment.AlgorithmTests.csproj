@@ -1,0 +1,15 @@
+<Project>
+  <!-- A distinct restore graph identity is required as well as distinct outputs:
+       NuGet does not restore ProjectReference.AdditionalProperties variants. -->
+  <PropertyGroup>
+    <OpenBladeNativePackageTests>true</OpenBladeNativePackageTests>
+    <AssemblyName>OpenBlade.Deployment</AssemblyName>
+    <PackageId>OpenBlade.Deployment.AlgorithmTests</PackageId>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <Import Project="../../src/OpenBlade.Deployment/OpenBlade.Deployment.csproj" />
+  <ItemGroup>
+    <Compile Include="../../src/OpenBlade.Deployment/*.cs" />
+  </ItemGroup>
+</Project>

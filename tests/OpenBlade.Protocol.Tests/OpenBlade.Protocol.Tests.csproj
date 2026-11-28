@@ -7,6 +7,9 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <None Include="..\Fixtures\Parity\rz09-0581-custom-observation.json" Link="Parity\rz09-0581-custom-observation.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\Fixtures\Parity\rz09-0581-thermal-pair-observation.json"
+          Link="Parity\rz09-0581-thermal-pair-observation.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\src\OpenBlade.Protocol\Fixtures\Rz09_0581_02e0_4_00_PadAbsentHyperBoostAdapterTransitionPlan.json"
           Link="Fixtures\Rz09_0581_02e0_4_00_PadAbsentHyperBoostAdapterTransitionPlan.json"
           CopyToOutputDirectory="PreserveNewest" />
@@ -30,6 +33,8 @@
   <ItemGroup>
     <Compile Include="..\OpenBlade.Testing\AsyncTest.cs" Link="AsyncTest.cs" />
     <Compile Include="..\OpenBlade.Testing\ParityFixture.cs" Link="ParityFixture.cs" />
+    <None Include="..\Fixtures\Parity\rz09-0581-ordinary-fan-transitions.json"
+          Link="Parity\rz09-0581-ordinary-fan-transitions.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\Fixtures\Parity\v1\razer-report.json"
           Link="Parity\razer-report.json" CopyToOutputDirectory="PreserveNewest" />
     <Compile Include="..\OpenBlade.Testing\PublicApiSurface.cs" Link="PublicApiSurface.cs" />

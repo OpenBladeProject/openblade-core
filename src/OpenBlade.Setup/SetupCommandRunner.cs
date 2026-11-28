@@ -1,4 +1,5 @@
 using System.Runtime.ExceptionServices;
+using OpenBlade.Deployment;
 
 namespace OpenBlade.Setup;
 
@@ -14,6 +15,9 @@ public interface ISetupPayloadTransaction : IAsyncDisposable
     Task RollbackAsync(CancellationToken cancellationToken);
 }
 
+public enum SetupServicePredecessorKind { Absent, Managed, Native }
+public enum SetupServiceTransition { Unchanged, ManagedPrepared, NativeRetirementPossible, NativeRetired }
+
 public sealed record SetupPayloadRecoveryDetails(
     string ActiveDirectory,
     string StagingDirectory,
@@ -26,7 +30,11 @@ public sealed record SetupPayloadRecoveryDetails(
         $"backup='{BackupDirectory}'; failed='{FailedDirectory}'";
 }
 
-public sealed record SetupServiceInstallState(bool Existed, bool WasRunning);
+public sealed record SetupServiceInstallState(bool Existed, bool WasRunning)
+{
+    public SetupServicePredecessorKind Kind { get; init; } = Existed ? SetupServicePredecessorKind.Managed : SetupServicePredecessorKind.Absent;
+    public string? ExecutablePath { get; init; }
+}
 
 public enum SetupStartupRegistration
 {
@@ -55,6 +63,7 @@ public sealed record SetupInstallLifecycleState(
 public interface ISetupPlatform
 {
     string CurrentUserSid { get; }
+    SetupServiceTransition ServiceTransition => SetupServiceTransition.Unchanged;
     Task<ISetupPayloadTransaction> StagePayloadAsync(CancellationToken cancellationToken);
     Task<bool> EnsureCpuTemperaturePrerequisiteAsync(string stagedPayloadDirectory, CancellationToken cancellationToken);
     Task<SetupInstallLifecycleState> CaptureInstallLifecycleStateAsync(CancellationToken cancellationToken);
@@ -147,6 +156,7 @@ public sealed class SetupCommandRunner(
                 await platform.RemoveUninstallRegistrationAsync(cancellationToken);
                 progress.Report(SetupProgressCode.StopServiceForReplacement);
                 await platform.PrepareServiceForInstallAsync(cancellationToken);
+                if (transaction is SetupNativePackageTransaction preparedNative) { preparedNative.ObservePredecessorTransition(platform.ServiceTransition); }
                 progress.Report(SetupProgressCode.StopTrayAndSessionAgent);
                 await platform.StopTrayAsync(cancellationToken);
                 await platform.StopSessionAgentAsync(cancellationToken);
@@ -161,7 +171,14 @@ public sealed class SetupCommandRunner(
                 progress.Report(SetupProgressCode.InstallService);
                 await platform.InstallServiceAsync(cancellationToken);
                 progress.Report(SetupProgressCode.VerifyServiceHealth);
-                await platform.VerifyServiceHealthAsync(cancellationToken);
+                if (transaction is SetupNativePackageTransaction native)
+                {
+                    await native.VerifyReadinessAsync(cancellationToken);
+                }
+                else
+                {
+                    await platform.VerifyServiceHealthAsync(cancellationToken);
+                }
                 progress.Report(SetupProgressCode.CreateShortcuts);
                 await platform.InstallSessionAgentStartupAsync(cancellationToken);
                 await platform.InstallStartMenuShortcutAsync(cancellationToken);
@@ -182,6 +199,16 @@ public sealed class SetupCommandRunner(
             }
             catch (Exception failure)
             {
+                if (mutationStarted && transaction is SetupNativePackageTransaction observedNative) { observedNative.ObservePredecessorTransition(platform.ServiceTransition); }
+                if (transaction is SetupNativePackageTransaction { RequiresExplicitNativeRecovery: true }
+                    || mutationStarted && (priorLifecycle?.Service.Kind == SetupServicePredecessorKind.Native
+                        || platform.ServiceTransition is SetupServiceTransition.NativeRetirementPossible or SetupServiceTransition.NativeRetired))
+                {
+                    try { (transaction as SetupNativePackageTransaction)?.RecordUnresolvedFailure(); }
+                    catch (Exception publicationFailure) { throw new AggregateException(failure, publicationFailure); }
+                    throw new NativeRecoveryException(NativeRecoveryReason.PreStartTransitionInterrupted,
+                        "Native transition requires explicit selection/attempt recovery; retired paths and incoming startup were not replayed.", failure);
+                }
                 progress.Report(SetupProgressCode.RestorePreviousState);
                 List<Exception> recoveryFailures = [];
                 using CancellationTokenSource recoveryTimeout = new(TimeSpan.FromSeconds(60));

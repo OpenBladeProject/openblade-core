@@ -61,6 +61,22 @@ public sealed class ProductionLightingSessionTests
         await lighting.DisposeLightingPortWithinDeadlineAsync();
     }
 
+    [Fact]
+    public async Task ActualProviderRetirementOutlivesTheBoundedLightingWaiter()
+    {
+        var port = new FakeLightingPort { BlockDispose = true, ReturnBeforeActualRetirement = true, DrainResult = false };
+        using var provider = new WindowsVerifiedBladeDeviceProvider(() => Probe(BatteryValidationProbeClassification.Ready),
+            Adapt(new FakeQueryFactory()), UnavailableFanRpmFactory(), new FakeLightingFactory(port));
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+        await device.ReadLightingStateAsync(default);
+        Task retirement = Task.Run(provider.RetireMailboxOwnersAsync);
+        await port.DrainStarted.Task.WaitAsync(TestDeadlockGuard);
+        Assert.False(retirement.IsCompleted);
+        port.DisposeRelease.SetResult();
+        await retirement.WaitAsync(TestDeadlockGuard);
+        Assert.Equal(1, port.DisposeCount);
+    }
+
     private sealed class UndrainedExperimentalSession : IRazerCommandSession
     {
         public RazerCommandSessionDisposition Disposition { get; set; } = RazerCommandSessionDisposition.Healthy;

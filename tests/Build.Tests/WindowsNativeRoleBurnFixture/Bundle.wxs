@@ -1,0 +1,18 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Bundle Name="OpenBlade Offline Native Roles Fixture" Version="$(FixtureVersion)"
+          Manufacturer="OpenBlade" UpgradeCode="{43E2F40F-60FA-4E9A-B198-EE5AE9345BBC}"
+          Condition="0" Compressed="yes">
+    <BootstrapperApplication SourceFile="FixtureBootstrapper.exe" />
+    <Chain>
+      <ExePackage Id="OpenBladeSetup" SourceFile="FixtureSetup.exe"
+                  DetectCondition="1" InstallCondition="0" PerMachine="no" Permanent="yes">
+        <Payload SourceFile="OpenBlade.WindowsNativeRoleInventory.bin"
+                 Name="payload\OpenBlade.WindowsNativeRoleInventory.bin" />
+        <Payload SourceFile="openblade-windows-service-candidate.exe"
+                 Name="payload\openblade-windows-service-candidate.exe" />
+        <Payload SourceFile="openblade-windows-agent-candidate.exe"
+                 Name="payload\openblade-windows-agent-candidate.exe" />
+      </ExePackage>
+    </Chain>
+  </Bundle>
+</Wix>

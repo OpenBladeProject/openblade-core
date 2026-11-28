@@ -9,8 +9,34 @@ publish.workspace = true
 [lints]
 workspace = true
 
+[features]
+# Pure bounded parsing/commitments use allocation and std::io error values;
+# no platform APIs. The existing allocation-free policy core stays no_std.
+thermal-history = ["dep:serde", "dep:serde_json", "dep:sha2"]
+# Managed's shared thermal convergence ledger document, its validation, codec
+# and transitions. Pure; the host owns the file and every admission check.
+thermal-convergence = ["thermal-history"]
+# The managed ProfileSet model, codec and validator. Pure rules over std
+# collections with their own JSON reader and writer; no serde, no platform APIs.
+profile-set = []
+# The native Service's durable keyboard Driver-mode ownership record: its
+# strict line codec and transitions. Pure std; the host owns the file.
+driver-mode-history = []
+# Leaving HyperBoost for a battery preset through managed's restore pair:
+# the RestoreThenBattery plan and the restore setters' progress 80-83 in the
+# shared thermal grammar. Readers built without it refuse those rows.
+hyperboost-exit = []
+# Entering HyperBoost from a confirmed admitted state: the HyperBoost
+# destination, its enable pair and its row destination in the shared thermal
+# grammar. Readers built without it refuse those rows.
+hyperboost = ["hyperboost-exit"]
+
 [dependencies]
 openblade-types.workspace = true
+
+serde = { version = '=1.0.228', features = ['derive'], optional = true }
+serde_json = { version = '=1.0.149', features = ['arbitrary_precision'], optional = true }
+sha2 = { version = '=0.10.9', optional = true }
 
 [dev-dependencies]
 serde = { version = '=1.0.228', features = ['derive'] }

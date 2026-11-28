@@ -342,7 +342,7 @@ try {
         -SourcePath $VcRedistPath `
         -DestinationDirectory $stagingPrerequisites)
     $dotNetPrerequisite = Get-OpenBladeDotNetRuntimePrerequisite
-    if ($dotNetPrerequisite.Version -ne [string]$buildProperties.Project.PropertyGroup.OpenBladeMinimumDotNetRuntimeVersion) {
+    if ($dotNetPrerequisite.Version -ne [string]$buildProperties.SelectSingleNode('/Project/PropertyGroup/OpenBladeMinimumDotNetRuntimeVersion').InnerText) {
         throw 'The pinned .NET prerequisite and product runtime minimum do not match.'
     }
     [void](Copy-OpenBladeDotNetRuntime `

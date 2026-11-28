@@ -252,25 +252,30 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
         CreateWindowsCore(null, false, capturePowerSource: capturePowerSource);
 
     internal static IProductionBatteryPortFactory
-        CreateWindowsForPadlessHyperBoostLifecycleValidation(Func<PowerSource>? capturePowerSource = null) =>
+        CreateWindowsForPadlessHyperBoostLifecycleValidation(
+            Func<PowerSource>? capturePowerSource = null, MailboxLifetime? lifetime = null) =>
         CreateWindowsCore(
             compatibilityPolicy: null,
-            allowPadlessHyperBoostLifecycleValidation: true, capturePowerSource: capturePowerSource);
+            allowPadlessHyperBoostLifecycleValidation: true, capturePowerSource: capturePowerSource,
+            lifetime: lifetime);
 
     internal static IProductionBatteryPortFactory CreateWindows(
-        FirmwareCompatibilityPolicy compatibilityPolicy, Func<PowerSource>? capturePowerSource = null)
+        FirmwareCompatibilityPolicy compatibilityPolicy, Func<PowerSource>? capturePowerSource = null,
+        MailboxLifetime? lifetime = null)
     {
         ArgumentNullException.ThrowIfNull(compatibilityPolicy);
         return CreateWindowsCore(
             compatibilityPolicy,
-            allowPadlessHyperBoostLifecycleValidation: false, capturePowerSource: capturePowerSource);
+            allowPadlessHyperBoostLifecycleValidation: false, capturePowerSource: capturePowerSource,
+            lifetime: lifetime);
     }
 
     private static IProductionBatteryPortFactory CreateWindowsCore(
         FirmwareCompatibilityPolicy? compatibilityPolicy,
         bool allowPadlessHyperBoostLifecycleValidation,
         ControllerExclusivityPolicy exclusivityPolicy =
-            ControllerExclusivityPolicy.Advisory, Func<PowerSource>? capturePowerSource = null)
+            ControllerExclusivityPolicy.Advisory, Func<PowerSource>? capturePowerSource = null,
+        MailboxLifetime? lifetime = null)
     {
         ReadOnlyMemory<byte>? fixtureBytes = ProductionFixtureSource.Read();
         if (fixtureBytes is null)
@@ -301,7 +306,7 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
             admitGpuOverclock: true,
             allowPadlessHyperBoostLifecycleValidation,
             directManualFanTransitionEvidenceAdmitted: true,
-            exclusivityPolicy: exclusivityPolicy, capturePowerSource: capturePowerSource);
+            exclusivityPolicy: exclusivityPolicy, capturePowerSource: capturePowerSource, lifetime: lifetime);
     }
 
     public static IProductionBatteryPortFactory CreateWindowsReadOnly() =>
@@ -314,7 +319,7 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
             allowPadlessHyperBoostLifecycleValidation: false);
 
     internal static IProductionBatteryPortFactory CreateWindowsReadOnly(
-        FirmwareCompatibilityPolicy compatibilityPolicy)
+        FirmwareCompatibilityPolicy compatibilityPolicy, MailboxLifetime? lifetime = null)
     {
         ArgumentNullException.ThrowIfNull(compatibilityPolicy);
         return CreateWindows(
@@ -323,7 +328,7 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
             ProductionBatteryReadEvidence.Production,
             compatibilityPolicy,
             admitGpuOverclock: false,
-            allowPadlessHyperBoostLifecycleValidation: false);
+            allowPadlessHyperBoostLifecycleValidation: false, lifetime: lifetime);
     }
 
     public async Task<HidSessionResult<IProductionBatteryPort>> OpenAsync(
@@ -424,9 +429,10 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
         bool allowPadlessHyperBoostLifecycleValidation,
         bool directManualFanTransitionEvidenceAdmitted = false,
         ControllerExclusivityPolicy exclusivityPolicy =
-            ControllerExclusivityPolicy.Advisory, Func<PowerSource>? capturePowerSource = null)
+            ControllerExclusivityPolicy.Advisory, Func<PowerSource>? capturePowerSource = null,
+        MailboxLifetime? lifetime = null)
     {
-        var native = new WindowsHidNative();
+        var native = new WindowsHidNative(lifetime);
         var registry = new WindowsRegistryValueSource();
         var processSource = new RunningProcessSource();
         var serviceSource = new WindowsServiceSource();
@@ -719,7 +725,7 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
             ? AdapterPowerProtocol.SynapseAdapterStates
             : new HashSet<AdapterPowerState>();
 
-    private static bool IsExactModelScopedRz090581Identity(
+    internal static bool IsExactModelScopedRz090581Identity(
         HostIdentityReadResult exactIdentity) => exactIdentity is
         {
             Evidence:

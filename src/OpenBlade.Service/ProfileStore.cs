@@ -606,7 +606,8 @@ internal static class AtomicFile
     public static async Task WriteAsync(
         string path,
         ReadOnlyMemory<byte> contents,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool exclusiveStaging = false)
     {
         string? directory = System.IO.Path.GetDirectoryName(path);
         if (!string.IsNullOrEmpty(directory))
@@ -614,20 +615,37 @@ internal static class AtomicFile
             Directory.CreateDirectory(directory);
         }
 
-        string temporaryPath = path + ".tmp";
-        await using (var stream = new FileStream(
-            temporaryPath,
-            FileMode.Create,
-            FileAccess.Write,
-            FileShare.None,
-            bufferSize: 4096,
-            FileOptions.Asynchronous | FileOptions.WriteThrough))
+        string temporaryPath = exclusiveStaging ? $"{path}.{Guid.NewGuid():N}.tmp" : path + ".tmp";
+        bool ownsStage = false;
+        try
         {
-            await stream.WriteAsync(contents, cancellationToken);
-            await stream.FlushAsync(cancellationToken);
-            stream.Flush(flushToDisk: true);
-        }
+            await using (var stream = new FileStream(
+                temporaryPath,
+                exclusiveStaging ? FileMode.CreateNew : FileMode.Create,
+                FileAccess.Write,
+                FileShare.None,
+                bufferSize: 4096,
+                FileOptions.Asynchronous | FileOptions.WriteThrough))
+            {
+                ownsStage = exclusiveStaging;
+                await stream.WriteAsync(contents, cancellationToken);
+                await stream.FlushAsync(cancellationToken);
+                stream.Flush(flushToDisk: true);
+            }
 
-        File.Move(temporaryPath, path, overwrite: true);
+            if (exclusiveStaging)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+            }
+            File.Move(temporaryPath, path, overwrite: true);
+            ownsStage = false;
+        }
+        finally
+        {
+            if (ownsStage)
+            {
+                File.Delete(temporaryPath);
+            }
+        }
     }
 }

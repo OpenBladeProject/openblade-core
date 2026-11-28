@@ -32,7 +32,7 @@ if ($LASTEXITCODE -ne 0 -or $changes.Count -ne 0) {
 }
 
 [xml]$props = Get-Content -LiteralPath (Join-Path $repository 'Directory.Build.props')
-$baseVersion = [string]$props.Project.PropertyGroup.OpenBladeVersion
+$baseVersion = [string]$props.SelectSingleNode('/Project/PropertyGroup/OpenBladeVersion').InnerText
 if ($baseVersion -notmatch '^(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)$') {
     throw 'Directory.Build.props does not contain a canonical OpenBlade version.'
 }

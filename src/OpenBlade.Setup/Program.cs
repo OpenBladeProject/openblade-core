@@ -66,12 +66,26 @@ try
     progress = new LoggingSetupProgressReporter(
         SetupProgressReporter.Create(invocation.ProgressPipeName),
         log);
-    int exitCode = await new SetupCommandRunner(
-        new WindowsSetupPlatform(new WindowsSetupPlatformOptions(
-            Paths: paths,
-            ProgressReporter: progress,
-            BundleOwnerId: invocation.BundleOwnerId,
-            CurrentUserSid: enrolledUserSid)),
+    var platformOptions = new WindowsSetupPlatformOptions(Paths: paths, ProgressReporter: progress,
+        BundleOwnerId: invocation.BundleOwnerId, CurrentUserSid: enrolledUserSid);
+    WindowsSetupPlatform platform;
+#if OPENBLADE_NATIVE_STATUS_INTEGRATION
+    OpenBlade.Deployment.WindowsNativePackage? incomingNative = null;
+    if (invocation.Command is SetupCommand.Install)
+    {
+        var selected = await OpenBlade.DeploymentBroker.BrokerNativePackageCommitmentProducer.OpenCurrentAsync(CancellationToken.None);
+        incomingNative = selected.Package;
+        platform = new WindowsSetupPlatform(platformOptions, selected.Package, selected.Request);
+    }
+    else { platform = new WindowsSetupPlatform(platformOptions); }
+#else
+    platform = new WindowsSetupPlatform(platformOptions);
+#endif
+#if OPENBLADE_NATIVE_STATUS_INTEGRATION
+    using var existingNative = await OpenBlade.Deployment.WindowsNativeInstalledSelection.OpenProductAsync(CancellationToken.None, incomingNative);
+    platform.BindExistingNativeSelection(existingNative);
+#endif
+    int exitCode = await new SetupCommandRunner(platform,
         progress)
         .RunAsync(effectiveArguments, CancellationToken.None);
     log.Write($"Finished with exit code {exitCode}.");

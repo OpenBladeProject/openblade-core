@@ -75,7 +75,8 @@ public sealed class BrokerEnrollmentTests : IDisposable
     public async Task Store_IsCreateOnceAndMissingFailsClosed()
     {
         BrokerPaths paths = BrokerPaths.CreateForTests(root);
-        BrokerEnrollmentStore store = new(paths);
+        int readinessChecks = 0;
+        BrokerEnrollmentStore store = new(paths, () => readinessChecks++);
         Directory.CreateDirectory(root);
 
         await Assert.ThrowsAsync<FileNotFoundException>(() => store.LoadAsync());
@@ -85,6 +86,18 @@ public sealed class BrokerEnrollmentTests : IDisposable
         await Assert.ThrowsAsync<IOException>(() => store.CreateOnceAsync(expected));
 
         Assert.Equal(expected, await store.LoadAsync());
+        Assert.Equal(2, readinessChecks);
+    }
+
+    [Fact]
+    public async Task Store_RefusedReadinessWritesNoEnrollment()
+    {
+        BrokerPaths paths = BrokerPaths.CreateForTests(Path.Combine(root, "broker"));
+        BrokerEnrollmentStore store = new(paths, () => throw new IOException("native custody is unresolved"));
+
+        await Assert.ThrowsAsync<IOException>(() => store.CreateOnceAsync(CreateEnrollment()));
+
+        Assert.False(Directory.Exists(paths.RootDirectory));
     }
 
     [Fact]

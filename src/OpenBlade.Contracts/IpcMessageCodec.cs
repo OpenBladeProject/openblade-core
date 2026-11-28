@@ -17,7 +17,10 @@ public static class OpenBladeIpc
     // local dimming capability and state, and the local dimming Clear request.
     // Protocol 89 adds the RZ09-0530 keyboard-MCU edition for regional key maps.
     // Protocol 90 reports cooling-pad lighting left in place while OpenBlade controls the fan.
-    public const int ProtocolVersion = 90;
+    // Protocol 91 keeps the protocol 90 contracts and also admits confirmed
+    // Custom performance whose levels the firmware did not report. Protocol 90
+    // peers reject that state, so the two versions cannot share a number.
+    public const int ProtocolVersion = 91;
     public const int ReadOnlyCompatibilityProtocolVersion = 51;
     public const int MaximumMessageBytes = 64 * 1024;
     public const int MaximumDiagnosticArchiveBytes = 16 * 1024 * 1024;
@@ -160,7 +163,9 @@ public static class IpcMessageCodec
             Protocol51SerializerOptions);
     }
 
-    private static async Task WriteFramedAsync<T>(
+    // Internal for the candidate-receipt fixtures in OpenBlade.Setup.Tests, which compare
+    // the native readiness serializer with this framing and write malformed frames.
+    internal static async Task WriteFramedAsync<T>(
         Stream stream,
         T message,
         CancellationToken cancellationToken,
@@ -664,7 +669,7 @@ public static class IpcMessageCodec
         }
 
         if (status.ConfirmedState is { } confirmed
-            && !ValidPerformanceState(
+            && !ValidConfirmedPerformanceState(
                 confirmed.Performance,
                 confirmed.CustomPerformance))
         {
@@ -860,6 +865,13 @@ public static class IpcMessageCodec
 
     private static InvalidDataException InvalidStatus(string reason) =>
         new($"IPC server status is invalid: {reason}.");
+
+    // Confirmed Custom may have unknown levels. Desired/request intent stays strict.
+    private static bool ValidConfirmedPerformanceState(
+        PerformancePreset? performance,
+        CustomPerformanceSettings? customPerformance) =>
+        performance == PerformancePreset.Custom && customPerformance is null
+        || ValidPerformanceState(performance, customPerformance);
 
     private static bool ValidPerformanceState(
         PerformancePreset? performance,

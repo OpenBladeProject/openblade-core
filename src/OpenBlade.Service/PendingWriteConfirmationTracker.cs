@@ -105,14 +105,18 @@ internal sealed record PendingWriteConfirmation(
     PerformancePreset? HyperBoostBaseMode = null,
     PendingBatteryIntentCommit? BatteryIntentCommit = null,
     bool GpuClockTuningOnly = false,
-    BatteryConfirmationScope BatteryConfirmation = BatteryConfirmationScope.All)
+    BatteryConfirmationScope BatteryConfirmation = BatteryConfirmationScope.All,
+    NativeHandbackClaim? NativeHandback = null)
 {
     public WriteConfirmationExpectation Expectation => new(
         Target, PreWriteState, HyperBoostActive, HyperBoostBaseMode, GpuClockTuningOnly, BatteryConfirmation,
         HyperBoostBaseMode is null ? null : PowerSource);
 
+    // A native write's firmware effect does not depend on managed's power
+    // source or automation instance, so handback entries ignore both.
     public bool CanConfirm(PowerSource powerSource, ProfileAutomationState owner) =>
-        PowerSource == powerSource
+        NativeHandback is not null
+        || PowerSource == powerSource
         && (BatteryIntentCommit is not { } intent || ReferenceEquals(intent.Owner, owner));
 
     public PendingConfirmationResult Match(
@@ -120,8 +124,11 @@ internal sealed record PendingWriteConfirmation(
         ConfirmedDeviceState confirmed,
         PowerSource powerSource,
         ProfileAutomationState owner,
-        GpuClockOffsetManagementState? managementState) =>
-        CanConfirm(powerSource, owner)
+        GpuClockOffsetManagementState? managementState,
+        bool thermalChannelsDisagree = false) =>
+        NativeHandback is { } handback
+            ? WriteConfirmationPolicy.MatchNativeHandback(subsystem, Expectation, confirmed, handback, thermalChannelsDisagree)
+            : CanConfirm(powerSource, owner)
             ? WriteConfirmationPolicy.Match(subsystem, Expectation, confirmed, managementState)
             : PendingConfirmationResult.Mismatch;
 }

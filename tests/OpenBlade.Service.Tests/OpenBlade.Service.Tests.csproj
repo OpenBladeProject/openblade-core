@@ -3,6 +3,11 @@
   <PropertyGroup>
     <TargetFramework>net10.0-windows</TargetFramework>
     <IsPackable>false</IsPackable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(OpenBladeNativePackageTests)' == 'true'">
+    <DefineConstants>$(DefineConstants);OPENBLADE_NATIVE_PACKAGE_TESTS</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
@@ -14,9 +19,49 @@
 
   <ItemGroup>
     <Using Include="Xunit" />
+    <None Include="../Fixtures/Parity/managed-mailbox-handoff-v2.json" Link="managed-mailbox-handoff-v2.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../Fixtures/Parity/managed-mailbox-handoff-v1.json" Link="managed-mailbox-handoff-v1.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="WindowsReplay\v1\*.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../tools/openblade-windows-host/tests/data/profile-set-vectors-v27.json" Link="profile-set-vectors-v27.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../tools/openblade-windows-host/tests/data/profile-capabilities-rz09-0581.json" Link="profile-capabilities-rz09-0581.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../tools/openblade-windows-host/tests/data/profile-aggregate-vectors.json" Link="profile-aggregate-vectors.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../tools/openblade-windows-host/tests/data/profile-migration-vectors.json" Link="profile-migration-vectors.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../tools/openblade-windows-host/tests/data/profile-ordinal-ignore-case.json" Link="profile-ordinal-ignore-case.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../tools/openblade-windows-host/tests/data/profile-resolution-vectors.json" Link="profile-resolution-vectors.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../tools/openblade-windows-host/tests/data/low-power-gate-vectors.json" Link="low-power-gate-vectors.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../tools/openblade-windows-host/tests/data/session-lifecycle-vectors.json" Link="session-lifecycle-vectors.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../tools/openblade-windows-host/tests/data/keyboard-driver-mode-vectors.json" Link="keyboard-driver-mode-vectors.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../tools/openblade-windows-host/tests/data/live-reading-vectors.json" Link="live-reading-vectors.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../tools/openblade-windows-host/tests/data/live-reading-native-frames.json" Link="live-reading-native-frames.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../tools/openblade-windows-host/tests/data/diagnostic-export-contract.json" Link="diagnostic-export-contract.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../tools/openblade-windows-host/tests/data/diagnostic-export-vectors.json" Link="diagnostic-export-vectors.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../tools/openblade-windows-host/tests/data/diagnostic-export-native.json" Link="diagnostic-export-native.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../tools/openblade-windows-host/tests/data/diagnostic-export-native-private.json" Link="diagnostic-export-native-private.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../tools/openblade-windows-host/tests/data/gpu-clock-offset-vectors.json" Link="gpu-clock-offset-vectors.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../tools/openblade-windows-host/tests/data/lighting-effect-vectors.json" Link="lighting-effect-vectors.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../tools/openblade-windows-host/tests/data/gpu-temperature-vectors.json" Link="gpu-temperature-vectors.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../tools/openblade-windows-host/tests/data/thermal-convergence-vectors.json" Link="thermal-convergence-vectors.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../tools/openblade-windows-host/tests/data/thermal-convergence-ledger-vectors.json" Link="thermal-convergence-ledger-vectors.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../tools/openblade-windows-host/tests/data/thermal-reapply-vectors.json" Link="thermal-reapply-vectors.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../tools/openblade-windows-host/tests/data/hyperboost-battery-exit-vectors.json" Link="hyperboost-battery-exit-vectors.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../tools/openblade-windows-host/tests/data/hyperboost-owned-vectors.json" Link="hyperboost-owned-vectors.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../tools/openblade-windows-host/tests/data/hyperboost-journal-vectors.json" Link="hyperboost-journal-vectors.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../tools/openblade-windows-host/tests/data/fan-stop-vectors.json" Link="fan-stop-vectors.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../tools/openblade-windows-host/tests/data/capability-record-vectors.json" Link="capability-record-vectors.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../tools/openblade-windows-host/tests/data/display-brightness-hid-vectors.json" Link="display-brightness-hid-vectors.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../tools/openblade-windows-host/tests/data/performance-shortcut-vectors.json" Link="performance-shortcut-vectors.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../tools/openblade-windows-host/tests/data/firmware-version-vectors.json" Link="firmware-version-vectors.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../tools/openblade-windows-host/tests/data/firmware-version-native-frames.json" Link="firmware-version-native-frames.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../tools/openblade-windows-host/tests/data/mcu-version-vectors.json" Link="mcu-version-vectors.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../tools/openblade-windows-host/tests/data/power-setting-vectors.json" Link="power-setting-vectors.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../tools/openblade-windows-host/tests/data/request-trigger-vectors.json" Link="request-trigger-vectors.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../tools/openblade-windows-host/tests/data/low-power-trigger-vectors.json" Link="low-power-trigger-vectors.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../tools/openblade-windows-host/tests/data/power-only-release-vectors.json" Link="power-only-release-vectors.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../tools/openblade-windows-host/tests/data/lifecycle-reconcile-vectors.json" Link="lifecycle-reconcile-vectors.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="..\OpenBlade.WriterFence.Scratch\WriterLease.cs" Link="ScratchWriterLease.cs" />
     <Compile Include="..\OpenBlade.Testing\ManagedAutomationPolicyBaseline.cs" Link="ManagedAutomationPolicyBaseline.cs" />
     <Compile Include="..\OpenBlade.Testing\ManagedProfilePolicyBaseline.cs" Link="ManagedProfilePolicyBaseline.cs" />
     <Compile Include="..\OpenBlade.Testing\ParityFixture.cs" Link="ParityFixture.cs" />

@@ -19,6 +19,13 @@ internal sealed class SessionGpuAppAdapter
         pipeName = SessionAgentPipeEndpoint.CreateGpu(userSid, process.SessionId).PipeName;
     }
 
+    // Explicit endpoint seam for isolated tests; the tray still resolves its production endpoint above.
+    internal SessionGpuAppAdapter(string pipeName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(pipeName);
+        this.pipeName = pipeName;
+    }
+
     internal Task<SessionGpuResponse> QueryAsync(CancellationToken cancellationToken) =>
         SendAsync(
             requestId => new QueryGpuAppsRequest(

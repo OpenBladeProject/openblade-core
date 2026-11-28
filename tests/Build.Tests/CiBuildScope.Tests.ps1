@@ -343,11 +343,18 @@ $unknownMetadata = Get-OpenBladeCiPlan -Repository $repository -ChangedPath @('t
 Assert-Equal 'full' $unknownMetadata.Mode 'Unowned metadata must fail closed.'
 $deletedMetadata = Get-OpenBladeCiPlan -Repository $repository -ChangedPath @('tests/OpenBlade.DeploymentClient.Tests/Deleted.csproj')
 Assert-Equal 'full' $deletedMetadata.Mode 'Deleted project metadata must fail closed.'
+$ownedFixtureFile = Get-OpenBladeCiPlan -Repository $repository -ChangedPath @(
+    'tests/Build.Tests/WindowsNativeRoleBurnFixture/Program.cs')
+Assert-Equal 'affected' $ownedFixtureFile.Mode 'A Build.Tests file owned by a test project must be classified by that project.'
+Assert-Contains $ownedFixtureFile.TestProjects `
+    'tests/Build.Tests/WindowsNativeRoleBurnFixture/InventoryWriter.csproj' `
+    'A Build.Tests file owned by a test project must select that project.'
 
 foreach ($globalPath in @(
         'Directory.Build.props',
         '.github/workflows/ci.yml',
-        'tools/new-script.ps1')) {
+        'tools/new-script.ps1',
+        'tests/Build.Tests/unknown_helper.py')) {
     $full = Get-OpenBladeCiPlan -Repository $repository -ChangedPath @($globalPath)
     Assert-Equal 'full' $full.Mode `
         "Global or unknown path '$globalPath' must fail closed."
@@ -356,6 +363,36 @@ $forced = Get-OpenBladeCiPlan -Repository $repository -ChangedPath @('README.md'
 Assert-Equal 'full' $forced.Mode 'Forced workflow boundaries must run full validation.'
 $empty = Get-OpenBladeCiPlan -Repository $repository -ChangedPath @()
 Assert-Equal 'full' $empty.Mode 'An empty change set must fail closed.'
+
+# Test-only fixture infrastructure selects consumers without product publishing.
+foreach ($fixtureInput in @(
+        'build/Test-NativeWindowsFixtures.ps1',
+        'build/NativeWindowsFixtures.ps1',
+        'build/native_windows_fixtures.py',
+        'build/NativeWindowsFixtureManifest.json',
+        'tests/Build.Tests/NativeWindowsFixtures.Tests.ps1',
+        'build/test_native_windows_fixtures.py',
+        'tools/openblade-windows-host/src/windows/scm/installed/readiness_tests/mutation.rs',
+        'tools/openblade-windows-host/src/windows/scm/installed/readiness_tests/temporary_charge_release.rs',
+        'tools/openblade-windows-host/src/windows/scm/installed/battery_mutation.rs',
+        'tools/openblade-windows-host/tests/fixtures/native-thermal-edge-fixtures.json',
+        'tools/openblade-windows-host/tests/fixtures/native-thermal-edge/get-status.json')) {
+    $fixture = Get-OpenBladeCiPlan -Repository $repository -ChangedPath @($fixtureInput)
+    Assert-Equal 'affected' $fixture.Mode "Fixture input '$fixtureInput' must use affected validation."
+    Assert-Equal 3 @($fixture.TestProjects).Count 'Fixture infrastructure selects exactly its three managed consumers.'
+    foreach ($consumer in @('Contracts', 'Service', 'Deployment')) {
+        Assert-Contains $fixture.TestProjects "tests/OpenBlade.$consumer.Tests/OpenBlade.$consumer.Tests.csproj" "Fixture input '$fixtureInput' must run the $consumer consumer."
+    }
+    foreach ($contract in @('NativeWindowsFixtures', 'CiBuildScope')) {
+        Assert-Contains $fixture.ContractTests "tests/Build.Tests/$contract.Tests.ps1" 'Fixture changes must validate orchestration and selector contracts.'
+    }
+    Assert-NotContains $fixture.ContractTests 'tests/Build.Tests/NativePayload.Tests.ps1' 'Test-only fixture changes must not promote native product payload validation.'
+    Assert-Equal $false $fixture.RunInstaller 'Test-only fixture changes must not promote installer validation.'
+    Assert-Equal 0 @($fixture.PublishProjects).Count 'Test-only fixture changes must not publish product binaries.'
+}
+$fixtureDocumentation = Get-OpenBladeCiPlan -Repository $repository -ChangedPath @('docs/native-windows-fixtures.md')
+Assert-Equal 'none' $fixtureDocumentation.Mode 'Unconsumed documentation must not provision native fixtures.'
+Assert-Equal 0 @($fixtureDocumentation.TestProjects).Count 'Documentation alone must not select fixture consumers.'
 
 $manifest = Get-OpenBladeCiManifest -Repository $repository
 $declaredContracts = @($manifest.contractRules | ForEach-Object { [string]$_.test } | Sort-Object)
@@ -497,6 +534,162 @@ foreach ($requiredBuildContract in @(
     if (-not $build.Contains($requiredBuildContract)) {
         throw "Shared build workflow is missing '$requiredBuildContract'."
     }
+}
+
+$quality = [Regex]::Match($build, '(?ms)^  quality-and-tests:\r?\n.*?(?=^  build-contracts:)').Value
+# Both jobs execute PowerShell fixture wrappers that resolve Python from PATH.
+# Provision the same supported minor before either full or affected invocation.
+function Assert-FixturePythonProvisioning {
+    param([string]$JobText, [string[]]$Invocation)
+    $setups = [Regex]::Matches($JobText, '(?ms)^      - name: Set up fixture Python\r?\n.*?(?=^      - name:|\z)')
+    if ($setups.Count -ne 1) { throw 'Each fixture job must provision Python exactly once.' }
+    $setup = $setups[0]
+    foreach ($required in @('uses: actions/setup-python@v7', "python-version: '3.12'", 'architecture: x64')) {
+        if (-not $setup.Value.Contains($required)) { throw "Fixture Python setup is missing '$required'." }
+    }
+    if ($setup.Value -match '(?m)^        if:') { throw 'Python setup must cover full and affected execution.' }
+    foreach ($command in $Invocation) {
+        $position = $JobText.IndexOf($command, [StringComparison]::Ordinal)
+        if ($position -lt 0 -or $position -le $setup.Index) {
+            throw "Supported Python must be provisioned before '$command'."
+        }
+    }
+}
+$contractJob = [Regex]::Match($build, '(?ms)^  build-contracts:\r?\n.*?(?=^  component-publish:)').Value
+Assert-FixturePythonProvisioning -JobText $quality -Invocation @(
+    'Invoke-OpenBladeNativeFixtureScope',
+    '.\build\Run-AffectedCi.ps1')
+Assert-FixturePythonProvisioning -JobText $contractJob -Invocation @(
+    'ForEach-Object { & $_.FullName }',
+    '.\build\Run-AffectedCi.ps1')
+foreach ($invalidJob in @(
+        ('Invoke-OpenBladeNativeFixtureScope' + [Environment]::NewLine + $quality),
+        $quality.Replace('uses: actions/setup-python@v7', 'uses: removed-python-setup'),
+        $quality.Replace("python-version: '3.12'", "python-version: '3.10'"),
+        $quality.Replace('      - name: Set up fixture Python', '      - name: Removed fixture Python'))) {
+    $rejected = $false
+    try { Assert-FixturePythonProvisioning -JobText $invalidJob -Invocation @('Invoke-OpenBladeNativeFixtureScope') }
+    catch { $rejected = $true }
+    Assert-Equal $true $rejected 'Missing or unsupported Python provisioning must fail the CI contract.'
+}
+
+$fullTest = [Regex]::Match($quality, '(?ms)^      - name: Test\r?\n.*?(?=^      - name:)').Value
+foreach ($required in @(
+        "if: matrix.shard == 'solution'",
+        'shell: pwsh',
+        '. ./build/NativeWindowsFixtures.ps1',
+        'Invoke-OpenBladeNativeFixtureScope',
+        '-Action {',
+        'dotnet test OpenBlade.slnx',
+        '--no-build --no-restore',
+        'if ($LASTEXITCODE -ne 0)')) {
+    if (-not $fullTest.Contains($required)) { throw "Full quality fixture scope is missing '$required'." }
+}
+$affectedStep = [Regex]::Match($quality, '(?ms)^      - name: Run affected quality and tests\r?\n.*?(?=^      - name:)').Value
+if (-not $affectedStep.Contains('shell: pwsh')) {
+    throw 'Affected native fixtures require the same PowerShell 7 runtime as full quality.'
+}
+foreach ($required in @(
+        'uses: actions/cache@v4',
+        '~/.cargo/registry',
+        '~/.cargo/git',
+        'tools/openblade-windows-host/Cargo.lock',
+        'fetch --locked --manifest-path tools/openblade-windows-host/Cargo.toml',
+        'Run native interop tests')) {
+    if (-not $quality.Contains($required)) { throw "Quality fixture preparation is missing '$required'." }
+}
+if ($fullTest.Contains('GITHUB_ENV')) {
+    throw 'Native fixture environment must be owned by the scoped managed invocation.'
+}
+$affectedSource = Get-Content (Join-Path $repository 'build/Run-AffectedCi.ps1') -Raw
+foreach ($required in @(
+        '$fixtureConsumers = @(',
+        "'tests/OpenBlade.Contracts.Tests/OpenBlade.Contracts.Tests.csproj'",
+        "'tests/OpenBlade.Service.Tests/OpenBlade.Service.Tests.csproj'",
+        "'tests/OpenBlade.Deployment.Tests/OpenBlade.Deployment.Tests.csproj'",
+        '$testProjects | Where-Object { $_ -in $fixtureConsumers }',
+        'Get-OpenBladeNativeFixturePrerequisiteProjects -Repository $repository',
+        'Action = $runSelectedTests',
+        'Invoke-OpenBladeNativeFixtureScope @fixtureScope',
+        '& $runSelectedTests')) {
+    if (-not $affectedSource.Contains($required)) { throw "Affected fixture routing is missing '$required'." }
+}
+
+# Full quality restores the solution once, which already owns every managed
+# fixture prerequisite. Affected quality must provision these independently.
+. (Join-Path $repository 'build/NativeWindowsFixtures.ps1')
+$fixturePrerequisites = @(Get-OpenBladeNativeFixturePrerequisiteProjects -Repository $repository)
+Assert-Equal 3 $fixturePrerequisites.Count 'Fixture preparation must declare its exact three managed projects.'
+[xml]$solution = Get-Content (Join-Path $repository 'OpenBlade.slnx') -Raw
+$solutionProjects = @($solution.SelectNodes('//Project') | ForEach-Object { [string]$_.Path })
+foreach ($prerequisite in $fixturePrerequisites) {
+    Assert-Contains $solutionProjects $prerequisite 'Full solution restore must include every fixture prerequisite.'
+}
+$fullRestore = [Regex]::Match($quality, '(?ms)^      - name: Restore\r?\n.*?(?=^      - name:)').Value
+if (-not $fullRestore.Contains('dotnet restore OpenBlade.slnx -p:NuGetAudit=false')) {
+    throw 'Full quality must retain its normal solution restore.'
+}
+
+# Exercise the actual affected dispatch with inert process/scope recorders.
+# Substitute only the repository location and the helper import seam in memory.
+$recordedRunner = $affectedSource.Replace(
+    '$repository = Split-Path -Parent $PSScriptRoot',
+    ('$repository = ' + "'" + $repository.Replace("'", "''") + "'")).Replace(
+    ". (Join-Path " + '$repository' + " 'build/NativeWindowsFixtures.ps1')",
+    '# Fixture scope is supplied by the command recorder.')
+$dispatch = [ScriptBlock]::Create($recordedRunner)
+$script:fixtureScopeCalls = 0
+$script:recordedManagedTests = [Collections.Generic.List[string]]::new()
+$script:recordedFixtureCommands = [Collections.Generic.List[object]]::new()
+function dotnet {
+    $script:recordedFixtureCommands.Add([string[]]$args)
+    if ($args[0] -eq 'test') { $script:recordedManagedTests.Add([string]$args[1]) }
+    $global:LASTEXITCODE = 0
+}
+function Invoke-OpenBladeNativeFixtureScope {
+    param($Repository, $Configuration, $OutputRoot, [scriptblock]$Action)
+    $script:fixtureScopeCalls++
+    $restored = @($script:recordedFixtureCommands | Where-Object { $_[0] -eq 'restore' } | ForEach-Object { $_[1] })
+    foreach ($prerequisite in $fixturePrerequisites) {
+        Assert-Contains $restored $prerequisite 'Offline fixture preparation must have its packages restored before scope entry.'
+    }
+    & $Action
+}
+try {
+    foreach ($selection in @(
+            @('tests/OpenBlade.Contracts.Tests/OpenBlade.Contracts.Tests.csproj'),
+            @('tests/OpenBlade.Service.Tests/OpenBlade.Service.Tests.csproj'),
+            @('tests/OpenBlade.Deployment.Tests/OpenBlade.Deployment.Tests.csproj'),
+            @('tests/OpenBlade.Contracts.Tests/OpenBlade.Contracts.Tests.csproj',
+              'tests/OpenBlade.Service.Tests/OpenBlade.Service.Tests.csproj',
+              'tests/OpenBlade.Deployment.Tests/OpenBlade.Deployment.Tests.csproj'))) {
+        $script:fixtureScopeCalls = 0
+        $script:recordedManagedTests.Clear()
+        $script:recordedFixtureCommands.Clear()
+        $recordedPlan = @{ mode = 'affected'; qualityProjects = @($selection); testProjects = @($selection) } | ConvertTo-Json -Compress
+        & $dispatch -Lane Quality -PlanJson $recordedPlan
+        $restores = @($script:recordedFixtureCommands | Where-Object { $_[0] -eq 'restore' })
+        Assert-Equal 3 $restores.Count 'Contracts-only and combined plans must restore exactly the deduplicated fixture prerequisites.'
+        foreach ($restore in $restores) {
+            Assert-Equal ('restore|' + $restore[1] + '|-p:NuGetAudit=false') ($restore -join '|') 'Fixture prerequisites must use normal repository-configured restore semantics.'
+        }
+        $builds = @($script:recordedFixtureCommands | Where-Object { $_[0] -eq 'build' })
+        Assert-Equal @($selection).Count $builds.Count 'Restoring fixture dependencies must not expand selected Quality builds.'
+        Assert-Equal 1 $script:fixtureScopeCalls 'Affected fixture consumers must share exactly one preparation scope.'
+        Assert-Equal @($selection).Count $script:recordedManagedTests.Count 'Affected fixture scope must run every selected managed consumer.'
+    }
+    $script:fixtureScopeCalls = 0
+    $script:recordedFixtureCommands.Clear()
+    $unrelated = 'tests/OpenBlade.Protocol.Tests/OpenBlade.Protocol.Tests.csproj'
+    $recordedPlan = @{ mode = 'affected'; qualityProjects = @($unrelated); testProjects = @($unrelated) } | ConvertTo-Json -Compress
+    & $dispatch -Lane Quality -PlanJson $recordedPlan
+    Assert-Equal 0 $script:fixtureScopeCalls 'Unrelated affected tests must not prepare native fixture corpora.'
+    $unrelatedRestores = @($script:recordedFixtureCommands | Where-Object { $_[0] -eq 'restore' })
+    Assert-Equal 1 $unrelatedRestores.Count 'Unrelated plans must not restore fixture prerequisite projects.'
+}
+finally {
+    Remove-Item Function:dotnet
+    Remove-Item Function:Invoke-OpenBladeNativeFixtureScope
 }
 
 if ($build.Contains('OPENBLADE_CHECKOUT_CAPTURES') -or

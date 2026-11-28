@@ -1,0 +1,118 @@
+{
+  "schemaVersion": 1,
+  "baseRevision": "1bd74726729ff3c894daa3c942c2bbf7317b5fae",
+  "producerMethod": "OpenBlade.Service.Tests.NativeThermalEdgeFixtureTests.WriteCurrentManagedWireAndPolicyFixtures",
+  "producerSource": "tests/OpenBlade.Service.Tests/NativeThermalEdgeFixtureTests.cs",
+  "producerSourceSha256": "611e37303756099f048cf65d2d6889cade48d2739eae8433874d1e59c2b95254",
+  "classification": "Actual managed IPC91 codec output and current PersistentOverrideStore schema 10 and ProfileStore schema 27 documents from fresh supplied private roots. The frozen persisted inputs are the earlier schema 8 and schema 25 managed documents, kept as migration cases. No installed runtime, firmware or hardware observation.",
+  "originalLegacyInputs": [
+    {
+      "name": "get-status-v79.frames",
+      "length": 6927,
+      "sha256": "1d77f3098a5c259dfbe2d53206dd5a448396964a384bfb08f9b644a21deb87aa"
+    },
+    {
+      "name": "observe-state-v79.frames",
+      "length": 6886,
+      "sha256": "6a82e28e3a6d7d4190d55bda1f2f37676abb3a0192be49eba4290a8987cb9907"
+    },
+    {
+      "name": "subscribe-status-v79.frames",
+      "length": 13645,
+      "sha256": "c404439ceaf1156369eff321ca08810267a0d32eb9c299a0dd274015a3887d06"
+    }
+  ],
+  "generated": [
+    {
+      "name": "get-status-v91.frames",
+      "length": 7309,
+      "sha256": "ded2fe5a55f076b57bb8b0b8124447d5a5ba0443724757f2e00024f10b9a184f",
+      "producer": "IpcMessageCodec"
+    },
+    {
+      "name": "observe-state-v91.frames",
+      "length": 7268,
+      "sha256": "dd31bd0b1da70f09fc45598a0aa5cc7a3b6efdf87d106a1aa918f1aa9df1133d",
+      "producer": "IpcMessageCodec"
+    },
+    {
+      "name": "subscribe-status-v91.frames",
+      "length": 14409,
+      "sha256": "1f0bcd90e96002dd1ca2635ea93f8d71a15f73fad07fdabd2da1e62d62ec1d5d",
+      "producer": "IpcMessageCodec"
+    },
+    {
+      "name": "custom-basic.json",
+      "length": 299,
+      "sha256": "2193786e82f18b09219f6d984d62245a16aefb55bcb4b06982304a62cc96e39c",
+      "producer": "PersistentOverrideStore.SaveAsync/LoadAsync"
+    },
+    {
+      "name": "custom-gpu-maximum.json",
+      "length": 520,
+      "sha256": "5b265f7ebe341874ad8bf6ddb9d8c5266ecd175ad3e446290a7183f51f650388",
+      "producer": "PersistentOverrideStore.SaveAsync/LoadAsync"
+    },
+    {
+      "name": "app-fans-0-1.json",
+      "length": 7191,
+      "sha256": "f93d0d9436351df5245f101daaa947b9971c4d9471302be245c65a3c18553f3f",
+      "producer": "ProfileStore.SaveAsync/LoadAsync"
+    },
+    {
+      "name": "app-fans-0-2.json",
+      "length": 7191,
+      "sha256": "a2d28cd4caa019cc85119235836c514be8ec2ee4389970e81a7dbce51c008dfc",
+      "producer": "ProfileStore.SaveAsync/LoadAsync"
+    },
+    {
+      "name": "app-fans-1-0.json",
+      "length": 7191,
+      "sha256": "283bb46dff1e88bba33cd71e4da86b81383fad31bf8ce44740ab9a3530ee3809",
+      "producer": "ProfileStore.SaveAsync/LoadAsync"
+    }
+  ],
+  "frozenPersisted": [
+    {
+      "name": "custom-basic-v8.json",
+      "length": 298,
+      "sha256": "da4fc74a31b43f3bd622598681809ade0f23a73a47cc1043adc70b7a7b0bf339",
+      "producer": "PersistentOverrideStore.SaveAsync/LoadAsync",
+      "schemaVersion": 8,
+      "producedAtRevision": "716b812c3d1328c426c99717f6a7af1d04f23939"
+    },
+    {
+      "name": "custom-gpu-maximum-v8.json",
+      "length": 519,
+      "sha256": "32e695e9310fa6d3e178a4dcf25901342b921227da3261c3f1a7c38346e77a6a",
+      "producer": "PersistentOverrideStore.SaveAsync/LoadAsync",
+      "schemaVersion": 8,
+      "producedAtRevision": "716b812c3d1328c426c99717f6a7af1d04f23939"
+    },
+    {
+      "name": "app-fans-0-1-v25.json",
+      "length": 7191,
+      "sha256": "334b1492a46b1457f4bba671034ba2861db469624799115d026257d6372888f8",
+      "producer": "ProfileStore.SaveAsync/LoadAsync",
+      "schemaVersion": 25,
+      "producedAtRevision": "716b812c3d1328c426c99717f6a7af1d04f23939"
+    },
+    {
+      "name": "app-fans-0-2-v25.json",
+      "length": 7191,
+      "sha256": "74684315f7aa65b93f585e885cce3848a2d0cd42c42f388d2342ecd5577afdd0",
+      "producer": "ProfileStore.SaveAsync/LoadAsync",
+      "schemaVersion": 25,
+      "producedAtRevision": "716b812c3d1328c426c99717f6a7af1d04f23939"
+    },
+    {
+      "name": "app-fans-1-0-v25.json",
+      "length": 7191,
+      "sha256": "bc843871e83944ebf275654b129d8507836d03d2bacf76b6cd77c3ec0ef24d26",
+      "producer": "ProfileStore.SaveAsync/LoadAsync",
+      "schemaVersion": 25,
+      "producedAtRevision": "716b812c3d1328c426c99717f6a7af1d04f23939"
+    }
+  ],
+  "frozenPersistedReason": "Earlier managed PersistentOverrideStore schema 8 and ProfileStore schema 25 output. The native readers admit both as older supported schemas, so these pinned inputs test that native reads them as managed migration does, beside the current generated documents."
+}

@@ -161,6 +161,7 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort, 
     private int nextTransaction = 1;
     private int driverModeRestoreOutcome;
     private bool ownsDriverMode;
+    private bool driverModeReleaseUncertain;
     private bool closing;
     private Task<LightingRendererOwnershipState>? closeTask;
     private int disposed;
@@ -405,10 +406,19 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort, 
             }
             if (current == RazerDeviceMode.Driver)
             {
-                await SetDeviceModeCoreAsync(
-                    RazerDeviceMode.Normal,
-                    cancellationToken,
-                    stillSuspending).ConfigureAwait(false);
+                driverModeReleaseUncertain = true;
+                try
+                {
+                    await SetDeviceModeCoreAsync(
+                        RazerDeviceMode.Normal,
+                        cancellationToken,
+                        stillSuspending).ConfigureAwait(false);
+                }
+                catch (BladeWriteException error) when (error.SubmissionState == WriteSubmissionState.KnownNotApplied)
+                {
+                    driverModeReleaseUncertain = false;
+                    throw;
+                }
             }
 
             RazerDeviceMode confirmed = await QueryDeviceModeCoreAsync(cancellationToken)
@@ -421,6 +431,7 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort, 
             }
 
             ownsDriverMode = false;
+            driverModeReleaseUncertain = false;
             return false;
         }
         finally
@@ -1736,6 +1747,11 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort, 
 
     private async Task TryRestoreOwnedDeviceModeCoreAsync()
     {
+        if (driverModeReleaseUncertain)
+        {
+            SetDriverModeRestoreOutcome(DriverModeRestoreOutcome.Indeterminate);
+            return;
+        }
         if (!ownsDriverMode)
         {
             SetDriverModeRestoreOutcome(DriverModeRestoreOutcome.NotOwned);

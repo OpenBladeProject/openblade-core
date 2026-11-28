@@ -40,6 +40,60 @@ internal static class WriteConfirmationPolicy
                 ? PendingConfirmationResult.Match
                 : PendingConfirmationResult.Mismatch);
 
+    // A crashed native write is confirmed against its own target only. Native
+    // performance never runs under owned manual fans, so manual fans are a
+    // mismatch; native fan targets compare by Automatic versus manual topology.
+    // Native sets the two thermal channels in turn, so a crash between them can
+    // leave a pair that reads as no state at all. A pair that still disagrees
+    // after the read's own retry is a definite firmware state other than the
+    // target. It survives restarts, so it is reported for an explicit reapply,
+    // as managed's own interrupted write is after a restart, never waited on.
+    // A Performance target read while HyperBoost is active reports no preset,
+    // but it is a definite state too: a native HyperBoost exit stopped before
+    // its first setter leaves HyperBoost on, which no later read changes.
+    internal static PendingConfirmationResult MatchNativeHandback(
+        DeviceSubsystem subsystem,
+        WriteConfirmationExpectation expectation,
+        ConfirmedDeviceState confirmed,
+        NativeHandbackClaim claim,
+        bool thermalChannelsDisagree = false)
+    {
+        if (!claim.Resolvable)
+        {
+            return PendingConfirmationResult.Unavailable;
+        }
+        return subsystem switch
+        {
+            // Native owned HyperBoost's enable pair: HyperBoost with Automatic
+            // fans, as managed confirms its own entry. A pair that still
+            // disagrees is a definite state other than the target.
+            DeviceSubsystem.Performance when expectation.HyperBoostActive is true =>
+                MatchPendingHyperBoost(expectation, confirmed) switch
+                {
+                    PendingConfirmationResult.Unavailable when thermalChannelsDisagree => PendingConfirmationResult.Mismatch,
+                    { } result => result,
+                    null => PendingConfirmationResult.Unavailable,
+                },
+            DeviceSubsystem.Performance => DeviceSubsystemOrder.IsManualFanMode(confirmed.Fans)
+                ? PendingConfirmationResult.Mismatch
+                : confirmed.Performance is not { } preset
+                    ? thermalChannelsDisagree || confirmed.HyperBoostActive is true
+                        ? PendingConfirmationResult.Mismatch
+                        : PendingConfirmationResult.Unavailable
+                    : preset == expectation.Target.Performance.Value
+                        ? PendingConfirmationResult.Match
+                        : PendingConfirmationResult.Mismatch,
+            DeviceSubsystem.Fans => confirmed.Fans is not { } fans
+                ? thermalChannelsDisagree ? PendingConfirmationResult.Mismatch : PendingConfirmationResult.Unavailable
+                : DeviceSubsystemOrder.IsManualFanMode(fans)
+                    == DeviceSubsystemOrder.IsManualFanMode(expectation.Target.Fans.Value)
+                    ? PendingConfirmationResult.Match
+                    : PendingConfirmationResult.Mismatch,
+            DeviceSubsystem.Battery => MatchPendingBattery(expectation, confirmed.Battery),
+            _ => PendingConfirmationResult.Unavailable,
+        };
+    }
+
     private static PendingConfirmationResult? MatchWithoutGpuManagementState(
         DeviceSubsystem subsystem,
         WriteConfirmationExpectation pending,

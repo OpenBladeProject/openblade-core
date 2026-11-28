@@ -181,6 +181,10 @@ internal static class ProductionLightingSessionFixture
         public BladeWriteException? PlaybackMuteFailure { get; init; }
 
         public int DisposeCount { get; private set; }
+        public bool BlockDispose { get; init; }
+        public bool ReturnBeforeActualRetirement { get; init; }
+        public TaskCompletionSource DisposeRelease { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private Task? closeTask;
 
         public int RelinquishCount { get; private set; }
 
@@ -405,15 +409,16 @@ internal static class ProductionLightingSessionFixture
         {
             DrainCount++;
             DrainStarted.TrySetResult();
-            await DisposeAsync();
+            if (!ReturnBeforeActualRetirement) { await DisposeAsync(); }
             return DrainResult;
         }
 
-        public ValueTask DisposeAsync()
+        public ValueTask DisposeAsync() => new(closeTask ??= DisposeCoreAsync());
+        private async Task DisposeCoreAsync()
         {
             DisposeCount++;
             OwnershipState = LightingRendererOwnershipState.None;
-            return ValueTask.CompletedTask;
+            if (BlockDispose) { await DisposeRelease.Task; }
         }
     }
 }

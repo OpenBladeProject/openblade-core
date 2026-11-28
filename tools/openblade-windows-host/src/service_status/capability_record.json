@@ -1,0 +1,99 @@
+{
+  "unidentified": {
+    "performancePresets": [],
+    "fanModes": [],
+    "lightingEffects": [],
+    "chargeLimits": [],
+    "supportsBatteryProtectionOff": false,
+    "supportsTemporaryFullCharge": false,
+    "supportsDirectManualFanTransitions": false,
+    "supportsBatterySaverFanStop": false,
+    "hasFanStopTrialEvidence": false,
+    "hasFanStopSourceEvidence": false,
+    "supportsFanStop": false,
+    "reportsPerformanceWithManualFans": false,
+    "supportsManualFansOnLimitedPower": false,
+    "supportsOrdinaryThermalControlOnUnclassifiedExternalPower": false,
+    "supportsKeyboardBrightness": false,
+    "supportsVaporChamberLighting": false,
+    "supportsTouchpadStatusIndicator": false,
+    "supportsBreathingColorSelection": true,
+    "supportedBreathingColorModes": null,
+    "supportsUniformLightingFrames": false,
+    "supportsWaveDirectionSelection": true,
+    "supportsPlaybackMuteIndicator": false,
+    "fanSpeedRange": null,
+    "fanSpeedRangesByPerformancePreset": {},
+    "observedFanSpeedRangesByPerformancePreset": {},
+    "customPerformance": null,
+    "cpuPowerLimit": null,
+    "cpuVoltageOptimizer": null,
+    "gpuOverclock": null,
+    "hyperBoostAccess": null,
+    "hyperBoostWithoutCoolingPadAccess": null,
+    "hyperBoostBaseModes": null,
+    "hyperBoostEntryRestriction": null,
+    "specialKeyBindingsAccess": null,
+    "writableSpecialKeySlots": 0,
+    "lampArrayLightingAccess": null,
+    "thxAudio": null,
+    "keyboardLightingLayoutId": null,
+    "blade18KeyboardLayoutId": null,
+    "blade14KeyboardEdition": null,
+    "supportedLightingRefreshRates": [],
+    "observedLightingEffects": [],
+    "observedLightingZones": [],
+    "observedPowerSourceBehaviors": [],
+    "logoLightingModes": [],
+    "hostManagedLaptopControls": [],
+    "oneShotLaptopControls": []
+  },
+  "identified": {
+    "localDimming": {"access":0,"supportsClear":false,"isWellFormed":true},
+    "hyperBoostAccess": 1,
+    "hyperBoostWithoutCoolingPadAccess": 0,
+    "hyperBoostBaseModes": {"silent":1,"balanced":1,"performance":1,"custom":1,"turbo":null},
+    "thxAudio": {"access":2,"productId":"rznb12"}
+  },
+  "thermal": {
+    "performancePresets": [1,0,2,3,4,5],
+    "fanModes": [0],
+    "supportsOrdinaryThermalControlOnUnclassifiedExternalPower": true,
+    "customPerformance": {"allowedCombinations":[{"cpu":0,"gpu":0,"isWellFormed":true},{"cpu":0,"gpu":1,"isWellFormed":true},{"cpu":0,"gpu":2,"isWellFormed":true},{"cpu":1,"gpu":0,"isWellFormed":true},{"cpu":1,"gpu":1,"isWellFormed":true},{"cpu":1,"gpu":2,"isWellFormed":true},{"cpu":2,"gpu":0,"isWellFormed":true},{"cpu":2,"gpu":1,"isWellFormed":true}],"supportsMaximumFans":false,"isWellFormed":true}
+  },
+  "fans": {
+    "fanModes": [0,3,1],
+    "supportsDirectManualFanTransitions": true,
+    "supportsManualFansOnLimitedPower": true,
+    "fanSpeedRange": {"minimumRpm":2000,"maximumRpm":5400,"stepRpm":100,"isWellFormed":true},
+    "fanSpeedRangesByPerformancePreset": {"Balanced":{"minimumRpm":2000,"maximumRpm":5400,"stepRpm":100,"isWellFormed":true},"Performance":{"minimumRpm":2000,"maximumRpm":5400,"stepRpm":100,"isWellFormed":true}}
+  },
+  "battery": {
+    "chargeLimits": [50,55,60,65,70,75,80],
+    "supportsBatteryProtectionOff": true
+  },
+  "temporaryCharge": {
+    "supportsTemporaryFullCharge": true
+  },
+  "lighting": {
+    "lightingEffects": [0,1,2,3,5,6,7,8,12],
+    "keyboardLightingLayoutId": "openblade.razer.rz09-0581.keyboard.6x17.v1",
+    "logoLightingModes": [0,1,2]
+  },
+  "lightingWithProfiles": {
+    "supportsKeyboardBrightness": true,
+    "supportedLightingRefreshRates": [0,1]
+  },
+  "hyperBoost": {
+    "hyperBoostAccess": 2,
+    "hyperBoostWithoutCoolingPadAccess": 2,
+    "hyperBoostBaseModes": {"silent":2,"balanced":2,"performance":2,"custom":2,"turbo":null}
+  },
+  "gpuClockTuning": {
+    "gpuOverclock": {"coreOffsetMegahertz":{"minimum":-1000,"maximum":400,"step":null,"isWellFormed":true},"memoryOffsetMegahertz":{"minimum":-1000,"maximum":3000,"step":null,"isWellFormed":true},"access":2,"supportsEnableDisable":true,"isWellFormed":true}
+  },
+  "fanStop": {
+    "hasFanStopTrialEvidence": true,
+    "hasFanStopSourceEvidence": true
+  }
+}

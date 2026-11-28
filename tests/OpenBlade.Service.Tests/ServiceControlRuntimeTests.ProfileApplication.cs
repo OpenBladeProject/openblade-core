@@ -309,6 +309,32 @@ public sealed partial class ServiceControlRuntimeTests
         Assert.True(runtime.GetStatus().WritesBlocked);
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData(@"C:\Other\unmatched.exe")]
+    public async Task ApplicationProfile_NoSelectionPreservesStatusButRecordsSequence(string? path)
+    {
+        TestContext context = await CreateApplicationProfileContextAsync();
+        using ServiceControlRuntime runtime = context.Runtime;
+        ServiceStatusSnapshot before = runtime.GetStatus();
+        Guid instance = Guid.NewGuid();
+        var report = new ReportApplicationContextRequest(
+            OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), instance, 1, path);
+
+        ControlOperationResult result = await runtime.ReportApplicationContextAsync(
+            report, static () => true, CancellationToken.None);
+        ControlOperationResult stale = await runtime.ReportApplicationContextAsync(
+            report with { RequestId = Guid.NewGuid() }, static () => true, CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Stored, result.Status);
+        Assert.Equal("No application profile is active.", result.Message);
+        Assert.Contains("stale", stale.Message);
+        ServiceStatusSnapshot after = runtime.GetStatus();
+        Assert.Null(after.ActiveApplicationProfileId);
+        Assert.Equal(before.Revision, after.Revision);
+        Assert.Equal(before.Message, after.Message);
+    }
+
     private async Task<TestContext> CreateApplicationProfileContextAsync()
     {
         TestContext context = CreateWritableContext();

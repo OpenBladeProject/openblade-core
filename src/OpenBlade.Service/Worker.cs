@@ -17,7 +17,9 @@ internal sealed class Worker(
     ServiceSessionPowerTransitionCoordinator powerTransitions,
     IServiceClientContextResolver clientContextResolver,
     ILogger<Worker> logger,
-    ServiceStartupTiming startupTiming) : BackgroundService
+    ServiceStartupTiming startupTiming,
+    ServiceMailboxHandoff? mailboxHandoff = null,
+    IVerifiedBladeDeviceProvider? deviceProvider = null) : BackgroundService
 {
     private const int MaximumPipeClients = NamedPipeControlServer.MaximumServerInstances;
     private static readonly TimeSpan ShutdownCleanupTimeout = TimeSpan.FromSeconds(5);
@@ -37,10 +39,22 @@ internal sealed class Worker(
                 RunBackgroundAsync,
                 token,
                 startupTiming),
-            (intentionalStop, token) => PrepareForShutdownAsync(
-                startupCoordinator.RuntimeInitialized,
-                intentionalStop,
-                token),
+            async (intentionalStop, token) =>
+            {
+                try
+                {
+                    await PrepareForShutdownAsync(startupCoordinator.RuntimeInitialized, intentionalStop, token).ConfigureAwait(false);
+                }
+                finally
+                {
+                    // Producers have drained and guarded cleanup has run. Stored or
+                    // uncertain settings are independent of transport quiescence.
+                    if (mailboxHandoff is not null && deviceProvider is not null)
+                    {
+                        await mailboxHandoff.CompleteAsync(deviceProvider, runtime, intentionalStop, token).ConfigureAwait(false);
+                    }
+                }
+            },
             stoppingToken,
             exception =>
             {

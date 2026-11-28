@@ -1,8 +1,23 @@
 <Project Sdk="Microsoft.NET.Sdk.Worker">
 
+  <PropertyGroup Condition="'$(OpenBladeScratchNativeReceiver)' == 'true' And '$(OpenBladeCandidateReceiptFixture)' == 'true'">
+    <OutputType>Library</OutputType>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(OpenBladeScratchNativeReceiver)' == 'true' And '$(OpenBladeCandidateReceiptFixture)' == 'true'">
+    <Compile Remove="Program.cs" />
+  </ItemGroup>
+
   <PropertyGroup>
     <TargetFramework>net10.0-windows</TargetFramework>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(OpenBladeCandidateReceiptFixture)' == 'true'">
+    <DefineConstants>$(DefineConstants);OPENBLADE_CANDIDATE_RECEIPT_FIXTURE</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(OpenBladeCandidateReceiptFixture)' == 'true'">
+    <InternalsVisibleTo Include="OpenBlade.Setup.Tests" />
+    <InternalsVisibleTo Include="OpenBlade.Setup" />
+    <InternalsVisibleTo Include="OpenBlade.CandidateReceipt.Scratch" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Hosting" />
@@ -10,6 +25,9 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="OpenBlade.Setup" />
+    <InternalsVisibleTo Include="OpenBlade.Service" />
+    <InternalsVisibleTo Include="OpenBlade.DeploymentBroker.Tests" />
     <ProjectReference Include="..\OpenBlade.Contracts\OpenBlade.Contracts.csproj" />
     <ProjectReference Include="..\OpenBlade.Deployment\OpenBlade.Deployment.csproj" />
   </ItemGroup>

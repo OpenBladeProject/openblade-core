@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Reflection;
 using System.Security.Principal;
 using OpenBlade.Contracts;
+using OpenBlade.Deployment;
 
 namespace OpenBlade.Setup;
 
@@ -44,8 +45,10 @@ public sealed record WindowsSetupPlatformOptions(
 public sealed class WindowsSetupPlatform : ISetupPlatform
 {
     private const string ServiceName = OpenBladeWindowsService.Name;
+    private const int ServiceNotActive = 1062;
     private const int ServiceDoesNotExist = 1060;
     private static readonly TimeSpan ServiceHealthTimeout = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan CandidateServiceHealthTimeout = TimeSpan.FromSeconds(10);
     private readonly SetupPaths paths;
     private readonly string payloadDirectory;
     private readonly ISetupPayloadFileSystem payloadFileSystem;
@@ -67,6 +70,57 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
     private readonly IPawnIoPrerequisite pawnIoPrerequisite;
     private readonly string setupExecutablePath;
     private readonly string currentUserSid;
+    private WindowsNativePackage? selectedNativePackage;
+    private Guid nativeRequest;
+    private SetupNativePackageTransaction? selectedNativeTransaction;
+    private WindowsNativeInstalledSelection? priorNativeSelection;
+    private WindowsManagedMailboxTransfer? managedTransfer;
+    private sealed record IncomingMailbox(string Installation, string Package);
+    private IncomingMailbox? incomingMailbox;
+    public SetupServiceTransition ServiceTransition { get; private set; }
+    internal Func<CancellationToken, Task<SetupCandidateServiceObservation>> ReadPredecessorService { get; set; } = WindowsSetupCandidateService.ReadAsync;
+    internal void BindExistingNativeSelection(WindowsNativeInstalledSelection? selection)
+    {
+        priorNativeSelection = selection;
+        if (selection?.Record.Phase == NativeEpochPhase.Retired) { ServiceTransition = SetupServiceTransition.NativeRetired; }
+    }
+    internal void BindSelectedNativeTransaction(SetupNativePackageTransaction selection)
+    {
+        if (selectedNativeTransaction is not null) { throw new InvalidOperationException("Native selection cannot be replaced."); }
+        selectedNativeTransaction = selection;
+    }
+    private async Task<WindowsSetupRetainedNativeLaunch?> CaptureNativeStopAsync(CancellationToken token)
+    {
+        if (priorNativeSelection is null || priorNativeSelection.Record.Phase == NativeEpochPhase.Retired) { return null; }
+        priorNativeSelection.RequireCurrent();
+        // Stopped/absent is not drain evidence. The recovery path below uses
+        // enforced original-attempt custody/history instead of a Running capture.
+        if (await serviceControl.GetStateAsync(ServiceName, token) != SetupServiceState.Running) { return null; }
+        return WindowsSetupRetainedNativeLaunch.Capture(await WindowsSetupCandidateService.ReadAsync(token),
+            priorNativeSelection.ServicePath, priorNativeSelection.ServiceSha256);
+    }
+    private async Task ConfirmNativeStopAsync(WindowsSetupRetainedNativeLaunch? original, TimeSpan budget, CancellationToken token)
+    {
+        if (priorNativeSelection is null || priorNativeSelection.Record.Phase == NativeEpochPhase.Retired) { return; }
+        var handback = WindowsNativeHandbackWriter.ForMachineData(paths.MachineDataDirectory);
+        if (original is null) { priorNativeSelection.RetireRecoverableSelection(handback: handback); return; }
+        await original.WaitForExitAsync(budget, token).ConfigureAwait(false);
+        token.ThrowIfCancellationRequested();
+        priorNativeSelection!.RetireAfterStatusDrain(original.Launch.ProcessId, original.Launch.CreationFileTimeUtc, handback);
+    }
+
+
+    // Internal typed selection only: no arbitrary executable path or public
+    // option/CLI switch. Default product construction stays managed.
+    internal WindowsSetupPlatform(WindowsSetupPlatformOptions? options, WindowsNativePackage package, Guid request) : this(options)
+    {
+        if (request == Guid.Empty) { throw new ArgumentException("A selected native transaction requires its authenticated request."); }
+        selectedNativePackage = package;
+        nativeRequest = request;
+        if (package.Service.RequiresMailboxHandoff)
+        { incomingMailbox = new(package.Release.Manifest.InstallationId.ToString("N"), NativeCanonical.Digest(package.Record)); }
+    }
+
 
     public WindowsSetupPlatform(WindowsSetupPlatformOptions? options = null)
     {
@@ -165,8 +219,24 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
                 paths.InstallDirectory,
                 CurrentUserSid,
                 cancellationToken);
+        string? managedPath = null;
+        if (selectedNativeTransaction is not null && state is not null && priorNativeSelection is null)
+        {
+            // Only the fixed managed predecessor may be restarted on this path.
+            // Capture its exact SCM configuration before any transition mutation.
+            var observed = await ReadPredecessorService(cancellationToken);
+            managedPath = Path.Combine(paths.InstallDirectory, "OpenBlade.Service.exe");
+            if (observed.ServiceType != 0x10 || observed.StartType != 2 || observed.Account != "LocalSystem"
+                || observed.CommandLine != $"\"{managedPath}\"")
+            { throw new InvalidDataException("The prior service is not the verified fixed managed predecessor."); }
+        }
         return new(
-            new(state is not null, state == SetupServiceState.Running),
+            new(state is not null, state == SetupServiceState.Running)
+            {
+                Kind = priorNativeSelection is not null ? SetupServicePredecessorKind.Native
+                    : state is null ? SetupServicePredecessorKind.Absent : SetupServicePredecessorKind.Managed,
+                ExecutablePath = managedPath,
+            },
             new(
                 tray,
                 sessionAgent,
@@ -184,21 +254,93 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
 
     public async Task PrepareServiceForInstallAsync(CancellationToken cancellationToken)
     {
-        await StopServiceAndWaitForExitAsync(cancellationToken);
+        // Set before a possibly submitted native stop/retirement, including a
+        // refusal with missing history. Managed preparation carries no native fence.
+        if (priorNativeSelection is not null && priorNativeSelection.Record.Phase != NativeEpochPhase.Retired)
+        { ServiceTransition = SetupServiceTransition.NativeRetirementPossible; }
+        long stopStarted = System.Diagnostics.Stopwatch.GetTimestamp();
+        using var nativeStop = await CaptureNativeStopAsync(cancellationToken);
+        SetupServiceState? state = await serviceControl.GetStateAsync(ServiceName, cancellationToken);
+        using var managedStop = incomingMailbox is not null
+            ? await CaptureManagedMailboxStopAsync(state, cancellationToken)
+            : null;
+
+        await StopPredecessorServiceAsync(nativeStop, [ServiceNotActive], cancellationToken);
         guardianQuiescenceGuard.EnsureClear();
+        if (managedStop is not null)
+        {
+            var transfer = managedTransfer ?? throw new IOException("Managed handoff request was not retained.");
+            await SetupManagedMailboxAdmission.ConfirmAsync(managedStop, transfer,
+                TimeSpan.FromSeconds(30) - System.Diagnostics.Stopwatch.GetElapsedTime(stopStarted), cancellationToken).ConfigureAwait(false);
+            (selectedNativeTransaction ?? throw new IOException("Native payload must be staged before managed handoff."))
+                .BindManagedHandoff(transfer);
+            managedTransfer = null;
+        }
+        await ConfirmNativeStopAsync(nativeStop, TimeSpan.FromSeconds(30) - System.Diagnostics.Stopwatch.GetElapsedTime(stopStarted), cancellationToken).ConfigureAwait(false);
+        ServiceTransition = priorNativeSelection is null ? SetupServiceTransition.ManagedPrepared : SetupServiceTransition.NativeRetired;
     }
 
-    public Task<ISetupPayloadTransaction> StagePayloadAsync(CancellationToken cancellationToken)
+    private async Task<ISetupOriginalManagedProcess> CaptureManagedMailboxStopAsync(SetupServiceState? state, CancellationToken token)
+    {
+        if (priorNativeSelection is { Record.Phase: not NativeEpochPhase.Retired } || state != SetupServiceState.Running)
+        { throw new IOException("Native mailbox observation requires a running handoff-capable managed upgrade first."); }
+        var files = WindowsNativeEpochFiles.OpenProtected(WindowsNativeEpochFiles.ManagedHandoffRoot);
+        WindowsSetupRetainedNativeLaunch? original = null;
+        WindowsManagedMailboxPackage? authenticated = null;
+        try
+        {
+            byte[] runBytes = files.ReadCurrent() ?? throw new IOException("Managed handoff upgrade prerequisite is missing.");
+            var run = ManagedMailboxRun.Parse(runBytes);
+            using var bound = files.OpenFile(Path.Combine(files.Root, "run-binding-" + run.Run + ".bin"));
+            var binding = ManagedMailboxBuildBinding.Parse(WindowsNativeEpochFiles.ReadBounded(bound));
+            var incoming = incomingMailbox ?? throw new IOException("Incoming mailbox package identity is unavailable.");
+            if (binding.RunDigest != NativeCanonical.Digest(runBytes) || binding.Installation != incoming.Installation)
+            { throw new IOException("Managed predecessor installation/run differs from the authenticated incoming package."); }
+            authenticated = WindowsManagedMailboxPackage.OpenCached(files, binding.Package);
+            if (authenticated.Installation != binding.Installation || authenticated.EnrollmentDigest != binding.Enrollment)
+            { throw new IOException("Managed predecessor trust enrollment changed."); }
+            var identity = authenticated.AuthenticateInstalled(paths.InstallDirectory);
+            if (identity.Executable != run.Executable || identity.Closure != run.Assembly || identity.Module != run.Module)
+            { throw new IOException("Managed original build differs from its signed preserved package."); }
+            using var installed = WindowsNativeEpochFiles.OpenProtected(paths.InstallDirectory);
+            using var executable = installed.OpenFile(Path.Combine(paths.InstallDirectory, "OpenBlade.Service.exe"));
+            string digest = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(executable));
+            if (digest != run.Executable) { throw new IOException("Managed handoff build differs from the original run."); }
+            original = WindowsSetupRetainedNativeLaunch.Capture(await ReadPredecessorService(token),
+                Path.Combine(paths.InstallDirectory, "OpenBlade.Service.exe"), digest);
+            if (run.Process != original.Launch.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture) + ":"
+                + original.Launch.CreationFileTimeUtc.ToString(System.Globalization.CultureInfo.InvariantCulture))
+            { throw new IOException("Managed handoff run belongs to a different process instance."); }
+            managedTransfer = new(files, runBytes, new(NativeCanonical.Digest(runBytes),
+                incoming.Installation, nativeRequest.ToString("N"), incoming.Package), authenticated);
+            return original;
+        }
+        catch { authenticated?.Dispose(); original?.Dispose(); files.Dispose(); throw; }
+    }
+
+    public async Task<ISetupPayloadTransaction> StagePayloadAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         dotNetRuntimeAdmission.EnsureAvailable();
-        return SetupPayloadTransaction.StageAsync(
+        var payload = await SetupPayloadTransaction.StageAsync(
             paths,
             payloadDirectory,
             payloadFileSystem,
             cancellationToken,
             progressReporter,
             guardianQuiescenceGuard.EnsureClear);
+        if (selectedNativePackage is null) { return payload; }
+        try
+        {
+            BindSelectedNativeTransaction(new SetupNativePackageTransaction(payload,
+                WindowsNativeEpochFiles.CreateOrOpenProductForInstall(), selectedNativePackage, nativeRequest,
+                managedTransfer: managedTransfer));
+            managedTransfer = null;
+            selectedNativePackage = null;
+            return selectedNativeTransaction ?? throw new InvalidOperationException("Native selection was not bound.");
+        }
+        catch { await payload.DisposeAsync(); throw; }
+
     }
 
     public async Task RestoreServiceInstallStateAsync(
@@ -206,6 +348,10 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(priorState);
+        if (selectedNativeTransaction?.RequiresExplicitNativeRecovery == true
+            || priorState.Kind == SetupServicePredecessorKind.Native
+            || ServiceTransition is SetupServiceTransition.NativeRetirementPossible or SetupServiceTransition.NativeRetired)
+        { throw new NativeRecoveryException(NativeRecoveryReason.PreStartTransitionInterrupted, "Native predecessor retirement requires explicit recovery; a retired or unprepared service path cannot be restored."); }
         if (!priorState.Existed)
         {
             await RemoveServiceAsync(cancellationToken);
@@ -215,9 +361,9 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
         SetupServiceState? current = await serviceControl.GetStateAsync(ServiceName, cancellationToken);
         if (priorState.WasRunning)
         {
-            if (current != SetupServiceState.Running)
+            if (current != SetupServiceState.Running || selectedNativeTransaction is not null)
             {
-                await ConfigureServiceAsync(startService: true, cancellationToken);
+                await ConfigureServiceAsync(startService: current != SetupServiceState.Running, cancellationToken, RestoreManagedPath(priorState));
             }
 
             await VerifyServiceHealthAsync("rollback", cancellationToken);
@@ -225,10 +371,21 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
         }
 
         await StopServiceAndWaitForExitAsync(cancellationToken);
-        if (current is null)
+        if (current is null || selectedNativeTransaction is not null)
         {
-            await ConfigureServiceAsync(startService: false, cancellationToken);
+            // Configuration may already name the incoming native image even
+            // though StartService was never submitted. Restore the captured path
+            // for a stopped predecessor too, without starting it.
+            await ConfigureServiceAsync(startService: false, cancellationToken, RestoreManagedPath(priorState));
         }
+    }
+
+    private string RestoreManagedPath(SetupServiceInstallState priorState)
+    {
+        string expected = Path.Combine(paths.InstallDirectory, "OpenBlade.Service.exe");
+        if (selectedNativeTransaction is not null && priorState.ExecutablePath != expected)
+        { throw new InvalidDataException("Managed rollback requires the exact captured predecessor path."); }
+        return priorState.ExecutablePath ?? expected;
     }
 
     public async Task WriteAuthorizedUserSidAsync(string sid, CancellationToken cancellationToken)
@@ -292,9 +449,9 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
 
     private async Task ConfigureServiceAsync(
         bool startService,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, string? restoredManagedPath = null)
     {
-        string serviceExecutable = Path.Combine(paths.InstallDirectory, "OpenBlade.Service.exe");
+        string serviceExecutable = restoredManagedPath ?? selectedNativeTransaction?.SelectedServicePath() ?? Path.Combine(paths.InstallDirectory, "OpenBlade.Service.exe");
         bool serviceExists = await serviceControl.ExistsAsync(ServiceName, cancellationToken);
         await serviceControl.RunAsync(
             [serviceExists ? "config" : "create", ServiceName, "binPath=", $"\"{serviceExecutable}\"", "start=", "auto", "obj=", "LocalSystem", "DisplayName=", "OpenBlade Service"],
@@ -308,6 +465,8 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
         await serviceControl.RunAsync(["failureflag", ServiceName, "1"], Array.Empty<int>(), cancellationToken);
         if (startService)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (restoredManagedPath is null) { selectedNativeTransaction?.MarkNativeStartupPossible(); }
             await serviceControl.RunAsync(["start", ServiceName], Array.Empty<int>(), cancellationToken);
             await serviceControl.WaitForStateAsync(
                 ServiceName,
@@ -320,14 +479,37 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
     public Task VerifyServiceHealthAsync(CancellationToken cancellationToken)
         => VerifyServiceHealthAsync("install", cancellationToken);
 
-    private async Task VerifyServiceHealthAsync(string purpose, CancellationToken cancellationToken)
+    internal Task VerifyCandidateServiceHealthAsync(
+        SetupCandidateLaunch expectedLaunch,
+        ISetupRetainedCandidateLaunch retainedLaunch,
+        CancellationToken cancellationToken)
+        => VerifyCandidateServiceHealthAsync(expectedLaunch, retainedLaunch,
+            WindowsSetupCandidateService.ReadAsync, SetupServiceHealthProbe.CreateCandidate(), cancellationToken);
+
+    internal Task VerifyCandidateServiceHealthAsync(
+        SetupCandidateLaunch expectedLaunch,
+        ISetupRetainedCandidateLaunch retainedLaunch,
+        Func<CancellationToken, Task<SetupCandidateServiceObservation>> readService,
+        SetupServiceHealthProbe probe,
+        CancellationToken cancellationToken)
     {
+        var candidate = new SetupCandidateServiceVerification(expectedLaunch, retainedLaunch, readService);
+        return VerifyServiceHealthAsync("candidate", cancellationToken,
+            (token, timing) => probe.VerifyAsync(token, timing, candidate));
+    }
+
+    private async Task VerifyServiceHealthAsync(
+        string purpose,
+        CancellationToken cancellationToken,
+        Func<CancellationToken, SetupServiceHealthTiming, Task>? verifyCandidate = null)
+    {
+        TimeSpan budget = verifyCandidate is null ? ServiceHealthTimeout : CandidateServiceHealthTimeout;
         using CancellationTokenSource timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         long deadlineArmedQpc = Stopwatch.GetTimestamp();
-        timeout.CancelAfter(ServiceHealthTimeout);
+        timeout.CancelAfter(budget);
         for (int attempt = 1; ; attempt++)
         {
-            var timing = new SetupServiceHealthTiming(purpose, ServiceHealthTimeout)
+            var timing = new SetupServiceHealthTiming(purpose, budget)
             {
                 DeadlineArmedQpc = deadlineArmedQpc,
             };
@@ -335,7 +517,7 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
             string? cause = null;
             try
             {
-                await healthProbe.VerifyWithTimingAsync(timeout.Token, timing);
+                await (verifyCandidate ?? healthProbe.VerifyWithTimingAsync)(timeout.Token, timing);
                 return;
             }
             catch (OperationCanceledException exception) when (!cancellationToken.IsCancellationRequested)
@@ -343,10 +525,11 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
                 outcome = nameof(TimeoutException);
                 cause = exception.GetType().Name;
                 throw new TimeoutException(
-                    $"The OpenBlade service did not respond to its health check within {ServiceHealthTimeout.TotalSeconds:0} seconds.",
+                    $"The OpenBlade service did not respond to its health check within {budget.TotalSeconds:0} seconds.",
                     exception);
             }
-            catch (IOException exception) when (attempt == 1
+            // Candidate identity and retained-generation failures can also be IOExceptions.
+            catch (IOException exception) when (verifyCandidate is null && attempt == 1
                 && timing.Connect.Succeeded && !timeout.IsCancellationRequested
                 && exception is not IpcProtocolVersionMismatchException)
             {
@@ -389,13 +572,14 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
     }
 
     public Task InstallSessionAgentStartupAsync(CancellationToken cancellationToken)
+        => RegisterSessionAgentStartupAsync(selectedNativeTransaction?.SelectedAgentPath()
+            ?? Path.Combine(paths.InstallDirectory, "OpenBlade.SessionAgent.exe"), cancellationToken);
+
+    private Task RegisterSessionAgentStartupAsync(string executable, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         signInTaskScheduler.Register(new SignInTaskDefinition(
-            SignInTaskNames.SessionAgent,
-            Path.Combine(paths.InstallDirectory, "OpenBlade.SessionAgent.exe"),
-            paths.InstallDirectory,
-            null,
+            SignInTaskNames.SessionAgent, executable, Path.GetDirectoryName(executable)!, null,
             "Starts the OpenBlade Session Agent when you sign in."));
         DeleteSessionAgentStartupFiles();
         return Task.CompletedTask;
@@ -413,6 +597,7 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
         SetupStartupRegistration prior,
         CancellationToken cancellationToken)
     {
+        RequireSafeStartupRestoration();
         switch (prior)
         {
             case SetupStartupRegistration.Shortcut:
@@ -434,6 +619,7 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
         SetupStartupRegistration prior,
         CancellationToken cancellationToken)
     {
+        RequireSafeStartupRestoration();
         switch (prior)
         {
             case SetupStartupRegistration.Shortcut:
@@ -445,9 +631,16 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
                     cancellationToken).ConfigureAwait(false);
                 break;
             case SetupStartupRegistration.SignInTask:
-                await InstallSessionAgentStartupAsync(cancellationToken).ConfigureAwait(false);
+                await RegisterSessionAgentStartupAsync(Path.Combine(paths.InstallDirectory, "OpenBlade.SessionAgent.exe"), cancellationToken).ConfigureAwait(false);
                 break;
         }
+    }
+
+    private void RequireSafeStartupRestoration()
+    {
+        if (selectedNativeTransaction?.RequiresExplicitNativeRecovery == true
+            || ServiceTransition is SetupServiceTransition.NativeRetirementPossible or SetupServiceTransition.NativeRetired)
+        { throw new NativeRecoveryException(NativeRecoveryReason.PreStartTransitionInterrupted, "Startup restoration requires a safe managed predecessor; native recovery remains fenced."); }
     }
 
     private void DeleteTrayStartupFiles()
@@ -577,14 +770,18 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
 
     public async Task RemoveServiceAsync(CancellationToken cancellationToken)
     {
-        await StopServiceAndWaitForExitAsync(cancellationToken);
+        long stopStarted = System.Diagnostics.Stopwatch.GetTimestamp();
+        using var nativeStop = await CaptureNativeStopAsync(cancellationToken);
+        await StopPredecessorServiceAsync(nativeStop, [ServiceDoesNotExist, ServiceNotActive], cancellationToken);
         if (!await serviceControl.ExistsAsync(ServiceName, cancellationToken))
         {
             guardianQuiescenceGuard.EnsureClear();
+            await ConfirmNativeStopAsync(nativeStop, TimeSpan.FromSeconds(30) - System.Diagnostics.Stopwatch.GetElapsedTime(stopStarted), cancellationToken).ConfigureAwait(false);
             return;
         }
 
         guardianQuiescenceGuard.EnsureClear();
+        await ConfirmNativeStopAsync(nativeStop, TimeSpan.FromSeconds(30) - System.Diagnostics.Stopwatch.GetElapsedTime(stopStarted), cancellationToken).ConfigureAwait(false);
         await serviceControl.RunAsync(["delete", ServiceName], [ServiceDoesNotExist], cancellationToken);
         await serviceControl.WaitForDeletionAsync(ServiceName, TimeSpan.FromSeconds(30), cancellationToken);
     }
@@ -592,6 +789,25 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
     private Task StopServiceAndWaitForExitAsync(CancellationToken cancellationToken) =>
         SetupServiceQuiescence.StopAsync(serviceControl, processOperations,
             paths.InstallDirectory, TimeSpan.FromSeconds(30), cancellationToken);
+
+    // The managed quiescence above admits only the installed managed executable,
+    // so it refuses a running native predecessor. That predecessor's exact
+    // retained launch confirms its own exit later in ConfirmNativeStopAsync.
+    private async Task StopPredecessorServiceAsync(
+        WindowsSetupRetainedNativeLaunch? nativeStop, int[] acceptedStopErrors, CancellationToken cancellationToken)
+    {
+        if (nativeStop is null)
+        {
+            await StopServiceAndWaitForExitAsync(cancellationToken);
+            return;
+        }
+        await serviceControl.RunAsync(["stop", ServiceName], acceptedStopErrors, cancellationToken);
+        await serviceControl.WaitForStateAsync(
+            ServiceName,
+            SetupServiceState.Stopped,
+            TimeSpan.FromSeconds(30),
+            cancellationToken);
+    }
 
     public Task StopTrayAsync(CancellationToken cancellationToken)
     {
@@ -604,15 +820,17 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
             cancellationToken);
     }
 
-    public Task StopSessionAgentAsync(CancellationToken cancellationToken)
+    public async Task StopSessionAgentAsync(CancellationToken cancellationToken)
     {
-        string installedAgent = Path.Combine(paths.InstallDirectory, "OpenBlade.SessionAgent.exe");
-        return StopInstalledProcessAsync(
+        string installedAgent = priorNativeSelection?.AgentPath ?? Path.Combine(paths.InstallDirectory, "OpenBlade.SessionAgent.exe");
+        await StopInstalledProcessAsync(
             "OpenBlade.SessionAgent",
             installedAgent,
             SessionAgentShutdownEndpoint.ForExecutablePath(installedAgent),
             "session agent",
             cancellationToken);
+        priorNativeSelection?.Dispose();
+        priorNativeSelection = null;
     }
 
     private async Task StopInstalledProcessAsync(

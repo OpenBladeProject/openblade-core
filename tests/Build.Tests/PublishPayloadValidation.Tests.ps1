@@ -497,7 +497,7 @@ try {
         Join-Path $footprintPayload 'Microsoft.Windows.ApplicationModel.Resources.dll') `
         -Value 'runtime resource loader' -NoNewline
     [xml]$buildProperties = Get-Content -LiteralPath (Join-Path $repository 'Directory.Build.props')
-    $runtimeVersion = [string]$buildProperties.Project.PropertyGroup.OpenBladeMinimumDotNetRuntimeVersion
+    $runtimeVersion = [string]$buildProperties.SelectSingleNode('/Project/PropertyGroup/OpenBladeMinimumDotNetRuntimeVersion').InnerText
     foreach ($application in @('OpenBlade.Service', 'OpenBlade.FanStop.Guardian', 'OpenBlade.CpuTemperature', 'OpenBlade.SessionAgent', 'OpenBlade.Tray')) {
         $frameworks = @([ordered]@{ name = 'Microsoft.NETCore.App'; version = $runtimeVersion })
         if ($application -eq 'OpenBlade.Tray') {
@@ -536,7 +536,8 @@ try {
     }
     Assert-ProductionBundleFootprint -Bundle $footprint
 
-    foreach ($toolName in @('openblade-discovery.exe', 'openblade-status-cli.exe')) {
+    $developerTools = @('openblade-discovery.exe', 'openblade-rust-session-agent.exe', 'openblade-status-cli.exe')
+    foreach ($toolName in $developerTools) {
         $toolFile = Join-Path $footprintPayload $toolName
         Set-Content -LiteralPath $toolFile -Value 'developer tool' -NoNewline
         $toolRejected = $false

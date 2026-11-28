@@ -15,6 +15,46 @@
     <DefineConstants>$(DefineConstants);OPENBLADE_LOCAL_DEV_DEPLOYMENT</DefineConstants>
   </PropertyGroup>
 
+  <PropertyGroup Condition="'$(OpenBladeNativeStatusIntegration)' == 'true' And '$(OpenBladeLocalDevDeployment)' == 'true'">
+    <DefineConstants>$(DefineConstants);OPENBLADE_NATIVE_STATUS_INTEGRATION</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(OpenBladeNativeStatusIntegration)' == 'true' And '$(OpenBladeLocalDevDeployment)' == 'true'">
+    <ProjectReference Include="../OpenBlade.DeploymentBroker/OpenBlade.DeploymentBroker.csproj" />
+  </ItemGroup>
+  <Target Name="RequireNativeStatusLocalDev" BeforeTargets="Restore;PrepareForBuild" Condition="'$(OpenBladeNativeStatusIntegration)' == 'true' And '$(OpenBladeLocalDevDeployment)' != 'true'">
+    <Error Text="Native status integration requires the explicitly selected LocalDev trust domain; Stable enrollment is not established." />
+  </Target>
+  <!-- Offline-only proof reader and scratch image-pin seam. -->
+  <PropertyGroup Condition="'$(OpenBladeScratchNativeReceiver)' == 'true' And '$(OpenBladeCandidateReceiptFixture)' == 'true'">
+    <OutputType>Library</OutputType>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(OpenBladeScratchNativeReceiver)' == 'true' And '$(OpenBladeCandidateReceiptFixture)' == 'true'">
+    <Compile Remove="Program.cs" />
+  </ItemGroup>
+  <PropertyGroup Condition="'$(OpenBladeCandidateReceiptFixture)' == 'true'">
+    <DefineConstants>$(DefineConstants);OPENBLADE_CANDIDATE_RECEIPT_FIXTURE</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(OpenBladeCandidateReceiptFixture)' == 'true'">
+    <ProjectReference Include="../OpenBlade.DeploymentBroker/OpenBlade.DeploymentBroker.csproj" />
+    <InternalsVisibleTo Include="OpenBlade.CandidateReceipt.Scratch" />
+  </ItemGroup>
+  <Target Name="PinScratchCandidateReadinessImage" BeforeTargets="GetAssemblyAttributes"
+          Condition="'$(OpenBladeCandidateReceiptFixture)' == 'true' And '$(OpenBladeCandidateReceiptRustProbe)' != ''">
+    <GetFileHash Files="$(OpenBladeCandidateReceiptRustProbe)" Algorithm="SHA256">
+      <Output TaskParameter="Hash" PropertyName="_ScratchCandidateReadinessSha256" />
+    </GetFileHash>
+    <ItemGroup>
+      <AssemblyMetadata Include="OpenBladeScratchCandidateReadinessSha256" Value="$(_ScratchCandidateReadinessSha256)" />
+    </ItemGroup>
+  </Target>
+  <ItemGroup>
+    <ProjectReference Include="../OpenBlade.Deployment/OpenBlade.Deployment.csproj" />
+  </ItemGroup>
+  <PropertyGroup Condition="'$(OpenBladePackageProofFixture)' == 'true'">
+    <DefineConstants>$(DefineConstants);OPENBLADE_PACKAGE_PROOF_FIXTURE</DefineConstants>
+  </PropertyGroup>
+
+
   <ItemGroup Condition="'$(OpenBladeLocalDevDeployment)' != 'true'">
     <Compile Remove="LocalDevEnrollmentUser.cs" />
     <Compile Remove="LocalDevRelatedBundleCompatibility.cs" />

@@ -14,7 +14,58 @@
     <Using Include="Xunit" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\OpenBlade.WriterFence.Scratch\OpenBlade.WriterFence.Scratch.csproj" />
+    <ProjectReference Include="..\..\src\OpenBlade.Deployment\OpenBlade.Deployment.csproj" />
     <ProjectReference Include="..\..\src\OpenBlade.Setup\OpenBlade.Setup.csproj" />
+    <ProjectReference Include="..\..\src\OpenBlade.Service\OpenBlade.Service.csproj" />
+    <ProjectReference Include="..\..\src\OpenBlade.Session\OpenBlade.Session.csproj" />
+  </ItemGroup>
+  <PropertyGroup Condition="'$(OpenBladeNativePackageTests)' == 'true'">
+    <DefineConstants>$(DefineConstants);OPENBLADE_NATIVE_PACKAGE_TESTS</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(OpenBladeNativePackageTests)' == 'true'">
+    <ProjectReference Include="../OpenBlade.Deployment.Tests/OpenBlade.Deployment.Tests.csproj" />
+  </ItemGroup>
+  <PropertyGroup Condition="'$(OpenBladePackageProofFixture)' == 'true'">
+    <DefineConstants>$(DefineConstants);OPENBLADE_PACKAGE_PROOF_FIXTURE</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(OpenBladeCandidateReceiptFixture)' == 'true'">
+    <DefineConstants>$(DefineConstants);OPENBLADE_CANDIDATE_RECEIPT_FIXTURE</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(OpenBladeCandidateReceiptFixture)' == 'true'">
+    <None Include="../../tools/openblade-windows-host/tests/data/scratch-native-receiver-v2.json" Link="scratch-native-receiver-v2.json" CopyToOutputDirectory="PreserveNewest" />
+    <ProjectReference Include="../../src/OpenBlade.DeploymentBroker/OpenBlade.DeploymentBroker.csproj" />
+    <None Include="$(OpenBladeScratchFixtureBuildRoot)/receiver/OpenBlade.CandidateReceipt.Scratch.exe"
+          Link="OpenBlade.CandidateReceipt.Scratch.exe" CopyToOutputDirectory="Always" />
+    <None Include="$(OpenBladeScratchFixtureBuildRoot)/receiver/scratch-receiver-build.json"
+          Link="scratch-receiver-build.json" CopyToOutputDirectory="Always" />
+  </ItemGroup>
+  <Target Name="BuildCurrentNativeScratchReceiver" BeforeTargets="PrepareForBuild"
+          Condition="'$(OpenBladeCandidateReceiptFixture)' == 'true' And '$(DesignTimeBuild)' != 'true'">
+    <Error Condition="'$(OpenBladeScratchNativeReceiverPath)' != '' Or '$(OpenBladeScratchFixtureBuildRoot)' == '' Or '$(OpenBladeCandidateReceiptRustProbe)' == ''"
+           Text="Candidate receipt tests require an external OpenBladeScratchFixtureBuildRoot and a readiness build; arbitrary receiver inputs are obsolete." />
+    <Exec Command="pwsh -NoProfile -NonInteractive -File &quot;$(MSBuildThisFileDirectory)../../build/Build-ScratchNativeReceiver.ps1&quot; -BuildRoot &quot;$([System.IO.Path]::GetFullPath('$(OpenBladeScratchFixtureBuildRoot)'))/.&quot; -ReadinessImage &quot;$(OpenBladeCandidateReceiptRustProbe)&quot;" />
+    <GetFileHash Files="$(OpenBladeScratchFixtureBuildRoot)/receiver/OpenBlade.CandidateReceipt.Scratch.exe" Algorithm="SHA256">
+      <Output TaskParameter="Hash" PropertyName="_ScratchReceiverSha256" />
+    </GetFileHash>
+    <GetFileHash Files="$(OpenBladeScratchFixtureBuildRoot)/receiver/scratch-receiver-build.json" Algorithm="SHA256">
+      <Output TaskParameter="Hash" PropertyName="_ScratchReceiverBuildSha256" />
+    </GetFileHash>
+    <ItemGroup>
+      <AssemblyMetadata Include="OpenBladeScratchReceiverSha256" Value="$(_ScratchReceiverSha256)" />
+      <AssemblyMetadata Include="OpenBladeScratchReceiverBuildSha256" Value="$(_ScratchReceiverBuildSha256)" />
+    </ItemGroup>
+  </Target>
+  <Target Name="VerifyCurrentNativeScratchReceiver" AfterTargets="CopyFilesToOutputDirectory" BeforeTargets="VSTest"
+          Condition="'$(OpenBladeCandidateReceiptFixture)' == 'true' And '$(DesignTimeBuild)' != 'true'">
+    <Exec Command="pwsh -NoProfile -NonInteractive -File &quot;$(MSBuildThisFileDirectory)../../build/Build-ScratchNativeReceiver.ps1&quot; -BuildRoot &quot;$([System.IO.Path]::GetFullPath('$(OpenBladeScratchFixtureBuildRoot)'))/.&quot; -ReadinessImage &quot;$(OpenBladeCandidateReceiptRustProbe)&quot; -Destination &quot;$(TargetDir).&quot; -VerifyOnly" />
+  </Target>
+  <PropertyGroup Condition="'$(OpenBladeCandidateReceiptFixture)' == 'true' And '$(OpenBladeCandidateReceiptRustProbe)' != ''">
+    <DefineConstants>$(DefineConstants);OPENBLADE_CANDIDATE_RECEIPT_RUST_PROBE</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(OpenBladeCandidateReceiptFixture)' == 'true' And '$(OpenBladeCandidateReceiptRustProbe)' != ''">
+    <None Include="$(OpenBladeCandidateReceiptRustProbe)" Link="openblade-scratch-candidate-receipt.exe"
+          CopyToOutputDirectory="Always" />
   </ItemGroup>
   <ItemGroup Condition="'$(OpenBladeLocalDevDeployment)' != 'true'">
     <Compile Remove="LocalDevRelatedBundleCompatibilityTests.cs" />

@@ -4,6 +4,10 @@
     <TargetFramework>net10.0</TargetFramework>
   </PropertyGroup>
 
+  <PropertyGroup Condition="'$(OpenBladeScratchNativeReceiver)' == 'true' And '$(OpenBladeCandidateReceiptFixture)' == 'true'">
+    <DefineConstants>$(DefineConstants);OPENBLADE_SCRATCH_NATIVE_RECEIVER</DefineConstants>
+  </PropertyGroup>
+
   <ItemGroup>
     <EmbeddedResource Include="Fixtures\Blade18KeyboardLightingLayout.json" />
     <EmbeddedResource Include="Fixtures\Blade14KeyboardLightingLayout.json" />

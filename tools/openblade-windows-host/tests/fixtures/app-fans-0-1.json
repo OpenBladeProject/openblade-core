@@ -1,0 +1,273 @@
+{
+  "schemaVersion": 27,
+  "profiles": {
+    "pluggedIn": {
+      "performance": 1,
+      "fans": 0,
+      "lighting": {
+        "effect": 0,
+        "color": {
+          "red": 0,
+          "green": 0,
+          "blue": 0
+        },
+        "brightness": 0,
+        "parameters": {
+          "kind": "off"
+        },
+        "logoMode": null
+      },
+      "display": {
+        "refreshRateKey": null,
+        "hdrEnabled": null,
+        "colorProfileKey": null,
+        "brightnessPercent": null,
+        "isConfigured": false
+      },
+      "stopFansInBatterySaver": false,
+      "customPerformance": {
+        "cpu": 1,
+        "gpu": 2,
+        "maximumFans": false,
+        "gpuClockOffsets": null
+      },
+      "gpuClockTuning": null,
+      "fanControl": {
+        "mode": 0,
+        "fixedSpeedRpm": 3700,
+        "manualCurve": {
+          "cpu": [
+            {
+              "temperatureCelsius": 40,
+              "speedRpm": 2000
+            },
+            {
+              "temperatureCelsius": 50,
+              "speedRpm": 2100
+            },
+            {
+              "temperatureCelsius": 60,
+              "speedRpm": 2600
+            },
+            {
+              "temperatureCelsius": 70,
+              "speedRpm": 3400
+            },
+            {
+              "temperatureCelsius": 80,
+              "speedRpm": 4400
+            },
+            {
+              "temperatureCelsius": 90,
+              "speedRpm": 5400
+            }
+          ],
+          "gpu": [
+            {
+              "temperatureCelsius": 35,
+              "speedRpm": 2000
+            },
+            {
+              "temperatureCelsius": 45,
+              "speedRpm": 2100
+            },
+            {
+              "temperatureCelsius": 55,
+              "speedRpm": 2700
+            },
+            {
+              "temperatureCelsius": 65,
+              "speedRpm": 3600
+            },
+            {
+              "temperatureCelsius": 75,
+              "speedRpm": 4500
+            },
+            {
+              "temperatureCelsius": 85,
+              "speedRpm": 5400
+            }
+          ],
+          "useHigherTemperatureForBoth": true
+        }
+      },
+      "lightingPowerPolicy": {
+        "turnOffWhenDisplayTurnsOff": false,
+        "idleTimeoutMinutes": null
+      },
+      "laptopBehavior": null,
+      "batteryProtectionEnabled": true,
+      "thxAudio": null
+    },
+    "battery": {
+      "performance": 3,
+      "fans": 0,
+      "lighting": {
+        "effect": 0,
+        "color": {
+          "red": 0,
+          "green": 0,
+          "blue": 0
+        },
+        "brightness": 0,
+        "parameters": {
+          "kind": "off"
+        },
+        "logoMode": null
+      },
+      "display": {
+        "refreshRateKey": null,
+        "hdrEnabled": null,
+        "colorProfileKey": null,
+        "brightnessPercent": null,
+        "isConfigured": false
+      },
+      "stopFansInBatterySaver": false,
+      "customPerformance": null,
+      "gpuClockTuning": null,
+      "fanControl": null,
+      "lightingPowerPolicy": {
+        "turnOffWhenDisplayTurnsOff": false,
+        "idleTimeoutMinutes": null
+      },
+      "laptopBehavior": null,
+      "batteryProtectionEnabled": true,
+      "thxAudio": null
+    },
+    "usbC": {
+      "performance": 1,
+      "fans": 0,
+      "lighting": {
+        "effect": 0,
+        "color": {
+          "red": 0,
+          "green": 0,
+          "blue": 0
+        },
+        "brightness": 0,
+        "parameters": {
+          "kind": "off"
+        },
+        "logoMode": null
+      },
+      "display": {
+        "refreshRateKey": null,
+        "hdrEnabled": null,
+        "colorProfileKey": null,
+        "brightnessPercent": null,
+        "isConfigured": false
+      },
+      "stopFansInBatterySaver": false,
+      "customPerformance": null,
+      "gpuClockTuning": null,
+      "fanControl": null,
+      "lightingPowerPolicy": {
+        "turnOffWhenDisplayTurnsOff": false,
+        "idleTimeoutMinutes": null
+      },
+      "laptopBehavior": null,
+      "batteryProtectionEnabled": true,
+      "thxAudio": null
+    },
+    "batteryPolicy": {
+      "chargeLimitPercent": 80
+    },
+    "lightingPowerPolicy": null,
+    "applicationProfiles": [
+      {
+        "id": "11111111-2222-3333-4444-555555555555",
+        "name": "Game",
+        "executablePath": "C:\\Games\\Game.exe",
+        "activationMode": 0,
+        "overrides": {
+          "pluggedIn": {
+            "performance": null,
+            "customPerformance": null,
+            "gpuClockTuning": null,
+            "fans": null,
+            "fanControl": {
+              "mode": 1,
+              "fixedSpeedRpm": 3700,
+              "manualCurve": {
+                "cpu": [
+                  {
+                    "temperatureCelsius": 40,
+                    "speedRpm": 2000
+                  },
+                  {
+                    "temperatureCelsius": 50,
+                    "speedRpm": 2100
+                  },
+                  {
+                    "temperatureCelsius": 60,
+                    "speedRpm": 2600
+                  },
+                  {
+                    "temperatureCelsius": 70,
+                    "speedRpm": 3400
+                  },
+                  {
+                    "temperatureCelsius": 80,
+                    "speedRpm": 4400
+                  },
+                  {
+                    "temperatureCelsius": 90,
+                    "speedRpm": 5400
+                  }
+                ],
+                "gpu": [
+                  {
+                    "temperatureCelsius": 35,
+                    "speedRpm": 2000
+                  },
+                  {
+                    "temperatureCelsius": 45,
+                    "speedRpm": 2100
+                  },
+                  {
+                    "temperatureCelsius": 55,
+                    "speedRpm": 2700
+                  },
+                  {
+                    "temperatureCelsius": 65,
+                    "speedRpm": 3600
+                  },
+                  {
+                    "temperatureCelsius": 75,
+                    "speedRpm": 4500
+                  },
+                  {
+                    "temperatureCelsius": 85,
+                    "speedRpm": 5400
+                  }
+                ],
+                "useHigherTemperatureForBoth": true
+              }
+            },
+            "lighting": null,
+            "display": null,
+            "gamingModeEnabled": null,
+            "gamingModeKeyPolicy": null,
+            "isConfigured": true
+          },
+          "battery": null,
+          "usbC": null,
+          "isConfigured": true
+        },
+        "enabled": true
+      }
+    ],
+    "windowsPowerModes": {
+      "silent": null,
+      "balanced": null,
+      "performance": null,
+      "batterySaver": null,
+      "batteryBalanced": null,
+      "custom": null,
+      "turbo": null,
+      "maximumPower": null,
+      "gaming": null,
+      "creator": null
+    }
+  }
+}

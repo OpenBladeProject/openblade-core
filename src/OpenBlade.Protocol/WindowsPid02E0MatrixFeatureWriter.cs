@@ -290,7 +290,8 @@ internal sealed class WindowsPid02E0MatrixFeatureWriter : IPid02E0MatrixFeatureW
         this.exclusivityPolicy = exclusivityPolicy;
         this.timingSink = timingSink;
         this.sharedCommandGate = sharedCommandGate;
-        worker = RunAsync();
+        var lifetime = handle.Lifetime?.Child();
+        worker = lifetime is null ? RunAsync() : lifetime.RunAsync(RunAsync);
     }
 
     public RazerCommandSessionDisposition Disposition

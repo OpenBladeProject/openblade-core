@@ -600,6 +600,11 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
         };
 
         int result = WindowsDisplayNative.DisplayConfigGetAdvancedColorInfo2(ref request);
+        return ProjectAdvancedColor(result, request);
+    }
+
+    internal static AdvancedColorState ProjectAdvancedColor(int result, DisplayConfigGetAdvancedColorInfo2 request)
+    {
         if (result != WindowsDisplayNative.ErrorSuccess)
         {
             return new AdvancedColorState(false, false, null);
@@ -1342,7 +1347,7 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
 
     private readonly record struct DisplayTargetIdentity(string FriendlyName, string? MonitorDevicePath);
 
-    private readonly record struct AdvancedColorState(
+    internal readonly record struct AdvancedColorState(
         bool HdrSupported,
         bool HdrEnabled,
         int? BitsPerColorChannel);

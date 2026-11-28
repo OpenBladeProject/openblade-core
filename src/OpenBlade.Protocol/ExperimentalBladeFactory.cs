@@ -186,7 +186,7 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
 
     public DiagnosticExperimentalSupport GetDiagnostics() => policy.Snapshot();
 
-    public static ExperimentalBladeFactory? CreateForCurrentHost(Func<PowerSource> capturePowerSource)
+    public static ExperimentalBladeFactory? CreateForCurrentHost(Func<PowerSource> capturePowerSource, MailboxLifetime? lifetime = null)
     {
         ArgumentNullException.ThrowIfNull(capturePowerSource);
         ExperimentalBladeModel? model = ExperimentalBladeModels.FindCurrentHost();
@@ -195,7 +195,7 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
             return null;
         }
         var registry = new WindowsRegistryValueSource();
-        var native = new WindowsHidNative();
+        var native = new WindowsHidNative(lifetime);
         return new(model,
             ExperimentalBladeModels.CreateIdentity(model, registry,
                 new RuntimeWindowsPlatformEvidenceSource(registry)), native,

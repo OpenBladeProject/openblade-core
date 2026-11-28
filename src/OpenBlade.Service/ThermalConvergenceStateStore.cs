@@ -121,9 +121,14 @@ internal sealed class ThermalConvergenceStateStore
     private readonly string path;
     private readonly string activeUserSid;
     private readonly SemaphoreSlim gate;
+    private readonly UserConfigurationWriterScope? writerScope;
 
-    internal ThermalConvergenceStateStore(string path, SecurityIdentifier activeUserSid)
+    internal ThermalConvergenceStateStore(
+        string path,
+        SecurityIdentifier activeUserSid,
+        UserConfigurationWriterScope? writerScope = null)
     {
+        this.writerScope = writerScope;
         this.path = System.IO.Path.GetFullPath(
             string.IsNullOrWhiteSpace(path)
                 ? throw new ArgumentException(
@@ -171,6 +176,9 @@ internal sealed class ThermalConvergenceStateStore
         ThermalConvergenceLedgerState state,
         CancellationToken cancellationToken)
     {
+        using IDisposable? admission = writerScope is null
+            ? null
+            : await writerScope.EnterAsync(cancellationToken).ConfigureAwait(false);
         ValidateState(state, activeUserSid, persisted: true);
         await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try

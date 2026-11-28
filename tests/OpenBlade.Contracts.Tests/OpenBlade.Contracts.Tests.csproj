@@ -19,6 +19,11 @@
   <ItemGroup>
     <Compile Include="..\OpenBlade.Testing\PublicApiSurface.cs" Link="PublicApiSurface.cs" />
     <None Include="PublicApiBaseline.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="WindowsReplay\v1\*.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\tools\openblade-windows-host\tests\fixtures\service-object-frames.json" Link="service-object-frames.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\tools\openblade-windows-host\tests\fixtures\get-status-v91.frames" Link="get-status-v91.frames" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\tools\openblade-windows-host\tests\fixtures\observe-state-v91.frames" Link="observe-state-v91.frames" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\tools\openblade-windows-host\tests\fixtures\subscribe-status-v91.frames" Link="subscribe-status-v91.frames" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

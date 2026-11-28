@@ -1,0 +1,29 @@
+{
+  "description": "ProfileStore applies PreserveLegacyIndependentProfileIntent only to schema 26: controlsKeyboardEffect true with non-null independentControls reads as false. The managed store test and the native profile aggregate reader both consume these cases.",
+  "cases": [
+    {
+      "name": "keyboard-effect-with-independent-controls",
+      "schema": 26,
+      "set": { "controlsKeyboardEffect": true, "independentControls": { "brightness": 40 } },
+      "controlsKeyboardEffect": false
+    },
+    {
+      "name": "keyboard-effect-without-independent-controls",
+      "schema": 26,
+      "set": { "controlsKeyboardEffect": true, "independentControls": null },
+      "controlsKeyboardEffect": true
+    },
+    {
+      "name": "independent-controls-without-keyboard-effect",
+      "schema": 26,
+      "set": { "controlsKeyboardEffect": false, "independentControls": { "brightness": 40 } },
+      "controlsKeyboardEffect": false
+    },
+    {
+      "name": "current-schema-keeps-both",
+      "schema": 27,
+      "set": { "controlsKeyboardEffect": true, "independentControls": { "brightness": 40 } },
+      "controlsKeyboardEffect": true
+    }
+  ]
+}

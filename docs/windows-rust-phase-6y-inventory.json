@@ -1,0 +1,61 @@
+{
+  "schema": 1,
+  "phase": "6y",
+  "scope": "offline Windows development fixtures",
+  "refs": {
+    "common931Base": "64f3cf8404b2063d8227e1a5fee27c40d04398bc",
+    "displayRestart6x": "f2efb485fa4a4d8b0c32e3b1df9c6ef850845446",
+    "reporterWatcher6w": "5962437c24ec5518720927ee2d743d248ef3423f",
+    "compositionCheckpoint": "5de4083d5e47f053379b6b247d77f5ce38e15508"
+  },
+  "incrementalSources": [
+    "tools/openblade-windows-host/Cargo.toml",
+    "tools/openblade-windows-host/src/lib.rs",
+    "tools/openblade-windows-host/src/pipe.rs",
+    "tools/openblade-windows-host/src/reporter_pipe.rs",
+    "tools/openblade-windows-host/src/session_windows.rs",
+    "tools/openblade-windows-host/src/session_windows/integrated.rs",
+    "tools/openblade-windows-host/src/windows/reporter_tests.rs",
+    "tests/OpenBlade.Tray.Tests/RustReadOnlyHostTests.cs",
+    "tests/OpenBlade.Tray.Tests/RustSessionAgentTests.cs",
+    "tests/OpenBlade.Tray.Tests/RustSessionAgentTests.Integrated.cs"
+  ],
+  "interfaces": {
+    "display": "Existing private Display v2 endpoint, C# adapter and scripted ICC journal",
+    "gpu": "Existing private GPU query endpoint, C# adapter and scripted scan",
+    "service": "Existing private v79 getStatus and reportApplicationContext operations",
+    "readiness": "Claims and listeners for both endpoints, matching endpoint logon identity, expected service child PID and Windows session, admitted v79 status and scripted watcher registration",
+    "shutdown": "Cancel the owned listeners and any in-flight report, join the scripted watcher, and retain the Display claim through process exit while a worker may still hold an attempt"
+  },
+  "offlineEvidence": {
+    "managedFilter": "FullyQualifiedName~RustSessionAgentTests|FullyQualifiedName~TrayClient_IntegratedApplicationLeaseSelectsAndReconcilesThroughScopedControls",
+    "managedPassed": 37,
+    "managedSkipped": 0,
+    "rustSessionPassed": 8,
+    "rustReporterPassed": 2,
+    "integration": [
+      "An occupied GPU endpoint and a mismatched service PID each fail before READY and journal creation.",
+      "Display query and reporter activation complete during a stalled GPU query. The typed GPU timeout leaves the ICC record byte-identical and Display mutations fenced.",
+      "Reporter activation and clear both preserve the pending service performance write and its confirmed value. A fresh reporter instance can report after Session Agent restart.",
+      "Concurrent successful Display and GPU queries follow restart. Resume preserves the pending ICC bytes. Explicit read-only reconciliation retires that record after verified baseline readback and leaves the service write fenced."
+    ],
+    "localChecks": [
+      "Pinned Rust 1.99.1 Windows MSVC build with Cargo offline and locked",
+      "Rust formatting and strict Clippy for the library and Session Agent binary",
+      ".NET 10 managed test compilation and no-build test execution"
+    ],
+    "checkLimitations": [
+      "Strict Clippy across all host binaries hits an inherited collapsible_if in battery_runtime/lighting.rs.",
+      "The default managed Build target also invokes an unrelated WinUI startup-smoke build, which lacked restored assets. The managed Compile target and private test execution passed."
+    ],
+    "testedBinarySha256": {
+      "openblade-rust-session-agent.exe": "7f5e0da911691fe3d68896f55800d3783251359f86e1e95fc0695f3837d3ef5a",
+      "openblade-windows-host.exe": "1c8227326a5d2db79f583838b8e9097117824e7eaa9332563e5719ec856663d0"
+    }
+  },
+  "remainingGates": [
+    "Attended validation of native foreground hook registration, process identity and real interactive-session transitions",
+    "Attended validation of native DisplayConfig, WCS, WMI and PDH acquisition, effects and independent readback",
+    "Production Session Agent admission, packaging, installed service lifecycle, and coordinated rollout and rollback"
+  ]
+}

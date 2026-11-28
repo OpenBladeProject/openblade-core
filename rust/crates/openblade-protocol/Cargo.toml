@@ -15,3 +15,11 @@ openblade-types.workspace = true
 [dev-dependencies]
 serde = { version = '=1.0.228', features = ['derive'] }
 serde_json = '=1.0.149'
+
+[features]
+# The reviewed RZ09-0581 00/04 keyboard device-mode setters. Only a host
+# composition that owns Driver mode enables it; the query needs no feature.
+device-mode-setters = []
+# The reviewed RZ09-0581 03/03, 03/00 and 03/02 brightness and logo setters.
+# Only the host's lighting composition enables it; the queries need no feature.
+lighting-setters = []

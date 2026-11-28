@@ -1,0 +1,24 @@
+# case	mode	cpu	gpu	inactive	D3	age_ms	canceled	verdict	cpu_trigger	gpu_trigger
+auto_at_limit	Auto	55	-	true	false	2000	false	Admitted	-	-
+auto_ignores_gpu_temp	Auto	55	150	true	false	40	false	Admitted	-	-
+auto_hot	Auto	56	-	true	false	150	false	AutoCpuLimit	56:55	-
+auto_active_before_hot	Auto	74	50	false	false	20	false	SafetyCondition	-	-
+auto_d3_does_not_imply_inactive	Auto	50	-	false	true	20	false	SafetyCondition	-	-
+auto_cpu_missing	Auto	-	-	true	true	30	false	SafetyCondition	-	-
+auto_cpu_implausibly_low	Auto	9	-	true	true	30	false	SafetyCondition	-	-
+auto_cpu_implausibly_high	Auto	126	-	true	true	30	false	SafetyCondition	-	-
+auto_future	Auto	50	-	true	true	-1	false	SafetyCondition	-	-
+auto_stale	Auto	56	-	true	true	2001	false	SafetyCondition	-	-
+auto_canceled	Auto	56	-	true	true	0	true	SafetyCondition	-	-
+custom_at_cutoffs	Custom	80	75	false	false	150	false	Admitted	-	-
+custom_above_averages	Custom	61	66	false	false	150	false	Admitted	-	-
+custom_both_hot	Custom	81	76	false	false	1	false	ImmediateCutoff	81:80	76:75
+custom_cpu_hot	Custom	81	74	false	false	1	false	ImmediateCutoff	81:80	-
+custom_gpu_hot	Custom	79	76	false	false	1	false	ImmediateCutoff	-	76:75
+custom_unknown_gpu_before_hot	Custom	81	-	true	false	1	false	SafetyCondition	-	-
+custom_gpu_out_of_range	Custom	61	126	false	false	1	false	SafetyCondition	-	-
+custom_d3	Custom	80	-	false	true	2000	false	Admitted	-	-
+custom_d3_ignores_value	Custom	81	90	false	true	20	false	ImmediateCutoff	81:80	-
+custom_cpu_unknown_in_d3	Custom	-	-	false	true	20	false	SafetyCondition	-	-
+custom_stale_in_d3	Custom	80	-	false	true	2001	false	SafetyCondition	-	-
+custom_canceled	Custom	81	76	false	false	100	true	SafetyCondition	-	-

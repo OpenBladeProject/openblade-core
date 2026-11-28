@@ -62,6 +62,8 @@ builder.Services.AddServiceControlRuntime(machineDataDirectory);
 builder.Services.AddSingleton<IServiceShutdownSignal, HostServiceShutdownSignal>();
 builder.Services.AddSingleton<ControlRequestHandler>();
 builder.Services.AddSingleton(startupTiming);
+// Registered first: the host constructs it before Worker and so before the production factories.
+builder.Services.AddHostedService<ServiceMailboxCustodyStartup>();
 builder.Services.AddHostedService<Worker>();
 
 startupTiming.HostBuildStartQpc = Stopwatch.GetTimestamp();

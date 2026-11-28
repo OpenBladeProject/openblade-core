@@ -34,6 +34,7 @@ internal sealed class OpenedCandidateHandle : IDisposable
 {
     private readonly Action disposeFileHandle;
     private int ownsFileHandle = 1;
+    internal MailboxLifetime.Participation? Lifetime { get; set; }
 
     public OpenedCandidateHandle(SafeFileHandle fileHandle)
         : this(fileHandle, fileHandle.Dispose)
@@ -64,7 +65,9 @@ internal sealed class OpenedCandidateHandle : IDisposable
     {
         if (Interlocked.Exchange(ref ownsFileHandle, 0) != 0)
         {
-            disposeFileHandle();
+            try { disposeFileHandle(); }
+            catch (Exception error) { Lifetime?.Fail(error); throw; }
+            finally { Lifetime?.Dispose(); }
         }
     }
 }
@@ -74,6 +77,7 @@ internal sealed class OpenedHidHandle : IAsyncDisposable
     private readonly Action disposeBoundHandle;
     private readonly Action disposeFileHandle;
     private int disposed;
+    internal MailboxLifetime.Participation? Lifetime { get; set; }
 
     public OpenedHidHandle(SafeFileHandle fileHandle, ThreadPoolBoundHandle boundHandle)
         : this(fileHandle, boundHandle, boundHandle.Dispose, fileHandle.Dispose)
@@ -106,12 +110,17 @@ internal sealed class OpenedHidHandle : IAsyncDisposable
         {
             try
             {
-                disposeBoundHandle();
+                try
+                {
+                    disposeBoundHandle();
+                }
+                finally
+                {
+                    disposeFileHandle();
+                }
             }
-            finally
-            {
-                disposeFileHandle();
-            }
+            catch (Exception error) { Lifetime?.Fail(error); throw; }
+            finally { Lifetime?.Dispose(); }
         }
 
         return ValueTask.CompletedTask;

@@ -1,0 +1,25 @@
+{
+  "chargeLimitPercent": 77,
+  "legacyFanStop": {
+    "endMode": 1,
+    "cpuLimitCelsius": 62,
+    "gpuLimitCelsius": 100,
+    "secondsAboveLimit": 8,
+    "automaticEnabled": true,
+    "automaticCpuBelowCelsius": 48,
+    "automaticGpuBelowCelsius": 51,
+    "secondsBelowLimits": 45
+  },
+  "currentFanStop": {
+    "endMode": 1,
+    "cpuLimitCelsius": 62,
+    "gpuLimitCelsius": 100,
+    "cpuImmediateCutoffCelsius": 72,
+    "gpuImmediateCutoffCelsius": 100,
+    "secondsAboveLimit": 8,
+    "automaticEnabled": true,
+    "automaticCpuBelowCelsius": 48,
+    "automaticGpuBelowCelsius": 51,
+    "secondsBelowLimits": 45
+  }
+}

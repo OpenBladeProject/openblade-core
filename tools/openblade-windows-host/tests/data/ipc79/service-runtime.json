@@ -1,0 +1,684 @@
+{
+  "schema": 1,
+  "dispatch": [
+    {
+      "id": "v79-active-status",
+      "input": {
+        "operation": "getStatus",
+        "version": 79,
+        "requestId": "11111111-2222-4333-8444-555555555555"
+      },
+      "session": "active",
+      "expected": {
+        "success": true,
+        "activations": 1,
+        "controlAccess": 0,
+        "effects": [
+          "readCachedStatus"
+        ]
+      }
+    },
+    {
+      "id": "v79-active-subscription-initial-status",
+      "input": {
+        "operation": "subscribeStatus",
+        "version": 79,
+        "requestId": "11111111-2222-4333-8444-555555555555"
+      },
+      "session": "active",
+      "expected": {
+        "success": true,
+        "activations": 1,
+        "controlAccess": 0,
+        "effects": [
+          "readCachedStatus"
+        ]
+      }
+    },
+    {
+      "id": "v79-background-status",
+      "input": {
+        "operation": "getStatus",
+        "version": 79,
+        "requestId": "11111111-2222-4333-8444-555555555555"
+      },
+      "session": "inactive",
+      "expected": {
+        "success": true,
+        "activations": 0,
+        "controlAccess": 1,
+        "effects": [
+          "readCachedStatus"
+        ]
+      }
+    },
+    {
+      "id": "v79-active-observation",
+      "input": {
+        "operation": "observeState",
+        "version": 79,
+        "requestId": "11111111-2222-4333-8444-555555555555",
+        "includeLiveReadings": true,
+        "requestedLiveReadings": 2
+      },
+      "session": "active",
+      "expected": {
+        "success": true,
+        "activations": 1,
+        "controlAccess": 0,
+        "sensors": 2,
+        "effects": [
+          "observeRequestedSensors",
+          "readCachedStatus"
+        ]
+      }
+    },
+    {
+      "id": "v79-active-write-stored",
+      "input": {
+        "operation": "setBatteryProtection",
+        "version": 79,
+        "requestId": "11111111-2222-4333-8444-555555555555",
+        "enabled": false
+      },
+      "session": "active",
+      "expected": {
+        "success": true,
+        "activations": 1,
+        "operationStatus": 0,
+        "effects": [
+          "storeBatteryProtectionIntent"
+        ]
+      }
+    },
+    {
+      "id": "v79-background-write-denied",
+      "input": {
+        "operation": "setBatteryProtection",
+        "version": 79,
+        "requestId": "11111111-2222-4333-8444-555555555555",
+        "enabled": false
+      },
+      "session": "inactive",
+      "expected": {
+        "success": false,
+        "activations": 0,
+        "effects": []
+      }
+    },
+    {
+      "id": "v79-pre-dispatch-cancel",
+      "input": {
+        "operation": "setBatteryProtection",
+        "version": 79,
+        "requestId": "11111111-2222-4333-8444-555555555555",
+        "enabled": false
+      },
+      "session": "active",
+      "cancelBeforeDispatch": true,
+      "expected": {
+        "failure": "canceled",
+        "activations": 0,
+        "effects": []
+      }
+    }
+  ],
+  "overrides": [
+    {
+      "id": "legacy-gpu-tuning-restart",
+      "input": {
+        "schemaVersion": 5,
+        "overrides": {
+          "performance": 5,
+          "fans": null,
+          "lighting": null,
+          "customPerformance": {
+            "cpu": 2,
+            "gpu": 1,
+            "gpuClockOffsets": {
+              "coreMegahertz": 125,
+              "memoryMegahertz": 500
+            }
+          },
+          "fanControl": null
+        }
+      },
+      "expected": {
+        "schemaVersion": 8,
+        "disposition": "Admitted",
+        "quarantineReason": "None",
+        "performance": 5,
+        "gpuOffsets": {
+          "coreMegahertz": 125,
+          "memoryMegahertz": 500
+        }
+      }
+    },
+    {
+      "id": "future-schema-preserved",
+      "input": {
+        "schemaVersion": 999,
+        "overrides": {
+          "futureMember": 1
+        }
+      },
+      "expected": {
+        "schemaVersion": 999,
+        "disposition": "Quarantined",
+        "quarantineReason": "FutureSchema",
+        "performance": null,
+        "gpuOffsets": null,
+        "saveBeforeLoadReason": "FutureSchema",
+        "saveAfterLoadReason": "InvalidDocument"
+      }
+    },
+    {
+      "id": "unknown-override-field-preserved",
+      "input": {
+        "schemaVersion": 8,
+        "overrides": {
+          "performance": 5,
+          "futureMember": 1
+        }
+      },
+      "expected": {
+        "schemaVersion": 8,
+        "disposition": "Quarantined",
+        "quarantineReason": "InvalidDocument",
+        "performance": null,
+        "gpuOffsets": null,
+        "saveBeforeLoadReason": "InvalidDocument",
+        "saveAfterLoadReason": "InvalidDocument"
+      }
+    }
+  ],
+  "journals": [
+    {
+      "id": "missing",
+      "input": null,
+      "expected": {
+        "reconciliation": false,
+        "readable": false,
+        "saveAllowed": true
+      }
+    },
+    {
+      "id": "pending-observation-after-restart",
+      "input": {
+        "Version": 1,
+        "Machine": "synthetic-host",
+        "Identity": "synthetic-device",
+        "Entries": [
+          {
+            "Requested": {
+              "Control": 1,
+              "Enabled": null,
+              "FunctionKeyMode": 0
+            },
+            "ReconciliationRequired": true
+          }
+        ]
+      },
+      "expected": {
+        "reconciliation": true,
+        "readable": true,
+        "saveAllowed": true
+      }
+    },
+    {
+      "id": "unknown-journal-version-fails-closed",
+      "input": {
+        "Version": 2,
+        "Machine": "synthetic-host",
+        "Identity": "synthetic-device",
+        "Entries": [
+          {
+            "Requested": {
+              "Control": 1,
+              "Enabled": null,
+              "FunctionKeyMode": 0
+            },
+            "ReconciliationRequired": true
+          }
+        ]
+      },
+      "expected": {
+        "reconciliation": true,
+        "readable": false,
+        "saveAllowed": false
+      }
+    },
+    {
+      "id": "duplicate-control-fails-closed",
+      "input": {
+        "Version": 1,
+        "Machine": "synthetic-host",
+        "Identity": "synthetic-device",
+        "Entries": [
+          {
+            "Requested": {
+              "Control": 1,
+              "Enabled": null,
+              "FunctionKeyMode": 0
+            },
+            "ReconciliationRequired": true
+          },
+          {
+            "Requested": {
+              "Control": 1,
+              "Enabled": null,
+              "FunctionKeyMode": 0
+            },
+            "ReconciliationRequired": true
+          }
+        ]
+      },
+      "expected": {
+        "reconciliation": true,
+        "readable": false,
+        "saveAllowed": false
+      }
+    }
+  ],
+  "thermal": [
+    {
+      "id": "indeterminate-confirmation",
+      "input": {
+        "result": "Failed",
+        "readback": null,
+        "writeAttempted": true,
+        "readbackMatched": false,
+        "deviceAccessFailed": true,
+        "confirmationUnavailable": true,
+        "preWriteState": {
+          "performance": 1,
+          "fans": 0
+        },
+        "submissionCertainty": "Indeterminate"
+      },
+      "expected": {
+        "attempts": 1,
+        "retryConsumed": false,
+        "progress": "Submitted",
+        "certainty": "Indeterminate",
+        "stage": "Submission",
+        "disposition": "ReconciliationUnavailable"
+      }
+    },
+    {
+      "id": "confirmed-write",
+      "input": {
+        "result": "Applied",
+        "readback": {
+          "performance": 2,
+          "fans": 0
+        },
+        "writeAttempted": true,
+        "readbackMatched": true,
+        "deviceAccessFailed": false,
+        "confirmationUnavailable": false,
+        "preWriteState": null,
+        "submissionCertainty": null
+      },
+      "expected": {
+        "attempts": 1,
+        "retryConsumed": false,
+        "progress": "Acknowledged",
+        "certainty": null,
+        "stage": "Confirmation",
+        "disposition": "Confirmed"
+      }
+    },
+    {
+      "id": "indeterminate-matching-readback",
+      "input": {
+        "result": "Applied",
+        "readback": {
+          "performance": 2,
+          "fans": 0
+        },
+        "writeAttempted": true,
+        "readbackMatched": true,
+        "deviceAccessFailed": false,
+        "confirmationUnavailable": false,
+        "preWriteState": null,
+        "submissionCertainty": "Indeterminate"
+      },
+      "expected": {
+        "attempts": 1,
+        "retryConsumed": false,
+        "progress": "Submitted",
+        "certainty": "Indeterminate",
+        "stage": "Confirmation",
+        "disposition": "Confirmed"
+      }
+    },
+    {
+      "id": "indeterminate-prior-readback",
+      "input": {
+        "result": "Failed",
+        "readback": {
+          "performance": 1,
+          "fans": 0
+        },
+        "writeAttempted": false,
+        "readbackMatched": false,
+        "deviceAccessFailed": false,
+        "confirmationUnavailable": false,
+        "preWriteState": null,
+        "submissionCertainty": "Indeterminate"
+      },
+      "expected": {
+        "attempts": 1,
+        "retryConsumed": false,
+        "progress": "Submitted",
+        "certainty": "Indeterminate",
+        "stage": "Confirmation",
+        "disposition": "External"
+      }
+    },
+    {
+      "id": "indeterminate-other-readback",
+      "input": {
+        "result": "Failed",
+        "readback": {
+          "performance": 3,
+          "fans": 0
+        },
+        "writeAttempted": true,
+        "readbackMatched": false,
+        "deviceAccessFailed": false,
+        "confirmationUnavailable": false,
+        "preWriteState": null,
+        "submissionCertainty": "Indeterminate"
+      },
+      "expected": {
+        "attempts": 1,
+        "retryConsumed": false,
+        "progress": "Submitted",
+        "certainty": "Indeterminate",
+        "stage": "Confirmation",
+        "disposition": "External"
+      }
+    },
+    {
+      "id": "acknowledgement-without-confirmation",
+      "input": {
+        "result": "Applied",
+        "readback": null,
+        "writeAttempted": true,
+        "readbackMatched": false,
+        "deviceAccessFailed": false,
+        "confirmationUnavailable": false,
+        "preWriteState": null,
+        "submissionCertainty": null
+      },
+      "expected": {
+        "attempts": 1,
+        "retryConsumed": false,
+        "progress": "Acknowledged",
+        "certainty": null,
+        "stage": "Acknowledgement",
+        "disposition": "Acknowledged"
+      }
+    },
+    {
+      "id": "known-no-submission",
+      "input": {
+        "result": "Blocked",
+        "readback": null,
+        "writeAttempted": false,
+        "readbackMatched": false,
+        "deviceAccessFailed": false,
+        "confirmationUnavailable": false,
+        "preWriteState": null,
+        "submissionCertainty": "KnownNotApplied"
+      },
+      "expected": {
+        "attempts": 1,
+        "retryConsumed": false,
+        "progress": "NotSubmitted",
+        "certainty": "KnownNotApplied",
+        "stage": "Preflight",
+        "disposition": "Blocked"
+      }
+    },
+    {
+      "id": "already-matched",
+      "input": {
+        "result": "Unchanged",
+        "readback": {
+          "performance": 2,
+          "fans": 0
+        },
+        "writeAttempted": false,
+        "readbackMatched": true,
+        "deviceAccessFailed": false,
+        "confirmationUnavailable": false,
+        "preWriteState": null,
+        "submissionCertainty": null
+      },
+      "expected": {
+        "attempts": 1,
+        "retryConsumed": false,
+        "progress": "NotSubmitted",
+        "certainty": null,
+        "stage": "Confirmation",
+        "disposition": "Confirmed"
+      }
+    }
+  ],
+  "laptopRecovery": [
+    {
+      "id": "canceled-before-submission",
+      "input": {
+        "action": "CanceledBefore",
+        "cleanupRevision": "Intent",
+        "requested": "FunctionKeys",
+        "readback": null,
+        "identity": "synthetic-device"
+      },
+      "expected": {
+        "journal": "Removed",
+        "setters": 0
+      }
+    },
+    {
+      "id": "canceled-before-submission-replacement",
+      "input": {
+        "action": "CanceledBefore",
+        "cleanupRevision": "Replacement",
+        "requested": "FunctionKeys",
+        "readback": null,
+        "identity": "synthetic-device"
+      },
+      "expected": {
+        "journal": "Replacement",
+        "setters": 0
+      }
+    },
+    {
+      "id": "canceled-during-submission",
+      "input": {
+        "action": "CanceledDuring",
+        "requested": "FunctionKeys",
+        "readback": null,
+        "identity": "synthetic-device"
+      },
+      "expected": {
+        "journal": "Pending",
+        "setters": 1
+      }
+    },
+    {
+      "id": "acknowledged-and-confirmed",
+      "input": {
+        "action": "Acknowledged",
+        "requested": "FunctionKeys",
+        "readback": "FunctionKeys",
+        "identity": "synthetic-device"
+      },
+      "expected": {
+        "journal": "Removed",
+        "setters": 1
+      }
+    },
+    {
+      "id": "acknowledged-different",
+      "input": {
+        "action": "Acknowledged",
+        "requested": "FunctionKeys",
+        "readback": "MultimediaKeys",
+        "identity": "synthetic-device"
+      },
+      "expected": {
+        "journal": "Tombstone",
+        "setters": 1
+      }
+    },
+    {
+      "id": "acknowledged-unreadable",
+      "input": {
+        "action": "Acknowledged",
+        "requested": "FunctionKeys",
+        "readback": null,
+        "identity": "synthetic-device"
+      },
+      "expected": {
+        "journal": "Pending",
+        "setters": 1
+      }
+    },
+    {
+      "id": "write-only-acknowledged",
+      "input": {
+        "action": "Acknowledged",
+        "requested": "Microphone",
+        "readback": null,
+        "identity": "synthetic-device"
+      },
+      "expected": {
+        "journal": "Removed",
+        "setters": 1
+      }
+    },
+    {
+      "id": "write-only-uncertain",
+      "input": {
+        "action": "Indeterminate",
+        "requested": "Microphone",
+        "readback": null,
+        "identity": "synthetic-device"
+      },
+      "expected": {
+        "journal": "Pending",
+        "setters": 1
+      }
+    },
+    {
+      "id": "write-only-after-restart",
+      "input": {
+        "action": "Restart",
+        "requested": "Microphone",
+        "readback": null,
+        "identity": "synthetic-device"
+      },
+      "expected": {
+        "journal": "Pending",
+        "setters": 0
+      }
+    },
+    {
+      "id": "restart-missing-identity",
+      "input": {
+        "action": "Restart",
+        "requested": "FunctionKeys",
+        "readback": "FunctionKeys",
+        "identity": null
+      },
+      "expected": {
+        "journal": "Pending",
+        "setters": 0
+      }
+    },
+    {
+      "id": "restart-mismatched-identity",
+      "input": {
+        "action": "Restart",
+        "requested": "FunctionKeys",
+        "readback": "FunctionKeys",
+        "identity": "SYNTHETIC-DEVICE"
+      },
+      "expected": {
+        "journal": "Pending",
+        "setters": 0
+      }
+    },
+    {
+      "id": "restart-read-unavailable",
+      "input": {
+        "action": "Restart",
+        "requested": "FunctionKeys",
+        "readback": null,
+        "identity": "synthetic-device"
+      },
+      "expected": {
+        "journal": "Pending",
+        "setters": 0
+      }
+    },
+    {
+      "id": "restart-matching-readback",
+      "input": {
+        "action": "Restart",
+        "requested": "FunctionKeys",
+        "readback": "FunctionKeys",
+        "identity": "synthetic-device"
+      },
+      "expected": {
+        "journal": "Removed",
+        "setters": 0
+      }
+    },
+    {
+      "id": "restart-differing-readback",
+      "input": {
+        "action": "Restart",
+        "requested": "FunctionKeys",
+        "readback": "MultimediaKeys",
+        "identity": "synthetic-device"
+      },
+      "expected": {
+        "journal": "Tombstone",
+        "setters": 0
+      }
+    }
+  ],
+  "compatibilityEdge": [
+    {
+      "id": "v51-cached-status",
+      "input": {
+        "operation": "getStatus",
+        "version": 51,
+        "requestId": "11111111-2222-4333-8444-555555555555"
+      },
+      "expected": {
+        "success": true,
+        "writesBlocked": true
+      }
+    },
+    {
+      "id": "v51-mutation-rejected",
+      "input": {
+        "operation": "setFullChargeOverride",
+        "version": 51,
+        "requestId": "11111111-2222-4333-8444-555555555555",
+        "enabled": true
+      },
+      "expected": {
+        "success": false,
+        "failure": "readOnlyProtocol"
+      }
+    }
+  ]
+}

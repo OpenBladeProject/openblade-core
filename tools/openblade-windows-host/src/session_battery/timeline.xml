@@ -1,0 +1,27 @@
+<BatteryReport xmlns="http://schemas.microsoft.com/battery/2012">
+  <ReportInformation>
+    <ScanTime>2026-01-02T12:00:00Z</ScanTime>
+    <ReportStartTime>2026-01-01T11:00:00Z</ReportStartTime>
+  </ReportInformation>
+  <Batteries>
+    <Battery>
+      <DesignCapacity>60000</DesignCapacity>
+      <FullChargeCapacity>50000</FullChargeCapacity>
+      <CycleCount>120</CycleCount>
+    </Battery>
+  </Batteries>
+  <RuntimeEstimates>
+    <DesignCapacity><Capacity>60000</Capacity></DesignCapacity>
+    <FullChargeCapacity><Capacity>50000</Capacity></FullChargeCapacity>
+  </RuntimeEstimates>
+  <RecentUsage>
+    <UsageEntry Timestamp="2026-01-01T11:30:00Z" Duration="72000000000"
+      Ac="0" EntryType="Active" ChargeCapacity="40000"
+      FullChargeCapacity="50000" Discharge="5000" />
+    <UsageEntry Timestamp="2026-01-01T14:00:00Z" Duration="18000000000"
+      Ac="1" EntryType="ConnectedStandby" ChargeCapacity="35000"
+      FullChargeCapacity="50000" Discharge="0" />
+    <UsageEntry Timestamp="2026-01-02T12:00:00Z" Duration="18446744073709551615"
+      Ac="1" EntryType="ReportGenerated" />
+  </RecentUsage>
+</BatteryReport>

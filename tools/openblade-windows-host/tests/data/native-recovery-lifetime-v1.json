@@ -1,0 +1,45 @@
+{
+  "maximumAttempts": 4096,
+  "descriptors": [
+    {
+      "name": "private-admin",
+      "bytes": "AQAEkBQAAAAAAAAAAAAAACQAAAABAgAAAAAABSAAAAAgAgAAAgA0AAIAAAAAABQA/wEfAAEBAAAAAAAFEgAAAAAAGAD/AR8AAQIAAAAAAAUgAAAAIAIAAA==",
+      "privateCustody": true
+    },
+    {
+      "name": "private-system",
+      "bytes": "AQAEkBQAAAAAAAAAAAAAACAAAAABAQAAAAAABRIAAAACADQAAgAAAAAAFAD/AR8AAQEAAAAAAAUSAAAAAAAYAP8BHwABAgAAAAAABSAAAAAgAgAA",
+      "privateCustody": true
+    },
+    {
+      "name": "public-lock",
+      "bytes": "AQAEgBQAAAAAAAAAAAAAACQAAAABAgAAAAAABSAAAAAgAgAAAgBMAAMAAAAAEBQA/wEfAAEBAAAAAAAFEgAAAAAQGAD/AR8AAQIAAAAAAAUgAAAAIAIAAAAQGACpABIAAQIAAAAAAAUgAAAAIQIAAA==",
+      "privateCustody": false
+    },
+    {
+      "name": "unprotected",
+      "bytes": "AQAEgBQAAAAAAAAAAAAAACQAAAABAgAAAAAABSAAAAAgAgAAAgA0AAIAAAAAABQA/wEfAAEBAAAAAAAFEgAAAAAAGAD/AR8AAQIAAAAAAAUgAAAAIAIAAA==",
+      "privateCustody": false
+    },
+    {
+      "name": "private-users-read",
+      "bytes": "AQAEkBQAAAAAAAAAAAAAACQAAAABAgAAAAAABSAAAAAgAgAAAgBMAAMAAAAAABQA/wEfAAEBAAAAAAAFEgAAAAAAGAD/AR8AAQIAAAAAAAUgAAAAIAIAAAAAGACpABIAAQIAAAAAAAUgAAAAIQIAAA==",
+      "privateCustody": false
+    },
+    {
+      "name": "missing-admin",
+      "bytes": "AQAEkBQAAAAAAAAAAAAAACAAAAABAQAAAAAABRIAAAACABwAAQAAAAAAFAD/AR8AAQEAAAAAAAUSAAAA",
+      "privateCustody": false
+    },
+    {
+      "name": "duplicate-system",
+      "bytes": "AQAEkBQAAAAAAAAAAAAAACQAAAABAgAAAAAABSAAAAAgAgAAAgAwAAIAAAAAABQA/wEfAAEBAAAAAAAFEgAAAAAAFAD/AR8AAQEAAAAAAAUSAAAA",
+      "privateCustody": false
+    },
+    {
+      "name": "inheriting",
+      "bytes": "AQAEkBQAAAAAAAAAAAAAACQAAAABAgAAAAAABSAAAAAgAgAAAgA0AAIAAAAAAxQA/wEfAAEBAAAAAAAFEgAAAAADGAD/AR8AAQIAAAAAAAUgAAAAIAIAAA==",
+      "privateCustody": false
+    }
+  ]
+}

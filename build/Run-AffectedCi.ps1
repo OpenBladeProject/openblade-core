@@ -94,9 +94,24 @@ switch ($Lane) {
             -AllowedExtension @('.csproj') `
             -AllowedPrefix @('tests/', 'build/installer/')
 
+        $fixtureConsumers = @(
+            'tests/OpenBlade.Contracts.Tests/OpenBlade.Contracts.Tests.csproj',
+            'tests/OpenBlade.Service.Tests/OpenBlade.Service.Tests.csproj',
+            'tests/OpenBlade.Deployment.Tests/OpenBlade.Deployment.Tests.csproj')
+        $requiresNativeFixtures = @($testProjects | Where-Object { $_ -in $fixtureConsumers }).Count -gt 0
+        $restoreProjects = @($qualityProjects)
+        if ($requiresNativeFixtures) {
+            . (Join-Path $repository 'build/NativeWindowsFixtures.ps1')
+            # The offline harness builds all three fixture variants even when
+            # only one consumer is selected. Restore that exact prerequisite
+            # closure through the normal repository-configured restore path.
+            $restoreProjects += @(Get-OpenBladeNativeFixturePrerequisiteProjects -Repository $repository)
+        }
+        $restoreProjects = @($restoreProjects | Sort-Object -Unique)
+
         # Restore the complete selected set before any custom build target can
         # consume another selected project's assets.
-        foreach ($project in $qualityProjects) {
+        foreach ($project in $restoreProjects) {
             Invoke-DotNetChecked -Operation "restore $project" -Arguments @(
                 'restore', $project, '-p:NuGetAudit=false')
         }
@@ -111,19 +126,37 @@ switch ($Lane) {
                 '-p:NuGetAudit=false', '--no-restore', '-m:1', '--verbosity', 'minimal')
         }
 
-        foreach ($project in $testProjects) {
-            # This suite requires the real Rust library and two C loader fixtures.
-            if ($project -eq 'tests/OpenBlade.Core.Native.Tests/OpenBlade.Core.Native.Tests.csproj') {
-                & pwsh -NoProfile -File (Join-Path $repository 'rust/Test-NativeInterop.ps1')
-                if ($LASTEXITCODE -ne 0) {
-                    throw "Native interop tests failed with exit code $LASTEXITCODE."
+        $runSelectedTests = {
+            foreach ($project in $testProjects) {
+                # This suite requires the real Rust library and two C loader fixtures.
+                if ($project -eq 'tests/OpenBlade.Core.Native.Tests/OpenBlade.Core.Native.Tests.csproj') {
+                    & pwsh -NoProfile -File (Join-Path $repository 'rust/Test-NativeInterop.ps1')
+                    if ($LASTEXITCODE -ne 0) {
+                        throw "Native interop tests failed with exit code $LASTEXITCODE."
+                    }
+                    continue
                 }
-                continue
+                Invoke-DotNetChecked -Operation "test $project" -Arguments @(
+                    'test', $project, '--configuration', $Configuration,
+                    '-p:NuGetAudit=false', '--no-build', '--no-restore',
+                    '-m:1', '--verbosity', 'minimal')
             }
-            Invoke-DotNetChecked -Operation "test $project" -Arguments @(
-                'test', $project, '--configuration', $Configuration,
-                '-p:NuGetAudit=false', '--no-build', '--no-restore',
-                '-m:1', '--verbosity', 'minimal')
+        }
+        if ($requiresNativeFixtures) {
+            $fixtureScope = @{
+                Repository = $repository
+                Configuration = $Configuration
+                Action = $runSelectedTests
+            }
+            if (-not [string]::IsNullOrWhiteSpace($env:RUNNER_TEMP)) {
+                $fixtureScope.OutputRoot = Join-Path $env:RUNNER_TEMP 'openblade-native-fixtures'
+            }
+            # One preparation brackets the complete managed selection. The
+            # helper validates inputs before/after and restores env in finally.
+            Invoke-OpenBladeNativeFixtureScope @fixtureScope
+        }
+        else {
+            & $runSelectedTests
         }
     }
 

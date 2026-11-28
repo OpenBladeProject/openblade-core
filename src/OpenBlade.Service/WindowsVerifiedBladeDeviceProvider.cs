@@ -40,6 +40,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
     private int firmwareCompatibility;
     private int requiresUntestedFirmwareOverride;
     private int disposed;
+    internal MailboxLifetime? MailboxLifetime { get; }
 
     public WindowsVerifiedBladeDeviceProvider()
         : this(
@@ -64,7 +65,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
         FirmwareCompatibilityPolicy? compatibilityPolicy = null,
         IGpuActivitySource? gpuActivitySource = null,
         Func<TimeSpan, CancellationToken, Task>? preWriteRetryDelay = null,
-        LowPowerGate? lowPowerGate = null)
+        LowPowerGate? lowPowerGate = null,
+        MailboxLifetime? mailboxLifetime = null)
     {
         TimeSpan effectiveShutdownBudget = shutdownBudget ?? DefaultShutdownBudget;
         if (effectiveShutdownBudget <= TimeSpan.Zero ||
@@ -74,6 +76,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
         }
 
         this.probe = probe ?? throw new ArgumentNullException(nameof(probe));
+        MailboxLifetime = mailboxLifetime;
         experimentalFactory = batteryFactory as ExperimentalBladeFactory;
         LaptopControlRecoveryIdentity = batteryFactory switch
         {
@@ -427,6 +430,14 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
         CancellationToken cancellationToken) =>
         device.InvalidateGpuClockOffsetConfirmationAsync(cancellationToken);
 
+    internal void RequireTransportDelegationClear() => device.RequireTransportDelegationClear();
+
+    internal Task RetireMailboxOwnersAsync()
+    {
+        Dispose();
+        return device.WaitForOwnerRetirementAsync();
+    }
+
     public void Dispose()
     {
         lock (providerLifecycleSync)
@@ -488,6 +499,13 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
         private readonly SemaphoreSlim hardwareOperationGate = new(1, 1);
         private bool fanStopDelegated;
         private Task? deferredDisposal;
+        internal async Task WaitForOwnerRetirementAsync()
+        {
+            Task? deferred;
+            lock (lifecycleSync) { deferred = deferredDisposal; }
+            if (deferred is not null) { await deferred.ConfigureAwait(false); }
+            await lightingSession.OwnerRetirement.ConfigureAwait(false);
+        }
         private bool closing;
         private bool disposed;
         // Querying NVML can wake an otherwise idle discrete GPU. Management
@@ -3171,6 +3189,14 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             if (gpuActivitySource is IDisposable disposable)
             {
                 disposable.Dispose();
+            }
+        }
+
+        internal void RequireTransportDelegationClear()
+        {
+            lock (lifecycleSync)
+            {
+                if (fanStopDelegated) { throw new IOException("Fan guardian transport custody is unresolved."); }
             }
         }
 

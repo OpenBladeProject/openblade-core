@@ -4,7 +4,7 @@ using OpenBlade.Session;
 
 namespace OpenBlade.Session.Tests;
 
-public sealed class DisplayAutomationCoordinatorTests
+public sealed partial class DisplayAutomationCoordinatorTests
 {
     [Fact]
     public async Task UnclassifiedManualCheckpointNeverEstablishesAnAutomationSource()

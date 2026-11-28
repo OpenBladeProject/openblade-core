@@ -1,0 +1,26 @@
+# Shared cases for managed and Rust refresh policy. No Windows or device calls.
+# CSV lists; timing tuples are width,height,hz,pixelRate,totalWidth,totalHeight.
+# Options are key~minimum~maximum~desktop~dynamic; semicolon separates entries.
+# refresh|name|driverRates|currentModeHz|virtualHz|activeHz[,scanline]|width|height|edidTimings|preferredTiming(width,height,hz[,scanline]) or -|virtualMode|boost|range(min,max) or -|expectedFixedRates|expectedOptions|expectedCurrentKey
+refresh|dynamic_with_preferred_and_edid|60,120,240|60|60|240|2560|1600|2560,1600,240,1140481000,2640,1800|2560,1600,240|1|1|48,240|60,240|fixed-60~60~60~60~0;fixed-240~240~240~240~0;dynamic-48-240~48~240~60~1|dynamic-48-240
+refresh|boost_off_split_is_unclassified|60,120,240|60|60|240|2560|1600|2560,1600,240,1140481000,2640,1800|2560,1600,240|1|0|48,240|60,240|fixed-60~60~60~60~0;fixed-240~240~240~240~0;dynamic-48-240~48~240~60~1|-
+refresh|mismatched_evidence_yields_no_dynamic|60,120,240|60|60|60|2560|1600|1920,1080,240,594000000,2200,1125|1920,1080,240|1|0|48,240|60|fixed-60~60~60~60~0|fixed-60
+refresh|advertised_timing_without_driver_mode|-|60|60|60|2560|1600|2560,1600,60,356400000,2640,2250|-|1|0|-|-|-|-
+refresh|edid_geometry_supplies_an_alternate_target|60,165|60|60|60|2560|1600|2560,1600,165,784080000,2640,1800|-|1|0|-|60,165|fixed-60~60~60~60~0;fixed-165~165~165~165~0;dynamic-60-165~60~165~60~1|fixed-60
+refresh|nonvirtual_ignores_preferred_mode|60,240|60|60|60|2560|1600|-|2560,1600,240|0|0|-|60|fixed-60~60~60~60~0|fixed-60
+refresh|active_boost_target_precedes_higher_preferred|60,120,240|60|60|120|2560|1600|-|2560,1600,240|1|1|48,240|60,120,240|fixed-60~60~60~60~0;fixed-120~120~120~120~0;fixed-240~240~240~240~0;dynamic-48-120~48~120~60~1|dynamic-48-120
+refresh|interlaced_signals_do_not_supply_dynamic_targets|60,144,165,240|60|60|240,2|2560|1600|2560,1600,165,784080000,2640,1800|2560,1600,144,2|1|1|-|60,165,240|fixed-60~60~60~60~0;fixed-165~165~165~165~0;fixed-240~240~240~240~0|-
+refresh|unrepresentable_edid_target_keeps_only_fixed|60,833|60|60|60|2560|1600|2560,1600,833,5000003000,3001,2001|-|1|0|-|60,833|fixed-60~60~60~60~0;fixed-833~833~833~833~0|fixed-60
+refresh|reduced_edid_target_supports_dynamic|60,792|60|60|60|2560|1600|2560,1600,792,4752000000,3000,2000|-|1|0|-|60,792|fixed-60~60~60~60~0;fixed-792~792~792~792~0;dynamic-60-792~60~792~60~1|fixed-60
+fixed|driver_intersection_and_recovery|48,50,59,60,120,144,165,240|60,240|60|240|60,240
+fixed|current_and_physical_need_driver_support|60,120,240|-|60|240|60,240
+fixed|never_invent_driver_rate|60|60,240|60|240|60
+classify|rounded_fixed|0|239.96|239.96|fixed-240~240~240~240~0|fixed-240
+classify|rounded_dynamic|1|60|239.96|dynamic-48-240~48~240~60~1|dynamic-48-240
+classify|fixed_split_is_not_fixed|0|60|240|fixed-60~60~60~60~0;fixed-240~240~240~240~0|-
+classify|boost_flag_requires_dynamic_option|1|60|120|dynamic-48-240~48~240~60~1|-
+# edid|name|width|height|pixelRate|totalWidth|totalHeight|interlaced|validExtensionChecksum|expectedHz, overflow, or -
+edid|overflowing_type7_refresh_is_invalid|1|1|16777216000|2|2|0|1|overflow
+edid|displayid_type7_2560x1600_240hz|2560|1600|1140481000|2640|1800|0|1|240
+edid|interlaced_type7_is_ignored|2560|1600|1140481000|2640|1800|1|1|-
+edid|invalid_extension_checksum_is_ignored|2560|1600|1140481000|2640|1800|0|0|-

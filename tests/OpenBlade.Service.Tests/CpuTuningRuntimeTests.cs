@@ -1110,6 +1110,7 @@ public sealed partial class CpuTuningRuntimeTests : IDisposable
             hub, provider, new DiagnosticHistory(), gate,
             new FakePresenceMonitor(), new FakeFirmwareSource(),
             static (_, _) => Task.CompletedTask, ProfileSetValidator.CreateUnverifiedSafeDefaults(),
+            NativeHandbackStore.Unbound,
             cpuTuningController: controllerFactory?.Invoke(source) ?? new CpuTuningController(source,
                 legacyStore,
                 admittedSavedBackend && !defaultSavedBackend ? safety => new FakeSavedBackend(source, safety) : null,

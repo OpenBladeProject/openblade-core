@@ -1027,7 +1027,7 @@ public sealed class SetupPayloadTransactionTests
         Assert.True(File.Exists(Path.Combine(ambiguous, "evidence.txt")));
     }
 
-    private static SortedDictionary<string, string> ReadManifest(string root)
+    internal static SortedDictionary<string, string> ReadManifest(string root)
     {
         SortedDictionary<string, string> result = new(StringComparer.OrdinalIgnoreCase);
         if (!Directory.Exists(root))
@@ -1043,7 +1043,7 @@ public sealed class SetupPayloadTransactionTests
         return result;
     }
 
-    private sealed class TestTree : IDisposable
+    internal sealed class TestTree : IDisposable
     {
         private static readonly string[] RequiredFiles =
         [
@@ -1084,10 +1084,10 @@ public sealed class SetupPayloadTransactionTests
             @"Microsoft.UI.Xaml\Assets\NoiseAsset_256x256_PNG.png",
         ];
 
-        public TestTree()
+        public TestTree(string? candidateScratchRoot = null)
         {
-            Root = Path.Combine(Path.GetTempPath(), "OpenBlade.Setup.Tests", Guid.NewGuid().ToString("N"));
-            ProgramFiles = Path.Combine(Root, "ProgramFiles");
+            Root = candidateScratchRoot ?? Path.Combine(Path.GetTempPath(), "OpenBlade.Setup.Tests", Guid.NewGuid().ToString("N"));
+            ProgramFiles = Path.Combine(Root, candidateScratchRoot is null ? "ProgramFiles" : "program-files");
             Payload = Path.Combine(Root, "payload");
             Directory.CreateDirectory(ProgramFiles);
             Directory.CreateDirectory(Payload);

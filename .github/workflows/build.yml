@@ -147,14 +147,40 @@ jobs:
           persist-credentials: false
           submodules: false
 
+      - name: Set up fixture Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          architecture: x64
+
       - name: Set up .NET
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: 10.0.x
 
+      - name: Cache locked native fixture dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: windows-native-fixtures-${{ hashFiles('rust/rust-toolchain.toml', 'rust/Cargo.lock', 'tools/openblade-windows-host/Cargo.lock') }}
+
       - name: Prepare pinned native build toolchain
         shell: powershell
         run: ./build/Prepare-NativeToolchain.ps1
+
+      - name: Prepare locked Windows fixture dependencies
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # The fixture runner is offline. Populate the separate development
+          # workspace's locked dependency cache here, using the installed pin.
+          $pin = [regex]::Match((Get-Content rust/rust-toolchain.toml -Raw),
+            '(?m)^channel = "([0-9.]+)"$').Groups[1].Value
+          if (-not $pin) { throw 'Missing exact Rust toolchain pin.' }
+          cargo "+$pin" fetch --locked --manifest-path tools/openblade-windows-host/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { throw 'Locked Windows fixture inputs could not be fetched.' }
 
       - name: Restore
         if: matrix.shard == 'format' || matrix.shard == 'solution'
@@ -226,14 +252,14 @@ jobs:
       # runs in the capture shard instead.
       - name: Test
         if: matrix.shard == 'solution'
-        run: >-
-          dotnet test OpenBlade.slnx
-          -p:NuGetAudit=false
-          --no-build
-          --no-restore
-          -m:1
-          --verbosity minimal
-          --filter "FullyQualifiedName!~OpenBlade.Capture.Tests."
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          . ./build/NativeWindowsFixtures.ps1
+          Invoke-OpenBladeNativeFixtureScope -Repository $PWD.Path -Configuration Debug -OutputRoot (Join-Path $env:RUNNER_TEMP 'openblade-native-fixtures') -Action {
+            dotnet test OpenBlade.slnx -p:NuGetAudit=false --no-build --no-restore -m:1 --verbosity minimal --filter "FullyQualifiedName!~OpenBlade.Capture.Tests."
+            if ($LASTEXITCODE -ne 0) { throw "Solution tests failed with exit code $LASTEXITCODE." }
+          }
 
       - name: Test Capture
         if: matrix.shard == 'capture'
@@ -246,7 +272,7 @@ jobs:
 
       - name: Run affected quality and tests
         if: matrix.shard == 'affected'
-        shell: powershell
+        shell: pwsh
         env:
           OPENBLADE_VALIDATION_PLAN_JSON: ${{ inputs.validation-plan-json }}
         run: >-
@@ -254,6 +280,15 @@ jobs:
           -Lane Quality
           -PlanJson $env:OPENBLADE_VALIDATION_PLAN_JSON
 
+      - name: Retain native fixture receipts
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-windows-fixtures-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.shard }}
+          path: ${{ runner.temp }}/openblade-native-fixtures/
+          if-no-files-found: ignore
+          retention-days: 14
+          compression-level: 0
       - name: Verify native failure stops the production actor
         if: matrix.shard == 'solution' || matrix.shard == 'affected'
         shell: powershell
@@ -281,6 +316,12 @@ jobs:
         with:
           persist-credentials: false
           submodules: false
+
+      - name: Set up fixture Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          architecture: x64
 
       - name: Set up .NET
         uses: actions/setup-dotnet@v5
