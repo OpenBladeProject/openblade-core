@@ -552,6 +552,14 @@ jobs:
               ($fanStop + 'native_package'),
               ($fanStop + 'profiles::'),
               ($fanStop + 'capability_tests'),
+              # The capability record in each composition that changes it: the
+              # battery group without and with the temporary full charge, lighting,
+              # and HyperBoost without and with the probes its triggers bring.
+              @('openblade-windows-service-candidate', 'service-battery-policy-v1', 'service_status::capability'),
+              @('openblade-windows-service-candidate', 'service-temporary-charge-v1', 'service_status::capability'),
+              ($lighting + 'service_status::capability'),
+              ($hyperboost + 'service_status::capability'),
+              ($hyperboostTriggers + 'service_status::capability'),
               ($fanStopTriggers + 'fan_stop'),
               ($fanStopTriggers + 'thermal_policy'),
               ($shortcut + 'shortcut'),
