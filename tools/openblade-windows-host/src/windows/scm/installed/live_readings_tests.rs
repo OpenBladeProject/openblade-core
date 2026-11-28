@@ -311,34 +311,32 @@ fn battery_mappings_match_the_managed_vectors() {
     }
 }
 
-/// A confirmed HyperBoost read carries the managed observation record, as do
-/// its publications, and an expired read none. The managed codec otherwise
-/// refuses a confirmed active HyperBoost. Any other read carries no record.
+/// Every confirmed read carries this composition's identified capability
+/// record, as do its publications, whatever HyperBoost state it observed
+/// (the managed codec refuses a confirmed active HyperBoost without a
+/// HyperBoost access), and an expired read managed's unavailable record.
 #[tokio::test]
-async fn a_confirmed_hyper_boost_read_carries_the_managed_observation_record() {
+async fn a_confirmed_read_carries_the_identified_capability_record() {
+    use crate::service_status::capability_record::compiled;
+    let identified = Value::from(compiled(true));
+    let unidentified = Value::from(compiled(false));
     let rig = Rig::new();
     let observed = rig.observe(0).await.unwrap();
     assert_eq!(observed["confirmedState"]["hyperBoostActive"], false);
-    assert_eq!(observed["capabilities"], Value::Null);
+    assert_eq!(observed["capabilities"], identified);
     rig.io.thermal.store(HYPER_BOOST, Ordering::Release);
     let observed = rig.observe(0).await.unwrap();
-    let mut expected = vectors()["capabilities"][0]["capabilities"].clone();
-    // A Fan Stop build publishes its source and trial evidence.
-    let fan_stop = cfg!(feature = "service-fan-stop-v1");
-    expected["hasFanStopSourceEvidence"] = json!(fan_stop);
-    expected["hasFanStopTrialEvidence"] = json!(fan_stop);
-    let expected = &expected;
     assert_eq!(observed["confirmedState"]["hyperBoostActive"], true);
-    assert_eq!(&observed["capabilities"], expected);
+    assert_eq!(observed["capabilities"], identified);
     for published in rig.published() {
         assert_eq!(published["confirmedState"]["hyperBoostActive"], true);
-        assert_eq!(&published["capabilities"], expected);
+        assert_eq!(published["capabilities"], identified);
     }
     rig.source.expire_for_tests();
     rig.metadata(false);
     for published in rig.published() {
         assert_eq!(published["confirmedState"], Value::Null);
-        assert_eq!(published["capabilities"], Value::Null);
+        assert_eq!(published["capabilities"], unidentified);
     }
 }
 
@@ -919,8 +917,14 @@ const REGENERATE: &str = "OPENBLADE_REGENERATE_NATIVE_LIVE_READING_FRAMES";
 /// test (`NativeLiveReadingFrames_DecodeThroughTheManagedCodec`): an
 /// ObserveState reply with every reading, a HyperBoost reply, the
 /// subscription feed after it, and an unverified status. A build with the
-/// Driver-mode read adds its own member, so only this composition records.
-#[cfg(not(feature = "service-keyboard-driver-mode-read-v1"))]
+/// Driver-mode read adds its own member, and a thermal build a richer
+/// capability record (`capability_record`, pinned by its own vectors), so
+/// only the read-only composition records. Its record is the managed
+/// `read only` row, or `unidentified` without a confirmed state.
+#[cfg(not(any(
+    feature = "service-keyboard-driver-mode-read-v1",
+    feature = "service-thermal-mutation-v1"
+)))]
 #[tokio::test]
 async fn native_frames_match_the_recorded_managed_codec_input() {
     let mut frames = Vec::new();
@@ -944,7 +948,7 @@ async fn native_frames_match_the_recorded_managed_codec_input() {
         "balanced reply with every reading",
         &observed,
         json!({
-            "hyperBoostActive": false, "hyperBoostObservedOnly": false,
+            "hyperBoostActive": false, "capabilityRow": "read only",
             "fan1Rpm": 3200, "fan2Rpm": 3000, "batteryPowerFlowMilliwatts": 25000, "gpuTemperatureCelsius": 52,
             "designCapacityMilliwattHours": 90000, "fullChargeCapacityMilliwattHours": 85000,
         }),
@@ -957,7 +961,7 @@ async fn native_frames_match_the_recorded_managed_codec_input() {
         "hyperboost reply with fan speeds",
         &observed,
         json!({
-            "hyperBoostActive": true, "hyperBoostObservedOnly": true,
+            "hyperBoostActive": true, "capabilityRow": "read only",
             "fan1Rpm": 3200, "fan2Rpm": 3000, "batteryPowerFlowMilliwatts": null, "gpuTemperatureCelsius": null,
             "designCapacityMilliwattHours": null, "fullChargeCapacityMilliwattHours": null,
         }),
@@ -967,7 +971,7 @@ async fn native_frames_match_the_recorded_managed_codec_input() {
         "hyperboost subscription",
         &published.active,
         json!({
-            "hyperBoostActive": true, "hyperBoostObservedOnly": true,
+            "hyperBoostActive": true, "capabilityRow": "read only",
             "fan1Rpm": null, "fan2Rpm": null, "batteryPowerFlowMilliwatts": null, "gpuTemperatureCelsius": null,
             "designCapacityMilliwattHours": null, "fullChargeCapacityMilliwattHours": null,
         }),
@@ -979,7 +983,7 @@ async fn native_frames_match_the_recorded_managed_codec_input() {
         "expired subscription",
         &published.active,
         json!({
-            "hyperBoostActive": null, "hyperBoostObservedOnly": false,
+            "hyperBoostActive": null, "capabilityRow": "unidentified",
             "fan1Rpm": null, "fan2Rpm": null, "batteryPowerFlowMilliwatts": null, "gpuTemperatureCelsius": null,
             "designCapacityMilliwattHours": null, "fullChargeCapacityMilliwattHours": null,
         }),

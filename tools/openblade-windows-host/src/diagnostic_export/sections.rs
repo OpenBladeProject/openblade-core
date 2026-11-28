@@ -187,26 +187,107 @@ fn capability_record(status: &Value) -> Value {
 }
 
 /// Capability members whose managed summary reads a typed record native
-/// never composes. A non-empty value refuses the export.
-const UNEXPORTED: [&str; 9] = [
-    "customPerformance",
+/// never composes. A non-empty value refuses the export. The custom
+/// performance, local dimming, GPU overclock, HyperBoost base-mode and
+/// per-preset fan range records the capability record carries are
+/// summarized (`typed_summaries`, `configuration`).
+const UNEXPORTED: [&str; 4] = [
     "cpuPowerLimit",
     "intelCpuPowerLimit",
-    "localDimming",
     "cpuVoltageOptimizer",
-    "gpuOverclock",
-    "hyperBoostBaseModes",
-    "fanSpeedRangesByPerformancePreset",
     "observedPowerSourceBehaviors",
 ];
+
+/// Whether `value` is a defined member of the recorded managed enum `name`
+/// (managed `Enum.IsDefined`).
+fn is_defined(name: &str, value: Option<&Value>) -> bool {
+    value
+        .and_then(Value::as_i64)
+        .is_some_and(|value| defined(name).any(|(_, defined)| *defined == value))
+}
+
+/// Managed `DeviceNumericRange.IsWellFormed`.
+fn range_well_formed(range: Option<&Value>) -> bool {
+    let Some(range) = range.filter(|range| range.is_object()) else {
+        return false;
+    };
+    let (Some(minimum), Some(maximum)) = (range["minimum"].as_i64(), range["maximum"].as_i64())
+    else {
+        return false;
+    };
+    minimum <= maximum
+        && match member(range, "step") {
+            None => true,
+            Some(step) => step
+                .as_i64()
+                .is_some_and(|step| step > 0 && (maximum - minimum) % step == 0),
+        }
+}
+
+/// Managed `CreateCapabilities` for the typed records native publishes:
+/// `CustomPerformanceCapabilities.IsWellFormed` and `SupportsMaximumFans`,
+/// the local dimming record and `SupportsClear`, and
+/// `GpuOverclockCapabilities.IsWellFormed`, its read-write access and
+/// `SupportsEnableDisable`.
+fn typed_summaries(caps: &Value) -> [(&'static str, bool); 7] {
+    let custom = member(caps, "customPerformance");
+    let combinations = custom
+        .and_then(|custom| member(custom, "allowedCombinations"))
+        .and_then(Value::as_array);
+    // Managed `CustomPerformanceCombination.IsWellFormed`: a defined CPU
+    // level, and a GPU level of Low, Medium or High.
+    let custom_well_formed = combinations.is_some_and(|items| {
+        !items.is_empty()
+            && items.iter().all(|item| {
+                item.is_object()
+                    && is_defined("CustomPerformanceLevel", item.get("cpu"))
+                    && item["gpu"]
+                        .as_i64()
+                        .is_some_and(|gpu| (0..=2).contains(&gpu))
+            })
+    });
+    let dimming = member(caps, "localDimming");
+    let gpu = member(caps, "gpuOverclock");
+    let gpu_well_formed = gpu.is_some_and(|gpu| {
+        range_well_formed(gpu.get("coreOffsetMegahertz"))
+            && range_well_formed(gpu.get("memoryOffsetMegahertz"))
+            && is_defined("DeviceFeatureAccess", gpu.get("access"))
+    });
+    let read_write = defined("DeviceFeatureAccess")
+        .find(|(label, _)| label == "ReadWrite")
+        .map(|(_, value)| *value);
+    let gpu_access = gpu
+        .and_then(|gpu| gpu.get("access"))
+        .and_then(Value::as_i64);
+    let flag_of =
+        |record: Option<&Value>, name: &str| record.is_some_and(|record| flag(record, name, false));
+    [
+        ("performance.customCombinations", custom_well_formed),
+        (
+            "performance.customMaximumFans",
+            flag_of(custom, "supportsMaximumFans"),
+        ),
+        ("display.localDimming.observed", dimming.is_some()),
+        (
+            "display.localDimming.clear",
+            flag_of(dimming, "supportsClear"),
+        ),
+        ("performance.gpuOverclock.observed", gpu_well_formed),
+        (
+            "performance.gpuOverclock.write",
+            gpu_access.is_some() && gpu_access == read_write,
+        ),
+        (
+            "performance.gpuOverclock.enableDisableObserved",
+            flag_of(gpu, "supportsEnableDisable"),
+        ),
+    ]
+}
 
 fn unexported(capabilities: &Value) -> Result<(), Failure> {
     for name in UNEXPORTED {
         let empty = match member(capabilities, name) {
             None => true,
-            Some(Value::Object(members)) if name == "fanSpeedRangesByPerformancePreset" => {
-                members.is_empty()
-            }
             Some(Value::Array(items)) if name == "observedPowerSourceBehaviors" => items.is_empty(),
             Some(_) => false,
         };
@@ -217,6 +298,51 @@ fn unexported(capabilities: &Value) -> Result<(), Failure> {
         }
     }
     Ok(())
+}
+
+/// Managed's `capability.fanSpeedRangesByPerformancePreset`: Unavailable
+/// for an empty map, otherwise each entry in preset order as
+/// `Preset:minimum-maximum/step`, joined with ", ".
+fn preset_fan_ranges(caps: &Value) -> Result<String, Failure> {
+    let ranges = match member(caps, "fanSpeedRangesByPerformancePreset") {
+        None => return Ok(UNAVAILABLE.into()),
+        Some(Value::Object(ranges)) => ranges,
+        Some(_) => {
+            return Err(Failure::new(
+                "Diagnostic status carries a malformed fan range map.",
+            ));
+        }
+    };
+    let mut entries = ranges
+        .iter()
+        .map(|(preset, range)| {
+            let order = defined("PerformancePreset")
+                .find(|(label, _)| label == preset)
+                .map(|(_, value)| *value)
+                .ok_or_else(|| {
+                    Failure::new("Diagnostic status carries an undefined performance preset.")
+                })?;
+            let rpm = |name: &str| number_text(range.get(name));
+            Ok((
+                order,
+                format!(
+                    "{preset}:{}-{}/{}",
+                    rpm("minimumRpm"),
+                    rpm("maximumRpm"),
+                    rpm("stepRpm")
+                ),
+            ))
+        })
+        .collect::<Result<Vec<_>, Failure>>()?;
+    if entries.is_empty() {
+        return Ok(UNAVAILABLE.into());
+    }
+    entries.sort_by_key(|(order, _)| *order);
+    Ok(entries
+        .into_iter()
+        .map(|(_, entry)| entry)
+        .collect::<Vec<_>>()
+        .join(", "))
 }
 
 fn model_number(status: &Value) -> Option<&str> {
@@ -383,24 +509,20 @@ pub(crate) fn capabilities(status: &Value) -> Result<BTreeMap<String, bool>, Fai
         "lighting.playbackMuteIndicator".into(),
         flag(caps, "supportsPlaybackMuteIndicator", false),
     );
-    // `unexported` admitted only absent typed records, which managed reads
-    // as not well formed and not read-write.
+    for (key, value) in typed_summaries(caps) {
+        put(key.into(), value);
+    }
+    // `unexported` admitted only absent CPU records, which managed reads as
+    // not well formed and not read-write.
     for key in [
-        "performance.customCombinations",
-        "performance.customMaximumFans",
         "performance.cpuPowerLimit.observed",
         "performance.cpuPowerLimit.write",
         "performance.intelCpuPowerLimit.observed",
         "performance.intelCpuPowerLimit.write",
         "performance.intelCpuPowerLimit.rangesKnown",
-        "display.localDimming.observed",
-        "display.localDimming.clear",
         "performance.cpuVoltageOptimizer.observed",
         "performance.cpuVoltageOptimizer.write",
         "performance.cpuVoltageOptimizer.enableDisableObserved",
-        "performance.gpuOverclock.observed",
-        "performance.gpuOverclock.write",
-        "performance.gpuOverclock.enableDisableObserved",
     ] {
         put(key.into(), false);
     }
@@ -866,10 +988,20 @@ pub(crate) fn configuration(
         )?
         .unwrap_or_else(|| "None".into()),
     );
-    for base in ["Balanced", "Custom", "Turbo"] {
+    // Managed `HyperBoostBaseModes?.Balanced`, `?.Custom?` and `?.Turbo?`.
+    let base_modes = member(caps, "hyperBoostBaseModes");
+    for (base, name) in [
+        ("Balanced", "balanced"),
+        ("Custom", "custom"),
+        ("Turbo", "turbo"),
+    ] {
         put(
             &format!("capability.hyperBoostBase.{base}"),
-            UNAVAILABLE.into(),
+            base_modes
+                .map(|modes| enum_member(modes, name, "DeviceFeatureAccess"))
+                .transpose()?
+                .flatten()
+                .unwrap_or_else(|| UNAVAILABLE.into()),
         );
     }
     let range = member(caps, "fanSpeedRange");
@@ -886,7 +1018,7 @@ pub(crate) fn configuration(
     );
     put(
         "capability.fanSpeedRangesByPerformancePreset",
-        UNAVAILABLE.into(),
+        preset_fan_ranges(caps)?,
     );
     for key in [
         "capability.rz09-0581.skuHardwareConfigurationRaw",

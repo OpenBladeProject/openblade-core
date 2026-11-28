@@ -183,6 +183,14 @@ pub(super) use hyperboost::Pad;
 pub(super) use hyperboost::cleanup::CleanupExit as HyperBoostCleanupExit;
 #[cfg(feature = "service-hyperboost-v1")]
 pub(super) use hyperboost::{MODEL as HYPERBOOST_MODEL, Probes};
+// The capability record admits HyperBoost writes exactly where the native
+// composition sets HyperBoost's probes (`hyperboost` in `Runtime::native`):
+// beside the lifecycle triggers.
+#[cfg(feature = "service-hyperboost-v1")]
+const _: () = assert!(
+    crate::service_status::capability_record::Composition::COMPILED.hyper_boost
+        == cfg!(feature = "service-profile-triggers-v1")
+);
 #[cfg(feature = "service-keyboard-driver-mode-v1")]
 pub(super) use keyboard::SHUTDOWN_BUDGET as KEYBOARD_SHUTDOWN_BUDGET;
 #[cfg(all(test, feature = "service-keyboard-driver-mode-v1"))]
@@ -1125,6 +1133,8 @@ impl Runtime {
             // Without them nothing would end an owned session after an
             // unplug, so no probe is composed and every HyperBoost request
             // replies `hyperboost::UNAVAILABLE` before any read or write.
+            // The capability record follows this (the assertion beside the
+            // `hyperboost` re-exports).
             #[cfg(all(
                 feature = "service-hyperboost-v1",
                 feature = "service-profile-triggers-v1"
@@ -2023,7 +2033,7 @@ fn gpu_failed(cause: &Cause) -> bool {
     false
 }
 /// The reply of a confirmed step without GPU clock tuning composed.
-const CONFIRMED: &str = "Bounded thermal preset confirmed by independent paired readback. GPU clock handling and broad device capabilities remain unavailable; other native controls are incomplete.";
+const CONFIRMED: &str = "Bounded thermal preset confirmed by independent paired readback. GPU clock handling remains unavailable.";
 /// The GPU half's second step (`thermal_gpu::Lane::complete`) once the
 /// firmware readback `confirmed` the destination, under the step's own
 /// write admission `proof`, read afresh. None when the step has no second

@@ -1763,8 +1763,9 @@ fn read_windows(cancel: &AtomicBool) -> Evidence {
 ///   (`hyperboost::MODEL`), through the probes those requests read, and only
 ///   where the composition has them. Managed publishes the pad with a
 ///   verified device whose capabilities name a HyperBoost access
-///   (`ResolvePadlessHyperBoostEligibility`); this status carries no such
-///   capability, so the matched host stands in for it. Every other host, a
+///   (`ResolvePadlessHyperBoostEligibility`); this status names a HyperBoost
+///   access only once a confirmed state identifies the model
+///   (`capability_record`), so the matched host stands in for it. Every other host, a
 ///   failed pad scan and a composition without probes report Unknown and no
 ///   pending restore.
 /// - Both reads run on the observer's thread after its last other check of

@@ -1279,8 +1279,13 @@ const REGENERATE: &str = "OPENBLADE_REGENERATE_NATIVE_FIRMWARE_FRAMES";
 /// ObserveState reply and the subscription feed with the complete record,
 /// both again after the read job read the MCU version, and a feed whose
 /// touchpad read hung. A build with the Driver-mode read adds its
-/// own member, so only this composition records.
-#[cfg(not(feature = "service-keyboard-driver-mode-read-v1"))]
+/// own member, and a thermal build a richer capability record
+/// (`capability_record`, pinned by its own vectors), so only the read-only
+/// composition records.
+#[cfg(not(any(
+    feature = "service-keyboard-driver-mode-read-v1",
+    feature = "service-thermal-mutation-v1"
+)))]
 #[tokio::test]
 async fn native_frames_match_the_recorded_managed_codec_input() {
     let mut frames = Vec::new();

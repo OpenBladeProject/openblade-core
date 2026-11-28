@@ -1990,7 +1990,10 @@ async fn installed_dispatcher_direct_pair_persists_before_applied_and_retains_pu
     assert_eq!(result["result"]["status"], 1);
     assert_eq!(status["status"]["confirmedState"]["performance"], 1);
     assert_eq!(status["status"]["writesBlocked"], true);
-    assert!(status["status"]["capabilities"].is_null());
+    assert_eq!(
+        status["status"]["capabilities"],
+        Value::from(crate::service_status::capability_record::compiled(true))
+    );
     assert_eq!(
         rig.files.document("manual-overrides.json")["overrides"]["performance"],
         1

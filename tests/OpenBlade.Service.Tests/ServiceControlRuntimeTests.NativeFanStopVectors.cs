@@ -12,7 +12,7 @@ namespace OpenBlade.Service.Tests;
 // its requests in order through one runtime and records each result with the
 // fanStopStatus member the v91 status codec then writes, and the stored settings,
 // flag and whether any configuration document changed. The capability rows record
-// the exact RZ09-0581 evidence and the observation record native publishes. The
+// the exact RZ09-0581 evidence; capability-record-vectors.json pins the record. The
 // Rust tests replay all three sections.
 public sealed partial class ServiceControlRuntimeTests
 {
@@ -33,8 +33,8 @@ public sealed partial class ServiceControlRuntimeTests
         + "user, observes once, then records the fanStopStatus member (initial), runs each request (mode, settings, resume or batterySaver; "
         + "sessionChanged makes stillControlsSession false) and records its result and the "
         + "fanStopStatus member, then the stored settings, flag and whether any configuration "
-        + "document changed. A capability row records the evidence flags and the observation "
-        + "record the native Service publishes beside a confirmed HyperBoost.";
+        + "document changed. A capability row records the evidence flags the production factory "
+        + "admits for its host.";
 
     private static readonly string[] NativeFanStopSections = ["capabilities", "sequences"];
 
@@ -64,7 +64,6 @@ public sealed partial class ServiceControlRuntimeTests
             Assert.True(names.Add(name), name);
             (bool trial, bool source) = FanStopEvidence((string)row["productName"]!);
             Record(row, "evidence", new JsonObject { ["trial"] = trial, ["source"] = source });
-            Record(row, "record", await ObservedFanStopCapabilitiesAsync(trial, source));
         }
 
         foreach (JsonNode? entry in root["sequences"]!.AsArray())
@@ -235,28 +234,6 @@ public sealed partial class ServiceControlRuntimeTests
             : System.Text.Json.JsonSerializer.Deserialize<FanStopSettings>(
                 members.ToJsonString(),
                 new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web))!;
-
-    // As ObservedHyperBoostCapabilitiesAsync, with the row's Fan Stop evidence.
-    private async Task<JsonNode> ObservedFanStopCapabilitiesAsync(bool trial, bool source)
-    {
-        TestContext context = CreateContext(providerAvailable: true);
-        await context.Runtime.ObserveAsync(CancellationToken.None);
-        ServiceStatusSnapshot status = context.Runtime.GetStatus() with
-        {
-            Capabilities = DeviceCapabilities.Unavailable() with
-            {
-                HyperBoostAccess = DeviceFeatureAccess.ObservedOnly,
-                SupportsTemporaryFullCharge = true,
-                HasFanStopTrialEvidence = trial,
-                HasFanStopSourceEvidence = source,
-            },
-            ConfirmedState = new ConfirmedDeviceState(null, FanMode.Automatic, null, null)
-            {
-                HyperBoostActive = true,
-            },
-        };
-        return (await EncodedStatusAsync(status))["capabilities"]!.DeepClone();
-    }
 
     // One member of the status as the v91 codec writes it. The test device's
     // confirmed state carries no capability record, which the codec requires

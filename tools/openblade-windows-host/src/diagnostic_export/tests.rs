@@ -499,14 +499,9 @@ fn a_poisoned_history_is_unreadable() {
 #[test]
 fn capability_members_without_a_native_summary_refuse_the_export() {
     for (member, value) in [
-        ("customPerformance", json!({"cpu": 1})),
         ("cpuPowerLimit", json!({})),
         ("intelCpuPowerLimit", json!({})),
-        ("localDimming", json!({"access": 1, "supportsClear": true})),
         ("cpuVoltageOptimizer", json!({})),
-        ("gpuOverclock", json!({})),
-        ("hyperBoostBaseModes", json!({"balanced": true})),
-        ("fanSpeedRangesByPerformancePreset", json!({"1": {}})),
         ("observedPowerSourceBehaviors", json!([{}])),
     ] {
         let mut status = native_status();
@@ -520,6 +515,28 @@ fn capability_members_without_a_native_summary_refuse_the_export() {
         "observedPowerSourceBehaviors": [], "customPerformance": null,
     });
     build(request(status, Snapshot::default()), &Cancel::default()).unwrap();
+}
+
+/// Managed's per-preset fan range summary: preset order, not map order, and
+/// Unavailable for an empty map. Managed replays a non-empty map through the
+/// identified capability record sample.
+#[test]
+fn per_preset_fan_ranges_are_summarized_in_preset_order() {
+    let range = json!({"minimumRpm": 2000, "maximumRpm": 5400, "stepRpm": 100});
+    let summary = |ranges: Value| {
+        let mut status = native_status();
+        status["capabilities"] = json!({"fanSpeedRangesByPerformancePreset": ranges});
+        sections::configuration(&status, true).map(|configuration| {
+            configuration["capability.fanSpeedRangesByPerformancePreset"].clone()
+        })
+    };
+    assert_eq!(
+        summary(json!({"Performance": range, "Balanced": range})).unwrap(),
+        "Balanced:2000-5400/100, Performance:2000-5400/100"
+    );
+    assert_eq!(summary(json!({})).unwrap(), "Unavailable");
+    assert!(summary(json!({"Unknown": range})).is_err());
+    assert!(summary(json!([])).is_err());
 }
 
 /// An archive's entries as text.
@@ -551,22 +568,96 @@ fn configuration_reads_absent_members_as_managed_defaults() {
     status["firmware"] = json!({"modelNumber": "RZ09-0581"});
     status["confirmedState"] =
         json!({"performance": 1, "fans": 0, "battery": null, "lighting": null});
-    status["capabilities"] =
-        serde_json::from_str(include_str!("../service_status/observed_capabilities.json")).unwrap();
+    // The identified record of the read-only composition.
+    status["capabilities"] = capability_row("read only");
     let configuration = sections::configuration(&status, false).unwrap();
     let value = |key: &str| configuration[key].as_str();
     assert_eq!(value("support.basis"), "PhysicallyValidated");
     assert_eq!(value("support.physicalValidation"), "Validated");
     assert_eq!(value("confirmed.hyperBoostActive"), "False");
     assert_eq!(value("confirmed.performance"), "Balanced");
-    assert_eq!(value("capability.hyperBoostAccess"), "ObservedOnly");
+    assert_eq!(value("capability.hyperBoostAccess"), "ReadOnly");
+    assert_eq!(
+        value("capability.hyperBoostWithoutCoolingPadAccess"),
+        "ObservedOnly"
+    );
+    assert_eq!(value("capability.hyperBoostBase.Balanced"), "ReadOnly");
+    assert_eq!(value("capability.hyperBoostBase.Custom"), "ReadOnly");
+    assert_eq!(value("capability.hyperBoostBase.Turbo"), "Unavailable");
+    assert_eq!(value("capability.thxAudioAccess"), "ReadWrite");
     assert_eq!(value("capability.writableSpecialKeySlots"), "None");
     let capabilities = sections::capabilities(&status).unwrap();
     assert!(capabilities["performance.hyperBoost.observed"]);
     assert!(!capabilities["performance.hyperBoost.write"]);
     assert!(capabilities["performance.hyperBoost.withoutCoolingPad.gate.crashRecovery"]);
     assert!(capabilities["lighting.breathingColorMode.Dual"]);
-    assert!(capabilities["battery.temporaryFullCharge"]);
+    // The read-only composition completes no temporary full charge.
+    assert!(!capabilities["battery.temporaryFullCharge"]);
+    assert!(capabilities["display.localDimming.observed"]);
+    assert!(!capabilities["display.localDimming.clear"]);
+    assert!(!capabilities["performance.customCombinations"]);
+    assert!(!capabilities["performance.gpuOverclock.observed"]);
+}
+
+/// A managed capability-record row (`capability-record-vectors.json`).
+fn capability_row(name: &str) -> Value {
+    let vectors: Value = serde_json::from_str(include_str!(
+        "../../tests/data/capability-record-vectors.json"
+    ))
+    .unwrap();
+    vectors["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["name"] == name)
+        .unwrap()["record"]
+        .clone()
+}
+
+/// Managed's summaries of the typed records the full composition carries:
+/// a well-formed custom performance table without Maximum fans, observed
+/// local dimming without Clear, a read-write GPU overclock with its enable
+/// toggle, and read-write HyperBoost base modes.
+#[test]
+fn the_typed_records_of_the_full_composition_are_summarized() {
+    let mut status = native_status();
+    status["capabilities"] = capability_row("every group");
+    let capabilities = sections::capabilities(&status).unwrap();
+    for (key, expected) in [
+        ("performance.customCombinations", true),
+        ("performance.customMaximumFans", false),
+        ("display.localDimming.observed", true),
+        ("display.localDimming.clear", false),
+        ("performance.gpuOverclock.observed", true),
+        ("performance.gpuOverclock.write", true),
+        ("performance.gpuOverclock.enableDisableObserved", true),
+        ("performance.hyperBoost.write", true),
+        ("performance.hyperBoost.withoutCoolingPad.write", true),
+    ] {
+        assert_eq!(capabilities[key], expected, "{key}");
+    }
+    let configuration = sections::configuration(&status, false).unwrap();
+    assert_eq!(
+        configuration["capability.hyperBoostBase.Balanced"],
+        "ReadWrite"
+    );
+    assert_eq!(
+        configuration["capability.hyperBoostBase.Custom"],
+        "ReadWrite"
+    );
+    assert_eq!(
+        configuration["capability.hyperBoostBase.Turbo"],
+        "Unavailable"
+    );
+    // A malformed table or range is not well formed, as managed reads it.
+    let mut malformed = status.clone();
+    malformed["capabilities"]["customPerformance"]["allowedCombinations"] =
+        json!([{"cpu": 0, "gpu": 3}]);
+    malformed["capabilities"]["gpuOverclock"]["coreOffsetMegahertz"]["step"] = json!(3);
+    let capabilities = sections::capabilities(&malformed).unwrap();
+    assert!(!capabilities["performance.customCombinations"]);
+    assert!(!capabilities["performance.gpuOverclock.observed"]);
+    assert!(capabilities["performance.gpuOverclock.write"]);
 }
 
 #[test]

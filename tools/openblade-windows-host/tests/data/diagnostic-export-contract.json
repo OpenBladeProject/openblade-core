@@ -29,6 +29,24 @@
         2
       ]
     ],
+    "CustomPerformanceLevel": [
+      [
+        "Low",
+        0
+      ],
+      [
+        "Medium",
+        1
+      ],
+      [
+        "High",
+        2
+      ],
+      [
+        "Boost",
+        3
+      ]
+    ],
     "DeviceFeatureAccess": [
       [
         "ObservedOnly",

@@ -1772,7 +1772,7 @@ impl ReadSource {
                 drift.observe_published(reading.performance);
                 drift.settle(reading.performance, Instant::now());
             }
-            // The status's observation record is exact-model data and the
+            // The status's capability record is exact-model data and the
             // reading carries no model; its Reader is the one producer.
             debug_assert_eq!(
                 crate::discovery::performance::OBSERVED_IDENTITY,
@@ -2463,7 +2463,10 @@ mod tests {
         assert_eq!(json["confirmedState"]["fans"], 0);
         assert_eq!(json["activePowerSource"], 1);
         assert_eq!(json["writesBlocked"], true);
-        assert!(json["capabilities"].is_null());
+        assert_eq!(
+            json["capabilities"],
+            serde_json::Value::from(crate::service_status::capability_record::compiled(true))
+        );
         assert!(json["liveReadings"].is_null());
         assert_eq!(held.submitted.load(Ordering::Acquire), 4); // Two getter envelopes and replies, one port.
         let retained = publisher.borrow().active.clone();

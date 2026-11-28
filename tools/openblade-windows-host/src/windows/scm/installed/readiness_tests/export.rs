@@ -910,6 +910,32 @@ async fn native_archives_match_the_recorded_managed_reader_input() {
             captured_at: "2026-11-23T10:00:01.12+00:00",
             live: false,
         },
+        // The capability record of the full composition, with every typed
+        // record native publishes (`capability_record`).
+        Sample {
+            name: "identified capability record of every group",
+            caller: SYSTEM,
+            served: Served {
+                edit: Some(|status| {
+                    let vectors: Value = serde_json::from_str(include_str!(
+                        "../../../../../tests/data/capability-record-vectors.json"
+                    ))
+                    .unwrap();
+                    status["capabilities"] = vectors["rows"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .find(|row| row["name"] == "every group")
+                        .unwrap()["record"]
+                        .clone();
+                }),
+                ..Served::default()
+            },
+            history: Vec::new(),
+            tokens: &[],
+            captured_at: "2026-11-23T10:00:01.12+00:00",
+            live: false,
+        },
     ];
     assert_recorded(SAMPLES, &record_samples(&samples).await);
 }
