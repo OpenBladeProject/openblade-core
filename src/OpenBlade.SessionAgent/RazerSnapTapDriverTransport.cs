@@ -8,16 +8,18 @@ internal sealed class RazerSnapTapDriverTransport : IRazerSnapTapHookTransport, 
     private readonly RazerSnapTapNativeIo io;
     private readonly Func<bool>? canEnable;
     private readonly Func<bool>? canOutput;
+    private readonly Func<bool>? canSetHook;
     private readonly RazerKeyboardHookPurpose purpose;
 
     internal RazerSnapTapDriverTransport(string path, Func<bool> isCurrent,
         Func<bool>? canEnable = null, Func<bool>? canOutput = null,
-        RazerKeyboardHookPurpose purpose = RazerKeyboardHookPurpose.SnapTap)
+        RazerKeyboardHookPurpose purpose = RazerKeyboardHookPurpose.SnapTap, Func<bool>? canSetHook = null)
     {
         _ = RazerSnapTapDriverProtocol.ScanCodes(purpose);
         this.purpose = purpose;
         this.canEnable = canEnable;
         this.canOutput = canOutput;
+        this.canSetHook = canSetHook;
         io = new(path, isCurrent);
     }
 
@@ -55,7 +57,9 @@ internal sealed class RazerSnapTapDriverTransport : IRazerSnapTapHookTransport, 
         {
             throw new InvalidDataException("Only the fixed keyboard hooks are admitted.");
         }
-        Mutate(RazerSnapTapDriverProtocol.SetInputHookIoControlCode, record);
+        // A stop refuses the next hook before submission, after its admission check, so
+        // a stopping worker leaves setup within one hook instead of finishing the set.
+        Mutate(RazerSnapTapDriverProtocol.SetInputHookIoControlCode, record, canSetHook);
     }
 
     public void ClearHook(byte[] record)
@@ -105,7 +109,8 @@ internal sealed class RazerSnapTapDriverTransport : IRazerSnapTapHookTransport, 
             RazerSnapTapDriverProtocol.EncodeOutput(stroke, purpose), 0, 250, false,
             canOutput ?? (() => false));
 
-    private void Mutate(uint code, byte[] packet) => io.Request(code, packet, 0, 250, false);
+    private void Mutate(uint code, byte[] packet, Func<bool>? canSubmit = null) =>
+        io.Request(code, packet, 0, 250, false, canSubmit);
 
     public void Dispose() => io.Dispose();
 }

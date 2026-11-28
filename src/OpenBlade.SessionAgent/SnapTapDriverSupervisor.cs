@@ -82,7 +82,8 @@ internal static class SnapTapDriverSupervisor
                     ? "snaptap-driver-ownership.json" : "function-row-driver-ownership.json");
             string boot = ReadBootIdentity();
             // An interrupted supervisor cannot establish ownership from coincidentally
-            // matching global records. Keep that case closed for explicit recovery.
+            // matching global records. Only its own durable journal and worker evidence
+            // can release that case automatically; otherwise it waits for explicit recovery.
             foreach (string previousPath in new[] { "snaptap-driver-ownership.json", "function-row-driver-ownership.json" }
                 .Select(name => Path.Combine(Path.GetDirectoryName(journal)!, name)))
             {
@@ -90,27 +91,82 @@ internal static class SnapTapDriverSupervisor
                 if (previous is null) { continue; }
                 if (!CanDiscardJournal(previous.BootIdentity, boot, baseline))
                 {
-                    // Automatic starts keep a same-boot journal closed. A launch from an
-                    // explicit preference change may release it after read-only checks:
-                    // the exclusive helper mutex excludes a live owner, fresh enumeration
-                    // shows no OpenBlade hook, and Windows reports no key or button down.
+                    // A same-boot journal stays closed unless one of two read-only-checked
+                    // paths releases it: an explicit preference change, or durable evidence
+                    // that its owner was terminated before its own reconciliation (Task
+                    // Manager, a forced process-tree stop). The exclusive helper mutex
+                    // excludes a live owner; fresh enumeration must then show no OpenBlade
+                    // hook and Windows must report no key or button down.
                     bool sameBoot = string.Equals(previous.BootIdentity, boot, StringComparison.Ordinal);
+                    bool terminatedOwner = false;
+                    if (sameBoot && TryReadTerminatedOwner(previous, out string? evidencePath,
+                            out IReadOnlyList<byte[]>? evidencedHooks, out int evidenceWorkerId))
+                    {
+                        // The dead worker wrote this after each independent hook readback.
+                        // Clear exactly those records with the normal post-exit transaction;
+                        // any other OpenBlade or foreign change refuses before mutation.
+                        stage = "TerminatedOwnerReconciliation";
+                        RazerKeyboardHookPurpose previousPurpose = RazerKeyboardHookScope.Purpose(previous.Features);
+                        using var recovery = previousPurpose == purpose ? null
+                            : new RazerSnapTapDriverTransport(endpoint.Path, () => admission.IsCurrent(endpoint),
+                                purpose: previousPurpose);
+                        // The evidence shrinks before each clear (see TryReconcileHooks), so a
+                        // kill here stays recoverable and never replays an in-flight clear.
+                        bool reconciled;
+                        string? orphanReason;
+                        try
+                        {
+                            reconciled = TryReconcileHooks(recovery ?? guardian, previous.BaselineHooks,
+                                pending => reconciliationMayHaveSubmitted = pending, out orphanReason,
+                                previousPurpose, evidencedHooks,
+                                RazerKeyboardOwnedHookEvidence.Recorder(evidencePath!, evidenceWorkerId));
+                        }
+                        catch when (reconciliationMayHaveSubmitted)
+                        {
+                            MarkJournalLatched(previousPath, evidencePath!);
+                            throw;
+                        }
+                        if (reconciled)
+                        {
+                            terminatedOwner = true;
+                            File.Delete(evidencePath!);
+                            baseline = guardian.ReadHooks();
+                        }
+                        else if (orphanReason != "HookOwnershipChanged")
+                        {
+                            // Latch, as the owner itself would have after a failed cleanup.
+                            MarkJournalLatched(previousPath, evidencePath!);
+                            return PublishTerminal(endpoint.Profile, SnapTapRuntimeState.Failed,
+                                SnapTapDiagnosticFailure.Create(SnapTapDiagnosticFailure.Supervisor,
+                                    "ReconcileTerminatedOwner", stage, orphanReason!, true), 1);
+                        }
+                        stage = "OwnershipJournal";
+                    }
                     bool ownedHooks = baseline.Any(record => IsPurposeHook(record, RazerKeyboardHookPurpose.Combined));
-                    bool released = retryRequested && sameBoot && !ownedHooks
+                    bool released = (retryRequested || terminatedOwner) && sameBoot && !ownedHooks
                         && WaitForReleasedInput(SnapTapDriverLoop.AllReleased, shouldStop, RetryReleaseBudgetMilliseconds);
-                    if (!CanRetrySameBootJournal(retryRequested, previous.BootIdentity, boot, baseline, released))
+                    if (!CanRetrySameBootJournal(retryRequested || terminatedOwner, previous.BootIdentity, boot, baseline, released))
                     {
                         return PublishTerminal(endpoint.Profile, SnapTapRuntimeState.RecoveryRequired,
                             SnapTapDiagnosticFailure.Create(SnapTapDiagnosticFailure.Supervisor,
                                 "OwnershipJournal", stage, "RecoveryRequired") with
                             {
-                                Context = $"RetryRequested={retryRequested}; SameBoot={sameBoot}; OwnedHooks={ownedHooks}; InputReleased={released}",
+                                Context = $"RetryRequested={retryRequested}; SameBoot={sameBoot}; OwnedHooks={ownedHooks}; "
+                                    + $"InputReleased={released}; TerminatedOwner={terminatedOwner}",
                             }, 4);
                     }
-                    Trace.TraceInformation("Released same-boot driver ownership journal {0} after an explicit retry.",
+                    Trace.TraceInformation(terminatedOwner
+                            ? "Released same-boot driver ownership journal {0} after clearing a terminated owner's evidenced hooks."
+                            : "Released same-boot driver ownership journal {0} after an explicit retry.",
                         Path.GetFileName(previousPath));
                 }
                 File.Delete(previousPath);
+                // A released or discarded journal's owner evidence can never be used again.
+                if (previous.SupervisorProcessId is int previousOwner && previousOwner > 0
+                    && previousOwner != Environment.ProcessId)
+                {
+                    File.Delete(RazerKeyboardOwnedHookEvidence.PathFor(previousOwner));
+                }
             }
             if (!CanStartWithHooks(baseline))
             {
@@ -125,10 +181,14 @@ internal static class SnapTapDriverSupervisor
                         "GuardHooks", stage, "ExistingHooks"), orphanFeature ? 4 : 3);
             }
             Directory.CreateDirectory(Path.GetDirectoryName(journal)!);
+            // Evidence left by an earlier process with this reused id must not
+            // outlive the journal this process is about to own.
+            File.Delete(RazerKeyboardOwnedHookEvidence.PathFor(Environment.ProcessId));
             using (var stream = new FileStream(journal, FileMode.CreateNew, FileAccess.Write, FileShare.Read,
                        4096, FileOptions.WriteThrough))
             {
-                JsonSerializer.Serialize(stream, new OwnershipJournal(boot, baseline.ToArray(), features));
+                JsonSerializer.Serialize(stream, new OwnershipJournal(boot, baseline.ToArray(), features,
+                    Environment.ProcessId, DateTimeOffset.UtcNow));
                 stream.Flush(true);
             }
             stage = "WorkerInfrastructure";
@@ -140,6 +200,7 @@ internal static class SnapTapDriverSupervisor
             using var stop = new EventWaitHandle(false, EventResetMode.ManualReset,
                 SnapTapInputProcess.StopEventName(Environment.ProcessId));
             stop.Reset();
+            using SnapTapWorkerProgress? progress = TryCreateProgress();
             string executable = Environment.ProcessPath!;
             var start = new ProcessStartInfo(executable)
             {
@@ -156,6 +217,7 @@ internal static class SnapTapDriverSupervisor
             {
                 Process? worker = null;
                 bool clean = false;
+                bool rearming = false;
                 try
                 {
                     startGate.Reset();
@@ -166,12 +228,15 @@ internal static class SnapTapDriverSupervisor
                     bool interrupted = false;
                     stage = "WorkerLaunch";
                     File.Delete(RazerKeyboardOwnedHookEvidence.PathFor(Environment.ProcessId));
+                    progress?.Reset();
                     DateTimeOffset workerStartedAt = DateTimeOffset.UtcNow;
                     worker = Process.Start(start) ?? throw new InvalidOperationException("The keyboard worker could not start.");
                     job.Assign(worker);
                     startGate.Set();
                     long lastHeartbeat = Environment.TickCount64;
                     bool started = false;
+                    bool killedAfterStall = false;
+                    bool killed = false;
                     while (!worker.HasExited)
                     {
                         // Read the window flag before consuming the heartbeat. The worker
@@ -188,22 +253,30 @@ internal static class SnapTapDriverSupervisor
                         if (requestedStop || timedOut)
                         {
                             interrupted = true;
+                            // Read the worker's step before the stop changes it.
+                            string? stallContext = null;
                             if (timedOut)
                             {
                                 observedWorkerFailure = HeartbeatTimeoutFailure(started);
+                                stallContext = string.Create(CultureInfo.InvariantCulture,
+                                    $"Started={started}; Admitting={workerAdmitting}; SinceHeartbeatMs={Environment.TickCount64 - lastHeartbeat}; {progress?.Read().ToString() ?? "WorkerStage=Unavailable"}");
                             }
                             stop.Set();
                             if (!worker.WaitForExit(6000))
                             {
                                 worker.Kill();
+                                killed = true;
                                 if (!worker.WaitForExit(1500))
                                 {
+                                    TraceStall(stallContext, "DidNotExit", progress);
                                     return PublishTerminal(endpoint.Profile, SnapTapRuntimeState.Failed,
                                         observedWorkerFailure ?? SnapTapDiagnosticFailure.Create(
                                             SnapTapDiagnosticFailure.Supervisor, "SuperviseWorker",
                                             "WorkerExit", "WorkerDidNotExit", started), 1);
                                 }
+                                killedAfterStall = timedOut && !requestedStop;
                             }
+                            TraceStall(stallContext, killed ? "Killed" : "Exited", progress);
                             break;
                         }
                     }
@@ -226,25 +299,75 @@ internal static class SnapTapDriverSupervisor
                             processExitCode: worker.ExitCode);
                     }
                     stage = "Reconciliation";
+                    string ownEvidence = RazerKeyboardOwnedHookEvidence.PathFor(Environment.ProcessId);
+                    IReadOnlyList<byte[]> workerOwned =
+                        RazerKeyboardOwnedHookEvidence.Read(Environment.ProcessId, worker.Id, workerStartedAt, purpose);
+                    if (!(worker.ExitCode is 0 or 3 || cleanPause))
+                    {
+                        // An uncertain exit always latches. Mark it before cleanup so a kill
+                        // during cleanup cannot look like a terminated owner.
+                        MarkJournalLatched(journal, ownEvidence);
+                    }
+                    // The evidence shrinks before each clear: if this supervisor dies during
+                    // its own cleanup, a later start can finish it without replaying a clear.
                     if (!TryReconcileHooks(guardian, baseline,
                         pending => reconciliationMayHaveSubmitted = pending, out string? cleanupReason, purpose,
-                        RazerKeyboardOwnedHookEvidence.Read(Environment.ProcessId, worker.Id, workerStartedAt, purpose)))
+                        workerOwned, RazerKeyboardOwnedHookEvidence.Recorder(ownEvidence, worker.Id)))
                     {
                         return PublishTerminal(endpoint.Profile, SnapTapRuntimeState.Failed,
                             SnapTapDiagnosticFailure.Create(SnapTapDiagnosticFailure.Supervisor,
                                 "ReconcileHooks", stage, cleanupReason!, true, observedWorkerFailure), 1);
                     }
                     clean = worker.ExitCode is 0 or 3 || cleanPause;
+                    if (clean)
+                    {
+                        // Verified cleanup after a clean exit leaves nothing to recover.
+                        File.Delete(ownEvidence);
+                    }
                     if (IsCleanStall(observedWorkerFailure, worker.ExitCode, finalStatus, worker.Id, workerStartedAt))
                     {
+                        // The observed timeout latched a clean-pause exit before cleanup.
+                        // Verified cleanup resolved it: close the journal on stop, and
+                        // reopen it before rearming so a later force-close stays recoverable.
                         if (shouldStop())
                         {
+                            clean = true;
+                            File.Delete(ownEvidence);
                             return 0;
                         }
-                        if (TryAdmitStallRearm(stallRearms, Environment.TickCount64))
+                        if (TryAdmitStallRearm(stallRearms, Environment.TickCount64) && ClearJournalLatch(journal))
                         {
                             Trace.TraceInformation("SnapTap worker stall reconciled; rearming: {0}", observedWorkerFailure);
                             clean = false;
+                            rearming = true;
+                            continue;
+                        }
+                    }
+                    else if (IsKilledStall(observedWorkerFailure, killedAfterStall, worker.ExitCode,
+                        MatchingWorkerFailure(finalStatus, worker.Id, workerStartedAt)))
+                    {
+                        // A worker frozen past the stop wait, as under boot load, was killed, or
+                        // it paused cleanly but its status was lost.
+                        // Reconciliation has cleared and read back its hooks, so this is the
+                        // terminated-owner case with a live supervisor: resume under the same
+                        // released-input check, within the shared stall-rearm budget.
+                        if (shouldStop())
+                        {
+                            if (SnapTapDriverLoop.AllReleased())
+                            {
+                                clean = true;
+                                File.Delete(ownEvidence);
+                                return 0;
+                            }
+                        }
+                        else if (WaitForReleasedInput(SnapTapDriverLoop.AllReleased, shouldStop, RetryReleaseBudgetMilliseconds)
+                            && TryAdmitStallRearm(stallRearms, Environment.TickCount64)
+                            && ClearJournalLatch(journal))
+                        {
+                            Trace.TraceInformation("SnapTap stalled worker reconciled after an unconfirmed exit; rearming: {0}", observedWorkerFailure);
+                            File.Delete(ownEvidence);
+                            clean = false;
+                            rearming = true;
                             continue;
                         }
                     }
@@ -258,6 +381,7 @@ internal static class SnapTapDriverSupervisor
                         // Keep the original baseline and durable journal across workers.
                         // A new process must pass fresh admission, focus and all-release gates.
                         clean = false;
+                        rearming = true;
                         continue;
                     }
                     int exitCode = clean ? worker.ExitCode : 4;
@@ -278,25 +402,38 @@ internal static class SnapTapDriverSupervisor
                 }
                 finally
                 {
-                    // Exceptions in admission, enumeration or recovery must also close
-                    // the mutator. Do not leave it alive behind a failed supervisor.
-                    if (worker is not null)
+                    try
                     {
-                        if (!worker.HasExited)
+                        // Exceptions in admission, enumeration or recovery must also close
+                        // the mutator. Do not leave it alive behind a failed supervisor.
+                        if (worker is not null)
                         {
-                            stop.Set();
-                            if (!worker.WaitForExit(6000))
+                            if (!worker.HasExited)
                             {
-                                worker.Kill();
-                                worker.WaitForExit(1500);
+                                stop.Set();
+                                if (!worker.WaitForExit(6000))
+                                {
+                                    worker.Kill();
+                                    worker.WaitForExit(1500);
+                                }
                             }
+                            worker.Dispose();
                         }
-                        worker.Dispose();
                     }
-                    if (clean)
+                    finally
                     {
-                        File.Delete(journal);
-                        File.Delete(RazerKeyboardOwnedHookEvidence.PathFor(Environment.ProcessId));
+                        if (clean)
+                        {
+                            File.Delete(journal);
+                            File.Delete(RazerKeyboardOwnedHookEvidence.PathFor(Environment.ProcessId));
+                        }
+                        else if (!rearming)
+                        {
+                            // This supervisor is leaving its journal for explicit recovery.
+                            // Mark that decision so a later start cannot mistake it for an
+                            // owner that was terminated before reaching this point.
+                            MarkJournalLatched(journal, RazerKeyboardOwnedHookEvidence.PathFor(Environment.ProcessId));
+                        }
                     }
                 }
             }
@@ -312,8 +449,8 @@ internal static class SnapTapDriverSupervisor
         }
     }
 
-    // Two worker pauses are clean: a focus loss in the input loop, and a subscription
-    // enable refused before submission during hook setup. Neither submitted output.
+    // Two worker pauses are clean: a focus loss in the input loop, and a hook or
+    // subscription enable refused before submission during hook setup. Neither submitted output.
     internal static bool IsCleanPause(
         int exitCode, SnapTapRuntimeStatus? status, int processId, DateTimeOffset startedAt) =>
         exitCode == SnapTapDriverLoop.CleanPauseExitCode
@@ -329,6 +466,28 @@ internal static class SnapTapDriverSupervisor
         }
         && failure is { Stage: "InputLoop", Reason: "ForegroundUnavailable" }
             or { Stage: "HookSetup", Reason: "SubscriptionDeferred" };
+
+    // Stall diagnostics never decide recovery: the failure record stays the exact
+    // HeartbeatTimeoutFailure so IsCleanStall and IsKilledStall keep matching it.
+    private static void TraceStall(string? stallContext, string outcome, SnapTapWorkerProgress? progress)
+    {
+        if (stallContext is null) { return; }
+        Trace.TraceWarning("SnapTap worker heartbeat timeout: {0}; Outcome={1}; AtExit {2}", stallContext, outcome,
+            progress?.Read().ToString() ?? "WorkerStage=Unavailable");
+    }
+
+    private static SnapTapWorkerProgress? TryCreateProgress()
+    {
+        try
+        {
+            return SnapTapWorkerProgress.Create(Environment.ProcessId);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            DiagnosticTrace.TraceException("OpenBlade.SessionAgent.SnapTapDriverSupervisor", "CreateWorkerProgress", exception);
+            return null;
+        }
+    }
 
     internal static DiagnosticFailure HeartbeatTimeoutFailure(bool started) => SnapTapDiagnosticFailure.Create(
         SnapTapDiagnosticFailure.Supervisor, "SuperviseWorker",
@@ -352,6 +511,25 @@ internal static class SnapTapDriverSupervisor
                 && status is { State: SnapTapRuntimeState.Off, Failure: null }
                 && status.ProcessId == processId && status.UpdatedAt >= startedAt)
             || IsCleanPause(exitCode, status, processId, startedAt));
+
+    // A worker that missed its input heartbeat and then ignored the stop for the whole
+    // wait was killed by this supervisor. Its output is as uncertain as after any
+    // force-close, so the caller resumes only after verified hook reconciliation and
+    // the released-input check that a terminated owner's recovery uses. Kill() does
+    // not fail on a worker that exited on its own just before it, so only the
+    // termination exit code counts, and a worker that published its own terminal
+    // failure keeps that failure's latch. A worker that left hook setup through the
+    // clean-pause exit after the stop, but whose Paused status did not reach disk
+    // before it exited (status writes are bounded, and slow under the same load),
+    // gets these same checks instead of a latch: IsCleanStall already took it when
+    // its status did land.
+    internal const int KilledExitCode = -1;
+
+    internal static bool IsKilledStall(DiagnosticFailure? observed, bool killedAfterStall, int exitCode,
+        DiagnosticFailure? workerTerminalFailure) =>
+        ((killedAfterStall && exitCode == KilledExitCode) || exitCode == SnapTapDriverLoop.CleanPauseExitCode)
+        && workerTerminalFailure is null
+        && observed is not null && observed == HeartbeatTimeoutFailure(started: true);
 
     // Bounds automatic stall recovery so a worker that keeps stalling still latches
     // a visible failure instead of restarting indefinitely.
@@ -391,7 +569,8 @@ internal static class SnapTapDriverSupervisor
         Action<bool> setSubmissionPending,
         out string? failureReason,
         RazerKeyboardHookPurpose purpose = RazerKeyboardHookPurpose.SnapTap,
-        IReadOnlyList<byte[]>? confirmedOwned = null)
+        IReadOnlyList<byte[]>? confirmedOwned = null,
+        Action<IReadOnlyList<byte[]>>? recordRemaining = null)
     {
         using var mutation = RazerKeyboardHookMutationGate.Enter();
         failureReason = null;
@@ -411,11 +590,17 @@ internal static class SnapTapDriverSupervisor
         // which may have changed since our own session started. During this
         // bounded transaction, every unrelated byte must remain unchanged.
         IReadOnlyList<byte[]> currentUnowned = hooks.Where(record => !IsPurposeHook(record, purpose)).ToArray();
+        var remaining = hooks.Where(record => IsPurposeHook(record, purpose)).ToList();
         foreach (ushort scan in RazerSnapTapDriverProtocol.ScanCodes(purpose))
         {
             byte[] owned = RazerSnapTapDriverProtocol.EncodeHook(scan, purpose);
             if (hooks.Any(record => record.AsSpan().SequenceEqual(owned)))
             {
+                // Before each submission, durable evidence shrinks to the hooks still
+                // to clear, without this one: a process ended mid-cleanup stays
+                // recoverable, and an in-flight clear is never replayed.
+                remaining.RemoveAll(record => record.AsSpan().SequenceEqual(owned));
+                recordRemaining?.Invoke(remaining.ToArray());
                 // The caller must prove child exit before this independent read/clear.
                 // Never synthesize a guessed key release or reset the driver.
                 setSubmissionPending(true);
@@ -438,6 +623,14 @@ internal static class SnapTapDriverSupervisor
         }
         return true;
     }
+
+    // The stall gates treat any failure this worker published, terminal or not, as its
+    // own claim, except the two fixed clean-pause failures that IsCleanPause admits.
+    internal static DiagnosticFailure? MatchingWorkerFailure(
+        SnapTapRuntimeStatus? status, int processId, DateTimeOffset startedAt) =>
+        MatchingTerminalFailure(status, processId, startedAt)
+        ?? (status is { Failure: { } failure } && status.ProcessId == processId && status.UpdatedAt >= startedAt
+            && !IsCleanPause(SnapTapDriverLoop.CleanPauseExitCode, status, processId, startedAt) ? failure : null);
 
     internal static DiagnosticFailure? MatchingTerminalFailure(
         SnapTapRuntimeStatus? status,
@@ -555,8 +748,135 @@ internal static class SnapTapDriverSupervisor
         throw new InvalidOperationException("Windows boot identity is unavailable.");
     }
 
+    // SupervisorProcessId and CreatedAt identify the writer; journals from earlier
+    // builds lack them and keep the explicit-retry-only behavior. Latched records a
+    // supervisor that deliberately left the journal for explicit recovery.
     internal sealed record OwnershipJournal(string BootIdentity, byte[][] BaselineHooks,
-        KeyboardDriverFeatures Features = KeyboardDriverFeatures.SnapTap);
+        KeyboardDriverFeatures Features = KeyboardDriverFeatures.SnapTap,
+        int? SupervisorProcessId = null, DateTimeOffset? CreatedAt = null, bool Latched = false);
+
+    // A same-boot, unlatched journal whose supervisor no longer runs was left by an
+    // owner terminated before its own reconciliation. Its hooks come only from that
+    // owner's worker evidence; none is needed when no OpenBlade hook remains, and the
+    // caller's reconciliation refuses any OpenBlade hook the evidence does not name.
+    internal static bool TryReadTerminatedOwner(OwnershipJournal previous, out string? evidencePath,
+        out IReadOnlyList<byte[]>? hooks, out int workerId) => TryReadTerminatedOwner(previous, Environment.ProcessId,
+            IsLiveSince, RazerKeyboardOwnedHookEvidence.PathFor, out evidencePath, out hooks, out workerId);
+
+    internal static bool TryReadTerminatedOwner(OwnershipJournal previous, int currentProcessId,
+        Func<int, DateTimeOffset, bool> isLiveSince, Func<int, string> evidencePathFor,
+        out string? evidencePath, out IReadOnlyList<byte[]>? hooks, out int workerId)
+    {
+        evidencePath = null;
+        hooks = null;
+        workerId = 0;
+        if (previous.Latched || previous.SupervisorProcessId is not int owner || owner <= 0
+            || owner == currentProcessId || previous.CreatedAt is not DateTimeOffset createdAt
+            || isLiveSince(owner, createdAt))
+        {
+            return false;
+        }
+        string path = evidencePathFor(owner);
+        RazerKeyboardOwnedHookEvidence.Evidence? evidence;
+        try
+        {
+            evidence = RazerKeyboardOwnedHookEvidence.ReadTerminatedOwner(path, createdAt,
+                RazerKeyboardHookScope.Purpose(previous.Features));
+        }
+        catch (Exception exception) when (exception is IOException or InvalidDataException or JsonException
+            or UnauthorizedAccessException or ArgumentException)
+        {
+            DiagnosticTrace.TraceException("OpenBlade.SessionAgent.SnapTapDriverSupervisor",
+                "ReadTerminatedOwnerEvidence", exception);
+            return false;
+        }
+        if (evidence is not null && isLiveSince(evidence.ProcessId, evidence.UpdatedAt))
+        {
+            return false;
+        }
+        evidencePath = path;
+        hooks = evidence?.Hooks ?? [];
+        workerId = evidence?.ProcessId ?? 0;
+        return true;
+    }
+
+    // True when a running process with this id started no later than notAfter, so it
+    // may be the recorded owner. A later start is a reused id. An unreadable process
+    // cannot be ruled out.
+    internal static bool IsLiveSince(int processId, DateTimeOffset notAfter)
+    {
+        Process process;
+        try { process = Process.GetProcessById(processId); }
+        catch (ArgumentException) { return false; }
+        using (process)
+        {
+            try { return !process.HasExited && process.StartTime.ToUniversalTime() <= notAfter.UtcDateTime; }
+            catch (InvalidOperationException) { return false; }
+            catch (System.ComponentModel.Win32Exception) { return true; }
+        }
+    }
+
+    internal const int LatchMarkAttempts = 3;
+
+    // Marks the journal latched. A concurrent reader or I/O error can block the
+    // replace, so it retries briefly and then fails closed: a refusal marker in the
+    // owner's evidence path makes a later start treat the journal as not terminated.
+    internal static bool MarkJournalLatched(string path, string evidencePath)
+    {
+        if (TryWriteJournalLatch(path, latched: true, "MarkJournalLatched")) { return true; }
+        try { RazerKeyboardOwnedHookEvidence.WriteRefusal(evidencePath); }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            DiagnosticTrace.TraceException("OpenBlade.SessionAgent.SnapTapDriverSupervisor",
+                "WriteLatchRefusal", exception);
+            // Last resort: without evidence, any remaining OpenBlade hook still refuses.
+            try { File.Delete(evidencePath + ".tmp"); File.Delete(evidencePath); }
+            catch (Exception deleteException) when (deleteException is IOException or UnauthorizedAccessException)
+            {
+                DiagnosticTrace.TraceException("OpenBlade.SessionAgent.SnapTapDriverSupervisor",
+                    "DeleteLatchEvidence", deleteException);
+            }
+        }
+        return false;
+    }
+
+    // Reopens a journal this supervisor latched before an uncertain cleanup that then
+    // passed every resume check. Failure leaves it latched, so the caller stays latched.
+    internal static bool ClearJournalLatch(string path) =>
+        TryWriteJournalLatch(path, latched: false, "ClearJournalLatch");
+
+    private static bool TryWriteJournalLatch(string path, bool latched, string operation)
+    {
+        Exception? last = null;
+        for (int attempt = 0; attempt < LatchMarkAttempts; attempt++)
+        {
+            try
+            {
+                OwnershipJournal? journal = DriverOwnershipJournalReader.Read(path);
+                if (journal is null) { return latched; }
+                if (journal.Latched == latched) { return true; }
+                string temporary = path + ".tmp";
+                using (var stream = new FileStream(temporary, FileMode.Create, FileAccess.Write, FileShare.None,
+                           4096, FileOptions.WriteThrough))
+                {
+                    JsonSerializer.Serialize(stream, journal with { Latched = latched });
+                    stream.Flush(true);
+                }
+                File.Move(temporary, path, overwrite: true);
+                return true;
+            }
+            catch (Exception exception) when (exception is IOException or InvalidDataException or JsonException
+                or UnauthorizedAccessException)
+            {
+                last = exception;
+                if (attempt + 1 < LatchMarkAttempts) { Thread.Sleep(50); }
+            }
+        }
+        DiagnosticTrace.TraceException("OpenBlade.SessionAgent.SnapTapDriverSupervisor", operation, last!);
+        try { File.Delete(path + ".tmp"); }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { }
+        return false;
+    }
 
     internal static bool IsValidOwnershipJournalScope(string fileName, KeyboardDriverFeatures features) => fileName switch
     {

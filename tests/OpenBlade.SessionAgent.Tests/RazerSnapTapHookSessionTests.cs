@@ -138,6 +138,17 @@ public sealed class RazerSnapTapHookSessionTests
     }
 
     [Fact]
+    public void NativeHookSetRefusedByStopGuardThrowsDeferredBeforeSubmission()
+    {
+        int checks = 0;
+        using var transport = new RazerSnapTapDriverTransport(@"\\.\NUL", () => true,
+            canSetHook: () => { checks++; return false; });
+        Assert.Throws<KeyboardSubmissionDeferredException>(() =>
+            transport.SetHook(RazerSnapTapDriverProtocol.EncodeHook(0x1E, RazerKeyboardHookPurpose.SnapTap)));
+        Assert.Equal(1, checks);
+    }
+
+    [Fact]
     public void FailurePreservesRedactedMessageAndNativeInnerCause()
     {
         var transport = new FakeTransport

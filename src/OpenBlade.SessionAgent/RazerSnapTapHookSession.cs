@@ -33,6 +33,8 @@ internal sealed class RazerSnapTapHookSession
     private readonly IRazerSnapTapHookTransport transport;
     private readonly RazerKeyboardHookPurpose purpose;
     private readonly Action<IReadOnlyList<byte[]>>? recordOwnership;
+    private readonly Action<string>? reportStage;
+    private readonly Func<bool>? shouldStop;
     private readonly List<byte[]> ownedHooks = [];
     private IReadOnlyList<byte[]> baselineHooks = [];
     private RazerSnapTapHookSessionState state;
@@ -43,12 +45,15 @@ internal sealed class RazerSnapTapHookSession
 
     internal RazerSnapTapHookSession(IRazerSnapTapHookTransport transport,
         RazerKeyboardHookPurpose purpose = RazerKeyboardHookPurpose.SnapTap,
-        Action<IReadOnlyList<byte[]>>? recordOwnership = null)
+        Action<IReadOnlyList<byte[]>>? recordOwnership = null,
+        Action<string>? reportStage = null, Func<bool>? shouldStop = null)
     {
         this.transport = transport ?? throw new ArgumentNullException(nameof(transport));
         _ = RazerSnapTapDriverProtocol.ScanCodes(purpose);
         this.purpose = purpose;
         this.recordOwnership = recordOwnership;
+        this.reportStage = reportStage;
+        this.shouldStop = shouldStop;
     }
 
     internal RazerSnapTapHookSessionState State { get { lock (gate) { return state; } } }
@@ -79,11 +84,9 @@ internal sealed class RazerSnapTapHookSession
             try
             {
                 using var mutation = RazerKeyboardHookMutationGate.Enter();
-                failureStage = "BaselineRead";
-                failureReason = "DriverRequestFailed";
+                SetStage("BaselineRead", "DriverRequestFailed");
                 baselineHooks = ReadSnapshot();
-                failureStage = "BaselineValidation";
-                failureReason = "HookValidationFailed";
+                SetStage("BaselineValidation", "HookValidationFailed");
                 if (baselineHooks.Any(record =>
                     RazerSnapTapDriverProtocol.TryDecodeHook(record, record.Length, out var hook)
                     && hook is not null && RazerSnapTapDriverProtocol.IsPurposeHook(hook, RazerKeyboardHookPurpose.Combined)))
@@ -99,14 +102,19 @@ internal sealed class RazerSnapTapHookSession
                 foreach (ushort scanCode in RazerSnapTapDriverProtocol.ScanCodes(purpose))
                 {
                     byte[] hook = RazerSnapTapDriverProtocol.EncodeHook(scanCode, purpose);
+                    SetStage("HookMutation", "SetHookFailed");
+                    if (shouldStop?.Invoke() == true)
+                    {
+                        // Leave setup between hooks, before any submission. The worker
+                        // takes the clean-pause exit; the guardian clears the owned hooks.
+                        throw new KeyboardSubmissionDeferredException();
+                    }
                     mutationPending = true;
-                    failureStage = "HookMutation";
-                    failureReason = "SetHookFailed";
                     transport.SetHook((byte[])hook.Clone());
-                    failureStage = "HookReadback";
-                    failureReason = "HookReadbackFailed";
+                    SetStage("HookReadback", "HookReadbackFailed");
                     VerifyOwnedHooks(ReadSnapshot(), [.. ownedHooks, hook]);
                     ownedHooks.Add(hook);
+                    reportStage?.Invoke("OwnershipRecord");
                     recordOwnership?.Invoke(Copy(ownedHooks));
                     mutationPending = false;
                 }
@@ -115,11 +123,9 @@ internal sealed class RazerSnapTapHookSession
                 // confirms records, not the file's subscription flag: Active means
                 // SetHookEnabled completed successfully, not independent flag readback.
                 mutationPending = true;
-                failureStage = "Subscription";
-                failureReason = "EnableFailed";
+                SetStage("Subscription", "EnableFailed");
                 transport.SetHookEnabled(true);
-                failureStage = "SubscriptionReadback";
-                failureReason = "HookReadbackFailed";
+                SetStage("SubscriptionReadback", "HookReadbackFailed");
                 VerifyOwnedHooks(ReadSnapshot(), ownedHooks);
                 mutationPending = false;
                 state = RazerSnapTapHookSessionState.Active;
@@ -163,6 +169,7 @@ internal sealed class RazerSnapTapHookSession
                 // Closing this file removes only its subscription. A separately
                 // opened guardian handle must clear/read back canonical owned
                 // hooks after closure; it must not retain a duplicate of our handle.
+                // Closing stays free of diagnostics callbacks.
                 failureStage = "SubscriptionClose";
                 failureReason = "CloseFailed";
                 transport.CloseSubscription();
@@ -251,6 +258,15 @@ internal sealed class RazerSnapTapHookSession
         {
             throw new InvalidOperationException("An unrelated keyboard hook was added during setup.");
         }
+    }
+
+    // reportStage is diagnostics only and must not throw: it runs inside the mutation
+    // sequence, where an exception would leave a confirmed hook unrecorded.
+    private void SetStage(string stage, string reason)
+    {
+        failureStage = stage;
+        failureReason = reason;
+        reportStage?.Invoke(stage);
     }
 
     private bool Fail(Exception exception)
