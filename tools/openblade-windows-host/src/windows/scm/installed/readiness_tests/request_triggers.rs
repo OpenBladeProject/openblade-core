@@ -9,7 +9,7 @@ use crate::installed::readiness::thermal_mutation::{
 };
 
 const RECORDED: &str = "The active application profile was recorded.";
-const CONFIRMED: &str = "Bounded thermal preset confirmed by independent paired readback. GPU clock handling and broad device capabilities remain unavailable; other native controls are incomplete.";
+const CONFIRMED: &str = "Bounded thermal preset confirmed by independent paired readback. GPU clock handling remains unavailable.";
 const AUTOMATIC: &str = "Automatic mode independently observed; no fan setter was submitted and no ownership was established.";
 const STORED: &str = "Profiles stored without automatic hardware application.";
 const VECTORS: &str = include_str!("../../../../../tests/data/request-trigger-vectors.json");

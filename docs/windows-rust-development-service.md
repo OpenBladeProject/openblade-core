@@ -1065,23 +1065,6 @@ feed, as managed does not push a change of live readings alone. A request for no
 sensors publishes `liveReadings: null`. Reads outside an ObserveState, such as a
 trigger's, ask for none.
 
-Native publishes no capability set: managed's exact-model set would claim
-controls this Service does not admit, and `capabilities: null` claims nothing.
-The managed codec refuses a confirmed active HyperBoost without a HyperBoost
-access, so a status whose confirmed state has an active HyperBoost, and only
-that status, carries an observation record: managed
-`DeviceCapabilities.Unavailable()` with `hyperBoostAccess: 0` (observed only)
-and the exact RZ09-0581 `supportsTemporaryFullCharge: true`. That member is
-not nullable, and the tray reads false as "this model has no temporary full
-charge", which the model's battery evidence refutes; true only keeps the
-tray's charge-limit actions waiting for the temporary state. The record admits
-no control. The record follows the published confirmed state in every
-projection: a fresh read, a retained read, an unavailable read and a
-mutation's own read. It applies in every mailbox composition. A confirmed
-state names no model, so the record is bound to its one producer, the exact
-RZ09-0581 performance Reader: `capability_tests` pins that Reader's identity
-to the record's and fails when another source file publishes an observation.
-
 Still unavailable natively: a reply
 for Custom High/High with Automatic fans, which the thermal read does not
 confirm, so that ObserveState has no fresh read and no live readings. A failed
@@ -1106,6 +1089,87 @@ codec decodes the native frames in `firmware-version-native-frames.json`
 request and reply codec through managed `McuVersionProtocol` and replay the
 managed three-read budget, with resume, through the native read source
 (`ServiceControlRuntimeTests.NativeFirmwareVersionMcuVectors`).
+
+#### Capability record
+
+Every status carries managed's `DeviceCapabilities` record, built by
+`service_status/capability_record.rs` from the compiled feature groups and
+whether a confirmed state identifies the exact RZ09-0581. `Snapshot::confirm`
+sets it with the confirmed state, so a fresh read, a retained read, an
+unavailable read, a battery reading and a mutation's rebased read publish the
+same record for the same state.
+
+- Without a confirmed state the record is `DeviceCapabilities.Unavailable()`,
+  what managed publishes before it reads the device.
+- With one, the record adds what managed's production factory publishes for
+  the exact model whatever it composes: HyperBoost read only with the
+  pad-less path observed only (managed's read-only fallback), THX audio for
+  `rznb12`, which the unchanged Session Agent serves, and observed local
+  dimming without Clear.
+- Each compiled group then adds managed's members for its backend, restricted
+  to what native serves: thermal (presets, Automatic fans, the Custom range,
+  unclassified external power), fans (Automatic, Fixed and Maximum, the RPM
+  range, direct transitions, manual fans on limited power, and the RPM range
+  for Balanced and Performance only, the presets `fan_recipe::Plan::select`
+  plans manual fans from), battery (charge limits 50 to 80 and protection
+  off), temporary charge (the temporary full charge, which
+  `setFullChargeOverride` refuses without `service-temporary-charge-v1`),
+  lighting (the nine admitted effects, the 6x17 layout and the logo modes;
+  keyboard brightness and refresh rates only with profiles, which serve their
+  requests), HyperBoost (writable, both paths and base modes) and Fan Stop
+  (evidence flags only, `supportsFanStop` false).
+- HyperBoost is writable only with `service-hyperboost-v1` beside the
+  lifecycle triggers, the one composition that sets HyperBoost's probes;
+  `thermal_mutation` asserts this at compile time. With `service-hyperboost-v1`
+  alone every HyperBoost request is refused, and the record keeps managed's
+  read-only HyperBoost.
+- GPU clock tuning keeps managed's absent `gpuOverclock`. The tray commits
+  tuning through `setPerformanceOverride` with `gpuClockTuning`, which the GPU
+  lane serves, but its offset editor reads its ranges from
+  `confirmedState.gpuClockOffsets`, which native does not publish, and a
+  GPU-only change while HyperBoost is active is sent as `setGpuClockTuning`,
+  which no composition serves. Each blocker has a tripwire: publishing
+  confirmed offsets fails a debug build while the record keeps `gpuOverclock`
+  absent (`capability_record::serialize_confirmed_state`), and
+  `capability_tests` fails once `setGpuClockTuning` is served.
+
+`ServiceControlRuntimeTests.NativeCapabilityRecordVectors` records the
+record managed produces for each group set through the v91 codec into
+`tests/data/capability-record-vectors.json`, and `capability_record` replays
+every row. A confirmed state names no model, so `capability_tests` binds the
+identified record to its producers: every caller of `with_mailbox_read`,
+`battery_projection` and `with_standard_performance`, over the exact
+RZ09-0581 performance Reader and its battery fixture. The diagnostic export
+summarizes the per-preset fan ranges as managed does.
+
+Known differences from managed:
+
+- With a pad connected native refuses HyperBoost entry, while the record
+  admits the pad path. The contract has no member for a pad-less-only
+  writable HyperBoost, and native's refusal tells the user to disconnect the
+  pad.
+- Native plans manual fans on AC and USB-C only (power sources 0 and 2, and
+  unclassified external power). On battery managed's
+  `PerformancePowerSourcePolicy` admits only BatterySaver and
+  BatteryBalanced, native's default desired preset there is BatterySaver,
+  and the record ranges neither, so the tray already refuses manual fans on
+  battery. The remaining case needs a desired Balanced or Performance preset
+  while on battery: managed's `FanControlPowerPolicy` would then admit Fixed
+  and Maximum, which native refuses. No path that produces one was found,
+  and the contract has no member for a per-source fan limit.
+- Under Silent, Custom or a battery preset the dashboard still lists Fixed
+  and Maximum, and choosing one reverts without a message
+  (`MainWindow.xaml.cs` restores the authoritative selection when the fan
+  command cannot run). This is latent while native publishes
+  `writesBlocked: true`.
+- The record follows the confirmed state, which native retains for 5 seconds
+  after the last completed read (`RETENTION_WINDOW` in `mailbox_read.rs`); a
+  status refresh does not renew it. After that the status returns to the
+  Unavailable record, where managed keeps its last record. Native publishes
+  no `observationReason`, so the tray cannot retain the previous record
+  across the gap. When reads are slower than the window (live readings Off or
+  at 10 seconds, or only the tray popup asking), the record and the controls
+  it admits flicker between reads.
 
 #### Diagnostic export (read-only)
 
@@ -1142,7 +1206,7 @@ with managed's message, and the response frame has managed's 24 MiB bound.
 | --- | --- |
 | `versions.json` | The status `serviceVersion`, the RtlGetVersion text managed `Environment.OSVersion` prints, and the status `firmware` record (live-reading builds); `Unavailable` otherwise. No fresh firmware read runs. |
 | `device.json`, `capabilities.json` | The status `firmware.modelNumber` against the contract's model catalog, and the status capabilities, as managed's status-only runtime. |
-| `configuration.json` | The status members managed prints. The `capability.rz09-0581.*` keys, the three `hyperBoostBase` modes and the fan speed ranges are `Unavailable`: no native status carries them. |
+| `configuration.json` | The status members managed prints. The three `hyperBoostBase` modes come from the status `hyperBoostBaseModes`. The `capability.rz09-0581.*` keys are `Unavailable`: no native status carries them. The fan speed ranges by preset print managed's `Preset:minimum-maximum/step` entries in preset order (`Balanced:2000-5400/100, Performance:2000-5400/100` with fans), and `Unavailable` for an empty map. |
 | `command-results.json`, `service-history.json` | The bounded history below. |
 | `device-verification.json` | Managed's `NotObserved` record: native has no device verification cache. |
 | `firmware-queries.json` | `[]`: native keeps no firmware query cache. |
@@ -1150,12 +1214,11 @@ with managed's message, and the response frame has managed's 24 MiB bound.
 | `experimental-support.json` | Absent, as managed omits it without an experimental model. |
 | `logs.jsonl` | Empty: native has no `ILogger` or trace producer. |
 
-A status capability member that no native summary prints
-(`customPerformance`, `cpuPowerLimit`, `intelCpuPowerLimit`, `localDimming`,
-`cpuVoltageOptimizer`, `gpuOverclock`, `hyperBoostBaseModes`, a non-empty
-`fanSpeedRangesByPerformancePreset` or
-`observedPowerSourceBehaviors`) fails the export instead of omitting it. No
-native composition publishes one today.
+`capabilities.json` prints managed's typed summaries of `customPerformance`,
+`localDimming` and `gpuOverclock`. A status capability member that no native
+summary prints (`cpuPowerLimit`, `intelCpuPowerLimit`, `cpuVoltageOptimizer`
+or a non-empty `observedPowerSourceBehaviors`) fails the export instead of
+omitting it. No native composition publishes one today.
 
 The history is managed `DiagnosticHistory`: 2048 entries, 4 Mi characters and
 4096 characters a line, each value redacted, put on one line and truncated
@@ -2266,7 +2329,7 @@ product ABI are unchanged.
 
 ### Known compatibility gaps
 
-- With null capabilities the tray's `ProfileAdmissionPolicy.Supports` refuses every profile draft. Beside an observed HyperBoost, the observation record lets it admit a draft that changes nothing, and it still refuses any change. Native profile admission stays authoritative, so the tray is unchanged.
+- The tray's `ProfileAdmissionPolicy.Supports` admits profile drafts from the [capability record](#capability-record) of the compiled groups. Native profile admission stays authoritative, so the tray is unchanged.
 - Session Display IPC stays at version 2 although main changed what it means. Manual setters now admit `ExternalUnknown` with fresh Service external-power evidence, and the display checkpoint admits source 3 as an unowned manual hold. The native Agent implements both. A version-2 peer built before that change refuses an `ExternalUnknown` manual request and treats a source-3 checkpoint as invalid, so automation pauses with every field uncertain. Both outcomes fail closed. The version number cannot tell the two behaviours apart.
 - The read-only protocol-51 projection keeps a confirmed Custom preset whose levels the firmware did not report, with `customPerformance` null. Protocol 91 admits that state; every v51-era managed reader rejects it, because `ValidPerformanceState` requires `IsWellFormed`, so such a status fails closed. This branch made that choice before the reconciliation and did not revisit it.
 
@@ -2335,12 +2398,9 @@ no backend for it:
 
 - `status.windowsDynamicLightingAdvisory` is absent and decodes as `Unknown`.
   The native Service has no Windows Dynamic Lighting advisory.
-- `capabilities` stays null except beside a confirmed HyperBoost state. That
-  observation record carries `hyperBoostEntryRestriction: null` and
-  `blade14KeyboardEdition: null`, as managed writes them for
-  `DeviceCapabilities.Unavailable()`. It omits main's
-  `intelCpuPowerLimit`, `firmwareGamingGpuOverclockAccess` and
-  `localDimming`, which decode as null.
+- `capabilities` is the [capability record](#capability-record). It omits
+  main's `intelCpuPowerLimit` and `firmwareGamingGpuOverclockAccess`, which
+  decode as null.
 - `confirmedState.localDimmingActive` is absent and decodes as null
   (unknown). The native Service has no local-dimming read.
 - `coolingPad` is absent. The native Service has no cooling-pad backend, so it

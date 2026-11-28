@@ -47,6 +47,7 @@
     <None Include="../../tools/openblade-windows-host/tests/data/hyperboost-owned-vectors.json" Link="hyperboost-owned-vectors.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../tools/openblade-windows-host/tests/data/hyperboost-journal-vectors.json" Link="hyperboost-journal-vectors.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../tools/openblade-windows-host/tests/data/fan-stop-vectors.json" Link="fan-stop-vectors.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../tools/openblade-windows-host/tests/data/capability-record-vectors.json" Link="capability-record-vectors.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../tools/openblade-windows-host/tests/data/display-brightness-hid-vectors.json" Link="display-brightness-hid-vectors.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../tools/openblade-windows-host/tests/data/performance-shortcut-vectors.json" Link="performance-shortcut-vectors.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../tools/openblade-windows-host/tests/data/firmware-version-vectors.json" Link="firmware-version-vectors.json" CopyToOutputDirectory="PreserveNewest" />

@@ -120,7 +120,7 @@ async fn a_paired_write_submits_the_offsets_after_the_confirmed_preset() {
     assert_eq!(reply["result"]["status"], 1, "{reply}");
     assert_eq!(
         message(&reply),
-        "Bounded thermal preset and GPU clock tuning confirmed by independent readback. Broad device capabilities remain unavailable; other native controls are incomplete."
+        "Bounded thermal preset and GPU clock tuning confirmed by independent readback."
     );
     assert_eq!(rig.port.state.lock().unwrap().selectors, [2; 2]);
     assert_eq!(fake.current(), (125, 500));
@@ -153,7 +153,7 @@ async fn no_tuning_relinquishes_and_writes_no_offsets() {
     assert_eq!(reply["result"]["status"], 1, "{reply}");
     assert_eq!(
         message(&reply),
-        "Bounded thermal preset confirmed by independent paired readback. Broad device capabilities remain unavailable; other native controls are incomplete."
+        "Bounded thermal preset confirmed by independent paired readback."
     );
     // The driver keeps what it holds: nothing restores it.
     assert_eq!(

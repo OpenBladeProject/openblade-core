@@ -58,9 +58,13 @@ public sealed class NativeThermalMutationResponseTests
             if (response.Status is { } status)
             {
                 Assert.Null(response.Result);
-                // Native publishes no capability set. Only a confirmed HyperBoost
-                // state carries the observation record the codec requires there.
-                Assert.Equal(status.ConfirmedState?.HyperBoostActive == true, status.Capabilities is not null);
+                // Every status carries a record: managed's Unavailable record
+                // before identity, and the record of the compiled composition
+                // once a confirmed state identifies the exact model.
+                Assert.NotNull(status.Capabilities);
+                bool identified = status.ConfirmedState is not null;
+                Assert.Equal(identified, status.Capabilities.HyperBoostAccess is not null);
+                Assert.Equal(identified, status.Capabilities.PerformancePresets.Count > 0);
                 Assert.Null(response.Archive);
                 if (status.ConfirmedState is { Performance: PerformancePreset.Custom, CustomPerformance: null } partial)
                 {
@@ -78,9 +82,9 @@ public sealed class NativeThermalMutationResponseTests
                     using var malformedFrame = FrameJson(malformed.ToJsonString());
                     await Assert.ThrowsAsync<InvalidDataException>(() => IpcMessageCodec.ReadServerFrameAsync(malformedFrame, CancellationToken.None));
                 }
-                if (status.ConfirmedState?.Performance is PerformancePreset.Balanced or PerformancePreset.Performance)
+                if (status.ConfirmedState?.Performance is { } preset and (PerformancePreset.Balanced or PerformancePreset.Performance))
                 {
-                    Assert.Null(status.Capabilities);
+                    Assert.Contains(preset, status.Capabilities.PerformancePresets);
                     // A later metadata projection keeps confirmed presentation,
                     // but cannot renew the mutation's independent read authority.
                     Assert.True(status.WritesBlocked);

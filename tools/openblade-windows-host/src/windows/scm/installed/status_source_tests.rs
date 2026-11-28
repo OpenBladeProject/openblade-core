@@ -151,8 +151,9 @@ fn assert_read_only(status: &Value) {
     assert_eq!(status["deviceVerified"], false);
     assert_eq!(status["writesBlocked"], true);
     assert_eq!(status["serviceVersion"], env!("CARGO_PKG_VERSION"));
+    // No identity, no record: managed's Unavailable record.
+    assert_eq!(status["capabilities"], capability_record(false));
     for field in [
-        "capabilities",
         "confirmedState",
         "liveReadings",
         "performanceOverride",
@@ -699,7 +700,10 @@ async fn guarded_sticky_read_loss_retains_current_metadata_and_expires_both_proj
         let value = to_value(status).unwrap();
         assert!(value["message"].as_str().unwrap().contains("retained"));
         assert_eq!(value["deviceVerified"], false);
-        assert!(value["capabilities"].is_null());
+        // A retained confirmed state keeps the identified record (managed
+        // retains its record beside the state it retains).
+        assert!(!value["confirmedState"].is_null());
+        assert_eq!(value["capabilities"], capability_record(true));
     }
     reader.expire_for_tests();
     source.refresh_publications().await.unwrap();
@@ -707,7 +711,7 @@ async fn guarded_sticky_read_loss_retains_current_metadata_and_expires_both_proj
     for status in [&publication.active, &publication.inactive] {
         let value = to_value(status).unwrap();
         assert!(value["confirmedState"].is_null());
-        assert!(value["capabilities"].is_null());
+        assert_eq!(value["capabilities"], capability_record(false));
         assert_eq!(value["writesBlocked"], true);
         assert!(value["message"].as_str().unwrap().contains("expired"));
     }
@@ -1074,4 +1078,11 @@ async fn drain_waits_for_a_stalled_observer_only_until_its_deadline() {
         }
         release.store(true, Ordering::Release);
     }
+}
+
+/// This composition's capability record with or without a confirmed state.
+fn capability_record(identified: bool) -> Value {
+    Value::from(crate::service_status::capability_record::compiled(
+        identified,
+    ))
 }

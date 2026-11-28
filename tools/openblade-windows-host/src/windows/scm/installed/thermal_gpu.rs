@@ -427,14 +427,12 @@ pub(super) fn lost(half: Half) -> Option<Completed> {
 /// GPU half `completed` confirmed, if it had one.
 pub(super) fn confirmed(completed: Option<&Completed>) -> &'static str {
     match completed.map(|c| c.message.as_str()) {
-        None => {
-            "Bounded thermal preset confirmed by independent paired readback. Broad device capabilities remain unavailable; other native controls are incomplete."
-        }
+        None => "Bounded thermal preset confirmed by independent paired readback.",
         Some(APPLIED) => {
-            "Bounded thermal preset and GPU clock tuning confirmed by independent readback. Broad device capabilities remain unavailable; other native controls are incomplete."
+            "Bounded thermal preset and GPU clock tuning confirmed by independent readback."
         }
         Some(_) => {
-            "Bounded thermal preset confirmed by independent paired readback, and GPU clock tuning by fresh readback after an indeterminate submission. Broad device capabilities remain unavailable; other native controls are incomplete."
+            "Bounded thermal preset confirmed by independent paired readback, and GPU clock tuning by fresh readback after an indeterminate submission."
         }
     }
 }

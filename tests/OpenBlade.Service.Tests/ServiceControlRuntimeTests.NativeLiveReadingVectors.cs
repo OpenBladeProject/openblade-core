@@ -9,10 +9,9 @@ namespace OpenBlade.Service.Tests;
 // The native Service's live readings are pinned against managed. Fan rows replay
 // FanRpmProtocol through the managed RazerReport codec with the three-byte
 // payload length FanRpmQueryPort gives the 0D/88 getter. Battery rows replay the
-// WindowsPowerStateProvider mappings. The capability row is the record native
-// publishes only beside a confirmed HyperBoost state, written through the real v91
-// status codec. Native frames are recorded by the Rust tests and decoded here
-// through the same codec.
+// WindowsPowerStateProvider mappings. Native frames are recorded by the Rust tests
+// and decoded here through the real v91 status codec, each with the managed
+// capability record of its composition (capability-record-vectors.json).
 public sealed partial class ServiceControlRuntimeTests
 {
     private const string NativeLiveReadingVectors = "live-reading-vectors.json";
@@ -27,12 +26,10 @@ public sealed partial class ServiceControlRuntimeTests
         + "(offset to byte), a recomputed checksum (inverted when corruptChecksum) and its envelope length. "
         + "Its expect is the decoded RPM or the managed validation failure. A battery-health row is "
         + "WindowsPowerStateProvider.MapBatteryHealth over its (design, full charge) capacities; a power-flow "
-        + "row is MapBatteryPowerFlow. The capability row is DeviceCapabilities.Unavailable() with "
-        + "HyperBoostAccess ObservedOnly and the exact RZ09-0581 SupportsTemporaryFullCharge as the v91 "
-        + "status codec writes it beside a confirmed HyperBoost state.";
+        + "row is MapBatteryPowerFlow.";
 
     private static readonly string[] NativeLiveReadingSections =
-        ["requests", "replies", "batteryHealth", "batteryPowerFlow", "capabilities"];
+        ["requests", "replies", "batteryHealth", "batteryPowerFlow"];
 
     [Fact]
     public async Task NativeLiveReadingVectors_MatchManagedCodecAndMappings()
@@ -110,13 +107,6 @@ public sealed partial class ServiceControlRuntimeTests
                 (uint)row["rate"]!));
         }
 
-        foreach (JsonNode? entry in root["capabilities"]!.AsArray())
-        {
-            JsonObject row = entry!.AsObject();
-            Assert.Equal("hyperBoostObservedOnly", (string)row["name"]!);
-            Record(row, "capabilities", await ObservedHyperBoostCapabilitiesAsync());
-        }
-
         if (!string.IsNullOrEmpty(output))
         {
             // One row per line keeps the shared file reviewable in a diff.
@@ -147,50 +137,19 @@ public sealed partial class ServiceControlRuntimeTests
         }
     }
 
-    // The real codec must accept the record beside a confirmed HyperBoost state:
-    // it requires an ObservedOnly, ReadOnly or ReadWrite HyperBoost access there.
-    // The non-nullable SupportsTemporaryFullCharge keeps the exact RZ09-0581 value:
-    // false would tell the tray the model has no temporary full charge, which its
-    // battery evidence refutes, where a null record leaves that unknown.
-    private async Task<JsonNode> ObservedHyperBoostCapabilitiesAsync()
-    {
-        TestContext context = CreateContext(providerAvailable: true);
-        await context.Runtime.ObserveAsync(CancellationToken.None);
-        ServiceStatusSnapshot status = context.Runtime.GetStatus() with
-        {
-            Capabilities = DeviceCapabilities.Unavailable() with
-            {
-                HyperBoostAccess = DeviceFeatureAccess.ObservedOnly,
-                SupportsTemporaryFullCharge = true,
-            },
-            ConfirmedState = new ConfirmedDeviceState(null, FanMode.Automatic, null, null)
-            {
-                HyperBoostActive = true,
-            },
-        };
-        using var stream = new MemoryStream();
-        await IpcMessageCodec.WriteServerFrameAsync(
-            stream,
-            new ServiceStatusEvent(OpenBladeIpc.ProtocolVersion, status),
-            CancellationToken.None);
-        byte[] framed = stream.ToArray();
-        stream.Position = 0;
-        var decoded = Assert.IsType<ServiceStatusEvent>(
-            await IpcMessageCodec.ReadServerFrameAsync(stream, CancellationToken.None));
-        Assert.True(decoded.Status.ConfirmedState!.HyperBoostActive);
-        JsonNode frame = JsonNode.Parse(framed.AsSpan(4))!;
-        return frame["status"]!["capabilities"]!.DeepClone();
-    }
-
     // Every native frame the Rust tests recorded decodes through the strict
-    // v91 codec. Only a confirmed HyperBoost frame carries a capability record,
-    // and no record denies the exact model's temporary full charge.
+    // v91 codec, and carries the managed record of its composition: the
+    // identified read-only record beside a confirmed state, and managed's
+    // unavailable record without one.
     [Fact]
     public async Task NativeLiveReadingFrames_DecodeThroughTheManagedCodec()
     {
         string path = Path.Combine(AppContext.BaseDirectory, NativeLiveReadingFrames);
         JsonArray rows = JsonNode.Parse(File.ReadAllText(path))!["frames"]!.AsArray();
         Assert.NotEmpty(rows);
+        Dictionary<string, JsonNode> records = JsonNode.Parse(File.ReadAllText(
+                Path.Combine(AppContext.BaseDirectory, NativeCapabilityRecordVectors)))!["rows"]!.AsArray()
+            .ToDictionary(row => (string)row!["name"]!, row => row!["record"]!);
         var names = new HashSet<string>();
         foreach (JsonNode? entry in rows)
         {
@@ -207,11 +166,10 @@ public sealed partial class ServiceControlRuntimeTests
             ServiceStatusSnapshot status = decoded.Status;
             JsonNode expected = entry["expect"]!;
             Assert.Equal((bool?)expected["hyperBoostActive"], status.ConfirmedState?.HyperBoostActive);
-            Assert.Equal(
-                (bool)expected["hyperBoostObservedOnly"]!,
-                status.Capabilities?.HyperBoostAccess == DeviceFeatureAccess.ObservedOnly);
-            Assert.Equal(status.ConfirmedState?.HyperBoostActive == true, status.Capabilities is not null);
-            Assert.NotEqual(false, status.Capabilities?.SupportsTemporaryFullCharge);
+            string row = status.ConfirmedState is null ? "unidentified" : "read only";
+            Assert.Equal(row, (string)expected["capabilityRow"]!);
+            Assert.True(JsonNode.DeepEquals(records[row], JsonNode.Parse(json)!["status"]!["capabilities"]), name);
+            Assert.Equal(status.ConfirmedState is not null, status.Capabilities!.HyperBoostAccess is not null);
             Assert.Equal((int?)expected["fan1Rpm"], status.LiveReadings?.Fan1Rpm);
             Assert.Equal((int?)expected["fan2Rpm"], status.LiveReadings?.Fan2Rpm);
             Assert.Equal(

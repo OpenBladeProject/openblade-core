@@ -300,38 +300,9 @@ pub(crate) fn requested_live_readings() -> u8 {
     LIVE_READINGS.try_with(|mask| *mask).unwrap_or(0)
 }
 
-/// The capability record a confirmed state needs, or null. Native publishes
-/// no capability set, because managed's exact-model set would claim controls
-/// this Service does not admit, and a null record claims nothing. The managed
-/// codec refuses a confirmed active HyperBoost without a HyperBoost access,
-/// so that state alone carries a record: managed
-/// `DeviceCapabilities.Unavailable()` with HyperBoost observed only and the
-/// exact RZ09-0581 temporary full charge, which admits no control. The
-/// non-nullable `supportsTemporaryFullCharge` is the one member consumers
-/// read differently from a null record, where false means the model has
-/// none. Pinned to the managed codec's output by the live-reading vectors.
-///
-/// A confirmed state names no model, so the record is bound to the one
-/// producer of an active HyperBoost: `with_mailbox_read` over the exact
-/// RZ09-0581 performance Reader (`OBSERVED_CAPABILITIES_MODEL`). A second
-/// model's observation needs its own record and an identity to select it.
 #[cfg(feature = "installed-service-candidate")]
-fn observed_capabilities(confirmed: Option<&FeatureRecord>) -> Option<FeatureRecord> {
-    let hyper_boost = confirmed.and_then(|state| state.get("hyperBoostActive"));
-    (hyper_boost == Some(&Value::Bool(true))).then(|| {
-        #[cfg_attr(not(feature = "service-fan-stop-v1"), allow(unused_mut))]
-        let mut record: FeatureRecord =
-            serde_json::from_str(include_str!("service_status/observed_capabilities.json"))
-                .expect("the reviewed observation capability record");
-        // Managed admits both Fan Stop evidence flags on exact RZ09-0581;
-        // `supportsFanStop` stays false while the guardian is unavailable.
-        #[cfg(feature = "service-fan-stop-v1")]
-        for evidence in ["hasFanStopTrialEvidence", "hasFanStopSourceEvidence"] {
-            record.insert(evidence.into(), Value::Bool(true));
-        }
-        record
-    })
-}
+#[path = "service_status/capability_record.rs"]
+pub(crate) mod capability_record;
 
 /// The one model with reviewed Fan Stop evidence: managed admits trial
 /// evidence on exact RZ09-0581 (`IsExactModelScopedRz090581Identity`) and
@@ -339,8 +310,8 @@ fn observed_capabilities(confirmed: Option<&FeatureRecord>) -> Option<FeatureRec
 #[cfg(feature = "installed-service-candidate")]
 pub(crate) const FAN_STOP_EVIDENCE_MODEL: &str = "RZ09-0581";
 
-/// The exact model, as (model, vendor ID, product ID), whose observation the
-/// record describes.
+/// The exact model, as (model, vendor ID, product ID), whose confirmed state
+/// the capability record (`capability_record`) describes.
 #[cfg(all(windows, feature = "service-mailbox-observation-v1"))]
 pub(crate) const OBSERVED_CAPABILITIES_MODEL: (&str, u16, u16) = ("RZ09-0581", 0x1532, 0x02e0);
 
@@ -1356,6 +1327,10 @@ pub(crate) struct Snapshot {
     external_changes: Vec<i32>,
     message: String,
     capabilities: Option<FeatureRecord>,
+    #[cfg_attr(
+        feature = "installed-service-candidate",
+        serde(serialize_with = "capability_record::serialize_confirmed_state")
+    )]
     confirmed_state: Option<FeatureRecord>,
     profiles: Profiles,
     desired_state: DesiredState,
@@ -1535,7 +1510,8 @@ impl Snapshot {
             controller_detection_warning: controller_detection_warning.map(str::to_owned),
             external_changes: Vec::new(),
             message,
-            capabilities: None,
+            // Managed publishes its unavailable record until it reads the device.
+            capabilities: Some(capability_record::compiled(false)),
             confirmed_state: None,
             profiles,
             desired_state,
@@ -1657,12 +1633,15 @@ impl Snapshot {
         Some(self)
     }
 
-    /// Publishes `state` as the confirmed state with the capability record it
-    /// needs (`observed_capabilities`), so every publication of one confirmed
-    /// state, from a read, a retained read or a mutation, carries one record.
+    /// Publishes `state` as the confirmed state with this composition's
+    /// capability record (`capability_record::record`): managed's identified
+    /// record beside a confirmed exact state, and its unavailable record
+    /// without one. Every publication of one confirmed state, from a read, a
+    /// retained read, an unavailable read, a battery reading or a mutation,
+    /// carries one record.
     #[cfg(feature = "installed-service-candidate")]
     fn confirm(&mut self, state: Option<FeatureRecord>) {
-        self.capabilities = observed_capabilities(state.as_ref());
+        self.capabilities = Some(capability_record::compiled(state.is_some()));
         self.confirmed_state = state;
     }
     #[cfg(all(windows, feature = "service-mailbox-observation-v1"))]
@@ -1689,7 +1668,7 @@ impl Snapshot {
         self.feature_fields
             .insert("keyboardDriverModeActive".into(), Value::Null);
         self.writes_blocked = true;
-        self.set_public_message("Thermal settings read. Native controls remain unavailable.");
+        self.set_public_message("Thermal settings read.");
         self.read_confirmation = Some(confirmation);
         self
     }
@@ -2306,7 +2285,9 @@ impl Snapshot {
             // Preserve unrelated observations and unknowns without manufacturing
             // a thermal result to carry a confirmed battery reading.
             if !(raw == 0x50 && temporary == Some(true)) {
-                let state = self.confirmed_state.get_or_insert_with(|| {
+                // The exact RZ09-0581 battery reading confirms the state, so
+                // it publishes through `confirm` with that state's record.
+                let mut state = self.confirmed_state.take().unwrap_or_else(|| {
                     FeatureRecord::from_iter([
                         ("performance".into(), Value::Null),
                         ("fans".into(), Value::Null),
@@ -2315,6 +2296,7 @@ impl Snapshot {
                     ])
                 });
                 state.insert("battery".into(),serde_json::json!({"protectionEnabled":raw!=0x50,"chargeLimitPercent":if raw==0x50{None}else{Some(raw&0x7f)},"temporaryFullCharge":temporary}));
+                self.confirm(Some(state));
             }
         }
         if !message.is_empty() {

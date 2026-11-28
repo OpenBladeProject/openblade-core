@@ -37,6 +37,7 @@ public sealed class NativeDiagnosticExportVectorTests
     [
         typeof(BladeSupportBasis),
         typeof(BreathingColorMode),
+        typeof(CustomPerformanceLevel),
         typeof(DeviceFeatureAccess),
         typeof(DeviceSubsystem),
         typeof(FanMode),

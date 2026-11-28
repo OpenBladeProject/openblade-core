@@ -229,8 +229,10 @@ Breathing Single needs its primary color and Dual both, Random needs none,
 Starlight's durations are 500, 1500 and 2000 ms, and Fire's parameters admit
 only Fire. Reactive, Ripple, AmbientAwareness, AudioMeter and Sequence are
 stored and refused as managed refuses an effect its capability table lacks
-(`deferred_effects_are_refused_by_the_table_divergence`). No capability
-record is published (`capabilities` stays null).
+(`deferred_effects_are_refused_by_the_table_divergence`). The
+[capability record](windows-rust-development-service.md#capability-record) lists exactly the nine admitted
+effects, the 6x17 layout and the logo modes, and keyboard brightness and
+refresh rates only when profiles serve their requests.
 
 The frame math is managed's effects, ported exactly
 (`performance/lighting_effects.rs`). `NativeLightingEffectVectorTests`
