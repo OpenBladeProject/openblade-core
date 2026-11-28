@@ -233,6 +233,7 @@ internal static class SnapTapDriverSupervisor
                     startGate.Set();
                     long lastHeartbeat = Environment.TickCount64;
                     bool started = false;
+                    bool killedAfterStall = false;
                     while (!worker.HasExited)
                     {
                         // Read the window flag before consuming the heartbeat. The worker
@@ -264,6 +265,7 @@ internal static class SnapTapDriverSupervisor
                                             SnapTapDiagnosticFailure.Supervisor, "SuperviseWorker",
                                             "WorkerExit", "WorkerDidNotExit", started), 1);
                                 }
+                                killedAfterStall = timedOut && !requestedStop;
                             }
                             break;
                         }
@@ -314,13 +316,45 @@ internal static class SnapTapDriverSupervisor
                     }
                     if (IsCleanStall(observedWorkerFailure, worker.ExitCode, finalStatus, worker.Id, workerStartedAt))
                     {
+                        // The observed timeout latched a clean-pause exit before cleanup.
+                        // Verified cleanup resolved it: close the journal on stop, and
+                        // reopen it before rearming so a later force-close stays recoverable.
                         if (shouldStop())
                         {
+                            clean = true;
+                            File.Delete(ownEvidence);
                             return 0;
                         }
-                        if (TryAdmitStallRearm(stallRearms, Environment.TickCount64))
+                        if (TryAdmitStallRearm(stallRearms, Environment.TickCount64) && ClearJournalLatch(journal))
                         {
                             Trace.TraceInformation("SnapTap worker stall reconciled; rearming: {0}", observedWorkerFailure);
+                            clean = false;
+                            rearming = true;
+                            continue;
+                        }
+                    }
+                    if (IsKilledStall(observedWorkerFailure, killedAfterStall, worker.ExitCode,
+                        MatchingTerminalFailure(finalStatus, worker.Id, workerStartedAt)))
+                    {
+                        // A worker frozen past the stop wait, as under boot load, was killed.
+                        // Reconciliation has cleared and read back its hooks, so this is the
+                        // terminated-owner case with a live supervisor: resume under the same
+                        // released-input check, within the shared stall-rearm budget.
+                        if (shouldStop())
+                        {
+                            if (SnapTapDriverLoop.AllReleased())
+                            {
+                                clean = true;
+                                File.Delete(ownEvidence);
+                                return 0;
+                            }
+                        }
+                        else if (WaitForReleasedInput(SnapTapDriverLoop.AllReleased, shouldStop, RetryReleaseBudgetMilliseconds)
+                            && TryAdmitStallRearm(stallRearms, Environment.TickCount64)
+                            && ClearJournalLatch(journal))
+                        {
+                            Trace.TraceInformation("SnapTap killed worker reconciled; rearming: {0}", observedWorkerFailure);
+                            File.Delete(ownEvidence);
                             clean = false;
                             rearming = true;
                             continue;
@@ -444,6 +478,20 @@ internal static class SnapTapDriverSupervisor
                 && status is { State: SnapTapRuntimeState.Off, Failure: null }
                 && status.ProcessId == processId && status.UpdatedAt >= startedAt)
             || IsCleanPause(exitCode, status, processId, startedAt));
+
+    // A worker that missed its input heartbeat and then ignored the stop for the whole
+    // wait was killed by this supervisor. Its output is as uncertain as after any
+    // force-close, so the caller resumes only after verified hook reconciliation and
+    // the released-input check that a terminated owner's recovery uses. Kill() does
+    // not fail on a worker that exited on its own just before it, so only the
+    // termination exit code counts, and a worker that published its own terminal
+    // failure keeps that failure's latch.
+    internal const int KilledExitCode = -1;
+
+    internal static bool IsKilledStall(DiagnosticFailure? observed, bool killedAfterStall, int exitCode,
+        DiagnosticFailure? workerTerminalFailure) =>
+        killedAfterStall && exitCode == KilledExitCode && workerTerminalFailure is null
+        && observed is not null && observed == HeartbeatTimeoutFailure(started: true);
 
     // Bounds automatic stall recovery so a worker that keeps stalling still latches
     // a visible failure instead of restarting indefinitely.
@@ -729,33 +777,7 @@ internal static class SnapTapDriverSupervisor
     // owner's evidence path makes a later start treat the journal as not terminated.
     internal static bool MarkJournalLatched(string path, string evidencePath)
     {
-        Exception? last = null;
-        for (int attempt = 0; attempt < LatchMarkAttempts; attempt++)
-        {
-            try
-            {
-                OwnershipJournal? journal = DriverOwnershipJournalReader.Read(path);
-                if (journal is null || journal.Latched) { return true; }
-                string temporary = path + ".tmp";
-                using (var stream = new FileStream(temporary, FileMode.Create, FileAccess.Write, FileShare.None,
-                           4096, FileOptions.WriteThrough))
-                {
-                    JsonSerializer.Serialize(stream, journal with { Latched = true });
-                    stream.Flush(true);
-                }
-                File.Move(temporary, path, overwrite: true);
-                return true;
-            }
-            catch (Exception exception) when (exception is IOException or InvalidDataException or JsonException
-                or UnauthorizedAccessException)
-            {
-                last = exception;
-                if (attempt + 1 < LatchMarkAttempts) { Thread.Sleep(50); }
-            }
-        }
-        DiagnosticTrace.TraceException("OpenBlade.SessionAgent.SnapTapDriverSupervisor", "MarkJournalLatched", last!);
-        try { File.Delete(path + ".tmp"); }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { }
+        if (TryWriteJournalLatch(path, latched: true, "MarkJournalLatched")) { return true; }
         try { RazerKeyboardOwnedHookEvidence.WriteRefusal(evidencePath); }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
@@ -769,6 +791,44 @@ internal static class SnapTapDriverSupervisor
                     "DeleteLatchEvidence", deleteException);
             }
         }
+        return false;
+    }
+
+    // Reopens a journal this supervisor latched before an uncertain cleanup that then
+    // passed every resume check. Failure leaves it latched, so the caller stays latched.
+    internal static bool ClearJournalLatch(string path) =>
+        TryWriteJournalLatch(path, latched: false, "ClearJournalLatch");
+
+    private static bool TryWriteJournalLatch(string path, bool latched, string operation)
+    {
+        Exception? last = null;
+        for (int attempt = 0; attempt < LatchMarkAttempts; attempt++)
+        {
+            try
+            {
+                OwnershipJournal? journal = DriverOwnershipJournalReader.Read(path);
+                if (journal is null) { return latched; }
+                if (journal.Latched == latched) { return true; }
+                string temporary = path + ".tmp";
+                using (var stream = new FileStream(temporary, FileMode.Create, FileAccess.Write, FileShare.None,
+                           4096, FileOptions.WriteThrough))
+                {
+                    JsonSerializer.Serialize(stream, journal with { Latched = latched });
+                    stream.Flush(true);
+                }
+                File.Move(temporary, path, overwrite: true);
+                return true;
+            }
+            catch (Exception exception) when (exception is IOException or InvalidDataException or JsonException
+                or UnauthorizedAccessException)
+            {
+                last = exception;
+                if (attempt + 1 < LatchMarkAttempts) { Thread.Sleep(50); }
+            }
+        }
+        DiagnosticTrace.TraceException("OpenBlade.SessionAgent.SnapTapDriverSupervisor", operation, last!);
+        try { File.Delete(path + ".tmp"); }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { }
         return false;
     }
 

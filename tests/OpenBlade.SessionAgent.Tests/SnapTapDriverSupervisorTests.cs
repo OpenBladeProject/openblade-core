@@ -266,6 +266,35 @@ public sealed class SnapTapDriverSupervisorTests
     }
 
     [Fact]
+    public void OnlyAnInputStallThatNeededAKillIsAKilledStall()
+    {
+        DiagnosticFailure stall = SnapTapDriverSupervisor.HeartbeatTimeoutFailure(started: true);
+        int killed = SnapTapDriverSupervisor.KilledExitCode;
+        bool Eligible(DiagnosticFailure? observed, bool kill = true, int code = -1, DiagnosticFailure? terminal = null) =>
+            SnapTapDriverSupervisor.IsKilledStall(observed, kill, code, terminal);
+        Assert.Equal(-1, killed);
+        Assert.True(Eligible(stall));
+        // A worker that honoured the stop goes through IsCleanStall instead.
+        Assert.False(Eligible(stall, kill: false));
+        Assert.False(Eligible(null));
+        // Kill() does not fail on a worker that already exited: only termination counts.
+        foreach (int code in new[] { 0, 1, 3, 4, SnapTapDriverLoop.CleanPauseExitCode, unchecked((int)0x80131623) })
+        {
+            Assert.False(Eligible(stall, code: code));
+        }
+        // A worker that published its own terminal failure keeps that failure's latch.
+        Assert.False(Eligible(stall, terminal: SnapTapDiagnosticFailure.Create(
+            SnapTapDiagnosticFailure.Worker, "Run", "InputLoop", "SendTimedOut", true)));
+        // A startup stall keeps its own budget and is not admitted.
+        Assert.False(Eligible(SnapTapDriverSupervisor.HeartbeatTimeoutFailure(started: false)));
+        Assert.False(Eligible(stall with { Reason = "WorkerDidNotExit" }));
+        Assert.False(Eligible(stall with { Component = SnapTapDiagnosticFailure.Worker }));
+        Assert.False(Eligible(stall with { Cause = stall }));
+        Assert.False(Eligible(SnapTapDiagnosticFailure.Create(SnapTapDiagnosticFailure.Supervisor,
+            "SuperviseWorker", "WorkerExit", "UnexpectedExit", processExitCode: -1)));
+    }
+
+    [Fact]
     public void StallRearmIsBoundedWithinItsWindow()
     {
         var recent = new Queue<long>();

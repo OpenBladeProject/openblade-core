@@ -412,7 +412,9 @@ See [UI typography](docs/ui-typography.md) for the semantic scale and table use.
    backend or bypass an uncertain ownership or output recovery gate. Only a same-boot
    journal whose own identified supervisor was terminated before cleanup may be
    released automatically, through that owner's worker evidence and the verified
-   cleanup and released-input checks in [SnapTap](docs/snap-tap.md). A separate, explicitly
+   cleanup and released-input checks in [SnapTap](docs/snap-tap.md). A live supervisor
+   that had to terminate its own stalled worker may rearm, or close its journal on
+   stop, under those same checks, within the bounded stall-rearm budget. A separate, explicitly
    user-initiated elevated helper may install each of the seven reviewed models'
    separately pinned complete stack after exact host, topology, package hash and
    Windows catalog verification. Original Razer carriers are data-only sources:

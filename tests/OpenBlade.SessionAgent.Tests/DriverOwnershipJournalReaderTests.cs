@@ -290,6 +290,47 @@ public sealed class DriverOwnershipJournalReaderTests
     }
 
     [Fact]
+    public void ClearedLatchRestoresTheIdentifiedJournal()
+    {
+        WithDirectory(directory =>
+        {
+            string path = Path.Combine(directory, "snaptap-driver-ownership.json");
+            byte[] baseline = new byte[RazerSnapTapDriverProtocol.HookRecordLength];
+            File.WriteAllText(path, JsonSerializer.Serialize(OwnedJournal() with { BaselineHooks = [baseline], Latched = true }));
+            Assert.True(SnapTapDriverSupervisor.ClearJournalLatch(path));
+            var reopened = DriverOwnershipJournalReader.Read(path)!;
+            Assert.False(reopened.Latched);
+            Assert.Equal(OwnerId, reopened.SupervisorProcessId);
+            Assert.Equal(JournalCreatedAt, reopened.CreatedAt);
+            Assert.Equal(CurrentBoot, reopened.BootIdentity);
+            Assert.Equal(baseline, Assert.Single(reopened.BaselineHooks));
+            Assert.False(File.Exists(path + ".tmp"));
+            // Clearing an already open journal changes nothing.
+            Assert.True(SnapTapDriverSupervisor.ClearJournalLatch(path));
+            Assert.False(DriverOwnershipJournalReader.Read(path)!.Latched);
+        });
+    }
+
+    [Fact]
+    public void ClearingALatchFailsClosed()
+    {
+        WithDirectory(directory =>
+        {
+            string path = Path.Combine(directory, "snaptap-driver-ownership.json");
+            // A missing journal cannot be reopened, so the caller must not rearm.
+            Assert.False(SnapTapDriverSupervisor.ClearJournalLatch(path));
+            Assert.False(File.Exists(path));
+            File.WriteAllText(path, JsonSerializer.Serialize(OwnedJournal() with { Latched = true }));
+            using (new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read))
+            {
+                Assert.False(SnapTapDriverSupervisor.ClearJournalLatch(path));
+            }
+            Assert.True(DriverOwnershipJournalReader.Read(path)!.Latched);
+            Assert.False(File.Exists(path + ".tmp"));
+        });
+    }
+
+    [Fact]
     public void RefusalMarkerBlocksReuse()
     {
         WithDirectory(directory =>
