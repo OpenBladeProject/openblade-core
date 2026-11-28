@@ -24,6 +24,15 @@ ENV_NAMES = ('OPENBLADE_NATIVE_THERMAL_RESPONSES', 'OPENBLADE_NATIVE_BATTERY_RES
              'OPENBLADE_NATIVE_EDGE_FRAMES')
 
 
+def developer_disk_gate_applies(environ=None):
+    # The 25 GiB gate protects the developer host, whose C: also holds the
+    # shared Cargo cache. GitHub-hosted runners are discarded after each job;
+    # a self-hosted runner reports 'self-hosted' and keeps the gate. Mirrors
+    # Test-OpenBladeDisposableHostedRunner in NativeWindowsFixtures.ps1.
+    environ = os.environ if environ is None else environ
+    return not (environ.get('GITHUB_ACTIONS') == 'true' and environ.get('RUNNER_ENVIRONMENT') == 'github-hosted')
+
+
 def require_supported_python():
     if sys.version_info < (3, 11) or not callable(getattr(hashlib, 'file_digest', None)):
         raise RuntimeError('Python 3.11 or newer with hashlib.file_digest is required for native fixture checks')
@@ -298,7 +307,7 @@ def prepare(repo, out, mode):
                 raise ValueError('Inherited corpus is forbidden: ' + name)
         if os.environ.get('CARGO_TARGET_DIR') != r'C:\build-cache\cargo\openblade-core':
             raise ValueError('Unexpected shared Cargo target')
-        if shutil.disk_usage('C:\\').free < 25 * 1024**3:
+        if developer_disk_gate_applies() and shutil.disk_usage('C:\\').free < 25 * 1024**3:
             raise ValueError('C: has less than 25 GiB free')
         # Resolve shims without installing a toolchain. Receipts bind actual
         # compiler/Cargo bytes, including on hosted runners whose PATH has rustup.
