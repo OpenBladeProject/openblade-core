@@ -200,6 +200,7 @@ internal static class SnapTapDriverSupervisor
             using var stop = new EventWaitHandle(false, EventResetMode.ManualReset,
                 SnapTapInputProcess.StopEventName(Environment.ProcessId));
             stop.Reset();
+            using SnapTapWorkerProgress? progress = TryCreateProgress();
             string executable = Environment.ProcessPath!;
             var start = new ProcessStartInfo(executable)
             {
@@ -227,6 +228,7 @@ internal static class SnapTapDriverSupervisor
                     bool interrupted = false;
                     stage = "WorkerLaunch";
                     File.Delete(RazerKeyboardOwnedHookEvidence.PathFor(Environment.ProcessId));
+                    progress?.Reset();
                     DateTimeOffset workerStartedAt = DateTimeOffset.UtcNow;
                     worker = Process.Start(start) ?? throw new InvalidOperationException("The keyboard worker could not start.");
                     job.Assign(worker);
@@ -234,6 +236,7 @@ internal static class SnapTapDriverSupervisor
                     long lastHeartbeat = Environment.TickCount64;
                     bool started = false;
                     bool killedAfterStall = false;
+                    bool killed = false;
                     while (!worker.HasExited)
                     {
                         // Read the window flag before consuming the heartbeat. The worker
@@ -250,16 +253,22 @@ internal static class SnapTapDriverSupervisor
                         if (requestedStop || timedOut)
                         {
                             interrupted = true;
+                            // Read the worker's step before the stop changes it.
+                            string? stallContext = null;
                             if (timedOut)
                             {
                                 observedWorkerFailure = HeartbeatTimeoutFailure(started);
+                                stallContext = string.Create(CultureInfo.InvariantCulture,
+                                    $"Started={started}; Admitting={workerAdmitting}; SinceHeartbeatMs={Environment.TickCount64 - lastHeartbeat}; {progress?.Read().ToString() ?? "WorkerStage=Unavailable"}");
                             }
                             stop.Set();
                             if (!worker.WaitForExit(6000))
                             {
                                 worker.Kill();
+                                killed = true;
                                 if (!worker.WaitForExit(1500))
                                 {
+                                    TraceStall(stallContext, "DidNotExit", progress);
                                     return PublishTerminal(endpoint.Profile, SnapTapRuntimeState.Failed,
                                         observedWorkerFailure ?? SnapTapDiagnosticFailure.Create(
                                             SnapTapDiagnosticFailure.Supervisor, "SuperviseWorker",
@@ -267,6 +276,7 @@ internal static class SnapTapDriverSupervisor
                                 }
                                 killedAfterStall = timedOut && !requestedStop;
                             }
+                            TraceStall(stallContext, killed ? "Killed" : "Exited", progress);
                             break;
                         }
                     }
@@ -333,10 +343,11 @@ internal static class SnapTapDriverSupervisor
                             continue;
                         }
                     }
-                    if (IsKilledStall(observedWorkerFailure, killedAfterStall, worker.ExitCode,
-                        MatchingTerminalFailure(finalStatus, worker.Id, workerStartedAt)))
+                    else if (IsKilledStall(observedWorkerFailure, killedAfterStall, worker.ExitCode,
+                        MatchingWorkerFailure(finalStatus, worker.Id, workerStartedAt)))
                     {
-                        // A worker frozen past the stop wait, as under boot load, was killed.
+                        // A worker frozen past the stop wait, as under boot load, was killed, or
+                        // it paused cleanly but its status was lost.
                         // Reconciliation has cleared and read back its hooks, so this is the
                         // terminated-owner case with a live supervisor: resume under the same
                         // released-input check, within the shared stall-rearm budget.
@@ -353,7 +364,7 @@ internal static class SnapTapDriverSupervisor
                             && TryAdmitStallRearm(stallRearms, Environment.TickCount64)
                             && ClearJournalLatch(journal))
                         {
-                            Trace.TraceInformation("SnapTap killed worker reconciled; rearming: {0}", observedWorkerFailure);
+                            Trace.TraceInformation("SnapTap stalled worker reconciled after an unconfirmed exit; rearming: {0}", observedWorkerFailure);
                             File.Delete(ownEvidence);
                             clean = false;
                             rearming = true;
@@ -438,8 +449,8 @@ internal static class SnapTapDriverSupervisor
         }
     }
 
-    // Two worker pauses are clean: a focus loss in the input loop, and a subscription
-    // enable refused before submission during hook setup. Neither submitted output.
+    // Two worker pauses are clean: a focus loss in the input loop, and a hook or
+    // subscription enable refused before submission during hook setup. Neither submitted output.
     internal static bool IsCleanPause(
         int exitCode, SnapTapRuntimeStatus? status, int processId, DateTimeOffset startedAt) =>
         exitCode == SnapTapDriverLoop.CleanPauseExitCode
@@ -455,6 +466,28 @@ internal static class SnapTapDriverSupervisor
         }
         && failure is { Stage: "InputLoop", Reason: "ForegroundUnavailable" }
             or { Stage: "HookSetup", Reason: "SubscriptionDeferred" };
+
+    // Stall diagnostics never decide recovery: the failure record stays the exact
+    // HeartbeatTimeoutFailure so IsCleanStall and IsKilledStall keep matching it.
+    private static void TraceStall(string? stallContext, string outcome, SnapTapWorkerProgress? progress)
+    {
+        if (stallContext is null) { return; }
+        Trace.TraceWarning("SnapTap worker heartbeat timeout: {0}; Outcome={1}; AtExit {2}", stallContext, outcome,
+            progress?.Read().ToString() ?? "WorkerStage=Unavailable");
+    }
+
+    private static SnapTapWorkerProgress? TryCreateProgress()
+    {
+        try
+        {
+            return SnapTapWorkerProgress.Create(Environment.ProcessId);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            DiagnosticTrace.TraceException("OpenBlade.SessionAgent.SnapTapDriverSupervisor", "CreateWorkerProgress", exception);
+            return null;
+        }
+    }
 
     internal static DiagnosticFailure HeartbeatTimeoutFailure(bool started) => SnapTapDiagnosticFailure.Create(
         SnapTapDiagnosticFailure.Supervisor, "SuperviseWorker",
@@ -485,12 +518,17 @@ internal static class SnapTapDriverSupervisor
     // the released-input check that a terminated owner's recovery uses. Kill() does
     // not fail on a worker that exited on its own just before it, so only the
     // termination exit code counts, and a worker that published its own terminal
-    // failure keeps that failure's latch.
+    // failure keeps that failure's latch. A worker that left hook setup through the
+    // clean-pause exit after the stop, but whose Paused status did not reach disk
+    // before it exited (status writes are bounded, and slow under the same load),
+    // gets these same checks instead of a latch: IsCleanStall already took it when
+    // its status did land.
     internal const int KilledExitCode = -1;
 
     internal static bool IsKilledStall(DiagnosticFailure? observed, bool killedAfterStall, int exitCode,
         DiagnosticFailure? workerTerminalFailure) =>
-        killedAfterStall && exitCode == KilledExitCode && workerTerminalFailure is null
+        ((killedAfterStall && exitCode == KilledExitCode) || exitCode == SnapTapDriverLoop.CleanPauseExitCode)
+        && workerTerminalFailure is null
         && observed is not null && observed == HeartbeatTimeoutFailure(started: true);
 
     // Bounds automatic stall recovery so a worker that keeps stalling still latches
@@ -585,6 +623,14 @@ internal static class SnapTapDriverSupervisor
         }
         return true;
     }
+
+    // The stall gates treat any failure this worker published, terminal or not, as its
+    // own claim, except the two fixed clean-pause failures that IsCleanPause admits.
+    internal static DiagnosticFailure? MatchingWorkerFailure(
+        SnapTapRuntimeStatus? status, int processId, DateTimeOffset startedAt) =>
+        MatchingTerminalFailure(status, processId, startedAt)
+        ?? (status is { Failure: { } failure } && status.ProcessId == processId && status.UpdatedAt >= startedAt
+            && !IsCleanPause(SnapTapDriverLoop.CleanPauseExitCode, status, processId, startedAt) ? failure : null);
 
     internal static DiagnosticFailure? MatchingTerminalFailure(
         SnapTapRuntimeStatus? status,

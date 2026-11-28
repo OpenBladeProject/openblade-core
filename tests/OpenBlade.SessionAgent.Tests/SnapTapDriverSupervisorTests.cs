@@ -278,10 +278,18 @@ public sealed class SnapTapDriverSupervisorTests
         Assert.False(Eligible(stall, kill: false));
         Assert.False(Eligible(null));
         // Kill() does not fail on a worker that already exited: only termination counts.
-        foreach (int code in new[] { 0, 1, 3, 4, SnapTapDriverLoop.CleanPauseExitCode, unchecked((int)0x80131623) })
+        foreach (int code in new[] { 0, 1, 3, 4, unchecked((int)0x80131623) })
         {
             Assert.False(Eligible(stall, code: code));
+            Assert.False(Eligible(stall, kill: false, code: code));
         }
+        // A clean-pause exit whose Paused status never landed gets the same strict checks,
+        // whether it beat the kill or honoured the stop in time.
+        Assert.True(Eligible(stall, code: SnapTapDriverLoop.CleanPauseExitCode));
+        Assert.True(Eligible(stall, kill: false, code: SnapTapDriverLoop.CleanPauseExitCode));
+        Assert.False(Eligible(stall, kill: false, code: SnapTapDriverLoop.CleanPauseExitCode,
+            terminal: SnapTapDiagnosticFailure.Create(SnapTapDiagnosticFailure.Worker, "Run", "HookSetup", "HookSetupFailed", true)));
+        Assert.False(Eligible(null, kill: false, code: SnapTapDriverLoop.CleanPauseExitCode));
         // A worker that published its own terminal failure keeps that failure's latch.
         Assert.False(Eligible(stall, terminal: SnapTapDiagnosticFailure.Create(
             SnapTapDiagnosticFailure.Worker, "Run", "InputLoop", "SendTimedOut", true)));
@@ -292,6 +300,28 @@ public sealed class SnapTapDriverSupervisorTests
         Assert.False(Eligible(stall with { Cause = stall }));
         Assert.False(Eligible(SnapTapDiagnosticFailure.Create(SnapTapDiagnosticFailure.Supervisor,
             "SuperviseWorker", "WorkerExit", "UnexpectedExit", processExitCode: -1)));
+    }
+
+    [Fact]
+    public void AnyNonCleanFailureThisWorkerPublishedBlocksTheUnconfirmedExitGate()
+    {
+        DateTimeOffset start = DateTimeOffset.UtcNow;
+        var paused = new SnapTapRuntimeStatus(SnapTapRuntimeState.Paused, start.AddMilliseconds(1), 123,
+            Failure: SnapTapDriverLoop.SubscriptionDeferredFailure());
+        DiagnosticFailure? Matching(SnapTapRuntimeStatus? status) =>
+            SnapTapDriverSupervisor.MatchingWorkerFailure(status, 123, start);
+        // The fixed clean-pause failure and a status without failure are not claims.
+        Assert.Null(Matching(paused));
+        Assert.Null(Matching(paused with { Failure = null }));
+        Assert.Null(Matching(null));
+        // A non-terminal status whose failure is not a clean pause still counts.
+        DiagnosticFailure unclean = paused.Failure! with { MayHaveSubmitted = true };
+        Assert.Equal(unclean, Matching(paused with { Failure = unclean }));
+        DiagnosticFailure failed = SnapTapDiagnosticFailure.Create(SnapTapDiagnosticFailure.Worker, "Run", "InputLoop", "SendTimedOut", true);
+        Assert.Equal(failed, Matching(paused with { State = SnapTapRuntimeState.Failed, Failure = failed }));
+        // Another worker or an earlier status is not this worker's claim.
+        Assert.Null(Matching(paused with { Failure = unclean, ProcessId = 124 }));
+        Assert.Null(Matching(paused with { Failure = unclean, UpdatedAt = start.AddMilliseconds(-1) }));
     }
 
     [Fact]

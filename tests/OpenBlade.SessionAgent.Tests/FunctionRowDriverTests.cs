@@ -322,6 +322,80 @@ public sealed class FunctionRowDriverTests
     }
 
     [Fact]
+    public void StopDuringHookSetupLeavesBetweenHooksBeforeSubmission()
+    {
+        var transport = new FakeTransport();
+        List<IReadOnlyList<byte[]>> evidence = [];
+        List<string> stages = [];
+        var session = new RazerSnapTapHookSession(transport, RazerKeyboardHookPurpose.Combined, evidence.Add,
+            stages.Add, () => transport.Hooks.Count == 3);
+        Assert.False(session.Start());
+        // The refusal precedes the fourth submission: a clean pause the guardian can
+        // reconcile from the evidence, not an uncertain write.
+        Assert.True(session.SubscriptionDeferred);
+        Assert.False(session.FailureMayHaveSubmitted);
+        Assert.Equal(3, transport.Hooks.Count);
+        Assert.Equal(3, session.OwnedHooks.Count);
+        Assert.Equal(3, evidence[^1].Count);
+        Assert.Equal(0, transport.Subscriptions);
+        Assert.Equal("HookMutation", session.Failure!.Stage);
+        Assert.Equal(["BaselineRead", "BaselineValidation",
+            "HookMutation", "HookReadback", "OwnershipRecord",
+            "HookMutation", "HookReadback", "OwnershipRecord",
+            "HookMutation", "HookReadback", "OwnershipRecord",
+            "HookMutation"], stages);
+        Assert.All(stages, step => Assert.Contains(step, SnapTapWorkerProgress.Stages));
+        Assert.True(SnapTapDriverSupervisor.TryReconcileHooks(transport, session.BaselineHooks,
+            _ => { }, out _, RazerKeyboardHookPurpose.Combined, evidence[^1]));
+        Assert.Empty(transport.Hooks);
+    }
+
+    [Fact]
+    public void TransportRefusalMidSetIsDeferredNotAmbiguous()
+    {
+        // The session sets mutationPending before the transport call; a refusal from the
+        // native guard still proves nothing was submitted.
+        var transport = new FakeTransport { RefuseSetAt = 5 };
+        List<IReadOnlyList<byte[]>> evidence = [];
+        var session = new RazerSnapTapHookSession(transport, RazerKeyboardHookPurpose.Combined, evidence.Add);
+        Assert.False(session.Start());
+        Assert.True(session.SubscriptionDeferred);
+        Assert.False(session.FailureMayHaveSubmitted);
+        Assert.Equal(5, session.OwnedHooks.Count);
+        Assert.Equal(5, evidence[^1].Count);
+        Assert.True(SnapTapDriverSupervisor.TryReconcileHooks(transport, session.BaselineHooks,
+            _ => { }, out _, RazerKeyboardHookPurpose.Combined, evidence[^1]));
+        Assert.Empty(transport.Hooks);
+    }
+
+    [Fact]
+    public void EveryStageOfACompleteSetupIsRecorded()
+    {
+        List<string> stages = [];
+        var session = new RazerSnapTapHookSession(new FakeTransport(), RazerKeyboardHookPurpose.Combined,
+            reportStage: stages.Add);
+        Assert.True(session.Start());
+        Assert.Equal("SubscriptionReadback", stages[^1]);
+        Assert.All(stages, step => Assert.Contains(step, SnapTapWorkerProgress.Stages));
+        // Closing reports nothing.
+        int before = stages.Count;
+        Assert.True(session.Stop());
+        Assert.Equal(before, stages.Count);
+    }
+
+    [Fact]
+    public void StopBeforeTheFirstHookSubmitsNothing()
+    {
+        var transport = new FakeTransport();
+        var session = new RazerSnapTapHookSession(transport, RazerKeyboardHookPurpose.Combined, shouldStop: () => true);
+        Assert.False(session.Start());
+        Assert.True(session.SubscriptionDeferred);
+        Assert.False(session.FailureMayHaveSubmitted);
+        Assert.Empty(transport.Hooks);
+        Assert.Empty(session.OwnedHooks);
+    }
+
+    [Fact]
     public void OwnershipEvidenceWriteFailurePreventsSubscriptionAndFurtherHookWrites()
     {
         var transport = new FakeTransport();
@@ -378,8 +452,14 @@ public sealed class FunctionRowDriverTests
     {
         internal List<byte[]> Hooks { get; } = [];
         internal int Subscriptions;
+        // Models the native guard that refuses after admission, before submission.
+        internal int RefuseSetAt { get; init; } = -1;
         public IReadOnlyList<byte[]> ReadHooks() => Hooks.Select(hook => (byte[])hook.Clone()).ToArray();
-        public void SetHook(byte[] hook) => Hooks.Add((byte[])hook.Clone());
+        public void SetHook(byte[] hook)
+        {
+            if (Hooks.Count == RefuseSetAt) { throw new KeyboardSubmissionDeferredException(); }
+            Hooks.Add((byte[])hook.Clone());
+        }
         public void ClearHook(byte[] clear) => Hooks.RemoveAll(hook => hook.AsSpan(0, 32).SequenceEqual(clear));
         public void SetHookEnabled(bool enabled) { Assert.True(enabled); Subscriptions++; }
         public void CloseSubscription() { }

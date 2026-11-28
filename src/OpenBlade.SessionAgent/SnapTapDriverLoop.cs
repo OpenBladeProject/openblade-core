@@ -30,6 +30,7 @@ internal static class SnapTapDriverLoop
         FunctionRowDriverContext? functionContext = null;
         FunctionRowDriverInputProcessor? functionProcessor = null;
         SnapTapDeliveryMonitor? delivery = null;
+        SnapTapWorkerProgress? progress = null;
         var deliveryTracker = new SnapTapDeliveryTracker();
         var deliveryClock = Stopwatch.StartNew();
         bool deliveryObservable = false;
@@ -59,10 +60,13 @@ internal static class SnapTapDriverLoop
                 SnapTapDriverSupervisor.HeartbeatName(parentId));
             using EventWaitHandle admitting = EventWaitHandle.OpenExisting(
                 SnapTapDriverSupervisor.AdmissionName(parentId));
+            progress = SnapTapWorkerProgress.TryOpen(parentId);
             stage = "TransportOpen";
             transport = new RazerSnapTapDriverTransport(endpoint!.Path,
-                () => AdmitWithProgress(() => admission.IsCurrent(endpoint), () => heartbeat.Set(), admitting),
-                () => !shouldStop() && AllReleased() && (functionContext is null || functionContext.Ready), CanOutput, purpose);
+                () => AdmitWithProgress(() => TimedAdmission(() => admission.IsCurrent(endpoint), progress),
+                    () => heartbeat.Set(), admitting),
+                () => !shouldStop() && AllReleased() && (functionContext is null || functionContext.Ready), CanOutput, purpose,
+                () => !shouldStop());
             output = new DriverKeyboardOutput(DecideOutput, SendDriverOutput);
             if (functionContext is not null)
             {
@@ -82,6 +86,7 @@ internal static class SnapTapDriverLoop
             delivery = new SnapTapDeliveryMonitor(functionContext?.DeliveryFeed);
             publisher.Publish(SnapTapRuntimeState.WaitingForRelease);
             stage = "WaitingForRelease";
+            progress?.Enter("WaitingForRelease");
             // Do not hook an in-flight hold whose initial down we did not see.
             while (!shouldStop())
             {
@@ -111,14 +116,16 @@ internal static class SnapTapDriverLoop
                 owned =>
                 {
                     RazerKeyboardOwnedHookEvidence.Write(parentId, owned);
+                    progress?.HooksSet(owned.Count);
                     heartbeat.Set();
-                });
+                },
+                step => progress?.Enter(step), shouldStop);
             if (!session.Start())
             {
                 if (session.SubscriptionDeferred)
                 {
-                    // A key, mouse button or metadata change during hook setup refused the
-                    // idle-only enable before submission. Exit like a focus pause: the
+                    // A stop before the next hook, or a key, mouse button or metadata change
+                    // before the idle-only enable, refused before submission. Exit like a focus pause: the
                     // guardian clears and reads back the owned hooks, then rearms.
                     publisher.Publish(SnapTapRuntimeState.Paused, SubscriptionDeferredFailure());
                     return CleanPauseExitCode;
@@ -130,6 +137,7 @@ internal static class SnapTapDriverLoop
                 return 1;
             }
             stage = "InputLoop";
+            progress?.Enter("InputLoop");
             DiagnosticFailure? loopFailure = null;
             bool foregroundPause = false;
             while (!shouldStop() && !processor.Faulted && !publisher.Failed
@@ -242,6 +250,7 @@ internal static class SnapTapDriverLoop
             // On ambiguous output, close the subscription without more writes.
             // The guardian reconciles only owned hook configuration after exit.
             stage = "Cleanup";
+            progress?.Enter("Cleanup");
             var stopExit = new StopRefusalExit(output!.SnapStopRefused, output.FunctionStopRefused, publisher.Failed,
                 session.Failure, processor.Faulted, processor.Failure, functionProcessor?.Faulted == true,
                 functionProcessor?.Failure, loopFailure,
@@ -318,6 +327,7 @@ internal static class SnapTapDriverLoop
             functionProcessor?.ReleaseMedia();
             functionContext?.Dispose();
             delivery?.Dispose();
+            progress?.Dispose();
         }
 
         void SendDriverOutput(SnapTapKeyStroke stroke)
@@ -356,6 +366,20 @@ internal static class SnapTapDriverLoop
         !IsOutputTargetCurrent(targetWindow, targetLayout, currentWindow, currentLayout, true)
             ? DriverOutputDecision.TargetChanged
             : !stopping && stopRequested ? DriverOutputDecision.StopRequested : DriverOutputDecision.Allowed;
+
+    // Records how long the last per-mutation admission took, for stall diagnostics.
+    internal static bool TimedAdmission(Func<bool> admit, SnapTapWorkerProgress? progress)
+    {
+        long started = Environment.TickCount64;
+        try
+        {
+            return admit();
+        }
+        finally
+        {
+            progress?.Admission(Environment.TickCount64 - started);
+        }
+    }
 
     // Brackets only the user-mode admission that precedes each driver mutation, never
     // the driver request itself. Progress is signalled before the window flag is
