@@ -54,9 +54,26 @@ function Get-OpenBladeNativeFixtureDiskPolicy {
     return 'Ready'
 }
 
+# The 25/50 GiB gate protects the developer host, whose C: also holds the
+# shared Cargo cache. GitHub-hosted runners are discarded after each job, so a
+# full disk there fails only that job. GitHub sets both values itself; a
+# self-hosted runner reports 'self-hosted' and keeps the gate.
+function Test-OpenBladeDisposableHostedRunner {
+    param(
+        [AllowNull()][string]$GitHubActions = $env:GITHUB_ACTIONS,
+        [AllowNull()][string]$RunnerEnvironment = $env:RUNNER_ENVIRONMENT)
+    return $GitHubActions -ceq 'true' -and $RunnerEnvironment -ceq 'github-hosted'
+}
+
 function Assert-OpenBladeNativeFixtureDiskSpace {
-    param([scriptblock]$ReadAvailableBytes = { ([IO.DriveInfo]::new('C:\')).AvailableFreeSpace })
+    param(
+        [scriptblock]$ReadAvailableBytes = { ([IO.DriveInfo]::new('C:\')).AvailableFreeSpace },
+        [bool]$DisposableHostedRunner = (Test-OpenBladeDisposableHostedRunner))
     $free = [long](& $ReadAvailableBytes)
+    if ($DisposableHostedRunner) {
+        Write-Host ('C: has {0:N1} GiB free. The developer-host 25 GiB gate does not apply to this GitHub-hosted runner.' -f ($free / 1GB))
+        return
+    }
     $policy = Get-OpenBladeNativeFixtureDiskPolicy $free
     if ($policy -eq 'Stop') { throw 'C: is below 25 GiB; stop before building fixtures.' }
     if ($policy -eq 'Warn') {

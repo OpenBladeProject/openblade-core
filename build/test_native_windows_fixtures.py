@@ -33,6 +33,34 @@ class FixtureContracts(unittest.TestCase):
         self.assertEqual(supported['executable'], sys.executable)
         self.assertTrue(supported['fileDigest'])
 
+    def test_disk_gate_exempts_only_github_hosted_runners(self):
+        cases = (({'GITHUB_ACTIONS': 'true', 'RUNNER_ENVIRONMENT': 'github-hosted'}, False),
+                 ({'GITHUB_ACTIONS': 'true', 'RUNNER_ENVIRONMENT': 'self-hosted'}, True),
+                 ({'GITHUB_ACTIONS': 'true'}, True),
+                 ({'RUNNER_ENVIRONMENT': 'github-hosted'}, True),
+                 ({'GITHUB_ACTIONS': 'True', 'RUNNER_ENVIRONMENT': 'github-hosted'}, True),
+                 ({}, True))
+        for environ, applies in cases:
+            with self.subTest(environ=environ):
+                self.assertIs(f.developer_disk_gate_applies(environ), applies)
+
+    def test_prepare_applies_disk_gate_before_tool_resolution(self):
+        class ToolResolution(Exception):
+            pass
+        low = type('Usage', (), {'free': 24 * 1024**3})()
+        base = {'CARGO_TARGET_DIR': r'C:\build-cache\cargo\openblade-core'}
+        hosted = {**base, 'GITHUB_ACTIONS': 'true', 'RUNNER_ENVIRONMENT': 'github-hosted'}
+        for environ, expected in ((base, ValueError), (hosted, ToolResolution)):
+            with self.subTest(environ=environ), tempfile.TemporaryDirectory() as root, \
+                    patch.dict(f.os.environ, environ, clear=True), \
+                    patch.object(f, 'load_manifest'), patch.object(f, 'source_manifest', return_value={}), \
+                    patch.object(f.shutil, 'disk_usage', return_value=low), \
+                    patch.object(f.shutil, 'which', side_effect=ToolResolution), \
+                    self.assertRaises(expected) as raised:
+                f.prepare(REPO, Path(root), 'PrepareOnly')
+            if expected is ValueError:
+                self.assertIn('less than 25 GiB', str(raised.exception))
+
     def test_preserves_exact_payload_and_ignores_trace_copy(self):
         data = self.line() + b'NATIVE_THERMAL_EDGE_TRACE getStatus {}\n'
         rows = f.collect(data, 'test', {'peer_response'})

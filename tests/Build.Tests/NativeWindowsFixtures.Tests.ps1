@@ -8,6 +8,8 @@ $python = $pythonRuntime.Executable
 & $python -B (Join-Path $repository 'build/test_native_windows_fixtures.py')
 if ($LASTEXITCODE -ne 0) { throw "Native Windows fixture harness contracts failed: $LASTEXITCODE" }
 
+# These cases run on GitHub-hosted CI too, so they pin the developer-host gate
+# explicitly instead of inheriting the runner's environment.
 foreach ($case in @(
     @{ Bytes = 24GB; Policy = 'Stop'; Reads = 1 },
     @{ Bytes = 25GB; Policy = 'Warn'; Reads = 2 },
@@ -19,7 +21,7 @@ foreach ($case in @(
     $script:fixtureDiskBytes = $case.Bytes
     $threw = $false
     try {
-        $messages = @(Assert-OpenBladeNativeFixtureDiskSpace -ReadAvailableBytes {
+        $messages = @(Assert-OpenBladeNativeFixtureDiskSpace -DisposableHostedRunner $false -ReadAvailableBytes {
             $script:fixtureDiskReadCount++
             return $script:fixtureDiskBytes
         } 3>&1)
@@ -31,7 +33,7 @@ foreach ($case in @(
 $script:fixtureDiskReadCount = 0
 $threw = $false
 try {
-    $null = Assert-OpenBladeNativeFixtureDiskSpace -ReadAvailableBytes {
+    $null = Assert-OpenBladeNativeFixtureDiskSpace -DisposableHostedRunner $false -ReadAvailableBytes {
         $script:fixtureDiskReadCount++
         if ($script:fixtureDiskReadCount -eq 1) { return 30GB }
         return 24GB
@@ -39,6 +41,47 @@ try {
 }
 catch { $threw = $true }
 if (-not $threw -or $script:fixtureDiskReadCount -ne 2) { throw 'Disk recheck must stop below 25 GiB.' }
+# A disposable GitHub-hosted runner reports its free space once and proceeds.
+foreach ($bytes in @(1GB, 24GB, 49GB)) {
+    $script:fixtureDiskReadCount = 0
+    $script:fixtureDiskBytes = $bytes
+    $messages = @(Assert-OpenBladeNativeFixtureDiskSpace -DisposableHostedRunner $true -ReadAvailableBytes {
+        $script:fixtureDiskReadCount++
+        return $script:fixtureDiskBytes
+    } 3>&1)
+    if ($script:fixtureDiskReadCount -ne 1 -or @($messages).Count -ne 0) { throw 'Hosted runner disk report mismatch.' }
+}
+# Only GitHub's own hosted-runner values exempt a run. A self-hosted runner, a
+# missing value or a differently cased value keeps the developer-host gate.
+foreach ($case in @(
+    @{ Actions = 'true'; Runner = 'github-hosted'; Hosted = $true },
+    @{ Actions = 'true'; Runner = 'self-hosted'; Hosted = $false },
+    @{ Actions = 'true'; Runner = $null; Hosted = $false },
+    @{ Actions = $null; Runner = 'github-hosted'; Hosted = $false },
+    @{ Actions = 'True'; Runner = 'github-hosted'; Hosted = $false },
+    @{ Actions = 'true'; Runner = 'GitHub-Hosted'; Hosted = $false },
+    @{ Actions = $null; Runner = $null; Hosted = $false }
+)) {
+    if ((Test-OpenBladeDisposableHostedRunner -GitHubActions $case.Actions -RunnerEnvironment $case.Runner) -ne $case.Hosted) {
+        throw "Hosted runner classification mismatch: GITHUB_ACTIONS='$($case.Actions)' RUNNER_ENVIRONMENT='$($case.Runner)'."
+    }
+}
+$savedActions = $env:GITHUB_ACTIONS
+$savedRunner = $env:RUNNER_ENVIRONMENT
+try {
+    $env:GITHUB_ACTIONS = 'true'
+    $env:RUNNER_ENVIRONMENT = 'self-hosted'
+    $threw = $false
+    try { $null = Assert-OpenBladeNativeFixtureDiskSpace -ReadAvailableBytes { 24GB } 3>&1 }
+    catch { $threw = $true }
+    if (-not $threw) { throw 'A self-hosted runner must keep the developer-host disk gate.' }
+    $env:RUNNER_ENVIRONMENT = 'github-hosted'
+    $null = Assert-OpenBladeNativeFixtureDiskSpace -ReadAvailableBytes { 24GB } 3>&1
+}
+finally {
+    $env:GITHUB_ACTIONS = $savedActions
+    $env:RUNNER_ENVIRONMENT = $savedRunner
+}
 Write-Host 'Fixture disk threshold contracts passed.'
 
 # These command shims only probe the runtime guard; they never invoke fixture
