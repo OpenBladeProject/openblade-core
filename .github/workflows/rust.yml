@@ -294,6 +294,11 @@ jobs:
       # serves GPU beside Display.
       - name: Test the candidates' object-only IPC decoders
         if: runner.os == 'Windows'
+        # GitHub caps a run script that contains an expression at 21000
+        # characters, and this one is longer, so the target comes from the
+        # environment and the script stays expression-free.
+        env:
+          CANDIDATE_TARGET: ${{ matrix.target }}
         run: |
           $ErrorActionPreference = 'Stop'
           $manifest = '../tools/openblade-windows-host/Cargo.toml'
@@ -650,7 +655,7 @@ jobs:
               @('openblade-windows-service-candidate', 'service-profiles-v1', 'device_mode'))) {
             # Capture the exit code instead of throwing, so the output is printed first.
             $PSNativeCommandUseErrorActionPreference = $false
-            $output = cargo test --locked --manifest-path $manifest --target ${{ matrix.target }} --bin $run[0] --features $run[1] -- $run[2]
+            $output = cargo test --locked --manifest-path $manifest --target $env:CANDIDATE_TARGET --bin $run[0] --features $run[1] -- $run[2]
             $exit = $LASTEXITCODE
             $output
             if ($exit -ne 0) {
